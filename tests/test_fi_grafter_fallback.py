@@ -6873,6 +6873,26 @@ def test_extract_kumotaan_section_refs_expands_same_base_letter_range() -> None:
     assert set(got) == {"6a", "10d", "10e", "10f", "10g", "10h", "10i", "14"}
 
 
+def test_extract_kumotaan_section_refs_expands_numeric_to_lettered_range_to_valid_labels() -> None:
+    """A ``N―M x`` range yields VALID base labels, not a bogus unexpanded literal.
+
+    The grammar-backed enumerator expands ``5―6 b`` to the numeric base range
+    ``5, 6`` (valid section labels). The retired parallel regex emitted the
+    raw string ``5-6b`` — a label that matches no real section node, so the
+    repeal target was effectively a silent no-op. Regression pin for that fix
+    (grammar enumerates structure; ``§(?!:)`` is only the site anchor).
+    """
+    johto = (
+        "kumotaan valtion vakuusrahastosta 30 päivänä huhtikuuta 1992 annetun "
+        "lain (379/92), 5―6 b, 8―10 ja 16―17 §"
+    )
+
+    got = _extract_kumotaan_section_refs(johto)
+
+    assert "5-6b" not in got  # no bogus unexpanded range literal
+    assert set(got) == {"5", "6", "8", "9", "10", "16", "17"}
+
+
 def test_extract_kumotaan_section_refs_ignores_attachment_number_ranges_without_section_marker() -> None:
     johto = (
         "Tällä lailla kumotaan 29 päivänä joulukuuta 1994 annetun sairausvakuutuslain "
@@ -6957,6 +6977,24 @@ def test_extract_muutetaan_section_refs_stops_at_lisataan() -> None:
     # should not add new items beyond what the muutetaan clause contributed.
     # The whole-section refs from the muutetaan clause are §4 (ch6) and §7 (ch5).
     assert got <= {"4", "7"}
+
+
+def test_extract_muutetaan_chapter_section_map_expands_numeric_to_lettered_range() -> None:
+    """A ``N―M x`` range in a muutetaan clause yields VALID base labels.
+
+    Grammar-backed enumeration expands ``22―23 a`` to ``22, 23`` rather than the
+    retired regex's bogus literal ``22-23a`` (which matched no real section, so
+    the recycle guard could never recognise the section as recycled). NEW-better
+    delta from the kumotaan regex→grammar demotion.
+    """
+    johto = (
+        "kumotaan sairausvakuutuslain (364/63) 28 §:n 4 momentti, "
+        "muutetaan 4 §:n 1 momentti, 22―23 a §"
+    )
+    got = _extract_muutetaan_chapter_section_map(johto)
+    flat = {label for labels in got.values() for label in labels}
+    assert "22-23a" not in flat  # no bogus unexpanded range literal
+    assert {"22", "23"} <= flat
 
 
 def test_extract_muutetaan_chapter_section_map_chapter_scoped() -> None:

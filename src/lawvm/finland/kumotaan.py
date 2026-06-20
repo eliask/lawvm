@@ -1,7 +1,16 @@
 """Kumotaan (repeal) extraction helpers for Finnish johtolause text.
 
-Extracted from grafter.py — pure regex functions on johtolause strings.
+Extracted from grafter.py — pure functions on johtolause strings.
 No lxml, no corpus access, no grafter state.
+
+The whole-section enumeration of a repeal/amend block (section / range /
+coordination / letter-suffix) is parsed by the shared johtolause grammar
+(``references.sections.parse_body_provision_tail``), NOT by a parallel regex.
+Regex survives here only as (a) clause-boundary / multi-statute / provenance
+ANCHORS and (b) the ``§(?!:)`` whole-section SITE ANCHOR that delimits each
+candidate run before handing its structure to the grammar — both the allowed
+lexer-primitive floor (a cheap site anchor that hands the structural tail to a
+real recognizer), never the structural parser.
 """
 from __future__ import annotations
 
@@ -11,10 +20,69 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
 from lawvm.core.payload_surface import TargetUnitKind
-from lawvm.finland.helpers import _expand_section_range
+from lawvm.finland.references.sections import parse_body_provision_tail
 
 
 _CHAPTER_MARKER_RE = re.compile(r'(\d{1,4}\s{1,4}[a-z]|\d{1,4})\s{1,8}luvun\b')
+
+
+# Whole-section SITE ANCHOR (scaffold, NOT a structural parser): a coordinated
+# number run terminated by a bare ``§`` that is NOT colon-qualified (``§(?!:)``).
+# The trailing ``§:`` exclusion is the whole-section discriminator the grammar
+# does not yet replicate — ``N §:n M momentti`` / ``N §:n edellä oleva
+# väliotsikko`` are sub-provision/heading repeals, never whole-section repeals.
+# The anchor only delimits the run SURFACE; its section/range/coordination/
+# letter-suffix STRUCTURE is enumerated by the grammar (parse_body_provision_tail).
+_WHOLE_SECTION_SITE_RE = re.compile(
+    r'(?P<run>'
+    r'\d+(?:\s*[a-z])?'
+    r'(?:\s*[–—―\-]\s*\d+(?:\s*[a-z])?)?'
+    r'(?:\s*(?:,|ja)\s*\d+(?:\s*[a-z])?(?:\s*[–—―\-]\s*\d+(?:\s*[a-z])?)?)*'
+    r')\s*§(?!:)',
+    re.IGNORECASE,
+)
+
+# De-glue coordination joiners fused to a following digit (``ja18`` → ``ja 18``)
+# and a letter-suffix fused to ``ja`` + digit (``16 aja 18`` → ``16 a ja 18``),
+# both attested source typos. This is a SITE-SCAN NORMALIZATION (anchor floor),
+# mirroring ``freetext_addresses._GLUED_JOINER_DIGIT_RE``; structure is still
+# parsed by the grammar over the de-glued tokens.
+_GLUED_JOINER_DIGIT_RE = re.compile(r'\b(ja|sekä|ynnä|tai)(?=\d)', re.IGNORECASE)
+_GLUED_LETTER_JOINER_RE = re.compile(r'([a-zäöå])ja(?=\s*\d)', re.IGNORECASE)
+
+
+def _deglue_run(run: str) -> str:
+    return _GLUED_LETTER_JOINER_RE.sub(r'\1 ja ', _GLUED_JOINER_DIGIT_RE.sub(r'\1 ', run))
+
+
+def _grammar_whole_section_labels(block: str) -> List[str]:
+    """Whole-section repeal labels in a block, enumerated by the shared grammar.
+
+    Replaces the parallel regex section enumerator: a ``§(?!:)`` site anchor
+    delimits each candidate whole-section run, and the grammar
+    (:func:`...references.sections.parse_body_provision_tail`) expands its
+    section / range / coordination / letter-suffix structure. Only WHOLE-section
+    targets are kept (``subsection_num``/``item_label``/``subitem_label`` all
+    ``None``) — momentti/kohta/alakohta precision is the grammar's job to model
+    and is excluded here exactly as the regex's ``§(?!:)`` did.
+
+    Order-preserving and de-duplicated, matching the prior regex contract.
+    """
+    out: List[str] = []
+    seen: Set[str] = set()
+    for m in _WHOLE_SECTION_SITE_RE.finditer(block):
+        run = _deglue_run(m.group("run"))
+        for target in parse_body_provision_tail(run + " §"):
+            if (
+                target.subsection_num is None
+                and target.item_label is None
+                and target.subitem_label is None
+                and target.section_label
+            ):
+                if target.section_label not in seen:
+                    seen.add(target.section_label)
+                    out.append(target.section_label)
+    return out
 
 
 @dataclass(frozen=True)
@@ -123,42 +191,6 @@ def _strip_source_provenance_tail(kumotaan_text: str) -> str:
     return re.split(r",\s*sellais[a-zäöå\s]*kuin\b", kumotaan_text, maxsplit=1, flags=re.I)[0]
 
 
-@functools.lru_cache(maxsize=8192)
-def _expand_kumotaan_section_range_tuple(start: str, end: str) -> tuple[str, ...]:
-    """Expand a repeal section range, including same-base letter suffix ranges.
-
-    ``helpers._expand_section_range()`` already handles pure numeric ranges.
-    ``kumotaan`` clauses also use same-base letter ranges such as ``10 d–10 i``;
-    those should expand to each lettered section individually so the repeal
-    extractor can suppress every target in the range.
-    """
-    start_norm = re.sub(r"\s+", "", start).lower()
-    end_norm = re.sub(r"\s+", "", end).lower()
-
-    expanded = tuple(_expand_section_range(f"{start_norm}-{end_norm}"))
-    if len(expanded) != 1 or expanded[0] != f"{start_norm}-{end_norm}":
-        return expanded
-
-    m_start = re.fullmatch(r"(\d+)([a-z])?", start_norm, flags=re.I)
-    m_end = re.fullmatch(r"(\d+)([a-z])?", end_norm, flags=re.I)
-    if not m_start or not m_end:
-        return expanded
-    if m_start.group(1) != m_end.group(1):
-        return expanded
-    if not m_start.group(2) or not m_end.group(2):
-        return expanded
-    if m_start.group(2) > m_end.group(2):
-        return expanded
-
-    base = m_start.group(1)
-    return tuple(f"{base}{chr(code)}" for code in range(ord(m_start.group(2)), ord(m_end.group(2)) + 1))
-
-
-def _expand_kumotaan_section_range(start: str, end: str) -> List[str]:
-    """Expand a repeal section range, including same-base letter suffix ranges."""
-    return list(_expand_kumotaan_section_range_tuple(start, end))
-
-
 def _extract_muutetaan_section_refs(johto: str) -> Set[str]:
     """Extract whole-section labels from the muutetaan clause of a johtolause."""
     return set(_extract_muutetaan_section_refs_frozenset(johto))
@@ -198,23 +230,10 @@ def _extract_muutetaan_section_refs_frozenset(johto: str) -> frozenset[str]:
     if len(set(statute_refs)) > 1 and muutetaan_text.count("§") > 1:
         return frozenset()
 
-    labels: Set[str] = set()
-    # Match whole-section refs: N §, N a §, range N–M § — skip momentti refs
-    for m in re.finditer(
-        r'(\d+(?:\s*[a-z])?)\s*(?:[–—―\-]\s*(\d+(?:\s*[a-z])?))?'
-        r'\s*§(?!:)',
-        muutetaan_text,
-    ):
-        start = re.sub(r'\s+', '', m.group(1).strip())
-        end = m.group(2)
-        if end:
-            end = re.sub(r'\s+', '', end.strip())
-            from lawvm.finland.helpers import _expand_section_range
-            for expanded in _expand_section_range(f"{start}-{end}"):
-                labels.add(expanded)
-        else:
-            labels.add(start)
-    return frozenset(labels)
+    # Whole-section refs (N §, N a §, range N–M §, coordinated N, M ja K §) —
+    # enumerated by the grammar; momentti/kohta refs (``§:n …``) are excluded by
+    # the ``§(?!:)`` site anchor / the grammar's sub-provision modeling.
+    return frozenset(_grammar_whole_section_labels(muutetaan_text))
 
 
 def _extract_muutetaan_chapter_section_map(johto: str) -> Dict[Optional[str], List[str]]:
@@ -316,56 +335,11 @@ def _extract_kumotaan_section_refs_tuple(johto: str) -> tuple[str, ...]:
     if len(set(statute_refs)) > 1 and kumotaan_text.count("§") > 1:
         return ()
 
-    def _sections_from_block(block: str) -> List[str]:
-        """Extract whole-section refs from a single already-stripped block."""
-        result: List[str] = []
-        # Multi-token: "N, M ja K §"
-        for m in re.finditer(
-            r'((?:'
-            r'\d+(?:\s*[a-z])?'
-            r'(?:\s*[–—―\-]\s*\d+(?:\s*[a-z])?)?'
-            r'\s*(?:,|ja)\s*'
-            r')+'
-            r'\d+(?:\s*[a-z])?'
-            r'(?:\s*[–—―\-]\s*\d+(?:\s*[a-z])?)?'
-            r')\s*§(?!:)',
-            block,
-        ):
-            for token in re.split(r'\s*(?:,|ja)\s*', m.group(1)):
-                norm = re.sub(r'\s+', '', token.strip())
-                if norm:
-                    range_match = re.fullmatch(
-                        r'(\d+(?:[a-z])?)[–—―\-](\d+(?:[a-z])?)',
-                        norm,
-                        flags=re.I,
-                    )
-                    if range_match:
-                        result.extend(
-                            _expand_kumotaan_section_range(
-                                range_match.group(1), range_match.group(2)
-                            )
-                        )
-                    else:
-                        result.append(norm)
-        # Single-token: "N §" or "N a §"
-        for m in re.finditer(
-            r'(\d+(?:\s*[a-z])?)\s*(?:[–—―\-]\s*(\d+(?:\s*[a-z])?))?'
-            r'\s*§(?!:)',
-            block,
-        ):
-            start = re.sub(r'\s+', '', m.group(1).strip())
-            end = m.group(2)
-            if end:
-                end = re.sub(r'\s+', '', end.strip())
-                result.extend(_expand_kumotaan_section_range(start, end))
-            else:
-                result.append(start)
-        return result
-
-    # Extract WHOLE-SECTION references only: N §, N a §, N–M §, N ja M §
-    # Skip references followed by ":n" (subsection qualifier like "16 §:n 3 momentti")
-    # — those target subsections, not whole sections.
-    sections: List[str] = _sections_from_block(kumotaan_text)
+    # Extract WHOLE-SECTION references only: N §, N a §, N–M §, N ja M §.
+    # The grammar enumerates section/range/coordination/letter-suffix structure;
+    # the ``§(?!:)`` site anchor skips ``§:n``-qualified (subsection/heading)
+    # refs exactly as the prior regex did.
+    sections: List[str] = _grammar_whole_section_labels(kumotaan_text)
 
     # Multi-item kumotaan lists: "1) text1, sellaisina kuin ...; sekä 2) text2, ..."
     # The provenance strip only removes the tail of the first item, losing
@@ -381,7 +355,7 @@ def _extract_kumotaan_section_refs_tuple(johto: str) -> tuple[str, ...]:
         cont_refs = re.findall(r'\d+/\d{2,4}', cont_text)
         if len(set(cont_refs)) > 1 and cont_text.count("§") > 1:
             continue
-        sections.extend(_sections_from_block(cont_text))
+        sections.extend(_grammar_whole_section_labels(cont_text))
 
     deduped: List[str] = []
     seen: Set[str] = set()
@@ -463,54 +437,13 @@ def _extract_sections_from_block(block_text: str) -> List[str]:
 
 @functools.lru_cache(maxsize=8192)
 def _extract_sections_from_block_tuple(block_text: str) -> tuple[str, ...]:
-    """Extract whole-section repeal labels from a single chapter block of kumotaan text."""
-    sections: List[str] = []
-    for m in re.finditer(
-        r'((?:'
-        r'\d+(?:\s*[a-z])?'
-        r'(?:\s*[–—―\-]\s*\d+(?:\s*[a-z])?)?'
-        r'\s*(?:,|ja)\s*'
-        r')+'
-        r'\d+(?:\s*[a-z])?'
-        r'(?:\s*[–—―\-]\s*\d+(?:\s*[a-z])?)?'
-        r')\s*§(?!:)',
-        block_text,
-    ):
-        for token in re.split(r'\s*(?:,|ja)\s*', m.group(1)):
-            norm = re.sub(r'\s+', '', token.strip())
-            if norm:
-                range_match = re.fullmatch(
-                    r'(\d+(?:[a-z])?)[–—―\-](\d+(?:[a-z])?)',
-                    norm, flags=re.I,
-                )
-                if range_match:
-                    for expanded in _expand_kumotaan_section_range(
-                        range_match.group(1), range_match.group(2)
-                    ):
-                        sections.append(expanded)
-                else:
-                    sections.append(norm)
-    for m in re.finditer(
-        r'(\d+(?:\s*[a-z])?)\s*(?:[–—―\-]\s*(\d+(?:\s*[a-z])?))?'
-        r'\s*§(?!:)',
-        block_text
-    ):
-        start = re.sub(r'\s+', '', m.group(1).strip())
-        end = m.group(2)
-        if end:
-            end = re.sub(r'\s+', '', end.strip())
-            for expanded in _expand_kumotaan_section_range(start, end):
-                sections.append(expanded)
-        else:
-            sections.append(start)
+    """Extract whole-section repeal labels from a single chapter block of kumotaan text.
 
-    deduped: List[str] = []
-    seen: Set[str] = set()
-    for sec in sections:
-        if sec not in seen:
-            deduped.append(sec)
-            seen.add(sec)
-    return tuple(deduped)
+    Section/range/coordination/letter-suffix structure is enumerated by the
+    shared grammar (:func:`_grammar_whole_section_labels`); the ``§(?!:)`` site
+    anchor scopes the block to whole-section (not ``§:n``-qualified) sites.
+    """
+    return tuple(_grammar_whole_section_labels(block_text))
 
 
 def _extract_kumotaan_subsection_refs(johto: str) -> Dict[str, List[str]]:

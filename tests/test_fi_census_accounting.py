@@ -33,12 +33,19 @@ from lawvm.finland.johtolause.census_accounting import (
     CENSUS_ACCOUNTING_BUCKETS,
     FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0,
     FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0,
+    FI_JOHTOLAUSE_GENUINE_DELTA_HUMAN_CORRECTIONS_V0,
     FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0,
     FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE,
     FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0,
     FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR,
     census_accounting,
     format_accounting_report,
+)
+from lawvm.finland.johtolause.census_adjudication import (
+    ADJUDICATION_SUB_REASONS,
+    HUMAN_CORRECTED_OLD_WRONG,
+    NEW_BETTER_RECOVERY,
+    PROVENANCE_ONLY_DELTA,
 )
 
 
@@ -96,6 +103,38 @@ def test_adjudication_ledger_holds_the_33_corrections() -> None:
     assert FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0.isdisjoint(
         FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0
     )
+
+
+def test_human_corrections_set_holds_the_four_category_c_cases() -> None:
+    # Category-C corrections (NEW REPLACES a wrong OLD node, not pure addition)
+    # cannot be soundly auto-detected by the content predicates and stay a
+    # human-judged sid-list. P2's preservation check rejects each, routing them
+    # here. The set is the 2 chapter-target corrections (1958/181, 1958/182) plus
+    # the 2 move-group recoveries (2006/889, 2011/322).
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_HUMAN_CORRECTIONS_V0 == {
+        "1958/181",
+        "1958/182",
+        "2006/889",
+        "2011/322",
+    }
+    # Disjoint from the legacy adjudication sets (no sid double-counted).
+    for other in (
+        FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0,
+        FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0,
+        FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0,
+        FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0,
+    ):
+        assert FI_JOHTOLAUSE_GENUINE_DELTA_HUMAN_CORRECTIONS_V0.isdisjoint(other)
+
+
+def test_adjudication_sub_reasons_are_the_closed_set() -> None:
+    assert set(ADJUDICATION_SUB_REASONS) == {
+        "provenance_only_delta",
+        "new_better_recovery",
+        "human_corrected_old_wrong",
+        "span_normalized",
+        "legacy_adjudicated",
+    }
 
 
 def test_baselines_are_sane() -> None:
@@ -179,24 +218,39 @@ def test_genuine_delta_unclassified_within_baseline(_result) -> None:
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
 @pytest.mark.slow
-def test_genuine_delta_adjudicated_fix_count(_result) -> None:
-    """The adjudicated bucket holds the corrections + witness-span + drop-recovery
-    + insertion-recovery sets that still diverge. Live = 52: 32 of the 33 parser
-    corrections (2002/375 converged to byte-identical via the appendix recovery's
-    OLD-side fix, so it no longer diverges) + 1 witness-span (2002/723) + 12
-    both-parser drop recoveries + 7 insertion recoveries.
+def test_genuine_delta_adjudicated_fix_by_sub_reason(_result) -> None:
+    """The adjudicated bucket is now content-driven (P1/P2) layered above the
+    legacy/human sid-lists, and every adjudicated clause carries a sub-reason.
+
+    Live sub-reason histogram on the full corpus:
+      provenance_only_delta  = 22  (P1: only witness.rule_id / source_span differ;
+                                     21 anaphoric-credit deltas + 2002/723's
+                                     witness-span, which P1 subsumes ahead of the
+                                     span-normalized sid-list)
+      new_better_recovery    = 22  (P2: source-witnessed additive recovery — the 14
+                                     additive cases + 8 legacy DROP/INSERTION-recovery
+                                     sids the content predicate now subsumes)
+      human_corrected_old_wrong = 4  (the category-C corrections sid-list)
+      span_normalized        = 0   (2002/723 absorbed by P1; the sid-list is a
+                                     redundant transition guard)
+      legacy_adjudicated     = 43  (legacy ADJUDICATED_FIXES / DROP / INSERTION sids
+                                     not subsumed by P1/P2)
     """
-    set_total = (
-        len(FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0)
-        + len(FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0)
-        + len(FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0)
-        + len(FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0)
+    sub = _result.adjudication_sub_reason_counts
+    assert set(sub) == set(ADJUDICATION_SUB_REASONS)
+    assert sub[PROVENANCE_ONLY_DELTA] == 22, sub
+    assert sub[NEW_BETTER_RECOVERY] == 22, sub
+    assert sub[HUMAN_CORRECTED_OLD_WRONG] == 4, sub
+    # The sub-reasons sum to the adjudicated bucket (closed accounting).
+    assert sum(sub.values()) == _result.buckets["genuine_delta_adjudicated_fix"]
+    assert _result.buckets["genuine_delta_adjudicated_fix"] == 91, (
+        "genuine_delta_adjudicated_fix should be 91 (22 P1 + 22 P2 + 4 corrections "
+        f"+ 43 legacy). Got {_result.buckets['genuine_delta_adjudicated_fix']}."
     )
-    assert set_total == 53  # 33 + 1 + 12 + 7
-    assert _result.buckets["genuine_delta_adjudicated_fix"] == 52, (
-        "genuine_delta_adjudicated_fix should be 52 (set total 53 minus 2002/375, "
-        "which converged to byte-identical). Got "
-        f"{_result.buckets['genuine_delta_adjudicated_fix']}."
+    # The four category-C corrections all reached the human sid-list, which proves
+    # P1/P2 correctly REJECTED them (fail-loud: corrections are not auto-detected).
+    assert sub[HUMAN_CORRECTED_OLD_WRONG] == len(
+        FI_JOHTOLAUSE_GENUINE_DELTA_HUMAN_CORRECTIONS_V0
     )
 
 

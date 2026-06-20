@@ -44,6 +44,17 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
+from lawvm.finland.johtolause.census_adjudication import (
+    HUMAN_CORRECTED_OLD_WRONG,
+    LEGACY_ADJUDICATED,
+    NEW_BETTER_RECOVERY,
+    PROVENANCE_ONLY_DELTA,
+    SPAN_NORMALIZED,
+    empty_sub_reason_counts,
+    is_provenance_only_delta,
+    is_source_witnessed_additive_recovery,
+    sub_reason_histogram,
+)
 from lawvm.finland.johtolause.fallback_residue import (
     classify_decline_reason,
     generalize_decline_reason,
@@ -233,6 +244,34 @@ FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0: frozenset[str] = frozenset(
 
 
 # ---------------------------------------------------------------------------
+# Human-judged corrections (class C_new_replaces_wrong_old). The DISTINGUISHING
+# property from the additive-recovery class (P2): NEW does NOT merely add on top
+# of OLD — it REPLACES a wrong OLD node with a different one. A node replacement
+# is a regression-or-correction ambiguity that only source-text reading resolves,
+# so these CANNOT be soundly auto-detected and must stay a human sid-list. P2's
+# preservation check correctly REJECTS each of these (NEW does not preserve the
+# OLD node / adds a non-insertion verb group), routing them here rather than to
+# new_better_recovery. Verdict authority: source-language reading.
+# ---------------------------------------------------------------------------
+FI_JOHTOLAUSE_GENUINE_DELTA_HUMAN_CORRECTIONS_V0: frozenset[str] = frozenset(
+    {
+        "1958/181",  # 'oikeudenkäymiskaaren 11 luvun 3 §:ään uusi 2 momentti' — OLD
+        #            target = CHAPTER '11' (wrong; took the chapter container as the
+        #            target, label '11'); NEW = SECTION '3' chapter='11' + momentti 2.
+        #            NEW relabels OLD's node, so P2 rejects (not a preservation).
+        "1958/182",  # 'oikeudenkäymiskaaren 10 luvun 7 §:ään uusi 2 momentti' — same
+        #            shape: OLD CHAPTER '10', NEW SECTION '7' chapter='10' momentti 2.
+        "2006/889",  # NEW recovers a whole SIIRTAA (jolloin-renumber) move group OLD
+        #            missed entirely (16 § renumbered), AND expands the LISATA group;
+        #            the move group has no johtolause source span, so P2 rejects the
+        #            NEW-only verb group — a recovered move is a correction, not an add.
+        "2011/322",  # same shape: NEW recovers a SIIRTAA move group (28 § renumbered)
+        #            OLD missed, plus LISATA expansion; P2 rejects the NEW-only move.
+    }
+)
+
+
+# ---------------------------------------------------------------------------
 # Pinned baselines. A human bumps these deliberately when the split legitimately
 # changes; the CI test fails on any un-bumped drift in the wrong direction.
 # Measured live on the full canonical corpus at base 8aa37aee.
@@ -285,6 +324,14 @@ class CensusAccountingResult:
     delta_shape_counts: dict[str, int]
     #: statute ids currently in ``genuine_delta_unclassified`` (the parity frontier).
     unclassified_delta_sids: list[str] = field(default_factory=list)
+    #: adjudication sub-reason -> count (refines ``genuine_delta_adjudicated_fix``;
+    #: the closed-five top-level contract is intact, but every adjudicated clause
+    #: records WHY it was adjudicated so provenance noise and real corrections are
+    #: not collapsed into one count). Keys are the closed
+    #: :data:`ADJUDICATION_SUB_REASONS` set.
+    adjudication_sub_reason_counts: dict[str, int] = field(
+        default_factory=empty_sub_reason_counts
+    )
 
     @property
     def partition_total(self) -> int:
@@ -293,6 +340,27 @@ class CensusAccountingResult:
     def is_partition(self) -> bool:
         """The five buckets sum to the amendment-johtolause total (no leak)."""
         return self.partition_total == self.total_amendment_clauses
+
+
+def _adjudicate_legacy_sid(sid: str, adjudicated_fixes: frozenset[str]) -> str | None:
+    """Return a sub-reason if ``sid`` is on any legacy/human sid-list, else None.
+
+    Consulted as the layer BELOW the content predicates (Codex Q3): the four
+    legacy sid-lists are kept as redundant-but-harmless transition guards (they
+    still route to adjudicated), and the human corrections list catches the
+    category-C cases the content predicates cannot soundly auto-detect.
+    """
+    if sid in FI_JOHTOLAUSE_GENUINE_DELTA_HUMAN_CORRECTIONS_V0:
+        return HUMAN_CORRECTED_OLD_WRONG
+    if sid in FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0:
+        return SPAN_NORMALIZED
+    if (
+        sid in adjudicated_fixes
+        or sid in FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0
+        or sid in FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0
+    ):
+        return LEGACY_ADJUDICATED
+    return None
 
 
 def census_accounting(
@@ -337,6 +405,7 @@ def census_accounting(
     legacy_class_counts: Counter[str] = Counter()
     unregistered_reasons: Counter[str] = Counter()
     delta_shape_counts: Counter[str] = Counter()
+    sub_reason_counts: Counter[str] = Counter()
     unclassified_delta_sids: list[str] = []
     total = 0
 
@@ -375,16 +444,15 @@ def census_accounting(
             continue
         except Exception as exc:  # noqa: BLE001
             # A non-decline crash is a genuine delta (the new parser did not
-            # produce a comparable model), not a clean fallback.
+            # produce a comparable model), not a clean fallback. No NEW model
+            # exists, so the content predicates cannot run — only the legacy/human
+            # sid-lists can adjudicate it.
             shape = f"<crash:{type(exc).__name__}>"
             delta_shape_counts[shape] += 1
-            if (
-                sid in adjudicated_fixes
-                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
-                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0
-                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0
-            ):
+            sub = _adjudicate_legacy_sid(sid, adjudicated_fixes)
+            if sub is not None:
                 counts["genuine_delta_adjudicated_fix"] += 1
+                sub_reason_counts[sub] += 1
             else:
                 counts["genuine_delta_unclassified"] += 1
                 unclassified_delta_sids.append(sid)
@@ -397,13 +465,18 @@ def census_accounting(
         else:
             shape = _generalize_delta_path(report.deltas[0].split(":", 1)[0])
             delta_shape_counts[shape] += 1
-            if (
-                sid in adjudicated_fixes
-                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
-                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0
-                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0
-            ):
+            # Layered adjudication (Codex Q3), most-specific first:
+            #   grammar_owned_0delta (above) -> P1 -> P2 -> human sid-list ->
+            #   legacy sid-lists -> unclassified.
+            if is_provenance_only_delta(report.deltas):
+                sub = PROVENANCE_ONLY_DELTA
+            elif is_source_witnessed_additive_recovery(old_model, new_model):
+                sub = NEW_BETTER_RECOVERY
+            else:
+                sub = _adjudicate_legacy_sid(sid, adjudicated_fixes)
+            if sub is not None:
                 counts["genuine_delta_adjudicated_fix"] += 1
+                sub_reason_counts[sub] += 1
             else:
                 counts["genuine_delta_unclassified"] += 1
                 unclassified_delta_sids.append(sid)
@@ -419,6 +492,7 @@ def census_accounting(
         unregistered_reasons=sorted(unregistered_reasons),
         delta_shape_counts=dict(delta_shape_counts),
         unclassified_delta_sids=unclassified_delta_sids,
+        adjudication_sub_reason_counts=sub_reason_histogram(sub_reason_counts),
     )
 
 
@@ -453,6 +527,16 @@ def format_accounting_report(result: CensusAccountingResult) -> str:
             result.legacy_class_counts.items(), key=lambda kv: -kv[1]
         ):
             lines.append(f"  {n:6d}  {cid}")
+        lines.append("")
+
+    if any(result.adjudication_sub_reason_counts.values()):
+        lines.append("-" * 72)
+        lines.append("genuine_delta_adjudicated_fix — by adjudication sub-reason")
+        lines.append("-" * 72)
+        for reason, n in sorted(
+            result.adjudication_sub_reason_counts.items(), key=lambda kv: -kv[1]
+        ):
+            lines.append(f"  {n:6d}  {reason}")
         lines.append("")
 
     if result.delta_shape_counts:

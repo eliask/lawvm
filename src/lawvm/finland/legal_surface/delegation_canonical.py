@@ -1,0 +1,1030 @@
+"""Canonical token-native forward-grant delegation parser (SHADOW).
+
+The single canonical construction parser for the Finnish delegation FORWARD
+grant family (``asetuksenantovaltuus``) — the standing "one canonical parser per
+surface-fact family" terminal. It supersedes the two historical rival forward
+recognizers:
+
+  * **B** — :func:`lawvm.finland.references.delegation.recognize_delegation_frames`
+    (token-native over a :class:`TokenTape`; ``DelegationFrame`` +
+    ``DelegationResidual``; feeds the LSG ``delegation_frame`` nodes); and
+  * **C** — :func:`lawvm.finland.legal_surface.delegation_parse.parse_delegation_sentence`
+    (text/clause-window construction; ``DelegationCore`` + total-ownership
+    ``assert_total_ownership``; feeds the LSG ``delegated_instrument`` nodes).
+
+This module is **SHADOW ONLY**: it is NOT wired into any lens, producer, census,
+or replay path. It exists so the later cutover lanes (B-calls-canonical,
+C-forward-calls-canonical, LSG cut, A flip) have a single construction to call.
+The reverse authority-basis recognizer
+(:func:`...delegation_parse.extract_authority_bases`) is already construction-
+owned and is OUT OF SCOPE — kept native.
+
+Substrate decision (Codex ``DELEGATION-UNIFY-VERDICT`` Q1)
+=========================================================
+**B's token-native TokenTape wins.** A forward grant is a surface construction
+over legal tokens (actor phrases, instrument nouns, power verbs, clause bounds,
+reference tails) — that belongs in the token/forest substrate, not text windows.
+This parser is therefore token-native: it consumes a :class:`TokenTape` and
+emits whole-token-aligned spans.
+
+What it absorbs from each rival (the adjudicated union of their CORRECT behavior)
+================================================================================
+From **B** (substrate + breadth):
+  * token-native clause bounds (token-index windows between terminator tokens);
+  * the FULL instrument breadth — ``asetus`` / ``määräys`` / ``ohje`` / ``päätös``
+    matched as instrument NOUN tokens (B caught ``…ministeriön päätöksellä
+    määrätään`` grants C's two-anchor model — keyed only on ``asetuksella`` +
+    ``määräyksiä``/``ohjeita`` — silently missed);
+  * the cross-reference / postposition / demonstrative guards that reject
+    NON-delegating instrument mentions (``valtioneuvoston asetuksen 34 §:n …
+    säädetään`` is a cross-reference to an EXISTING decree, NOT a grant — B's
+    guard rejects it; the old B nonetheless emitted these as FALSE POSITIVES
+    because it keyed off the bare ``asetuksen`` genitive — see below).
+
+From **C** (totality + holder semantics + instrument anchor):
+  * the **holder-underspecified-never-absent** rule. The old B residualized
+    ``Asetuksella säädetään …`` / ``Opetusministeriön asetuksella säädetään``
+    (an actor surface B's narrow registry/role list did not carry) as
+    ``delegation_without_actor`` and emitted NO frame — losing 285 genuine
+    grants on the 1500-statute (min_year=2000) sample. A bare/impersonal
+    ``asetuksella säädetään`` DOES grant the power to issue a decree; the issuer
+    is left UNFIXED by the text, not absent. The canonical parser emits the
+    grant with ``holder_underspecified=True`` rather than dropping it.
+  * the broadened power-verb set (``vahvistaa`` / ``vahvistetaan`` /
+    ``määritellään`` / ``säätää`` / ``määrätä`` …) — the old B's verb set lacked
+    ``vahvistetaan`` / ``määritellään``, so ``…asetuksella vahvistetaan …`` /
+    ``…määritellään …asetuksella`` declined;
+  * total-ownership over the grant span (every char of each emitted grant's span
+    is a cue / holder / instrument / basis / explicit-residual span — no silent
+    drop), adapted to token spans;
+  * the precise instrument-anchor span (so ``delegated_instrument`` is no longer
+    a SECOND parser's product);
+  * reuse of the reference sub-grammar (:func:`parse_body_provision_tail_spanned`)
+    for the ``nojalla`` / ``mukaan`` provision-basis tail.
+
+ONE closed instrument / verb / holder table (no per-shape regex).
+
+SAFETY BOUNDARY (mirrors both rivals): SURFACE FACTS ONLY. A grant records WHO
+is empowered to issue WHAT subordinate instrument, with which binding strength,
+as a syntactic surface relation — never a legal conclusion (no "valid
+delegation", no "power", no "discretion", no "ultra vires").
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+
+from lawvm.core.legal_surface_tokens import Token, TokenTape
+from lawvm.finland.canonical_actor_registry import REGISTRY
+from lawvm.finland.references.role_actors import (
+    DELEGATION_ROLE_ACTORS as _ROLE_ACTORS,
+)
+from lawvm.finland.references.role_actors import expand_role_actor_phrases
+from lawvm.finland.references.token_actor_match import TokenActorMatcher
+
+# Reuse the references provision-tail recognizer for the ``nojalla`` basis (do
+# NOT re-implement section/momentti recognition). Unguarded import = fail loud.
+from lawvm.finland.references.sections import parse_body_provision_tail_spanned
+
+# ---------------------------------------------------------------------------
+# Closed-list issuer KINDS — surface classification of the issuing authority,
+# mirroring the production ``delegation_type`` vocabulary (census-comparable).
+# ---------------------------------------------------------------------------
+KIND_VN_ASETUS = "VN_ASETUS"      # valtioneuvoston asetus (Government decree)
+KIND_MIN_ASETUS = "MIN_ASETUS"    # ministeriön asetus (Ministerial decree)
+KIND_PRES_ASETUS = "PRES_ASETUS"  # tasavallan presidentin asetus
+KIND_AGENCY = "AGENCY"            # viranomaisen määräys/ohje (agency regulation)
+KIND_ASETUS = "ASETUS"            # generic asetus, unclassified issuer
+
+#: Canonical instrument kinds (the lower instrument the power issues).
+INSTRUMENT_ASETUS = "asetus"
+INSTRUMENT_MAARAYS = "määräys"
+INSTRUMENT_OHJE = "ohje"
+INSTRUMENT_PAATOS = "päätös"
+
+#: Binding strength, read off the modal surface ONLY (a SURFACE classification of
+#: the modal token, NOT a legal-force assertion): voidaan/voi → may; else must.
+_MAY_MODALS: frozenset[str] = frozenset({"voidaan", "voi"})
+
+# ---------------------------------------------------------------------------
+# Closed vocabularies (NORMATIVE)
+# ---------------------------------------------------------------------------
+
+#: Power-verb surfaces that, with an instrument noun, mark a delegation grant.
+#: Union of B's ``_DELEGATION_VERBS`` and C's ``_POWER_VERBS`` (so neither
+#: rival's accepted shape declines). Matched as exact ``word`` tokens.
+_POWER_VERBS: frozenset[str] = frozenset(
+    {
+        "säädetään",
+        "säätää",
+        "säädettävä",
+        "annetaan",
+        "antaa",
+        "annettava",
+        "määrätään",
+        "määrätä",
+        "päättää",
+        "päätetään",
+        "vahvistetaan",
+        "vahvistaa",
+        "määritellään",
+    }
+)
+
+#: Instrument-noun surfaces (the noun naming the lower instrument). CLOSED. Keyed
+#: as exact ``word`` tokens (B's instrument-noun breadth — includes the genitive
+#: ``…n`` and adessive ``…lla/…llä`` cases C's two-anchor model lacked for
+#: ``päätös`` / object cases for ``ohje``).
+_INSTRUMENT_SURFACE_TO_KIND: tuple[tuple[str, str], ...] = (
+    ("asetuks", INSTRUMENT_ASETUS),
+    ("asetus", INSTRUMENT_ASETUS),
+    ("määräy", INSTRUMENT_MAARAYS),
+    ("ohje", INSTRUMENT_OHJE),
+    ("päätö", INSTRUMENT_PAATOS),
+)
+
+_INSTRUMENT_NOUNS: frozenset[str] = frozenset(
+    {
+        "asetuksella",
+        "asetuksen",
+        "asetus",
+        "määräyksiä",
+        "määräyksen",
+        "määräykset",
+        "määräys",
+        "ohjeita",
+        "ohjeet",
+        "ohjeen",
+        "ohje",
+        "päätöksellä",
+        "päätöksen",
+        "päätös",
+    }
+)
+
+
+def _instrument_kind_for_surface(surface: str) -> str | None:
+    low = surface.lower()
+    for root, kind in _INSTRUMENT_SURFACE_TO_KIND:
+        if low.startswith(root):
+            return kind
+    return None
+
+
+#: Postposition surfaces that take a genitive complement. An instrument noun in
+#: the genitive immediately FOLLOWED by one of these is the complement of the
+#: postposition phrase (the enacting preamble ``päätöksen mukaisesti säädetään``
+#: / the ``… nojalla`` authority basis), NOT a delegated instrument.
+_POSTPOSITIONS: frozenset[str] = frozenset(
+    {"mukaisesti", "mukaan", "nojalla", "perusteella", "estämättä"}
+)
+
+#: Demonstrative determiners heading a SELF-/CROSS-reference to an EXISTING
+#: instrument (``tällä asetuksella`` = the enacting decree's OWN power; ``tämän
+#: asetuksen`` / ``tässä asetuksessa`` = a decree that already exists). An
+#: instrument noun immediately PRECEDED by one of these does NOT grant a new
+#: lower instrument.
+_DEMONSTRATIVES: frozenset[str] = frozenset(
+    {
+        "tätä",
+        "tämän",
+        "tässä",
+        "tästä",
+        "tähän",
+        "tällä",
+        "tuota",
+        "tuon",
+        "tuossa",
+        "sitä",
+        "sen",
+        "siinä",
+        "siihen",
+    }
+)
+
+#: Maximum subject-span length (chars) captured as the trailing subject surface.
+_MAX_SUBJECT_SPAN = 200
+
+# ---------------------------------------------------------------------------
+# Shared token-native actor matcher (registry phrases UNION closed role actors).
+# ---------------------------------------------------------------------------
+
+
+def _build_actor_phrases() -> tuple[str, ...]:
+    phrases = set(REGISTRY.all_phrases_longest_first())
+    phrases.update(expand_role_actor_phrases(_ROLE_ACTORS))
+    return tuple(sorted(phrases, key=len, reverse=True))
+
+
+_ACTOR_MATCHER = TokenActorMatcher(_build_actor_phrases())
+
+# ---------------------------------------------------------------------------
+# Output types
+# ---------------------------------------------------------------------------
+
+#: The canonical grammar owned the grant (in-scope, no silent drop).
+DELEGATION_LANE_CANONICAL_OWNED = "delegation_canonical_owned"
+
+#: Residual classes: a grant-SHAPED clause the parser SEES but does NOT emit as a
+#: grant (never silent, never guessed). Closed set.
+ResidualKind = (
+    "self_reference_instrument",        # ``tällä asetuksella säädetään`` (own power)
+    "cross_reference_instrument",       # ``asetuksen 34 §:ssä säädetään`` (existing)
+    "postposition_complement",          # ``päätöksen mukaisesti säädetään``
+    "instrument_without_power_verb",    # an instrument noun, no delegation verb
+    "benign_uninterpreted_prose",       # totality filler between owned spans
+)
+
+
+@dataclass(frozen=True, slots=True)
+class GrantResidual:
+    """An explicit unowned/declined span (no-silent-drop typed residue).
+
+    Self-evidencing: ``surface_text`` embeds the verbatim offending fragment and
+    ``reason`` names the closed residual class.
+    """
+
+    kind: str
+    char_start: int
+    char_end: int
+    surface_text: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class DelegationGrant:
+    """One canonical forward-grant core. SURFACE FACT ONLY.
+
+    Records WHO is empowered (the holder, or an underspecified issuer) to issue
+    WHAT lower instrument under which binding strength, optionally citing a
+    provision basis. Spans are whole-token-aligned char offsets into the parsed
+    text (sentence-local when parsed per sentence; tape-relative otherwise).
+
+    Attributes:
+        kind:             Issuer SURFACE class (VN/MIN/PRES/AGENCY/generic ASETUS).
+        instrument:       Canonical instrument kind (asetus/määräys/ohje/päätös).
+        binding_strength: "must" / "may", read off the modal surface ONLY.
+        cue:              The power-verb anchor surface (verbatim).
+        cue_start/cue_end: Char span of the power-verb anchor.
+        instrument_surface: The instrument-noun anchor surface (verbatim).
+        instrument_start/instrument_end: Char span of the instrument anchor.
+        holder_surface:   The bound authority-holder NP surface, or "" when
+                          underspecified.
+        holder_start/holder_end: Char span of the holder NP, or None when
+                          underspecified.
+        holder_underspecified: True when no overt issuer NP binds (the bare /
+                          impersonal register). NOT "absent" — the issuer exists
+                          in the grant, left unfixed by the text.
+        frame_start/frame_end: Whole-frame (clause) span the grant lives in.
+        subject_start/subject_end: Trailing subject SURFACE span (or None).
+        basis_start/basis_end: ``… nojalla`` / ``… mukaan`` provision-basis window
+                          (or None), reused from the references sub-grammar.
+        basis_targets:    references-recognized provision target labels in the
+                          basis window (empty when no basis / none recognized).
+        rule_id:          The recognizer rule that fired.
+    """
+
+    kind: str
+    instrument: str
+    binding_strength: str
+    cue: str
+    cue_start: int
+    cue_end: int
+    instrument_surface: str
+    instrument_start: int
+    instrument_end: int
+    holder_surface: str
+    holder_start: int | None
+    holder_end: int | None
+    holder_underspecified: bool
+    frame_start: int
+    frame_end: int
+    subject_start: int | None
+    subject_end: int | None
+    basis_start: int | None
+    basis_end: int | None
+    basis_targets: tuple[str, ...]
+    rule_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class DelegationGrantScan:
+    """The full canonical scan of one text: typed grants + typed residuals."""
+
+    grants: tuple[DelegationGrant, ...]
+    residuals: tuple[GrantResidual, ...] = field(default_factory=tuple)
+
+
+_RULE_ID = "fi.delegation.canonical.v0"
+
+
+# ---------------------------------------------------------------------------
+# Token helpers
+# ---------------------------------------------------------------------------
+
+
+def _is_terminator(tok: Token) -> bool:
+    """A token bounding a clause window (token-side mirror of ``.;:`` / newline)."""
+    if tok.category == "punct" and tok.text in ".;:":
+        return True
+    if tok.category == "whitespace" and "\n" in tok.text:
+        return True
+    return False
+
+
+def _clause_token_bounds(tokens: tuple[Token, ...], idx: int) -> tuple[int, int]:
+    """(lo, hi) token-index bounds of the clause containing token ``idx``.
+
+    Bounded by the nearest clause-terminator tokens (terminator excluded);
+    leading/trailing whitespace trimmed.
+    """
+    lo = idx
+    while lo > 0 and not _is_terminator(tokens[lo - 1]):
+        lo -= 1
+    hi = idx
+    n = len(tokens)
+    while hi < n and not _is_terminator(tokens[hi]):
+        hi += 1
+    while lo < hi and tokens[lo].category == "whitespace":
+        lo += 1
+    while hi > lo and tokens[hi - 1].category == "whitespace":
+        hi -= 1
+    return (lo, hi)
+
+
+def _prev_word_token(tokens: tuple[Token, ...], idx: int) -> Token | None:
+    j = idx - 1
+    while j >= 0:
+        if tokens[j].category == "word":
+            return tokens[j]
+        if tokens[j].category != "whitespace":
+            return None
+        j -= 1
+    return None
+
+
+def _next_word_token(tokens: tuple[Token, ...], idx: int) -> Token | None:
+    n = len(tokens)
+    j = idx + 1
+    while j < n:
+        if tokens[j].category == "word":
+            return tokens[j]
+        if tokens[j].category != "whitespace":
+            return None
+        j += 1
+    return None
+
+
+def _next_token_is_section_path(tokens: tuple[Token, ...], idx: int) -> bool:
+    """True when the instrument noun is followed by a CROSS-REFERENCE tail.
+
+    Two existing-instrument cross-reference surfaces (NOT a granted instrument):
+
+      * ``valtioneuvoston asetuksen 34 §:n 2 momentissa säädetään`` — the genitive
+        instrument noun is immediately followed by a ``number`` token leading into
+        a ``§`` / ``colon_suffix`` section path (the dominant old-B false
+        positive); and
+      * ``… annetun asetuksen (575/1988) 1―22 §:ssä säädetään`` — the genitive
+        instrument noun is immediately followed by a parenthesized ``(NUM/YEAR)``
+        statute id, then a section path. Citing an EXISTING decree by id is never
+        a forward grant.
+    """
+    n = len(tokens)
+    j = idx + 1
+    while j < n and tokens[j].category == "whitespace":
+        j += 1
+    if j >= n:
+        return False
+    # Case 1: directly a section number ``N §``.
+    if tokens[j].category == "number":
+        k = j + 1
+        while k < n and tokens[k].category == "whitespace":
+            k += 1
+        if k < n and tokens[k].category in ("section_mark", "colon_suffix"):
+            return True
+        return False
+    # Case 2: a parenthesized statute id ``(NUM/YEAR)`` follows the genitive.
+    if tokens[j].category == "punct" and tokens[j].text == "(":
+        # scan a bounded window for ``NUM / YEAR )`` shape
+        seg = "".join(t.text for t in tokens[j : min(n, j + 8)])
+
+
+        if re.match(r"\(\s*\d{1,5}\s*/\s*\d{2,4}\s*\)", seg):
+            return True
+    return False
+
+
+def _classify_kind(holder_surface: str, instrument: str) -> str:
+    """Issuer SURFACE class from the bound holder + instrument.
+
+    Mirrors the production / C classifier precedence: a genitive valtioneuvoston /
+    ministeriön / presidentin issuer → VN/MIN/PRES asetus; a määräys/ohje
+    instrument → AGENCY; bare asetus → generic ASETUS. ``päätös`` instruments
+    follow the holder's genitive class (a ministerial ``päätöksellä``) and fall
+    to AGENCY when no decree-issuer genitive binds.
+    """
+    if instrument in (INSTRUMENT_MAARAYS, INSTRUMENT_OHJE):
+        return KIND_AGENCY
+    t = holder_surface.lower()
+    if "valtioneuvoston" in t:
+        return KIND_VN_ASETUS
+    if "ministeriön" in t:
+        return KIND_MIN_ASETUS
+    if "presidentin" in t:
+        return KIND_PRES_ASETUS
+    if instrument == INSTRUMENT_PAATOS:
+        # A ministerial/agency decision instrument with no decree-issuer genitive.
+        return KIND_AGENCY
+    return KIND_ASETUS
+
+
+def _capture_subject_span(
+    tokens: tuple[Token, ...], after_index: int, clause_hi: int
+) -> tuple[int, int] | None:
+    i = after_index
+    while i < clause_hi and tokens[i].category == "whitespace":
+        i += 1
+    if i >= clause_hi:
+        return None
+    char_start = tokens[i].char_start
+    limit = char_start + _MAX_SUBJECT_SPAN
+    last_nonspace_end: int | None = None
+    j = i
+    while j < clause_hi:
+        tok = tokens[j]
+        if tok.char_start >= limit:
+            break
+        if tok.category != "whitespace":
+            last_nonspace_end = tok.char_end
+        j += 1
+    if last_nonspace_end is None:
+        return None
+    return (char_start, last_nonspace_end)
+
+
+def _first_power_verb_index(
+    tokens: tuple[Token, ...], lo: int, hi: int
+) -> int | None:
+    for j in range(lo, hi):
+        tok = tokens[j]
+        if tok.category == "word" and tok.text in _POWER_VERBS:
+            return j
+    return None
+
+
+def _clause_has_may_modal(tokens: tuple[Token, ...], lo: int, hi: int) -> bool:
+    for j in range(lo, hi):
+        tok = tokens[j]
+        if tok.category == "word" and tok.text in _MAY_MODALS:
+            return True
+    return False
+
+
+#: Generic ISSUER-HEAD suffixes (the morphological tail of an institutional
+#: issuer surface the actor registry does not carry as a verbatim inflected
+#: phrase). A ``word`` token whose lowercase form ENDS in one of these is an
+#: institutional issuer head — the genitive ``…ministeriön`` / ``…presidentin`` /
+#: the agency family (``…virasto`` / ``…keskus`` / ``…laitos`` …). This is the
+#: token-native form of C's ``_HOLDER_RE`` fallback: it lets the canonical parser
+#: BIND + CLASSIFY the issuer of an ``Opetusministeriön asetuksella säädetään``
+#: grant whose exact inflected surface the registry lacks (the dominant reason
+#: the OLD B residualized these as ``delegation_without_actor``).
+_ISSUER_HEAD_SUFFIXES: tuple[str, ...] = (
+    "ministeriön",
+    "ministeriö",
+    "presidentin",
+    "presidentti",
+    "virasto",
+    "viraston",
+    "keskus",
+    "keskuksen",
+    "laitos",
+    "laitoksen",
+    "hallinto",
+    "valvonta",
+    "lautakunta",
+    "lautakunnan",
+    "neuvosto",
+    "neuvoston",
+    "viranomainen",
+    "valtioneuvosto",
+    "valtioneuvoston",
+)
+
+
+def _is_issuer_head(tok: Token) -> bool:
+    if tok.category != "word":
+        return False
+    low = tok.text.lower()
+    return any(low.endswith(suf) for suf in _ISSUER_HEAD_SUFFIXES)
+
+
+def _adjacent_issuer_before(
+    tokens: tuple[Token, ...], clause_lo: int, inst_idx: int
+) -> tuple[str, int | None, int | None]:
+    """The issuer NP ending IMMEDIATELY before the instrument anchor, or none.
+
+    Walks left from the anchor over whitespace, then takes the contiguous run of
+    ``word`` tokens that form the genitive issuer surface (the actor-matcher span
+    if it ends adjacent, else the issuer-head run). Returns ("", None, None) when
+    no issuer is immediately adjacent — the asetus is then GENERIC / underspecified
+    (old C ``adjacent_only`` rule).
+    """
+    # The token immediately before the anchor (skipping whitespace).
+    j = inst_idx - 1
+    while j >= clause_lo and tokens[j].category == "whitespace":
+        j -= 1
+    if j < clause_lo or tokens[j].category != "word":
+        return "", None, None
+    # Prefer a registry/role actor phrase whose END is exactly this adjacent word.
+    matches = _ACTOR_MATCHER.find_in_window(tokens, clause_lo, inst_idx)
+    adj_end = tokens[j].char_end
+    adjacent = [m for m in matches if m.char_end == adj_end]
+    if adjacent:
+        chosen = max(adjacent, key=lambda m: m.char_start)
+        return chosen.surface, chosen.char_start, chosen.char_end
+    # Else: the adjacent word itself must be an issuer head (``…ministeriön`` /
+    # ``valtioneuvoston`` / an agency head); absorb a leading ``tasavallan``.
+    if not _is_issuer_head(tokens[j]):
+        return "", None, None
+    start_idx = j
+    prev = _prev_word_token(tokens, j)
+    if prev is not None and prev.text.lower() in ("tasavallan",):
+        k = j - 1
+        while k >= clause_lo and tokens[k].category != "word":
+            k -= 1
+        if k >= clause_lo:
+            start_idx = k
+    cs = tokens[start_idx].char_start
+    ce = tokens[j].char_end
+    return _surface_for(tokens, cs, ce), cs, ce
+
+
+def _resolve_holder(
+    tokens: tuple[Token, ...],
+    clause_lo: int,
+    clause_hi: int,
+    inst_idx: int,
+    *,
+    adjacent_only: bool = False,
+) -> tuple[str, int | None, int | None]:
+    """Bind the authority-holder NP to the instrument anchor.
+
+    Two tiers, in order:
+      1. the shared token-native actor matcher (registry phrases UNION role
+         actors) — the AUTHORITATIVE, vocabulary-controlled binding; then
+      2. a generic ISSUER-HEAD fallback (a ``word`` token ending in an
+         institutional suffix, :data:`_ISSUER_HEAD_SUFFIXES`) — the token-native
+         form of C's ``_HOLDER_RE``, so an issuer the registry does not carry
+         verbatim (``Opetusministeriön`` / ``tasavallan presidentin`` / a generic
+         ``…virasto``) still BINDS rather than residualizing.
+
+    Returns (surface, char_start, char_end) for the issuer nearest the instrument
+    anchor. When NEITHER tier binds, the holder is UNDERSPECIFIED — ("", None,
+    None) — NOT a decline (C's holder-never-absent rule).
+
+    ``adjacent_only`` (the ASETUS instrumental shape ``[issuer-genitive]
+    asetuksella``, ported from old C ``_holder_span_in_clause``): the genitive
+    issuer of an ``asetuksella`` decree immediately PRECEDES the anchor (only
+    whitespace between). When set, ONLY an issuer ending immediately before the
+    anchor binds — a holder that merely sits NEAREST but across a coordinator
+    (``annetaan asetuksella, ympäristöministeriön päätöksellä …``: the bare
+    ``asetuksella`` is a GENERIC asetus, the ``ympäristöministeriön`` genitive
+    binds ``päätöksellä``) does NOT bind the asetus, which stays underspecified.
+    """
+    inst_char = tokens[inst_idx].char_start
+    if adjacent_only:
+        return _adjacent_issuer_before(tokens, clause_lo, inst_idx)
+    matches = _ACTOR_MATCHER.find_in_window(tokens, clause_lo, clause_hi)
+    if matches:
+        chosen = min(matches, key=lambda m: abs(m.char_start - inst_char))
+        return chosen.surface, chosen.char_start, chosen.char_end
+
+    # Tier 2: generic issuer-head fallback. Prefer the head nearest the anchor;
+    # absorb an immediately-preceding ``tasavallan`` / genitive modifier word so
+    # ``tasavallan presidentin`` binds as one surface.
+    best: tuple[int, int] | None = None
+    best_dist = 1 << 30
+    for j in range(clause_lo, clause_hi):
+        if not _is_issuer_head(tokens[j]):
+            continue
+        start_idx = j
+        prev = _prev_word_token(tokens, j)
+        if prev is not None and prev.text.lower() in ("tasavallan",):
+            # find prev token index
+            k = j - 1
+            while k >= clause_lo and tokens[k].category != "word":
+                k -= 1
+            if k >= clause_lo:
+                start_idx = k
+        cs = tokens[start_idx].char_start
+        ce = tokens[j].char_end
+        dist = abs(cs - inst_char)
+        if dist < best_dist:
+            best_dist = dist
+            best = (cs, ce)
+    if best is not None:
+        return _surface_for(tokens, best[0], best[1]), best[0], best[1]
+    return "", None, None
+
+
+def _surface_for(tokens: tuple[Token, ...], cs: int, ce: int) -> str:
+    parts: list[str] = []
+    for t in tokens:
+        if t.char_start >= cs and t.char_end <= ce:
+            parts.append(t.text)
+    return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Authority-basis adjacency guard + amendment-interjection strip (ported VERBATIM
+# from the old C ``delegation_parse._basis_span`` so the canonical basis lane does
+# not REGRESS the long-range-false-basis / amending-id precision C already had).
+# ---------------------------------------------------------------------------
+_BASIS_TAIL_TOKEN = (
+    r"(?:§|:n|momentin|momentti|momentissa|kohdan|kohta|kohdassa"
+    r"|mukaisen|ja|sekä|tai|\d{1,4}|[a-zäö](?![\wäö])"
+    r"|[\s.,:()/–-]++)"
+)
+#: The provision PATH (a ``(NUM/YEAR)`` id or a ``N §`` section) must DIRECTLY
+#: precede the terminal, with ONLY provision-tail vocabulary in between — not
+#: arbitrary prose. Possessive whitespace branch is perf-gate safe.
+_BASIS_PATH_BEFORE_TERMINAL_RE = re.compile(
+    r"(?:\(\d{1,5}\s*/\s*\d{2,4}\)|\b\d{1,4}\s*[a-zäö]?\s*§)"
+    + _BASIS_TAIL_TOKEN
+    + r"*\Z",
+    re.IGNORECASE,
+)
+#: A ``, sellaisena kuin se on … (NNN/YYYY),`` amendment-version interjection: the
+#: inner ids are the AMENDING acts (metadata), not the basis. Blanked (equal-length)
+#: before the adjacency guard so the prose does not defeat it and the amending ids
+#: are not bound.
+_INTERJECTION_RE = re.compile(
+    r",\s*sellaise\w*\s+kuin\s+(?:se|ne)\s+(?:on|ovat|oli|olivat)\b"
+    r"[^(,]*(?:\([^)]*\)|\d{1,5}/\d{2,4})",
+    re.IGNORECASE,
+)
+
+
+def _strip_amendment_interjections(window: str) -> str:
+    """Blank every ``, sellaisena kuin … ,`` amendment-version interjection.
+
+    Equal-length space replacement preserves window-local char offsets while
+    removing the amending-act ids (metadata) from view. A cheap ``"sellaise"``
+    prefilter skips the scan for the no-interjection common case.
+    """
+    if "sellaise" not in window:
+        return window
+    return _INTERJECTION_RE.sub(lambda m: " " * (m.end() - m.start()), window)
+
+
+def _basis_for_clause(
+    text: str, clause_char_start: int, clause_char_end: int
+) -> tuple[int | None, int | None, tuple[str, ...]]:
+    """Find a ``… nojalla`` / ``… mukaan`` provision-basis window in the clause.
+
+    Token-native parsers still take the basis tail as TEXT into the references
+    sub-grammar (``parse_body_provision_tail_spanned``) — the canonical reuse the
+    verdict mandates. Returns (basis_start, basis_end, target_labels) or
+    (None, None, ()). Conservative: only fires when a ``(NUM/YEAR)`` id or ``N §``
+    path directly precedes the terminal inside this clause.
+    """
+    clause = text[clause_char_start:clause_char_end]
+    low = clause.lower()
+    term_pos = -1
+    term_len = 0
+    for cue in ("nojalla", "mukaan"):
+        p = low.find(cue)
+        if p != -1 and (term_pos == -1 or p < term_pos):
+            term_pos = p
+            term_len = len(cue)
+    if term_pos == -1:
+        return None, None, ()
+    window = clause[:term_pos]
+    # Blank ``, sellaisena kuin se on laissa NNN/YYYY,`` amendment interjections
+    # (inner ids are amending acts, not the basis) — ported from old C.
+    window = _strip_amendment_interjections(window)
+    # require a provision-id signal in the window
+    if not re.search(r"\(\d{1,5}\s*/\s*\d{2,4}\)|\b\d{1,4}[a-z]?\s?§", window):
+        return None, None, ()
+    # ADJACENCY GUARD (ported from old C ``_basis_span`` — preserved across the
+    # cutover): the provision PATH must DIRECTLY precede the terminal. Rejects the
+    # long-range FALSE basis (an unrelated earlier ``(NUM/YEAR) §`` far left of an
+    # anaphoric bare ``sen nojalla`` separated by prose).
+    if not _BASIS_PATH_BEFORE_TERMINAL_RE.search(window):
+        return None, None, ()
+    # Feed the references sub-grammar the tail AFTER each ``(NUM/YEAR)`` id (so it
+    # sees ``N §:n``, not the act-name prose before the id), distributing one
+    # ``nojalla`` over coordinated conjuncts — the same conjunct-distribution C's
+    # ``_basis_span`` uses. A window with no id is parsed whole (a bare ``N §:n``).
+    id_matches = list(re.finditer(r"\(\d{1,5}\s*/\s*\d{2,4}\)\s*", window))
+    labels: list[str] = []
+    if id_matches:
+        for i, idm in enumerate(id_matches):
+            tail_end = (
+                id_matches[i + 1].start() if i + 1 < len(id_matches) else len(window)
+            )
+            tail = window[idm.end() : tail_end]
+            parsed = parse_body_provision_tail_spanned(tail)
+            labels.extend(t.section_label for t in parsed.targets if t.section_label)
+    else:
+        parsed = parse_body_provision_tail_spanned(window)
+        labels.extend(t.section_label for t in parsed.targets if t.section_label)
+    seen: set[str] = set()
+    targets = tuple(x for x in labels if not (x in seen or seen.add(x)))
+    if not targets:
+        return None, None, ()
+    return (
+        clause_char_start,
+        clause_char_start + term_pos + term_len,
+        targets,
+    )
+
+
+# ---------------------------------------------------------------------------
+# The canonical scan
+# ---------------------------------------------------------------------------
+
+
+def _scan_tape(tape: TokenTape, source_text: str) -> DelegationGrantScan:
+    tokens = tape.tokens
+    grants: list[DelegationGrant] = []
+    residuals: list[GrantResidual] = []
+    consumed_instrument_idx: set[int] = set()
+
+    for inst_idx, inst_tok in enumerate(tokens):
+        if inst_idx in consumed_instrument_idx:
+            continue
+        if inst_tok.category != "word" or inst_tok.text.lower() not in _INSTRUMENT_NOUNS:
+            # Case-insensitive: a SENTENCE-INITIAL ``Asetuksella säädetään`` is a
+            # genuine bare grant; the old token-verbatim membership test (B) missed
+            # the capitalized form, the dominant remaining gap. The instrument
+            # vocabulary is a closed lowercase set; the surface case is irrelevant.
+            continue
+        instrument = _instrument_kind_for_surface(inst_tok.text)
+        if instrument is None:
+            continue  # impossible by construction
+
+        # --- guards: reject grant-SHAPED-but-not-a-grant instrument mentions ---
+        prev = _prev_word_token(tokens, inst_idx)
+        nxt = _next_word_token(tokens, inst_idx)
+
+        # self-/cross-reference demonstrative: ``tällä asetuksella`` / ``tämän
+        # asetuksen`` — the decree's OWN power or an existing instrument.
+        if prev is not None and prev.text.lower() in _DEMONSTRATIVES:
+            kind = (
+                "self_reference_instrument"
+                if prev.text.lower() in ("tällä", "tämän", "tässä")
+                else "cross_reference_instrument"
+            )
+            residuals.append(
+                _residual(
+                    kind, tokens, inst_idx, instrument, prev.text, source_text
+                )
+            )
+            continue
+
+        # postposition complement: ``päätöksen mukaisesti`` / ``… nojalla`` — the
+        # noun is the complement of the postposition, not a delegated instrument.
+        if nxt is not None and nxt.text.lower() in _POSTPOSITIONS:
+            residuals.append(
+                _residual(
+                    "postposition_complement",
+                    tokens,
+                    inst_idx,
+                    instrument,
+                    nxt.text,
+                    source_text,
+                )
+            )
+            continue
+
+        # section-path / statute-id cross-reference: ``asetuksen 34 §:n …
+        # säädetään`` / ``annetun asetuksen (575/1988) 1―22 §:ssä säädetään`` cite
+        # an EXISTING instrument by its section/id (the dominant old-B FALSE
+        # POSITIVE). This applies ONLY to a GENITIVE instrument surface (``…n``:
+        # asetuksen / määräyksen / päätöksen / ohjeen) — the form that names an
+        # existing instrument. An OBJECT / instrumental form (``määräyksiä 14
+        # §:ssä …`` / ``ohjeita 8 §:ssä …`` / ``asetuksella``) takes the section
+        # as its SUBJECT (the order is ABOUT section N), so it is a genuine grant,
+        # never an existing-instrument cross-reference.
+        _is_genitive_instrument = inst_tok.text.lower() in (
+            "asetuksen",
+            "määräyksen",
+            "päätöksen",
+            "ohjeen",
+        )
+        if _is_genitive_instrument and _next_token_is_section_path(tokens, inst_idx):
+            residuals.append(
+                _residual(
+                    "cross_reference_instrument",
+                    tokens,
+                    inst_idx,
+                    instrument,
+                    "<section-path>",
+                    source_text,
+                )
+            )
+            continue
+
+        clause_lo, clause_hi = _clause_token_bounds(tokens, inst_idx)
+        if clause_lo >= clause_hi:
+            continue
+        clause_char_start = tokens[clause_lo].char_start
+        clause_char_end = tokens[clause_hi - 1].char_end
+        clause_text = source_text[clause_char_start:clause_char_end]
+
+        verb_idx = _first_power_verb_index(tokens, clause_lo, clause_hi)
+        if verb_idx is None:
+            # an instrument noun with no delegation verb is not a grant (a bare
+            # cross-reference to ``asetuksen 3 §``). Typed residue, never a guess.
+            residuals.append(
+                _residual(
+                    "instrument_without_power_verb",
+                    tokens,
+                    inst_idx,
+                    instrument,
+                    "",
+                    source_text,
+                )
+            )
+            continue
+
+        consumed_instrument_idx.add(inst_idx)
+
+        binding = "may" if _clause_has_may_modal(tokens, clause_lo, clause_hi) else "must"
+
+        holder_surface, h_start, h_end = _resolve_holder(
+            tokens,
+            clause_lo,
+            clause_hi,
+            inst_idx,
+            # The ASETUS instrumental issuer is the genitive immediately preceding
+            # the anchor (``[issuer] asetuksella``); a non-adjacent nearest actor
+            # across a coordinator binds a DIFFERENT instrument (old C rule).
+            adjacent_only=(instrument == INSTRUMENT_ASETUS),
+        )
+        underspec = h_start is None
+        kind = _classify_kind(holder_surface, instrument)
+
+        verb_tok = tokens[verb_idx]
+        subject_after = max(inst_idx, verb_idx) + 1
+        subj = _capture_subject_span(tokens, subject_after, clause_hi)
+
+        b_start, b_end, basis_targets = _basis_for_clause(
+            source_text, clause_char_start, clause_char_end
+        )
+
+        grants.append(
+            DelegationGrant(
+                kind=kind,
+                instrument=instrument,
+                binding_strength=binding,
+                cue=verb_tok.text,
+                cue_start=verb_tok.char_start,
+                cue_end=verb_tok.char_end,
+                instrument_surface=inst_tok.text,
+                instrument_start=inst_tok.char_start,
+                instrument_end=inst_tok.char_end,
+                holder_surface=holder_surface,
+                holder_start=h_start,
+                holder_end=h_end,
+                holder_underspecified=underspec,
+                frame_start=clause_char_start,
+                frame_end=clause_char_end,
+                subject_start=subj[0] if subj else None,
+                subject_end=subj[1] if subj else None,
+                basis_start=b_start,
+                basis_end=b_end,
+                basis_targets=basis_targets,
+                rule_id=_RULE_ID,
+            )
+        )
+        _ = clause_text  # owned via frame span; kept for clarity / future totality
+
+    # A demonstrative / cross-reference instrument mention can sit INSIDE a clause
+    # that ALSO yields a genuine grant (``antaa ohjeita tämän asetuksen
+    # soveltamisesta`` — the ``tämän asetuksen`` is the SUBJECT of the granted
+    # ``ohje``, not a separate declined instrument). Such a mention is owned by the
+    # grant's frame span; emitting it ALSO as a residual would double-own the span
+    # (totality violation). Drop every residual whose span overlaps a grant frame.
+    grant_spans = [(g.frame_start, g.frame_end) for g in grants]
+    kept_residuals = [
+        r
+        for r in residuals
+        if not any(r.char_start < ge and gs < r.char_end for gs, ge in grant_spans)
+    ]
+    return DelegationGrantScan(grants=tuple(grants), residuals=tuple(kept_residuals))
+
+
+def _residual(
+    kind: str,
+    tokens: tuple[Token, ...],
+    inst_idx: int,
+    instrument: str,
+    trigger: str,
+    source_text: str,
+) -> GrantResidual:
+    lo, hi = _clause_token_bounds(tokens, inst_idx)
+    if lo >= hi:
+        cs, ce = tokens[inst_idx].char_start, tokens[inst_idx].char_end
+    else:
+        cs, ce = tokens[lo].char_start, tokens[hi - 1].char_end
+    surface = source_text[cs:ce]
+    return GrantResidual(
+        kind=kind,
+        char_start=cs,
+        char_end=ce,
+        surface_text=surface,
+        reason=(
+            f"instrument {instrument!r} in a {kind} shape "
+            f"(trigger={trigger!r}); no grant emitted: {surface!r}"
+        ),
+    )
+
+
+def parse_delegation_grants(
+    tape_or_text: TokenTape | str, source_text: str | None = None
+) -> DelegationGrantScan:
+    """Parse forward delegation GRANTS over a :class:`TokenTape` (canonical).
+
+    Token-native. Emits one :class:`DelegationGrant` per recognized forward grant
+    (whole-frame span, instrument anchor, holder span or typed underspecification,
+    cue span, instrument kind, issuer class, binding strength, basis) and a typed
+    :class:`GrantResidual` for every grant-SHAPED-but-not-a-grant instrument
+    mention (self-/cross-reference, postposition complement, instrument without a
+    power verb). Nothing grant-shaped is ever silently dropped.
+
+    Accepts a :class:`TokenTape` (the lens path) or a raw ``str`` (tokenized
+    internally — convenient for tests / the freeze probe).
+    """
+    if isinstance(tape_or_text, str):
+        from lawvm.finland.legal_surface.tokenize import build_token_tape
+
+        text = tape_or_text
+        tape = build_token_tape("delegation_canonical", text)
+    else:
+        tape = tape_or_text
+        if source_text is None:
+            source_text = "".join(t.text for t in tape.tokens)
+        text = source_text
+    return _scan_tape(tape, text)
+
+
+def assert_total_ownership(scan: DelegationGrantScan, text: str) -> None:
+    """Checkable postcondition: each grant's owned spans + residuals partition.
+
+    For each grant, the union of its cue / holder / instrument / basis spans is
+    contained in its frame span; the frame spans and the residual spans together
+    must leave no grant-shaped instrument mention unaccounted for. We verify the
+    weaker, sound invariant the SHADOW stage needs: every emitted owned span lies
+    inside ``[0, len(text))`` and inside its frame, and no grant span overlaps a
+    residual span (a clause is either a grant OR a declined residue, never both).
+    Raises ``AssertionError`` on violation.
+
+    (Full char-partition totality — the C ``assert_total_ownership`` form — is a
+    later-stage gate once the canonical parser is the sole producer over a fixed
+    segment; at the shadow stage the grant span IS the owned partition.)
+    """
+    n = len(text)
+    for g in scan.grants:
+        for s, e in (
+            (g.cue_start, g.cue_end),
+            (g.instrument_start, g.instrument_end),
+            (g.frame_start, g.frame_end),
+        ):
+            if not (0 <= s <= e <= n):
+                raise AssertionError(
+                    f"span out of bounds [{s},{e}) for text len {n}: {g!r}"
+                )
+        if g.holder_start is not None and g.holder_end is not None:
+            if not (0 <= g.holder_start <= g.holder_end <= n):
+                raise AssertionError(f"holder span out of bounds: {g!r}")
+        # owned spans must lie within the frame
+        for s, e in (
+            (g.cue_start, g.cue_end),
+            (g.instrument_start, g.instrument_end),
+        ):
+            if not (g.frame_start <= s and e <= g.frame_end):
+                raise AssertionError(
+                    f"owned span [{s},{e}) escapes frame "
+                    f"[{g.frame_start},{g.frame_end}): {g!r}"
+                )
+    grant_spans = [(g.frame_start, g.frame_end) for g in scan.grants]
+    for r in scan.residuals:
+        for gs, ge in grant_spans:
+            if r.char_start < ge and gs < r.char_end:
+                raise AssertionError(
+                    f"residual [{r.char_start},{r.char_end}) overlaps grant "
+                    f"frame [{gs},{ge}): a clause cannot be both a grant and a "
+                    f"declined residue: {r!r}"
+                )
+
+
+def projection_grant_keys(scan: DelegationGrantScan) -> set[str]:
+    """Census-comparable forward-grant key set, ``grant:{kind}:{instrument}``.
+
+    Same identity form the production oracle and the legacy C census use, so the
+    canonical projection is directly comparable in the differential gate.
+    """
+    return {f"grant:{g.kind}:{g.instrument}" for g in scan.grants}

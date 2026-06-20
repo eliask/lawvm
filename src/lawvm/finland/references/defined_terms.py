@@ -405,11 +405,42 @@ _GUARD_SOVELLETTAESSA = "sovellettaessa"
 # "Tässä asetuksessa tarkoitetaan:\n<definiendum-adessive> <expansion>;".  The
 # ``tarkoitetaan\s{0,3}:`` tail is the ambiguity guard — a referential
 # "Tässä asetuksessa säädetään …" lacks it and never opens a block.
+#
+# A SECOND header arm covers the APPLICATION-cue enumerated block:
+# "… sovellettaessa tarkoitetaan:" — e.g. "Tätä lakia sovellettaessa
+# tarkoitetaan:", "Valvontalakia ja tätä asetusta sovellettaessa tarkoitetaan:",
+# "… säännöksiä ja määräyksiä sovellettaessa tarkoitetaan:".  This is the SAME
+# statute-wide application cue already recognised inline by
+# ``_SCOPE_CUE_SOVELLETTAESSA`` (scope = statute), but it also OPENS an enumerated
+# definitions block whose items were previously dropped by BOTH lanes because the
+# ``Tässä <unit>`` arm did not match.  The arm anchors on the cue word
+# ``sovellettaessa`` immediately leading into ``tarkoitetaan:`` (the same ambiguity
+# guard as the ``Tässä <unit>`` arm), so a referential "… sovellettaessa
+# noudatetaan …" never fires.  ``unit`` is absent on this arm; the caller maps an
+# absent unit to the statute scope (an application cue reaches the whole
+# instrument, identical to ``Tätä lakia sovellettaessa``).
 _ENUM_HEADER = re.compile(
+    r"(?:"
     rf"\bTässä\s{{1,3}}(?P<unit>{_SCOPE_UNIT_ALTERNATION})\s{{1,3}}"
-    r"tarkoitetaan\s{0,3}:",
+    r"tarkoitetaan\s{0,3}:"
+    r"|"
+    r"\bsovellettaessa\s{1,3}tarkoitetaan\s{0,3}:"
+    r")",
     re.IGNORECASE,
 )
+
+
+def _enum_header_scope(unit: str | None) -> str:
+    """Scope of an enumerated-block header.
+
+    ``unit`` is the captured ``Tässä <unit>`` locative (mapped through the closed
+    :data:`_SCOPE_CUE_UNITS` vocabulary) or ``None`` for the application-cue arm
+    (``… sovellettaessa tarkoitetaan:``), which is statute-wide (the whole
+    instrument, identical to ``Tätä lakia sovellettaessa``).
+    """
+    if unit is None:
+        return _SCOPE_STATUTE
+    return _SCOPE_CUE_UNITS[unit.lower()]
 # A single list item inside the block: a delimiter ('``:``' opening the list or a
 # preceding item's terminating '``;``'), optional whitespace / stripped
 # enumerator, then the leading definiendum word, then the expansion up to the next
@@ -1021,7 +1052,7 @@ def _recognize_enumerated_definitions(
     out: list[DefinedTermBinding] = []
     headers = list(_ENUM_HEADER.finditer(text))
     for i, h in enumerate(headers):
-        scope = _SCOPE_CUE_UNITS[h.group("unit").lower()]
+        scope = _enum_header_scope(h.group("unit"))
         # Start the block at the header's ':' so the FIRST item's ':' delimiter is
         # in scope (the item regex anchors each item on a ':' / ';' delimiter).
         block_start = h.end() - 1

@@ -62,8 +62,8 @@ from lawvm.finland.references.defined_terms import (
     _ENUM_HEADER,
     _ENUM_ITEM,
     _PRONOUN_ADESSIVE_FORMS,
-    _SCOPE_CUE_UNITS,
     _TARKOITETAAN,
+    _enum_header_scope,
     _scope_cue_before,
 )
 
@@ -205,7 +205,7 @@ def _parse_enumerated_block(text: str) -> DefinitionParse | None:
     h = _ENUM_HEADER.search(text)
     if h is None:
         return None
-    scope = _SCOPE_CUE_UNITS[h.group("unit").lower()]
+    scope = _enum_header_scope(h.group("unit"))
     # Chapeau span: the WHOLE matched header (``Tässä <unit> tarkoitetaan:``) is
     # the construction's owned chapeau — total-ownership checks this same span the
     # residual fill treats as owned. (The bare ``tarkoitetaan`` cue is surfaced

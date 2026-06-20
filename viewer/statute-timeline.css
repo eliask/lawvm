@@ -709,6 +709,27 @@ details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer
 .ref-hovercard .hc-candidates li { margin: 0.05rem 0; }
 .ref-hovercard .hc-broken-note { color: #8a2b2b; font-size: 0.76rem; margin: 0.3rem 0; }
 
+/* Set-valued reference (placement v0): one anchor → list of member provisions
+   (range / coordination). All members are MEANT — styled as a transclusion list,
+   distinct from the ambiguous-candidate list above. */
+.ref-hovercard .hc-resolution-set { margin: 0.35rem 0; }
+.ref-hovercard .hc-resolution-lbl { font-weight: 600; color: var(--muted); font-size: 0.72rem; margin-bottom: 0.15rem; }
+.ref-hovercard .hc-resolution-members { margin: 0; padding-left: 1.1rem; list-style: none; }
+.ref-hovercard .hc-resolution-members li { margin: 0.08rem 0; display: flex; align-items: baseline; gap: 0.35rem; }
+.ref-hovercard a.hc-resolution-member {
+  color: #1f6f43;
+  text-decoration: none;
+  border-bottom: 1px dotted #8fc5a4;
+  cursor: pointer;
+}
+.ref-hovercard a.hc-resolution-member:hover { background: #f3faf5; }
+.ref-hovercard span.hc-resolution-member { color: var(--fg, #222); }
+.ref-hovercard .hc-resolution-member-status {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+
 /* ---- semantic overlay layers ---- */
 /* Layer toggle bar (pills) under the scrubber. */
 .overlay-bar {

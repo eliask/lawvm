@@ -577,6 +577,75 @@ def _is_oracle_presentation_list_or_table(sd: dict[str, Any], events: list[dict[
     return _is_presentation_structural_diff(sd, events, "fi")
 
 
+def _section_diff_is_bench_neutralized(
+    sd: dict[str, Any], events: list[dict[str, Any]]
+) -> bool:
+    """Return True when the bench does NOT penalise this section's diff.
+
+    This is the single source of truth for "the bench neutralizes this
+    divergence" — the same predicate ``_structural_sim`` uses to skip a
+    diverging section.  A section is neutralized when its only diffs are:
+    - oracle-side crossHeading deficiencies,
+    - flat→merged digit renesting encoding differences,
+    - whitespace-only (OCR word-fusion) wording changes, or
+    - oracle presentation list/table layout differences.
+
+    Editorial-only (kumottu tombstone) sections never reach this predicate —
+    they are excluded upstream (``_sections_with_diffs`` drops ``editorial_only``
+    and the ``non_editorial`` filter drops them again).  Callers that classify
+    a raw section must therefore treat ``editorial_only`` as neutralized too.
+    """
+    return (
+        _is_oracle_crossheading_only(sd, events)
+        or _is_digit_renesting_mismatch(sd, events)
+        or _is_wording_whitespace_only_diff(sd, events)
+        or _is_oracle_presentation_list_or_table(sd, events)
+    )
+
+
+def bench_penalized_section_keys(sid: str, master: Any) -> tuple[set[str], bool]:
+    """Return ``(penalized_keys, oracle_absent)`` for a statute.
+
+    ``penalized_keys`` is the exact set of section keys the bench's
+    ``_structural_sim`` scores against (i.e. the sections that count against
+    the similarity metric).  A key is penalized iff it has a non-editorial
+    semantic diff with real events/structure AND none of the bench
+    neutralization filters apply.  This is the view the bench actually
+    penalizes — distinct from the consolidated-oracle text comparison
+    ``oracle_check`` uses — and lets consumers (e.g. bench-triage) reconcile
+    their classification with what the bench scores.
+
+    The section keys are produced by ``compute_statute_section_diffs`` (via
+    ``section_keys.extract_ir_sections`` / ``extract_oracle_sections``), the
+    same key space ``oracle_check._classify_statute`` uses, so the two are
+    directly comparable.
+    """
+    from lawvm.tools.structural_review import (
+        compute_statute_section_diffs,
+        _sections_with_diffs,
+    )
+
+    sections, oracle_absent = compute_statute_section_diffs(
+        sid,
+        oracle_selector_mode="bench_comparable",
+        replay_master=master,
+        support_mode="diff_only",
+    )
+    if oracle_absent:
+        return set(), True
+    non_editorial = {
+        k: v
+        for k, v in sections.items()
+        if v.get("semantic_diff", {}).get("kind") != "editorial_only"
+    }
+    penalized: set[str] = set()
+    for sec_key, sd, events in _sections_with_diffs({"sections": non_editorial}):
+        if _section_diff_is_bench_neutralized(sd, events):
+            continue
+        penalized.add(sec_key)
+    return penalized, False
+
+
 def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
     """Structural section score — consistent with ``structural-review --dump``.
 
@@ -619,13 +688,7 @@ def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
     for _sec_key, sd, events in diffs:
         for event in events:
             event_counts[event.get("kind", "unknown")] += 1
-        if _is_oracle_crossheading_only(sd, events):
-            continue
-        if _is_digit_renesting_mismatch(sd, events):
-            continue
-        if _is_wording_whitespace_only_diff(sd, events):
-            continue
-        if _is_oracle_presentation_list_or_table(sd, events):
+        if _section_diff_is_bench_neutralized(sd, events):
             continue
         penalised += 1
     return 1.0 - penalised / len(non_editorial), event_counts
