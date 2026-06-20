@@ -248,6 +248,62 @@ def test_canonical_bundle_requires_closed_effect_graph() -> None:
         )
 
 
+def test_canonical_bundle_rejects_stale_effect_graph_endpoint_records() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    graph_effect = EffectRef(
+        effect_id="effect:1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    stale_effect = EffectRef(
+        effect_id="effect:1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "2"),)),
+    )
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=stale_effect,
+    )
+    graph_relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=graph_effect,
+    )
+    relation_with_detail = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=graph_effect,
+        detail={"note": "stale"},
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=graph_effect,
+        relation=relation_with_detail,
+        expires="2021-01-01",
+    )
+
+    with pytest.raises(ValueError, match="target_effect differs from graph effect"):
+        CanonicalBundle(
+            source_effects=(graph_effect,),
+            effect_relations=(relation,),
+        )
+    with pytest.raises(ValueError, match="relation differs from graph relation"):
+        CanonicalBundle(
+            source_effects=(graph_effect,),
+            effect_relations=(graph_relation,),
+            effect_lifecycle_events=(lifecycle,),
+        )
+
+
 def test_unresolved_effect_lifecycle_event_cannot_emit_executable_projection() -> None:
     instrument = SourceInstrumentRef(instrument_id="2020/1")
     event = EffectLifecycleEvent(

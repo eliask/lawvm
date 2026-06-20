@@ -358,27 +358,55 @@ def validate_effect_graph_closure(
     the same carrier, otherwise the graph is not auditable from the product.
     """
 
-    effect_ids = {effect.effect_id for effect in source_effects}
-    relation_ids = {relation.relation_id for relation in effect_relations}
+    effects_by_id = {effect.effect_id: effect for effect in source_effects}
+    relations_by_id = {relation.relation_id: relation for relation in effect_relations}
     for relation in effect_relations:
-        if relation.target_effect is not None and relation.target_effect.effect_id not in effect_ids:
-            raise ValueError(
-                f"{subject}.effect_relations references missing target_effect: "
-                f"{relation.target_effect.effect_id!r}"
-            )
-        if relation.source_effect is not None and relation.source_effect.effect_id not in effect_ids:
-            raise ValueError(
-                f"{subject}.effect_relations references missing source_effect: "
-                f"{relation.source_effect.effect_id!r}"
-            )
+        if relation.target_effect is not None:
+            target_effect = effects_by_id.get(relation.target_effect.effect_id)
+            if target_effect is None:
+                raise ValueError(
+                    f"{subject}.effect_relations references missing target_effect: "
+                    f"{relation.target_effect.effect_id!r}"
+                )
+            if target_effect != relation.target_effect:
+                raise ValueError(
+                    f"{subject}.effect_relations target_effect differs from graph effect: "
+                    f"{relation.target_effect.effect_id!r}"
+                )
+        if relation.source_effect is not None:
+            source_effect = effects_by_id.get(relation.source_effect.effect_id)
+            if source_effect is None:
+                raise ValueError(
+                    f"{subject}.effect_relations references missing source_effect: "
+                    f"{relation.source_effect.effect_id!r}"
+                )
+            if source_effect != relation.source_effect:
+                raise ValueError(
+                    f"{subject}.effect_relations source_effect differs from graph effect: "
+                    f"{relation.source_effect.effect_id!r}"
+                )
     for event in effect_lifecycle_events:
-        if event.effect is not None and event.effect.effect_id not in effect_ids:
-            raise ValueError(
-                f"{subject}.effect_lifecycle_events references missing effect: "
-                f"{event.effect.effect_id!r}"
-            )
-        if event.relation is not None and event.relation.relation_id not in relation_ids:
-            raise ValueError(
-                f"{subject}.effect_lifecycle_events references missing relation: "
-                f"{event.relation.relation_id!r}"
-            )
+        if event.effect is not None:
+            effect = effects_by_id.get(event.effect.effect_id)
+            if effect is None:
+                raise ValueError(
+                    f"{subject}.effect_lifecycle_events references missing effect: "
+                    f"{event.effect.effect_id!r}"
+                )
+            if effect != event.effect:
+                raise ValueError(
+                    f"{subject}.effect_lifecycle_events effect differs from graph effect: "
+                    f"{event.effect.effect_id!r}"
+                )
+        if event.relation is not None:
+            relation = relations_by_id.get(event.relation.relation_id)
+            if relation is None:
+                raise ValueError(
+                    f"{subject}.effect_lifecycle_events references missing relation: "
+                    f"{event.relation.relation_id!r}"
+                )
+            if relation != event.relation:
+                raise ValueError(
+                    f"{subject}.effect_lifecycle_events relation differs from graph relation: "
+                    f"{event.relation.relation_id!r}"
+                )
