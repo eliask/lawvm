@@ -286,7 +286,12 @@ def test_temporal_postprocessing_expiry_override_uses_source_model() -> None:
     assert "xml_bytes" not in source
     assert "from lawvm.finland.metadata import _commencement_expiry_override" not in source
     assert "_commencement_expiry_override(" not in source
-    assert 'source_model.source_text_contains("voimaantulos")' in source
+    # Leak-ledger rank 15 / AGENTS §1.11–§1.12: the commencement/expiry override
+    # decision is owned solely by the typed surface; the former
+    # source_text_contains("voimaantulos") substring prefilter (which could not
+    # change the typed result) is removed so no raw-text predicate gates legal
+    # state here.
+    assert 'source_text_contains("voimaantulos")' not in source
     assert "source_model.commencement_expiry_override(" in source
 
 

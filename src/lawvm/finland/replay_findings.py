@@ -313,6 +313,45 @@ def fold_timeline_backfill_finding(
     )
 
 
+def editorial_repeal_notice_substring_finding(
+    *,
+    source_statute: str,
+    kind: str,
+    label: str,
+    clause_text: str,
+    witness_rule_id: str,
+) -> Finding:
+    """Build the observation emitted when a repeal notice is recognised by substring.
+
+    The placeholder-restoration guard preferred the typed
+    ``lawvm_repeal_placeholder`` attr but fell back to a case-insensitive
+    ``kumottu`` scan of materialized text because no typed marker yet owns
+    "the consolidation text itself declares this provision repealed"
+    (leak-ledger rank 15; AGENTS §1.11–§1.12). The clause snippet is embedded so
+    triaging the residual never requires re-running materialization.
+    """
+    return Finding(
+        kind="REPLAY.EDITORIAL_REPEAL_NOTICE_SUBSTRING",
+        role="observation",
+        stage="replay",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Replay-fold repeal-placeholder restoration skipped a node whose "
+                "materialized text already shows an editorial repeal notice. No "
+                "typed marker owns this case yet, so a residual 'kumottu' "
+                "substring scan decided it; recorded as a witness instead of a "
+                "silent surface-predicate decision."
+            ),
+            "kind": kind,
+            "label": label,
+            "clause_text": clause_text,
+            "witness_rule_id": witness_rule_id,
+        },
+    )
+
+
 def materialized_provisions_wrapper_projection_finding(
     *,
     source_statute: str,

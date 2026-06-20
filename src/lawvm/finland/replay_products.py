@@ -89,6 +89,15 @@ _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
 _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG = (
     "lawvm:materialize_as_absent_under_detached_horizon"
 )
+# Witness rule id for the residual substring path in
+# ``_restore_replay_fold_repeal_placeholders``: an editorial repeal notice is
+# recognised by a case-insensitive "kumottu" scan of materialized text because
+# no typed marker yet exists for "the official consolidation text itself
+# declares this provision repealed" (the typed ``lawvm_repeal_placeholder`` attr
+# only covers replay-minted placeholders, which are checked first). Per
+# leak-ledger rank 15 / AGENTS §1.11–§1.12, the substring path is no longer
+# silent: each firing emits a witnessed observation reachable from ReplayProducts.
+FI_EDITORIAL_REPEAL_NOTICE_SUBSTRING_RULE_ID = "fi.replay.editorial_repeal_notice_substring"
 _FI_REPLAY_FOLD_MIXED_HIERARCHY_PROFILE = TreeInvariantProfile(
     surface="replay_fold_tree",
     families=("mixed_hierarchy_child",),
@@ -148,6 +157,9 @@ class ReplayProducts:
     source_adjudication: Optional[SourceAdjudication] = None
     fold_timeline_backfills: tuple["FoldTimelineBackfillRecord", ...] = ()
     timeline_version_dedupes: tuple["TimelineVersionDedupeRecord", ...] = ()
+    editorial_repeal_notice_substring_witnesses: tuple[
+        "EditorialRepealNoticeSubstringWitness", ...
+    ] = ()
     dropped_cited_version_snapshots: tuple["CitedVersionSnapshotDrop", ...] = ()
     materialization_issues: tuple[TimelineIssue, ...] = ()
     materialization_certificate: Optional[MaterializationCertificate] = None
@@ -211,13 +223,57 @@ def _fi_root_num_text(kind: IRNodeKind, label: str) -> str | None:
     return None
 
 
+@dataclass(frozen=True, slots=True)
+class EditorialRepealNoticeSubstringWitness:
+    """Evidence for one editorial-repeal-notice recognised by raw-text substring.
+
+    No typed marker yet owns "the materialized/oracle consolidation text itself
+    declares this provision repealed". When the typed
+    ``lawvm_repeal_placeholder`` attr is absent but the ``kumottu`` substring
+    fires, the placeholder-restoration guard keeps the substring decision and
+    records this witness so the residual surface predicate is accounted for
+    (leak-ledger rank 15; AGENTS §1.11–§1.12).
+    """
+
+    kind: str
+    label: str
+    clause_text: str
+    witness_rule_id: str = FI_EDITORIAL_REPEAL_NOTICE_SUBSTRING_RULE_ID
+
+
 def _content_is_repeal_placeholder(node: IRNode) -> bool:
     return node.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
-def _content_is_editorial_repeal_notice(node: IRNode) -> bool:
+def _content_is_editorial_repeal_notice(
+    node: IRNode,
+    *,
+    witness_sink: Optional[list["EditorialRepealNoticeSubstringWitness"]] = None,
+) -> bool:
+    """Whether ``node`` already shows an editorial repeal notice.
+
+    Typed-first: a replay-minted repeal placeholder (the typed
+    ``lawvm_repeal_placeholder`` attr) is the authoritative marker and is
+    consulted first. Only when no typed marker is present do we fall back to the
+    residual ``kumottu`` substring scan of the rendered text — and that residual
+    path is witnessed, never silent: when ``witness_sink`` is provided, each
+    firing appends an ``EditorialRepealNoticeSubstringWitness`` so the
+    surface-predicate decision is reachable from a public surface.
+    """
+    if _content_is_repeal_placeholder(node):
+        return True
     text = irnode_to_text(node).casefold()
-    return "kumottu" in text
+    if "kumottu" not in text:
+        return False
+    if witness_sink is not None:
+        witness_sink.append(
+            EditorialRepealNoticeSubstringWitness(
+                kind=str(node.kind.value if hasattr(node.kind, "value") else node.kind),
+                label=str(node.label or ""),
+                clause_text=irnode_to_text(node)[:400],
+            )
+        )
+    return True
 
 
 def fi_product_tree_invariant_violations(
@@ -652,17 +708,27 @@ def _should_restore_repeal_placeholder(node: IRNode) -> bool:
     return node.kind is IRNodeKind.PARAGRAPH and node.attrs.get("lawvm_restore_materialized_stale_item_slot") == "1"
 
 
-def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: IRNode) -> IRNode:
+def _restore_replay_fold_repeal_placeholders(
+    materialized: IRNode,
+    replay_fold: IRNode,
+    *,
+    witness_sink: Optional[list["EditorialRepealNoticeSubstringWitness"]] = None,
+) -> IRNode:
     """Carry replay-owned dotted-text placeholders through PIT export.
 
     Core materialization treats tombstones as absence. Finland's official
     consolidation export profile intentionally keeps repeal placeholders as
     visible dotted-text slots. This pass is Finland-local and copies only nodes
     that replay already marked as repeal placeholders.
+
+    ``witness_sink`` collects ``EditorialRepealNoticeSubstringWitness`` rows for
+    every node where the residual ``kumottu`` substring path (not the typed
+    ``lawvm_repeal_placeholder`` attr) decided the node was already an editorial
+    repeal notice, so that surface-predicate decision is no longer silent.
     """
     if materialized.kind is not replay_fold.kind or materialized.label != replay_fold.label:
         return materialized
-    if _content_is_editorial_repeal_notice(materialized):
+    if _content_is_editorial_repeal_notice(materialized, witness_sink=witness_sink):
         return materialized
     if _should_restore_repeal_placeholder(replay_fold):
         return replay_fold
@@ -712,7 +778,9 @@ def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: 
             existing_keys.add(key)
             source_child = source_by_key.get(key)
             if source_child is not None:
-                new_child = _restore_replay_fold_repeal_placeholders(child, source_child)
+                new_child = _restore_replay_fold_repeal_placeholders(
+                    child, source_child, witness_sink=witness_sink
+                )
                 changed = changed or new_child is not child
         new_children.append(new_child)
 
@@ -1882,9 +1950,16 @@ def build_replay_products(
             _strip_standalone_subsection_item_prefixes_ir(materialized_state.ir)
         )
     )
+    editorial_repeal_notice_substring_witnesses: list[
+        EditorialRepealNoticeSubstringWitness
+    ] = []
     if synthesize_repeal_placeholders:
         materialized_state = materialized_state.with_ir(
-            _restore_replay_fold_repeal_placeholders(materialized_state.ir, replay_fold_state.ir)
+            _restore_replay_fold_repeal_placeholders(
+                materialized_state.ir,
+                replay_fold_state.ir,
+                witness_sink=editorial_repeal_notice_substring_witnesses,
+            )
         )
     materialized_state = materialized_state.with_ir(
         _reconcile_materialized_fold_hcontainer_sections(
@@ -1915,6 +1990,9 @@ def build_replay_products(
         effect_lifecycle_events=effect_lifecycle_events,
         fold_timeline_backfills=fold_timeline_backfills.records,
         timeline_version_dedupes=timeline_version_dedupes,
+        editorial_repeal_notice_substring_witnesses=tuple(
+            editorial_repeal_notice_substring_witnesses
+        ),
         dropped_cited_version_snapshots=cited_version_snapshot_drops,
         materialization_issues=materialization_result.issues,
         materialization_certificate=materialization_result.certificate,

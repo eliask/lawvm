@@ -441,6 +441,12 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "warn", "grafter",
                 "materialized PIT product split fold-owned operative sections out of an attachments wrapper",
                 ("preservation", "safety_invariant"), role="observation"),
+    FindingSpec("REPLAY.EDITORIAL_REPEAL_NOTICE_SUBSTRING", "replay_products",
+                "recovery", "warn", "grafter",
+                "replay-fold placeholder restoration recognised an existing editorial repeal notice "
+                "by a residual 'kumottu' substring scan (no typed marker owns this case yet); "
+                "recorded as a witness rather than a silent surface predicate",
+                ("parse_witness", "provenance"), role="observation"),
     FindingSpec("REPLAY.MATERIALIZED_PROVISIONS_WRAPPER_PROJECTED", "replay_products",
                 "recovery", "warn", "grafter",
                 "materialized PIT product projected fold-owned provisions-wrapper children into legal topology",

@@ -201,6 +201,9 @@ def _normalize_product_trees(products: ReplayProducts) -> ReplayProducts:
         effect_lifecycle_events=products.effect_lifecycle_events,
         fold_timeline_backfills=products.fold_timeline_backfills,
         timeline_version_dedupes=products.timeline_version_dedupes,
+        editorial_repeal_notice_substring_witnesses=(
+            products.editorial_repeal_notice_substring_witnesses
+        ),
         materialization_spec=products.materialization_spec,
         source_adjudication=products.source_adjudication,
     )

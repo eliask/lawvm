@@ -418,6 +418,76 @@ def test_restore_replay_fold_repeal_placeholders_preserves_editorial_notice_slot
     assert projected_parent is materialized_parent_missing
 
 
+def test_editorial_repeal_notice_substring_path_is_witnessed_not_silent() -> None:
+    from lawvm.finland.replay_products import (
+        EditorialRepealNoticeSubstringWitness,
+        FI_EDITORIAL_REPEAL_NOTICE_SUBSTRING_RULE_ID,
+        _content_is_editorial_repeal_notice,
+    )
+
+    # Typed-first: a replay-minted placeholder is recognised by the typed attr
+    # and never touches the substring path (no witness emitted).
+    typed_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3) something"),),
+    )
+    typed_sink: list[EditorialRepealNoticeSubstringWitness] = []
+    assert _content_is_editorial_repeal_notice(typed_placeholder, witness_sink=typed_sink) is True
+    assert typed_sink == []
+
+    # Residual substring path: no typed marker, but the consolidation text shows
+    # "kumottu". The decision still fires (representation parity preserved) AND a
+    # witness is recorded — the surface predicate is no longer silent.
+    notice = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3 kohta on kumottu L:lla 16.1.2026/45."),),
+    )
+    sink: list[EditorialRepealNoticeSubstringWitness] = []
+    assert _content_is_editorial_repeal_notice(notice, witness_sink=sink) is True
+    assert len(sink) == 1
+    witness = sink[0]
+    assert witness.label == "3"
+    assert "kumottu" in witness.clause_text
+    assert witness.witness_rule_id == FI_EDITORIAL_REPEAL_NOTICE_SUBSTRING_RULE_ID
+
+    # Negative: ordinary substantive text is not misfired and emits no witness.
+    plain = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="4",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="4) substantive in-force text"),),
+    )
+    plain_sink: list[EditorialRepealNoticeSubstringWitness] = []
+    assert _content_is_editorial_repeal_notice(plain, witness_sink=plain_sink) is False
+    assert plain_sink == []
+
+
+def test_restore_replay_fold_repeal_placeholders_threads_substring_witness() -> None:
+    from lawvm.finland.replay_products import EditorialRepealNoticeSubstringWitness
+
+    replay_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1", "lawvm_restore_materialized_stale_item_slot": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3)"),),
+    )
+    materialized_notice = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3 kohta on kumottu L:lla 16.1.2026/45."),),
+    )
+    sink: list[EditorialRepealNoticeSubstringWitness] = []
+    result = _restore_replay_fold_repeal_placeholders(
+        materialized_notice, replay_placeholder, witness_sink=sink
+    )
+    # Representation parity: still returns the materialized notice unchanged.
+    assert result is materialized_notice
+    assert len(sink) == 1
+    assert sink[0].label == "3"
+
+
 def test_project_materialized_provisions_wrapper_reparents_eid_sections_to_chapters() -> None:
     section_17g = IRNode(
         kind=IRNodeKind.SECTION,

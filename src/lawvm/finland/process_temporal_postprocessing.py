@@ -99,16 +99,20 @@ class ProcessTemporalPostprocessContext:
     def apply_commencement_expiry_overrides(self) -> None:
         # Accepted voimaantulosäännös-only amendments may extend or expire prior
         # ops even when this amendment emitted no section-level replacement ops.
-        has_foreign_scoped_expiry = any(
-            target_mid != self.amendment_id
-            for target_mid, _labels, _expiry in self.section_expiry_overrides
+        #
+        # Legal-state authority is the typed commencement/expiry surface
+        # ``commencement_expiry_override`` (it owns the voimaantulosäännös parse
+        # and the foreign-scoped section-expiry decision), never a raw-text
+        # substring predicate (AGENTS §1.11/§1.12, leak-ledger rank 15). The
+        # former raw-text prefilter on the commencement-clause keyword could not
+        # change the result — the typed parser's own ``voimaantulosäänn`` match
+        # already implies that keyword, and the foreign-scoped branch is carried
+        # by ``section_expiry_overrides`` — so it is dropped and the typed
+        # surface is consulted unconditionally.
+        accepted = self.source_model.commencement_expiry_override(
+            self.amendment_id,
+            section_expiry_overrides=self.section_expiry_overrides,
         )
-        accepted = None
-        if has_foreign_scoped_expiry or self.source_model.source_text_contains("voimaantulos"):
-            accepted = self.source_model.commencement_expiry_override(
-                self.amendment_id,
-                section_expiry_overrides=self.section_expiry_overrides,
-            )
         if accepted is not None:
             target_mid, labels, expiry = accepted
             if target_mid != self.amendment_id:

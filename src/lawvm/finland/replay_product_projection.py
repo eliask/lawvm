@@ -18,6 +18,7 @@ from lawvm.core.phase_result import Finding
 from lawvm.finland.replay_findings import (
     _emit_structural_dedup_warning,
     _replay_product_invariant_finding,
+    editorial_repeal_notice_substring_finding,
     fold_timeline_backfill_finding,
     timeline_version_dedupe_finding,
 )
@@ -104,6 +105,36 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
                 )
             )
             seen_dedupes.add(key)
+    if products.editorial_repeal_notice_substring_witnesses:
+        seen_editorial = {
+            (
+                finding.kind,
+                str(finding.detail.get("kind") or ""),
+                str(finding.detail.get("label") or ""),
+                str(finding.detail.get("witness_rule_id") or ""),
+            )
+            for finding in request.replay_findings
+            if finding.kind == "REPLAY.EDITORIAL_REPEAL_NOTICE_SUBSTRING"
+        }
+        for witness in products.editorial_repeal_notice_substring_witnesses:
+            key = (
+                "REPLAY.EDITORIAL_REPEAL_NOTICE_SUBSTRING",
+                witness.kind,
+                witness.label,
+                witness.witness_rule_id,
+            )
+            if key in seen_editorial:
+                continue
+            request.replay_findings.append(
+                editorial_repeal_notice_substring_finding(
+                    source_statute=request.parent_id,
+                    kind=witness.kind,
+                    label=witness.label,
+                    clause_text=witness.clause_text,
+                    witness_rule_id=witness.witness_rule_id,
+                )
+            )
+            seen_editorial.add(key)
     typed_product_tree_violations = {
         "replay_fold_tree": list(
             fi_product_tree_invariant_dicts(
