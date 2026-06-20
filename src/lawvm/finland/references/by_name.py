@@ -165,6 +165,7 @@ _COORD_LEFT_RE = re.compile(
     rf"(?:{_NAME_CHAR}{{1,80}}-\s+(?:ja|sekä|tai)\s+)+$",
     re.IGNORECASE,
 )
+_COORD_LEFT_LOOKBACK = 320
 
 # ---------------------------------------------------------------------------
 # ``-kaari`` (code) heads: oikeudenkäymiskaari, maakaari, kauppakaari, …
@@ -423,10 +424,18 @@ def _extend_coordinated_modifier(text: str, match_start: int, modifier: str) -> 
     last conjunct alone. We still synthesize a single key (one mention), not
     per-conjunct ids.
     """
-    left = text[:match_start]
+    left_start = max(0, match_start - _COORD_LEFT_LOOKBACK)
+    left = text[left_start:match_start]
     m = _COORD_LEFT_RE.search(left)
     if m is None:
         return modifier
+    # Preserve the historical full-prefix behavior if the fast window could have
+    # cut through a very long coordinated title chain.
+    if left_start > 0 and m.start() == 0:
+        full = _COORD_LEFT_RE.search(text[:match_start])
+        if full is None:
+            return modifier
+        return full.group(0) + modifier
     return m.group(0) + modifier
 
 

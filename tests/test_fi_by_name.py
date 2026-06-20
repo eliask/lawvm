@@ -93,6 +93,17 @@ def test_coordinated_compound_modifier_head_detected() -> None:
     assert "maankäyttö- ja rakennuslain" in m.surface_text
 
 
+def test_coordinated_modifier_extension_ignores_long_prefix() -> None:
+    prefix = "Johdantotekstiä ilman säädösviittausta. " * 40
+    mentions = recognize_by_name_refs(prefix + "maankäyttö- ja rakennuslain 132 §:ssä")
+
+    assert len(mentions) == 1
+    tr = mentions[0].target_provision_ref
+    assert tr is not None
+    assert tr.statute_id == "fi-name:maankäyttö- ja rakennuslaki"
+    assert tr.section_label == "132"
+
+
 def test_id_anchored_reference_emits_nothing() -> None:
     """``jätelain (646/2011) 3 §`` -> NOTHING (id-anchored; plain-text lane)."""
     assert recognize_by_name_refs("jätelain (646/2011) 3 § säädetään.") == []
