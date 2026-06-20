@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import io
 from pathlib import Path
+from types import SimpleNamespace
 import zipfile
 from typing import Any, cast
 
@@ -182,6 +183,29 @@ def test_import_consolidated_zip_dry_run_does_not_store(tmp_path: Path) -> None:
 
     assert report.total_errors == 0
     assert archive.calls == []
+
+
+def test_import_zip_main_dry_run_does_not_create_missing_dest(tmp_path: Path) -> None:
+    zip_path = tmp_path / "statute.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(
+            "akn/fi/act/statute/1988/46/fin@/main.xml",
+            _statute_xml(),
+        )
+    dest = tmp_path / "unused"
+
+    import_zip.main(
+        SimpleNamespace(
+            statute_zip=str(zip_path),
+            consolidated_zip=None,
+            dest=str(dest),
+            skip_existing=False,
+            dry_run=True,
+            batch_size=1,
+        )
+    )
+
+    assert not dest.exists()
 
 
 def test_import_consolidated_zip_keeps_each_family_root_identity(tmp_path: Path) -> None:

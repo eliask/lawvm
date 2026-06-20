@@ -15,6 +15,7 @@ from lawvm.us_federal.sources import (
     list_plaw_identities,
     list_plaw_locators,
     open_us_federal_farchive,
+    open_us_federal_import_farchive,
     parse_plaw_locator,
     parse_plaw_member_name,
     plaw_locator,
@@ -106,6 +107,18 @@ def test_open_us_federal_farchive_defaults_readonly_without_creating_missing_arc
     except Exception:
         pass
     else:
+        archive.close()
+
+    assert not missing.exists()
+
+
+def test_open_us_federal_import_farchive_dry_run_does_not_create_missing_archive(tmp_path: Path) -> None:
+    missing = tmp_path / "unused.farchive"
+
+    archive = open_us_federal_import_farchive(missing, dry_run=True)
+    try:
+        assert archive.resolve("us://plaw/118/publ5.xml") is None
+    finally:
         archive.close()
 
     assert not missing.exists()

@@ -239,6 +239,33 @@ def open_us_federal_farchive(
     return Farchive(path, readonly=readonly)
 
 
+class _MissingDryRunFarchive:
+    """Resolve-only archive facade for dry-run imports against missing DBs."""
+
+    def resolve(self, _locator: str) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+def open_us_federal_import_farchive(
+    db_path: Path | None = None,
+    *,
+    dry_run: bool = False,
+) -> Farchive | _MissingDryRunFarchive:
+    """Open the U.S. import archive without creating DBs during dry-runs."""
+    if db_path is None:
+        path, _rule = resolve_us_federal_farchive_path()
+    else:
+        path = Path(db_path)
+    if dry_run:
+        if path.exists():
+            return open_us_federal_farchive(path, readonly=True)
+        return _MissingDryRunFarchive()
+    return open_us_federal_farchive(path, allow_create=True)
+
+
 # ---------------------------------------------------------------------------
 # Archive-backed resolution
 # ---------------------------------------------------------------------------

@@ -37,6 +37,7 @@ from lawvm.us_federal.sources import (
     content_digest,
     extract_usc_edition_currency,
     open_us_federal_farchive,
+    open_us_federal_import_farchive,
     parse_usc_member_name,
     resolve_us_federal_farchive_path,
 )
@@ -249,7 +250,7 @@ def import_usc_sources(
     if dry_run:
         print("  (--dry-run: no writes will be performed)", file=sys.stderr)
 
-    archive = open_us_federal_farchive(db_path, allow_create=True)
+    archive = open_us_federal_import_farchive(db_path, dry_run=dry_run)
     try:
         for source, expected in sources:
             print(f"\nImporting USC source: {source}", file=sys.stderr)
