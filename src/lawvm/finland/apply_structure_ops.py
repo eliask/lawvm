@@ -733,6 +733,7 @@ def _find_scoped_section_insert_parent_path(
         ),
         missing_part_policy="not_found",
         missing_chapter_in_part_policy="not_found",
+        provision_index=state.provision_index,
     )
 
 

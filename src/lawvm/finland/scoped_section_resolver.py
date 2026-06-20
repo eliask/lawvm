@@ -157,6 +157,7 @@ def find_scoped_section_insert_parent_path(
     find_insert_parent_path: FindInsertParentPath,
     missing_part_policy: MissingPartPolicy,
     missing_chapter_in_part_policy: MissingChapterInPartPolicy,
+    provision_index: ProvisionIndex | None = None,
 ) -> Path | None:
     """Resolve the parent path for inserting a section under optional scope.
 
@@ -179,9 +180,18 @@ def find_scoped_section_insert_parent_path(
                 if missing_part_policy == "not_found":
                     return None
             elif chapter_label:
-                chapter_path = _tops.find(part_node, "chapter", chapter_label)
-                if chapter_path is not None:
-                    return _tops._as_path(part_path + chapter_path)
+                if provision_index is not None:
+                    for candidate in provision_index.get(
+                        ("chapter", normalized_label_key(chapter_label)),
+                        (),
+                    ):
+                        chapter_path = _tops._as_path(candidate)
+                        if len(chapter_path) > len(part_path) and chapter_path[: len(part_path)] == part_path:
+                            return chapter_path
+                else:
+                    chapter_path = _tops.find(part_node, "chapter", chapter_label)
+                    if chapter_path is not None:
+                        return _tops._as_path(part_path + chapter_path)
                 if missing_chapter_in_part_policy == "not_found":
                     return None
             if part_node is not None:

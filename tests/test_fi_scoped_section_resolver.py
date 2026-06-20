@@ -213,6 +213,28 @@ def test_scoped_section_insert_parent_path_keeps_missing_scope_policies_explicit
     ) is None
 
 
+def test_scoped_section_insert_parent_path_uses_provision_index_for_part_chapter() -> None:
+    ir = _body(
+        _part("1", _chapter("1", _sec("8"))),
+        _part("2", _chapter("1", _sec("9"))),
+    )
+    provision_index = _tops.build_provision_label_index(ir)
+
+    def fail_find_insert_parent(_chapter_label: str | None) -> Path:
+        raise AssertionError("fallback parent lookup should not be used")
+
+    assert find_scoped_section_insert_parent_path(
+        ir,
+        chapter_label="1",
+        part_label="2",
+        find_part_path=lambda label: _tops.find(ir, "part", label, label_index=provision_index),
+        find_insert_parent_path=fail_find_insert_parent,
+        missing_part_policy="not_found",
+        missing_chapter_in_part_policy="not_found",
+        provision_index=provision_index,
+    ) == (("part", "2"), ("chapter", "1"))
+
+
 def test_section_candidate_selectors_keep_part_and_chapter_boundaries() -> None:
     ir = _body(
         _sec("8"),
