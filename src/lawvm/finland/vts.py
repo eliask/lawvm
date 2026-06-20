@@ -164,18 +164,24 @@ def _parent_title_variants(parent_title: str) -> List[str]:
     norm = norm.rstrip(" .:;")
     if not norm:
         return []
-    variants = [norm]
+    base_titles = [norm]
+    title_without_citation = re.sub(r"\s*\(\s*\d+\s*/\s*\d{2,4}\s*\)\s*$", "", norm).strip()
+    if title_without_citation and title_without_citation != norm:
+        base_titles.append(title_without_citation)
+    variants = []
     # Genitive form via real M1 head inflection (split off the closed-class
     # head, inflect via the morphology engine, re-attach the invariant
     # modifier), with a legacy string-slice fallback when M1 declines to
     # inflect a head so coverage never regresses below the old behavior.
-    genitive = _head_genitive_title(norm)
-    if genitive is not None:
-        variants.append(genitive)
-    # Titles that start with "laki " also appear in cross-statute prose as
-    # "<rest> annetun lain" (genitive form without the leading "laki").
-    if norm.startswith("laki "):
-        variants.append(norm[5:] + " annetun lain")
+    for title in base_titles:
+        variants.append(title)
+        genitive = _head_genitive_title(title)
+        if genitive is not None:
+            variants.append(genitive)
+        # Titles that start with "laki " also appear in cross-statute prose as
+        # "<rest> annetun lain" (genitive form without the leading "laki").
+        if title.startswith("laki "):
+            variants.append(title[5:] + " annetun lain")
     return list(dict.fromkeys(v for v in variants if v))
 
 

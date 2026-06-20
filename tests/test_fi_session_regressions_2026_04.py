@@ -1751,6 +1751,44 @@ def test_1978_611_1998_532_cross_statute_vts_repeals_are_routed() -> None:
     }
 
 
+def test_1987_275_1993_1005_cross_statute_vts_repeals_are_routed() -> None:
+    """1993/1005 §24(2) repeals työllisyyslaki provisions by inflected title."""
+
+    compiled_ops: list[dict[str, object]] = []
+    replay = pinned_replay(
+        "1987/275",
+        mode="official_consolidation",
+        quiet=True,
+        compiled_ops_out=compiled_ops,
+    )
+
+    rows = [
+        row
+        for row in compiled_ops
+        if row.get("source_statute") == "1993/1005"
+        and row.get("witness_rule_id") == "fi.repeal_vts_voimaantulo"
+    ]
+    targets = {
+        (
+            row.get("target_unit_kind"),
+            row.get("target_norm"),
+            row.get("target_paragraph"),
+        )
+        for row in rows
+    }
+    assert {("section", "7", ""), ("section", "8", ""), ("section", "26", "2")} <= targets
+
+    sec7 = replay.materialized_state.find_section("7", "3")
+    sec8 = replay.materialized_state.find_section("8", "3")
+    assert sec7 is not None
+    assert sec8 is not None
+    assert irnode_to_text(sec7) == "7 §"
+    assert irnode_to_text(sec8) == "8 §"
+    sec26 = replay.materialized_state.find_section("26", "5")
+    assert sec26 is not None
+    assert "Euroopan talousalueen" not in irnode_to_text(sec26)
+
+
 def test_1991_1208_1993_994_regional_table_section_14_op_is_preserved() -> None:
     """Regional table ``kohta`` clauses must not drop a coordinated section body."""
 
