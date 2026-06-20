@@ -225,6 +225,8 @@ def pick_latest(versions: list[ProvisionVersion]) -> Optional[ProvisionVersion]:
     """Pick the latest version by (effective, enacted, substantive-bias, index)."""
     if not versions:
         return None
+    if len(versions) == 1:
+        return versions[0]
 
     same_source_late_placeholder_ties: set[tuple[str, str, str]] = set()
     grouped: dict[tuple[str, str, str], list[tuple[int, ProvisionVersion]]] = {}
