@@ -1860,6 +1860,92 @@ def _load_history() -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
+# Opt-in environment flag: when set to a truthy value, the Finland bench ALSO
+# renders the shared cross-jurisdiction unified summary (via the bench contract)
+# in addition to its legacy summary. Default (unset) leaves FI output exactly as
+# it has always been, so the many FI bench tests stay green untouched.
+_FI_BENCH_UNIFIED_ENV = "LAWVM_BENCH_UNIFIED"
+
+
+def _fi_bench_unified_enabled() -> bool:
+    return os.environ.get(_FI_BENCH_UNIFIED_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _fi_unit_results_from_rows(
+    flat: List[Tuple[str, float, str]],
+    *,
+    section_sims: Optional[Dict[str, float]] = None,
+) -> list["BenchUnitResult"]:
+    """Build contract ``BenchUnitResult``s from already-computed FI bench rows.
+
+    Maps the existing per-statute numbers onto the two contract axes WITHOUT
+    re-running replay (the expensive work is already done):
+
+    - ``text_err = 1 - text_sim`` when a text score was computed (``sim >= 0``).
+    - ``structural_err = 1 - section_sim`` when section scoring ran for the row
+      (``section_sims`` provides it), else ``None`` (axis not attempted on the
+      text-only run). When a structural axis is present the typed residue is not
+      available from the flat rows, so reconciliation is skipped for those rows
+      by leaving ``structural_err`` unset whenever no section score exists.
+    - non-scored / crashed rows map onto the matching ``BenchStatus`` so the
+      scored/non-scored/crashed partition matches the legacy summary exactly.
+    """
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
+
+    _status_map = {
+        "NO_TRUTH": BenchStatus.NO_TRUTH,
+        "SOURCE_UNAVAILABLE": BenchStatus.SOURCE_UNAVAILABLE,
+        _ORACLE_STALE_DIAGNOSIS: BenchStatus.ORACLE_STALE,
+    }
+    out: list[BenchUnitResult] = []
+    for sid, sim, status in flat:
+        if sim < 0:
+            mapped = _status_map.get(status)
+            if mapped is not None:
+                out.append(BenchUnitResult(unit_id=sid, status=mapped))
+            else:
+                # Genuine exception (status == str(exception)) — a crash.
+                out.append(
+                    BenchUnitResult(
+                        unit_id=sid, status=BenchStatus.CRASH, witnesses=(status,)
+                    )
+                )
+            continue
+        structural_err: Optional[float] = None
+        if section_sims is not None:
+            sec = section_sims.get(sid)
+            if sec is not None and sec >= 0:
+                structural_err = 1.0 - sec
+        out.append(
+            BenchUnitResult(
+                unit_id=sid,
+                status=BenchStatus.SCORED,
+                structural_err=structural_err,
+                text_err=1.0 - sim,
+            )
+        )
+    return out
+
+
+def _show_unified_summary_fi(
+    flat: List[Tuple[str, float, str]],
+    label: str,
+    *,
+    section_sims: Optional[Dict[str, float]] = None,
+) -> None:
+    """Render the shared cross-jurisdiction summary for FI (env-var gated)."""
+    from lawvm.core.bench_aggregate import render_summary
+
+    unit_results = _fi_unit_results_from_rows(flat, section_sims=section_sims)
+    for line in render_summary(unit_results, label, jurisdiction="fi"):
+        print(line)
+
+
 def _show_summary(
     results: List[Tuple[int, str, float, str, float]],
     label: str,
@@ -2948,6 +3034,18 @@ def main(args) -> None:
 
     verified = _load_verified_statutes()
     _show_summary(results, label, oracle_stale_adjusted=oracle_adjusted_summary, verified=verified or None, lev_sims=lev_sims)
+    if _fi_bench_unified_enabled():
+        # Opt-in shared cross-jurisdiction summary (LAWVM_BENCH_UNIFIED). Reuses
+        # the per-statute numbers already computed above; default output above is
+        # unchanged. When section scoring ran, fold in the structural axis so the
+        # FI worst-of headline binds on the worse of section/text divergence.
+        section_sims: Optional[Dict[str, float]] = None
+        if section_score_mode and section_results is not None:
+            section_sims = {
+                sid: section_sim
+                for _count, sid, _text_sim, section_sim, _status, _elapsed in section_results
+            }
+        _show_unified_summary_fi(flat, label, section_sims=section_sims)
     if by_decade:
         _show_by_decade([(sid, sim) for _, sid, sim, _, _ in results], corpus=corpus)
     _show_worst(results, top, lev_sims=lev_sims, verified=verified or None)
