@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass
 from typing import Iterator, cast
 
@@ -334,7 +333,7 @@ def append_fold_timeline_backfill_ops(
             sequence=0,
             action=StructuralAction.INSERT,
             target=address,
-            payload=_stamp_exact_section_snapshot_payload(copy.deepcopy(node)),
+            payload=_stamp_exact_section_snapshot_payload(node),
             source=OperationSource(
                 statute_id=source_statute,
                 title="Fold timeline backfill",
