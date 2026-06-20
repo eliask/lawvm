@@ -483,15 +483,13 @@ class UKReplayInvariantDiagnosticsMixin:
                     op=op,
                     detail=_invariant_detail(op, scoped_violation, **mutation_event_detail),
                 )
-            elif isinstance(invariant_record, tree_ops.TreeInvariantViolation) and invariant_record.kind == "sort_order":
-                _append_uk_replay_adjudication(
-                    self.adjudications_out,
-                    kind="uk_replay_sort_order_observation",
-                    message="UK replay retained source insertion order even though the generic label-order invariant would sort the affected siblings elsewhere.",
-                    op=op,
-                    detail=_invariant_detail(op, scoped_violation, **mutation_event_detail),
-                )
             else:
+                # A residual ``sort_order`` violation that was NOT already owned by
+                # ``uk_source_anchored_order_observation`` lacks a source-order
+                # witness pertaining to the affected siblings. Asserting "retained
+                # source insertion order" here would be unfalsifiable, so such a
+                # violation stays classified as a replay bug rather than being
+                # silently downgraded to a non-blocking observation.
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_tree_invariant_violation",

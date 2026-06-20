@@ -253,11 +253,8 @@ def test_replay_uk_ops_rescans_invariants_after_label_changing_replace() -> None
     )
 
 
-def test_replay_uk_ops_classifies_sort_order_as_observation() -> None:
-    """Sort-order tree invariants are owned as source-order observations, not bugs."""
-    from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
-
-    statute = IRStatute(
+def _sort_order_statute() -> IRStatute:
+    return IRStatute(
         statute_id="ukpga/2000/1",
         title="Test Act",
         body=IRNode(
@@ -269,9 +266,124 @@ def test_replay_uk_ops_classifies_sort_order_as_observation() -> None:
             ),
         ),
     )
+
+
+def _insertion_anchor_witness_attrs(*, preceding_eid: str) -> dict[str, Any]:
+    """Build a payload sidecar witness carrying a source insertion anchor.
+
+    Mirrors the dict shape that ``_witness_for_op`` rehydrates; the required
+    ``effect_witness``/``extraction_witness``/``target_expansion_witness`` keys
+    are present so the witness is recognised, and the insertion anchor records a
+    source-declared position (the source-order evidence the downgrade requires).
+    """
+    from lawvm.uk_legislation.witness_sidecars import _lowered_witness_to_payload_data
+    from lawvm.uk_legislation.witnesses import (
+        UKApplicabilityWitness,
+        UKEffectWitness,
+        UKInsertionAnchorWitness,
+        UKLoweredOperationWitness,
+        UKProvisionExtractionWitness,
+        UKTargetExpansionWitness,
+    )
+
+    witness = UKLoweredOperationWitness(
+        op_id="uk-test-sort-order-observation",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "3"),)),
+        payload=None,
+        source=_source(),
+        effect_witness=UKEffectWitness(
+            effect_id="e1",
+            affected_provisions_raw="",
+            affecting_provisions_raw="",
+            effect_type_raw="inserted",
+            comments_raw="",
+            authority_layer="EFFECT_FEED_INDEX",
+            applicability=UKApplicabilityWitness(
+                effective_date=None,
+                in_force_dates=(),
+                requires_applied=False,
+                applied=False,
+                effect_type_raw="inserted",
+            ),
+        ),
+        extraction_witness=UKProvisionExtractionWitness(
+            effect_id="e1",
+            authority_layer="EFFECT_FEED_INDEX",
+            extracted_tag=None,
+            extracted_text="",
+            extracted_source_present=True,
+            metadata_fallback_used=False,
+            extraction_failure_kind=None,
+        ),
+        target_expansion_witness=UKTargetExpansionWitness(
+            original_ref="s. 3",
+            expanded_refs=(),
+            expansion_source="effect",
+        ),
+        text_rewrite_witness=None,
+        insertion_anchor_witness=UKInsertionAnchorWitness(
+            preceding_eid=preceding_eid,
+            anchor_source="effect",
+        ),
+    )
+    return {"rewrite_witness": _lowered_witness_to_payload_data(witness)}
+
+
+def test_replay_uk_ops_classifies_witnessed_sort_order_as_source_anchored_observation() -> None:
+    """A sort-order invariant whose affected sibling carries a source insertion anchor
+    is owned as a (non-blocking) source-anchored observation, never the generic bug."""
+    from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
+
+    statute = _sort_order_statute()
     adjudications: list[CompileAdjudication] = []
     op = LegalOperation(
         op_id="uk-test-sort-order-observation",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "3"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            text="Section three.",
+            attrs=_insertion_anchor_witness_attrs(preceding_eid="section-2"),
+        ),
+        source=_source(),
+        sequence=1,
+    )
+
+    replay_uk_ops(statute, [op], adjudications_out=adjudications)
+
+    anchored_adjs = [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_source_anchored_order_observed"
+    ]
+    assert len(anchored_adjs) == 1, [
+        adj.kind for adj in adjudications if "order" in adj.kind or "invariant" in adj.kind
+    ]
+    assert "section out of order:" in str(anchored_adjs[0].detail["violation"])
+    assert classify_uk_replay_adjudication_bucket(anchored_adjs[0].kind) == "nonblocking_observation"
+    assert anchored_adjs[0].detail["blocking"] is False
+    # Neither the generic sort-order downgrade nor the bug kind is emitted: the
+    # source anchor proves the order, so the witness-pertaining branch owns it.
+    assert not [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind
+        in {"uk_replay_sort_order_observation", "uk_replay_tree_invariant_violation"}
+    ]
+
+
+def test_replay_uk_ops_classifies_unwitnessed_sort_order_as_bug() -> None:
+    """Without a source insertion-anchor witness for the affected siblings the order
+    claim is unprovable; the sort-order violation must stay classified as a bug."""
+    from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
+
+    statute = _sort_order_statute()
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk-test-sort-order-no-witness",
         action=StructuralAction.INSERT,
         target=LegalAddress(path=(("section", "3"),)),
         payload=IRNode(kind=IRNodeKind.SECTION, label="3", text="Section three."),
@@ -281,17 +393,21 @@ def test_replay_uk_ops_classifies_sort_order_as_observation() -> None:
 
     replay_uk_ops(statute, [op], adjudications_out=adjudications)
 
-    sort_order_adjs = [
+    # No unfalsifiable "retained source insertion order" downgrade without evidence.
+    assert not [
         adjudication
         for adjudication in adjudications
-        if adjudication.kind == "uk_replay_sort_order_observation"
+        if adjudication.kind
+        in {"uk_replay_sort_order_observation", "uk_replay_source_anchored_order_observed"}
+    ], [adj.kind for adj in adjudications if "order" in adj.kind or "invariant" in adj.kind]
+    bug_adjs = [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_tree_invariant_violation"
     ]
-    assert len(sort_order_adjs) == 1, [
-        adj.kind for adj in adjudications if "order" in adj.kind or "invariant" in adj.kind
-    ]
-    assert "section out of order:" in str(sort_order_adjs[0].detail["violation"])
-    assert classify_uk_replay_adjudication_bucket(sort_order_adjs[0].kind) == "nonblocking_observation"
-    assert sort_order_adjs[0].detail["blocking"] is False
+    assert len(bug_adjs) == 1
+    assert "section out of order:" in str(bug_adjs[0].detail["violation"])
+    assert classify_uk_replay_adjudication_bucket(bug_adjs[0].kind) == "replay_bug"
 
 
 def test_replay_uk_ops_rescans_invariants_after_descendant_shape_replace() -> None:

@@ -154,6 +154,37 @@ def _uk_subsection_with_schedule_entry() -> IRNode:
     )
 
 
+def _uk_part_with_illegal_subsection_child() -> IRNode:
+    """A subsection directly under a part is not a legal UK shape.
+
+    ``part`` admits chapters/sections/headings/crossheadings/p1group/pblock but
+    never a bare ``subsection``; this must surface as ``unexpected_child_kind``.
+    """
+    return IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="I",
+                children=(
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=()),
+                ),
+            ),
+        ),
+    )
+
+
+def _uk_body_with_mixed_hierarchy_section_then_part() -> IRNode:
+    """A section followed by a deeper-ranked part sibling is a mixed hierarchy."""
+    return IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="1", children=()),
+            IRNode(kind=IRNodeKind.PART, label="I", children=()),
+        ),
+    )
+
+
 def _count_violations(tree: IRNode, *, families: tuple[TreeInvariantKind, ...]) -> int:
     return sum(1 for _ in iter_tree_invariant_violations(tree, families=families))
 
@@ -176,3 +207,27 @@ def test_uk_section_allows_direct_paragraph() -> None:
 def test_uk_subsection_allows_schedule_entry() -> None:
     tree = _uk_subsection_with_schedule_entry()
     assert _count_violations(tree, families=("unexpected_child_kind",)) == 0
+
+
+def test_uk_illegal_subsection_under_part_is_unexpected_child() -> None:
+    tree = _uk_part_with_illegal_subsection_child()
+    violations = [
+        violation
+        for violation in iter_tree_invariant_violations(tree, families=("unexpected_child_kind",))
+    ]
+    assert len(violations) == 1
+    violation = violations[0]
+    assert violation.kind == "unexpected_child_kind"
+    assert violation.parent_kind == "part"
+    assert violation.child_kind == "subsection"
+
+
+def test_uk_mixed_hierarchy_section_then_part_is_flagged() -> None:
+    tree = _uk_body_with_mixed_hierarchy_section_then_part()
+    violations = [
+        violation
+        for violation in iter_tree_invariant_violations(tree, families=("mixed_hierarchy_child",))
+    ]
+    assert len(violations) == 1
+    assert violations[0].kind == "mixed_hierarchy_child"
+    assert violations[0].child_kind == "section"
