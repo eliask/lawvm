@@ -123,6 +123,53 @@ def _real_corpus_evidence(statute_id: str) -> RealCorpusEvidenceFixture:
     )
 
 
+@lru_cache(maxsize=None)
+def _real_corpus_section_bisect_rows(
+    statute_id: str,
+    mode: str,
+    section_key: str,
+    diagnosis: str,
+    blame_source: str,
+) -> tuple[dict[str, Any], ...]:
+    fixture = _real_corpus_evidence(statute_id)
+    oracle_text = render_node_text(fixture.oracle_sections.get(section_key))
+    rows = _section_bisect_support(
+        statute_id,
+        mode,
+        [
+            {
+                "section": section_key,
+                "diagnosis": diagnosis,
+                "blame_source": blame_source,
+                "blame_title": "",
+                "replay_text": fixture.replay_texts.get(section_key, ""),
+                "oracle_text": oracle_text,
+            }
+        ],
+        oracle_root=fixture.oracle_root,
+    )
+    return tuple(rows)
+
+
+def _real_corpus_section_bisect(
+    statute_id: str,
+    mode: str,
+    section_key: str,
+    diagnosis: str,
+    blame_source: str,
+) -> list[dict[str, Any]]:
+    return [
+        dict(row)
+        for row in _real_corpus_section_bisect_rows(
+            statute_id,
+            mode,
+            section_key,
+            diagnosis,
+            blame_source,
+        )
+    ]
+
+
 def test_oracle_text_temporary_source_id_accepts_bare_citation_suffix() -> None:
     text = "21 b § oli väliaikaisesti voimassa 24.11.2021–30.1.2022 L 984/2021."
 
@@ -2010,27 +2057,13 @@ def test_1984_719_typed_proof_claims_promote_same_chapter_oracle_range_drift_for
 
 
 def test_1984_719_bisect_support_finds_oracle_section_stale_for_79() -> None:
-    fixture = _real_corpus_evidence("1984/719")
-    replay_texts = fixture.replay_texts
-    oracle_root = fixture.oracle_root
-    oracle_sections = fixture.oracle_sections
     oracle_key = "chapter:9/section:79"
-    oracle_text = render_node_text(oracle_sections.get(oracle_key))
-
-    bisect_rows = _section_bisect_support(
+    bisect_rows = _real_corpus_section_bisect(
         "1984/719",
         "legal_pit",
-        [
-            {
-                "section": oracle_key,
-                "diagnosis": "REPLAY_EXTRA",
-                "blame_source": "1996/295",
-                "blame_title": "",
-                "replay_text": replay_texts.get(oracle_key, ""),
-                "oracle_text": oracle_text,
-            }
-        ],
-        oracle_root=oracle_root,
+        oracle_key,
+        "REPLAY_EXTRA",
+        "1996/295",
     )
 
     row = next(r for r in bisect_rows if r["section"] == oracle_key)
@@ -2042,27 +2075,13 @@ def test_1984_719_bisect_support_finds_oracle_section_stale_for_79() -> None:
 
 
 def test_1984_719_bisect_support_finds_preexisting_same_section_structure_drift_for_78() -> None:
-    fixture = _real_corpus_evidence("1984/719")
-    replay_texts = fixture.replay_texts
-    oracle_root = fixture.oracle_root
-    oracle_sections = fixture.oracle_sections
     oracle_key = "chapter:9/section:78"
-    oracle_text = render_node_text(oracle_sections.get(oracle_key))
-
-    bisect_rows = _section_bisect_support(
+    bisect_rows = _real_corpus_section_bisect(
         "1984/719",
         "legal_pit",
-        [
-            {
-                "section": oracle_key,
-                "diagnosis": "REPLAY_MISSING",
-                "blame_source": "1996/295",
-                "blame_title": "",
-                "replay_text": replay_texts.get(oracle_key, ""),
-                "oracle_text": oracle_text,
-            }
-        ],
-        oracle_root=oracle_root,
+        oracle_key,
+        "REPLAY_MISSING",
+        "1996/295",
     )
 
     row = next(r for r in bisect_rows if r["section"] == oracle_key)
@@ -2075,25 +2094,15 @@ def test_1984_719_bisect_support_finds_preexisting_same_section_structure_drift_
 def test_1984_719_typed_section_claims_select_preexisting_same_section_structure_drift_for_78() -> None:
     fixture = _real_corpus_evidence("1984/719")
     replay_texts = fixture.replay_texts
-    oracle_root = fixture.oracle_root
     oracle_sections = fixture.oracle_sections
     oracle_key = "chapter:9/section:78"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
-
-    bisect_rows = _section_bisect_support(
+    bisect_rows = _real_corpus_section_bisect(
         "1984/719",
         "legal_pit",
-        [
-            {
-                "section": oracle_key,
-                "diagnosis": "REPLAY_MISSING",
-                "blame_source": "1996/295",
-                "blame_title": "",
-                "replay_text": replay_texts.get(oracle_key, ""),
-                "oracle_text": oracle_text,
-            }
-        ],
-        oracle_root=oracle_root,
+        oracle_key,
+        "REPLAY_MISSING",
+        "1996/295",
     )
 
     rows = build_section_claims_typed(
@@ -2121,25 +2130,15 @@ def test_1984_719_typed_section_claims_select_preexisting_same_section_structure
 def test_1984_719_typed_proof_claims_keep_preexisting_same_section_structure_drift_for_78() -> None:
     fixture = _real_corpus_evidence("1984/719")
     replay_texts = fixture.replay_texts
-    oracle_root = fixture.oracle_root
     oracle_sections = fixture.oracle_sections
     oracle_key = "chapter:9/section:78"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
-
-    bisect_rows = _section_bisect_support(
+    bisect_rows = _real_corpus_section_bisect(
         "1984/719",
         "legal_pit",
-        [
-            {
-                "section": oracle_key,
-                "diagnosis": "REPLAY_MISSING",
-                "blame_source": "1996/295",
-                "blame_title": "",
-                "replay_text": replay_texts.get(oracle_key, ""),
-                "oracle_text": oracle_text,
-            }
-        ],
-        oracle_root=oracle_root,
+        oracle_key,
+        "REPLAY_MISSING",
+        "1996/295",
     )
 
     typed_rows = build_section_claims_typed(
@@ -2189,25 +2188,15 @@ def test_1984_719_typed_proof_claims_keep_preexisting_same_section_structure_dri
 def test_1984_719_typed_section_claims_select_oracle_section_stale_for_79() -> None:
     fixture = _real_corpus_evidence("1984/719")
     replay_texts = fixture.replay_texts
-    oracle_root = fixture.oracle_root
     oracle_sections = fixture.oracle_sections
     oracle_key = "chapter:9/section:79"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
-
-    bisect_rows = _section_bisect_support(
+    bisect_rows = _real_corpus_section_bisect(
         "1984/719",
         "legal_pit",
-        [
-            {
-                "section": oracle_key,
-                "diagnosis": "REPLAY_EXTRA",
-                "blame_source": "1996/295",
-                "blame_title": "",
-                "replay_text": replay_texts.get(oracle_key, ""),
-                "oracle_text": oracle_text,
-            }
-        ],
-        oracle_root=oracle_root,
+        oracle_key,
+        "REPLAY_EXTRA",
+        "1996/295",
     )
 
     rows = build_section_claims_typed(
@@ -2233,25 +2222,15 @@ def test_1984_719_typed_section_claims_select_oracle_section_stale_for_79() -> N
 def test_1984_719_typed_proof_claims_promote_oracle_section_stale_for_79() -> None:
     fixture = _real_corpus_evidence("1984/719")
     replay_texts = fixture.replay_texts
-    oracle_root = fixture.oracle_root
     oracle_sections = fixture.oracle_sections
     oracle_key = "chapter:9/section:79"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
-
-    bisect_rows = _section_bisect_support(
+    bisect_rows = _real_corpus_section_bisect(
         "1984/719",
         "legal_pit",
-        [
-            {
-                "section": oracle_key,
-                "diagnosis": "REPLAY_EXTRA",
-                "blame_source": "1996/295",
-                "blame_title": "",
-                "replay_text": replay_texts.get(oracle_key, ""),
-                "oracle_text": oracle_text,
-            }
-        ],
-        oracle_root=oracle_root,
+        oracle_key,
+        "REPLAY_EXTRA",
+        "1996/295",
     )
 
     typed_rows = build_section_claims_typed(
