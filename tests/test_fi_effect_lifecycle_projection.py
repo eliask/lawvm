@@ -804,6 +804,44 @@ def test_finland_lifecycle_projection_rejects_untyped_primary_lanes() -> None:
         )
 
 
+def test_finland_lifecycle_override_rejects_untyped_string_fields() -> None:
+    scope = EffectLifecycleOverrideScope.sections(("4 a",))
+
+    with pytest.raises(TypeError, match="source_statute"):
+        EffectLifecycleOverride(
+            source_statute=cast(Any, 2021),
+            target_statute="2020/1",
+            scope=scope,
+            expiry="2022-12-31",
+            context="accepted_amendment",
+        )
+    with pytest.raises(TypeError, match="expiry"):
+        EffectLifecycleOverride(
+            source_statute="2021/2",
+            target_statute="2020/1",
+            scope=scope,
+            expiry=cast(Any, object()),
+            context="accepted_amendment",
+        )
+
+
+def test_finland_relation_signal_rejects_untyped_string_fields() -> None:
+    with pytest.raises(TypeError, match="target_title"):
+        EffectRelationSignal.pending_amendment(
+            source_statute="2021/2",
+            target_statute="2020/1",
+            target_title=cast(Any, object()),
+            resolved=True,
+        )
+    with pytest.raises(TypeError, match="message"):
+        EffectRelationSignal.meta_repeal(
+            source_statute="2021/2",
+            target_statute="2020/1",
+            message=cast(Any, object()),
+            resolved=True,
+        )
+
+
 def test_process_result_builder_preserves_effect_lifecycle_side_channels() -> None:
     instrument = SourceInstrumentRef(instrument_id="2024/1")
     witness = SourceProvisionRef(instrument=instrument, path=("1",))

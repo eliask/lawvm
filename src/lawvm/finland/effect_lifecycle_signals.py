@@ -13,6 +13,12 @@ EffectRelationSignalKind = Literal["pending_amendment", "meta_repeal"]
 EffectRelationSignalRelationKind = Literal["modifies_effect", "repeals_effect"]
 
 
+def _normalized_signal_string(subject: str, value: object) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{subject} must be a string")
+    return value.strip()
+
+
 def _normalized_section_labels(labels: Iterable[object]) -> tuple[str, ...]:
     cleaned: list[str] = []
     for label in labels:
@@ -138,11 +144,20 @@ class EffectLifecycleOverride:
     expiry: str = ""
 
     def __post_init__(self) -> None:
-        source_statute = str(self.source_statute).strip()
-        target_statute = str(self.target_statute).strip()
-        context = str(self.context).strip()
-        effective = str(self.effective).strip()
-        expiry = str(self.expiry).strip()
+        source_statute = _normalized_signal_string(
+            "EffectLifecycleOverride.source_statute",
+            self.source_statute,
+        )
+        target_statute = _normalized_signal_string(
+            "EffectLifecycleOverride.target_statute",
+            self.target_statute,
+        )
+        context = _normalized_signal_string("EffectLifecycleOverride.context", self.context)
+        effective = _normalized_signal_string(
+            "EffectLifecycleOverride.effective",
+            self.effective,
+        )
+        expiry = _normalized_signal_string("EffectLifecycleOverride.expiry", self.expiry)
         if not source_statute:
             raise ValueError("lifecycle override source_statute must be non-empty")
         if not target_statute:
@@ -187,15 +202,39 @@ class EffectRelationSignal:
     resolved: bool = False
 
     def __post_init__(self) -> None:
-        signal_kind = str(self.signal_kind).strip()
-        relation_kind = str(self.relation_kind).strip()
-        source_statute = str(self.source_statute).strip()
-        target_statute = str(self.target_statute).strip()
-        target_title = str(self.target_title).strip()
-        base_parent_id = str(self.base_parent_id).strip()
-        route_reason = str(self.route_reason).strip()
-        message = str(self.message).strip()
-        source_finding = str(self.source_finding).strip()
+        signal_kind = _normalized_signal_string(
+            "EffectRelationSignal.signal_kind",
+            self.signal_kind,
+        )
+        relation_kind = _normalized_signal_string(
+            "EffectRelationSignal.relation_kind",
+            self.relation_kind,
+        )
+        source_statute = _normalized_signal_string(
+            "EffectRelationSignal.source_statute",
+            self.source_statute,
+        )
+        target_statute = _normalized_signal_string(
+            "EffectRelationSignal.target_statute",
+            self.target_statute,
+        )
+        target_title = _normalized_signal_string(
+            "EffectRelationSignal.target_title",
+            self.target_title,
+        )
+        base_parent_id = _normalized_signal_string(
+            "EffectRelationSignal.base_parent_id",
+            self.base_parent_id,
+        )
+        route_reason = _normalized_signal_string(
+            "EffectRelationSignal.route_reason",
+            self.route_reason,
+        )
+        message = _normalized_signal_string("EffectRelationSignal.message", self.message)
+        source_finding = _normalized_signal_string(
+            "EffectRelationSignal.source_finding",
+            self.source_finding,
+        )
         if signal_kind not in {"pending_amendment", "meta_repeal"}:
             raise ValueError(f"unknown effect relation signal kind: {self.signal_kind!r}")
         if relation_kind not in {"modifies_effect", "repeals_effect"}:
