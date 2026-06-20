@@ -14,7 +14,6 @@ from lawvm.core.effect_lifecycle import (
     SourceProvisionRef,
 )
 from lawvm.core.ir import LegalOperation
-from lawvm.core.phase_result import Finding
 from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
 
@@ -392,53 +391,6 @@ def _lifecycle_events_from_lifecycle_overrides(
     return tuple(events)
 
 
-def _pending_relation_from_finding(finding: Finding) -> EffectRelation | None:
-    detail = dict(finding.detail)
-    source_statute = str(finding.source_statute or "")
-    target_id = str(detail.get("target_amendment_id") or "")
-    target_title = str(detail.get("target_amendment_title") or "")
-    if not source_statute or not target_id:
-        return None
-    witness = _source_witness(
-        source_statute=source_statute,
-        path=("routing",),
-        rule_id="fi.pending_amendment_of_parent_effect_relation",
-        text_excerpt=str(detail.get("message") or ""),
-    )
-    if witness is None:
-        return None
-    return EffectRelation(
-        relation_id=_relation_id(source_statute, "pending_amendment", target_id),
-        kind="modifies_effect",
-        source_provision=witness,
-        target_instrument=SourceInstrumentRef(instrument_id=target_id, title=target_title),
-        detail={
-            "source_finding": finding.kind,
-            "target_amendment_id": target_id,
-            "target_amendment_title": target_title,
-            "base_parent_id": str(detail.get("base_parent_id") or ""),
-            "resolved": finding.kind == "APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
-        },
-    )
-
-
-def _pending_relations_from_findings(findings: Sequence[Finding]) -> tuple[EffectRelation, ...]:
-    relations: list[EffectRelation] = []
-    seen: set[str] = set()
-    for finding in findings:
-        if finding.kind not in {
-            "APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
-            "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
-        }:
-            continue
-        relation = _pending_relation_from_finding(finding)
-        if relation is None or relation.relation_id in seen:
-            continue
-        seen.add(relation.relation_id)
-        relations.append(relation)
-    return tuple(relations)
-
-
 def _relation_from_signal(signal: EffectRelationSignal) -> EffectRelation | None:
     witness = _source_witness(
         source_statute=signal.source_statute,
@@ -480,74 +432,6 @@ def _relations_from_signals(relation_signals: Sequence[EffectRelationSignal]) ->
     return tuple(relations)
 
 
-def _meta_repeal_relation_from_finding(finding: Finding) -> EffectRelation | None:
-    detail = dict(finding.detail)
-    source_statute = str(finding.source_statute or "")
-    target_id = str(detail.get("target_amendment_id") or "")
-    if not source_statute or not target_id:
-        return None
-    witness = _source_witness(
-        source_statute=source_statute,
-        path=("routing",),
-        rule_id="fi.meta_repeal_effect_relation",
-        text_excerpt=str(detail.get("message") or ""),
-    )
-    if witness is None:
-        return None
-    return EffectRelation(
-        relation_id=_relation_id(source_statute, "meta_repeal", target_id),
-        kind="repeals_effect",
-        source_provision=witness,
-        target_instrument=SourceInstrumentRef(instrument_id=target_id),
-        detail={
-            "source_finding": finding.kind,
-            "target_amendment_id": target_id,
-            "route_reason": str(detail.get("route_reason") or ""),
-            "resolved": True,
-        },
-    )
-
-
-def _meta_repeal_relations_from_findings(findings: Sequence[Finding]) -> tuple[EffectRelation, ...]:
-    relations: list[EffectRelation] = []
-    seen: set[str] = set()
-    for finding in findings:
-        if finding.kind != "APPLY.META_REPEAL_EFFECT_RECORDED":
-            continue
-        relation = _meta_repeal_relation_from_finding(finding)
-        if relation is None or relation.relation_id in seen:
-            continue
-        seen.add(relation.relation_id)
-        relations.append(relation)
-    return tuple(relations)
-
-
-def _unresolved_lifecycle_from_pending_findings(
-    findings: Sequence[Finding],
-) -> tuple[EffectLifecycleEvent, ...]:
-    events: list[EffectLifecycleEvent] = []
-    for finding in findings:
-        if finding.kind != "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED":
-            continue
-        relation = _pending_relation_from_finding(finding)
-        if relation is None:
-            continue
-        events.append(
-            EffectLifecycleEvent(
-                lifecycle_event_id=_lifecycle_id(finding.source_statute, "pending_unresolved"),
-                kind="unresolved_effect_target",
-                source_provision=relation.source_provision,
-                relation=relation,
-                executable=False,
-                detail={
-                    "source_finding": finding.kind,
-                    **dict(finding.detail),
-                },
-            )
-        )
-    return tuple(events)
-
-
 def _unresolved_lifecycle_from_relation_signals(
     relation_signals: Sequence[EffectRelationSignal],
 ) -> tuple[EffectLifecycleEvent, ...]:
@@ -557,7 +441,21 @@ def _unresolved_lifecycle_from_relation_signals(
         if signal.resolved:
             continue
         relation = _relation_from_signal(signal)
-        if relation is None:
+        witness = (
+            relation.source_provision
+            if relation is not None
+            else _source_witness(
+                source_statute=signal.source_statute,
+                path=("routing",),
+                rule_id=(
+                    "fi.pending_amendment_of_parent_effect_unresolved"
+                    if signal.signal_kind == "pending_amendment"
+                    else "fi.meta_repeal_effect_unresolved"
+                ),
+                text_excerpt=signal.message,
+            )
+        )
+        if witness is None:
             continue
         lifecycle_id = _lifecycle_id(signal.source_statute, signal.signal_kind, "unresolved")
         if lifecycle_id in seen:
@@ -567,7 +465,7 @@ def _unresolved_lifecycle_from_relation_signals(
             EffectLifecycleEvent(
                 lifecycle_event_id=lifecycle_id,
                 kind="unresolved_effect_target",
-                source_provision=relation.source_provision,
+                source_provision=witness,
                 relation=relation,
                 executable=False,
                 detail={
@@ -580,45 +478,11 @@ def _unresolved_lifecycle_from_relation_signals(
     return tuple(events)
 
 
-def _unresolved_lifecycle_from_meta_repeal_findings(
-    findings: Sequence[Finding],
-) -> tuple[EffectLifecycleEvent, ...]:
-    events: list[EffectLifecycleEvent] = []
-    for finding in findings:
-        if finding.kind != "APPLY.META_REPEAL_EFFECT_UNRESOLVED":
-            continue
-        source_statute = str(finding.source_statute or "")
-        if not source_statute:
-            continue
-        witness = _source_witness(
-            source_statute=source_statute,
-            path=("routing",),
-            rule_id="fi.meta_repeal_effect_unresolved",
-            text_excerpt=str(dict(finding.detail).get("message") or ""),
-        )
-        if witness is None:
-            continue
-        events.append(
-            EffectLifecycleEvent(
-                lifecycle_event_id=_lifecycle_id(source_statute, "meta_repeal_unresolved"),
-                kind="unresolved_effect_target",
-                source_provision=witness,
-                executable=False,
-                detail={
-                    "source_finding": finding.kind,
-                    **dict(finding.detail),
-                },
-            )
-        )
-    return tuple(events)
-
-
 def build_finland_effect_lifecycle(
     *,
     target_statute: str,
     canonical_ops: Sequence[LegalOperation],
     temporal_events: Sequence[TemporalEvent],
-    findings: Sequence[Finding],
     lifecycle_overrides: Sequence[EffectLifecycleOverride] = (),
     relation_signals: Sequence[EffectRelationSignal] = (),
     known_source_effects: Sequence[EffectRef] = (),
@@ -647,8 +511,6 @@ def build_finland_effect_lifecycle(
             source_effects=source_effect_context,
         )
         + _relations_from_signals(relation_signals)
-        + _pending_relations_from_findings(findings)
-        + _meta_repeal_relations_from_findings(findings)
     )
     lifecycle_events = (
         _lifecycle_from_temporal_events(temporal_events, target_statute=target_statute)
@@ -658,7 +520,5 @@ def build_finland_effect_lifecycle(
             source_effects=source_effect_context,
         )
         + _unresolved_lifecycle_from_relation_signals(relation_signals)
-        + _unresolved_lifecycle_from_pending_findings(findings)
-        + _unresolved_lifecycle_from_meta_repeal_findings(findings)
     )
     return source_effects, relations, lifecycle_events

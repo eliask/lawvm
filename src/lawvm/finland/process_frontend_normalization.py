@@ -82,7 +82,6 @@ class ProcessFrontendNormalizationContext:
             target_statute=self.parent_id,
             canonical_ops=(),
             temporal_events=temporal_events,
-            findings=(),
         )
         findings = phase_result.findings()
         return FrontendNormalizationResult(

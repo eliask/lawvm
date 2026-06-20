@@ -311,6 +311,16 @@ class ProcessRouteRejectionContext:
                         blocking=False,
                     )
             else:
+                self.effect_relation_signals.append(
+                    EffectRelationSignal.meta_repeal(
+                        source_statute=self.amendment_id,
+                        target_statute="",
+                        route_reason=disposition.route_reason,
+                        message="Meta-repeal target could not be resolved to a prior source-backed effect.",
+                        source_finding="APPLY.META_REPEAL_EFFECT_UNRESOLVED",
+                        resolved=False,
+                    )
+                )
                 self.record_finding(
                     kind="APPLY.META_REPEAL_EFFECT_UNRESOLVED",
                     message="Meta-repeal target could not be resolved to a prior source-backed effect.",

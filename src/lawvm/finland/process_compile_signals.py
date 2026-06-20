@@ -48,7 +48,6 @@ class ProcessCompileSignalsContext:
             target_statute=self.parent_id,
             canonical_ops=(),
             temporal_events=temporal_events,
-            findings=(),
         )
         self.source_effects.extend(source_effects)
         self.effect_lifecycle_events.extend(lifecycle_events)

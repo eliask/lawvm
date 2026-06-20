@@ -517,7 +517,6 @@ def process_muutoslaki_resolved(
             target_statute=parent_id,
             canonical_ops=amendment_lo_ops,
             temporal_events=(),
-            findings=(),
         )
         existing_source_effect_ids = {effect.effect_id for effect in runtime.source_effects}
         for effect in source_effects:

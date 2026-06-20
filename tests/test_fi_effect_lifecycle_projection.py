@@ -11,7 +11,6 @@ from lawvm.core.effect_lifecycle import (
     SourceProvisionRef,
     lower_lifecycle_event_to_temporal_event,
 )
-from lawvm.core.phase_result import Finding
 from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.finland.effect_lifecycle_signals import (
     EffectLifecycleOverride,
@@ -57,7 +56,6 @@ def test_finland_temporal_event_projects_to_effect_lifecycle_event() -> None:
         target_statute="1990/1",
         canonical_ops=(_op(),),
         temporal_events=(temporal,),
-        findings=(),
     )
 
     assert {effect.source_instrument.instrument_id for effect in source_effects} == {"2020/1"}
@@ -78,7 +76,6 @@ def test_finland_canonical_op_mints_source_effect_identity() -> None:
         target_statute="1990/1",
         canonical_ops=(op,),
         temporal_events=(),
-        findings=(),
     )
 
     assert relations == ()
@@ -112,43 +109,11 @@ def test_mixed_lifecycle_scope_keeps_labels_and_addresses_distinct() -> None:
     assert scope.to_meta()["scope_addresses"] == ["chapter:2/section:8"]
 
 
-def test_finland_pending_amendment_unresolved_emits_relation_and_nonexecuting_lifecycle() -> None:
-    finding = Finding(
-        kind="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
-        role="obligation",
-        stage="process_muutoslaki",
-        source_statute="2021/2",
-        blocking=True,
-        detail={
-            "message": "pending target unresolved",
-            "target_amendment_id": "2020/1",
-            "route_reason": "pending_amendment_of_parent_skip",
-        },
-    )
-
-    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
-        target_statute="1990/1",
-        canonical_ops=(),
-        temporal_events=(),
-        findings=(finding,),
-    )
-
-    assert source_effects == ()
-    assert len(relations) == 1
-    assert relations[0].kind == "modifies_effect"
-    assert relations[0].target_instrument is not None
-    assert relations[0].target_instrument.instrument_id == "2020/1"
-    assert len(lifecycle_events) == 1
-    assert lifecycle_events[0].kind == "unresolved_effect_target"
-    assert lifecycle_events[0].executable is False
-
-
 def test_finland_pending_amendment_relation_signal_is_authority_input() -> None:
     source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
         target_statute="1990/1",
         canonical_ops=(),
         temporal_events=(),
-        findings=(),
         relation_signals=(
             EffectRelationSignal.pending_amendment(
                 source_statute="2021/2",
@@ -173,40 +138,11 @@ def test_finland_pending_amendment_relation_signal_is_authority_input() -> None:
     assert lifecycle_events[0].detail["projection"] == "effect_relation_signal"
 
 
-def test_finland_meta_repeal_recorded_emits_repeal_relation() -> None:
-    finding = Finding(
-        kind="APPLY.META_REPEAL_EFFECT_RECORDED",
-        role="observation",
-        stage="process_muutoslaki",
-        source_statute="2021/2",
-        blocking=False,
-        detail={
-            "target_amendment_id": "2020/1",
-            "route_reason": "citation_mismatch_skip",
-        },
-    )
-
-    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
-        target_statute="1990/1",
-        canonical_ops=(),
-        temporal_events=(),
-        findings=(finding,),
-    )
-
-    assert source_effects == ()
-    assert len(relations) == 1
-    assert relations[0].kind == "repeals_effect"
-    assert relations[0].target_instrument is not None
-    assert relations[0].target_instrument.instrument_id == "2020/1"
-    assert lifecycle_events == ()
-
-
 def test_finland_meta_repeal_relation_signal_is_authority_input() -> None:
     _source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
         target_statute="1990/1",
         canonical_ops=(),
         temporal_events=(),
-        findings=(),
         relation_signals=(
             EffectRelationSignal.meta_repeal(
                 source_statute="2021/2",
@@ -227,21 +163,21 @@ def test_finland_meta_repeal_relation_signal_is_authority_input() -> None:
     assert lifecycle_events == ()
 
 
-def test_finland_meta_repeal_unresolved_emits_nonexecuting_lifecycle() -> None:
-    finding = Finding(
-        kind="APPLY.META_REPEAL_EFFECT_UNRESOLVED",
-        role="obligation",
-        stage="process_muutoslaki",
-        source_statute="2021/2",
-        blocking=True,
-        detail={"route_reason": "citation_mismatch_skip"},
-    )
-
+def test_finland_meta_repeal_unresolved_signal_emits_nonexecuting_lifecycle() -> None:
     source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
         target_statute="1990/1",
         canonical_ops=(),
         temporal_events=(),
-        findings=(finding,),
+        relation_signals=(
+            EffectRelationSignal.meta_repeal(
+                source_statute="2021/2",
+                target_statute="",
+                route_reason="citation_mismatch_skip",
+                message="meta repeal unresolved",
+                source_finding="APPLY.META_REPEAL_EFFECT_UNRESOLVED",
+                resolved=False,
+            ),
+        ),
     )
 
     assert source_effects == ()
@@ -249,6 +185,7 @@ def test_finland_meta_repeal_unresolved_emits_nonexecuting_lifecycle() -> None:
     assert len(lifecycle_events) == 1
     assert lifecycle_events[0].kind == "unresolved_effect_target"
     assert lifecycle_events[0].executable is False
+    assert lifecycle_events[0].detail["source_finding"] == "APPLY.META_REPEAL_EFFECT_UNRESOLVED"
 
 
 def test_finland_commencement_expiry_override_without_effect_stays_unresolved() -> None:
@@ -256,7 +193,6 @@ def test_finland_commencement_expiry_override_without_effect_stays_unresolved() 
         target_statute="1990/1",
         canonical_ops=(),
         temporal_events=(),
-        findings=(),
         lifecycle_overrides=(
             EffectLifecycleOverride(
                 source_statute="2021/2",
@@ -289,7 +225,6 @@ def test_finland_commencement_expiry_override_matching_effect_is_executable() ->
         target_statute="1990/1",
         canonical_ops=(_op(),),
         temporal_events=(),
-        findings=(),
         lifecycle_overrides=(
             EffectLifecycleOverride(
                 source_statute="2021/2",
@@ -333,7 +268,6 @@ def test_finland_commencement_effective_override_projects_executable_lifecycle()
         target_statute="1990/1",
         canonical_ops=(op,),
         temporal_events=(),
-        findings=(),
         lifecycle_overrides=(
             EffectLifecycleOverride(
                 source_statute="2021/2",
@@ -376,7 +310,6 @@ def test_finland_repeal_override_projects_executable_lifecycle_when_effect_match
             ),
         ),
         temporal_events=(),
-        findings=(),
         lifecycle_overrides=(
             EffectLifecycleOverride(
                 source_statute="2021/2",
@@ -406,7 +339,6 @@ def test_finland_lifecycle_projection_rejects_serialized_override_meta() -> None
             target_statute="1990/1",
             canonical_ops=(),
             temporal_events=(),
-            findings=(),
             lifecycle_overrides=cast(Any, (
                 {
                     "source_statute": "2021/2",
