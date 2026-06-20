@@ -721,7 +721,14 @@ class CanonicalBundle:
         """Return direct temporal events plus lifecycle-derived projections."""
         events_by_id: dict[str, TemporalEvent] = {}
         for event in self.temporal_events + self.lifecycle_projected_temporal_events:
-            events_by_id.setdefault(event.event_id, event)
+            previous = events_by_id.get(event.event_id)
+            if previous is None:
+                events_by_id[event.event_id] = event
+            elif previous != event:
+                raise ValueError(
+                    "CanonicalBundle.executable_temporal_events conflicting "
+                    f"duplicate event_id: {event.event_id!r}"
+                )
         return tuple(events_by_id.values())
 
     def provision_lineage(

@@ -858,6 +858,7 @@ def _merge_temporal_events(
 ) -> tuple[TemporalEvent, ...]:
     """Merge temporal events without dropping pre-existing executable carriers."""
     merged = list(existing)
+    events_by_id = {event.event_id: event for event in existing}
 
     def _signature(event: TemporalEvent) -> tuple[object, ...]:
         if event.kind == "expire":
@@ -878,10 +879,19 @@ def _merge_temporal_events(
 
     seen = {_signature(event) for event in merged}
     for event in synthesized:
+        previous = events_by_id.get(event.event_id)
+        if previous is not None:
+            if previous != event:
+                raise ValueError(
+                    "Finland replay temporal merge conflicting duplicate "
+                    f"event_id: {event.event_id!r}"
+                )
+            continue
         signature = _signature(event)
         if signature in seen:
             continue
         merged.append(event)
+        events_by_id[event.event_id] = event
         seen.add(signature)
     return tuple(merged)
 

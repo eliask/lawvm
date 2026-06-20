@@ -57,6 +57,7 @@ from lawvm.finland.replay_products import _renumber_source_prefix_may_match_cach
 from lawvm.finland.replay_products import _classify_finland_lineage_bridge
 from lawvm.finland.replay_products import _select_pit_lineage_inputs
 from lawvm.finland.replay_products import _temporal_events_from_lo_ops
+from lawvm.finland.replay_products import _merge_temporal_events
 from lawvm.finland.replay_products import build_replay_products
 from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
 from lawvm.finland.replay_products import project_materialized_provisions_wrapper
@@ -4487,6 +4488,42 @@ def test_build_replay_products_merges_existing_temporal_events_with_synthesized_
 
     assert len(products.temporal_events) == 2
     assert products.materialized_state.ir.children[0].text == "Updated"
+
+
+def test_merge_temporal_events_rejects_conflicting_duplicate_event_ids() -> None:
+    existing = TemporalEvent(
+        event_id="temporal:1",
+        group_id="g:1",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-01-01",
+    )
+    identical = TemporalEvent(
+        event_id="temporal:1",
+        group_id="g:1",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-01-01",
+    )
+    same_signature = TemporalEvent(
+        event_id="temporal:1:alias",
+        group_id="g:1",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-01-01",
+    )
+    conflicting = TemporalEvent(
+        event_id="temporal:1",
+        group_id="g:1",
+        kind="expire",
+        scope=TemporalScope(target_statute="1999/1"),
+        expires="2021-01-01",
+    )
+
+    assert _merge_temporal_events((existing,), (identical,)) == (existing,)
+    assert _merge_temporal_events((existing,), (same_signature,)) == (existing,)
+    with pytest.raises(ValueError, match="conflicting duplicate event_id"):
+        _merge_temporal_events((existing,), (conflicting,))
 
 
 def test_retarget_root_node_preserves_existing_num_suffix_for_section() -> None:

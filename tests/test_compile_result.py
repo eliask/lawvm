@@ -558,6 +558,7 @@ def test_canonical_bundle_executable_temporal_events_dedupes_lifecycle_projectio
         source_provision=witness,
         effect=effect,
         effective="2020-06-01",
+        temporal_event=direct,
     )
     bundle = CanonicalBundle(
         temporal_events=(direct,),
@@ -566,6 +567,39 @@ def test_canonical_bundle_executable_temporal_events_dedupes_lifecycle_projectio
     )
 
     assert bundle.executable_temporal_events == (direct,)
+
+
+def test_canonical_bundle_rejects_conflicting_executable_temporal_event_ids() -> None:
+    direct = TemporalEvent(
+        event_id="life:2020/1:op-1:commence:temporal",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-06-01",
+        source=OperationSource(statute_id="2020/1", effective="2020-06-01"),
+    )
+    instrument = SourceInstrumentRef(instrument_id="2020/1", effective="2020-06-01")
+    witness = SourceProvisionRef(instrument=instrument, path=("2 §",))
+    effect = EffectRef(
+        effect_id="effect:2020/1:op-1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        source_provision=witness,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="life:2020/1:op-1:commence",
+        kind="commence_effect",
+        source_provision=witness,
+        effect=effect,
+        effective="2020-06-01",
+    )
+    bundle = CanonicalBundle(
+        temporal_events=(direct,),
+        source_effects=(effect,),
+        effect_lifecycle_events=(lifecycle,),
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate event_id"):
+        _ = bundle.executable_temporal_events
 
 
 def test_compiled_op_provenance_tags_freeze_and_validate_tag_sets() -> None:
