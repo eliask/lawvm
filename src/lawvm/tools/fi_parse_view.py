@@ -53,14 +53,12 @@ def _load_statute_body(statute_id: str) -> tuple[Any, Any]:
 
 def _build_forest(bundle: Any, unit: Any) -> Any:
     from lawvm.finland.legal_surface.source_syntax_graph import (
-        assemble_source_syntax_graph,
+        assemble_source_syntax_graph_for_unit,
     )
 
-    return assemble_source_syntax_graph(
+    return assemble_source_syntax_graph_for_unit(
         subject=bundle.subject,
-        source_units=(),
-        statute_id=unit.source_unit_id,
-        body=unit.raw_text,
+        unit=unit,
     )
 
 
