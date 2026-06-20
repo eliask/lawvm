@@ -47,6 +47,24 @@ def _normalized_source_ref_string(subject: str, value: object) -> str:
     return value.strip()
 
 
+def _validate_string_mapping_keys(subject: str, value: object) -> None:
+    if isinstance(value, Mapping):
+        for key, inner in value.items():
+            if not isinstance(key, str):
+                raise TypeError(f"{subject} keys must be strings")
+            _validate_string_mapping_keys(f"{subject}.{key}", inner)
+    elif isinstance(value, list | tuple | set | frozenset):
+        for inner in value:
+            _validate_string_mapping_keys(subject, inner)
+
+
+def _freeze_effect_detail(subject: str, detail: Mapping[str, Any]) -> Mapping[str, Any]:
+    if not isinstance(detail, Mapping):
+        raise TypeError(f"{subject} must be a mapping")
+    _validate_string_mapping_keys(subject, detail)
+    return freeze_mapping(detail)
+
+
 @dataclass(frozen=True, slots=True)
 class SourceInstrumentRef:
     """Stable identity for a source instrument that declares or modifies effects."""
@@ -233,7 +251,11 @@ class EffectRelation:
         if self.source_effect is not None and not isinstance(self.source_effect, EffectRef):
             raise ValueError("EffectRelation.source_effect must be an EffectRef when provided")
         object.__setattr__(self, "relation_id", relation_id)
-        object.__setattr__(self, "detail", freeze_mapping(self.detail))
+        object.__setattr__(
+            self,
+            "detail",
+            _freeze_effect_detail("EffectRelation.detail", self.detail),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -361,7 +383,11 @@ class EffectLifecycleEvent:
                 "executable expiry/repeal EffectLifecycleEvent requires "
                 "effective or expires date"
             )
-        object.__setattr__(self, "detail", freeze_mapping(self.detail))
+        object.__setattr__(
+            self,
+            "detail",
+            _freeze_effect_detail("EffectLifecycleEvent.detail", self.detail),
+        )
 
 
 def lower_lifecycle_event_to_temporal_event(

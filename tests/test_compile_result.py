@@ -288,6 +288,46 @@ def test_effect_lifecycle_carriers_reject_untyped_identity_fields() -> None:
         )
 
 
+def test_effect_lifecycle_detail_requires_string_keyed_mappings() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+
+    with pytest.raises(TypeError, match="EffectRelation.detail"):
+        EffectRelation(
+            relation_id="relation:bad-detail",
+            kind="extends_effect_expiry",
+            source_provision=witness,
+            target_effect=effect,
+            detail=cast(Any, (("reason", "not-a-mapping"),)),
+        )
+    with pytest.raises(TypeError, match="keys must be strings"):
+        EffectRelation(
+            relation_id="relation:bad-key",
+            kind="extends_effect_expiry",
+            source_provision=witness,
+            target_effect=effect,
+            detail=cast(Any, {1: "not-a-string-key"}),
+        )
+
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    with pytest.raises(TypeError, match="keys must be strings"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:bad-nested-key",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2021-12-31",
+            detail=cast(Any, {"rows": [{1: "not-a-string-key"}]}),
+        )
+
+
 def test_canonical_bundle_requires_source_effect_records() -> None:
     with pytest.raises(TypeError, match="source_effects"):
         CanonicalBundle(source_effects=cast(Any, ("not-an-effect",)))
