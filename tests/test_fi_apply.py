@@ -10828,6 +10828,73 @@ class TestApplyItemReplace:
         para5 = next(c for c in sub_e.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "5")
         assert "updated fifth item" in irnode_to_text(para5)
 
+    def test_replace_letter_item_reconcile_witnesses_positional_rebind(self):
+        """A letter→digit kohta reconcile assigns identity by ordinal position
+        (no intrinsic label match), so it must witness the positional rebind on
+        the production source-pathology ledger, not only logger.debug.
+        (EXIT_REAUDIT_2 V5)
+        """
+        sec = _sec(
+            "1",
+            _sub(
+                "1",
+                _para("1", "original first item"),
+                _para("2", "second item"),
+                _para("3", "third item"),
+                _para("4", "fourth item"),
+                _para("5", "original fifth item"),
+            ),
+        )
+        state = _make_state(_body(sec))
+        sec_path = (("section", "1"),)
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+
+        op_e = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="e")
+        amend_e = _sub("1", _para("e", "updated fifth item"))
+        muutos_e = IRNode(kind=IRNodeKind.SECTION, children=(amend_e,))
+        pathologies: list = []
+        _apply_item_replace(
+            state,
+            op_e,
+            sec_path,
+            sec,
+            subsecs,
+            amend_e,
+            muutos_e,
+            "1 § 1 mom e k",
+            source_pathologies_out=pathologies,
+        )
+        rebinds = [p for p in pathologies if p.code == "ITEM_TARGET_POSITIONAL_REBIND"]
+        assert len(rebinds) == 1, [p.code for p in pathologies]
+        detail = rebinds[0].detail
+        assert detail["source_item_label"] == "e"
+        assert detail["assigned_item_label"] == "5"
+        assert detail["ordinal"] == 5
+        assert detail["identity_basis"] == "ordinal_position"
+
+    def test_replace_item_with_explicit_label_match_emits_no_positional_rebind(self):
+        """A REPLACE whose target label matches a live item intrinsically must
+        NOT emit a positional-rebind witness. (EXIT_REAUDIT_2 V5)
+        """
+        state, sec_path, sec = self._make_sec_with_items()
+        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
+        amend_sub = _sub("1", _para("2", "updated second item"))
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "1 § 1 mom 2 k",
+            source_pathologies_out=pathologies,
+        )
+        assert "ITEM_TARGET_POSITIONAL_REBIND" not in [p.code for p in pathologies]
+
     def test_replace_letter_item_refuses_reconcile_when_labels_mix_letter_and_digit(self):
         # Conservative guard: if the live list is NOT uniformly digit-labelled
         # (a genuine letter kohta 'a' coexists), letter→ordinal would be a guess.

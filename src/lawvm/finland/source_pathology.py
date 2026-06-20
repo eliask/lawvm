@@ -175,6 +175,7 @@ __all__ = [
     "build_item_target_structure_absent_pathology",
     "build_item_target_slot_occupied_pathology",
     "build_item_target_anchor_absent_pathology",
+    "build_item_target_positional_rebind_pathology",
     "build_subsection_target_rebound_pathology",
     "build_subsection_target_absent_pathology",
     "build_temporary_section_rebase_pathology",
@@ -377,6 +378,48 @@ def build_item_target_anchor_absent_pathology(
             "live_label": live_label,
             "live_has_paragraphs": live_has_paragraphs,
             "amend_has_paragraphs": amend_has_paragraphs,
+        },
+    )
+
+
+def build_item_target_positional_rebind_pathology(
+    *,
+    source_statute: str,
+    target_section: str,
+    target_paragraph: str,
+    source_item_label: str,
+    assigned_item_label: str,
+    ordinal: int,
+    live_item_count: int = 0,
+) -> SourcePathology:
+    """Build a typed record for a letter→digit kohta rebind by ordinal position.
+
+    Some amendments author a kohta target with a *letter* scheme (``a``/``e``)
+    while the live consolidation numbers the same items with *digits*. Replay
+    resolves the letter to its ordinal digit slot when the live list is uniformly
+    digit-labelled. That is a positional-identity assignment (no intrinsic label
+    match), so it must be witnessed on a public surface rather than left to a
+    console ``logger.debug``. (LAWVM_PIPELINE_CONTRACT §1 no-silent-guess, §8
+    no-positional-identity.)
+    """
+    return SourcePathology.from_scope(
+        code="ITEM_TARGET_POSITIONAL_REBIND",
+        message=(
+            "Item-level target was rebound from a letter scheme to a live digit "
+            "slot by ordinal position because no intrinsic label match existed; "
+            "identity was assigned positionally rather than by label."
+        ),
+        source_statute=source_statute,
+        target_unit_kind="section",
+        target_label=f"{target_section} § {target_paragraph} mom {source_item_label} kohta",
+        detail={
+            "target_section": target_section,
+            "target_paragraph": target_paragraph,
+            "source_item_label": source_item_label,
+            "assigned_item_label": assigned_item_label,
+            "ordinal": ordinal,
+            "live_item_count": live_item_count,
+            "identity_basis": "ordinal_position",
         },
     )
 

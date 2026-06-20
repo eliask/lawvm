@@ -27,6 +27,7 @@ from lawvm.finland.helpers import _is_omission_ir, _norm_num_token, _previous_it
 from lawvm.finland.source_pathology import (
     build_destructive_shape_loss_risk_pathology,
     build_item_target_anchor_absent_pathology,
+    build_item_target_positional_rebind_pathology,
     build_item_target_structure_absent_pathology,
     build_item_target_slot_occupied_pathology,
     build_subsection_target_rebound_pathology,
@@ -970,6 +971,24 @@ def _apply_item_replace(
             reconciled_idx = _reconcile_letter_item_to_digit_index(item_norm, paras)
             if reconciled_idx is not None:
                 live_digit_label = normalized_label_key(paras[reconciled_idx].label)
+                source_letter_label = item_norm
+                # Identity was assigned by ordinal position (letter → ordinal
+                # digit slot), not by an intrinsic label match. Witness the
+                # positional guess on the production source-pathology ledger
+                # rather than only emitting a console logger.debug.
+                # (EXIT_REAUDIT_2 V5; LAWVM_PIPELINE_CONTRACT §1/§8.)
+                if source_pathologies_out is not None:
+                    source_pathologies_out.append(
+                        build_item_target_positional_rebind_pathology(
+                            source_statute=view.source_statute,
+                            target_section=view.target_section,
+                            target_paragraph=str(view.target_paragraph or ""),
+                            source_item_label=source_letter_label,
+                            assigned_item_label=live_digit_label,
+                            ordinal=ord(source_letter_label) - ord("a") + 1,
+                            live_item_count=len(paras),
+                        )
+                    )
                 para_idx = reconciled_idx
                 item_norm = live_digit_label
                 amend_para = _relabel_paragraph_ir(amend_para, live_digit_label)
