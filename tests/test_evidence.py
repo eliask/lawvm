@@ -6,7 +6,7 @@ import json
 import pytest
 import warnings
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
 from lawvm.core.source_witness import source_witness_digest_coverage
@@ -111,6 +111,9 @@ class RealCorpusEvidenceFixture:
     oracle_sections: dict[str, Any]
 
 
+EvidenceReplayMode = Literal["official_consolidation", "legal_pit"]
+
+
 @lru_cache(maxsize=None)
 def _real_corpus_evidence(statute_id: str) -> RealCorpusEvidenceFixture:
     master = pinned_replay(statute_id, mode="legal_pit", quiet=True)
@@ -126,7 +129,7 @@ def _real_corpus_evidence(statute_id: str) -> RealCorpusEvidenceFixture:
 @lru_cache(maxsize=None)
 def _real_corpus_section_bisect_rows(
     statute_id: str,
-    mode: str,
+    mode: EvidenceReplayMode,
     section_key: str,
     diagnosis: str,
     blame_source: str,
@@ -153,7 +156,7 @@ def _real_corpus_section_bisect_rows(
 
 def _real_corpus_section_bisect(
     statute_id: str,
-    mode: str,
+    mode: EvidenceReplayMode,
     section_key: str,
     diagnosis: str,
     blame_source: str,
