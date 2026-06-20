@@ -24,7 +24,7 @@ from lawvm.core.effect_intent import (
     Expiry,
 )
 from lawvm.core.semantic_types import MetaClauseKind
-from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER, parse_fi_day_month_year
+from lawvm.finland.fi_dates import parse_fi_day_month_year
 
 UNSUPPORTED_META_CLAUSE_RULE_ID = "PARSE.META_CLAUSE_UNSUPPORTED"
 
@@ -61,9 +61,6 @@ class UnsupportedMetaClause:
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
-
-_MONTH_MAP = FI_MONTH_PARTITIVE_TO_NUMBER
-
 
 def _parse_fi_date(day: str, month_name: str, year: str) -> Optional[dt.date]:
     return parse_fi_day_month_year(day, month_name, year)

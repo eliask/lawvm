@@ -40,9 +40,6 @@ _AFFECTED_HEAD_TITLE_DATE_RE = re.compile(
 _CITATION_RE = re.compile(r"\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)")
 _NOJALLA_RE = re.compile(r"\bnojalla\b", re.IGNORECASE)
 
-_FI_MONTH_GENITIVE_TO_NUMBER = FI_MONTH_PARTITIVE_TO_NUMBER
-
-
 @dataclass(frozen=True, slots=True)
 class AffectedStatuteHead:
     """Typed surface for the statute identity phrase before operative targets."""
@@ -158,7 +155,7 @@ def target_zone(text: str) -> str:
 def _parse_finnish_date(day_s: str | None, month_s: str | None, year_s: str | None) -> date | None:
     if not day_s or not month_s or not year_s:
         return None
-    month = _FI_MONTH_GENITIVE_TO_NUMBER.get(month_s.lower())
+    month = FI_MONTH_PARTITIVE_TO_NUMBER.get(month_s.lower())
     if month is None:
         return None
     try:

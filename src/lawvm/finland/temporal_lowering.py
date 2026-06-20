@@ -29,7 +29,7 @@ from lawvm.core.effect_intent import Commencement, EffectIntent
 from lawvm.core.phase_result import Finding
 from lawvm.core.temporal import ActivationRule, TemporalEvent
 from lawvm.core.semantic_types import MetaClauseKind
-from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER, parse_fi_day_month_year
+from lawvm.finland.fi_dates import parse_fi_day_month_year
 from lawvm.finland.johtolause.surface_model import SurfaceMetaClause
 
 
@@ -258,9 +258,6 @@ _COMMENCEMENT_DATE_PATTERN = re.compile(
     r"(\d{1,2})\s+päivän[aä]\s+([a-zäöå]+)\s+(\d{4})",
     re.IGNORECASE,
 )
-
-_MONTH_MAP = FI_MONTH_PARTITIVE_TO_NUMBER
-
 
 def _extract_date_from_text(text: str) -> str:
     """Extract ISO-8601 date from Finnish commencement text, or empty string."""
