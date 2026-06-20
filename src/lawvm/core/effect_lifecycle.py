@@ -208,6 +208,16 @@ class EffectLifecycleEvent:
             raise ValueError("resolved EffectLifecycleEvent requires effect")
         if self.executable and self.effect is None:
             raise ValueError("executable EffectLifecycleEvent requires effect")
+        if (
+            self.executable
+            and self.temporal_event is None
+            and self.kind in {"expire_effect", "change_effect_expiry", "repeal_effect"}
+            and not (self.expires or self.effective)
+        ):
+            raise ValueError(
+                "executable expiry/repeal EffectLifecycleEvent requires "
+                "effective or expires date"
+            )
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
 

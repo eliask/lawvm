@@ -245,6 +245,24 @@ def test_resolved_effect_lifecycle_event_requires_target_effect() -> None:
         )
 
 
+def test_executable_expiry_lifecycle_event_requires_resolved_date() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument)
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+
+    with pytest.raises(
+        ValueError,
+        match="executable expiry/repeal EffectLifecycleEvent requires effective or expires date",
+    ):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:1",
+            kind="repeal_effect",
+            source_provision=witness,
+            effect=effect,
+            executable=True,
+        )
+
+
 def test_pending_amendment_effect_unresolved_blocks_strict_mode() -> None:
     finding = Finding(
         kind="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
