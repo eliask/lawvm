@@ -781,7 +781,12 @@ class TestAstLintGate:
     """
 
     def test_no_new_violations(self) -> None:
-        violations = _scan_patterns(_SRC_ROOT).violations
+        scan = _scan_patterns(_SRC_ROOT)
+        assert scan.total_patterns >= 300, (
+            f"Only {scan.total_patterns} module-scope patterns found — "
+            "scan may be broken or codebase shrank unexpectedly."
+        )
+        violations = scan.violations
 
         allowlisted: dict[str, list[tuple[int, str, str, list[str]]]] = {}
         new_violations: dict[str, list[tuple[int, str, str, list[str]]]] = {}
@@ -828,14 +833,6 @@ class TestAstLintGate:
                 f"_KNOWN_UNFIXED entry {rel!r} does not correspond to a real file. "
                 "Remove it from the allowlist."
             )
-
-    def test_patterns_discovered_count(self) -> None:
-        """Sanity: at least 300 module-scope patterns should be found."""
-        total = _scan_patterns(_SRC_ROOT).total_patterns
-        assert total >= 300, (
-            f"Only {total} module-scope patterns found — "
-            "scan may be broken or codebase shrank unexpectedly."
-        )
 
 
 # ---------------------------------------------------------------------------
