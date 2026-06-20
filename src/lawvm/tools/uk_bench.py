@@ -51,6 +51,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
+    from lawvm.core.bench_contract import BenchUnitResult
     from lawvm.core.ir import IRStatute
 
 import Levenshtein
@@ -1097,6 +1098,74 @@ class _BenchResult:
     duration_s: float = 0.0
     process_maxrss_kb: int = 0
     phase_timings: dict[str, float] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Unified cross-jurisdiction bench contract — UK adapter
+#
+# Re-house the existing UK EID-Jaccard and text-Levenshtein numbers into a
+# contract BenchUnitResult without changing them. See
+# lawvm.core.bench_comparator_registry and notes/UNIFIED_BENCH_CONTRACT.md.
+# ---------------------------------------------------------------------------
+
+
+def uk_bench_unit_result(result: "_BenchResult", *, has_commencement: bool = False) -> "BenchUnitResult":
+    """Map a UK ``_BenchResult`` onto a contract ``BenchUnitResult``.
+
+    - ``structural_err = 1 - EID Jaccard`` (the commencement-lensed score when a
+      commencement run is active and available, else the plain EID score —
+      exactly the existing primary-score selection).
+    - ``text_err = 1 - text_score`` when a text score was computed, else
+      ``None`` (axis not attempted).
+    - ``residue_buckets`` count the EIDs not in the intersection
+      (``eid_only_in_enacted`` / ``eid_only_in_oracle``), which is non-zero iff
+      the Jaccard score is below 1 — so the structural error reconciles.
+    """
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
+
+    status = result.status
+    if status == "OK":
+        score = _bench_primary_score(result, has_commencement=has_commencement)
+        if score < 0:
+            # Commencement lane not attempted and no base score — non-scored.
+            return BenchUnitResult(unit_id=result.statute_id, status=BenchStatus.NO_TRUTH)
+        structural_err = 1.0 - score
+        only_in_enacted = max(0, result.n_enacted_eids - result.n_common)
+        only_in_oracle = max(0, result.n_oracle_eids - result.n_common)
+        residue: dict[str, int] = {}
+        if only_in_enacted:
+            residue["eid_only_in_enacted"] = only_in_enacted
+        if only_in_oracle:
+            residue["eid_only_in_oracle"] = only_in_oracle
+        if structural_err > 0 and not residue:
+            # Score < 1 with an empty symmetric difference would be a contract
+            # violation; record the residual fraction explicitly rather than
+            # leaving the error silently unexplained.
+            residue["eid_score_residual"] = 1
+        text_err = None if result.text_score < 0 else 1.0 - result.text_score
+        return BenchUnitResult(
+            unit_id=result.statute_id,
+            status=BenchStatus.SCORED,
+            structural_err=structural_err,
+            text_err=text_err,
+            residue_buckets=residue,
+        )
+    if status in {"NO_ENACTED", "NO_ORACLE"}:
+        return BenchUnitResult(unit_id=result.statute_id, status=BenchStatus.NO_TRUTH)
+    # "ERR" or any other status — a genuine crash.
+    witnesses = (result.error,) if result.error else ()
+    return BenchUnitResult(
+        unit_id=result.statute_id, status=BenchStatus.CRASH, witnesses=witnesses
+    )
+
+
+def _register_uk_bench_comparator() -> None:
+    from lawvm.core.bench_comparator_registry import register_bench_comparator
+
+    register_bench_comparator("uk", uk_bench_unit_result)
+
+
+_register_uk_bench_comparator()
 
 
 _REPORT_EVIDENCE_TUPLE_FIELDS = (
