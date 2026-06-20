@@ -2345,6 +2345,7 @@ def test_1996_579_1998_518_new_chapter_does_not_reanimate_repealed_section_32() 
     assert "Korvausrahaston jäsenyys" in irnode_to_text(chapter_6_section_32)
 
 
+@pytest.mark.slow
 def test_1992_1243_2016_118_chapter_8a_repealed_by_2024_853() -> None:
     """Real corpus anchor for single unnumbered chapter-heading migration."""
     from lawvm.provision_state import resolve_provision_state
