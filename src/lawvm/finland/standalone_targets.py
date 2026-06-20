@@ -25,6 +25,16 @@ class StandaloneSectionTarget:
     chapter: str | None
     label: str
 
+    def __post_init__(self) -> None:
+        raw_label = str(self.label).strip()
+        if not raw_label:
+            raise ValueError("StandaloneSectionTarget.label must be non-empty")
+        part = _norm_num_token(str(self.part)) if self.part not in (None, "") else None
+        chapter = _norm_num_token(str(self.chapter)) if self.chapter not in (None, "") else None
+        object.__setattr__(self, "part", part)
+        object.__setattr__(self, "chapter", chapter)
+        object.__setattr__(self, "label", _norm_num_token(raw_label))
+
 
 StandaloneSectionTargetInput: TypeAlias = StandaloneSectionTarget
 StandaloneSectionTargetsInput: TypeAlias = Iterable[StandaloneSectionTarget] | None
@@ -36,16 +46,7 @@ def normalize_standalone_section_target(
     """Normalize a typed standalone-section target at the apply boundary."""
     if not isinstance(raw_target, StandaloneSectionTarget):
         raise TypeError("standalone_section_targets must contain StandaloneSectionTarget rows")
-    raw_part = raw_target.part
-    raw_chapter = raw_target.chapter
-    raw_label = raw_target.label
-    if raw_label is None:
-        return None
-    return StandaloneSectionTarget(
-        part=_norm_num_token(str(raw_part)) if raw_part not in (None, "") else None,
-        chapter=_norm_num_token(str(raw_chapter)) if raw_chapter not in (None, "") else None,
-        label=_norm_num_token(str(raw_label)),
-    )
+    return raw_target
 
 
 def normalize_standalone_section_targets(

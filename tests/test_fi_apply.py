@@ -203,6 +203,14 @@ def test_standalone_section_targets_reject_legacy_tuple_shape() -> None:
         normalize_standalone_section_target(cast(Any, (None, "6", "23")))
 
 
+def test_standalone_section_target_is_normalized_typed_record() -> None:
+    target = StandaloneSectionTarget(part="  IV ", chapter=" 6 ", label=" 23 § ")
+
+    assert target == StandaloneSectionTarget(part="iv", chapter="6", label="23")
+    with pytest.raises(ValueError, match="label must be non-empty"):
+        StandaloneSectionTarget(part=None, chapter="6", label="")
+
+
 def test_replay_state_section_path_cache_is_state_local() -> None:
     state = ReplayState(
         ir=_body(
