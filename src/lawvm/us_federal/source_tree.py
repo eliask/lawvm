@@ -956,7 +956,7 @@ def split_statutory_subsections(
             # body text that merely contains parenthesised cross-references.
             m = _MARKER_RE.match(rest)
 
-        if para.indent_depth < 0 or not run_tokens:
+        if not run_tokens:
             # A flush, unindented block paragraph (e.g. ``Paragraph (4) shall not
             # be construed...``) is a structural sibling under the current open
             # unit, not a continuation of its deepest child. Closing to the parent

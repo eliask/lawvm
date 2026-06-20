@@ -12,6 +12,8 @@ import pytest
 
 from lawvm.core.ir import LegalAddress
 from lawvm.us_federal.source_tree import (
+    UscSection,
+    UscStatutoryParagraph,
     iter_section_notes,
     parse_usc_title_document,
     split_statutory_subsections,
@@ -345,6 +347,78 @@ def test_split_runin_nested_subparagraph_clause_ladder() -> None:
         ("subparagraph", "A"),
         ("clause", "ii"),
     ) in segs
+
+
+def test_flush_hang_paragraphs_with_leading_markers_are_structural_nodes() -> None:
+    """The OLRC uses negative-indent "flush/hang" CSS classes for paragraphs that are
+    structurally children of a subsection (e.g., Title 28 §124 divisions (1)-(7)).
+    The marker itself, not the visual indent, determines the structural level.
+    """
+    section = UscSection(
+        title=28,
+        section="124",
+        heading="Texas judicial districts",
+        address=LegalAddress(
+            path=(
+                ("title", "28"),
+                ("section", "124"),
+            )
+        ),
+        statutory_text=(
+            "(a) The Western District comprises seven divisions. "
+            "(1) The Austin Division comprises A. (2) The Pecos Division comprises B. "
+            "Court for the Pecos Division shall be held at Pecos. "
+            "(b) The Eastern District."
+        ),
+        source_credit_raw="",
+        repealed=False,
+        paragraphs=(
+            UscStatutoryParagraph(
+                indent_depth=0,
+                css_class="statutory-body",
+                text="(a) The Western District comprises seven divisions.",
+            ),
+            # These mimic the OLRC flush2/hang4 class: visually flush, but markers
+            # make them paragraph-level structural children of (a).
+            UscStatutoryParagraph(
+                indent_depth=-1,
+                css_class="statutory-body-flush2_hang4",
+                text="(1) The Austin Division comprises A.",
+            ),
+            UscStatutoryParagraph(
+                indent_depth=-1,
+                css_class="statutory-body-flush2_hang4",
+                text="(2) The Pecos Division comprises B.",
+            ),
+            UscStatutoryParagraph(
+                indent_depth=-1,
+                css_class="statutory-body-flush2_hang4",
+                text="Court for the Pecos Division shall be held at Pecos.",
+            ),
+            UscStatutoryParagraph(
+                indent_depth=0,
+                css_class="statutory-body",
+                text="(b) The Eastern District.",
+            ),
+        ),
+        notes=(),
+    )
+    nodes, findings = split_statutory_subsections(section)
+    by_segs = {n.address.path[2:]: n for n in nodes}
+
+    # Flush/hang markers are parsed as paragraph nodes, not swallowed as continuation.
+    assert (("subsection", "a"), ("paragraph", "1")) in by_segs
+    assert (("subsection", "a"), ("paragraph", "2")) in by_segs
+    para1 = by_segs[(("subsection", "a"), ("paragraph", "1"))]
+    assert para1.text.startswith("(1) The Austin Division")
+    para2 = by_segs[(("subsection", "a"), ("paragraph", "2"))]
+    assert para2.text.startswith("(2) The Pecos Division")
+
+    # The continuation line attaches to the open paragraph node.
+    assert "Court for the Pecos Division shall be held at Pecos" in para2.text
+
+    # No ambiguous findings for this clean shape.
+    assert not findings
 
 
 def test_locate_subsection_text_finds_runin_paragraph() -> None:
