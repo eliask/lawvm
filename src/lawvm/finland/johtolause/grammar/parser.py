@@ -2278,21 +2278,21 @@ def _parse_verb_group(
         if _sep(scan) is None:
             # No conjunction/comma separator. The old ``_target_list``, when
             # ``_sep`` returns None but a sentinel span was absorbed (the cursor
-            # advanced), still tries another target at the new position — so two
-            # CONTAINER targets separated only by a provenance / citation span
-            # (``liitteenä [CITE] liitteen …``) both become nodes. Reproduce that
-            # for the container family: if sentinels advanced us and another
-            # container target follows, fold it in and continue.
+            # advanced), still tries another target at the new position — so
+            # targets separated only by a provenance / citation span stay in the
+            # list. Reproduce that for container continuations: if sentinels
+            # advanced us and another container or section target follows, fold
+            # it in and continue.
             if kind == "container" and scan.pos != saved:
                 try:
                     more, more_kind = _recognize_one_target(scan, chapter, part)
                 except OutOfScope:
                     scan.goto(saved)
                 else:
-                    if more_kind == "container":
+                    if more_kind in {"container", "section"}:
                         nodes.extend(more)
                         last_batch = list(more)
-                        chapter = _extract_chapter(more, chapter, verb)
+                        chapter = _chapter_after_batch(scan, saved, more, chapter, verb)
                         part = _extract_part(more, part)
                         continue
                     scan.goto(saved)

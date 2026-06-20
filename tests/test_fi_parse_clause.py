@@ -303,6 +303,30 @@ def test_parse_clause_historical_passive_preverbal_replace_keeps_section_list() 
     )
 
 
+def test_parse_clause_container_provenance_bridge_keeps_first_section_target() -> None:
+    """A provenance span after a chapter target must not swallow the first
+    following section target.
+
+    Real witness: 1998/1143, where ``3 luku siihen myöhemmin tehtyine
+    muutoksineen, 27, 28 ja 31 §`` changes chapters 2/3 and also separately
+    changes sections 27/28/31. Dropping 27 lets the body wrapper smuggle it into
+    chapter 3 instead of leaving it as an explicit section target.
+    """
+
+    result = parse_clause(
+        "muutetaan 2 luku, 3 luku siihen myöhemmin tehtyine muutoksineen, "
+        "27, 28 ja 31 §"
+    )
+
+    assert [op.code() for op in result.parsed_ops] == [
+        "M L 2",
+        "M L 3",
+        "M P L:3 27",
+        "M P L:3 28",
+        "M P L:3 31",
+    ]
+
+
 def test_parse_clause_surface_clause_populated():
     """surface_clause must be a non-None object (Phase 3 SurfaceClause)."""
     from lawvm.finland.johtolause.surface_model import SurfaceClause
