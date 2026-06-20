@@ -229,34 +229,39 @@ def pick_latest(versions: list[ProvisionVersion]) -> Optional[ProvisionVersion]:
         return versions[0]
 
     same_source_late_placeholder_ties: set[tuple[str, str, str]] = set()
-    grouped: dict[tuple[str, str, str], list[tuple[int, ProvisionVersion]]] = {}
+    indexed: list[tuple[int, ProvisionVersion, bool, tuple[str, str, str]]] = []
+    max_placeholder_index_by_key: dict[tuple[str, str, str], int] = {}
+    min_substantive_index_by_key: dict[tuple[str, str, str], int] = {}
     for idx, version in enumerate(versions):
         source_statute = version.source.statute_id if version.source is not None else ""
         key = (version.effective, version.enacted, source_statute)
-        grouped.setdefault(key, []).append((idx, version))
-    for key, group in grouped.items():
-        placeholder_indexes = [idx for idx, version in group if content_is_repeal_placeholder(version.content)]
-        substantive_indexes = [idx for idx, version in group if not content_is_repeal_placeholder(version.content)]
-        if placeholder_indexes and substantive_indexes and max(placeholder_indexes) > min(substantive_indexes):
+        is_placeholder = content_is_repeal_placeholder(version.content)
+        indexed.append((idx, version, is_placeholder, key))
+        if is_placeholder:
+            current = max_placeholder_index_by_key.get(key)
+            if current is None or idx > current:
+                max_placeholder_index_by_key[key] = idx
+        else:
+            current = min_substantive_index_by_key.get(key)
+            if current is None or idx < current:
+                min_substantive_index_by_key[key] = idx
+    for key, max_placeholder_index in max_placeholder_index_by_key.items():
+        min_substantive_index = min_substantive_index_by_key.get(key)
+        if min_substantive_index is not None and max_placeholder_index > min_substantive_index:
             same_source_late_placeholder_ties.add(key)
 
     return max(
-        enumerate(versions),
-        key=lambda iv: (
-            iv[1].effective,
-            iv[1].enacted,
+        indexed,
+        key=lambda item: (
+            item[1].effective,
+            item[1].enacted,
             2
             if (
-                content_is_repeal_placeholder(iv[1].content)
-                and (
-                    iv[1].effective,
-                    iv[1].enacted,
-                    iv[1].source.statute_id if iv[1].source is not None else "",
-                )
-                in same_source_late_placeholder_ties
+                item[2]
+                and item[3] in same_source_late_placeholder_ties
             )
-            else (0 if content_is_repeal_placeholder(iv[1].content) else 1),
-            iv[0],
+            else (0 if item[2] else 1),
+            item[0],
         ),
     )[1]
 
