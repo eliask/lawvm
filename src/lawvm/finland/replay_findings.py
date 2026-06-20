@@ -394,6 +394,49 @@ def cited_version_snapshot_drop_finding(
     )
 
 
+def xml_ingest_observation_finding(
+    *,
+    source_statute: str,
+    obs_dict: Dict[str, object],
+) -> Optional[Finding]:
+    """Build a governed Finding for one witnessed XML->IR ingest event.
+
+    The base statute's XML->IR ingest can silently drop an unknown childless
+    source element, assign a positional (non-intrinsic) label, hit an unmapped
+    tag, or re-parent/merge tree shape on a structural-repair heuristic. The
+    production parse (``StatuteContext.from_xml``) witnesses these through an
+    ``_IngestSink`` and folds them into ``ingest_metadata`` -- but that channel
+    is only read by tests, so a dropped/guessed/repaired source child reached no
+    certificate or findings ledger. Each witnessed ``IngestObservation`` dict
+    (envelope ``kind``/``family``/``phase`` + witness detail) is projected here
+    into the governed SCAN.XML_INGEST_* observation finding so the ingest-boundary
+    event reaches the same production findings ledger every other base-statute
+    witness flows through. This is witness threading only: the set of
+    dropped/guessed/repaired children is unchanged.
+    """
+    obs_kind = str(obs_dict.get("kind", "")).strip()
+    if not obs_kind:
+        return None
+    spec = get_finding_spec(obs_kind)
+    if spec is None or spec.role != "observation":
+        return None
+    detail: dict[str, Any] = {
+        "message": f"XML->IR ingest observation: {obs_kind}",
+    }
+    for key, value in obs_dict.items():
+        if str(key) == "kind":
+            continue
+        detail[str(key)] = value
+    return Finding(
+        kind=obs_kind,
+        role="observation",
+        stage="xml_ingest",
+        blocking=False,
+        source_statute=source_statute,
+        detail=detail,
+    )
+
+
 def materialized_provisions_wrapper_projection_finding(
     *,
     source_statute: str,
