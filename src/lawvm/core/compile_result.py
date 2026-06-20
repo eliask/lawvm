@@ -666,23 +666,23 @@ class CanonicalBundle:
 
     @property
     def temporal_event_kinds(self) -> tuple[str, ...]:
-        """Return the distinct temporal-event kinds carried by this bundle."""
-        return distinct_event_kinds(self.temporal_events)
+        """Return the distinct executable temporal-event kinds for this bundle."""
+        return distinct_event_kinds(self.executable_temporal_events)
 
     @property
     def temporal_events_with_activation_rules(self) -> int:
-        """Return the number of temporal events carrying an embedded activation rule."""
-        return count_events_with_activation_rules(self.temporal_events)
+        """Return the number of executable temporal events carrying an activation rule."""
+        return count_events_with_activation_rules(self.executable_temporal_events)
 
     @property
     def temporal_events_with_source(self) -> int:
-        """Return the number of temporal events carrying provenance source data."""
-        return count_events_with_source(self.temporal_events)
+        """Return the number of executable temporal events carrying source data."""
+        return count_events_with_source(self.executable_temporal_events)
 
     @property
     def temporal_event_activation_rule_kinds(self) -> tuple[str, ...]:
-        """Return the distinct activation-rule kinds carried by this bundle."""
-        return distinct_activation_rule_kinds(self.temporal_events)
+        """Return executable temporal activation-rule kinds for this bundle."""
+        return distinct_activation_rule_kinds(self.executable_temporal_events)
 
     @property
     def lifecycle_projected_temporal_events(self) -> tuple[TemporalEvent, ...]:

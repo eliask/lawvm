@@ -595,6 +595,33 @@ class TestCanonicalBundleTemporalSummaries:
 
         assert bundle.temporal_events_with_source == 1
 
+    def test_temporal_summaries_include_lifecycle_projected_events(self) -> None:
+        instrument = SourceInstrumentRef(instrument_id="2020/1")
+        witness = SourceProvisionRef(
+            instrument=instrument,
+            path=("2 §",),
+            text_excerpt="Tulee voimaan 1.6.2020.",
+        )
+        lifecycle = EffectLifecycleEvent(
+            lifecycle_event_id="life:2020/1:commence",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=EffectRef(
+                effect_id="effect:2020/1:op-1",
+                source_instrument=instrument,
+                target_statute="1999/1",
+                target_address=LegalAddress(path=(("section", "1"),)),
+                source_provision=witness,
+            ),
+            effective="2020-06-01",
+        )
+        bundle = CanonicalBundle(effect_lifecycle_events=(lifecycle,))
+
+        assert bundle.temporal_event_kinds == ("commence",)
+        assert bundle.temporal_events_with_activation_rules == 1
+        assert bundle.temporal_events_with_source == 1
+        assert bundle.temporal_event_activation_rule_kinds == ("fixed_date",)
+
 
 class TestCompileResultTargetScopeNormalization:
     def test_normalize_target_unit_kind_prefers_neutral_vocabulary(self) -> None:
