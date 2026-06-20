@@ -7,9 +7,16 @@ from lxml import etree as ET
 from typing import Any, Callable, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
-from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _addr_leaf_label
+from lawvm.core.semantic_types import IRNodeKind
+from lawvm.uk_legislation.addressing import (
+    _addr_container,
+    _addr_field,
+    _addr_leaf_kind,
+    _addr_leaf_label,
+)
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.effect_payload_rejections import (
+    reject_body_section_replace_with_unmatched_schedule_payload,
     reject_broad_schedule_flat_replace_payload,
     reject_non_substantive_structural_payload,
 )
@@ -34,6 +41,7 @@ from lawvm.uk_legislation.source_payload_helpers import (
     _prepend_inserted_section_heading_carrier,
 )
 from lawvm.uk_legislation.uk_grafter import (
+    _LEG_NS,
     _clean_num,
     _parse_chapter,
     _parse_p1group,
@@ -44,6 +52,8 @@ from lawvm.uk_legislation.uk_grafter import (
     _parse_pblock,
     _parse_schedule_single,
     _parse_section,
+    _slugify,
+    _text_content,
 )
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag
 
@@ -82,6 +92,167 @@ def _uk_core_kind_alias_value(kind: str) -> str:
     if kind_value == "point":
         return "item"
     return kind_value
+
+
+_UK_EFFECT_INSERTED_SCHEDULE_P1GROUP_CROSSHEADING_WRAPPER_RULE_ID = (
+    "uk_effect_inserted_schedule_p1group_crossheading_wrapper_lowered"
+)
+
+
+def _find_schedule_p1group_wrapper_payload_element(
+    extracted_el: Optional[ET._Element],
+    payload_match_target: LegalAddress,
+) -> Optional[ET._Element]:
+    """Return a P1group wrapper whose inner P1 matches a schedule paragraph target.
+
+    UK affecting XML sometimes wraps inserted schedule paragraphs in a
+    ``P1group/Title`` that supplies the intended crossheading (e.g. ``The
+    Harbours Act 1964 (c. 40)``).  The matching inner ``P1`` supplies the
+    paragraph number.  When present, the whole ``P1group`` should be lowered as
+    the payload so the crossheading wrapper is preserved.
+    """
+    if extracted_el is None:
+        return None
+    if (
+        _addr_container(payload_match_target) != "schedule"
+        or _addr_leaf_kind(payload_match_target) != "paragraph"
+    ):
+        return None
+    target_label = _addr_leaf_label(payload_match_target) or ""
+    if not target_label:
+        return None
+    target_clean = _clean_num(target_label)
+    for am in extracted_el.iter():
+        if _tag(am) not in ("BlockAmendment", "InlineAmendment"):
+            continue
+        for child in list(am):
+            if _tag(child) != "P1group":
+                continue
+            inner_p1s = [c for c in child if _tag(c) == "P1"]
+            if not inner_p1s:
+                continue
+            if any(
+                _clean_num(_direct_structural_num(p1)) == target_clean
+                for p1 in inner_p1s
+            ):
+                return _with_trailing_subordinate_siblings(child, am)
+    return None
+
+
+def _is_foreign_physical_source_id(identity: str) -> bool:
+    """Return True for legislation.gov.uk physical ids like ``p02828``."""
+    if not identity or identity[0] != "p" or len(identity) < 4:
+        return False
+    return identity[1:4].isdigit()
+
+
+def _maybe_lower_inserted_schedule_p1group_crossheading_wrapper(
+    *,
+    content_ir: Optional[dict[str, Any]],
+    actual_el: Optional[ET._Element],
+    target: LegalAddress,
+    effect: UKEffectRecord,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> Optional[dict[str, Any]]:
+    """Convert an inserted schedule P1group wrapper into a crossheading Pblock.
+
+    UK affecting XML sometimes wraps inserted schedule paragraphs in a
+    ``P1group`` whose ``Title`` supplies the intended crossheading.  The oracle
+    materialises this as a ``<Pblock id=\"...crossheading-...\">`` containing
+    the inserted paragraphs.  Lowering converts the ``P1group`` to a
+    ``CROSSHEADING`` node, assigns a schedule-scoped crossheading EID, and gives
+    each child paragraph a flat schedule EID.
+    """
+    if content_ir is None or actual_el is None:
+        return content_ir
+    if _tag(actual_el) != "P1group":
+        return content_ir
+    if _addr_container(target) != "schedule" or _addr_leaf_kind(target) != "paragraph":
+        return content_ir
+    schedule_label = _addr_field(target, "schedule")
+    if not schedule_label:
+        return content_ir
+    schedule_root = f"schedule-{_clean_num(schedule_label)}"
+    title_el = actual_el.find(f"./{{{_LEG_NS}}}Title")
+    heading_text = _text_content(title_el) if title_el is not None else ""
+    if not heading_text:
+        return content_ir
+    # The current-oracle crossheading slug appears to strip hyphens before
+    # slugifying compound words (e.g. "Levelling-Up" -> "levellingup"), so
+    # we remove ASCII hyphens here to stay commensurable.
+    heading_slug = _slugify(heading_text.replace("-", ""))
+    if not heading_slug:
+        return content_ir
+    wrapper_eid = f"{schedule_root}-crossheading-{heading_slug}"
+
+    result = dict(content_ir)
+    result["kind"] = IRNodeKind.CROSSHEADING.value
+    result["attrs"] = dict(result.get("attrs") or {})
+    result["attrs"]["eId"] = wrapper_eid
+    result["attrs"].pop("id", None)
+    result["attrs"]["source_tag"] = "P1group"
+    result["attrs"]["source_rule_id"] = (
+        _UK_EFFECT_INSERTED_SCHEDULE_P1GROUP_CROSSHEADING_WRAPPER_RULE_ID
+    )
+
+    child_eids: list[str] = []
+    children = list(result.get("children") or [])
+    for child in children:
+        child_kind = str(child.get("kind") or "").lower()
+        child_label = str(child.get("label") or "").strip()
+        clean_label = _clean_num(child_label) if child_label else ""
+        if not clean_label:
+            continue
+        if child_kind == "paragraph":
+            child_eid = f"{schedule_root}-paragraph-{clean_label}"
+        elif child_kind in ("subparagraph", "item", "point", "p2", "p3", "p4"):
+            child_eid = f"{schedule_root}-{child_kind}-{clean_label}"
+        else:
+            continue
+        child["attrs"] = dict(child.get("attrs") or {})
+        child["attrs"]["eId"] = child_eid
+        child["attrs"].pop("id", None)
+        child_eids.append(child_eid)
+
+    def _scrub_foreign_ids(node: dict[str, Any]) -> None:
+        attrs = node.get("attrs")
+        if isinstance(attrs, dict):
+            identity = str(attrs.get("eId") or attrs.get("id") or "")
+            if _is_foreign_physical_source_id(identity):
+                attrs.pop("eId", None)
+                attrs.pop("id", None)
+        for c in node.get("children") or []:
+            _scrub_foreign_ids(c)
+
+    _scrub_foreign_ids(result)
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_EFFECT_INSERTED_SCHEDULE_P1GROUP_CROSSHEADING_WRAPPER_RULE_ID,
+        family="payload_normalization",
+        reason_code="inserted_schedule_paragraph_p1group_wrapper_lowered_to_crossheading",
+        reason=(
+            "UK inserted schedule paragraph payload is wrapped in a P1group whose "
+            "Title supplies the intended crossheading; lowering converts the "
+            "P1group to a CROSSHEADING Pblock and assigns flat schedule EIDs to "
+            "the wrapper and its paragraph children."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "schedule_root": schedule_root,
+            "wrapper_eid": wrapper_eid,
+            "heading_text_preview": heading_text[:200],
+            "child_eids": child_eids,
+        },
+    )
+    return result
 
 
 def lower_flat_p1para_schedule_paragraph_insert_payload(
@@ -232,6 +403,11 @@ def extract_uk_structural_payload_ir(
     if actual_el is None and action == "insert" and _addr_container(target) == "schedule" and len(target.path) > 1:
         schedule_root_target = LegalAddress(path=target.path[:1], special=None)
         actual_el = _select_whole_schedule_element(extracted_el, schedule_root_target)
+    if content_ir is None and actual_el is None and action == "insert":
+        actual_el = _find_schedule_p1group_wrapper_payload_element(
+            extracted_el=extracted_el,
+            payload_match_target=payload_match_target,
+        )
     if content_ir is None and actual_el is None:
         actual_el = _find_matching_structural_payload_element(
             extracted_el=extracted_el,
@@ -261,6 +437,16 @@ def extract_uk_structural_payload_ir(
                 target=target,
                 content_ir=content_ir,
                 actual_el=actual_el,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                lowering_rejections_out=lowering_rejections_out,
+            )
+            content_ir = _maybe_lower_inserted_schedule_p1group_crossheading_wrapper(
+                content_ir=content_ir,
+                actual_el=actual_el,
+                target=target,
+                effect=effect,
+                target_ref=target_ref,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
                 lowering_rejections_out=lowering_rejections_out,
@@ -400,6 +586,18 @@ def prepare_uk_operation_payload_node(
     ):
         return UKPayloadNodePreparation(payload_node=None, skip_effect=True)
     if reject_broad_schedule_flat_replace_payload(
+        effect=effect,
+        curr_action=curr_action,
+        t_str=target_ref,
+        target=target,
+        payload_node_mut=payload_node_mut,
+        actual_el=actual_el,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    ):
+        return UKPayloadNodePreparation(payload_node=None, skip_effect=True)
+    if reject_body_section_replace_with_unmatched_schedule_payload(
         effect=effect,
         curr_action=curr_action,
         t_str=target_ref,

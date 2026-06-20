@@ -193,12 +193,19 @@ def _apply_uk_effect_type_date_qualifier(
     return base_type
 
 
+UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_schedule_words_before_table_substitution_lowered"
+)
+
+
 def uk_nonstructural_replay_candidate_family_for_effect_type(effect_type: str) -> str:
     """Return the nonstructural replay family implied by an effects-feed type."""
     effect_type = " ".join(str(effect_type or "").strip().lower().split())
-    if effect_type.startswith("substituted for"):
+    if effect_type.startswith("substituted"):
         if effect_type in {"substituted for word", "substituted for words"}:
             return ""
+        if "for the words before the table substitute" in effect_type:
+            return "substituted_schedule_words_before_table"
         return "substituted_for_series"
     if effect_type.startswith("revoked"):
         return "revoked_repeal"

@@ -9,7 +9,10 @@ from typing import Any, Optional
 
 from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import StructuralAction
-from lawvm.uk_legislation.addressing import _uk_canonicalize_eid_letter_case
+from lawvm.uk_legislation.addressing import (
+    _addr_leaf_label,
+    _uk_canonicalize_eid_letter_case,
+)
 from lawvm.uk_legislation.effects import UKEffectRecord, _COMMENCEMENT_EFFECT_TYPES
 from lawvm.uk_legislation.effect_lowering_tail import (
     append_no_targets_rejection,
@@ -83,14 +86,13 @@ from lawvm.uk_legislation.substitution_metadata import (
     UKSourceLabelChangingSubstitution,
     _source_replaced_sibling_count_from_substitution_text,
 )
-from lawvm.uk_legislation.target_parser import _split_metadata_provisions
+from lawvm.uk_legislation.target_parser import _parse_affected_target, _split_metadata_provisions
 from lawvm.uk_legislation.witness_builders import (
     _uk_effect_witness,
     _uk_extraction_witness,
 )
 from lawvm.uk_legislation.xml_helpers import _text_content
 from lawvm.uk_legislation.effect_target_prelude import canonicalize_uk_address
-from lawvm.uk_legislation.target_parser import _parse_affected_target
 from lawvm.uk_legislation.table_sources import (
     _uk_table_driven_fee_target_refinements,
     address_to_citation,
@@ -109,6 +111,41 @@ class _EffectTargetPrelude:
     replacement_leaf_override: Optional[str]
     replacement_leaf_kind: Optional[str]
     label_changing_substitutions: tuple[UKSourceLabelChangingSubstitution, ...]
+
+
+def _trailing_repeal_collides_with_replacement(
+    trailing_repeal_refs: list[str],
+    replacement_leaf_override: Optional[str],
+    label_changing_substitutions: tuple[UKSourceLabelChangingSubstitution, ...],
+) -> bool:
+    """Return True when a trailing repeal target label equals a new payload label.
+
+    When a label-changing substitution replaces old subsection 11 with a new
+    subsection 12, and the trailing repeal also targets subsection 12, the repeal
+    must run before the replace so the old subsection 12 is removed before the
+    new subsection 12 is created.  Otherwise replay resolves the repeal to the
+    newly inserted node and leaves the duplicate old node in place.
+    """
+    from lawvm.uk_legislation.uk_grafter import _clean_num
+
+    replacement_labels: set[str] = set()
+    if replacement_leaf_override:
+        replacement_labels.add(_clean_num(replacement_leaf_override))
+    for substitution in label_changing_substitutions:
+        replacement_labels.add(
+            _clean_num(_addr_leaf_label(substitution.replacement_target) or "")
+        )
+    if not replacement_labels:
+        return False
+    for ref in trailing_repeal_refs:
+        try:
+            target = _parse_affected_target(ref)
+        except ValueError:
+            continue
+        repeal_label = _clean_num(_addr_leaf_label(target) or "")
+        if repeal_label and repeal_label in replacement_labels:
+            return True
+    return False
 
 
 def _prepare_effect_target_prelude(
@@ -893,16 +930,22 @@ def _compile_effect_to_ir_ops_impl(
             source_root=source_root,
         )
     if action == "replace" and trailing_repeal_refs:
-        ops.extend(
-            build_trailing_repeal_ops(
-                effect=effect,
-                sequence=sequence,
-                trailing_repeal_refs=trailing_repeal_refs,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                original_targets_str=original_targets_str,
-                source_parent_substitution_range_payload=source_parent_substitution_range_payload,
-            )
+        trailing_repeal_ops = build_trailing_repeal_ops(
+            effect=effect,
+            sequence=sequence,
+            trailing_repeal_refs=trailing_repeal_refs,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            original_targets_str=original_targets_str,
+            source_parent_substitution_range_payload=source_parent_substitution_range_payload,
         )
+        if _trailing_repeal_collides_with_replacement(
+            trailing_repeal_refs,
+            replacement_leaf_override,
+            label_changing_substitutions,
+        ):
+            ops = trailing_repeal_ops + ops
+        else:
+            ops.extend(trailing_repeal_ops)
     _mark_lower_phase("compile_lower_tail")
     return ops

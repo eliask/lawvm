@@ -507,6 +507,12 @@ def _uk_schedule_list_entry_repeal_selector(
     text = " ".join((extracted_text or "").split())
     if not text:
         return None
+    # Inner "omit"/"insert" text inside a "words before the table substitute"
+    # formula modifies the moved table; it is not a structural schedule-list-entry
+    # repeal. The whole formula is owned by
+    # uk_effect_schedule_words_before_table_substitution_lowered.
+    if "for the words before the table substitute" in text.lower():
+        return None
     target_surface = f"{target_ref} {target}".lower()
     target_leaf_kind = _addr_leaf_kind(target)
     local_list_carrier_target = _addr_container(target) != "schedule" and target_leaf_kind in {
