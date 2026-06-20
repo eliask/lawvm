@@ -104,6 +104,38 @@ def test_resolve_accepts_list_paths_and_returns_matching_node() -> None:
     assert node.label == "5"
 
 
+def test_resolve_matches_enum_path_kind_and_normalized_label() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1.",
+                children=(IRNode(kind=IRNodeKind.SECTION, label="5 a"),),
+            ),
+        ),
+    )
+
+    node = resolve(body, [(IRNodeKind.CHAPTER, "1"), (IRNodeKind.SECTION, "5-a")])
+
+    assert node is not None
+    assert node.kind == IRNodeKind.SECTION
+    assert node.label == "5 a"
+
+
+def test_resolve_matches_string_stored_kind_with_enum_path_kind() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind="section", label="3.", text="legacy string kind"),),  # type: ignore[arg-type]
+    )
+
+    node = resolve(body, [(IRNodeKind.SECTION, "3")])
+
+    assert node is not None
+    assert node.kind == "section"
+    assert node.label == "3."
+
+
 def test_resolve_required_raises_on_missing_path() -> None:
     body = _body_with_duplicate_sections()
 

@@ -267,6 +267,8 @@ def normalize_text(tree: IRNode) -> IRNode:
 
 PathStep: TypeAlias = TreePathStep
 Path: TypeAlias = TreePath  # ((kind, label), ...)
+_NormalizedPathStep: TypeAlias = Tuple[str, str]
+_NormalizedPath: TypeAlias = Tuple[_NormalizedPathStep, ...]
 LabelIndex = Dict[PathStep, List[Path]]
 
 InvariantPathStep = Tuple[str, Optional[str]]
@@ -462,14 +464,14 @@ def find_unique(
 
 def _resolve_from_path(
     tree: IRNode,
-    path: Path,
+    path: _NormalizedPath,
     depth: int,
     path_len: int,
 ) -> Optional[IRNode]:
-    kind, label = path[depth]
+    kind, label_key = path[depth]
     leaf_depth = path_len - 1
     for child in tree.children:
-        if not _kind_matches(child.kind, kind) or not _match_label(child.label, label):
+        if _kind_str(child.kind) != kind or _norm(child.label or "") != label_key:
             continue
         if depth == leaf_depth:
             return child
@@ -489,7 +491,8 @@ def resolve(tree: IRNode, path: Sequence[PathStep]) -> Optional[IRNode]:
     if not path:
         return tree
 
-    return _resolve_from_path(tree, path, 0, len(path))
+    normalized_path = tuple((_kind_str(kind), _norm(label)) for kind, label in path)
+    return _resolve_from_path(tree, normalized_path, 0, len(normalized_path))
 
 
 def resolve_required(tree: IRNode, path: Sequence[PathStep]) -> IRNode:
