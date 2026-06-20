@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from lawvm.core.candidate_set_certificate import candidate_set_evidence_report
+from lawvm.core.candidate_set_coverage import candidate_set_evidence_report
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import execution_authorization_evidence_report
 from lawvm.core.frontier_work_item import frontier_work_item_evidence_report
@@ -106,7 +106,7 @@ def finland_strict_report_evidence_surface(
     ).to_dict()
     potential_operation_rows = mapping_sequence(potential_operation_report.get("rows"))
     potential_operation_summary = dict(potential_operation_report.get("summary") or {})
-    sparse_certificates = mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
+    sparse_certificates = mapping_sequence(payload.get("sparse_slot_candidate_set_coverages"))
     source_lineage_witnesses = mapping_sequence(payload.get("source_lineage_source_witnesses"))
     source_unit_coverages = mapping_sequence(payload.get("source_unit_coverages"))
     source_unit_coverage_report = source_unit_coverage_evidence_report(
@@ -163,7 +163,7 @@ def finland_strict_report_evidence_surface(
     recovery_authorization_report_summary = dict(
         recovery_authorization_report.get("summary") or {}
     )
-    strict_report_candidate_sets = mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
+    strict_report_candidate_sets = mapping_sequence(payload.get("strict_report_candidate_set_coverages"))
     strict_report_candidate_set_report = candidate_set_evidence_report(
         strict_report_candidate_sets,
         jurisdiction="fi",
@@ -236,7 +236,7 @@ def finland_strict_report_evidence_surface(
                 {"surface": "potential_operation", **dict(row)}
                 for row in potential_operation_rows
             ),
-            *({"surface": "sparse_slot_candidate_set_certificate", **dict(row)} for row in sparse_certificates),
+            *({"surface": "sparse_slot_candidate_set_coverage", **dict(row)} for row in sparse_certificates),
             *({"surface": "source_lineage_source_witness", **dict(row)} for row in source_lineage_witnesses),
             *({"surface": "source_unit_coverage", **dict(row)} for row in source_unit_coverage_rows),
             *(
@@ -253,7 +253,7 @@ def finland_strict_report_evidence_surface(
                 for row in recoveryauthorization_rows_with_report
             ),
             *(
-                {**dict(row), "surface": "strict_report_candidate_set_certificate"}
+                {**dict(row), "surface": "strict_report_candidate_set_coverage"}
                 for row in strict_report_candidate_set_report_rows
             ),
             *(
@@ -330,7 +330,7 @@ def finland_strict_report_evidence_surface(
         "frontier_work_item_status_counts": dict(
             frontier_work_item_report_summary.get("frontier_status_counts") or {}
         ),
-        "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
+        "sparse_slot_candidate_set_coverage_count": len(sparse_certificates),
         "source_lineage_source_witness_count": len(source_lineage_witnesses),
         "source_unit_coverage_count": len(source_unit_coverage_rows),
         "source_unit_coverage_status_counts": dict(
@@ -384,7 +384,7 @@ def finland_strict_report_evidence_surface(
         "recovery_execution_authorization_strict_blocked_count": int(
             recovery_authorization_report_summary.get("strict_blocked_count") or 0
         ),
-        "strict_report_candidate_set_certificate_count": len(strict_report_candidate_sets),
+        "strict_report_candidate_set_coverage_count": len(strict_report_candidate_sets),
         "strict_report_candidate_set_status_counts": dict(
             strict_report_candidate_set_report_summary.get(
                 "candidate_set_status_counts"
@@ -474,7 +474,7 @@ def finland_strict_report_evidence_surface(
                 "source_completeness_status_as_replay_authorization",
                 "temporal_resolution_evidence_as_unconditional_commencement_proof",
                 "recovery_projection_as_replay_authorization",
-                "candidate_set_certificate_as_source_cue_exhaustiveness_proof",
+                "candidate_set_coverage_as_source_cue_exhaustiveness_proof",
                 "ownership_closure_coverage_as_full_corpus_omniscience",
                 "regex_coverage_as_replay_authorization",
                 "bounded_wildcard_as_semantic_proof",

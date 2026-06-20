@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from lawvm.core.compile_result import SourcePathology
-from lawvm.core.candidate_set_certificate import CANDIDATE_SET_COMPLETE, CandidateSetCertificate
+from lawvm.core.candidate_set_coverage import CANDIDATE_SET_COMPLETE, CandidateSetCoverage
 from lawvm.core.evidence_kernel import AuthorizationResult
 from lawvm.core.frontier_work_item import frontier_work_item_claim_closure_report
 from lawvm.core.manual_claims.kind_registry import list_registered_kinds
@@ -40,7 +40,7 @@ from lawvm.finland.agreement_residual_proof_projector import (
     finlex_editorial_witness_agreement_residual_rows,
     source_adjudication_agreement_residual_rows,
 )
-from lawvm.finland.sparse_slot_certificate_projector import sparse_slot_candidate_set_certificate_rows
+from lawvm.finland.sparse_slot_certificate_projector import sparse_slot_candidate_set_coverage_rows
 from lawvm.finland.recovery_temporal_proof_projector import (
     recovery_execution_authorization_rows_from_projection_rows,
     source_completeness_status_row,
@@ -1316,7 +1316,7 @@ def test_source_pathology_proof_surface_rows_bundle_authorization_and_frontier()
 
 
 def test_sparse_slot_binding_projects_partial_candidate_certificate() -> None:
-    certificates = sparse_slot_candidate_set_certificate_rows(
+    certificates = sparse_slot_candidate_set_coverage_rows(
         (
             {
                 "kind": "ELAB.SPARSE_SLOT_BINDING",
@@ -1350,7 +1350,7 @@ def test_sparse_slot_binding_projects_partial_candidate_certificate() -> None:
 
 
 def test_sparse_leftover_projects_rejected_candidate_certificate() -> None:
-    certificates = sparse_slot_candidate_set_certificate_rows(
+    certificates = sparse_slot_candidate_set_coverage_rows(
         (
             {
                 "kind": "ELAB.SPARSE_PAYLOAD_LEFTOVER",
@@ -1376,7 +1376,7 @@ def test_sparse_leftover_projects_rejected_candidate_certificate() -> None:
 
 
 def test_sparse_ambiguous_binding_projects_partial_candidate_certificate() -> None:
-    certificates = sparse_slot_candidate_set_certificate_rows(
+    certificates = sparse_slot_candidate_set_coverage_rows(
         (
             {
                 "kind": "ELAB.AMBIGUOUS_BINDING",
@@ -1429,7 +1429,7 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
                     statute_id="2001/1234",
                 ).to_dict(),
             ],
-            "sparse_slot_candidate_set_certificates": [{"candidate_set_kind": "fi_sparse_payload_slot_assignment"}],
+            "sparse_slot_candidate_set_coverages": [{"candidate_set_kind": "fi_sparse_payload_slot_assignment"}],
             "agreement_residuals": [
                 {
                     "residual_id": "fi:2001/1234:noncommensurable",
@@ -1508,7 +1508,7 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["frontier_claim_template_kind_counts"] == {
         "fi.v1.MUTATION_BOUNDARY_RESOLUTION": 1
     }
-    assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
+    assert report["summary"]["sparse_slot_candidate_set_coverage_count"] == 1
     assert report["summary"]["agreement_residual_count"] == 1
     assert report["summary"]["agreement_residual_family_counts"] == {
         "non_commensurable_surface": 1
@@ -1538,7 +1538,7 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
         "source_pathology",
         "source_pathology_execution_authorization",
         "source_pathology_frontier_work_item",
-        "sparse_slot_candidate_set_certificate",
+        "sparse_slot_candidate_set_coverage",
         "agreement_residual",
         "mutation_boundary_proof",
         "source_completeness_status",
@@ -1682,7 +1682,7 @@ def test_finland_strict_report_ownership_closure_can_close_declared_slice() -> N
         "fi_strict_report_operation_cue_coverage",
     )
     candidate_sets = [
-        CandidateSetCertificate(
+        CandidateSetCoverage(
             scope_id=f"fi:2001/1234:{kind}",
             candidate_set_kind=kind,
             phase="strict_report_projection",
@@ -1701,7 +1701,7 @@ def test_finland_strict_report_ownership_closure_can_close_declared_slice() -> N
     ]
     candidate_set_authorizations = finland_strict_report_candidate_set_execution_authorizations(
         {
-            "strict_report_candidate_set_certificates": candidate_sets,
+            "strict_report_candidate_set_coverages": candidate_sets,
         }
     )
 
@@ -1714,7 +1714,7 @@ def test_finland_strict_report_ownership_closure_can_close_declared_slice() -> N
             "projection_rows": [],
             "source_pathologies": [],
             "strict_fail_reasons": [],
-            "strict_report_candidate_set_certificates": candidate_sets,
+            "strict_report_candidate_set_coverages": candidate_sets,
             "strict_report_candidate_set_execution_authorizations": candidate_set_authorizations,
             "mutation_boundary_proofs": [],
         }
@@ -1741,7 +1741,7 @@ def test_finland_strict_report_ownership_closure_can_close_declared_slice() -> N
 
 
 def test_finland_strict_report_ownership_closure_requires_candidate_set_authorizations() -> None:
-    candidate_set = CandidateSetCertificate(
+    candidate_set = CandidateSetCoverage(
         scope_id="fi:2001/1234:fi_strict_report_operation_cue_coverage",
         candidate_set_kind="fi_strict_report_operation_cue_coverage",
         phase="operation_cue_detection",
@@ -1766,7 +1766,7 @@ def test_finland_strict_report_ownership_closure_requires_candidate_set_authoriz
             "projection_rows": [],
             "source_pathologies": [],
             "strict_fail_reasons": [],
-            "strict_report_candidate_set_certificates": [candidate_set],
+            "strict_report_candidate_set_coverages": [candidate_set],
             "strict_report_candidate_set_execution_authorizations": [],
             "mutation_boundary_proofs": [],
         }
@@ -1780,7 +1780,7 @@ def test_finland_strict_report_ownership_closure_requires_candidate_set_authoriz
         "execution_authorization_missing",
     ]
     assert certificate["unowned_counts"][
-        "candidate_set_certificates_without_execution_authorization"
+        "candidate_set_coverages_without_execution_authorization"
     ] == 1
     assert certificate["detail"]["missing_required_certificates"] == [
         "source_unit_enumeration_certificate",
@@ -1791,7 +1791,7 @@ def test_finland_strict_report_ownership_closure_requires_candidate_set_authoriz
 
 
 def test_finland_strict_report_ownership_closure_requires_matching_candidate_set_authorization_scope() -> None:
-    candidate_set = CandidateSetCertificate(
+    candidate_set = CandidateSetCoverage(
         scope_id="fi:2001/1234:operation-cue-coverage:a",
         candidate_set_kind="fi_strict_report_operation_cue_coverage",
         phase="operation_cue_detection",
@@ -1808,7 +1808,7 @@ def test_finland_strict_report_ownership_closure_requires_matching_candidate_set
     ).to_dict()
     wrong_scope_authorization = finland_strict_report_candidate_set_execution_authorizations(
         {
-            "strict_report_candidate_set_certificates": [
+            "strict_report_candidate_set_coverages": [
                 {
                     **candidate_set,
                     "scope_id": "fi:2001/1234:operation-cue-coverage:b",
@@ -1826,7 +1826,7 @@ def test_finland_strict_report_ownership_closure_requires_matching_candidate_set
             "projection_rows": [],
             "source_pathologies": [],
             "strict_fail_reasons": [],
-            "strict_report_candidate_set_certificates": [candidate_set],
+            "strict_report_candidate_set_coverages": [candidate_set],
             "strict_report_candidate_set_execution_authorizations": wrong_scope_authorization,
             "mutation_boundary_proofs": [],
         }
@@ -1834,7 +1834,7 @@ def test_finland_strict_report_ownership_closure_requires_matching_candidate_set
 
     assert certificate["closed"] is False
     assert certificate["unowned_counts"][
-        "candidate_set_certificates_without_execution_authorization"
+        "candidate_set_coverages_without_execution_authorization"
     ] == 1
     assert (
         "candidate_set_execution_authorization:"
@@ -1846,7 +1846,7 @@ def test_finland_strict_report_ownership_closure_requires_matching_candidate_set
 
 def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensitive_ids() -> None:
     candidate_sets = [
-        CandidateSetCertificate(
+        CandidateSetCoverage(
             scope_id=f"fi:2001/1234:operation-cue-coverage:{suffix}",
             candidate_set_kind="fi_strict_report_operation_cue_coverage",
             phase="operation_cue_detection",
@@ -1865,7 +1865,7 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
     ]
     authorizations = finland_strict_report_candidate_set_execution_authorizations(
         {
-            "strict_report_candidate_set_certificates": candidate_sets,
+            "strict_report_candidate_set_coverages": candidate_sets,
         }
     )
 
@@ -1882,13 +1882,13 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
             "statute_id": "2001/1234",
             "profile": "strict",
             "ops": {"canonical": 0, "failed": 0},
-            "strict_report_candidate_set_certificates": candidate_sets,
+            "strict_report_candidate_set_coverages": candidate_sets,
             "strict_report_candidate_set_execution_authorizations": authorizations,
             "ownership_closure_coverage": finland_strict_report_ownership_closure_coverage(
                 {
                     "statute_id": "2001/1234",
                     "profile": "strict",
-                    "strict_report_candidate_set_certificates": candidate_sets,
+                    "strict_report_candidate_set_coverages": candidate_sets,
                     "strict_report_candidate_set_execution_authorizations": authorizations,
                     "failed_ops": [],
                     "strict_fail_reasons": [],
@@ -1897,7 +1897,7 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
             ),
         }
     )
-    assert report["summary"]["strict_report_candidate_set_certificate_count"] == 2
+    assert report["summary"]["strict_report_candidate_set_coverage_count"] == 2
     assert report["summary"]["strict_report_candidate_set_status_counts"] == {
         "complete": 2,
     }
@@ -1918,7 +1918,7 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
     candidate_set_rows = [
         row
         for row in report["rows"]
-        if row["surface"] == "strict_report_candidate_set_certificate"
+        if row["surface"] == "strict_report_candidate_set_coverage"
     ]
     assert [row["row_id"] for row in candidate_set_rows] == [
         "fi:2001/1234:operation-cue-coverage:a",
@@ -1928,7 +1928,7 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
     assert {row["proof_ref"] for row in candidate_set_rows} == {
         "fi_strict_report_operation_cue_coverage_complete"
     }
-    assert all("candidate_set_certificate_as_replay_authorization" in row["forbidden_shortcuts"] for row in candidate_set_rows)
+    assert all("candidate_set_coverage_as_replay_authorization" in row["forbidden_shortcuts"] for row in candidate_set_rows)
     proof_surface = proof_surface_from_evidence_report(report).to_dict()
     candidate_authorization_rows = [
         row
@@ -1956,7 +1956,7 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
 
 
 def test_finland_strict_report_candidate_set_frontier_rows_are_non_executable() -> None:
-    candidate_set = CandidateSetCertificate(
+    candidate_set = CandidateSetCoverage(
         scope_id="fi:2001/1234:fi_strict_report_operation_cue_coverage",
         candidate_set_kind="fi_strict_report_operation_cue_coverage",
         phase="operation_cue_detection",
@@ -1978,7 +1978,7 @@ def test_finland_strict_report_candidate_set_frontier_rows_are_non_executable() 
     rows = finland_strict_report_candidate_set_frontier_work_items(
         {
             "statute_id": "2001/1234",
-            "strict_report_candidate_set_certificates": [candidate_set],
+            "strict_report_candidate_set_coverages": [candidate_set],
         }
     )
 
@@ -2006,7 +2006,7 @@ def test_finland_strict_report_candidate_set_frontier_rows_are_non_executable() 
 
 
 def test_finland_sparse_slot_candidate_set_frontier_uses_manual_compilation_lane() -> None:
-    candidate_set = CandidateSetCertificate(
+    candidate_set = CandidateSetCoverage(
         scope_id="fi:2010/100:section:3:binding:payload-slot:1:1",
         candidate_set_kind="fi_sparse_payload_slot_assignment",
         phase="typed_elaboration",
@@ -2031,7 +2031,7 @@ def test_finland_sparse_slot_candidate_set_frontier_uses_manual_compilation_lane
     rows = finland_strict_report_candidate_set_frontier_work_items(
         {
             "statute_id": "2001/1234",
-            "strict_report_candidate_set_certificates": [candidate_set],
+            "strict_report_candidate_set_coverages": [candidate_set],
         }
     )
 

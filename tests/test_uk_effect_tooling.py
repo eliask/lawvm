@@ -757,13 +757,13 @@ def test_uk_frontier_work_item_defaults_cover_grounding_corpus_families(
     assert work_item_payload["detail"]["packet_completeness"][
         "non_executable_frontier_invariant"
     ] is True
-    assert work_item_payload["detail"]["candidate_set_certificate"][
+    assert work_item_payload["detail"]["candidate_set_coverage"][
         "candidate_set_kind"
     ] == "uk_frontier_work_item_candidate_targets"
-    assert work_item_payload["detail"]["candidate_set_certificate"][
+    assert work_item_payload["detail"]["candidate_set_coverage"][
         "completeness_status"
     ] == "complete"
-    assert work_item_payload["detail"]["candidate_set_certificate"][
+    assert work_item_payload["detail"]["candidate_set_coverage"][
         "next_promotion_allowed"
     ] is False
     target_resolution = work_item_payload["detail"]["target_resolution_coverage"]
@@ -855,7 +855,7 @@ def test_uk_frontier_work_item_marks_missing_target_candidates_unavailable() -> 
         }
     ).to_dict()
 
-    certificate = work_item["detail"]["candidate_set_certificate"]
+    certificate = work_item["detail"]["candidate_set_coverage"]
     target_resolution = work_item["detail"]["target_resolution_coverage"]
 
     assert certificate["completeness_status"] == "unavailable"
@@ -4078,11 +4078,11 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
         "surface": "replay_vs_current_oracle_target_presence",
         "compare_shape": "commensurable",
     }
-    assert payload["candidate_set_certificate"]["completeness_status"] == "complete"
-    assert payload["candidate_set_certificate"]["candidate_ids"] == ["s. 1"]
-    assert payload["candidate_set_certificate"]["next_promotion_allowed"] is False
-    assert payload["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
-        payload["candidate_set_certificate"]
+    assert payload["candidate_set_coverage"]["completeness_status"] == "complete"
+    assert payload["candidate_set_coverage"]["candidate_ids"] == ["s. 1"]
+    assert payload["candidate_set_coverage"]["next_promotion_allowed"] is False
+    assert payload["frontier_work_item"]["detail"]["candidate_set_coverage"] == (
+        payload["candidate_set_coverage"]
     )
     assert payload["agreement_residual"]["agreement_surface"] == (
         "manual_compile_frontier_vs_current_oracle"
@@ -4640,11 +4640,11 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
         "surface": "replay_vs_current_oracle_target_presence",
         "compare_shape": "commensurable",
     }
-    assert payload["candidate_set_certificate"]["completeness_status"] == "complete"
-    assert payload["candidate_set_certificate"]["candidate_ids"] == ["s. 1"]
-    assert payload["candidate_set_certificate"]["next_promotion_allowed"] is False
-    assert payload["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
-        payload["candidate_set_certificate"]
+    assert payload["candidate_set_coverage"]["completeness_status"] == "complete"
+    assert payload["candidate_set_coverage"]["candidate_ids"] == ["s. 1"]
+    assert payload["candidate_set_coverage"]["next_promotion_allowed"] is False
+    assert payload["frontier_work_item"]["detail"]["candidate_set_coverage"] == (
+        payload["candidate_set_coverage"]
     )
     assert payload["agreement_residual"]["residual_id"] == payload["work_item_id"]
     assert payload["agreement_residual"]["family"] == "source_pathology"
@@ -6140,7 +6140,7 @@ def test_uk_manual_compile_evidence_jsonl_templates_schedule_note_claim() -> Non
     assert payload["frontier_work_item"]["detail"]["modeled_targets"] == [
         modeled_target
     ]
-    assert payload["candidate_set_certificate"]["modeled_targets"] == [modeled_target]
+    assert payload["candidate_set_coverage"]["modeled_targets"] == [modeled_target]
     target_resolution = payload["frontier_work_item"]["detail"][
         "target_resolution_coverage"
     ]

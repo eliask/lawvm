@@ -34,7 +34,7 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
                 "required_claim_kind": "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE",
             },
         ],
-        candidate_set_certificates=[
+        candidate_set_coverages=[
             {
                 "candidate_set_kind": "fi_strict_report_operation_cue_coverage",
                 "completeness_status": "partial",
@@ -192,7 +192,7 @@ def test_proof_gate_summary_accepts_single_mapping_inputs() -> None:
             "frontier_status": "manual_claim_needed",
             "required_claim_kind": "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE",
         },
-        candidate_set_certificates={
+        candidate_set_coverages={
             "candidate_set_kind": "fi_strict_report_source_unit_enumeration",
             "completeness_status": "partial",
         },

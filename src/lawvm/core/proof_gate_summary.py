@@ -322,7 +322,7 @@ def proof_gate_summary_from_surfaces(
     manual_or_other_frontier_work_items: Any = (),
     coverage_frontier_work_items: Any = (),
     frontier_claim_closure_rows: Any = (),
-    candidate_set_certificates: Any = (),
+    candidate_set_coverages: Any = (),
     evidence_summary: Mapping[str, Any] | None = None,
     manual_claim_kind_prefixes: tuple[str, ...] = (),
     safe_default: str = "treat_open_proof_gates_as_non_executable_frontier_accounting",
@@ -369,7 +369,7 @@ def proof_gate_summary_from_surfaces(
     closure_replay_authorized_count = sum(
         1 for row in closure_rows if bool(row.get("replay_authorized"))
     )
-    candidate_sets = _mapping_rows(candidate_set_certificates)
+    candidate_sets = _mapping_rows(candidate_set_coverages)
     incomplete_candidate_sets = tuple(
         row
         for row in candidate_sets

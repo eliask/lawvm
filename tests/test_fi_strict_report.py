@@ -224,7 +224,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                     "candidate_set_fi_strict_report_operation_cue_coverage_partial"
                 ],
                 "ownership_closure_unowned_counts": {
-                    "incomplete_candidate_set_certificates": 4,
+                    "incomplete_candidate_set_coverages": 4,
                 },
                 "ownership_closure_owned_counts": {
                     "canonical_ops": 4,
@@ -363,7 +363,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert loaded is not None
     assert loaded[0]["proof_gate_open_signal_count"] == 18
     assert loaded[0]["ownership_closure_unowned_counts"] == {
-        "incomplete_candidate_set_certificates": 4,
+        "incomplete_candidate_set_coverages": 4,
     }
     assert loaded[0]["ownership_closure_owned_counts"] == {
         "canonical_ops": 4,
@@ -507,7 +507,7 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                     "candidate_set_fi_strict_report_operation_cue_coverage_partial"
                 ],
                 "ownership_closure_unowned_counts": {
-                    "incomplete_candidate_set_certificates": 4,
+                    "incomplete_candidate_set_coverages": 4,
                 },
                 "ownership_closure_owned_counts": {
                     "canonical_ops": 4,
@@ -607,7 +607,7 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "Ownership closure failed gates" in out
     assert "candidate_set_fi_strict_report_operation_cue_coverage_partial" in out
     assert "Ownership closure unowned counts" in out
-    assert "incomplete_candidate_set_certificates" in out
+    assert "incomplete_candidate_set_coverages" in out
     assert "Ownership closure owned counts" in out
     assert "canonical_ops" in out
     assert "failed_ops_visible" in out
@@ -915,7 +915,7 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     )
     operation_cue_certificate = next(
         row
-        for row in payload["strict_report_candidate_set_certificates"]
+        for row in payload["strict_report_candidate_set_coverages"]
         if row["candidate_set_kind"] == "fi_strict_report_operation_cue_coverage"
     )
     assert operation_cue_certificate["candidate_ids"] == [
@@ -1266,9 +1266,9 @@ def test_to_json_exports_open_ownership_closure_coverage_without_replay_claims()
         "candidate_set_fi_strict_report_operation_cue_coverage_partial",
     ]
     assert certificate["unowned_counts"] == {
-        "incomplete_candidate_set_certificates": 4,
-        "candidate_set_certificates_without_execution_authorization": 0,
-        "incomplete_candidate_set_certificates_without_frontier_work_item": 0,
+        "incomplete_candidate_set_coverages": 4,
+        "candidate_set_coverages_without_execution_authorization": 0,
+        "incomplete_candidate_set_coverages_without_frontier_work_item": 0,
         "failed_ops_without_frontier_work_item": 0,
         "operation_cues_without_candidate_coverage_certificate": 0,
         "source_units_without_enumeration_certificate": 0,
@@ -1277,7 +1277,7 @@ def test_to_json_exports_open_ownership_closure_coverage_without_replay_claims()
     }
     assert certificate["owned_counts"]["canonical_ops"] == 1
     assert certificate["owned_counts"]["strict_report_candidate_set_authorizations"] == 4
-    candidate_sets = payload["strict_report_candidate_set_certificates"]
+    candidate_sets = payload["strict_report_candidate_set_coverages"]
     assert [row["candidate_set_kind"] for row in candidate_sets] == [
         "fi_strict_report_visible_operation_rows",
         "fi_strict_report_source_lineage_units",
@@ -1327,7 +1327,7 @@ def test_to_json_exports_open_ownership_closure_coverage_without_replay_claims()
     assert report["report_kind"] == "finland_strict_report_ownership_closure"
     assert report["replay_claims"] is False
     assert report["canonical_effect_claims"] is False
-    assert surface["summary"]["strict_report_candidate_set_certificate_count"] == 4
+    assert surface["summary"]["strict_report_candidate_set_coverage_count"] == 4
     assert surface["summary"]["strict_report_candidate_set_status_counts"] == {
         "partial": 2,
         "unavailable": 2,
@@ -1391,7 +1391,7 @@ def test_to_json_exports_sparse_slot_candidate_certificates() -> None:
         }
     )
 
-    certificates = payload["sparse_slot_candidate_set_certificates"]
+    certificates = payload["sparse_slot_candidate_set_coverages"]
     assert len(certificates) == 1
     assert certificates[0]["candidate_set_kind"] == "fi_sparse_payload_slot_assignment"
     assert certificates[0]["completeness_status"] == "partial"
@@ -1403,7 +1403,7 @@ def test_to_json_exports_sparse_slot_candidate_certificates() -> None:
     assert report["replay_claims"] is False
     assert report["canonical_effect_claims"] is True
     assert report["agreement_claims"] is False
-    assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
+    assert report["summary"]["sparse_slot_candidate_set_coverage_count"] == 1
 
 
 def test_to_json_exports_source_adjudication_agreement_residual() -> None:
@@ -1455,7 +1455,7 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
     )
     source_unit_certificate = next(
         row
-        for row in payload["strict_report_candidate_set_certificates"]
+        for row in payload["strict_report_candidate_set_coverages"]
         if row["candidate_set_kind"] == "fi_strict_report_source_unit_enumeration"
     )
     assert source_unit_certificate["completeness_status"] == "partial"
@@ -1492,10 +1492,10 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
         "source_unit_coverage",
         "agreement_residual",
         "source_completeness_status",
-        "strict_report_candidate_set_certificate",
-        "strict_report_candidate_set_certificate",
-        "strict_report_candidate_set_certificate",
-        "strict_report_candidate_set_certificate",
+        "strict_report_candidate_set_coverage",
+        "strict_report_candidate_set_coverage",
+        "strict_report_candidate_set_coverage",
+        "strict_report_candidate_set_coverage",
         "strict_report_candidate_set_execution_authorization",
         "strict_report_candidate_set_execution_authorization",
         "strict_report_candidate_set_execution_authorization",

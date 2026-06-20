@@ -9,10 +9,10 @@ from lawvm.core.agreement_residual import (
     agreement_surface_evidence_report,
     agreement_surface_from_residuals,
 )
-from lawvm.core.candidate_set_certificate import (
+from lawvm.core.candidate_set_coverage import (
     CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_TRUNCATED,
-    CandidateSetCertificate,
+    CandidateSetCoverage,
     candidate_set_evidence_report,
 )
 from lawvm.core.evidence_contracts import (
@@ -710,7 +710,7 @@ def test_execution_authorization_report_preserves_distinct_same_rule_rows() -> N
         "strict_disposition": "block",
         "quirks_disposition": "record",
         "required_proofs": ("operation_cue_classification_report",),
-        "safe_default": "do_not_treat_candidate_set_certificate_as_replay_authorization",
+        "safe_default": "do_not_treat_candidate_set_coverage_as_replay_authorization",
     }
     report = execution_authorization_evidence_report(
         (
@@ -2904,8 +2904,8 @@ def test_evidence_surface_report_requires_claim_flags() -> None:
         )
 
 
-def test_candidate_set_certificate_records_bounded_completeness() -> None:
-    certificate = CandidateSetCertificate(
+def test_candidate_set_coverage_records_bounded_completeness() -> None:
+    certificate = CandidateSetCoverage(
         scope_id="uk-candidates:demo",
         candidate_set_kind="uk_candidates_frontier_rows",
         phase="tooling",
@@ -2933,7 +2933,7 @@ def test_candidate_set_certificate_records_bounded_completeness() -> None:
 
 
 def test_candidate_set_evidence_report_is_passive_shared_surface() -> None:
-    complete = CandidateSetCertificate(
+    complete = CandidateSetCoverage(
         scope_id="fi:demo:source-unit-enumeration",
         candidate_set_kind="fi_strict_report_source_unit_enumeration",
         phase="source_unit_enumeration",
@@ -2946,7 +2946,7 @@ def test_candidate_set_evidence_report_is_passive_shared_surface() -> None:
         next_promotion_allowed=True,
         next_promotion_requires=("execution_authorization",),
     )
-    truncated = CandidateSetCertificate(
+    truncated = CandidateSetCoverage(
         scope_id="fi:demo:operation-cue-coverage",
         candidate_set_kind="fi_strict_report_operation_cue_coverage",
         phase="operation_cue_detection",
@@ -2974,7 +2974,7 @@ def test_candidate_set_evidence_report_is_passive_shared_surface() -> None:
     assert report["candidate_effect_claims"] is False
     assert report["dry_run_claims"] is False
     assert report["agreement_claims"] is False
-    assert report["summary"]["candidate_set_certificate_count"] == 2
+    assert report["summary"]["candidate_set_coverage_count"] == 2
     assert report["summary"]["complete_count"] == 1
     assert report["summary"]["incomplete_count"] == 1
     assert report["summary"]["candidate_count"] == 5
@@ -2984,12 +2984,12 @@ def test_candidate_set_evidence_report_is_passive_shared_surface() -> None:
         "operation_cue_scan_truncated": 1
     }
     row = report["rows"][0]
-    assert row["surface"] == "candidate_set_certificate"
+    assert row["surface"] == "candidate_set_coverage"
     assert row["row_id"] == "fi:demo:source-unit-enumeration"
     assert row["subject_id"] == "fi:demo:source-unit-enumeration"
     assert row["status"] == "complete"
-    assert "candidate_set_certificate_as_replay_authorization" in row["forbidden_shortcuts"]
-    assert "candidate_set_certificate_as_replay_authorization" in report["forbidden_shortcuts"]
+    assert "candidate_set_coverage_as_replay_authorization" in row["forbidden_shortcuts"]
+    assert "candidate_set_coverage_as_replay_authorization" in report["forbidden_shortcuts"]
 
 
 def test_potential_operation_evidence_report_is_passive_shared_surface() -> None:
@@ -3339,7 +3339,7 @@ def test_candidate_set_report_rejects_invalid_mapping_rows() -> None:
 
 def test_candidate_set_report_projects_to_proof_surface_rows() -> None:
     report = candidate_set_evidence_report(
-        CandidateSetCertificate(
+        CandidateSetCoverage(
             scope_id="fi:demo:source-unit-enumeration",
             candidate_set_kind="fi_strict_report_source_unit_enumeration",
             phase="source_unit_enumeration",
@@ -3355,11 +3355,11 @@ def test_candidate_set_report_projects_to_proof_surface_rows() -> None:
 
     proof_surface = proof_surface_from_evidence_report(report).to_dict()
 
-    assert proof_surface["surface_kind"] == "candidate_set_certificate"
+    assert proof_surface["surface_kind"] == "candidate_set_coverage"
     assert proof_surface["claim_flags"]["candidate_effect_claims"] is False
     assert proof_surface["rows"][0]["row_id"] == "fi:demo:source-unit-enumeration"
     assert proof_surface["rows"][0]["subject_id"] == "fi:demo:source-unit-enumeration"
-    assert proof_surface["rows"][0]["row_kind"] == "candidate_set_certificate"
+    assert proof_surface["rows"][0]["row_kind"] == "candidate_set_coverage"
     assert proof_surface["rows"][0]["status"] == "complete"
     assert proof_surface["rows"][0]["proof_refs"] == ["fi_source_unit_enumeration_complete"]
 
@@ -3377,13 +3377,13 @@ def test_proof_surface_synthesizes_scope_sensitive_candidate_set_row_ids() -> No
         agreement_claims=False,
         rows=(
             {
-                "surface": "candidate_set_certificate",
+                "surface": "candidate_set_coverage",
                 "candidate_set_kind": "fi_strict_report_operation_cue_coverage",
                 "scope_id": "fi:demo:operation-cue-coverage:a",
                 "completeness_status": "complete",
             },
             {
-                "surface": "candidate_set_certificate",
+                "surface": "candidate_set_coverage",
                 "candidate_set_kind": "fi_strict_report_operation_cue_coverage",
                 "scope_id": "fi:demo:operation-cue-coverage:b",
                 "completeness_status": "complete",
@@ -3399,9 +3399,9 @@ def test_proof_surface_synthesizes_scope_sensitive_candidate_set_row_ids() -> No
     assert all(row_id.startswith("candidate-set:") for row_id in row_ids)
 
 
-def test_candidate_set_certificate_rejects_partial_promotion() -> None:
+def test_candidate_set_coverage_rejects_partial_promotion() -> None:
     with pytest.raises(ValueError, match="next_promotion_allowed"):
-        CandidateSetCertificate(
+        CandidateSetCoverage(
             scope_id="scope",
             candidate_set_kind="kind",
             phase="tooling",
@@ -3414,9 +3414,9 @@ def test_candidate_set_certificate_rejects_partial_promotion() -> None:
         )
 
 
-def test_candidate_set_certificate_complete_requires_no_missing_candidates() -> None:
+def test_candidate_set_coverage_complete_requires_no_missing_candidates() -> None:
     with pytest.raises(ValueError, match="missing_candidate_count=0"):
-        CandidateSetCertificate(
+        CandidateSetCoverage(
             scope_id="scope",
             candidate_set_kind="kind",
             phase="tooling",

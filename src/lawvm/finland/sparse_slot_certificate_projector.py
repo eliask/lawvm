@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Mapping
 
-from lawvm.core.candidate_set_certificate import CandidateSetCertificate
+from lawvm.core.candidate_set_coverage import CandidateSetCoverage
 from lawvm.finland.proof_surface_row_helpers import positive_int, string_sequence
 
 SPARSE_SLOT_PROMOTION_PROOFS: tuple[str, ...] = (
@@ -17,7 +17,7 @@ SPARSE_SLOT_PROMOTION_PROOFS: tuple[str, ...] = (
     "mutation_boundary_proof_before_replay_promotion",
 )
 
-def sparse_slot_candidate_set_certificate_rows(
+def sparse_slot_candidate_set_coverage_rows(
     projection_rows: tuple[Mapping[str, Any], ...],
     *,
     statute_id: str = "",
@@ -48,7 +48,7 @@ def sparse_slot_candidate_certificate(
     row: Mapping[str, Any],
     *,
     statute_id: str = "",
-) -> CandidateSetCertificate | None:
+) -> CandidateSetCoverage | None:
     kind = str(row.get("kind") or "")
     detail_raw = row.get("detail")
     if not isinstance(detail_raw, Mapping):
@@ -69,7 +69,7 @@ def sparse_slot_binding_candidate_certificate(
     detail: Mapping[str, Any],
     *,
     statute_id: str,
-) -> CandidateSetCertificate:
+) -> CandidateSetCoverage:
     source_statute = str(detail.get("source_statute") or statute_id or "unknown")
     target_unit_kind = str(detail.get("target_unit_kind") or "")
     target_norm = str(detail.get("target_norm") or "")
@@ -84,7 +84,7 @@ def sparse_slot_binding_candidate_certificate(
         target_chapter=target_chapter,
         suffix=f"binding:{candidate_id}",
     )
-    return CandidateSetCertificate(
+    return CandidateSetCoverage(
         scope_id=scope_id,
         candidate_set_kind="fi_sparse_payload_slot_assignment",
         phase="typed_elaboration",
@@ -120,12 +120,12 @@ def sparse_ambiguous_binding_candidate_certificate(
     detail: Mapping[str, Any],
     *,
     statute_id: str,
-) -> CandidateSetCertificate:
+) -> CandidateSetCoverage:
     source_statute = str(detail.get("amendment_id") or detail.get("source_statute") or statute_id or "unknown")
     slot_id = positive_int(detail.get("slot_id"))
     candidate_count = max(positive_int(detail.get("candidate_count")), 1)
     candidate_id = f"payload-slot:{slot_id}" if slot_id else "payload-slot:unknown"
-    return CandidateSetCertificate(
+    return CandidateSetCoverage(
         scope_id=sparse_scope_id(
             source_statute=source_statute,
             target_unit_kind="",
@@ -158,7 +158,7 @@ def sparse_leftover_candidate_certificate(
     detail: Mapping[str, Any],
     *,
     statute_id: str,
-) -> CandidateSetCertificate | None:
+) -> CandidateSetCoverage | None:
     slots = string_sequence(detail.get("unassigned_slots"))
     if not slots:
         return None
@@ -167,7 +167,7 @@ def sparse_leftover_candidate_certificate(
     target_norm = str(detail.get("target_norm") or "")
     target_chapter = str(detail.get("target_chapter") or "")
     candidate_ids = tuple(sparse_payload_slot_candidate_id_from_text(slot) for slot in slots)
-    return CandidateSetCertificate(
+    return CandidateSetCoverage(
         scope_id=sparse_scope_id(
             source_statute=source_statute,
             target_unit_kind=target_unit_kind,
@@ -233,5 +233,5 @@ def sparse_scope_id(
 
 __all__ = [
     "SPARSE_SLOT_PROMOTION_PROOFS",
-    "sparse_slot_candidate_set_certificate_rows",
+    "sparse_slot_candidate_set_coverage_rows",
 ]

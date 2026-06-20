@@ -119,7 +119,7 @@ SOURCE_PATHOLOGY_PROOF_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         required_proofs=(
             "source_identity_proof",
             "explicit_item_target_identity_proof",
-            "live_state_candidate_set_certificate",
+            "live_state_candidate_set_coverage",
             "payload_slot_identity_proof",
             "mutation_boundary_proof_before_replay_promotion",
         ),
@@ -153,7 +153,7 @@ SOURCE_PATHOLOGY_PROOF_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         required_proofs=(
             "source_identity_proof",
             "explicit_item_target_identity_proof",
-            "live_state_candidate_set_certificate",
+            "live_state_candidate_set_coverage",
             "anchor_absence_proof",
             "mutation_boundary_proof_before_replay_promotion",
         ),
@@ -170,7 +170,7 @@ SOURCE_PATHOLOGY_PROOF_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         required_proofs=(
             "source_identity_proof",
             "explicit_subsection_target_identity_proof",
-            "live_state_candidate_set_certificate",
+            "live_state_candidate_set_coverage",
             "payload_slot_identity_proof",
             "mutation_boundary_proof_before_replay_promotion",
         ),
@@ -276,7 +276,7 @@ SOURCE_PATHOLOGY_PROOF_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         required_proofs=(
             "source_identity_proof",
             "explicit_target_identity_proof",
-            "live_state_candidate_set_certificate",
+            "live_state_candidate_set_coverage",
             "rebound_rule_ownership_proof",
             "mutation_boundary_proof_before_replay_promotion",
         ),
@@ -301,7 +301,7 @@ SOURCE_PATHOLOGY_PROOF_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         required_proofs=(
             "source_identity_proof",
             "explicit_container_target_identity_proof",
-            "live_state_candidate_set_certificate",
+            "live_state_candidate_set_coverage",
             "container_absence_proof",
             "mutation_boundary_proof_before_replay_promotion",
         ),

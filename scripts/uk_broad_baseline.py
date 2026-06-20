@@ -2988,7 +2988,7 @@ def _manual_frontier_work_item_candidate_set_status_counts(
         detail = work_item.get("detail")
         if not isinstance(detail, dict):
             continue
-        certificate = detail.get("candidate_set_certificate")
+        certificate = detail.get("candidate_set_coverage")
         if not isinstance(certificate, dict):
             continue
         status = str(certificate.get("completeness_status") or "")
@@ -3039,7 +3039,7 @@ def _candidate_set_status_for_work_item(work_item: Mapping[str, Any]) -> str:
     detail = work_item.get("detail")
     if not isinstance(detail, Mapping):
         return "missing_detail"
-    certificate = detail.get("candidate_set_certificate")
+    certificate = detail.get("candidate_set_coverage")
     if not isinstance(certificate, Mapping):
         return "missing_certificate"
     return str(certificate.get("completeness_status") or "unproven")
@@ -4838,7 +4838,7 @@ def main(argv: list[str] | None = None) -> int:
         "--fail-on-frontier-candidate-set-gaps",
         action="store_true",
         help=(
-            "Exit nonzero when manual-frontier CandidateSetCertificate "
+            "Exit nonzero when manual-frontier CandidateSetCoverage "
             "status counters contain any non-complete status"
         ),
     )
