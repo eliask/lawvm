@@ -37,6 +37,7 @@ construction and asserted absent from the catalog below.
 from __future__ import annotations
 
 import ast
+from functools import lru_cache
 from pathlib import Path
 
 from lawvm.tools.spec_ledger import _FI_RULE_SPECS
@@ -133,6 +134,7 @@ def _file_parse_witness_rule_ids(tree: ast.Module) -> set[str]:
     return found
 
 
+@lru_cache(maxsize=1)
 def _discover_fi_parse_witness_rule_ids() -> set[str]:
     """Every static FI parse-witness rule id (literal or module-constant), via AST."""
     found: set[str] = set()
