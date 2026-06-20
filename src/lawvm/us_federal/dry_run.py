@@ -71,6 +71,7 @@ from lawvm.us_federal.sources import (
 from lawvm.us_federal.source_tree import (
     UscSection,
     UscSourceDocument,
+    _SUBSECTION_PARSE_AMBIGUOUS,
     _USC_LADDER,
     _marker_interpretations,
     _normalize_text,
@@ -129,6 +130,32 @@ US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID = "us_dry_run_residual_match_te
 # rather than fall back to an unscoped whole-section string replace.
 US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID = (
     "us_dry_run_residual_subsection_target_node_not_located_in_before_section"
+)
+# A structural-redesignation payload introduced a clause whose body is a bare
+# prefix in the source XML (e.g., USLM quotedContent ended after "(i) any member"),
+# while the oracle shows the full clause body.  The materialization is source-faithful;
+# the gap is on the source/oracle side, so the residual is classified as oracle_suspect
+# rather than lawvm_wrong.
+US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID = (
+    "us_dry_run_residual_source_truncated_payload"
+)
+# The USC annual edition's source tree does not expose the structural level the
+# amendment names: the target level is absent from the parsed section (e.g. a
+# non-positive-law title that omits subsection/paragraph markers but renders
+# deeper subparagraph/clause markers). The materialization cannot safely locate
+# the node, and the gap is in the source comparison surface, so the residual is
+# classified as a source-footing gap rather than a lawvm_wrong lowering bug.
+US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID = (
+    "us_dry_run_residual_target_level_absent_in_source_tree"
+)
+# The USC annual edition's source tree exposes the structural level the
+# amendment names, but the parsing of that section's markers is ambiguous
+# (e.g. a section whose text precedes the first enumerated marker, or a marker
+# that is genuinely ambiguous between levels). The materialization cannot safely
+# locate a specific node without fabricating structure, so the residual is
+# classified as a source-footing gap rather than a lawvm_wrong lowering bug.
+US_DRY_RUN_RESIDUAL_SOURCE_TREE_PARSE_AMBIGUOUS_RULE_ID = (
+    "us_dry_run_residual_source_tree_parse_ambiguous"
 )
 
 # Typed refusals (no materialization attempted / not representable at section level).
@@ -276,6 +303,93 @@ def _subsection_segments(address: LegalAddress) -> tuple[tuple[str, str], ...]:
             out.append((kind, label))
     return tuple(out)
 
+
+def _source_tree_resolution_state(
+    section: UscSection, address: LegalAddress
+) -> tuple[bool, bool]:
+    """Returns ``(target_level_absent, parse_ambiguous)`` for ``address`` in ``section``.
+
+    ``target_level_absent`` is true when the section exposes no node at the
+    target's structural level at all.  ``parse_ambiguous`` is true when nodes at
+    the target level exist, but the source-tree split emitted ambiguity findings
+    for the section, so locating a *specific* target node is unsafe.
+    """
+    target_segments = _subsection_segments(address)
+    if not target_segments:
+        return False, False
+    target_level = target_segments[-1][0]
+    nodes, findings = split_statutory_subsections(section)
+    has_target_level = any(
+        _subsection_segments(node.address)[-1][0] == target_level
+        for node in nodes
+    )
+    parse_ambiguous = any(
+        f.get("rule_id") == _SUBSECTION_PARSE_AMBIGUOUS for f in findings
+    )
+    return not has_target_level, parse_ambiguous
+
+
+def _source_tree_gap_rule_for_address(
+    section: UscSection, address: LegalAddress
+) -> str | None:
+    """Return a dedicated source-footing-gap rule id if the section's source tree
+    cannot cleanly locate ``address``, otherwise ``None``.
+    """
+    level_absent, parse_ambiguous = _source_tree_resolution_state(section, address)
+    if level_absent:
+        return US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID
+    if parse_ambiguous:
+        return US_DRY_RUN_RESIDUAL_SOURCE_TREE_PARSE_AMBIGUOUS_RULE_ID
+    return None
+
+
+# Conservative pattern for a structural clause introduced by a redesignation payload
+# whose quotedContent was truncated by the USLM converter: a lowercase clause label
+# directly after an em-dash/colon introducer, followed by a very short body (1-3
+# words).  The oracle may show the same words plus a longer completing phrase.
+_SOURCE_TRUNCATED_CLAUSE_RE = re.compile(
+    r"(?P<intro>[—–:])\s*\((?P<label>[a-z]+)\)\s*(?P<body>(?:[^\s()]+\s*){1,3})"
+)
+
+
+def _has_source_truncated_clause_payload(materialized: str, oracle: str) -> bool:
+    """Detect a clause body the source XML truncated during lowering.
+
+    Some USLM redesignations wrap a new clause in quotedContent that ends after a
+    bare noun phrase.  The oracle after-edition supplies the full clause body.  The
+    materialization is source-faithful; the gap belongs to the source/oracle surface,
+    so the residual should be oracle_suspect, not lawvm_wrong.
+
+    This test is intentionally narrow: the clause must be introduced by a structural
+    dash/colon, the materialized body must be a short prefix of the oracle body, and
+    the oracle body must continue with substantial additional text.  It never
+    modifies either text; it only guides classification.
+    """
+    for m in _SOURCE_TRUNCATED_CLAUSE_RE.finditer(materialized):
+        label = m.group("label")
+        body = m.group("body").strip()
+        if not body or body.rstrip().endswith((".", ";")):
+            continue
+        # The oracle must have the same label and its body must start with the same
+        # words and continue significantly.
+        pattern = rf"[—–:]\s*\({re.escape(label)}\)\s*"
+        for om in re.finditer(pattern, oracle):
+            rest = oracle[om.end():]
+            # Compare case-insensitively and quote-insensitively for the prefix.
+            prefix_match = (
+                rest.lower().startswith(body.lower())
+                or _norm(body).lower() == _norm(rest[: len(body)]).lower()
+            )
+            if prefix_match:
+                tail = rest[len(body):]
+                # Require substantial oracle continuation that looks like completed
+                # clause text, not just conjunctions or punctuation.
+                trimmed_tail = tail.lstrip(" \t\n\r\u201c\u201d\"'")
+                if len(trimmed_tail) >= 30 and not trimmed_tail[:8].lower().startswith(
+                    ("and", "or")
+                ):
+                    return True
+    return False
 
 def _locate_subsection_text(
     section: UscSection | None, address: LegalAddress
@@ -1343,10 +1457,19 @@ def _materialize_one(
                 return _refuse_absent_text_target(
                     operation, absent_kind="match anchor", absent_text=match_text
                 )
+            rule_id = US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+            disposition = DISPOSITION_LAWVM_WRONG
+            if before_section is not None:
+                gap_rule = _source_tree_gap_rule_for_address(
+                    before_section, operation.target
+                )
+                if gap_rule is not None:
+                    rule_id = gap_rule
+                    disposition = DISPOSITION_MISSING_SOURCE
             return (
                 "",
-                US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
-                DISPOSITION_LAWVM_WRONG,
+                rule_id,
+                disposition,
             )
 
         if not _token_in_text(before_text, match_text):
@@ -1388,10 +1511,19 @@ def _materialize_one(
             before_section, operation.anchor, before_text, node_overrides
         )
         if anchor_text is None:
+            rule_id = US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+            disposition = DISPOSITION_LAWVM_WRONG
+            if before_section is not None:
+                gap_rule = _source_tree_gap_rule_for_address(
+                    before_section, operation.anchor
+                )
+                if gap_rule is not None:
+                    rule_id = gap_rule
+                    disposition = DISPOSITION_MISSING_SOURCE
             return (
                 "",
-                US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
-                DISPOSITION_LAWVM_WRONG,
+                rule_id,
+                disposition,
             )
         new_anchor_text = f"{anchor_text} {payload_text}".strip()
         materialized = before_text.replace(anchor_text, new_anchor_text, 1)
@@ -1496,10 +1628,19 @@ def _materialize_one(
                 # We could not locate the targeted node in the running section (the
                 # split did not expose it cleanly, or an earlier op moved it): a
                 # sub-section payload cannot be applied blindly. Typed residual.
+                rule_id = US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+                disposition = DISPOSITION_LAWVM_WRONG
+                if before_section is not None:
+                    gap_rule = _source_tree_gap_rule_for_address(
+                        before_section, operation.target
+                    )
+                    if gap_rule is not None:
+                        rule_id = gap_rule
+                        disposition = DISPOSITION_MISSING_SOURCE
                 return (
                     "",
-                    US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
-                    DISPOSITION_LAWVM_WRONG,
+                    rule_id,
+                    disposition,
                 )
             if action is StructuralAction.REPLACE:
                 # amend-to-read of the sub-section node: the payload IS the node's
@@ -1957,6 +2098,28 @@ def build_us_dry_run(
                     section_key=section_key,
                     status="residual",
                     rule_id=US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
+                    disposition=DISPOSITION_ORACLE_SUSPECT,
+                    match_text=row_match,
+                    replacement=row_replacement,
+                    before_text=before_text,
+                    materialized_text=materialized,
+                    oracle_text=oracle_text,
+                    oracle_changed=oracle_changed_here,
+                )
+            )
+        elif _has_source_truncated_clause_payload(materialized, oracle_text):
+            # The source XML supplied a truncated structural redesignation payload
+            # (e.g., a clause introduced as "(i) any member"); our materialization
+            # faithfully reproduces that source, while the oracle shows the completed
+            # clause body.  The gap is on the source/oracle surface, not the lowering.
+            rows.append(
+                USDryRunSectionRow(
+                    op_id=row_op_id,
+                    action=row_action,
+                    target_address=target_address,
+                    section_key=section_key,
+                    status="residual",
+                    rule_id=US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID,
                     disposition=DISPOSITION_ORACLE_SUSPECT,
                     match_text=row_match,
                     replacement=row_replacement,

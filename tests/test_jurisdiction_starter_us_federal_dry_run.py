@@ -31,6 +31,7 @@ from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKin
 from lawvm.us_federal.amendatory import lower_plaw_amendatory
 from lawvm.us_federal.dry_run import (
     DISPOSITION_LAWVM_WRONG,
+    DISPOSITION_MISSING_SOURCE,
     DISPOSITION_ORACLE_SUSPECT,
     US_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID,
     US_DRY_RUN_REFUSED_SECTION_NOT_IN_BEFORE_RULE_ID,
@@ -39,12 +40,16 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID,
     US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID,
     US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID,
+    US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID,
     US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
+    US_DRY_RUN_RESIDUAL_SOURCE_TREE_PARSE_AMBIGUOUS_RULE_ID,
+    US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID,
     US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
     US_DRY_RUN_SECTION_AGREES_RULE_ID,
     USDryRunRefusal,
     USDryRunReport,
     USDryRunWindowError,
+    _has_source_truncated_clause_payload,
     _index_node_text,
     _materialize_one,
     _norm_editorial,
@@ -212,6 +217,80 @@ def test_structural_repeal_op_is_refused_at_section_text_granularity() -> None:
 
     assert isinstance(refusal, USDryRunRefusal)
     assert refusal.rule_id == US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID
+
+
+def test_subsection_replace_when_source_tree_parse_is_ambiguous_is_source_footing_gap() -> None:
+    # Section starts with unmarked prose (a definitions/intro sentence) before the
+    # first enumerated marker, so the source-tree split emits an ambiguity finding
+    # even though the paragraph level exists. The target label is missing, but the
+    # gap is in the source tree, not the lowering.
+    section = synthetic_usc_section(
+        title=50,
+        section="1881a",
+        text=(
+            "Notwithstanding any other provision of law, upon the issuance... "
+            "(1) may not intentionally target any person known at the time of acquisition to be located in the United States. "
+            "(2) may not intentionally target a person reasonably believed to be located outside the United States."
+        ),
+    )
+    op = LegalOperation(
+        op_id="replace-para-5",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(
+            path=(
+                ("title", "50"),
+                ("section", "1881a"),
+                ("paragraph", "5"),
+            )
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="5",
+            text="(5) Replacement paragraph.",
+        ),
+    )
+    outcome = _materialize_one(
+        op, section.statutory_text, before_section=section
+    )
+    assert not isinstance(outcome, USDryRunRefusal)
+    _materialized, rule_id, disposition = outcome
+    assert rule_id == US_DRY_RUN_RESIDUAL_SOURCE_TREE_PARSE_AMBIGUOUS_RULE_ID
+    assert disposition == DISPOSITION_MISSING_SOURCE
+
+
+def test_source_tree_parse_ambiguous_not_fired_when_parse_is_clean_and_label_missing() -> None:
+    # Control: section has clean markers, target level exists, label is missing.
+    # No source-tree ambiguity, so the generic node-not-located residual stays.
+    section = synthetic_usc_section(
+        title=11,
+        section="77",
+        text="(1) The first paragraph. (2) The second paragraph.",
+    )
+    op = LegalOperation(
+        op_id="replace-para-99",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(
+            path=(
+                ("title", "11"),
+                ("section", "77"),
+                ("paragraph", "99"),
+            )
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="99",
+            text="(99) Replacement paragraph.",
+        ),
+    )
+    outcome = _materialize_one(
+        op, section.statutory_text, before_section=section
+    )
+    assert not isinstance(outcome, USDryRunRefusal)
+    _materialized, rule_id, disposition = outcome
+    assert rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+    assert disposition == DISPOSITION_LAWVM_WRONG
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +497,16 @@ def test_real_title11_2018_2020_window_composes_multi_law_amendments() -> None:
     assert "11:1182" not in lawvm_wrong_sections
     assert "11:365" not in lawvm_wrong_sections
     assert "11:541" not in lawvm_wrong_sections
+
+    # §101 had a remaining lawvm_wrong caused by a USLM XML-truncated SBRA
+    # redesignation clause (PL 116-54 /s4/a/1/B/ii/II: "(i) any member").  It is
+    # now classified as oracle_suspect under the source-truncated-payload rule
+    # rather than lawvm_wrong, because our materialization is source-faithful.
+    assert "11:101" not in lawvm_wrong_sections
+    s101 = {r.section_key: r for r in report.rows}.get("11:101")
+    assert s101 is not None
+    assert s101.disposition == DISPOSITION_ORACLE_SUSPECT
+    assert s101.rule_id == US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID
 
     # Oracle-suspect residuals are now numerous (editorial quote shapes, dropped
     # marginal notes, etc.). We only assert a stable floor rather than pinning a
@@ -1577,6 +1666,36 @@ def test_norm_editorial_folds_straight_and_curly_quote_shapes() -> None:
     assert _norm_editorial(enacted) != _norm_editorial(other)
 
 
+def test_source_truncated_clause_payload_is_detected() -> None:
+    # Mirrors PL 116-54 /s4/a/1/B/ii/II: the USLM quotedContent introduces clause (i)
+    # with a bare noun phrase, while the oracle shows the completed body.
+    materialized = (
+        "(51D) The term small business debtor—"
+        "(A) means a person; and"
+        "(B) does not include—(i) any member (ii) any debtor that is a corporation."
+    )
+    oracle = (
+        "(51D) The term small business debtor—"
+        "(A) means a person; and"
+        "(B) does not include—"
+        "(i) any member of a group of affiliated debtors that has aggregate debts; "
+        "(ii) any debtor that is a corporation."
+    )
+    assert _has_source_truncated_clause_payload(materialized, oracle) is True
+    # A clause whose materialized body already ends with a terminal marker is not
+    # treated as truncated: the source considered it complete.
+    complete = (
+        "(B) does not include—(i) any member; (ii) any debtor that is a corporation."
+    )
+    assert _has_source_truncated_clause_payload(complete, oracle) is False
+    # Requiring the oracle body to continue substantially rules out false positives
+    # where only punctuation differs.
+    short_oracle = (
+        "(B) does not include—(i) any member (ii) any debtor."
+    )
+    assert _has_source_truncated_clause_payload(complete, short_oracle) is False
+
+
 def test_quoted_block_insert_residual_is_typed_oracle_suspect_not_lawvm_wrong(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1993,3 +2112,73 @@ def test_tail_strike_each_place_cuts_at_the_leftmost_anchor_only() -> None:
 
     # An anchor absent from the text is a no-op (never an over-broad deletion).
     assert _replace_token_tail_in_text(text, "absent", "Y", count=-1) == text
+
+
+# A section whose visible markers skip an entire level the amendment names. The
+# source tree exposes only subparagraph ``(A)/(B)`` units while the amendment
+# targets ``paragraph (1)``: the paragraph level is absent, so the failure is a
+# source-footing gap, not a lawvm_wrong lowering bug.
+_TARGET_LEVEL_ABSENT_SECTION = synthetic_usc_section(
+    title=42,
+    section="1395w-demo",
+    text="(A) The first visible unit. (B) The second visible unit.",
+)
+
+
+def test_subsection_replace_when_target_level_absent_is_source_footing_gap() -> None:
+    op = LegalOperation(
+        op_id="replace-para-1",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(
+            path=(
+                ("title", "42"),
+                ("section", "1395w-demo"),
+                ("paragraph", "1"),
+            )
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            text="(1) Replacement paragraph.",
+        ),
+    )
+    outcome = _materialize_one(
+        op,
+        _TARGET_LEVEL_ABSENT_SECTION.statutory_text,
+        before_section=_TARGET_LEVEL_ABSENT_SECTION,
+    )
+    assert not isinstance(outcome, USDryRunRefusal)
+    _materialized, rule_id, disposition = outcome
+    assert rule_id == US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID
+    assert disposition == DISPOSITION_MISSING_SOURCE
+
+
+def test_target_level_absent_not_fired_when_level_is_present_but_label_missing() -> None:
+    # Section has paragraph (1) but not paragraph (2). The level exists, so a
+    # missing target label stays the generic node-not-located residual.
+    section = synthetic_usc_section(
+        title=11,
+        section="77",
+        text="(1) The first paragraph. (2) The second paragraph.",
+    )
+    op = LegalOperation(
+        op_id="replace-para-99",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(
+            path=(("title", "11"), ("section", "77"), ("paragraph", "99"))
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="99",
+            text="(99) Replacement paragraph.",
+        ),
+    )
+    outcome = _materialize_one(
+        op, section.statutory_text, before_section=section
+    )
+    assert not isinstance(outcome, USDryRunRefusal)
+    _materialized, rule_id, disposition = outcome
+    assert rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+    assert disposition == DISPOSITION_LAWVM_WRONG

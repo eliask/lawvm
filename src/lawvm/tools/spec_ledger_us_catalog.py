@@ -259,6 +259,25 @@ _US_RULE_SPECS: Dict[str, str] = {
         "before-section split does not expose, or whose text an earlier op already "
         "mutated — surfaced as a typed residual rather than an unscoped string replace."
     ),
+    "us_dry_run_residual_target_level_absent_in_source_tree": (
+        "Contradiction: the USC annual-edition source tree for the section does not "
+        "expose the structural level the amendment names (e.g. only subparagraph markers "
+        "are rendered while the amendment targets a paragraph). The node cannot be safely "
+        "located, so the residual is classified as a source-footing gap."
+    ),
+    "us_dry_run_residual_source_tree_parse_ambiguous": (
+        "Contradiction: the USC annual-edition source tree for the section exposes the "
+        "structural level the amendment names, but its marker parsing is ambiguous "
+        "(e.g. prose precedes the first enumerated marker, or a marker is genuinely "
+        "ambiguous between levels). A specific target node cannot be safely located, "
+        "so the residual is classified as a source-footing gap rather than a lowering bug."
+    ),
+    "us_dry_run_residual_source_truncated_payload": (
+        "Contradiction: a structural redesignation payload the source XML truncated "
+        "(e.g., a clause introduced only as '(i) any member') was materialized faithfully, "
+        "while the oracle shows the completed clause body.  The gap is on the source/oracle "
+        "surface, not in lowering, so the residual is oracle_suspect rather than lawvm_wrong."
+    ),
     "us_dry_run_surface_not_replay_authorized": (
         "Invariant: the dry-run surface never authorizes actual replay — the gate is "
         "always closed (replay_authorized is False)."
@@ -460,6 +479,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_strike_insert_end_punctuation": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_insert_punctuation_word": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_materialized_text_mismatch_with_oracle": US_CONFIDENCE_HEURISTIC,
+    "us_dry_run_residual_source_truncated_payload": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_deferred_amend_to_read": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_paren": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_href": US_CONFIDENCE_HEURISTIC,
