@@ -785,6 +785,7 @@ def _compile_artifacts_from_replay(
         canonical_ops=canonical_ops,
         failures=compile_failures,
         findings=tuple(findings_tuple),
+        effect_lifecycle_events=tuple(replay_result.products.effect_lifecycle_events),
     )
     if registry_codes_from_runtime_violations:
         gated_barrier_codes = {

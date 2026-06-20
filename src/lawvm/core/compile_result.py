@@ -1134,6 +1134,7 @@ def strict_fail_reasons_from_finding_ledger(
     canonical_ops: Iterable[LegalOperation],
     failures: Iterable[CompileFailure],
     findings: Iterable[Finding],
+    effect_lifecycle_events: Iterable[EffectLifecycleEvent] = (),
 ) -> list[str]:
     """Derive strict-fail reasons using finding-ledger inputs instead of adjudication bags.
 
@@ -1148,6 +1149,15 @@ def strict_fail_reasons_from_finding_ledger(
         triggered.add("APPLY.FAILED_OPERATION")
 
     canonical_ops_list = list(canonical_ops)
+
+    for event in effect_lifecycle_events:
+        if event.kind != "unresolved_effect_target":
+            continue
+        source_finding = str(event.detail.get("source_finding") or "").strip()
+        if source_finding:
+            triggered.add(source_finding)
+        else:
+            triggered.add("APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED")
 
     def _as_canonical_action_value(raw_action: Any) -> str:
         if isinstance(raw_action, StructuralAction):

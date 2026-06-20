@@ -221,6 +221,25 @@ def test_pending_amendment_effect_unresolved_blocks_strict_mode() -> None:
     ) == ["APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED"]
 
 
+def test_unresolved_effect_lifecycle_event_blocks_strict_mode_without_finding() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    event = EffectLifecycleEvent(
+        lifecycle_event_id="life:unresolved",
+        kind="unresolved_effect_target",
+        source_provision=SourceProvisionRef(instrument=instrument),
+        executable=False,
+    )
+
+    assert strict_fail_reasons_from_finding_ledger(
+        StrictProfile(name="strict"),
+        compiled_ops=(),
+        canonical_ops=(),
+        failures=(),
+        findings=(),
+        effect_lifecycle_events=(event,),
+    ) == ["APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED"]
+
+
 def test_effect_lifecycle_event_lowers_to_temporal_event_semantics() -> None:
     instrument = SourceInstrumentRef(
         instrument_id="2020/1",
