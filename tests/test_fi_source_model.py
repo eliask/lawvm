@@ -775,6 +775,22 @@ def test_source_model_chapter_payload_lookup_uses_logical_pseudo_chapter_segment
     ] == ["1", "2", "3", "4", "5", "6", "7", "8"]
 
 
+def test_source_model_chapter_payload_lookup_salvages_marker_only_pseudo_chapter() -> None:
+    xml = get_corpus_store().read_source("1995/1396")
+    assert xml is not None
+    model = AmendmentSourceModel.from_tree(etree.fromstring(xml), source_ref="1995/1396")
+
+    lookup = model.lookup_payload_ir("chapter", "8a")
+
+    assert lookup.status == "unique"
+    assert lookup.payload_basis == "body_inventory"
+    assert lookup.payload_ir is not None
+    assert lookup.payload_ir.kind is IRNodeKind.CHAPTER
+    assert lookup.payload_ir.label == "8a"
+    assert "Kansainvälinen hakemus" in irnode_to_text(lookup.payload_ir)
+    assert all(child.kind is not IRNodeKind.SECTION for child in lookup.payload_ir.children)
+
+
 def test_source_model_section_payload_text_uses_typed_payload_ir() -> None:
     tree = etree.fromstring(
         b"""

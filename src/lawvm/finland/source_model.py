@@ -20,6 +20,7 @@ from lawvm.core.coverage import CoverageIgnoredUnit, CoverageUnit
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_surface import TargetUnitKind
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.body_coverage import BodyCoveragePayloadRef, extract_body_coverage
 from lawvm.finland.body_pairing import (
     ObservedBodyUnit,
@@ -134,6 +135,30 @@ class _SourcePayloadIrEntry:
                     target_unit_kind=self.kind,
                     target_norm=self.label,
                 )
+                if self._payload[0] is None and _xml_localname(self.el) == "section":
+                    marker_ir, cross_ir = _payload_ir_from_muutos_node(
+                        self.el,
+                        target_unit_kind="section",
+                        target_norm=self.label,
+                    )
+                    marker_children = (
+                        tuple(
+                            child
+                            for child in marker_ir.children
+                            if child.kind in {IRNodeKind.NUM, IRNodeKind.HEADING}
+                        )
+                        if marker_ir is not None
+                        else ()
+                    )
+                    if marker_children:
+                        self._payload = (
+                            IRNode(
+                                kind=IRNodeKind.CHAPTER,
+                                label=self.label,
+                                children=marker_children,
+                            ),
+                            cross_ir,
+                        )
             else:
                 self._payload = _payload_ir_from_muutos_node(
                     self.el,
