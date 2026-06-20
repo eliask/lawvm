@@ -115,6 +115,10 @@ from lawvm.finland.apply_ir_ops import (
 )
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.strict_profile import default_finland_strict_profile
+from lawvm.finland.standalone_targets import (
+    StandaloneSectionTarget,
+    normalize_standalone_section_target,
+)
 from tests.corpus_pin_helpers import pinned_replay
 from lawvm.finland.metadata import get_johtolause
 from lawvm.finland.merge import _merge_section_with_omission_ir, _partial_section_replace_diagnostics_ir
@@ -192,6 +196,11 @@ def _compat_upsert_policy():
 def _make_state(body_ir: IRNode) -> ReplayState:
     """Build a minimal ReplayState with the given IRNode as its .ir."""
     return ReplayState(ir=body_ir)
+
+
+def test_standalone_section_targets_reject_legacy_tuple_shape() -> None:
+    with pytest.raises(TypeError, match="StandaloneSectionTarget"):
+        normalize_standalone_section_target(cast(Any, (None, "6", "23")))
 
 
 def test_replay_state_section_path_cache_is_state_local() -> None:
@@ -3852,7 +3861,9 @@ def test_emit_section_snapshot_skips_container_child_for_cross_chapter_standalon
         source_issue_date=_DATE,
         source_effective_date=_DATE,
         base_ir=state.ir,
-        standalone_section_targets=frozenset({(None, "6", "23")}),
+        standalone_section_targets=frozenset(
+            {StandaloneSectionTarget(part=None, chapter="6", label="23")}
+        ),
     )
 
     assert any(op.target.path == (("chapter", "5"), ("section", "18")) for op in lo_ops)
@@ -4223,7 +4234,9 @@ def test_emit_section_snapshot_keeps_container_child_when_same_label_exists_in_o
         source_issue_date=_DATE,
         source_effective_date=_DATE,
         base_ir=state.ir,
-        standalone_section_targets=frozenset({(None, "15", "1")}),
+        standalone_section_targets=frozenset(
+            {StandaloneSectionTarget(part=None, chapter="15", label="1")}
+        ),
     )
 
     assert any(
@@ -5741,7 +5754,9 @@ class TestApplyContainerInsert:
             muutos_ir,
             _LEGAL_PIT,
             "[2018/301] INSERT V osan 2 luku",
-            standalone_section_targets=frozenset({("4", "2", "1")}),
+            standalone_section_targets=frozenset(
+                {StandaloneSectionTarget(part="4", chapter="2", label="1")}
+            ),
         )
 
         result = _modified(state, result)
@@ -6110,7 +6125,9 @@ def test_apply_container_whole_chapter_replace_keeps_cross_chapter_same_labeled_
         muutos_ir,
         _LEGAL_PIT,
         "[1997/1251] REPLACE 5 luku otsikko",
-        standalone_section_targets=frozenset({("6", "23")}),
+        standalone_section_targets=frozenset(
+            {StandaloneSectionTarget(part=None, chapter="6", label="23")}
+        ),
     )
 
     result = _modified(state, result)

@@ -57,6 +57,7 @@ from lawvm.finland.johtolause.compat import parse_clause
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
+from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.statute import ReplayState
 from lawvm.finland.restructure_plan import resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan
 from tests.corpus_pin_helpers import pinned_replay
@@ -407,7 +408,9 @@ class TestContainerInsertSectionDedup:
 
         # standalone_section_targets: chapter-SCOPED op for (ch=2, sec=1)
         # This means the op explicitly targets ch2/§1, so ch7/§1 is distinct.
-        standalone_section_targets = frozenset({("2", "1")})
+        standalone_section_targets = frozenset(
+            {StandaloneSectionTarget(part=None, chapter="2", label="1")}
+        )
 
         result = _apply_container_op(
             state,
