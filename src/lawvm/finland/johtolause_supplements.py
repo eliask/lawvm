@@ -56,10 +56,14 @@ _ITEM_AND_MOMENT_TARGET_RULE_ID = "fi.item_and_moment_target_supplement.v1"
 _ITEM_AND_MOMENT_TARGET_TAG = "item_and_moment_target_supplement"
 _MIXED_EXPLICIT_TARGET_RULE_ID = "fi.mixed_explicit_target_supplement.v1"
 _MIXED_EXPLICIT_TARGET_TAG = "mixed_explicit_target_supplement"
+_EXPLICIT_CHAPTER_SCOPE_TAG = "chapter_scope_from_explicit_chunk"
 _SECTION_LABEL_PATTERN = r"\d{1,4}(?:[a-zäöå]|\s[a-zäöå])?"
+_CHAPTER_LABEL_PATTERN = _SECTION_LABEL_PATTERN
+_OPTIONAL_CHAPTER_SECTION_PREFIX = rf"(?:(?P<chapter>{_CHAPTER_LABEL_PATTERN})\s{{1,10}}luvun\s{{1,20}})?"
 _ITEM_LABEL_PATTERN = r"\d{1,3}(?:[a-zäöå]|\s[a-zäöå])?"
 _REPLACE_ITEMS_AND_MOMENT_RE = re.compile(
-    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
+    _OPTIONAL_CHAPTER_SECTION_PREFIX
+    + rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
     r"(?P<moment>\d{1,3})\s+momentin\s+kohdat\s+"
     r"(?P<items>\d{1,3}(?:\s{0,20}(?:,|ja)\s{0,20}\d{1,3}){0,12})\s+"
     r"sekä\s+(?P<extra_moment>\d{1,3})\s+momentti\b",
@@ -67,30 +71,35 @@ _REPLACE_ITEMS_AND_MOMENT_RE = re.compile(
 )
 _INSERT_ITEM_RE = re.compile(
     r"\blisätään\b[\s\S]{0,800}?"
-    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
+    + _OPTIONAL_CHAPTER_SECTION_PREFIX
+    + rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
     r"(?P<moment>\d{1,3})\s+momenttiin\s+uusi\s+kohta\s+"
     r"(?P<item>\d{1,3})\b",
     flags=re.I,
 )
 _ITEM_REPLACE_RE = re.compile(
-    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
+    _OPTIONAL_CHAPTER_SECTION_PREFIX
+    + rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
     r"(?P<moment>\d{1,3})\s+momentin\s+kohta\s+"
     rf"(?P<item>{_ITEM_LABEL_PATTERN})\b",
     flags=re.I,
 )
 _TABLE_AND_MOMENT_RE = re.compile(
-    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
+    _OPTIONAL_CHAPTER_SECTION_PREFIX
+    + rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
     rf"taulukko\s+{_SECTION_LABEL_PATTERN}\s+ja\s+"
     r"(?P<moment>\d{1,3})\s+momentti\b",
     flags=re.I,
 )
 _INSERT_MOMENT_RE = re.compile(
-    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}ään\s+uusi\s+"
+    _OPTIONAL_CHAPTER_SECTION_PREFIX
+    + rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}ään\s+uusi\s+"
     r"(?P<moment>\d{1,3})\s+momentti\b",
     flags=re.I,
 )
 _BARE_REPLACE_SECTION_RE = re.compile(
-    rf"(?<![/\d])(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§(?!\s{{0,10}}:)(?!\s{{0,10}}n\b)",
+    rf"(?<![/\d]){_OPTIONAL_CHAPTER_SECTION_PREFIX}"
+    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§(?!\s{{0,10}}:)(?!\s{{0,10}}n\b)",
     flags=re.I,
 )
 _CHAPTER_HEADING_PAIR_PREFIX_RE = re.compile(
@@ -132,6 +141,7 @@ class ItemAndMomentReplaceClause:
     """Typed supplement for ``N momentin kohdat ... sekä M momentti`` clauses."""
 
     section: str
+    chapter: str | None
     moment: int
     item_labels: tuple[str, ...]
     extra_moment: int
@@ -143,6 +153,7 @@ class ItemInsertClause:
     """Typed supplement for ``N momenttiin uusi kohta M`` clauses."""
 
     section: str
+    chapter: str | None
     moment: int
     item_label: str
     raw_text: str
@@ -153,6 +164,7 @@ class ItemReplaceClause:
     """Typed supplement for ``N §:n K momentin kohta M`` clauses."""
 
     section: str
+    chapter: str | None
     moment: int
     item_label: str
     raw_text: str
@@ -163,6 +175,7 @@ class BareSectionReplaceClause:
     """Typed supplement for bare whole-section targets inside ``muutetaan``."""
 
     section: str
+    chapter: str | None
     raw_text: str
 
 
@@ -171,6 +184,7 @@ class MomentTargetClause:
     """Typed supplement for explicit moment targets skipped in mixed lists."""
 
     section: str
+    chapter: str | None
     moment: int
     op_type: str
     raw_text: str
@@ -488,6 +502,10 @@ def _parse_item_labels(raw_items: str) -> tuple[str, ...]:
     return tuple(labels)
 
 
+def _match_chapter(match: re.Match[str]) -> str | None:
+    return _norm_num_token(match.group("chapter") or "") or None
+
+
 def _parse_item_and_moment_replace_clauses(johto: str) -> tuple[ItemAndMomentReplaceClause, ...]:
     clauses: list[ItemAndMomentReplaceClause] = []
     for match in _REPLACE_ITEMS_AND_MOMENT_RE.finditer(johto or ""):
@@ -498,6 +516,7 @@ def _parse_item_and_moment_replace_clauses(johto: str) -> tuple[ItemAndMomentRep
         clauses.append(
             ItemAndMomentReplaceClause(
                 section=section,
+                chapter=_match_chapter(match),
                 moment=int(match.group("moment")),
                 item_labels=item_labels,
                 extra_moment=int(match.group("extra_moment")),
@@ -517,12 +536,24 @@ def _parse_item_insert_clauses(johto: str) -> tuple[ItemInsertClause, ...]:
         clauses.append(
             ItemInsertClause(
                 section=section,
+                chapter=_match_chapter(match),
                 moment=int(match.group("moment")),
                 item_label=item_label,
                 raw_text=match.group(0),
             )
         )
     return tuple(clauses)
+
+
+_ANY_CHAPTER: object = object()
+
+
+def _chapter_matches(op_chapter: str | None, chapter: str | None | object) -> bool:
+    return chapter is _ANY_CHAPTER or op_chapter == chapter
+
+
+def _scope_tags_for_chapter(chapter: str | None) -> tuple[str, ...]:
+    return (_EXPLICIT_CHAPTER_SCOPE_TAG,) if chapter else ()
 
 
 def _has_op(
@@ -532,11 +563,13 @@ def _has_op(
     section: str,
     moment: int,
     item: str | None,
+    chapter: str | None | object = _ANY_CHAPTER,
 ) -> bool:
     return any(
         op.op_type == op_type
         and op.target_unit_kind == "section"
         and op.target_section == section
+        and _chapter_matches(op.target_chapter, chapter)
         and op.target_paragraph == moment
         and (op.target_item or None) == item
         and not op.target_special
@@ -552,20 +585,24 @@ def _append_unique_op(
     section: str,
     moment: int | None = None,
     item: str | None = None,
+    chapter: str | None = None,
     numbered_table_targets: tuple[str, ...] = (),
 ) -> None:
+    chapter_filter: str | None | object = chapter if chapter is not None else _ANY_CHAPTER
     if _has_op(
         ops,
         op_type=op_type,
         section=section,
         moment=moment or 0,
         item=item,
+        chapter=chapter_filter,
     ):
         return
     if moment is None and any(
         op.op_type == op_type
         and op.target_unit_kind == "section"
         and op.target_section == section
+        and _chapter_matches(op.target_chapter, chapter_filter)
         and op.target_paragraph is None
         and not op.target_item
         and not op.target_special
@@ -578,10 +615,12 @@ def _append_unique_op(
             op_type=cast(OpType, op_type),
             target_section=section,
             target_unit_kind="section",
+            target_chapter=chapter,
             target_paragraph=moment,
             target_item=item,
             numbered_table_targets=numbered_table_targets,
             extraction_provenance_tags=(_MIXED_EXPLICIT_TARGET_TAG,),
+            scope_provenance_tags=_scope_tags_for_chapter(chapter),
             witness_rule_id=_MIXED_EXPLICIT_TARGET_RULE_ID,
         )
     )
@@ -597,6 +636,7 @@ def _parse_item_replace_clauses(johto: str) -> tuple[ItemReplaceClause, ...]:
         clauses.append(
             ItemReplaceClause(
                 section=section,
+                chapter=_match_chapter(match),
                 moment=int(match.group("moment")),
                 item_label=item_label,
                 raw_text=match.group(0),
@@ -621,16 +661,18 @@ def _parse_bare_section_replace_clauses(johto: str) -> tuple[BareSectionReplaceC
     if stop_matches:
         muutetaan_segment = muutetaan_segment[: min(stop_matches)]
     clauses: list[BareSectionReplaceClause] = []
-    seen: set[str] = set()
+    seen: set[tuple[str | None, str]] = set()
     for match in _BARE_REPLACE_SECTION_RE.finditer(muutetaan_segment):
         prefix = " ".join(muutetaan_segment[: match.start()].split())
         if _CHAPTER_HEADING_PAIR_PREFIX_RE.search(prefix):
             continue
         section = _norm_num_token(match.group("section"))
-        if not section or section in seen:
+        chapter = _match_chapter(match)
+        key = (chapter, section)
+        if not section or key in seen:
             continue
-        seen.add(section)
-        clauses.append(BareSectionReplaceClause(section=section, raw_text=match.group(0)))
+        seen.add(key)
+        clauses.append(BareSectionReplaceClause(section=section, chapter=chapter, raw_text=match.group(0)))
     return tuple(clauses)
 
 
@@ -643,6 +685,7 @@ def _parse_table_and_moment_replace_clauses(johto: str) -> tuple[MomentTargetCla
         clauses.append(
             MomentTargetClause(
                 section=section,
+                chapter=_match_chapter(match),
                 moment=int(match.group("moment")),
                 op_type="REPLACE",
                 raw_text=match.group(0),
@@ -665,6 +708,7 @@ def _parse_moment_insert_clauses(johto: str) -> tuple[MomentTargetClause, ...]:
         clauses.append(
             MomentTargetClause(
                 section=section,
+                chapter=_match_chapter(match),
                 moment=int(match.group("moment")),
                 op_type="INSERT",
                 raw_text=match.group(0),
@@ -695,6 +739,7 @@ def _supplement_mixed_explicit_clause_ops(
             op_id=f"mixed_item_replace_{idx}_{clause.section}_{clause.moment}_{clause.item_label}",
             op_type="REPLACE",
             section=clause.section,
+            chapter=clause.chapter,
             moment=clause.moment,
             item=clause.item_label,
         )
@@ -704,6 +749,7 @@ def _supplement_mixed_explicit_clause_ops(
             op_id=f"mixed_moment_{clause.op_type.lower()}_{idx}_{clause.section}_{clause.moment}",
             op_type=clause.op_type,
             section=clause.section,
+            chapter=clause.chapter,
             moment=clause.moment,
             numbered_table_targets=clause.table_labels or table_targets_by_section.get(clause.section, ()),
         )
@@ -713,6 +759,7 @@ def _supplement_mixed_explicit_clause_ops(
             op_id=f"mixed_bare_section_replace_{idx}_{clause.section}",
             op_type="REPLACE",
             section=clause.section,
+            chapter=clause.chapter,
         )
     return supplemented
 
@@ -736,6 +783,7 @@ def _supplement_item_and_moment_clause_ops(
                 section=clause.section,
                 moment=clause.moment,
                 item=item_label,
+                chapter=clause.chapter if clause.chapter is not None else _ANY_CHAPTER,
             ):
                 continue
             supplemented.append(
@@ -744,9 +792,11 @@ def _supplement_item_and_moment_clause_ops(
                     op_type="REPLACE",
                     target_section=clause.section,
                     target_unit_kind="section",
+                    target_chapter=clause.chapter,
                     target_paragraph=clause.moment,
                     target_item=item_label,
                     extraction_provenance_tags=(_ITEM_AND_MOMENT_TARGET_TAG,),
+                    scope_provenance_tags=_scope_tags_for_chapter(clause.chapter),
                     witness_rule_id=_ITEM_AND_MOMENT_TARGET_RULE_ID,
                 )
             )
@@ -756,6 +806,7 @@ def _supplement_item_and_moment_clause_ops(
             section=clause.section,
             moment=clause.extra_moment,
             item=None,
+            chapter=clause.chapter if clause.chapter is not None else _ANY_CHAPTER,
         ):
             supplemented.append(
                 AmendmentOp(
@@ -763,8 +814,10 @@ def _supplement_item_and_moment_clause_ops(
                     op_type="REPLACE",
                     target_section=clause.section,
                     target_unit_kind="section",
+                    target_chapter=clause.chapter,
                     target_paragraph=clause.extra_moment,
                     extraction_provenance_tags=(_ITEM_AND_MOMENT_TARGET_TAG,),
+                    scope_provenance_tags=_scope_tags_for_chapter(clause.chapter),
                     witness_rule_id=_ITEM_AND_MOMENT_TARGET_RULE_ID,
                 )
             )
@@ -776,6 +829,7 @@ def _supplement_item_and_moment_clause_ops(
             section=clause.section,
             moment=clause.moment,
             item=clause.item_label,
+            chapter=clause.chapter if clause.chapter is not None else _ANY_CHAPTER,
         ):
             continue
         converted = False
@@ -784,6 +838,7 @@ def _supplement_item_and_moment_clause_ops(
                 op.op_type == "INSERT"
                 and op.target_unit_kind == "section"
                 and (not op.target_section or op.target_section == clause.section)
+                and (clause.chapter is None or not op.target_chapter or op.target_chapter == clause.chapter)
                 and op.target_paragraph == clause.moment
                 and not op.target_item
                 and not op.target_special
@@ -791,10 +846,12 @@ def _supplement_item_and_moment_clause_ops(
                 supplemented[pos] = dc_replace(
                     op,
                     target_section=clause.section,
+                    target_chapter=clause.chapter or op.target_chapter,
                     target_item=clause.item_label,
                     lo=(
                         _lo_with_path_update(
                             op.lo,
+                            chapter=clause.chapter or op.target_chapter,
                             section=clause.section,
                             subsection=str(clause.moment),
                             item=clause.item_label,
@@ -804,6 +861,9 @@ def _supplement_item_and_moment_clause_ops(
                     ),
                     extraction_provenance_tags=tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, _ITEM_AND_MOMENT_TARGET_TAG))
+                    ),
+                    scope_provenance_tags=tuple(
+                        dict.fromkeys((*op.scope_provenance_tags, *_scope_tags_for_chapter(clause.chapter)))
                     ),
                     witness_rule_id=op.witness_rule_id or _ITEM_AND_MOMENT_TARGET_RULE_ID,
                 )
@@ -817,9 +877,11 @@ def _supplement_item_and_moment_clause_ops(
                 op_type="INSERT",
                 target_section=clause.section,
                 target_unit_kind="section",
+                target_chapter=clause.chapter,
                 target_paragraph=clause.moment,
                 target_item=clause.item_label,
                 extraction_provenance_tags=(_ITEM_AND_MOMENT_TARGET_TAG,),
+                scope_provenance_tags=_scope_tags_for_chapter(clause.chapter),
                 witness_rule_id=_ITEM_AND_MOMENT_TARGET_RULE_ID,
             )
         )

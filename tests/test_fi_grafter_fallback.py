@@ -12380,6 +12380,41 @@ def test_supplement_mixed_explicit_clause_ops_recovers_skipped_targets() -> None
     assert {op.extraction_provenance_tags for op in recovered} == {("mixed_explicit_target_supplement",)}
 
 
+def test_supplement_mixed_explicit_clause_ops_preserves_explicit_chapter_for_moment_insert() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="replace_chapter_2_section_3_heading",
+            op_type="REPLACE",
+            target_section="3",
+            target_kind=TargetKind.SECTION,
+            target_chapter="2",
+            target_special="otsikko",
+        )
+    ]
+    johto = (
+        "muutetaan rikostorjunnasta Tullissa annetun lain (623/2015) 1 luvun "
+        "3 §:n 12 kohta ja 2 luvun 3 §:n otsikko, sekä lisätään 1 luvun "
+        "3 §:ään uusi 13 kohta sekä 2 lukuun uusi 2 a – ja 2 b §, "
+        "2 luvun 3 §:ään uusi 2 momentti sekä 2 lukuun uusi 5 – ja 6 § seuraavasti:"
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    recovered = [
+        op
+        for op in got
+        if op.op_type == "INSERT"
+        and op.target_section == "3"
+        and op.target_paragraph == 2
+        and op.target_unit_kind == "section"
+    ]
+    assert len(recovered) == 1
+    assert recovered[0].target_chapter == "2"
+    assert recovered[0].scope_provenance_tags == ("chapter_scope_from_explicit_chunk",)
+    assert recovered[0].witness_rule_id == "fi.mixed_explicit_target_supplement.v1"
+    assert recovered[0].extraction_provenance_tags == ("mixed_explicit_target_supplement",)
+
+
 def test_supplement_mixed_explicit_clause_ops_does_not_treat_repeal_body_sections_as_targets() -> None:
     ops = [
         AmendmentOp(
