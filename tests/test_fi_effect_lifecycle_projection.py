@@ -20,6 +20,7 @@ from lawvm.finland.effect_lifecycle_signals import (
     EffectLifecycleOverrideScope,
     EffectRelationSignal,
 )
+from lawvm.finland import effect_lifecycle_projection as elp
 from lawvm.finland.effect_lifecycle_projection import (
     _lifecycle_events_from_resolved_signal_relations,
     build_finland_effect_lifecycle,
@@ -1058,3 +1059,104 @@ def test_process_compile_signals_rejects_conflicting_source_effect_id() -> None:
 
     with pytest.raises(ValueError, match="conflicting duplicate effect_id"):
         context.project()
+
+
+def test_build_finland_effect_lifecycle_merges_final_graph_lanes(monkeypatch) -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    relation = EffectRelation(
+        relation_id="relation:shared",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_instrument=instrument,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:shared",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        relation=relation,
+        executable=False,
+    )
+
+    monkeypatch.setattr(
+        elp,
+        "_relations_from_lifecycle_overrides",
+        lambda *_args, **_kwargs: (relation,),
+    )
+    monkeypatch.setattr(
+        elp,
+        "_relations_from_signals",
+        lambda *_args, **_kwargs: (relation,),
+    )
+    monkeypatch.setattr(
+        elp,
+        "_lifecycle_from_temporal_events",
+        lambda *_args, **_kwargs: (lifecycle,),
+    )
+    monkeypatch.setattr(
+        elp,
+        "_lifecycle_events_from_lifecycle_overrides",
+        lambda *_args, **_kwargs: (lifecycle,),
+    )
+    monkeypatch.setattr(
+        elp,
+        "_lifecycle_events_from_resolved_signal_relations",
+        lambda *_args, **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        elp,
+        "_lifecycle_events_from_unresolved_signal_relations",
+        lambda *_args, **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        elp,
+        "_unresolved_lifecycle_from_relation_signals",
+        lambda *_args, **_kwargs: (),
+    )
+
+    _effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(),
+        temporal_events=(),
+    )
+
+    assert relations == (relation,)
+    assert lifecycle_events == (lifecycle,)
+
+
+def test_build_finland_effect_lifecycle_rejects_conflicting_final_graph_lanes(
+    monkeypatch,
+) -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    relation = EffectRelation(
+        relation_id="relation:shared",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_instrument=instrument,
+    )
+    conflicting_relation = EffectRelation(
+        relation_id="relation:shared",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_instrument=instrument,
+        detail={"note": "conflict"},
+    )
+
+    monkeypatch.setattr(
+        elp,
+        "_relations_from_lifecycle_overrides",
+        lambda *_args, **_kwargs: (relation,),
+    )
+    monkeypatch.setattr(
+        elp,
+        "_relations_from_signals",
+        lambda *_args, **_kwargs: (conflicting_relation,),
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate relation_id"):
+        build_finland_effect_lifecycle(
+            target_statute="1990/1",
+            canonical_ops=(),
+            temporal_events=(),
+        )

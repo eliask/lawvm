@@ -15,7 +15,9 @@ from lawvm.core.effect_lifecycle import (
     append_unique_effect_lifecycle_event,
     append_unique_effect_ref,
     append_unique_effect_relation,
+    merge_unique_effect_lifecycle_events,
     merge_unique_effect_refs,
+    merge_unique_effect_relations,
 )
 from lawvm.core.ir import LegalOperation
 from lawvm.core.temporal import TemporalEvent
@@ -833,27 +835,29 @@ def build_finland_effect_lifecycle(
         temporal_events=temporal_events,
     )
     source_effect_context = _merge_unique_source_effect_context(known_source_effects, source_effects)
-    relations = (
+    relations = merge_unique_effect_relations(
         _relations_from_lifecycle_overrides(
             lifecycle_overrides,
             target_statute=target_statute,
             source_effects=source_effect_context,
-        )
-        + _relations_from_signals(relation_signals, source_effects=source_effect_context)
+        ),
+        _relations_from_signals(relation_signals, source_effects=source_effect_context),
+        subject="Finland effect lifecycle relations",
     )
-    lifecycle_events = (
+    lifecycle_events = merge_unique_effect_lifecycle_events(
         _lifecycle_from_temporal_events(
             temporal_events,
             target_statute=target_statute,
             source_effects=source_effect_context,
-        )
-        + _lifecycle_events_from_lifecycle_overrides(
+        ),
+        _lifecycle_events_from_lifecycle_overrides(
             lifecycle_overrides,
             target_statute=target_statute,
             source_effects=source_effect_context,
-        )
-        + _lifecycle_events_from_resolved_signal_relations(relations)
-        + _lifecycle_events_from_unresolved_signal_relations(relations)
-        + _unresolved_lifecycle_from_relation_signals(relation_signals)
+        ),
+        _lifecycle_events_from_resolved_signal_relations(relations),
+        _lifecycle_events_from_unresolved_signal_relations(relations),
+        _unresolved_lifecycle_from_relation_signals(relation_signals),
+        subject="Finland effect lifecycle events",
     )
     return source_effects, relations, lifecycle_events
