@@ -555,7 +555,12 @@ def test_effect_graph_wire_projects_typed_lifecycle_graph() -> None:
     temporal = TemporalEvent(
         event_id="temporal:relation:2024/1:op-1",
         kind="expire",
-        scope=TemporalScope(target_statute="1991/1"),
+        scope=TemporalScope(
+            target_statute="1991/1",
+            exact_addresses=(
+                LegalAddress(path=(("section", "4 a"),), special=FacetKind.HEADING),
+            ),
+        ),
         expires="2024-02-01",
         group_id="g:2024/1:op-1",
     )
@@ -565,6 +570,7 @@ def test_effect_graph_wire_projects_typed_lifecycle_graph() -> None:
         source_provision=witness,
         effect=effect,
         relation=relation,
+        expires="2024-02-01",
         temporal_event=temporal,
         executable=True,
         detail={"projection": "effect_relation_signal"},
@@ -655,7 +661,7 @@ def test_effect_graph_wire_projects_typed_lifecycle_graph() -> None:
                 "effect_id": "effect:2024/1:op-1",
                 "relation_id": "relation:2024/1:op-1",
                 "effective": "",
-                "expires": "",
+                "expires": "2024-02-01",
                 "expiry_convention": "exclusive_cutoff",
                 "temporal_event": {
                     "event_id": "temporal:relation:2024/1:op-1",
@@ -999,6 +1005,151 @@ def test_canonical_bundle_executable_temporal_events_dedupes_lifecycle_projectio
     )
 
     assert bundle.executable_temporal_events == (direct,)
+
+
+def test_lifecycle_event_temporal_projection_must_match_lifecycle_semantics() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1", effective="2020-06-01")
+    witness = SourceProvisionRef(instrument=instrument, path=("2 §",))
+    effect = EffectRef(
+        effect_id="effect:2020/1:op-1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        source_provision=witness,
+    )
+
+    with pytest.raises(ValueError, match="temporal_event kind must match"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-kind",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-06-01",
+            temporal_event=TemporalEvent(
+                event_id="life:wrong-kind:temporal",
+                kind="expire",
+                scope=TemporalScope(
+                    target_statute="1999/1",
+                    exact_addresses=(LegalAddress(path=(("section", "1"),)),),
+                ),
+                expires="2020-06-01",
+            ),
+        )
+
+    with pytest.raises(ValueError, match="effective date must match"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-effective",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-06-01",
+            temporal_event=TemporalEvent(
+                event_id="life:wrong-effective:temporal",
+                kind="commence",
+                scope=TemporalScope(
+                    target_statute="1999/1",
+                    exact_addresses=(LegalAddress(path=(("section", "1"),)),),
+                ),
+                effective="2020-07-01",
+            ),
+        )
+
+    with pytest.raises(ValueError, match="exact address scope must match"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-scope",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-06-01",
+            temporal_event=TemporalEvent(
+                event_id="life:wrong-scope:temporal",
+                kind="commence",
+                scope=TemporalScope(
+                    target_statute="1999/1",
+                    exact_addresses=(LegalAddress(path=(("section", "2"),)),),
+                ),
+                effective="2020-06-01",
+            ),
+        )
+
+    with pytest.raises(ValueError, match="non-executable EffectLifecycleEvent"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:non-executable-temporal",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-06-01",
+            executable=False,
+            temporal_event=TemporalEvent(
+                event_id="life:non-executable-temporal:temporal",
+                kind="commence",
+                scope=TemporalScope(
+                    target_statute="1999/1",
+                    exact_addresses=(LegalAddress(path=(("section", "1"),)),),
+                ),
+                effective="2020-06-01",
+            ),
+        )
+
+
+def test_lifecycle_expiry_temporal_projection_matches_inclusive_expiry_convention() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("2 §",))
+    effect = EffectRef(
+        effect_id="effect:2020/1:op-1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        source_provision=witness,
+    )
+    relation = EffectRelation(
+        relation_id="relation:2020/1:op-1:expiry",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="life:expiry",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2020-12-31",
+        expiry_convention="inclusive_valid_until",
+        temporal_event=TemporalEvent(
+            event_id="life:expiry:temporal",
+            kind="expire",
+            scope=TemporalScope(
+                target_statute="1999/1",
+                exact_addresses=(LegalAddress(path=(("section", "1"),)),),
+            ),
+            expires="2021-01-01",
+        ),
+    )
+
+    assert lifecycle.temporal_event is not None
+    assert lifecycle.temporal_event.expires == "2021-01-01"
+
+    with pytest.raises(ValueError, match="expires date must match"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-expiry",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2020-12-31",
+            expiry_convention="inclusive_valid_until",
+            temporal_event=TemporalEvent(
+                event_id="life:wrong-expiry:temporal",
+                kind="expire",
+                scope=TemporalScope(
+                    target_statute="1999/1",
+                    exact_addresses=(LegalAddress(path=(("section", "1"),)),),
+                ),
+                expires="2020-12-31",
+            ),
+        )
 
 
 def test_canonical_bundle_rejects_conflicting_executable_temporal_event_ids() -> None:

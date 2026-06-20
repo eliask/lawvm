@@ -88,6 +88,30 @@ def _require_effect_lifecycle_event(subject: str, value: object) -> "EffectLifec
     return value
 
 
+def _expected_temporal_kind_for_lifecycle(kind: EffectLifecycleEventKind) -> str | None:
+    if kind in {"commence_effect", "change_effect_commencement"}:
+        return "commence"
+    if kind in {"expire_effect", "change_effect_expiry", "repeal_effect"}:
+        return "expire"
+    if kind == "suspend_effect":
+        return "suspend"
+    if kind == "revive_effect":
+        return "revive"
+    return None
+
+
+def _projected_lifecycle_expires(
+    *,
+    effective: str,
+    expires: str,
+    expiry_convention: EffectExpiryConvention,
+) -> str:
+    projected = expires or effective
+    if projected and expiry_convention == "inclusive_valid_until":
+        return expires_on_from_valid_until(dt.date.fromisoformat(projected)).isoformat()
+    return projected
+
+
 @dataclass(frozen=True, slots=True)
 class SourceInstrumentRef:
     """Stable identity for a source instrument that declares or modifies effects."""
@@ -337,6 +361,8 @@ class EffectLifecycleEvent:
         object.__setattr__(self, "lifecycle_event_id", lifecycle_event_id)
         object.__setattr__(self, "effective", effective)
         object.__setattr__(self, "expires", expires)
+        if self.temporal_event is not None and not self.executable:
+            raise ValueError("non-executable EffectLifecycleEvent cannot carry temporal_event")
         if self.executable and self.kind == "unresolved_effect_target":
             raise ValueError("unresolved EffectLifecycleEvent cannot be executable")
         if self.kind == "unresolved_effect_target" and self.effect is not None:
@@ -368,6 +394,59 @@ class EffectLifecycleEvent:
             raise ValueError("resolved EffectLifecycleEvent requires effect")
         if self.executable and self.effect is None:
             raise ValueError("executable EffectLifecycleEvent requires effect")
+        if self.temporal_event is not None:
+            expected_temporal_kind = _expected_temporal_kind_for_lifecycle(self.kind)
+            if expected_temporal_kind is None:
+                raise ValueError(
+                    "EffectLifecycleEvent kind cannot carry temporal_event: "
+                    f"{self.kind!r}"
+                )
+            if self.temporal_event.kind != expected_temporal_kind:
+                raise ValueError(
+                    "EffectLifecycleEvent temporal_event kind must match lifecycle kind: "
+                    f"expected {expected_temporal_kind!r}, got {self.temporal_event.kind!r}"
+                )
+            if self.kind in {"commence_effect", "change_effect_commencement"}:
+                if self.temporal_event.effective != effective:
+                    raise ValueError(
+                        "EffectLifecycleEvent temporal_event effective date must "
+                        "match lifecycle effective date"
+                    )
+            elif self.kind in {"expire_effect", "change_effect_expiry", "repeal_effect"}:
+                expected_expires = _projected_lifecycle_expires(
+                    effective=effective,
+                    expires=expires,
+                    expiry_convention=self.expiry_convention,
+                )
+                if self.temporal_event.expires != expected_expires:
+                    raise ValueError(
+                        "EffectLifecycleEvent temporal_event expires date must "
+                        "match lifecycle expiry projection"
+                    )
+            elif self.temporal_event.effective != effective:
+                raise ValueError(
+                    "EffectLifecycleEvent temporal_event effective date must "
+                    "match lifecycle effective date"
+                )
+            if self.effect is not None:
+                if (
+                    self.effect.target_statute
+                    and self.temporal_event.scope.target_statute
+                    and self.temporal_event.scope.target_statute != self.effect.target_statute
+                ):
+                    raise ValueError(
+                        "EffectLifecycleEvent temporal_event scope target_statute "
+                        "must match effect target_statute"
+                    )
+                if (
+                    self.effect.target_address is not None
+                    and self.temporal_event.scope.exact_addresses
+                    != (self.effect.target_address,)
+                ):
+                    raise ValueError(
+                        "EffectLifecycleEvent temporal_event exact address scope "
+                        "must match effect target_address"
+                    )
         if self.kind in {
             "change_effect_commencement",
             "change_effect_expiry",
