@@ -7,6 +7,48 @@ from lawvm.core.mutation_boundary import TreePath
 from lawvm.uk_legislation.addressing import _action_name
 
 
+def _collect_renumber_before_insert_edges(
+    ops: Sequence[LegalOperation],
+) -> dict[str, set[str]]:
+    """Return edges that force RENAME/RENUMBER ops before descendant INSERT ops.
+
+    When an amendment both renumbers an existing provision as its own descendant
+    (e.g. ``section:262`` -> ``section:262/subsection:1``) and inserts further
+    descendants (e.g. ``section:262/subsection:2``), the renumber must be
+    applied first.  Otherwise the inserted descendants get swept into the newly
+    created renumbered node, producing structurally invalid nesting such as
+    ``subsection inside subsection`` and ``heading inside subsection``.
+
+    Edges are added from each RENUMBER/RENAME op to any INSERT op whose target
+    path is a strict descendant of the renumber source path.
+    """
+    edges: dict[str, set[str]] = {}
+    renumber_ops = [
+        op for op in ops
+        if _action_name(op.action) in {"renumber", "rename"}
+    ]
+    if not renumber_ops:
+        return edges
+    for op in ops:
+        if _action_name(op.action) != "insert":
+            continue
+        target_path = op.target.path
+        if not target_path:
+            continue
+        for renumber_op in renumber_ops:
+            source_path = renumber_op.target.path
+            if not source_path:
+                continue
+            # renumber target path is the *source* of the renumber; inserts whose
+            # target starts with that path are strictly inside the renumbered node.
+            if (
+                len(target_path) > len(source_path)
+                and target_path[: len(source_path)] == source_path
+            ):
+                edges.setdefault(renumber_op.op_id, set()).add(op.op_id)
+    return edges
+
+
 class UKSameSourceTextPatchOverlapClassification(NamedTuple):
     overlapping_op_ids: set[str]
     disjoint_overlap_op_ids: set[str]

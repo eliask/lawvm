@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace as dc_replace
 from typing import Protocol, cast
 
-from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir import IRNodeKind, LegalAddress, LegalOperation
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.replay_adjudication import CompileAdjudication
@@ -206,6 +206,16 @@ class UKReplayRenumberApplyMixin:
         # or updates the eId lookup index, so the path may not be recoverable
         # from the mutable node afterward.
         old_path = replay._tree_path_for_mutable_node(source_node)
+        retained_children = [
+            child
+            for child in source_node.children
+            if child.kind in (IRNodeKind.HEADING, IRNodeKind.NUM)
+        ]
+        moved_children = [
+            child
+            for child in source_node.children
+            if child.kind not in (IRNodeKind.HEADING, IRNodeKind.NUM)
+        ]
         child = UKMutableNode(
             kind=uk_ir_node_kind(destination_kind),
             label=destination_label,
@@ -215,14 +225,16 @@ class UKReplayRenumberApplyMixin:
                 destination_label=destination_label,
             ),
             attrs={"eId": replay._derive_target_eid(destination)},
-            children=list(source_node.children),
+            children=moved_children,
         )
+        replacement_children = list(retained_children)
+        replacement_children.append(child)
         replacement = UKMutableNode(
             kind=source_node.kind,
             label=source_node.label,
             text="",
             attrs=dict(source_node.attrs),
-            children=[child],
+            children=replacement_children,
         )
         replaced = replay._replace_node_in_statute(source_node, replacement)
         if replaced and old_path is not None:

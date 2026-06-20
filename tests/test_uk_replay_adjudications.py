@@ -11454,3 +11454,180 @@ def test_replay_uk_ops_collects_text_duplication_warnings() -> None:
     assert evidence_rows[0].blocking is False
     assert evidence_rows[0].strict_disposition == "record"
     assert evidence_rows[0].quirks_disposition == "record"
+
+
+def test_collect_renumber_before_insert_edges_matches_descendant_inserts() -> None:
+    """Renumber source path prefixes descendant insert targets -> edge recorded."""
+    from lawvm.uk_legislation.replay_prepare_ordering import _collect_renumber_before_insert_edges
+
+    insert_ahead = LegalOperation(
+        op_id="insert-subsection-2",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "262"), ("subsection", "2"))),
+        source=_source(),
+        sequence=1,
+    )
+    insert_later = LegalOperation(
+        op_id="insert-subsection-3",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "262"), ("subsection", "3"))),
+        source=_source(),
+        sequence=2,
+    )
+    renumber = LegalOperation(
+        op_id="renumber-section-262",
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("section", "262"),)),
+        destination=LegalAddress(path=(("section", "262"), ("subsection", "1"))),
+        source=_source(),
+        sequence=3,
+        witness_rule_id="uk_effect_metadata_renumber_lowered",
+    )
+    # Source order has inserts before renumber; edges must still point renumber->insert.
+    edges = _collect_renumber_before_insert_edges([insert_ahead, insert_later, renumber])
+    assert edges == {"renumber-section-262": {"insert-subsection-2", "insert-subsection-3"}}
+
+
+def test_order_ops_by_before_edges_respects_renumber_insert_edges() -> None:
+    """Topological order places the renumber op before its descendant inserts."""
+    from lawvm.uk_legislation.replay_prepare_ordering import _order_ops_by_before_edges
+
+    insert_sub_2 = LegalOperation(
+        op_id="insert-subsection-2",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "262"), ("subsection", "2"))),
+        source=_source(),
+        sequence=1,
+    )
+    insert_sub_3 = LegalOperation(
+        op_id="insert-subsection-3",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "262"), ("subsection", "3"))),
+        source=_source(),
+        sequence=2,
+    )
+    renumber = LegalOperation(
+        op_id="renumber-section-262",
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("section", "262"),)),
+        destination=LegalAddress(path=(("section", "262"), ("subsection", "1"))),
+        source=_source(),
+        sequence=3,
+        witness_rule_id="uk_effect_metadata_renumber_lowered",
+    )
+    ordered = _order_ops_by_before_edges(
+        [insert_sub_2, insert_sub_3, renumber],
+        {"renumber-section-262": {"insert-subsection-2", "insert-subsection-3"}},
+    )
+    ordered_ids = [op.op_id for op in ordered]
+    assert ordered_ids == ["renumber-section-262", "insert-subsection-2", "insert-subsection-3"]
+
+
+def test_prepare_replay_orders_renumber_before_descendant_inserts() -> None:
+    """Full prepare_replay_uk_ops reorders source-late renumber before descendant inserts."""
+    statute = IRStatute(
+        statute_id="ukpga/1988/1",
+        title="Income and Corporation Taxes Act 1988",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="262",
+                    text="Chargeable gains.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    # Source order from the Finance (No. 2) Act 1992: inserts precede the renumber.
+    ops = [
+        LegalOperation(
+            op_id="insert-subsection-2",
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "262"), ("subsection", "2"))),
+            payload=IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Inserted subsection 2."),
+            source=_source(),
+            sequence=1,
+        ),
+        LegalOperation(
+            op_id="insert-subsection-3",
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "262"), ("subsection", "3"))),
+            payload=IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Inserted subsection 3."),
+            source=_source(),
+            sequence=2,
+        ),
+        LegalOperation(
+            op_id="insert-subsection-4",
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "262"), ("subsection", "4"))),
+            payload=IRNode(kind=IRNodeKind.SUBSECTION, label="4", text="Inserted subsection 4."),
+            source=_source(),
+            sequence=3,
+        ),
+        LegalOperation(
+            op_id="renumber-section-262",
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "262"),)),
+            destination=LegalAddress(path=(("section", "262"), ("subsection", "1"))),
+            source=_source(),
+            sequence=4,
+            witness_rule_id="uk_effect_metadata_renumber_lowered",
+        ),
+    ]
+    result = _prepare_replay_uk_ops(ops, base_ir=statute)
+    ordered_ids = [op.op_id for op in result.accepted_ops]
+    renumber_idx = ordered_ids.index("renumber-section-262")
+    for insert_op_id in ("insert-subsection-2", "insert-subsection-3", "insert-subsection-4"):
+        assert ordered_ids.index(insert_op_id) > renumber_idx, (
+            f"{insert_op_id} should run after the renumber that creates subsection:1"
+        )
+
+
+def test_prepare_replay_renumber_before_insert_prevents_nested_subsections() -> None:
+    """Putting renumber before inserts yields a flat section/subsection list."""
+    statute = IRStatute(
+        statute_id="ukpga/1988/1",
+        title="Income and Corporation Taxes Act 1988",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="262",
+                    text="Chargeable gains.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    ops = [
+        LegalOperation(
+            op_id="insert-subsection-2",
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "262"), ("subsection", "2"))),
+            payload=IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Inserted subsection 2."),
+            source=_source(),
+            sequence=1,
+        ),
+        LegalOperation(
+            op_id="renumber-section-262",
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "262"),)),
+            destination=LegalAddress(path=(("section", "262"), ("subsection", "1"))),
+            source=_source(),
+            sequence=2,
+            witness_rule_id="uk_effect_metadata_renumber_lowered",
+        ),
+    ]
+    replayed = replay_uk_ops(statute, ops, mutation_events_out=[])
+    section = replayed.body.children[0]
+    assert all(child.kind == IRNodeKind.SUBSECTION for child in section.children), (
+        "section children should all be subsections after renumber-then-insert"
+    )
+    assert {child.label for child in section.children} == {"1", "2"}
