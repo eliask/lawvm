@@ -16,6 +16,7 @@ from lawvm.core.effect_lifecycle import (
 from lawvm.core.ir import LegalOperation
 from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
+from lawvm.finland.helpers import _norm_num_token
 
 
 def _typed_override_rows(
@@ -394,7 +395,7 @@ def _effect_matches_override_scope(effect: EffectRef, row: EffectLifecycleOverri
     if row.scope.kind == "section":
         section_labels = set(row.scope.labels)
         return any(
-            kind == "section" and label in section_labels
+            kind == "section" and _norm_num_token(label) in section_labels
             for kind, label in effect.target_address.path
         )
     if row.scope.kind == "mixed":
@@ -402,7 +403,7 @@ def _effect_matches_override_scope(effect: EffectRef, row: EffectLifecycleOverri
             return True
         section_labels = set(row.scope.labels)
         return any(
-            kind == "section" and label in section_labels
+            kind == "section" and _norm_num_token(label) in section_labels
             for kind, label in effect.target_address.path
         )
     return False

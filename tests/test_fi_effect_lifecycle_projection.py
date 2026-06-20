@@ -220,22 +220,28 @@ def test_duplicate_temporal_group_ids_use_event_and_target_discriminator() -> No
 
 
 def test_section_lifecycle_scope_is_not_an_exact_address() -> None:
-    scope = EffectLifecycleOverrideScope.sections(("4 a",))
+    scope = EffectLifecycleOverrideScope.sections(("4 a §",))
 
     assert scope.kind == "section"
+    assert scope.labels == ("4a",)
     assert scope.exact_target_address is None
-    assert scope.to_meta()["scope_labels"] == ["4 a"]
+    assert scope.to_meta()["scope_labels"] == ["4a"]
 
 
 def test_mixed_lifecycle_scope_keeps_labels_and_addresses_distinct() -> None:
     address = LegalAddress(path=(("chapter", "2"), ("section", "8"),))
 
-    scope = EffectLifecycleOverrideScope.mixed(labels=("4 a",), addresses=(address,))
+    scope = EffectLifecycleOverrideScope.mixed(labels=("4 a §",), addresses=(address,))
 
     assert scope.kind == "mixed"
     assert scope.exact_target_address is None
-    assert scope.to_meta()["scope_labels"] == ["4 a"]
+    assert scope.to_meta()["scope_labels"] == ["4a"]
     assert scope.to_meta()["scope_addresses"] == ["chapter:2/section:8"]
+
+
+def test_lifecycle_scope_rejects_untyped_exact_addresses() -> None:
+    with pytest.raises(TypeError, match="LegalAddress"):
+        EffectLifecycleOverrideScope.exact_addresses(cast(Any, ("section:4a",)))
 
 
 def test_finland_pending_amendment_relation_signal_is_authority_input() -> None:
@@ -543,7 +549,7 @@ def test_finland_commencement_expiry_override_matching_effect_is_executable() ->
             EffectLifecycleOverride(
                 source_statute="2021/2",
                 target_statute="2020/1",
-                scope=EffectLifecycleOverrideScope.sections(("4 a",)),
+                scope=EffectLifecycleOverrideScope.sections(("4 a §",)),
                 expiry="2022-12-31",
                 context="accepted_amendment",
             ),

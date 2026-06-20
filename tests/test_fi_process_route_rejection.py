@@ -178,7 +178,7 @@ def test_skipped_amendment_expiry_override_records_lifecycle_when_rewrite_fails(
     assert note.source_statute == "2020/100"
     assert note.target_statute == "2019/50"
     assert note.scope.kind == "section"
-    assert note.scope.labels == ("4 a",)
+    assert note.scope.labels == ("4a",)
     assert note.expiry == "2022-12-31"
 
 

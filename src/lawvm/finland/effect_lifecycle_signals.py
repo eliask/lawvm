@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable, Literal
 
 from lawvm.core.ir import LegalAddress
+from lawvm.finland.helpers import _norm_num_token
 
 EffectLifecycleOverrideScopeKind = Literal["instrument", "section", "address", "mixed"]
 EffectRelationSignalKind = Literal["pending_amendment", "meta_repeal"]
@@ -26,8 +27,14 @@ class EffectLifecycleOverrideScope:
     addresses: tuple[LegalAddress, ...] = ()
 
     def __post_init__(self) -> None:
-        labels = tuple(str(label).strip() for label in self.labels if str(label).strip())
+        labels = tuple(
+            _norm_num_token(str(label))
+            for label in self.labels
+            if str(label).strip()
+        )
         addresses = tuple(self.addresses)
+        if not all(isinstance(address, LegalAddress) for address in addresses):
+            raise TypeError("lifecycle override scope addresses must contain LegalAddress rows")
         if self.kind == "instrument":
             labels = ()
             addresses = ()
@@ -53,7 +60,7 @@ class EffectLifecycleOverrideScope:
 
     @classmethod
     def sections(cls, labels: Iterable[object]) -> "EffectLifecycleOverrideScope":
-        cleaned = tuple(str(label).strip() for label in labels if str(label).strip())
+        cleaned = tuple(_norm_num_token(str(label)) for label in labels if str(label).strip())
         if not cleaned or cleaned == ("*",):
             return cls.instrument()
         return cls(kind="section", labels=tuple(sorted(cleaned)))
@@ -74,7 +81,7 @@ class EffectLifecycleOverrideScope:
         labels: Iterable[object],
         addresses: Iterable[LegalAddress],
     ) -> "EffectLifecycleOverrideScope":
-        cleaned_labels = tuple(str(label).strip() for label in labels if str(label).strip())
+        cleaned_labels = tuple(_norm_num_token(str(label)) for label in labels if str(label).strip())
         cleaned_addresses = tuple(sorted(tuple(addresses), key=str))
         if cleaned_labels and cleaned_addresses:
             return cls(kind="mixed", labels=tuple(sorted(cleaned_labels)), addresses=cleaned_addresses)
