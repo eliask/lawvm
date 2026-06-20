@@ -66,7 +66,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -80,6 +80,7 @@ from lawvm.finland.legal_surface.clause_segment import (
 from lawvm.finland.legal_surface.tokenize import build_token_tape
 from lawvm.finland.legal_surface.union_ownership_census import (
     SentenceUnionAnalysis,
+    UnownedSignalSpan,
     analyze_body_union,
 )
 
@@ -1135,7 +1136,7 @@ def _emit_list_inheritance(
 def _emit_residual_nodes(
     body: str,
     *,
-    unowned_examples: list,  # list[UnownedSignalSpan]
+    unowned_examples: Sequence[UnownedSignalSpan],
     text_hash: str,
     totality: bool,
     nodes: dict[str, SyntaxNode],
