@@ -622,6 +622,10 @@ class SurfaceTextSpanPlacer:
     _non_identity_normalized_segment_cache: dict[int, tuple[str, list[int]]] = (
         dataclasses.field(default_factory=dict)
     )
+    _occurrence_cache: dict[
+        tuple[str, str, bool],
+        list["OccurrencePlacement"],
+    ] = dataclasses.field(default_factory=dict)
 
     def _build_lower_segment_groups(
         self,
@@ -965,6 +969,11 @@ def place_occurrence_spans(
     if not surface_text.strip():
         return []
     locator = _normalize_interlink_locator(source_locator)
+    if placer is not None:
+        cache_key = (surface_text, locator, enable_ordinal_experimental)
+        cached = placer._occurrence_cache.get(cache_key)
+        if cached is not None:
+            return cached
     norm_surface = _normalize_surface(surface_text)
     placements: list[OccurrencePlacement] = []
     # Scope to the segments under the source locator. When a reusable per-export
@@ -1097,6 +1106,8 @@ def place_occurrence_spans(
                         },
                     )
                 )
+    if placer is not None:
+        placer._occurrence_cache[cache_key] = placements
     return placements
 
 
