@@ -1454,6 +1454,7 @@ def test_replay_xml_1978_38_section_12_1_full_replace_does_not_preserve_stale_li
     assert "Kiinteistönvälittäjän vastuusta on voimassa" in text
 
 
+@pytest.mark.slow
 def test_replay_xml_1978_38_preserves_chapter_12_sections_1a_and_1b_alongside_new_chapter_7_1a() -> None:
     replay = pinned_replay("1978/38", mode="official_consolidation", quiet=True)
 
@@ -5584,6 +5585,7 @@ def test_replay_xml_2004_301_has_no_orphan_bare_86b_timeline_after_repeal() -> N
     assert bare_addr not in replay.products.timelines
 
 
+@pytest.mark.slow
 def test_replay_xml_2004_301_section_142_item_three_has_no_duplicate_kohta_marker() -> None:
     """§142 2 mom 3 kohta must not carry a redundant ``3)`` body prefix.
 
