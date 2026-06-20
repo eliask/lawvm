@@ -40,7 +40,9 @@ from lawvm.finland.replay_products import _FI_SOURCELESS_BASE_MERGE_CLEANUP_RULE
 from lawvm.finland.replay_products import _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR
 from lawvm.finland.replay_products import _cleanup_sourceless_base_merge_conflicts
 from lawvm.finland.replay_products import _reconcile_materialized_fold_hcontainer_sections
+from lawvm.finland.replay_products import _restore_replay_fold_repeal_placeholders
 from lawvm.finland.replay_products import _rekey_timelines_with_migration_events
+from lawvm.finland.replay_products import _renumber_source_prefix_may_match_cached
 from lawvm.finland.replay_products import _classify_finland_lineage_bridge
 from lawvm.finland.replay_products import _select_pit_lineage_inputs
 from lawvm.finland.replay_products import _temporal_events_from_lo_ops
@@ -314,6 +316,51 @@ def test_project_materialized_provisions_wrapper_unwraps_direct_sections_without
         IRNodeKind.SECTION,
     ]
     assert [child.label for child in projected.children] == ["1", "2"]
+
+
+def test_restore_replay_fold_repeal_placeholders_preserves_editorial_notice_slots() -> None:
+    replay_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1", "lawvm_restore_materialized_stale_item_slot": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3)"),),
+    )
+    unmarked_replay_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3)"),),
+    )
+    materialized_notice = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3 kohta on kumottu L:lla 16.1.2026/45."),),
+    )
+    materialized_stale = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3) stale substantive text"),),
+    )
+    materialized_parent_missing = IRNode(kind=IRNodeKind.SUBSECTION, label="1")
+    replay_parent_with_missing_placeholder = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(replay_placeholder,),
+    )
+
+    assert _restore_replay_fold_repeal_placeholders(materialized_notice, replay_placeholder) is materialized_notice
+    assert (
+        _restore_replay_fold_repeal_placeholders(materialized_stale, unmarked_replay_placeholder)
+        is materialized_stale
+    )
+    restored = _restore_replay_fold_repeal_placeholders(materialized_stale, replay_placeholder)
+    projected_parent = _restore_replay_fold_repeal_placeholders(
+        materialized_parent_missing,
+        replay_parent_with_missing_placeholder,
+    )
+
+    assert restored is replay_placeholder
+    assert projected_parent is materialized_parent_missing
 
 
 def test_project_materialized_provisions_wrapper_reparents_eid_sections_to_chapters() -> None:
@@ -3629,6 +3676,62 @@ def test_materialize_pit_keeps_non_zero_day_repeal_placeholder_visible_under_det
     assert section.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
+def test_materialize_pit_drops_marked_future_repeal_under_detached_horizon() -> None:
+    def _find_section(node: IRNode, label: str) -> IRNode | None:
+        for child in node.children:
+            if child.kind is IRNodeKind.SECTION and child.label == label:
+                return child
+            found = _find_section(child, label)
+            if found is not None:
+                return found
+        return None
+
+    base = IRStatute(
+        statute_id="test/future-repeal-detached",
+        title="Future repeal under detached horizon",
+        body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="19", text="Base 19 §"),)),
+    )
+    addr = LegalAddress(path=(("section", "19"),))
+    timelines = {
+        addr: ProvisionTimeline(
+            address=addr,
+            versions=[
+                ProvisionVersion(
+                    effective="0000-00-00",
+                    enacted="0000-00-00",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="19", text="Base 19 §"),
+                ),
+                ProvisionVersion(
+                    effective="2006-01-01",
+                    enacted="2005-11-11",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="19",
+                        attrs={
+                            "lawvm_repeal_placeholder": "1",
+                            _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR: "1",
+                        },
+                    ),
+                    source=OperationSource(
+                        statute_id="2005/886",
+                        enacted="2005-11-11",
+                        effective="2006-01-01",
+                    ),
+                ),
+            ],
+        )
+    }
+
+    pit = materialize_pit(
+        timelines,
+        "2006-01-01",
+        base=base,
+        expires_as_of="2005-11-11",
+    )
+
+    assert _find_section(pit.body, "19") is None
+
+
 def test_build_replay_products_accepts_temporal_events_for_materialization() -> None:
     ctx = StatuteContext(
         id="test/temporal-products",
@@ -3864,6 +3967,35 @@ def test_rekey_timelines_prefers_destination_native_lineage_over_migrated_source
     assert len(destination_versions) == 1
     assert destination_versions[0].content is not None
     assert destination_versions[0].content.text == "159 § native lineage"
+
+
+def test_renumber_source_prefix_predicate_reuses_cached_normalized_path(monkeypatch) -> None:
+    import lawvm.finland.migration_ledger as migration_ledger
+
+    calls = 0
+    real_normalize_address_path = migration_ledger.normalize_address_path
+
+    def counted_normalize_address_path(path):
+        nonlocal calls
+        calls += 1
+        return real_normalize_address_path(path)
+
+    path = (("part", "III"), ("chapter", "2"), ("section", "5"))
+    renumber_sources = frozenset({(("part", "3"),)})
+    _renumber_source_prefix_may_match_cached.cache_clear()
+    real_normalize_address_path.cache_clear()
+    monkeypatch.setattr(
+        migration_ledger,
+        "normalize_address_path",
+        counted_normalize_address_path,
+    )
+    try:
+        assert _renumber_source_prefix_may_match_cached(path, renumber_sources)
+        assert _renumber_source_prefix_may_match_cached(tuple(path), renumber_sources)
+        assert calls == 1
+    finally:
+        _renumber_source_prefix_may_match_cached.cache_clear()
+        real_normalize_address_path.cache_clear()
 
 
 def test_rekey_timelines_walks_migration_chains_across_distinct_waves_regardless_of_input_order() -> None:

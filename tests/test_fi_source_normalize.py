@@ -38,6 +38,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
+    BASE_TABLE_NOTE_SUBSECTION_FOLD,
     TRAILING_CHAPTER_REPARENT,
 )
 
@@ -295,6 +296,307 @@ class TestTagReclassify:
         assert fold_facts[0].basis_value == SourceNormalizationBasis.IMPOSSIBLE_NUMBERING.value
         assert "subsection:2" in fold_facts[0].before
         assert "3->2" in fold_facts[0].after
+
+    def test_folds_dash_bullet_definition_continuation_subsection(self) -> None:
+        """Dash-list definition continuations stay under the preceding numbered kohta."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 §"),
+                IRNode(kind=IRNodeKind.HEADING, text="Määritelmät"),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="Tässä päätöksessä tarkoitetaan:"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="PCB:llä"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="- polykloorattuja bifenyylejä;"),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="- polykloorattuja terfenyylejä;"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="- monometyylitetraklooridifenyylimetaania; sekä"),),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="- seosta, jossa jotakin edellä mainittua ainetta on yli 0,005 prosenttia;"),),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="2)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="PCB-laitteistolla muuntajaa;"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="3",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="3)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="PCB-jätteellä jätettä;"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="4",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="4)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="käsittelyllä hyödyntämistä."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "1998/711")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3", "4"]
+        assert "monometyylitetraklooridifenyylimetaania" in irnode_to_text(paragraphs[0])
+        assert "PCB-jätteellä" in irnode_to_text(paragraphs[2])
+        assert check_invariants(normalized) == []
+
+        fold_facts = [fact for fact in facts if fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD]
+        assert len(fold_facts) == 1
+        assert fold_facts[0].basis_value == SourceNormalizationBasis.IMPOSSIBLE_NUMBERING.value
+
+    def test_real_1998_711_dash_definition_list_preserves_all_items(self) -> None:
+        """Regression: 1998/711 section 2 is a single definition-list moment."""
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("1998/711")
+        assert xml is not None
+        xml_bytes: bytes = xml if isinstance(xml, bytes) else xml.encode("utf-8")
+        root = etree.fromstring(xml_bytes)
+        body = root.find(".//{*}body")
+        raw = fi_xml_to_ir_node(body if body is not None else root, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1998/711")
+
+        section_2: IRNode | None = None
+        pending = list(normalized.children)
+        while pending:
+            candidate = pending.pop()
+            if candidate.kind == IRNodeKind.SECTION and candidate.label == "2":
+                section_2 = candidate
+                break
+            pending.extend(candidate.children)
+        assert section_2 is not None
+        subsections = [child for child in section_2.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3", "4"]
+        section_text = irnode_to_text(section_2)
+        assert "polykloorattuja terfenyylejä" in section_text
+        assert "PCB-jätteellä PCB:tä" in section_text
+        assert "käsittelyllä jäteasetuksen" in section_text
+
+        assert any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+        assert not any(
+            fact.kind_value == BASE_DUPLICATE_SIBLING_DROP
+            and fact.path[-1] in {"subsection:1", "subsection:2"}
+            for fact in facts
+        )
+
+    def test_folds_synthetic_table_note_subsections_into_table_moment(self) -> None:
+        """EId-less table-note wrappers continue the table-bearing moment."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="3 §"),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="Moment begins:"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.CONTENT,
+                                    children=(IRNode(kind=IRNodeKind.TABLE, text="table body"),),
+                                ),
+                            ),
+                        ),
+                        IRNode(kind=IRNodeKind.OMISSION),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="(*) first table note."),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="(**) listed note:"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="- first bullet"),),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "table-note-fixture")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        assert "(*) first table note." in irnode_to_text(subsections[0])
+        assert "- first bullet" in irnode_to_text(subsections[0])
+        assert any(fact.kind_value == BASE_TABLE_NOTE_SUBSECTION_FOLD for fact in facts)
+
+    def test_table_note_fold_preserves_real_eid_subsection(self) -> None:
+        """A real following moment with source eId is not a table-note wrapper."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.CONTENT,
+                                    children=(IRNode(kind=IRNodeKind.TABLE, text="table body"),),
+                                ),
+                            ),
+                        ),
+                        IRNode(kind=IRNodeKind.OMISSION),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    attrs={"eId": "sec_3__subsec_2"},
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="Real second moment."),),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "real-moment-fixture")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2"]
+        assert not any(fact.kind_value == BASE_TABLE_NOTE_SUBSECTION_FOLD for fact in facts)
+
+    def test_table_note_fold_preserves_unmarked_following_prose_moment(self) -> None:
+        """EId-less following prose is not a table-note run without a marker."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="6",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="Table-bearing moment:"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.CONTENT,
+                                    children=(IRNode(kind=IRNodeKind.TABLE, text="table body"),),
+                                ),
+                            ),
+                        ),
+                        IRNode(kind=IRNodeKind.OMISSION),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="Tämän pykälän mukainen maksu koskee myös muita."),),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "table-prose-fixture")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2"]
+        assert "Tämän pykälän mukainen" in irnode_to_text(subsections[1])
+        assert not any(fact.kind_value == BASE_TABLE_NOTE_SUBSECTION_FOLD for fact in facts)
+
+    def test_real_2006_953_table_notes_stay_with_replaced_first_moment(self) -> None:
+        """Regression: 2006/953 section 3 publishes table notes inside 3 § 1 mom."""
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("2006/953")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        body = root.find(".//{*}body")
+        raw = fi_xml_to_ir_node(body if body is not None else root, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2006/953")
+
+        section_3: IRNode | None = None
+        pending = list(normalized.children)
+        while pending:
+            candidate = pending.pop()
+            if candidate.kind == IRNodeKind.SECTION and candidate.label == "3":
+                section_3 = candidate
+                break
+            pending.extend(candidate.children)
+        assert section_3 is not None
+        subsections = [child for child in section_3.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        section_text = irnode_to_text(section_3)
+        assert "P el hitsausgeneraattoreilla" in section_text
+        assert "Yksimoottorisiin ajoneuvonostureihin" in section_text
+        assert "Sallittu äänitehotaso pyöristetään" in section_text
+        assert any(fact.kind_value == BASE_TABLE_NOTE_SUBSECTION_FOLD for fact in facts)
+        assert not any(fact.kind_value == BASE_DUPLICATE_TAIL_SPLIT for fact in facts)
+
+    def test_real_2013_255_unmarked_table_following_moments_are_preserved(self) -> None:
+        """Regression: 2013/255 section 6 has real prose moments after a table."""
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("2013/255")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        body = root.find(".//{*}body")
+        raw = fi_xml_to_ir_node(body if body is not None else root, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2013/255")
+
+        section_6: IRNode | None = None
+        pending = list(normalized.children)
+        while pending:
+            candidate = pending.pop()
+            if candidate.kind == IRNodeKind.SECTION and candidate.label == "6":
+                section_6 = candidate
+                break
+            pending.extend(candidate.children)
+        assert section_6 is not None
+        subsections = [child for child in section_6.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) >= 3
+        assert "Tämän pykälän mukainen" in irnode_to_text(subsections[1])
+        assert "Markkinarakennetoimija-asetuksen" in irnode_to_text(subsections[2])
+        assert not any(fact.kind_value == BASE_TABLE_NOTE_SUBSECTION_FOLD for fact in facts)
 
     def test_promotes_dotted_paragraph_rows_to_peer_subsections(self) -> None:
         """Old decision-style dotted rows are momentit, not kohdat."""
@@ -1113,6 +1415,43 @@ class TestSparsePayloadRepairs:
         assert len(repair_facts) == 1
         assert repair_facts[0].basis_value == SourceNormalizationBasis.MONOTONIC_LOCAL_REPAIR.value
         assert not any(f.kind_value == SourceNormalizationKind.NUMBERING_REPAIR.value for f in facts)
+
+    def test_duplicate_tail_split_ignores_unlabelled_paragraph_rows(self) -> None:
+        """Unlabelled prose/list rows are not duplicate-labelled paragraphs."""
+        node = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="4",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="(**) note begins:"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="- first row"),),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="- terminal row."),),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="5",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="Following real prose."),),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(node, "unlabelled-tail-fixture")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["4", "5"]
+        assert "- terminal row." in irnode_to_text(subsections[0])
+        assert "Following real prose." in irnode_to_text(subsections[1])
+        assert not any(fact.kind_value == BASE_DUPLICATE_TAIL_SPLIT for fact in facts)
 
 
 class TestDigitResetSubparagraphSplit:

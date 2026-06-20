@@ -308,7 +308,7 @@ def test_witness_span_sid_is_structurally_equal_not_byte_equal() -> None:
     from lawvm.finland.transparent_store import TransparentCorpusStore
     from lawvm.tools.parse_bench import _archive_path
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     xb = store.read_source("2002/723") or store.read_amendment("2002/723")
     assert xb is not None
     johto = get_johtolause(xb)

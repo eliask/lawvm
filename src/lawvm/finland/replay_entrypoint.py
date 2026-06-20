@@ -17,6 +17,7 @@ from lawvm.finland.amendment_selection import resolve_applicable_amendment_recor
 from lawvm.finland.chapter_seed import seed_missing_chapters as _seed_missing_chapters
 from lawvm.finland.consolidated_store import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import (
+    CorpusStore,
     _get_corpus_store,
     _selected_consolidated_locator_and_provenance_for_statute,
     get_consolidated_oracle_suspect,
@@ -250,7 +251,7 @@ def _oracle_selector_info(
         return None
     _locator, provenance = _selected_consolidated_locator_and_provenance_for_statute(
         parent_id,
-        corpus,  # type: ignore[arg-type]
+        cast(Optional[CorpusStore], corpus),
         selector=cast(Optional[ConsolidatedArtifactSelector], oracle_selector),
     )
     if provenance is None:

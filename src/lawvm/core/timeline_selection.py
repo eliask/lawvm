@@ -17,6 +17,9 @@ _VERSION_SELECTION_RAILS = frozenset(
 _QUERY_TYPES = frozenset({"governing", "in_force"})
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _BASE_SENTINEL_DATE = "0000-00-00"
+_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
+    "lawvm_materialize_as_absent_under_detached_horizon"
+)
 
 
 def _validate_query_type(query_type: str) -> None:
@@ -195,6 +198,12 @@ def content_is_repeal_placeholder(content: IRNode | None) -> bool:
     if content is None:
         return False
     return content.attrs.get("lawvm_repeal_placeholder") == "1"
+
+
+def _projects_as_absent_under_detached_horizon(content: IRNode | None) -> bool:
+    if content is None:
+        return False
+    return content.attrs.get(_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR) == "1"
 
 
 def eligible(
@@ -395,6 +404,7 @@ def _select_background_version_from_eligible(
                     expires_as_of
                     and as_of > expires_as_of
                     and (v.content is None or content_is_repeal_placeholder(v.content))
+                    and not _projects_as_absent_under_detached_horizon(v.content)
                     and v.effective > expires_as_of
                 )
             )

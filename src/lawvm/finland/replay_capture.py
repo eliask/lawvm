@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, SupportsIndex
 
 
 class ReplayLegalOperationCaptureList(list[Any]):
@@ -54,7 +54,7 @@ class ReplayLegalOperationCaptureList(list[Any]):
         self._invalidate_indexes()
         super().__delitem__(key)
 
-    def insert(self, index: int, item: Any) -> None:
+    def insert(self, index: SupportsIndex, item: Any) -> None:
         self._invalidate_indexes()
         super().insert(index, item)
 
@@ -62,7 +62,7 @@ class ReplayLegalOperationCaptureList(list[Any]):
         self._invalidate_indexes()
         super().clear()
 
-    def pop(self, index: int = -1) -> Any:
+    def pop(self, index: SupportsIndex = -1) -> Any:
         self._invalidate_indexes()
         return super().pop(index)
 

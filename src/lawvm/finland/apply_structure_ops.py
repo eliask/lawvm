@@ -1687,6 +1687,7 @@ def _apply_whole_section_op(
     _target_unit_kind = view.target_unit_kind
     _op_type = view.op_type
     _target_paragraph = view.target_paragraph
+    _target_item = view.target_item
     _target_special = view.target_special
     _target_chapter = view.target_chapter
     _target_part = view.target_part
@@ -1756,6 +1757,7 @@ def _apply_whole_section_op(
     if (
         _target_unit_kind != "section"
         or _target_paragraph
+        or _target_item
         or (_target_special and _target_special not in {"otsikko", "otsikko_edella"})
     ):
         return None

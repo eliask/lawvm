@@ -443,7 +443,7 @@ def scan_corpus(sample: int) -> _MiningResult:
     from lawvm.finland.legal_surface.bundle import decode_body_text
     from lawvm.finland.transparent_store import TransparentCorpusStore
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     if sample:
         ids = ids[:sample]

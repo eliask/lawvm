@@ -39,6 +39,7 @@ def _normalize_migration_label(kind: str, label: str) -> str:
     return normalized_label_key(label)
 
 
+@lru_cache(maxsize=65536)
 def normalize_address_path(path: TreePath) -> TreePath:
     """Normalize address labels for Finland migration-wave matching.
 

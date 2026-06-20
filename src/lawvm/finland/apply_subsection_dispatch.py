@@ -267,6 +267,108 @@ def _follow_same_wave_subsection_migration(
     )
 
 
+def _unique_subsection_label_for_item_target(
+    master_subsecs: List[IRNode],
+    item_label: str | None,
+) -> str | None:
+    if not item_label:
+        return None
+    item_norm = normalized_label_key(item_label)
+    matches: list[str] = []
+    for subsection in master_subsecs:
+        if not subsection.label:
+            continue
+        if any(
+            child.kind is IRNodeKind.PARAGRAPH
+            and child.label
+            and normalized_label_key(child.label) == item_norm
+            for child in subsection.children
+        ):
+            matches.append(str(subsection.label))
+    return matches[0] if len(matches) == 1 else None
+
+
+def _rebound_item_only_target_to_unique_subsection(
+    original: AmendmentOp | ResolvedOp,
+    *,
+    master_subsecs: List[IRNode],
+    source_pathologies_out: Optional[List[SourcePathology]],
+    strict_profile: Optional[StrictProfile],
+    amend_sub_ir: Optional[IRNode],
+) -> AmendmentOp | ResolvedOp:
+    if isinstance(original, ResolvedOp):
+        target_paragraph = original.effective_target_paragraph
+        target_item = original.effective_target_item_label
+        target_section = original.resolved_target_section_label or ""
+        source_statute = original.resolved_source_statute
+        action = original.resolved_action_type
+        witness_rule_id = original.witness_rule_id
+    else:
+        target_paragraph = original.target_paragraph
+        target_item = original.target_item
+        target_section = original.target_section or ""
+        source_statute = original.source_statute or ""
+        action = original.op_type
+        witness_rule_id = original.witness_rule_id
+    if action != "REPEAL":
+        return original
+    if witness_rule_id != "fi.repeal_vts_voimaantulo":
+        return original
+    if target_paragraph is not None or not target_item:
+        return original
+    rebound_label = _unique_subsection_label_for_item_target(master_subsecs, target_item)
+    if rebound_label is None or not rebound_label.isdigit():
+        return original
+    if source_pathologies_out is not None:
+        source_pathologies_out.append(
+            build_subsection_target_rebound_pathology(
+                source_statute=source_statute,
+                target_section=target_section,
+                target_paragraph=int(rebound_label),
+                rebound_kind="unique_item_label_subsection_fallback",
+                stale_fragment_idx=-1,
+                live_has_paragraphs=True,
+                amend_has_paragraphs=bool(
+                    amend_sub_ir is not None
+                    and any(child.kind == IRNodeKind.PARAGRAPH for child in amend_sub_ir.children)
+                ),
+            )
+        )
+    if strict_profile is not None:
+        return original
+    if isinstance(original, ResolvedOp):
+        rebound = _rebind_resolved_target_address(
+            original,
+            target_paragraph=int(rebound_label),
+            target_item=target_item,
+            target_special=original.effective_target_special,
+        )
+        return dc_replace(
+            rebound,
+            target_guessing_provenance_tags=tuple(
+                dict.fromkeys(
+                    (
+                        *rebound.target_guessing_provenance_tags,
+                        "unique_item_label_subsection_fallback",
+                    )
+                )
+            ),
+        )
+    return dc_replace(
+        original,
+        target_paragraph=int(rebound_label),
+        target_item=target_item,
+        target_guessing_provenance_tags=tuple(
+            dict.fromkeys(
+                (
+                    *original.target_guessing_provenance_tags,
+                    "unique_item_label_subsection_fallback",
+                )
+            )
+        ),
+    )
+
+
 def _normalize_subsection_dispatch_inputs(
     *,
     dispatch_op: AmendmentOp | ResolvedOp,
@@ -282,6 +384,13 @@ def _normalize_subsection_dispatch_inputs(
         master_subsecs,
         amend_sub_ir,
         ctx_label,
+    )
+    normalized = _rebound_item_only_target_to_unique_subsection(
+        normalized,
+        master_subsecs=master_subsecs,
+        source_pathologies_out=source_pathologies_out,
+        strict_profile=strict_profile,
+        amend_sub_ir=amend_sub_ir,
     )
     if rop is not None:
         original_target_paragraph = rop.effective_target_paragraph

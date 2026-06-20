@@ -505,10 +505,10 @@ class TestHEGovernmentProposalRefTyping:
         result = extract_all_reference_mentions(
             FULL_CHAIN.xml_bytes, FULL_CHAIN.source_statute_id
         )
-        he_targets = [
-            str(m.target_provision_ref.statute_id)
-            for m in self._he_mentions(result.mentions)
-        ]
+        he_targets = []
+        for m in self._he_mentions(result.mentions):
+            assert m.target_provision_ref is not None
+            he_targets.append(str(m.target_provision_ref.statute_id))
         assert he_targets == ["he/2021/173"], (
             f"HE must be emitted exactly once, got {he_targets}"
         )
@@ -2143,6 +2143,7 @@ class TestIssuedUnderAuthorityKindEndToEnd:
         from lawvm.finland.references.ref_mention_extractor import (
             _edge_to_cite_kind,
         )
+        from lawvm.finland.references.cross_refs import CrossRefEdge
         from lawvm.finland.graph import build_statute_graph_fi_lightweight
         import asyncio
 
@@ -2156,13 +2157,13 @@ class TestIssuedUnderAuthorityKindEndToEnd:
         assert issued["1998/629"].target_kind == "act"
         assert issued["1998/629"].target_section == "36"
         assert (
-            _edge_to_cite_kind(issued["1998/629"], "2010/908")
+            _edge_to_cite_kind(cast(CrossRefEdge, issued["1998/629"]), "2010/908")
             == CiteKind.CROSS_STATUTE
         )
         assert issued["1992/150"].target_kind == "act"
         assert issued["1992/150"].target_section == "8"
         assert (
-            _edge_to_cite_kind(issued["1992/150"], "2010/908")
+            _edge_to_cite_kind(cast(CrossRefEdge, issued["1992/150"]), "2010/908")
             == CiteKind.CROSS_STATUTE
         )
 
@@ -2175,6 +2176,7 @@ class TestIssuedUnderAuthorityKindEndToEnd:
         from lawvm.finland.references.ref_mention_extractor import (
             _edge_to_cite_kind,
         )
+        from lawvm.finland.references.cross_refs import CrossRefEdge
         from lawvm.finland.graph import build_statute_graph_fi_lightweight
         import asyncio
 
@@ -2188,7 +2190,7 @@ class TestIssuedUnderAuthorityKindEndToEnd:
         }
         assert issued["1977/702"].target_kind == "decree"
         assert (
-            _edge_to_cite_kind(issued["1977/702"], "1979/86")
+            _edge_to_cite_kind(cast(CrossRefEdge, issued["1977/702"]), "1979/86")
             == CiteKind.NON_STATUTORY_INSTRUMENT
         )
 

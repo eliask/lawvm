@@ -286,7 +286,8 @@ def test_corpus_run_cache_memoizes_parse_locators_and_bytes() -> None:
     )
 
     class _FakeArchive:
-        def __init__(self) -> None:
+        def __init__(self, name: str = "archive") -> None:
+            self.name = name
             self.locator_calls: list[str] = []
             self.get_calls: list[str] = []
             self.closed = 0
@@ -316,6 +317,14 @@ def test_corpus_run_cache_memoizes_parse_locators_and_bytes() -> None:
         # Same path returns the same shared handle (no re-open).
         again = cache.open_archive(Path("data/nz_legislation.farchive"), lambda _p: real)
         assert shared is again
+        writable_real = _FakeArchive("writable")
+        writable = cache.open_archive(
+            Path("data/nz_legislation.farchive"),
+            lambda _p: writable_real,
+            readonly=False,
+        )
+        assert writable is not shared
+        assert writable.name == "writable"
 
         # locators() memoized per pattern.
         assert shared.locators("pre%") == ["loc-a", "loc-b"]

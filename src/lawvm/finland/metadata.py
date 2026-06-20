@@ -1134,6 +1134,16 @@ _TEMPORARY_TITLE_SCOPED_SECTION_RE = re.compile(
 )
 _TEMPORARY_TITLE_SECTION_LABEL_RE = re.compile(r"\d+\s*(?:[a-z](?![a-z]))?")
 _LEADING_CHAPTER_CONTEXT_RE = re.compile(r"^\s*(?:[\d\w]+\s+)*luvun\s+", re.IGNORECASE)
+_TEMPORARY_EXPIRY_SENTENCE_RE = re.compile(
+    r"(?:Lain|Asetuksen|Päätöksen|Sen)\s+"
+    r"(?P<subject>[^.]+?)\s+"
+    r"(?:ovat|on)\s+voimassa\s+"
+    r"(?:\d{1,2}\s+päivästä\s+[a-zäöå]+\s+)?"
+    r"(?P<day>\d{1,2})\s+päivään\s+"
+    r"(?P<month>[a-zäöå]+)\s+"
+    r"(?P<year>\d{4})",
+    re.IGNORECASE,
+)
 
 
 def _parse_moment_label_list(raw: str) -> set[int]:
@@ -1190,18 +1200,13 @@ def _temporary_provision_expiry_overrides(
     overrides: list[TemporaryProvisionExpiryOverride] = []
     seen: set[tuple[str, str, int | None, str | None, str]] = set()
 
-    for sunset in re.finditer(
-        r'(?:Lain|Asetuksen|Päätöksen|Sen)\s+(.+?)\s+(?:ovat|on)\s+voimassa\s+'
-        r'(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
-        text,
-        flags=re.IGNORECASE,
-    ):
-        subject = sunset.group(1)
-        month = month_map.get(sunset.group(3).lower())
+    for sunset in _TEMPORARY_EXPIRY_SENTENCE_RE.finditer(text):
+        subject = sunset.group("subject")
+        month = month_map.get(sunset.group("month").lower())
         if month is None:
             continue
         try:
-            expiry = dt.date(int(sunset.group(4)), month, int(sunset.group(2)))
+            expiry = dt.date(int(sunset.group("year")), month, int(sunset.group("day")))
         except ValueError:
             continue
         for scoped in re.finditer(

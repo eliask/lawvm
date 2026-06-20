@@ -167,6 +167,39 @@ class TestMigrationLedgerUnit:
             _addr(("section", "25"), ("subsection", "1"), ("item", "1"))
         ) == _addr(("section", "25"), ("subsection", "1"), ("item", "1"))
 
+    def test_normalize_address_path_reuses_cached_result(self, monkeypatch) -> None:
+        import lawvm.finland.migration_ledger as migration_ledger
+
+        calls = 0
+        real_normalize = migration_ledger._normalize_migration_label
+
+        def counted_normalize(kind: str, label: str) -> str:
+            nonlocal calls
+            calls += 1
+            return real_normalize(kind, label)
+
+        path = (("part", "III"), ("chapter", "2"), ("item", "i"))
+        migration_ledger.normalize_address_path.cache_clear()
+        monkeypatch.setattr(
+            migration_ledger,
+            "_normalize_migration_label",
+            counted_normalize,
+        )
+        try:
+            assert migration_ledger.normalize_address_path(path) == (
+                ("part", "3"),
+                ("chapter", "2"),
+                ("item", "i"),
+            )
+            assert migration_ledger.normalize_address_path(tuple(path)) == (
+                ("part", "3"),
+                ("chapter", "2"),
+                ("item", "i"),
+            )
+            assert calls == 3
+        finally:
+            migration_ledger.normalize_address_path.cache_clear()
+
     def test_prefix_migration_signature_cache_reused_and_invalidated(self, monkeypatch) -> None:
         import lawvm.finland.migration_ledger as migration_ledger
 

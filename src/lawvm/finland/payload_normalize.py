@@ -1216,7 +1216,7 @@ def _assign_numbered_table_companion_slot_ops(
         _obs(
             "ELAB.NUMBERED_TABLE_COMPANION_SUBSECTION_BINDING",
             "sparse_subsection_elaboration",
-            source_target_paragraph=int(op.target_paragraph),
+            source_target_paragraph=int(op.target_paragraph or 0),
             structural_payload_label=str(sub.label or ""),
             numbered_table_targets=list(op.numbered_table_targets),
             op_description=op.description(),
@@ -2038,10 +2038,8 @@ _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOA
 _TEXT_TABLE_ROW_CONTINUATION_RULE = "ELAB.TEXT_TABLE_ROW_CONTINUATION"
 
 
-def _flattened_list_row_from_subsection_ir(sub_ir: IRNode) -> Optional[FlattenedListRow]:
-    if any(c.kind in {IRNodeKind.PARAGRAPH, IRNodeKind.SUBSECTION} for c in sub_ir.children):
-        return None
-    flat_text = " ".join(irnode_to_text(sub_ir).split())
+def _flattened_list_row_from_text(text: str) -> Optional[FlattenedListRow]:
+    flat_text = " ".join(text.split())
     m = re.match(r"^(\d+|[a-z])\s*[\).]\s*(.+)$", flat_text, flags=re.I)
     if m is None:
         return None
@@ -2049,6 +2047,28 @@ def _flattened_list_row_from_subsection_ir(sub_ir: IRNode) -> Optional[Flattened
     label = _norm_num_token(raw_label)
     text = m.group(2).strip()
     return FlattenedListRow(label=label, text=text, is_lettered=not label.isdigit())
+
+
+def _flattened_list_rows_from_subsection_ir(sub_ir: IRNode) -> Optional[list[FlattenedListRow]]:
+    if any(c.kind is IRNodeKind.SUBSECTION for c in sub_ir.children):
+        return None
+    if any(c.kind is IRNodeKind.PARAGRAPH for c in sub_ir.children):
+        rows: list[FlattenedListRow] = []
+        for child in sub_ir.children:
+            if child.kind not in {IRNodeKind.CONTENT, IRNodeKind.INTRO, IRNodeKind.PARAGRAPH}:
+                return None
+            row = _flattened_list_row_from_text(irnode_to_text(child))
+            if row is None:
+                return None
+            rows.append(row)
+        return rows or None
+    row = _flattened_list_row_from_text(irnode_to_text(sub_ir))
+    return [row] if row is not None else None
+
+
+def _flattened_list_row_from_subsection_ir(sub_ir: IRNode) -> Optional[FlattenedListRow]:
+    rows = _flattened_list_rows_from_subsection_ir(sub_ir)
+    return rows[0] if rows is not None and len(rows) == 1 else None
 
 
 def _paragraph_from_flattened_list_row(row: FlattenedListRow) -> IRNode:
@@ -2308,12 +2328,12 @@ def _collapse_intro_list_subsections_inside_section_ir(
         rows: List[FlattenedListRow] = []
         j = i + 1
         while j < len(children):
-            row = None
+            row_group = None
             if children[j].kind is IRNodeKind.SUBSECTION:
-                row = _flattened_list_row_from_subsection_ir(children[j])
-            if row is None:
+                row_group = _flattened_list_rows_from_subsection_ir(children[j])
+            if row_group is None:
                 break
-            rows.append(row)
+            rows.extend(row_group)
             j += 1
         if not rows:
             new_children.append(child)

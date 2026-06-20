@@ -19,6 +19,8 @@ strangle), never replacing it.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from lawvm.finland.legal_surface.bundle import build_surface_bundle
 from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
 from lawvm.finland.legal_surface.lenses.deontic_core import (
@@ -57,15 +59,17 @@ def test_deontic_core_node_minted_with_surface_payload() -> None:
     permissions = [n for n in cores if n.payload.get("kind") == "permission"]
     assert permissions, "expected a permission deontic core (voi)"
     node = permissions[0]
-    assert node.payload["cue"] == "voi"
-    assert node.payload["polarity"] == "affirmative"
-    assert node.payload["voice"] == "active"
-    assert node.payload["source"] == "construction_modal_parse"
+    payload = cast(dict[str, object], node.payload)
+    assert payload["cue"] == "voi"
+    assert payload["polarity"] == "affirmative"
+    assert payload["voice"] == "active"
+    assert payload["source"] == "construction_modal_parse"
     # the node's anchoring span is the modal cue span (raw_text coords)
     ref = node.source_ref
     assert ref is not None
-    assert ref.char_start == node.payload["cue_span"][0]
-    assert ref.char_end == node.payload["cue_span"][1]
+    cue_span = cast(tuple[int, int], payload["cue_span"])
+    assert ref.char_start == cue_span[0]
+    assert ref.char_end == cue_span[1]
 
 
 def test_deontic_core_lens_is_dense_relative_to_actor_modal_frame() -> None:

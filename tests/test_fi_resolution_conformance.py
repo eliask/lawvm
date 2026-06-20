@@ -47,6 +47,7 @@ the contrast.
 from __future__ import annotations
 
 import datetime as dt
+from typing import cast
 
 import pytest
 
@@ -64,6 +65,7 @@ from lawvm.finland.references.defined_terms import (
 )
 from lawvm.finland.references.registries.statute_name import (
     StatuteNameEntry,
+    StatuteNameRegistry,
     build_registry,
 )
 from lawvm.finland.references.resolve import (
@@ -548,7 +550,7 @@ def test_each_status_is_actually_produced_by_resolve():
     ]
     produced = set()
     for expected, mention, reg in cases:
-        (res,) = resolve_mentions([mention], statute_registry=reg)
+        (res,) = resolve_mentions([mention], statute_registry=cast(StatuteNameRegistry, reg))
         assert res.status is expected, (
             f"expected {expected.name}, got {res.status.name}"
         )

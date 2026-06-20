@@ -6,12 +6,16 @@ owns Finlex URLs, Finnish locator labels, and local corpus preview extraction.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 import xml.etree.ElementTree as ET
 from typing import Protocol, cast
 
-from lawvm.finland.section_text_extractor import extract_sections_text
+from lawvm.finland.section_text_extractor import (
+    SectionTextExtractionResult,
+    extract_sections_text,
+)
 from lawvm.finland.statute_id import engine_statute_id
 from lawvm.tools.transition_graph_interlinks import (
     InterlinkTargetPreviewContext,
@@ -35,10 +39,18 @@ _SECTION_LOCATOR_RE = re.compile(r"(?:^|/)section:([^/]+)")
 _SUBSECTION_LOCATOR_RE = re.compile(r"(?:^|/)subsection:([^/]+)")
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class _ConsolidatedPreviewHeader:
+    identity: dict[str, str]
+    title: str
+    chapter_titles: dict[str, str]
+
+
 def build_fi_interlink_target_row(
     target_ref: LawvmInterlinkTargetRef,
     *,
     corpus: _PreviewCorpus,
+    preview_cache: dict[str, object] | None = None,
 ) -> LawvmInterlinkTargetRow:
     """Build a Finnish preview row for one neutral interlink target."""
     if target_ref.jurisdiction != "fi" or target_ref.work_kind != "normative_act":
@@ -47,7 +59,12 @@ def build_fi_interlink_target_row(
     engine_id = engine_statute_id(target_ref.local_id)
     if not _looks_like_engine_statute_id(engine_id):
         return _unsupported_fi_target_row(target_ref, status="unsupported_fi_target_id")
-    preview = _target_preview_payload(target_ref, engine_id=engine_id, corpus=corpus)
+    preview = _target_preview_payload(
+        target_ref,
+        engine_id=engine_id,
+        corpus=corpus,
+        preview_cache=preview_cache,
+    )
     target_url = _finlex_lainsaadanto_url(
         engine_id,
         fragment=str(preview.get("target_fragment") or ""),
@@ -117,7 +134,9 @@ def resolve_fi_interlink_target_row(
     if context.corpus is None:
         return _unsupported_fi_target_row(target_ref, status="missing_local_corpus")
     return build_fi_interlink_target_row(
-        target_ref, corpus=cast(_PreviewCorpus, context.corpus)
+        target_ref,
+        corpus=cast(_PreviewCorpus, context.corpus),
+        preview_cache=context.preview_cache,
     )
 
 
@@ -200,6 +219,7 @@ def _target_preview_payload(
     *,
     engine_id: str,
     corpus: _PreviewCorpus,
+    preview_cache: dict[str, object] | None = None,
 ) -> dict[str, object]:
     locator_label = _locator_label(target_ref.locator)
     base_payload: dict[str, object] = {
@@ -229,8 +249,14 @@ def _target_preview_payload(
             "title": title,
         }
 
-    identity = _consolidated_preview_identity(xml_bytes)
-    title, chapter_titles = _title_and_chapter_titles(xml_bytes)
+    header = _consolidated_preview_header(
+        engine_id,
+        xml_bytes,
+        preview_cache=preview_cache,
+    )
+    identity = header.identity
+    title = header.title
+    chapter_titles = header.chapter_titles
     payload = {
         **base_payload,
         "status": "law_title_only",
@@ -238,7 +264,19 @@ def _target_preview_payload(
         "title": title,
         **identity,
     }
-    matched_section = _matching_section_preview(engine_id, target_ref.locator, xml_bytes)
+    section_label = _section_label_from_locator(target_ref.locator)
+    if not section_label:
+        return payload
+    sections = _consolidated_section_text_result(
+        engine_id,
+        xml_bytes,
+        preview_cache=preview_cache,
+    )
+    matched_section = _matching_section_preview(
+        target_ref.locator,
+        sections,
+        section_label,
+    )
     if matched_section is None:
         return payload
 
@@ -275,6 +313,45 @@ def _target_preview_payload(
         )
         or str(payload.get("target_fragment") or ""),
     }
+
+
+def _consolidated_preview_header(
+    engine_id: str,
+    xml_bytes: bytes,
+    *,
+    preview_cache: dict[str, object] | None,
+) -> _ConsolidatedPreviewHeader:
+    cache_key = f"fi.consolidated_preview_header:{engine_id}"
+    if preview_cache is not None:
+        cached = preview_cache.get(cache_key)
+        if isinstance(cached, _ConsolidatedPreviewHeader):
+            return cached
+    title, chapter_titles = _title_and_chapter_titles(xml_bytes)
+    header = _ConsolidatedPreviewHeader(
+        identity=_consolidated_preview_identity(xml_bytes),
+        title=title,
+        chapter_titles=chapter_titles,
+    )
+    if preview_cache is not None:
+        preview_cache[cache_key] = header
+    return header
+
+
+def _consolidated_section_text_result(
+    engine_id: str,
+    xml_bytes: bytes,
+    *,
+    preview_cache: dict[str, object] | None,
+) -> SectionTextExtractionResult:
+    cache_key = f"fi.consolidated_section_text:{engine_id}"
+    if preview_cache is not None:
+        cached = preview_cache.get(cache_key)
+        if isinstance(cached, SectionTextExtractionResult):
+            return cached
+    result = extract_sections_text(xml_bytes, engine_id)
+    if preview_cache is not None:
+        preview_cache[cache_key] = result
+    return result
 
 
 def _consolidated_preview_identity(xml_bytes: bytes) -> dict[str, str]:
@@ -325,11 +402,11 @@ def _chapter_label_from_eid(eid: str) -> str:
     return match.group(1) if match else ""
 
 
-def _matching_section_preview(engine_id: str, locator: str | None, xml_bytes: bytes):
-    section_label = _section_label_from_locator(locator)
-    if not section_label:
-        return None
-    result = extract_sections_text(xml_bytes, engine_id)
+def _matching_section_preview(
+    locator: str | None,
+    result: SectionTextExtractionResult,
+    section_label: str,
+):
     matches = [
         section
         for section in result.sections

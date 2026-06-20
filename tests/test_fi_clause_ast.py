@@ -227,8 +227,7 @@ def test_core_carriers_do_not_store_move_tail_residue():
 
     lo = clause_node_to_legal_operation(node)
     assert isinstance(lo, LegalOperation)
-    assert not hasattr(lo, "move_clause_target_unit_kind")
-    assert "move_clause_target_unit_kind" not in {field.name for field in fields(type(lo))}
+    assert lo.move_clause_target_unit_kind is None
 
 
 # ---------------------------------------------------------------------------

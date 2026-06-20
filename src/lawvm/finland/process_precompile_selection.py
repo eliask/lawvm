@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional, Protocol, Sequence
+from typing import TYPE_CHECKING, Callable, Optional, Protocol, Sequence
 
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.finland.acquisition import AmendmentAcquisitionResult
@@ -15,6 +15,9 @@ from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.source_pathology import build_empty_operative_body_pathology
 from lawvm.finland.vts import VtsSkippedTarget, extract_vts_repeals_fallback
 
+if TYPE_CHECKING:
+    from lawvm.finland.frontend_compile import _AmendmentTreeMetadata
+
 ReplayPrint = Callable[[str], None]
 OpsEnricher = Callable[..., list[AmendmentOp]]
 
@@ -23,7 +26,7 @@ class VtsExtractor(Protocol):
     def __call__(
         self,
         johto: str,
-        source_xml_bytes: bytes,
+        xml_bytes: bytes,
         parent_id: str,
         parent_title: str,
         strict_profile: Optional[StrictProfile],
@@ -57,7 +60,7 @@ class ProcessPrecompileSelectionContext:
     vts_skipped_targets: list[VtsSkippedTarget]
     finding_recorder: ProcessFindingRecorder
     replay_print: ReplayPrint
-    amendment_metadata: object | None = None
+    amendment_metadata: "_AmendmentTreeMetadata | None" = None
     extract_vts_repeals: VtsExtractor = extract_vts_repeals_fallback
     enrich_ops_from_amendment_tree: OpsEnricher = _enrich_ops_from_amendment_tree
 

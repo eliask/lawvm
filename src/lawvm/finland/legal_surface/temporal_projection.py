@@ -63,7 +63,7 @@ from lawvm.core.legal_surface_lens import (
 )
 from lawvm.finland.legal_surface.source_syntax_graph import (
     SourceSyntaxGraph,
-    assemble_source_syntax_graph,
+    assemble_source_syntax_graph_for_unit,
 )
 from lawvm.finland.legal_surface.temporal_parse import (
     ROLE_COMMENCEMENT,
@@ -333,11 +333,9 @@ def project_forest_temporal_seeds(
 
     seeds: list[SurfaceNodeSeed] = []
     for unit in bundle.units:
-        forest = assemble_source_syntax_graph(
+        forest = assemble_source_syntax_graph_for_unit(
             subject=bundle.subject,
-            source_units=(),
-            statute_id=unit.source_unit_id,
-            body=unit.raw_text,
+            unit=unit,
         )
         for seg_id in _gated_temporal_segment_ids(forest):
             seg = forest.syntax_nodes[seg_id]

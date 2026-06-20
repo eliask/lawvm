@@ -216,6 +216,28 @@ def test_temporary_provision_expiry_overrides_parse_mixed_heading_and_moment_sco
     assert ("8", 3, None, "2025-12-31") in got
 
 
+def test_temporary_provision_expiry_overrides_do_not_cross_sentence_boundaries() -> None:
+    tree = _tree(
+        "Tämä päätös tulee voimaan 21 päivänä kesäkuuta 2021. "
+        "Päätöksen 2 §:n 1 ja 2 momentti sekä 7 §:n 1 momentti ovat voimassa "
+        "31 päivään elokuuta 2021. "
+        "Päätöksen 6 §:n 2 momentti on voimassa 31 päivään joulukuuta 2021."
+    )
+
+    overrides = _temporary_provision_expiry_overrides(tree, "2021/575")
+
+    got = {
+        (override.section, override.subsection, override.expiry.isoformat())
+        for override in overrides
+    }
+    assert got == {
+        ("2", 1, "2021-08-31"),
+        ("2", 2, "2021-08-31"),
+        ("7", 1, "2021-08-31"),
+        ("6", 2, "2021-12-31"),
+    }
+
+
 def test_temporary_section_expiry_overrides_collect_multiple_clauses() -> None:
     tree = _tree(
         "Tämä laki tulee voimaan 1 päivänä toukokuuta 2020. "

@@ -109,6 +109,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_NUM_IN_INTRO_MISMATCH,
     BASE_NUM_IN_INTRO_RECOVERED,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
+    BASE_TABLE_NOTE_SUBSECTION_FOLD,
     BASE_TAIL_PROSE_ABSORB,
     TRAILING_CHAPTER_REPARENT,
     UNNUMBERED_PEER_REPARENT,
@@ -581,6 +582,41 @@ def _paragraph_label_values(subsection: IRNode) -> list[int]:
     ]
 
 
+def _node_text_starts_with_dash_bullet(node: IRNode) -> bool:
+    text = irnode_to_text(node).lstrip()
+    return text.startswith(("-", "–", "—", "−"))
+
+
+def _subsection_resumes_item_run_after_dash_continuation(
+    subsection: IRNode,
+    expected_next_value: int,
+) -> bool:
+    """Return True for a synthetic subsection carrying dash-list item tails.
+
+    Finlex occasionally splits a single definition-list moment so that the
+    first numbered item remains in one subsection and following dash bullets
+    plus items 2..N appear in a synthetic sibling subsection.  The witness is
+    narrow: the sibling must start with dash-bullet continuation text before
+    the expected next numbered item appears.
+    """
+    if subsection.kind != IRNodeKind.SUBSECTION:
+        return False
+
+    saw_dash_continuation = False
+    for child in subsection.children:
+        numbered_value = _numbered_paragraph_value(child)
+        if numbered_value is not None:
+            return saw_dash_continuation and numbered_value == expected_next_value
+        if child.kind in (IRNodeKind.INTRO, IRNodeKind.PARAGRAPH) and _node_text_starts_with_dash_bullet(child):
+            saw_dash_continuation = True
+            continue
+        if child.kind == IRNodeKind.NUM:
+            continue
+        if irnode_to_text(child).strip():
+            return False
+    return False
+
+
 def _numbered_paragraph_value(paragraph: IRNode) -> int | None:
     if paragraph.kind != IRNodeKind.PARAGRAPH or not _paragraph_has_num_child(paragraph):
         return None
@@ -700,13 +736,23 @@ def _fold_section_item_subsection_run(
 
         base_paragraphs = [c for c in child.children if c.kind == IRNodeKind.PARAGRAPH]
         base_values = _paragraph_label_values(child)
+        if not base_values or base_values != list(range(1, len(base_values) + 1)):
+            rewritten.append(child)
+            i += 1
+            continue
+
         next_child = children[i + 1] if i + 1 < len(children) else None
+        expected_next_value = max(base_values) + 1
         if (
-            not base_values
-            or base_values != list(range(1, len(base_values) + 1))
-            or next_child is None
+            next_child is None
             or next_child.kind != IRNodeKind.SUBSECTION
-            or _item_num_value(next_child) != max(base_values) + 1
+            or (
+                _item_num_value(next_child) != expected_next_value
+                and not _subsection_resumes_item_run_after_dash_continuation(
+                    next_child,
+                    expected_next_value,
+                )
+            )
             or _is_item_style_subsection(next_child)
         ):
             rewritten.append(child)
@@ -790,6 +836,127 @@ def _fold_section_item_subsection_run(
         )
         changed = True
         i = len(children)
+
+    return rewritten if changed else children
+
+
+def _node_has_descendant_kind(node: IRNode, kind: IRNodeKind) -> bool:
+    return any(child.kind == kind or _node_has_descendant_kind(child, kind) for child in node.children)
+
+
+def _subsection_has_omission_marker(node: IRNode) -> bool:
+    return any(
+        child.kind == IRNodeKind.OMISSION
+        or (child.kind == IRNodeKind.HCONTAINER and child.attrs.get("name") == "omission")
+        for child in node.children
+    )
+
+
+def _has_source_eid(node: IRNode) -> bool:
+    return bool(node.attrs.get("eId") or node.attrs.get("lawvm_source_subsection_eid"))
+
+
+def _is_table_note_continuation_subsection(node: IRNode) -> bool:
+    """Synthetic source wrapper for table notes/prose, not a real momentti."""
+    if node.kind != IRNodeKind.SUBSECTION or _has_source_eid(node):
+        return False
+    if any(child.kind == IRNodeKind.NUM for child in node.children):
+        return False
+    if any(child.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(child) for child in node.children):
+        return False
+    return bool(irnode_to_text(node).strip())
+
+
+def _starts_table_note_run(node: IRNode) -> bool:
+    leading = "".join(irnode_to_text(node).lstrip()[:24].split())
+    return leading.startswith(("(*)", "(**)", "(***)", "(****)"))
+
+
+def _fold_table_note_subsections_into_previous_moment(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold synthetic table-note subsection wrappers into a table-bearing moment.
+
+    Some amendment payload XML encodes one targeted moment as a table-bearing
+    subsection followed by source-synthetic subsection wrappers for footnotes,
+    dash bullets, and final prose.  The source johto owns the whole moment; the
+    wrappers are transport shape, not separate momentit.
+    """
+    if len(children) < 2:
+        return children
+
+    rewritten: List[IRNode] = []
+    changed = False
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if (
+            child.kind != IRNodeKind.SUBSECTION
+            or not _node_has_descendant_kind(child, IRNodeKind.TABLE)
+            or not _subsection_has_omission_marker(child)
+        ):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        j = i + 1
+        if j >= len(children) or not _starts_table_note_run(children[j]):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        continuation_children: list[IRNode] = []
+        consumed_paths: list[str] = []
+        while j < len(children) and _is_table_note_continuation_subsection(children[j]):
+            continuation = children[j]
+            continuation_children.extend(continuation.children)
+            consumed_paths.append(_node_path_label(continuation))
+            j += 1
+
+        if not continuation_children:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(child.children) + tuple(continuation_children),
+            )
+        )
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_TABLE_NOTE_SUBSECTION_FOLD,
+                basis=SourceNormalizationBasis.PROFILE_INVALID,
+                before=(
+                    f"table-bearing {_node_path_label(child)} followed by synthetic "
+                    f"table-note subsection wrappers {consumed_paths!r}"
+                ),
+                after=(
+                    f"folded {len(consumed_paths)} table-note/prose wrappers into "
+                    f"{_node_path_label(child)}"
+                ),
+                explanation=(
+                    "The source encoded footnotes and concluding prose for one "
+                    "table-bearing moment as sibling subsection wrappers without "
+                    "source eIds or numbered paragraph children.  Fold those "
+                    "transport wrappers into the preceding table-bearing moment "
+                    "so the targeted subsection replacement preserves the whole "
+                    "source-owned moment payload."
+                ),
+                path=parent_path + (_node_path_label(child),),
+                confidence=0.96,
+            )
+        )
+        changed = True
+        i = j
 
     return rewritten if changed else children
 
@@ -1490,6 +1657,9 @@ def _split_nonpenal_trailing_duplicate_paragraph(
 
         tail_para = paragraph_children[-1]
         prev_para = paragraph_children[-2]
+        if tail_para.label is None or prev_para.label is None:
+            rebuilt_children.append(child)
+            continue
         if _norm_num_token(str(tail_para.label or "")) != _norm_num_token(str(prev_para.label or "")):
             rebuilt_children.append(child)
             continue
@@ -2309,6 +2479,9 @@ def normalize_source_ir(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_item_subsection_run(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_table_note_subsections_into_previous_moment(
             initial_children, statute_id, current_path, facts
         )
 

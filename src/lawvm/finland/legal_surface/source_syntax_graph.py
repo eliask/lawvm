@@ -71,7 +71,8 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from lawvm.core.legal_surface_graph import SourceUnitRef, SurfaceGraphSubject
-from lawvm.core.legal_surface_tokens import SegmentationGraph
+from lawvm.core.legal_surface_lens import SourceSurfaceUnit
+from lawvm.core.legal_surface_tokens import ClauseIndex, SegmentationGraph, TokenTape
 from lawvm.finland.legal_surface.clause_segment import (
     build_clause_index,
     build_segmentation_graph,
@@ -641,6 +642,9 @@ def assemble_source_syntax_graph(
     source_units: tuple[SourceUnitRef, ...],
     statute_id: str,
     body: str,
+    segmentation_graph: SegmentationGraph | None = None,
+    token_tape: TokenTape | None = None,
+    clause_index: ClauseIndex | None = None,
 ) -> SourceSyntaxGraph:
     """Assemble (or REUSE a cached) per-provision construction parse FOREST.
 
@@ -665,9 +669,37 @@ def assemble_source_syntax_graph(
         source_units=source_units,
         statute_id=statute_id,
         body=body,
+        segmentation_graph=segmentation_graph,
+        token_tape=token_tape,
+        clause_index=clause_index,
     )
     _FOREST_CACHE[key] = forest
     return forest
+
+
+def assemble_source_syntax_graph_for_unit(
+    *,
+    subject: SurfaceGraphSubject,
+    unit: SourceSurfaceUnit,
+    source_units: tuple[SourceUnitRef, ...] = (),
+) -> SourceSyntaxGraph:
+    """Assemble a forest for a bundle unit, reusing deterministic substrate views."""
+    segmentation_graph = unit.metadata.get("segmentation_graph")
+    token_tape = unit.token_tape
+    clause_index = unit.clause_index
+    return assemble_source_syntax_graph(
+        subject=subject,
+        source_units=source_units,
+        statute_id=unit.source_unit_id,
+        body=unit.raw_text,
+        segmentation_graph=(
+            segmentation_graph
+            if isinstance(segmentation_graph, SegmentationGraph)
+            else None
+        ),
+        token_tape=token_tape if isinstance(token_tape, TokenTape) else None,
+        clause_index=clause_index if isinstance(clause_index, ClauseIndex) else None,
+    )
 
 
 def _assemble_source_syntax_graph(
@@ -676,6 +708,9 @@ def _assemble_source_syntax_graph(
     source_units: tuple[SourceUnitRef, ...],
     statute_id: str,
     body: str,
+    segmentation_graph: SegmentationGraph | None = None,
+    token_tape: TokenTape | None = None,
+    clause_index: ClauseIndex | None = None,
 ) -> SourceSyntaxGraph:
     """Assemble the per-provision construction parse FOREST over ``body``.
 
@@ -714,7 +749,7 @@ def _assemble_source_syntax_graph(
     family grammar and makes NO attachment/composition decision (those are L3+).
     """
     text_hash = _sha256_text(body)
-    seg_graph = build_segmentation_graph(statute_id, body)
+    seg_graph = segmentation_graph or build_segmentation_graph(statute_id, body)
 
     nodes: dict[str, SyntaxNode] = {}
     edges: list[SyntaxEdge] = []
@@ -732,6 +767,8 @@ def _assemble_source_syntax_graph(
         seg_graph=seg_graph,
         seg_node_id=seg_node_id,
         text_hash=text_hash,
+        token_tape=token_tape,
+        clause_index=clause_index,
         nodes=nodes,
         edges=edges,
     )
@@ -869,6 +906,8 @@ def _emit_construction_leaves(
     seg_graph: SegmentationGraph,
     seg_node_id: list[str | None],
     text_hash: str,
+    token_tape: TokenTape | None = None,
+    clause_index: ClauseIndex | None = None,
     nodes: dict[str, SyntaxNode],
     edges: list[SyntaxEdge],
 ) -> None:
@@ -880,8 +919,8 @@ def _emit_construction_leaves(
     edge). The leaf is contained under its enclosing structural segment when it sits
     inside one.
     """
-    tape = build_token_tape(statute_id, body)
-    index = build_clause_index(statute_id, body, token_tape=tape)
+    tape = token_tape or build_token_tape(statute_id, body)
+    index = clause_index or build_clause_index(statute_id, body, token_tape=tape)
 
     for sent in index.sentences:
         off = sent.char_start

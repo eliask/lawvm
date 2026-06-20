@@ -90,7 +90,9 @@ def test_get_johtolause_from_tree_restores_authorial_notes() -> None:
 
     assert "muutetaan 3 §" in result
     assert "9 §" not in result
-    assert len(tree.xpath(".//*[local-name()='authorialNote']")) == 1
+    authorial_notes = tree.xpath(".//*[local-name()='authorialNote']")
+    assert isinstance(authorial_notes, list)
+    assert len(authorial_notes) == 1
 
 
 def test_get_johtolause_includes_insertions_originals_block() -> None:

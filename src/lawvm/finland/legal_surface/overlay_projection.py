@@ -47,6 +47,7 @@ from lawvm.core.interlinks import RenderedTextSpan, legal_interlink_to_row
 from lawvm.core.legal_surface_graph import (
     LegalSurfaceGraph,
     SourceSpanRef,
+    SurfaceEdge,
     SurfaceNode,
 )
 
@@ -354,7 +355,7 @@ def _overlay_id(statute_id: str, node_id: str) -> str:
 
 def _links_json(
     node_id: str,
-    graph: LegalSurfaceGraph,
+    outgoing_edges_by_node: Mapping[str, list[SurfaceEdge]],
     overlay_id_by_node: Mapping[str, str],
 ) -> str:
     """Serialize this node's OUTGOING edges as a deterministic link list.
@@ -366,9 +367,7 @@ def _links_json(
     entity/resolution endpoint with no own overlay. Sorted for determinism.
     """
     links: list[dict[str, object]] = []
-    for edge in graph.edges:
-        if edge.src != node_id:
-            continue
+    for edge in outgoing_edges_by_node.get(node_id, ()):
         target_overlay_id = overlay_id_by_node.get(edge.dst)
         link: dict[str, object] = {"rel": edge.edge_kind}
         if target_overlay_id is not None:
@@ -424,6 +423,9 @@ def graph_to_overlay_rows(
         node.node_id: _overlay_id(statute_id, node.node_id)
         for node in renderable_nodes
     }
+    outgoing_edges_by_node: dict[str, list[SurfaceEdge]] = {}
+    for edge in graph.edges:
+        outgoing_edges_by_node.setdefault(edge.src, []).append(edge)
 
     rows: list[dict[str, object]] = []
     for node in renderable_nodes:
@@ -453,7 +455,11 @@ def graph_to_overlay_rows(
             "payload_json": json.dumps(
                 dict(node.payload), ensure_ascii=False, sort_keys=True, default=str
             ),
-            "links_json": _links_json(node.node_id, graph, overlay_id_by_node),
+            "links_json": _links_json(
+                node.node_id,
+                outgoing_edges_by_node,
+                overlay_id_by_node,
+            ),
             "status": _overlay_status(node, kind, resolution),
             **span_cols,
         }

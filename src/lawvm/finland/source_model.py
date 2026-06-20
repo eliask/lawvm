@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Literal, Optional
 import lxml.etree as etree
 
 from lawvm.core.coverage import CoverageIgnoredUnit, CoverageUnit
-from lawvm.core.ir import IRNode
+from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.body_coverage import BodyCoveragePayloadRef, extract_body_coverage
@@ -1063,7 +1063,7 @@ class AmendmentSourceModel:
     def section_commencement_effective_override(
         self,
         source_statute_id: str,
-    ) -> tuple[str, dict[str, set[str]], dt.date] | None:
+    ) -> tuple[str, dict[str | None, set[str]], dt.date] | None:
         """Return section-scoped commencement effective override metadata."""
         from lawvm.finland.metadata import _section_commencement_effective_override
 
@@ -1072,7 +1072,7 @@ class AmendmentSourceModel:
     def section_subsection_commencement_effective_override(
         self,
         source_statute_id: str,
-    ) -> tuple[str, set[str], dt.date] | None:
+    ) -> tuple[str, tuple[LegalAddress, ...], dt.date] | None:
         """Return subsection-scoped commencement effective override metadata."""
         from lawvm.finland.metadata import _section_subsection_commencement_effective_override
 

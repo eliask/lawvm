@@ -56,6 +56,7 @@ trimmed off every emitted span; an all-whitespace span is dropped.
 from __future__ import annotations
 
 import hashlib
+from bisect import bisect_left
 
 from lawvm.core.legal_surface_tokens import (
     ClauseIndex,
@@ -295,6 +296,7 @@ def build_clause_index(
         source_unit_id, raw_text
     )
     tokens = tape.tokens
+    token_starts = tuple(token.char_start for token in tokens)
 
     # ── pass 1: sentence boundaries ──────────────────────────────────────────
     # A sentence boundary index is the char offset just AFTER the boundary char.
@@ -324,7 +326,14 @@ def build_clause_index(
     clauses: list[ClauseSpan] = []
     for sent_index, (s_start, s_end) in enumerate(sentence_spans):
         clauses.extend(
-            _segment_sentence_clauses(text, tokens, s_start, s_end, sent_index)
+            _segment_sentence_clauses(
+                text,
+                tokens,
+                token_starts,
+                s_start,
+                s_end,
+                sent_index,
+            )
         )
 
     return ClauseIndex(
@@ -352,24 +361,17 @@ def _spans_from_cuts(text: str, cuts: list[int]) -> list[tuple[int, int]]:
     return spans
 
 
-def _token_index_at_or_after(tokens: tuple[Token, ...], char_start: int) -> int:
-    """First token index whose char_start >= ``char_start`` (linear; small)."""
-    for i, t in enumerate(tokens):
-        if t.char_start >= char_start:
-            return i
-    return len(tokens)
-
-
 def _segment_sentence_clauses(
     text: str,
     tokens: tuple[Token, ...],
+    token_starts: tuple[int, ...],
     s_start: int,
     s_end: int,
     sent_index: int,
 ) -> list[ClauseSpan]:
     """Split one sentence span into sub-clauses. Returns trimmed ClauseSpans."""
     # Walk the tokens that fall inside [s_start, s_end).
-    i = _token_index_at_or_after(tokens, s_start)
+    i = bisect_left(token_starts, s_start)
     clause_open = s_start  # char offset where the current clause opens
     open_kind = "sentence"
     out: list[ClauseSpan] = []

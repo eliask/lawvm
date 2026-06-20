@@ -20,6 +20,7 @@ from lawvm.finland.restructure_plan import (
     ExecutedOp,
     StructuralTransformPlan,
     TransformOpKind,
+    _RelabelLookupCache,
     _resolve_live_section_snapshot_path,
     _resolve_section_node_at_live_path,
     deferred_plan_op_finding,
@@ -269,6 +270,7 @@ def emit_restructure_plan_section_snapshot_legal_operations(
         and op.source is not None
         and op.source.statute_id == amendment_id
     }
+    lookup_cache = _RelabelLookupCache()
     emitted = 0
     for exec_op in executed_ops:
         if (
@@ -278,7 +280,11 @@ def emit_restructure_plan_section_snapshot_legal_operations(
             or exec_op.applied_path[-1][0] != "section"
         ):
             continue
-        live_path = _resolve_live_section_snapshot_path(state_ir, exec_op.applied_path)
+        live_path = _resolve_live_section_snapshot_path(
+            state_ir,
+            exec_op.applied_path,
+            lookup_cache=lookup_cache,
+        )
         if live_path is None:
             continue
         address = LegalAddress(path=live_path)

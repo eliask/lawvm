@@ -74,6 +74,7 @@ ScopeResolutionSource = Literal[
     "grouped_part",
     "grouped_chapter",
     "explicit_scope_rewrite",
+    "live_stem_host",
 ]
 SectionPathResolutionReason = Literal[
     "live_unique_global_fallback",

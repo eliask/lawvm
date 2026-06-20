@@ -31,7 +31,7 @@ from typing import Any
 from lawvm.finland.legal_surface.overlay_projection import OVERLAY_ROW_COLUMNS
 from lawvm.tools.transition_graph_interlinks import (
     RenderedTextSegment,
-    place_surface_text_spans,
+    place_surface_text_spans_many,
 )
 
 #: Closed surface-overlay row column order — re-exported from the projection so
@@ -100,12 +100,21 @@ def place_lawvm_surface_overlays(
     painted inline.
     """
     placed: list[dict[str, object]] = []
+    placement_by_surface = place_surface_text_spans_many(
+        [
+            str(row.get("label") or "")
+            for row in rows
+            if not row.get("rendered_address")
+        ],
+        None,
+        segments_by_date,
+    )
     for row in rows:
         if row.get("rendered_address"):
             placed.append(row)
             continue
         surface_text = str(row.get("label") or "")
-        candidates = place_surface_text_spans(surface_text, None, segments_by_date)
+        candidates = placement_by_surface.get(surface_text, [])
         if not candidates:
             placed.append(row)
             continue

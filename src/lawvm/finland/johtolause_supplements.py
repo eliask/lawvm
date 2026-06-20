@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace as dc_replace
-from typing import List, Tuple
+from typing import List, Tuple, cast
 
 from lawvm.core.phase_result import Finding
 from lawvm.core.tree_ops import normalized_label_key
@@ -29,7 +29,7 @@ from lawvm.finland.johtolause.clause_patterns import (
 )
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johto_scope_mentions import collect_johto_numbered_table_targets
-from lawvm.finland.ops import AmendmentOp, _lo_with_path_update
+from lawvm.finland.ops import AmendmentOp, OpType, _lo_with_path_update
 
 _SPARSE_OSALTA_ROW_OMISSION_RULE_ID = "fi.sparse_osalta_row_omission_repeal.v1"
 _SPARSE_OSALTA_ROW_OMISSION_TAG = "sparse_osalta_row_omission_repeal"
@@ -649,7 +649,7 @@ def _append_unique_op(
     ops.append(
         AmendmentOp(
             op_id=op_id,
-            op_type=op_type,
+            op_type=cast(OpType, op_type),
             target_section=section,
             target_unit_kind="section",
             target_paragraph=moment,

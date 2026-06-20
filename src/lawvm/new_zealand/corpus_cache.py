@@ -17,7 +17,7 @@ run. It is purely a performance layer:
   :func:`lawvm.new_zealand.acquisition.open_farchive` and
   :func:`lawvm.new_zealand.source_tree.parse_nz_source_document` consult the
   active cache. The cache keys parsed documents by ``(xml_locator, version_id)``
-  and the archive handle by its resolved filesystem path. Parsed
+  and the archive handle by its resolved filesystem path plus read/write mode. Parsed
   :class:`NZSourceDocument` values are frozen and built from immutable tuples, so
   sharing one instance across consumers cannot change any result.
 
@@ -106,13 +106,13 @@ class CorpusRunCache:
     __slots__ = ("_archives", "_parsed")
 
     def __init__(self) -> None:
-        # Resolved archive path -> (real archive, shared wrapper).
-        self._archives: dict[str, tuple[Any, _SharedArchive]] = {}
+        # (resolved archive path, readonly) -> (real archive, shared wrapper).
+        self._archives: dict[tuple[str, bool], tuple[Any, _SharedArchive]] = {}
         # (xml_locator, version_id) -> parsed document (pure, input-addressed).
         self._parsed: dict[tuple[str, str], NZSourceDocument] = {}
 
-    def open_archive(self, path: Path, opener: Any) -> Any:
-        key = self._archive_key(path)
+    def open_archive(self, path: Path, opener: Any, *, readonly: bool = True) -> Any:
+        key = (self._archive_key(path), readonly)
         existing = self._archives.get(key)
         if existing is not None:
             return existing[1]

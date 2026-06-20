@@ -223,10 +223,14 @@ def _scan_phrases(
     """
     tokens = tape.tokens
     out: list[tuple[int, int, str, int | None, int | None]] = []
+    phrases_by_first_word: dict[str, list[list[str]]] = {}
+    for phrase in phrases:
+        if phrase:
+            phrases_by_first_word.setdefault(phrase[0], []).append(phrase)
     for i in range(len(tokens)):
         # try longest-first; first phrase that matches at i wins (mirrors the
         # regex alternation which is anchored at each position longest-first).
-        for phrase in phrases:
+        for phrase in phrases_by_first_word.get(tokens[i].normalized, ()):
             last_idx = _try_match_phrase(tokens, i, phrase)
             if last_idx is None:
                 continue

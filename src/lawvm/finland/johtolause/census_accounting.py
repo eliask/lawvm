@@ -396,7 +396,7 @@ def census_accounting(
     if adjudicated_fixes is None:
         adjudicated_fixes = FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     if limit:
         ids = ids[:limit]

@@ -39,6 +39,7 @@ class FoldTimelineBackfillResult:
     records: tuple[FoldTimelineBackfillRecord, ...]
     raw_timelines: dict[LegalAddress, ProvisionTimeline]
     rekeyed_timelines: dict[LegalAddress, ProvisionTimeline]
+    backfill_ops: tuple[LegalOperation, ...] = ()
 
 
 def _content_is_repeal_placeholder(node: IRNode) -> bool:
@@ -178,19 +179,21 @@ def _preview_rekeyed_timelines(
     as_of: str,
     temporal_events: tuple[object, ...],
     base_enacted_date: str,
+    raw_timelines: dict[LegalAddress, ProvisionTimeline] | None = None,
 ) -> FoldTimelineBackfillResult:
     from lawvm.finland.replay_products import (
         _rekey_timelines_with_migration_events,
         fi_label_norm,
     )
 
-    raw_timelines = compile_timelines(
-        base_ir,
-        lo_ops,
-        base_enacted_date=base_enacted_date,
-        label_norm=fi_label_norm,
-        temporal_events=cast(tuple[TemporalEvent, ...], temporal_events),
-    )
+    if raw_timelines is None:
+        raw_timelines = compile_timelines(
+            base_ir,
+            lo_ops,
+            base_enacted_date=base_enacted_date,
+            label_norm=fi_label_norm,
+            temporal_events=cast(tuple[TemporalEvent, ...], temporal_events),
+        )
     rekeyed_timelines = _rekey_timelines_with_migration_events(
         raw_timelines,
         migration_events,
@@ -214,6 +217,7 @@ def append_fold_timeline_backfill_ops(
     as_of: str,
     temporal_events: tuple[object, ...] = (),
     base_enacted_date: str = "",
+    preview_raw_timelines: dict[LegalAddress, ProvisionTimeline] | None = None,
 ) -> FoldTimelineBackfillResult:
     """Append snapshot LOs for fold sections that lack timeline authority.
 
@@ -234,9 +238,11 @@ def append_fold_timeline_backfill_ops(
         as_of=as_of,
         temporal_events=temporal_events,
         base_enacted_date=base_enacted_date,
+        raw_timelines=preview_raw_timelines,
     )
     existing_op_ids = {op.op_id for op in lo_ops}
     records: list[FoldTimelineBackfillRecord] = []
+    backfill_ops: list[LegalOperation] = []
     for path, node in _iter_fold_section_nodes(replay_fold_ir):
         if _content_is_repeal_placeholder(node):
             continue
@@ -253,24 +259,24 @@ def append_fold_timeline_backfill_ops(
         op_id = f"snapshot_section_{node.label}_fold_timeline_backfill"
         if op_id in existing_op_ids:
             continue
-        lo_ops.append(
-            LegalOperation(
-                op_id=op_id,
-                sequence=0,
-                action=StructuralAction.INSERT,
-                target=address,
-                payload=_stamp_exact_section_snapshot_payload(copy.deepcopy(node)),
-                source=OperationSource(
-                    statute_id=source_statute,
-                    title="Fold timeline backfill",
-                    enacted=effective,
-                    effective=effective,
-                    raw_text="",
-                ),
-                group_id=f"finland-fold-backfill:{source_statute}:{address}",
-                witness_rule_id=FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID,
-            )
+        backfill_op = LegalOperation(
+            op_id=op_id,
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=address,
+            payload=_stamp_exact_section_snapshot_payload(copy.deepcopy(node)),
+            source=OperationSource(
+                statute_id=source_statute,
+                title="Fold timeline backfill",
+                enacted=effective,
+                effective=effective,
+                raw_text="",
+            ),
+            group_id=f"finland-fold-backfill:{source_statute}:{address}",
+            witness_rule_id=FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID,
         )
+        lo_ops.append(backfill_op)
+        backfill_ops.append(backfill_op)
         existing_op_ids.add(op_id)
         records.append(
             FoldTimelineBackfillRecord(
@@ -283,6 +289,7 @@ def append_fold_timeline_backfill_ops(
         records=tuple(records),
         raw_timelines=preview.raw_timelines,
         rekeyed_timelines=preview.rekeyed_timelines,
+        backfill_ops=tuple(backfill_ops),
     )
 
 

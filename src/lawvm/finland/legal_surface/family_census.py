@@ -202,7 +202,7 @@ def run_family_census(
     if check_totality is None:
         check_totality = bool(os.environ.get("LAWVM_PARSE_TOTALITY"))
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     if min_year:
         ids = [s for s in ids if s[:4].isdigit() and int(s[:4]) >= min_year]

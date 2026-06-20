@@ -1012,14 +1012,15 @@ def _version_date_from_version_id(version_id: str) -> str:
     return candidate if candidate else ""
 
 
-def _open_farchive_uncached(path: Path) -> ArchiveStore:
+def _open_farchive_uncached(path: Path, *, readonly: bool = True) -> ArchiveStore:
     from farchive import Farchive
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return cast(ArchiveStore, Farchive(path))
+    if not readonly:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    return cast(ArchiveStore, Farchive(path, readonly=readonly))
 
 
-def open_farchive(path: Path) -> ArchiveStore:
+def open_farchive(path: Path, *, readonly: bool = True) -> ArchiveStore:
     # When a corpus/north-star run has activated a run-scoped cache, share one
     # opened archive handle per path for the whole run instead of re-opening (and
     # re-loading the compression dictionary) on every per-work call. Outside a run
@@ -1028,8 +1029,11 @@ def open_farchive(path: Path) -> ArchiveStore:
 
     cache = active_corpus_run_cache()
     if cache is not None:
-        return cast(ArchiveStore, cache.open_archive(path, _open_farchive_uncached))
-    return _open_farchive_uncached(path)
+        return cast(
+            ArchiveStore,
+            cache.open_archive(path, _open_farchive_uncached, readonly=readonly),
+        )
+    return _open_farchive_uncached(path, readonly=readonly)
 
 
 def main(args: Any) -> None:
@@ -1063,7 +1067,7 @@ def main(args: Any) -> None:
         diagnostics_jsonl=Path(args.diagnostics_jsonl) if args.diagnostics_jsonl else None,
         verbose=args.verbose,
     )
-    archive = open_farchive(options.db_path)
+    archive = open_farchive(options.db_path, readonly=False)
     try:
         stats = sync_nz_corpus(archive, api_key=api_key, options=options)
     finally:

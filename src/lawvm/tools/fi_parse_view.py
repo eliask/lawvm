@@ -43,7 +43,7 @@ def _load_statute_body(statute_id: str) -> tuple[Any, Any]:
     from lawvm.tools.export_fi_interlinks import _get_statute_xml
     from lawvm.tools.parse_bench import _archive_path
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     xml_bytes = _get_statute_xml(statute_id, store)
     if xml_bytes is None:
         raise SystemExit(f"ERROR: no archived source XML for statute {statute_id!r}")

@@ -64,7 +64,7 @@ from lawvm.core.legal_surface_lens import (
     SourceSurfaceBundle,
     SurfaceNodeSeed,
 )
-from lawvm.core.legal_surface_tokens import TokenTape
+from lawvm.core.legal_surface_tokens import ClauseIndex, TokenTape
 from lawvm.finland.legal_surface.clause_segment import build_clause_index
 from lawvm.finland.legal_surface.modal_parse import (
     ModalCore,
@@ -73,7 +73,7 @@ from lawvm.finland.legal_surface.modal_parse import (
 )
 from lawvm.finland.legal_surface.source_syntax_graph import (
     SourceSyntaxGraph,
-    assemble_source_syntax_graph,
+    assemble_source_syntax_graph_for_unit,
 )
 from lawvm.finland.references.actor_modal import ActorModalFrame
 
@@ -304,16 +304,16 @@ def project_forest_deontic_core_seeds(
 
     seeds: list[SurfaceNodeSeed] = []
     for unit in bundle.units:
-        forest = assemble_source_syntax_graph(
+        forest = assemble_source_syntax_graph_for_unit(
             subject=bundle.subject,
-            source_units=(),
-            statute_id=unit.source_unit_id,
-            body=unit.raw_text,
+            unit=unit,
         )
         modal_intervals = _forest_modal_owned_intervals(forest)
         tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
-        index = build_clause_index(
-            unit.source_unit_id, unit.raw_text, token_tape=tape
+        index = (
+            unit.clause_index
+            if isinstance(unit.clause_index, ClauseIndex)
+            else build_clause_index(unit.source_unit_id, unit.raw_text, token_tape=tape)
         )
         for sent in index.sentences:
             if not _span_overlaps_any(

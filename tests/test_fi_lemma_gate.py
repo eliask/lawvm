@@ -170,9 +170,15 @@ def test_negative_paradigm_jokin_obliques_indexed() -> None:
 def test_negative_paradigm_agent_nouns_indexed() -> None:
     """oppilas / sotilas / kokelas plural obliques resolve to the agent noun."""
     np = negative_paradigms()
-    assert np.longest_suffix_match("oppilaille").lemma == "oppilas"  # type: ignore[union-attr]
-    assert np.longest_suffix_match("rintamasotilaille").lemma == "sotilas"  # type: ignore[union-attr]
-    assert np.longest_suffix_match("kokelaiksi").lemma == "kokelas"  # type: ignore[union-attr]
+    oppilas = np.longest_suffix_match("oppilaille")
+    sotilas = np.longest_suffix_match("rintamasotilaille")
+    kokelas = np.longest_suffix_match("kokelaiksi")
+    assert oppilas is not None
+    assert sotilas is not None
+    assert kokelas is not None
+    assert oppilas.lemma == "oppilas"
+    assert sotilas.lemma == "sotilas"
+    assert kokelas.lemma == "kokelas"
 
 
 def test_negative_paradigm_alainen_generated_via_m1() -> None:

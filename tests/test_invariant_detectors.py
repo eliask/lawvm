@@ -80,7 +80,7 @@ def test_core_replay_invariant_profile_is_declarative_and_opt_in() -> None:
         "temporal_overlap",
         "temporary_overlay",
         "expiry_chain",
-        "replay_timeline",
+        "replay_timeline_robust",
     )
     assert data["warnings"] == ("text_duplication", "flattened_sublist_family", "label_sequence_gap")
     assert data["local_allowance_policy"] == "frontend_required"

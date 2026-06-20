@@ -197,9 +197,11 @@ _v("osaan", "osa", "OSA", "ILL")
 
 # Subsection — NOM/GEN/ILL (momentti/momentin/momenttiin) are engine-derived above.
 # Source typo tolerance: 1996/473 prints "momenttti" in a long replacement
-# list. Treat it as a subsection noun so the list continues instead of dropping
-# all following targets.
+# list; 2000/235 prints "momenti" for "momentti" in a sparse subsection
+# replacement. Treat them as subsection nouns so the normal grammar owns the
+# target rather than widening to the host section.
 _v("momenttti", "momentti", "MOMENTTI", "NOM")
+_v("momenti", "momentti", "MOMENTTI", "NOM")
 _v("momenttia", "momentti", "MOMENTTI", "NOM")  # partitive, treat as nom
 _v("momentiksi", "momentti", "MOMENTTI", "NOM")  # translative (in jolloin)
 _v("momentista", "momentti", "MOMENTTI", "GEN")  # elative (kumotaan X §:n N momentista M kohta)

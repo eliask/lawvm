@@ -4849,6 +4849,39 @@ def test_apply_whole_section_insert_consumes_expired_temporary_section_slot() ->
     assert pathologies[0].detail["latest_snapshot_expires"] == "2008-08-01"
 
 
+def test_apply_whole_section_op_declines_item_repeal() -> None:
+    """A section/item repeal must stay on the item dispatch lane."""
+
+    section = _sec(
+        "1",
+        _sub(
+            "1",
+            _para("1", "first item"),
+            _para("2", "second item"),
+            _para("3", "third item"),
+        ),
+    )
+    state = _make_state(_body(section))
+    op = _op(
+        op_type="REPEAL",
+        target_section="1",
+        target_item="2",
+        witness_rule_id="fi.repeal_vts_voimaantulo",
+    )
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        (("section", "1"),),
+        None,
+        None,
+        _FINLEX_ORACLE,
+        "1 § 2 kohta",
+    )
+
+    assert result is None
+
+
 def _paragraph_labels(sub: IRNode) -> List[str]:
     return [c.label for c in sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label is not None]
 
@@ -9103,6 +9136,136 @@ def test_normalize_subsection_dispatch_inputs_blocks_singleton_item_rebound_in_s
     assert rop.effective_target_item_label is None
     assert [p.code for p in pathologies] == ["SUBSECTION_TARGET_REBOUND"]
     assert pathologies[0].detail["rebound_kind"] == "single_subsection_item_fallback"
+
+
+def test_normalize_subsection_dispatch_inputs_rebounds_unique_bare_item_target() -> None:
+    master_subsecs = [
+        _sub("1", _para("1", "first item")),
+        _sub("2", _para("2", "second item"), _para("3", "third item")),
+    ]
+    op = _op(
+        op_type="REPEAL",
+        target_section="1",
+        target_item="2",
+        witness_rule_id="fi.repeal_vts_voimaantulo",
+    )
+    pathologies: list[SourcePathology] = []
+
+    normalized_dispatch_op, normalized_rop = _normalize_subsection_dispatch_inputs(
+        dispatch_op=op,
+        rop=None,
+        master_subsecs=master_subsecs,
+        amend_sub_ir=None,
+        ctx_label="1 § 2 kohta",
+        source_pathologies_out=pathologies,
+    )
+
+    assert normalized_rop is None
+    assert isinstance(normalized_dispatch_op, AmendmentOp)
+    assert normalized_dispatch_op.target_paragraph == 2
+    assert normalized_dispatch_op.target_item == "2"
+    assert "unique_item_label_subsection_fallback" in normalized_dispatch_op.target_guessing_provenance_tags
+    assert [p.code for p in pathologies] == ["SUBSECTION_TARGET_REBOUND"]
+    assert pathologies[0].detail["rebound_kind"] == "unique_item_label_subsection_fallback"
+
+
+def test_normalize_subsection_dispatch_inputs_blocks_unique_bare_item_rebound_in_strict_mode() -> None:
+    master_subsecs = [
+        _sub("1", _para("1", "first item")),
+        _sub("2", _para("2", "second item"), _para("3", "third item")),
+    ]
+    op = _op(
+        op_type="REPEAL",
+        target_section="1",
+        target_item="2",
+        witness_rule_id="fi.repeal_vts_voimaantulo",
+    )
+    pathologies: list[SourcePathology] = []
+
+    normalized_dispatch_op, normalized_rop = _normalize_subsection_dispatch_inputs(
+        dispatch_op=op,
+        rop=None,
+        master_subsecs=master_subsecs,
+        amend_sub_ir=None,
+        ctx_label="1 § 2 kohta",
+        source_pathologies_out=pathologies,
+        strict_profile=default_finland_strict_profile(),
+    )
+
+    assert normalized_dispatch_op is op
+    assert normalized_rop is None
+    assert op.target_paragraph is None
+    assert [p.code for p in pathologies] == ["SUBSECTION_TARGET_REBOUND"]
+    assert pathologies[0].detail["rebound_kind"] == "unique_item_label_subsection_fallback"
+
+
+def test_normalize_subsection_dispatch_inputs_does_not_rebound_non_repeal_bare_item_target() -> None:
+    master_subsecs = [
+        _sub("1", _para("1", "first item")),
+        _sub("2", _para("2", "second item"), _para("3", "third item")),
+    ]
+    op = _op(op_type="REPLACE", target_section="1", target_item="2")
+    pathologies: list[SourcePathology] = []
+
+    normalized_dispatch_op, normalized_rop = _normalize_subsection_dispatch_inputs(
+        dispatch_op=op,
+        rop=None,
+        master_subsecs=master_subsecs,
+        amend_sub_ir=None,
+        ctx_label="1 § 2 kohta",
+        source_pathologies_out=pathologies,
+    )
+
+    assert normalized_dispatch_op is op
+    assert normalized_rop is None
+    assert op.target_paragraph is None
+    assert pathologies == []
+
+
+def test_normalize_subsection_dispatch_inputs_does_not_rebound_generic_bare_item_repeal() -> None:
+    master_subsecs = [
+        _sub("1", _para("1", "first item")),
+        _sub("2", _para("2", "second item"), _para("3", "third item")),
+    ]
+    op = _op(op_type="REPEAL", target_section="1", target_item="2", witness_rule_id="fi.section_ref")
+    pathologies: list[SourcePathology] = []
+
+    normalized_dispatch_op, normalized_rop = _normalize_subsection_dispatch_inputs(
+        dispatch_op=op,
+        rop=None,
+        master_subsecs=master_subsecs,
+        amend_sub_ir=None,
+        ctx_label="1 § 2 kohta",
+        source_pathologies_out=pathologies,
+    )
+
+    assert normalized_dispatch_op is op
+    assert normalized_rop is None
+    assert op.target_paragraph is None
+    assert pathologies == []
+
+
+def test_normalize_subsection_dispatch_inputs_does_not_rebound_ambiguous_bare_item_target() -> None:
+    master_subsecs = [
+        _sub("1", _para("2", "first subsection item")),
+        _sub("2", _para("2", "second subsection item")),
+    ]
+    op = _op(op_type="REPEAL", target_section="1", target_item="2")
+    pathologies: list[SourcePathology] = []
+
+    normalized_dispatch_op, normalized_rop = _normalize_subsection_dispatch_inputs(
+        dispatch_op=op,
+        rop=None,
+        master_subsecs=master_subsecs,
+        amend_sub_ir=None,
+        ctx_label="1 § 2 kohta",
+        source_pathologies_out=pathologies,
+    )
+
+    assert normalized_dispatch_op is op
+    assert normalized_rop is None
+    assert op.target_paragraph is None
+    assert pathologies == []
 
 
 def test_apply_op_typed_strict_blocks_singleton_item_rebound() -> None:

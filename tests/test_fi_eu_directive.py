@@ -288,8 +288,18 @@ def test_artikla_plain_list_and_range_preserved() -> None:
 
 def _ref(text: str):
     refs = recognize_eu_directive_refs(text)
-    assert len(refs) == 1, [r.mention.target_provision_ref.serialized() for r in refs]
+    assert len(refs) == 1, [
+        r.mention.target_provision_ref.serialized()
+        for r in refs
+        if r.mention.target_provision_ref is not None
+    ]
     return refs[0]
+
+
+def _target_ref(result):
+    target = result.mention.target_provision_ref
+    assert target is not None
+    return target
 
 
 def test_kohta_carried_onto_subsection_num() -> None:
@@ -323,14 +333,14 @@ def test_kohta_serializes_distinctly_from_bare_article() -> None:
     # distinct from the article-only cite.
     bare = _ref("yleisen tietosuoja-asetuksen 6 artiklassa")
     with_kohta = _ref("yleisen tietosuoja-asetuksen 6 artiklan 1 kohdassa")
-    assert bare.mention.target_provision_ref.serialized() == "celex:32016R0679/6"
+    assert _target_ref(bare).serialized() == "celex:32016R0679/6"
     assert (
-        with_kohta.mention.target_provision_ref.serialized()
+        _target_ref(with_kohta).serialized()
         == "celex:32016R0679/6/1"
     )
     assert (
-        bare.mention.target_provision_ref.serialized()
-        != with_kohta.mention.target_provision_ref.serialized()
+        _target_ref(bare).serialized()
+        != _target_ref(with_kohta).serialized()
     )
 
 
@@ -340,7 +350,7 @@ def test_kohta_coordination_enumerates() -> None:
     refs = recognize_eu_directive_refs(
         "yleisen tietosuoja-asetuksen 7 artiklan 1 ja 2 kohdassa"
     )
-    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+    assert [_target_ref(r).serialized() for r in refs] == [
         "celex:32016R0679/7/1",
         "celex:32016R0679/7/2",
     ]
@@ -354,7 +364,7 @@ def test_alakohta_coordination_enumerates() -> None:
     refs = recognize_eu_directive_refs(
         "yleisen tietosuoja-asetuksen 18 artiklan 1 kohdan a ja b alakohdassa"
     )
-    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+    assert [_target_ref(r).serialized() for r in refs] == [
         "celex:32016R0679/18/1/ka",
         "celex:32016R0679/18/1/kb",
     ]
@@ -366,7 +376,7 @@ def test_article_coordination_with_shared_kohta() -> None:
     refs = recognize_eu_directive_refs(
         "yleisen tietosuoja-asetuksen 33 ja 35 artiklan 1 kohdassa"
     )
-    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+    assert [_target_ref(r).serialized() for r in refs] == [
         "celex:32016R0679/33/1",
         "celex:32016R0679/35/1",
     ]
@@ -376,7 +386,7 @@ def test_bare_article_no_kohta_unchanged() -> None:
     # A bare "N artiklassa" (locative, no genitive, no kohta) is untouched: no
     # subsection_num / item_label fabricated.
     r = _ref("teollisuuspäästödirektiivin 12 artiklassa")
-    tgt = r.mention.target_provision_ref
+    tgt = _target_ref(r)
     assert tgt.subsection_num is None
     assert tgt.item_label is None
     assert tgt.serialized() == "celex:32010L0075/12"
@@ -387,7 +397,7 @@ def test_genitive_article_without_kohta_unchanged() -> None:
     # A genitive "N artiklan" NOT followed by a kohta tail must NOT fabricate a
     # sub-element (fail-loud): a trailing unrelated number is not a kohta.
     r = _ref("teollisuuspäästödirektiivin 12 artiklan mukaisesti")
-    tgt = r.mention.target_provision_ref
+    tgt = _target_ref(r)
     assert tgt.subsection_num is None
     assert tgt.item_label is None
     assert tgt.serialized() == "celex:32010L0075/12"
@@ -401,10 +411,10 @@ def test_alakohta_dash_range_not_fabricated() -> None:
     refs = recognize_eu_directive_refs(
         "yleisen tietosuoja-asetuksen 6 artiklan 1 kohdan a–c alakohdassa"
     )
-    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+    assert [_target_ref(r).serialized() for r in refs] == [
         "celex:32016R0679/6/1",
     ]
-    assert refs[0].mention.target_provision_ref.item_label is None
+    assert _target_ref(refs[0]).item_label is None
 
 
 def test_kohta_resolves_via_formal_cite_head() -> None:

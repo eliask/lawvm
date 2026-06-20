@@ -562,31 +562,55 @@ _MONTH_STEMS = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _TailToken:
+    text: str
+    start: int
+    end: int
+
+
+def _tail_nonspace_tokens(text: str, limit: int) -> list[_TailToken]:
+    """Return up to ``limit`` final non-space tokens, right-to-left."""
+    tokens: list[_TailToken] = []
+    end = len(text.rstrip())
+    while end > 0 and len(tokens) < limit:
+        start = end
+        while start > 0 and not text[start - 1].isspace():
+            start -= 1
+        tokens.append(_TailToken(text=text[start:end], start=start, end=end))
+        end = start
+        while end > 0 and text[end - 1].isspace():
+            end -= 1
+    return tokens
+
+
 def _date_phrase_start(left: str) -> int | None:
     """Return the start offset of a date phrase at the end of ``left``."""
-    toks = list(re.finditer(r"\S+", left.rstrip()))
+    toks = _tail_nonspace_tokens(left, 4)
     if len(toks) < 2:
         return None
-    year = toks[-1].group(0)
+    year = toks[0].text
     if len(year) != 4 or not year.isdigit():
         return None
-    month = toks[-2].group(0).lower()
+    month = toks[1].text.lower()
     if not any(month.startswith(stem + "kuu") for stem in _MONTH_STEMS):
         return None
     month_suffix = month.split("kuu", 1)[1]
     if month_suffix not in {"", "ta", "n", "ssa"}:
         return None
-    start_idx = len(toks) - 2
-    if start_idx > 0:
-        marker = toks[start_idx - 1].group(0).lower()
+    start_idx = 1
+    previous_idx = 2
+    if len(toks) > previous_idx:
+        marker = toks[previous_idx].text.lower()
         if marker in {"p", "p.", "päivänä", "p:nä", "p:na"}:
-            start_idx -= 1
-    if start_idx > 0:
-        day = toks[start_idx - 1].group(0)
+            start_idx = previous_idx
+            previous_idx += 1
+    if len(toks) > previous_idx:
+        day = toks[previous_idx].text
         day_norm = day[:-1] if day.endswith(".") else day
         if day_norm.isdigit() and 1 <= len(day_norm) <= 2:
-            start_idx -= 1
-    return toks[start_idx].start()
+            start_idx = previous_idx
+    return toks[start_idx].start
 
 
 def _complement_word_ok(word: str) -> bool:
