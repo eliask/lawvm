@@ -204,11 +204,11 @@ def classify_rangaistussaannos(node: IRNode) -> Literal["yes", "no", "unknown"]:
     has_admin_sanction_terms = bool(_RANGAISTUS_ADMIN_SANCTION_RE.search(text))
     has_colon_intro_list = _has_colon_intro_signal(node)
 
-    if has_admin_sanction_terms:
-        return "no"
-
     if has_sentencing_command and has_penalty_expression and (has_offence_formula or has_offence_name):
         return "yes"
+
+    if has_admin_sanction_terms:
+        return "no"
 
     if has_colon_intro_list and not has_sentencing_command and not has_penalty_expression:
         return "no"
