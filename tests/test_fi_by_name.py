@@ -556,6 +556,19 @@ def test_empty_text() -> None:
     assert recognize_by_name_refs("") == []
 
 
+def test_cached_results_return_fresh_lists() -> None:
+    text = "ympäristönsuojelulain 5 §:ssä säädetään"
+
+    first = recognize_by_name_refs(text)
+    assert first
+    first.clear()
+
+    second = recognize_by_name_refs(text)
+    assert len(second) == 1
+    assert second[0].target_provision_ref is not None
+    assert second[0].target_provision_ref.statute_id == "fi-name:ympäristönsuojelulaki"
+
+
 # ---------------------------------------------------------------------------
 # G1 — chapter-organized by-name refs carry the chapter onto the AKN path
 # ---------------------------------------------------------------------------

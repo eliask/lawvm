@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
 from lawvm.core.reference_mention import (
     CiteConfidence,
@@ -1239,6 +1240,12 @@ def name_head_np_start_before_paren(text: str, paren_start: int) -> int | None:
 
 
 def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
+    """Recognise inflected-statute-name cross-references in ``text``."""
+    return list(_recognize_by_name_refs_cached(text))
+
+
+@lru_cache(maxsize=8192)
+def _recognize_by_name_refs_cached(text: str) -> tuple[ReferenceMention, ...]:
     """Recognise inflected-statute-name cross-references in ``text``.
 
     For each inflected statute-name head NOT immediately followed by a
@@ -1428,7 +1435,7 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
     # them separately (codes ARE statutes) and merge their cross-statute mentions
     # in — never an internal leak.
     out.extend(_recognize_kaari_refs(text))
-    return out
+    return tuple(out)
 
 
 __all__ = ["recognize_by_name_refs", "name_head_np_start_before_paren"]
