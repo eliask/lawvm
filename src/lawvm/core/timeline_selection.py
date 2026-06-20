@@ -280,6 +280,8 @@ def equal_rank_same_source_conflicts(
         query_type=query_type,
         expires_as_of=expires_as_of,
     )
+    if len(timeline.versions) < 2:
+        return ()
 
     eligible_versions = [
         version
