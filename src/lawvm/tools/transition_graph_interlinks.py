@@ -600,6 +600,9 @@ class SurfaceTextSpanPlacer:
     _normalization_identity_cache: dict[int, bool] = dataclasses.field(
         default_factory=dict
     )
+    _non_identity_normalized_segment_cache: dict[int, tuple[str, list[int]]] = (
+        dataclasses.field(default_factory=dict)
+    )
 
     def _build_lower_segment_groups(
         self,
@@ -788,6 +791,18 @@ class SurfaceTextSpanPlacer:
         is_identity = _surface_normalization_is_identity(segment.text)
         self._normalization_identity_cache[key] = is_identity
         return is_identity
+
+    def non_identity_normalized_segment(
+        self,
+        segment: RenderedTextSegment,
+    ) -> tuple[str, list[int]]:
+        key = id(segment)
+        cached = self._non_identity_normalized_segment_cache.get(key)
+        if cached is not None:
+            return cached
+        normalized = _normalize_surface_with_map(segment.text)
+        self._non_identity_normalized_segment_cache[key] = normalized
+        return normalized
 
     def place(
         self,
@@ -989,7 +1004,10 @@ def place_occurrence_spans(
                 norm_text = segment.text
                 offset_map = None
             else:
-                norm_text, offset_map = _normalize_surface_with_map(segment.text)
+                if placer is not None:
+                    norm_text, offset_map = placer.non_identity_normalized_segment(segment)
+                else:
+                    norm_text, offset_map = _normalize_surface_with_map(segment.text)
             for nstart in _find_all(norm_text, norm_surface):
                 nend = nstart + len(norm_surface)
                 norm_hits.append((segment, nstart, nend, offset_map))
