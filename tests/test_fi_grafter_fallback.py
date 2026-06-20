@@ -12106,6 +12106,42 @@ def test_supplement_missing_repeals_after_item_shift_clause_adds_lost_moment_rep
     }
 
 
+def test_johtolause_supplements_item_shift_delegates_to_canonical_clause_surface() -> None:
+    """Q4 demotion invariant: the supplement lane owns NO rival item-shift regex.
+
+    The ``jolloin … muuttuvat kohdiksi`` family has a single canonical parser in
+    ``johtolause.clause_surface``; ``johtolause_supplements`` must call it rather
+    than carry a duplicate regex (two rival parsers = audit state). Pin both the
+    delegation (identical results) and the absence of a private copy.
+    """
+    from lawvm.finland.johtolause import clause_surface as _clause_surface
+    from lawvm.finland import johtolause_supplements as _supplements
+
+    # No private item-shift parser survives in the supplement module.
+    assert not hasattr(_supplements, "_parse_item_shift_clauses")
+    assert not hasattr(_supplements, "_parse_item_shift_after_repeal_clauses")
+
+    johto = (
+        "kumotaan 2 §:n 1 momentin d kohdan, jolloin kohdat e-h muuttuvat "
+        "kohdiksi d-g ja muutetaan 2 §:n 1 momentin c kohdan"
+    )
+    ops = [
+        AmendmentOp(
+            op_id="repeal_d",
+            op_type="REPEAL",
+            target_section="2",
+            target_kind=TargetKind.SECTION,
+            target_paragraph=1,
+            target_item="d",
+        ),
+    ]
+    # The supplement tagger threads its parse through the canonical recognizer.
+    canonical = _clause_surface.parse_item_shift_clauses(johto)
+    assert canonical, "canonical parser must recognize the sample item-shift clause"
+    tagged = _tag_explicit_item_shift_after_repeal_hints(ops, johto)
+    assert tagged[0].post_repeal_item_shift_label == "d"
+
+
 def test_supplement_named_table_row_mixed_clause_ops_adds_missing_replace_and_tags_rows() -> None:
     ops = [
         AmendmentOp(

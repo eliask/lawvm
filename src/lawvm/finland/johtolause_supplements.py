@@ -4,10 +4,23 @@ Pure ``(ops, johto) -> ops`` transforms that enrich ``List[AmendmentOp]``
 with typed carriers and supplementary ops derived from johtolause text.
 No master state, no corpus access, no lxml.
 
-These parsers handle item-shift-after-repeal clauses and named-row table
-clauses — typed parse results that supplement the main PEG pipeline output.
-They are regex-based and emit typed clause AST nodes directly; the PEG
-grammar does not cover these phenomena.
+These transforms run AFTER the grammar pipeline as a recovery layer: they
+re-scan the johtolause for explicit amendment targets the PEG flattens or drops
+in long mixed ``muutetaan``/``lisätään`` lists (item/momentti/table replace and
+insert ops, bare whole-section targets, sparse office-row omission repeals). The
+grammar's insertion family declines these enumeration-continuation shapes by
+design (see ``johtolause/grammar/insertions.py`` "Out of scope" list), so this is
+the registered typed-residue lane for them: every supplemented op carries a
+``witness_rule_id`` and ``extraction_provenance_tags`` so the recovery is
+witnessed, never silently invented. The structural regexes here are bounded
+anchors over that residue, not a competing primary parser.
+
+Item-shift (``jolloin … muuttuvat kohdiksi``) and named-row table parsing are NOT
+re-implemented here: they delegate to the canonical grammar-package recognizers
+``johtolause.clause_surface.parse_item_shift_clauses`` /
+``parse_item_shift_after_repeal_clauses`` and
+``johtolause.clause_patterns.parse_named_table_row_*`` (one canonical parser per
+family — no rival regex copy).
 
 Extracted from grafter.py (Phase A, lines 125–334 in the original file).
 Clause-waist parsers consolidated here from clause_waist.py.
@@ -26,6 +39,10 @@ from lawvm.core.semantic_types import StructuralAction
 from lawvm.finland.johtolause.clause_patterns import (
     parse_named_table_row_mixed_clauses,
     parse_named_table_row_single_clauses,
+)
+from lawvm.finland.johtolause.clause_surface import (
+    parse_item_shift_after_repeal_clauses,
+    parse_item_shift_clauses,
 )
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johto_scope_mentions import collect_johto_numbered_table_targets
@@ -92,20 +109,6 @@ _SPARSE_OSALTA_ROW_OMISSION_RE = re.compile(
 # ---------------------------------------------------------------------------
 # Item-shift clause types
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ItemShiftAfterRepealClause:
-    """Typed parse result for item-shift-after-repeal clause families.
-
-    The typed ``ItemShiftClause`` is the owned semantic fact.  The optional
-    extra repeal information is carried here so compatibility adapters can
-    synthesize the legacy ``AmendmentOp`` while the parsing ownership lives
-    in this module.
-    """
-
-    clause: ItemShiftClause
-    extra_repeal_target_paragraph: int | None = None
 
 
 @dataclass(frozen=True)
@@ -179,83 +182,6 @@ class MomentTargetClause:
 # ---------------------------------------------------------------------------
 
 
-def _parse_item_shift_clauses(johto: str) -> List[ItemShiftClause]:
-    """Parse item-shift-after-repeal clauses from johtolause text."""
-    # johto is already Zs-normalized by _normalize_fi_parse_text upstream.
-    text = re.sub(r"\s+", " ", johto or "").lower()
-    if "jolloin" not in text or "muuttuvat kohdiksi" not in text:
-        return []
-
-    clauses: List[ItemShiftClause] = []
-    for match in re.finditer(
-        r"(\d+\s*[a-z]?)\s*§:n\s*(\d+)\s+momentin\s*([a-z])\s+kohdan\s*,\s*jolloin\s+kohdat\s+([a-z])\s*[–—―-]\s*([a-z])\s+muuttuvat\s+kohdiksi\s+([a-z])\s*[–—―-]\s*([a-z])",
-        text,
-        flags=re.I,
-    ):
-        sec, mom, repealed, src_lo, src_hi, dst_lo, dst_hi = match.groups()
-        repealed = repealed.lower()
-        src_lo = src_lo.lower()
-        src_hi = src_hi.lower()
-        dst_lo = dst_lo.lower()
-        dst_hi = dst_hi.lower()
-
-        if repealed != dst_lo:
-            continue
-        if ord(src_lo) - ord(dst_lo) != 1 or ord(src_hi) - ord(dst_hi) != 1:
-            continue
-
-        sec_norm = re.sub(r"\s+", "", sec)
-        source_items = tuple(chr(c) for c in range(ord(src_lo), ord(src_hi) + 1))
-        target_items = tuple(chr(c) for c in range(ord(dst_lo), ord(dst_hi) + 1))
-        clauses.append(
-            ItemShiftClause(
-                source_items=source_items,
-                target_items=target_items,
-                target_paragraph=int(mom),
-                target_section=sec_norm,
-            )
-        )
-    return clauses
-
-
-def _parse_item_shift_after_repeal_clauses(johto: str) -> List[ItemShiftAfterRepealClause]:
-    """Parse item-shift clauses that also carry a trailing repeal target."""
-    # johto is already Zs-normalized by _normalize_fi_parse_text upstream.
-    text = re.sub(r"\s+", " ", johto or "").lower()
-    if "jolloin" not in text or "muuttuvat kohdiksi" not in text:
-        return []
-
-    results: List[ItemShiftAfterRepealClause] = []
-    for match in re.finditer(
-        r"(\d+\s*[a-z]?)\s*§:n\s*(\d+)\s+momentin\s*([a-z])\s+kohdan\s*,\s*jolloin\s+kohdat\s+([a-z])\s*[–—―-]\s*([a-z])\s+muuttuvat\s+kohdiksi\s+([a-z])\s*[–—―-]\s*([a-z])\s+ja\s+(\d+)\s+momentin\s*,\s*muutetaan",
-        text,
-        flags=re.I,
-    ):
-        sec, repeal_mom, _repealed, src_lo, src_hi, dst_lo, dst_hi, extra_mom = match.groups()
-        src_lo = src_lo.lower()
-        src_hi = src_hi.lower()
-        dst_lo = dst_lo.lower()
-        dst_hi = dst_hi.lower()
-        if ord(src_lo) - ord(dst_lo) != 1 or ord(src_hi) - ord(dst_hi) != 1:
-            continue
-
-        sec_norm = re.sub(r"\s+", "", sec)
-        source_items = tuple(chr(c) for c in range(ord(src_lo), ord(src_hi) + 1))
-        target_items = tuple(chr(c) for c in range(ord(dst_lo), ord(dst_hi) + 1))
-        results.append(
-            ItemShiftAfterRepealClause(
-                clause=ItemShiftClause(
-                    source_items=source_items,
-                    target_items=target_items,
-                    target_paragraph=int(repeal_mom),
-                    target_section=sec_norm,
-                ),
-                extra_repeal_target_paragraph=int(extra_mom),
-            )
-        )
-    return results
-
-
 def _parse_named_row_clauses(johto: str) -> List[NamedRowClause]:
     """Parse named-row table clauses from johtolause text."""
     clauses: List[NamedRowClause] = []
@@ -302,7 +228,7 @@ def _parse_item_shift_with_extra_repeal(johto: str) -> List[Tuple[ItemShiftClaus
     Returns pairs of (ItemShiftClause, synthesized REPEAL AmendmentOp).
     """
     results: List[Tuple[ItemShiftClause, AmendmentOp]] = []
-    for idx, match in enumerate(_parse_item_shift_after_repeal_clauses(johto)):
+    for idx, match in enumerate(parse_item_shift_after_repeal_clauses(johto)):
         clause = match.clause
         extra_op = AmendmentOp(
             op_id=f"explicit_repeal_after_item_shift_{idx}",
@@ -322,10 +248,10 @@ def _tag_explicit_item_shift_after_repeal_hints(
 ) -> List[AmendmentOp]:
     """Attach narrow post-repeal item-renumber hints from explicit jolloin clauses.
 
-    Delegates to ``_parse_item_shift_clauses`` for parsing; only performs the
-    typed post-repeal item-shift tagging side-effect.
+    Delegates to the canonical ``clause_surface.parse_item_shift_clauses`` for
+    parsing; only performs the typed post-repeal item-shift tagging side-effect.
     """
-    clauses = _parse_item_shift_clauses(johto)
+    clauses = parse_item_shift_clauses(johto)
     if not clauses:
         return ops
 
