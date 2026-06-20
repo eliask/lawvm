@@ -947,7 +947,6 @@ def _emit_construction_leaves(
 
     for sentence in sentence_unions:
         off = sentence.char_start
-        seg_text = sentence.text
         su = sentence.union
         if not su.owners:
             continue
