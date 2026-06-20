@@ -443,14 +443,18 @@ def test_finland_pending_amendment_signal_does_not_bind_multiple_effects_by_inst
     assert relation.target_effect is None
     assert relation.target_instrument is not None
     assert relation.target_instrument.instrument_id == "2020/1"
-    assert relation.detail["target_effect_resolution"] == "ambiguous_multiple_effects"
-    assert relation.detail["matched_effect_count"] == 2
+    assert relation.target_resolution is not None
+    assert relation.target_resolution.kind == "ambiguous_multiple_effects"
+    assert relation.target_resolution.matched_effect_count == 2
     assert len(lifecycle_events) == 1
     lifecycle = lifecycle_events[0]
     assert lifecycle.kind == "unresolved_effect_target"
     assert lifecycle.relation == relation
     assert lifecycle.executable is False
-    assert lifecycle.detail["target_effect_resolution"] == "ambiguous_multiple_effects"
+    lifecycle_relation = lifecycle.relation
+    assert lifecycle_relation is not None
+    assert lifecycle_relation.target_resolution is not None
+    assert lifecycle_relation.target_resolution.kind == "ambiguous_multiple_effects"
     assert lifecycle.detail["relation_source_finding"] == (
         "APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET"
     )
@@ -587,14 +591,18 @@ def test_finland_meta_repeal_signal_does_not_bind_multiple_effects_by_instrument
     assert relation.target_effect is None
     assert relation.target_instrument is not None
     assert relation.target_instrument.instrument_id == "2020/1"
-    assert relation.detail["target_effect_resolution"] == "ambiguous_multiple_effects"
-    assert relation.detail["matched_effect_count"] == 2
+    assert relation.target_resolution is not None
+    assert relation.target_resolution.kind == "ambiguous_multiple_effects"
+    assert relation.target_resolution.matched_effect_count == 2
     assert len(lifecycle_events) == 1
     lifecycle = lifecycle_events[0]
     assert lifecycle.kind == "unresolved_effect_target"
     assert lifecycle.relation == relation
     assert lifecycle.executable is False
-    assert lifecycle.detail["target_effect_resolution"] == "ambiguous_multiple_effects"
+    lifecycle_relation = lifecycle.relation
+    assert lifecycle_relation is not None
+    assert lifecycle_relation.target_resolution is not None
+    assert lifecycle_relation.target_resolution.kind == "ambiguous_multiple_effects"
     assert lifecycle.detail["relation_source_finding"] == "APPLY.META_REPEAL_EFFECT_RECORDED"
     assert "source_finding" not in lifecycle.detail
     assert strict_fail_reasons_from_finding_ledger(

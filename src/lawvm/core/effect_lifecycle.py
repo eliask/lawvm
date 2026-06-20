@@ -39,6 +39,11 @@ EffectLifecycleEventKind = Literal[
 ]
 
 EffectExpiryConvention = Literal["exclusive_cutoff", "inclusive_valid_until"]
+EffectRelationTargetResolutionKind = Literal[
+    "target_effect_resolved",
+    "target_instrument_only",
+    "ambiguous_multiple_effects",
+]
 EffectDetailWireConverter = Callable[[Mapping[str, Any]], object]
 
 
@@ -258,6 +263,39 @@ class EffectRef:
 
 
 @dataclass(frozen=True, slots=True)
+class EffectRelationTargetResolution:
+    """How precisely an effect relation target is bound inside the effect graph."""
+
+    kind: EffectRelationTargetResolutionKind
+    matched_effect_count: int = 0
+    non_executable_reason: str = ""
+
+    def __post_init__(self) -> None:
+        kind = _normalized_source_ref_string("EffectRelationTargetResolution.kind", self.kind)
+        if kind not in {
+            "target_effect_resolved",
+            "target_instrument_only",
+            "ambiguous_multiple_effects",
+        }:
+            raise ValueError(f"unsupported EffectRelationTargetResolution.kind: {self.kind!r}")
+        if not isinstance(self.matched_effect_count, int):
+            raise TypeError("EffectRelationTargetResolution.matched_effect_count must be an int")
+        if self.matched_effect_count < 0:
+            raise ValueError("EffectRelationTargetResolution.matched_effect_count must be non-negative")
+        if kind == "ambiguous_multiple_effects" and self.matched_effect_count < 2:
+            raise ValueError("ambiguous effect target resolution requires at least two matched effects")
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(
+            self,
+            "non_executable_reason",
+            _normalized_source_ref_string(
+                "EffectRelationTargetResolution.non_executable_reason",
+                self.non_executable_reason,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class EffectRelation:
     """A witnessed relation from one effect or instrument to another."""
 
@@ -267,6 +305,7 @@ class EffectRelation:
     target_effect: Optional[EffectRef] = None
     target_instrument: Optional[SourceInstrumentRef] = None
     source_effect: Optional[EffectRef] = None
+    target_resolution: Optional[EffectRelationTargetResolution] = None
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -297,7 +336,32 @@ class EffectRelation:
             raise ValueError("EffectRelation.target_instrument must be a SourceInstrumentRef when provided")
         if self.source_effect is not None and not isinstance(self.source_effect, EffectRef):
             raise ValueError("EffectRelation.source_effect must be an EffectRef when provided")
+        target_resolution = self.target_resolution
+        if target_resolution is None:
+            target_resolution = EffectRelationTargetResolution(
+                kind=(
+                    "target_effect_resolved"
+                    if self.target_effect is not None
+                    else "target_instrument_only"
+                ),
+                matched_effect_count=1 if self.target_effect is not None else 0,
+            )
+        elif not isinstance(target_resolution, EffectRelationTargetResolution):
+            raise TypeError(
+                "EffectRelation.target_resolution must be an "
+                "EffectRelationTargetResolution when provided"
+            )
+        if self.target_effect is not None and target_resolution.kind != "target_effect_resolved":
+            raise ValueError("EffectRelation target_effect requires target_effect_resolved status")
+        if self.target_instrument is not None and target_resolution.kind == "target_effect_resolved":
+            raise ValueError("EffectRelation target_instrument cannot use target_effect_resolved status")
+        if (
+            target_resolution.kind == "ambiguous_multiple_effects"
+            and target_resolution.matched_effect_count < 2
+        ):
+            raise ValueError("ambiguous effect target resolution requires at least two matched effects")
         object.__setattr__(self, "relation_id", relation_id)
+        object.__setattr__(self, "target_resolution", target_resolution)
         object.__setattr__(
             self,
             "detail",
@@ -706,6 +770,9 @@ def effect_relation_wire(
 ) -> dict[str, object]:
     """Project one witnessed effect relation into the stable wire shape."""
 
+    target_resolution = relation.target_resolution
+    if target_resolution is None:
+        raise ValueError("EffectRelation target_resolution was not normalized")
     return {
         "relation_id": relation.relation_id,
         "kind": relation.kind,
@@ -721,6 +788,11 @@ def effect_relation_wire(
         "source_effect_id": (
             relation.source_effect.effect_id if relation.source_effect is not None else ""
         ),
+        "target_resolution": {
+            "kind": target_resolution.kind,
+            "matched_effect_count": target_resolution.matched_effect_count,
+            "non_executable_reason": target_resolution.non_executable_reason,
+        },
         "detail": detail_converter(relation.detail),
     }
 

@@ -1802,6 +1802,11 @@ class TestWireArtifact:
                 "target_effect_id": "effect:2024/1:op-1",
                 "target_instrument": None,
                 "source_effect_id": "",
+                "target_resolution": {
+                    "kind": "target_effect_resolved",
+                    "matched_effect_count": 1,
+                    "non_executable_reason": "",
+                },
                 "detail": {"source_finding": "APPLY.META_REPEAL_EFFECT_RECORDED"},
             },
         )

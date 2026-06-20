@@ -10,6 +10,7 @@ from lawvm.core.effect_lifecycle import (
     EffectRef,
     EffectRelation,
     EffectRelationKind,
+    EffectRelationTargetResolution,
     SourceInstrumentRef,
     SourceProvisionRef,
     append_unique_effect_lifecycle_event,
@@ -609,6 +610,7 @@ def _relation_from_signal(
     signal: EffectRelationSignal,
     *,
     target_effect: EffectRef | None = None,
+    target_resolution: EffectRelationTargetResolution | None = None,
     detail: dict[str, object] | None = None,
 ) -> EffectRelation | None:
     witness = _source_witness(
@@ -629,6 +631,7 @@ def _relation_from_signal(
             kind=signal.relation_kind,
             source_provision=witness,
             target_effect=target_effect,
+            target_resolution=target_resolution,
             detail={**signal.to_meta_row(), **(detail or {})},
         )
     target_instrument = (
@@ -643,6 +646,7 @@ def _relation_from_signal(
         kind=signal.relation_kind,
         source_provision=witness,
         target_instrument=target_instrument,
+        target_resolution=target_resolution,
         detail={**signal.to_meta_row(), **(detail or {})},
     )
 
@@ -658,9 +662,15 @@ def _relations_from_signals(
         if len(matched_effects) > 1:
             relation = _relation_from_signal(
                 signal,
+                target_resolution=EffectRelationTargetResolution(
+                    kind="ambiguous_multiple_effects",
+                    matched_effect_count=len(matched_effects),
+                    non_executable_reason=(
+                        "effect relation signal names an instrument but not "
+                        "a unique source-backed effect"
+                    ),
+                ),
                 detail={
-                    "target_effect_resolution": "ambiguous_multiple_effects",
-                    "matched_effect_count": len(matched_effects),
                     "non_executable_reason": (
                         "effect relation signal names an instrument but not "
                         "a unique source-backed effect"

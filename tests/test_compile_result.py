@@ -19,6 +19,7 @@ from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
     EffectRef,
     EffectRelation,
+    EffectRelationTargetResolution,
     SourceInstrumentRef,
     SourceProvisionRef,
     append_unique_effect_lifecycle_event,
@@ -333,6 +334,48 @@ def test_effect_lifecycle_detail_requires_string_keyed_mappings() -> None:
         )
 
 
+def test_effect_relation_target_resolution_is_typed_and_endpoint_consistent() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument)
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+
+    resolved = EffectRelation(
+        relation_id="relation:effect",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    assert resolved.target_resolution is not None
+    assert resolved.target_resolution.kind == "target_effect_resolved"
+    assert resolved.target_resolution.matched_effect_count == 1
+
+    ambiguous = EffectRelation(
+        relation_id="relation:ambiguous",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_instrument=instrument,
+        target_resolution=EffectRelationTargetResolution(
+            kind="ambiguous_multiple_effects",
+            matched_effect_count=2,
+            non_executable_reason="multiple source effects match",
+        ),
+    )
+    assert ambiguous.target_resolution is not None
+    assert ambiguous.target_resolution.kind == "ambiguous_multiple_effects"
+    assert ambiguous.target_resolution.non_executable_reason == "multiple source effects match"
+
+    with pytest.raises(ValueError, match="at least two matched effects"):
+        EffectRelationTargetResolution(kind="ambiguous_multiple_effects", matched_effect_count=1)
+    with pytest.raises(ValueError, match="target_effect requires target_effect_resolved"):
+        EffectRelation(
+            relation_id="relation:mismatch",
+            kind="modifies_effect",
+            source_provision=witness,
+            target_effect=effect,
+            target_resolution=EffectRelationTargetResolution(kind="target_instrument_only"),
+        )
+
+
 def test_canonical_bundle_requires_source_effect_records() -> None:
     with pytest.raises(TypeError, match="source_effects"):
         CanonicalBundle(source_effects=cast(Any, ("not-an-effect",)))
@@ -637,6 +680,11 @@ def test_effect_graph_wire_projects_typed_lifecycle_graph() -> None:
                 "target_effect_id": "effect:2024/1:op-1",
                 "target_instrument": None,
                 "source_effect_id": "",
+                "target_resolution": {
+                    "kind": "target_effect_resolved",
+                    "matched_effect_count": 1,
+                    "non_executable_reason": "",
+                },
                 "detail": {"converted": ("source_finding",)},
             },
         ),
