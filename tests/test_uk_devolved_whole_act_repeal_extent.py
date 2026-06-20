@@ -17,6 +17,7 @@ from lawvm.uk_legislation.effect_target_prelude import (
     reject_external_or_partial_whole_act_scope,
 )
 from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.source_adjudication import classify_uk_manual_compile_frontier
 
 
 def _whole_act_repeal_effect(
@@ -164,3 +165,51 @@ def test_devolved_partial_whole_act_repeal_not_caught_by_full_repeal_branch() ->
     # The branch did not fire; whatever the partial-scope path decides, the new
     # devolved-full-repeal rule must not appear.
     del rejected
+
+
+def test_devolved_whole_act_repeal_frontier_status_is_out_of_scope() -> None:
+    effect = _whole_act_repeal_effect(affecting_class="ScottishStatutoryInstrument")
+    rejected, rejections = _reject(effect)
+    assert rejected is True
+    rejected_row = next(
+        r
+        for r in rejections
+        if r["rule_id"] == "uk_effect_devolved_whole_act_repeal_extent_limited_rejected"
+    )
+    classification = classify_uk_manual_compile_frontier(
+        effect_type="repealed",
+        source_pathology="",
+        extracted_tag="",
+        extracted_text="",
+        lowering_rejections=[rejected_row],
+        compiled_op_count=0,
+        replay_applicable=False,
+        structural_for_replay=False,
+    )
+    assert classification["status"] == "non_textual_or_out_of_scope"
+    assert (
+        classification["rule_id"]
+        == "uk_manual_frontier_devolved_extent_limited_repeal_out_of_scope"
+    )
+
+
+def test_uk_wide_si_whole_act_repeal_is_not_devolved_frontier() -> None:
+    effect = _whole_act_repeal_effect(
+        affecting_class="UnitedKingdomStatutoryInstrument"
+    )
+    rejected, rejections = _reject(effect)
+    assert rejected is False
+    classification = classify_uk_manual_compile_frontier(
+        effect_type="repealed",
+        source_pathology="",
+        extracted_tag="",
+        extracted_text="",
+        lowering_rejections=rejections,
+        compiled_op_count=0,
+        replay_applicable=False,
+        structural_for_replay=False,
+    )
+    assert (
+        classification["rule_id"]
+        != "uk_manual_frontier_devolved_extent_limited_repeal_out_of_scope"
+    )

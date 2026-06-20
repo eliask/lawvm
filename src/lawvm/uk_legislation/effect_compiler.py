@@ -101,6 +101,10 @@ from lawvm.uk_legislation.table_sources import (
 
 _UK_EFFECT_FEE_TARGET_REFINEMENT_FAILED_RULE_ID = "uk_effect_fee_target_refinement_failed"
 
+UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID = (
+    "uk_effect_savings_references_qualified_repeal_blocked"
+)
+
 
 @dataclass(frozen=True)
 class _EffectTargetPrelude:
@@ -146,6 +150,59 @@ def _trailing_repeal_collides_with_replacement(
         if repeal_label and repeal_label in replacement_labels:
             return True
     return False
+
+
+def _savings_qualified_structural_mutation_blocks_lowering(
+    effect: UKEffectRecord,
+    action: str,
+    *,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    """Block lowering when a whole-target repeal is saved by an explicit schedule.
+
+    A UK effect feed entry that names ``ukm:Savings`` provisions is legally
+    qualified.  When the savings reference points at a schedule of the
+    affecting instrument (e.g. ``schedule-32``), the repeal is being held in
+    abeyance for everything covered by that savings schedule.  Until LawVM
+    resolves the exact savings scope, the safe default is to withhold the
+    deletion rather than remove the target.
+
+    Partial omissions and substitutions with savings references are not blocked
+    here; they are individually owned by text-patch lowering paths.  Savings
+    references that point at sections, regulations, or other non-schedule
+    provisions are treated as ordinary savings clauses and the repeal is left
+    to proceed.
+    """
+    if action != "repeal":
+        return False
+    if not any(
+        str(ref.get("ref") or "").startswith("schedule-")
+        for ref in effect.savings_references
+    ):
+        return False
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id=UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID,
+        family="applicability",
+        reason_code="savings_references_qualify_structural_mutation",
+        reason=(
+            "UK effect carries a savings reference to an explicit schedule of the "
+            "affecting instrument; the whole-target repeal is legally qualified and "
+            "is blocked from replay until the savings scope is resolved."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "savings_references": effect.savings_references,
+            "lowering_action": action,
+            "strict_disposition": "block",
+            "quirks_disposition": "skip",
+        },
+    )
+    return True
 
 
 def _prepare_effect_target_prelude(
@@ -459,6 +516,16 @@ def _compile_effect_to_ir_ops_impl(
             lowering_rejections_out=lowering_rejections_out,
         )
         _mark_lower_phase("compile_lower_prepare")
+        return []
+
+    if _savings_qualified_structural_mutation_blocks_lowering(
+        effect,
+        action,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    ):
+        _mark_lower_phase("compile_lower_savings_guard")
         return []
 
     use_metadata_fallback = (

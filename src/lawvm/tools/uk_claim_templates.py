@@ -710,6 +710,10 @@ def _required_operation_family_proof_semantics(
         return ("whole_act_repeal_exception_set_and_boundary_claim",)
     if action_family == "savings_qualified_text_omission":
         return ("savings_qualified_omission_applicability_scope",)
+    if action_family == "savings_qualified_structural_repeal":
+        return ("savings_qualified_structural_repeal_applicability_scope",)
+    if action_family == "source_acquisition_or_payload_extraction":
+        return ("source_payload_or_instruction_acquisition_claim",)
     if action_family == "contingent_commencement_resolution":
         return ("contingent_commencement_resolution",)
     if action_family == "same_moment_cross_act_precedence_resolution":
@@ -1872,6 +1876,74 @@ def manual_compile_suggested_claim_template(
             _savings_qualified_omission_parts(
                 row.summary.source_extracted_text_preview or ""
             )
+        )
+        return template
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_savings_references_qualified_repeal_candidate"
+    ):
+        detail = _first_lowering_rejection_detail(
+            row=row, rule_id="uk_effect_savings_references_qualified_repeal_blocked"
+        )
+        template = _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="savings_qualified_structural_repeal",
+            placement_family="applicability_qualified_repeal_requires_savings_claim",
+            required_ownership=[
+                "source_named_whole_target_repeal",
+                "exact_target_carrier",
+                "savings_schedule_reference",
+                "temporal_or_applicability_scope",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_whole_target_repeal_and_savings_schedule_reference",
+                "claim_represents_savings_condition_as_applicability_not_unconditional_deletion",
+                "claim_identifies_exact_target_carrier",
+                "claim_preserves_unclaimed_target_text_and_children",
+                "changed_paths_are_within_declared_savings_qualified_repeal_boundary",
+            ],
+        )
+        template.update(
+            {
+                "savings_references": list(detail.get("savings_references") or ()),
+                "lowering_rule_id": detail.get("rule_id", ""),
+                "lowering_reason_code": detail.get("reason_code", ""),
+            }
+        )
+        return template
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_body_section_schedule_payload_candidate"
+    ):
+        detail = _first_lowering_rejection_detail(
+            row=row, rule_id="uk_effect_body_section_replace_schedule_unmatched_rejected"
+        )
+        template = _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="source_acquisition_or_payload_extraction",
+            placement_family="body_section_schedule_payload_mapping_required",
+            required_ownership=[
+                "official_source_payload_or_instruction",
+                "source_target_payload_boundary",
+                "temporal_extent",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "official_source_witness_contains_payload_or_instruction",
+                "payload_or_instruction_witness_is_not_empty",
+                "claim_blocks_replay_until_source_payload_is_available",
+                "claim_identifies_source_target_payload_and_temporal_dimensions",
+                "claim_preserves_affected_statute_text_state",
+            ],
+        )
+        template.update(
+            {
+                "lowering_rule_id": detail.get("rule_id", ""),
+                "lowering_reason_code": detail.get("reason_code", ""),
+            }
         )
         return template
     if (

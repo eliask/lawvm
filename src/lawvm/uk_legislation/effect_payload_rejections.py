@@ -6,12 +6,15 @@ from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
+from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
 from lawvm.uk_legislation.source_payload_elaboration import (
     _is_broad_schedule_flat_replace_payload,
     _is_non_substantive_structural_payload,
 )
+from lawvm.uk_legislation.uk_grafter import _clean_num
+from lawvm.uk_legislation.xml_helpers import _tag
 
 
 def reject_mixed_heading_structural_insert_missing_payload(
@@ -158,6 +161,92 @@ def reject_broad_schedule_flat_replace_payload(
             "payload_kind": str(payload_node_mut.kind),
             "payload_label": str(payload_node_mut.label or ""),
             "payload_text_preview": " ".join((payload_node_mut.text or "").split())[:240],
+        },
+    )
+    return True
+
+
+_UK_BODY_SECTION_LIKE_KINDS = frozenset({"section", "article", "rule", "regulation"})
+
+
+def reject_body_section_replace_with_unmatched_schedule_payload(
+    *,
+    effect: UKEffectRecord,
+    curr_action: Optional[str],
+    t_str: str,
+    target: LegalAddress,
+    payload_node_mut: Any,
+    actual_el: Optional[ET._Element],
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    """Reject replacing a body section with a schedule that does not contain it.
+
+    UK effect feeds sometimes expose a whole SI schedule as the source payload for
+    an "applied (with modifications)" row against one or more body sections (e.g.
+    s. 2 and s. 4 of the Land Compensation Act 1961 being given the entire text of
+    Schedule 2 to the Contaminated Land Regulations 2000).  The schedule's
+    paragraphs are not body sections: replaying a schedule-paragraph 4 as section 4
+    destroys the target section and blocks later amendments that depend on it.
+
+    A schedule genuinely replaces a section only when it carries a structural
+    child whose parsed kind is section-like (Section, Article, Rule) and whose
+    label matches the target.  Schedule-paragraph (P1) children with matching
+    numbers are not accepted as proxies for body sections.
+    """
+    if curr_action != "replace":
+        return False
+    if _addr_container(target) == "schedule":
+        return False
+    leaf_kind = (_addr_leaf_kind(target) or "").lower()
+    if leaf_kind not in _UK_BODY_SECTION_LIKE_KINDS:
+        return False
+    if actual_el is None or _tag(actual_el) != "Schedule":
+        return False
+    if payload_node_mut is None or str(payload_node_mut.kind).lower() != "schedule":
+        return False
+
+    target_label = _addr_leaf_label(target) or ""
+    target_clean = _clean_num(target_label)
+    if not target_clean:
+        return False
+
+    def _has_section_like_child(node: Any) -> bool:
+        for child in getattr(node, "children", ()):
+            child_kind = str(child.kind).lower()
+            child_label = _clean_num(str(child.label or ""))
+            if child_kind in _UK_BODY_SECTION_LIKE_KINDS and child_label == target_clean:
+                return True
+            if _has_section_like_child(child):
+                return True
+        return False
+
+    if _has_section_like_child(payload_node_mut):
+        return False
+
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_body_section_replace_schedule_unmatched_rejected",
+        family="payload_coverage_filter",
+        reason_code="schedule_payload_lacks_target_section_like_unit",
+        reason=(
+            "UK structural replace targets a body section but the extracted "
+            "schedule payload contains no Section/P1/Article/Rule that would be "
+            "parsed as a body section with a matching label; the effect is not a "
+            "genuine section replacement and would destroy the target carrier."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "target": str(target),
+            "target_leaf_kind": leaf_kind,
+            "target_leaf_label": target_label,
+            "payload_tag": _tag(actual_el),
+            "strict_disposition": "block",
+            "quirks_disposition": "reject",
         },
     )
     return True
