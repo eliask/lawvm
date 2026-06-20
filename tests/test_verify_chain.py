@@ -28,3 +28,13 @@ def test_verify_chain_main_suppresses_raw_replay_chatter_for_1978_38(
     payload = json.loads((tmp_path / "1978_38.json").read_text(encoding="utf-8"))
     assert payload["statute_id"] == "1978/38"
     assert payload["total_amendments"] > 0
+
+
+def test_fetch_html_sections_does_not_create_missing_archive(tmp_path) -> None:
+    archive_db = tmp_path / "unused"
+
+    labels, error = verify_chain._fetch_html_sections("2020/369", archive_db=archive_db)
+
+    assert labels == []
+    assert "archive fetch error" in error
+    assert not archive_db.exists()
