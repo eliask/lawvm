@@ -21,6 +21,9 @@ from lawvm.core.effect_lifecycle import (
     EffectRelation,
     SourceInstrumentRef,
     SourceProvisionRef,
+    append_unique_effect_lifecycle_event,
+    append_unique_effect_ref,
+    append_unique_effect_relation,
     effect_graph_wire,
     lower_lifecycle_events_to_temporal_events,
 )
@@ -469,6 +472,54 @@ def test_canonical_bundle_rejects_stale_effect_graph_endpoint_records() -> None:
             source_effects=(graph_effect,),
             effect_relations=(graph_relation,),
             effect_lifecycle_events=(lifecycle,),
+        )
+
+
+def test_effect_graph_merge_helpers_reject_untyped_records() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(
+        effect_id="effect:1",
+        source_instrument=instrument,
+        source_provision=witness,
+    )
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        executable=False,
+    )
+
+    with pytest.raises(TypeError, match="EffectRef"):
+        append_unique_effect_ref([], cast(Any, "effect:1"), subject="test source effects")
+    with pytest.raises(TypeError, match="EffectRelation"):
+        append_unique_effect_relation([], cast(Any, "relation:1"), subject="test relations")
+    with pytest.raises(TypeError, match="EffectLifecycleEvent"):
+        append_unique_effect_lifecycle_event([], cast(Any, "event:1"), subject="test lifecycle")
+
+    with pytest.raises(TypeError, match="EffectRef"):
+        append_unique_effect_ref(
+            cast(Any, ["effect:old"]),
+            effect,
+            subject="test source effects",
+        )
+    with pytest.raises(TypeError, match="EffectRelation"):
+        append_unique_effect_relation(
+            cast(Any, ["relation:old"]),
+            relation,
+            subject="test relations",
+        )
+    with pytest.raises(TypeError, match="EffectLifecycleEvent"):
+        append_unique_effect_lifecycle_event(
+            cast(Any, ["event:old"]),
+            lifecycle,
+            subject="test lifecycle",
         )
 
 

@@ -61,7 +61,14 @@ from typing import Any, Generic, Iterable, List, Mapping, Tuple, TypeVar, cast
 
 import icontract
 
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    merge_unique_effect_lifecycle_events,
+    merge_unique_effect_refs,
+    merge_unique_effect_relations,
+)
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.frozen_values import freeze_mapping
@@ -389,9 +396,21 @@ class PhaseResult(Generic[T]):
             findings=self.finding_ledger + other.finding_ledger,
             temporal_events=self.temporal_events + other.temporal_events,
             migration_events=self.migration_events + other.migration_events,
-            source_effects=self.source_effects + other.source_effects,
-            effect_relations=self.effect_relations + other.effect_relations,
-            effect_lifecycle_events=self.effect_lifecycle_events + other.effect_lifecycle_events,
+            source_effects=merge_unique_effect_refs(
+                self.source_effects,
+                other.source_effects,
+                subject="PhaseResult.source_effects",
+            ),
+            effect_relations=merge_unique_effect_relations(
+                self.effect_relations,
+                other.effect_relations,
+                subject="PhaseResult.effect_relations",
+            ),
+            effect_lifecycle_events=merge_unique_effect_lifecycle_events(
+                self.effect_lifecycle_events,
+                other.effect_lifecycle_events,
+                subject="PhaseResult.effect_lifecycle_events",
+            ),
         )
 
     def findings(self) -> "Tuple[Finding, ...]":

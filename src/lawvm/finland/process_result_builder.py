@@ -11,7 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List, Optional, Sequence
 
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_relations,
+)
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import LegalOperation
 from lawvm.core.mutation_accounting import MutationInvariantReport as ApplyMutationInvariantReport
@@ -27,10 +33,6 @@ from lawvm.finland.apply_events import (
 )
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
-from lawvm.finland.effect_graph_merge import (
-    append_unique_effect_lifecycle_events,
-    append_unique_effect_relations,
-)
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.replay_findings import (

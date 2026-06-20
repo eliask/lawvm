@@ -6,7 +6,14 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional
 
 from lawvm.corpus_store import CorpusStore
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_refs,
+    append_unique_effect_relations,
+)
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.provenance import MigrationEvent
@@ -16,11 +23,6 @@ from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallba
 from lawvm.core.tree_ops import resort_children as _resort_children
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
-from lawvm.finland.effect_graph_merge import (
-    append_unique_effect_lifecycle_events,
-    append_unique_effect_refs,
-    append_unique_effect_relations,
-)
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
 from lawvm.finland.future_repeal_prescan import (
     PreScanRepealDiagnostic,

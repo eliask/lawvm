@@ -228,14 +228,37 @@ def test_phase_result_rejects_duplicate_effect_graph_ids() -> None:
         PhaseResult(output=None, effect_lifecycle_events=(lifecycle_a, lifecycle_b))
 
 
-def test_phase_result_merge_rejects_duplicate_effect_graph_ids() -> None:
+def test_phase_result_merge_dedupes_identical_effect_graph_ids() -> None:
     instrument = SourceInstrumentRef(instrument_id="2024/1")
     effect_a = EffectRef(effect_id="effect:a", source_instrument=instrument)
     effect_b = EffectRef(effect_id="effect:a", source_instrument=instrument)
     pr_a = PhaseResult(output="a", source_effects=(effect_a,))
     pr_b = PhaseResult(output="b", source_effects=(effect_b,))
 
-    with pytest.raises(ValueError, match="duplicate effect_id"):
+    merged = pr_a.merge(pr_b)
+
+    assert merged.output == "b"
+    assert merged.source_effects == (effect_a,)
+
+
+def test_phase_result_merge_rejects_conflicting_effect_graph_ids() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    effect_a = EffectRef(
+        effect_id="effect:a",
+        source_instrument=instrument,
+        target_statute="1991/1",
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    effect_b = EffectRef(
+        effect_id="effect:a",
+        source_instrument=instrument,
+        target_statute="1991/1",
+        target_address=LegalAddress(path=(("section", "2"),)),
+    )
+    pr_a = PhaseResult(output="a", source_effects=(effect_a,))
+    pr_b = PhaseResult(output="b", source_effects=(effect_b,))
+
+    with pytest.raises(ValueError, match="conflicting duplicate effect_id"):
         pr_a.merge(pr_b)
 
 

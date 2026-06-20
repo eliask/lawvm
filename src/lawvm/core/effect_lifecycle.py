@@ -70,6 +70,24 @@ def _default_effect_detail_wire(detail: Mapping[str, Any]) -> object:
     return dict(detail)
 
 
+def _require_effect_ref(subject: str, value: object) -> "EffectRef":
+    if not isinstance(value, EffectRef):
+        raise TypeError(f"{subject} must contain EffectRef records")
+    return value
+
+
+def _require_effect_relation(subject: str, value: object) -> "EffectRelation":
+    if not isinstance(value, EffectRelation):
+        raise TypeError(f"{subject} must contain EffectRelation records")
+    return value
+
+
+def _require_effect_lifecycle_event(subject: str, value: object) -> "EffectLifecycleEvent":
+    if not isinstance(value, EffectLifecycleEvent):
+        raise TypeError(f"{subject} must contain EffectLifecycleEvent records")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class SourceInstrumentRef:
     """Stable identity for a source instrument that declares or modifies effects."""
@@ -393,6 +411,124 @@ class EffectLifecycleEvent:
             "detail",
             _freeze_effect_detail("EffectLifecycleEvent.detail", self.detail),
         )
+
+
+def append_unique_effect_ref(
+    target: list[EffectRef],
+    effect: EffectRef,
+    *,
+    subject: str,
+) -> None:
+    effect = _require_effect_ref(subject, effect)
+    for existing_value in target:
+        existing = _require_effect_ref(subject, existing_value)
+        if existing.effect_id != effect.effect_id:
+            continue
+        if existing != effect:
+            raise ValueError(
+                f"{subject} conflicting duplicate effect_id: {effect.effect_id!r}"
+            )
+        return
+    target.append(effect)
+
+
+def append_unique_effect_refs(
+    target: list[EffectRef],
+    effects: Iterable[EffectRef],
+    *,
+    subject: str,
+) -> None:
+    for effect in effects:
+        append_unique_effect_ref(target, effect, subject=subject)
+
+
+def merge_unique_effect_refs(
+    *lanes: Iterable[EffectRef],
+    subject: str,
+) -> tuple[EffectRef, ...]:
+    merged: list[EffectRef] = []
+    for lane in lanes:
+        append_unique_effect_refs(merged, lane, subject=subject)
+    return tuple(merged)
+
+
+def append_unique_effect_relation(
+    target: list[EffectRelation],
+    relation: EffectRelation,
+    *,
+    subject: str,
+) -> None:
+    relation = _require_effect_relation(subject, relation)
+    for existing_value in target:
+        existing = _require_effect_relation(subject, existing_value)
+        if existing.relation_id != relation.relation_id:
+            continue
+        if existing != relation:
+            raise ValueError(
+                f"{subject} conflicting duplicate relation_id: {relation.relation_id!r}"
+            )
+        return
+    target.append(relation)
+
+
+def append_unique_effect_relations(
+    target: list[EffectRelation],
+    relations: Iterable[EffectRelation],
+    *,
+    subject: str,
+) -> None:
+    for relation in relations:
+        append_unique_effect_relation(target, relation, subject=subject)
+
+
+def merge_unique_effect_relations(
+    *lanes: Iterable[EffectRelation],
+    subject: str,
+) -> tuple[EffectRelation, ...]:
+    merged: list[EffectRelation] = []
+    for lane in lanes:
+        append_unique_effect_relations(merged, lane, subject=subject)
+    return tuple(merged)
+
+
+def append_unique_effect_lifecycle_event(
+    target: list[EffectLifecycleEvent],
+    event: EffectLifecycleEvent,
+    *,
+    subject: str,
+) -> None:
+    event = _require_effect_lifecycle_event(subject, event)
+    for existing_value in target:
+        existing = _require_effect_lifecycle_event(subject, existing_value)
+        if existing.lifecycle_event_id != event.lifecycle_event_id:
+            continue
+        if existing != event:
+            raise ValueError(
+                f"{subject} conflicting duplicate lifecycle_event_id: "
+                f"{event.lifecycle_event_id!r}"
+            )
+        return
+    target.append(event)
+
+
+def append_unique_effect_lifecycle_events(
+    target: list[EffectLifecycleEvent],
+    events: Iterable[EffectLifecycleEvent],
+    *,
+    subject: str,
+) -> None:
+    for event in events:
+        append_unique_effect_lifecycle_event(target, event, subject=subject)
+
+
+def merge_unique_effect_lifecycle_events(
+    *lanes: Iterable[EffectLifecycleEvent],
+    subject: str,
+) -> tuple[EffectLifecycleEvent, ...]:
+    merged: list[EffectLifecycleEvent] = []
+    for lane in lanes:
+        append_unique_effect_lifecycle_events(merged, lane, subject=subject)
+    return tuple(merged)
 
 
 def legal_address_wire(address: Optional[LegalAddress]) -> Optional[dict[str, object]]:

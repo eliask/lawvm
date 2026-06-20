@@ -19,6 +19,11 @@ from lawvm.core.invariant_surface_matrix import (
 )
 from lawvm.core.mutation_accounting import MutationAccountingResult
 from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.effect_lifecycle import (
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_refs,
+    append_unique_effect_relations,
+)
 from lawvm.finland.acquisition import amendment_lacks_operative_structure as _amendment_lacks_operative_structure
 from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
 from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
@@ -28,11 +33,6 @@ from lawvm.finland.citation_routing import (
 )
 from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.constraints import muutos_node_lookup_cache_scope
-from lawvm.finland.effect_graph_merge import (
-    append_unique_effect_lifecycle_events,
-    append_unique_effect_refs,
-    append_unique_effect_relations,
-)
 from lawvm.finland.elaboration_rule_dispatch import (
     PROCESS_AMENDMENT_PIPELINE,
     emit_elaboration_pipeline_observation,

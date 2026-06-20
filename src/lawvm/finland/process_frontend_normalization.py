@@ -10,7 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, List, Optional
 
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_refs,
+    append_unique_effect_relations,
+)
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir import IRNode
 from lawvm.core.phase_result import Finding
@@ -18,11 +25,6 @@ from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.johtolause import parse_clause as _parse_johtolause_clause
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
-from lawvm.finland.effect_graph_merge import (
-    append_unique_effect_lifecycle_events,
-    append_unique_effect_refs,
-    append_unique_effect_relations,
-)
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import _normalize_frontend_temporal_events

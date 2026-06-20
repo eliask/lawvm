@@ -5,16 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
-from lawvm.core.compile_result import SourcePathology
-from lawvm.core.phase_result import Finding, PhaseResult
-from lawvm.core.temporal import TemporalEvent
-from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
-from lawvm.finland.effect_graph_merge import (
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
     append_unique_effect_lifecycle_events,
     append_unique_effect_refs,
     append_unique_effect_relations,
 )
+from lawvm.core.compile_result import SourcePathology
+from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.temporal import TemporalEvent
+from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.ops import ResolvedOp
 from lawvm.finland.temporal_rewrites import _normalize_frontend_temporal_events
 

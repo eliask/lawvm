@@ -427,7 +427,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_tree_ops_ambiguity.py",
     ),
     "core_compile_projection": (
-        "test_fi_effect_graph_merge.py",
         "test_fi_effect_lifecycle_projection.py",
         "test_fi_compile_facade.py",
         "test_compile_records.py",

@@ -24,7 +24,11 @@ from lawvm.core.compile_result import (
     strict_fail_reasons_from_finding_ledger,
     _compiled_op_scope_witness,
 )
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.effect_lifecycle import (
+    merge_unique_effect_lifecycle_events,
+    merge_unique_effect_refs,
+    merge_unique_effect_relations,
+)
 from lawvm.replay_adjudication import SourceAdjudication
 from lawvm.core.phase_result import Finding
 from lawvm.core.observation_registry import get_finding_spec
@@ -45,82 +49,6 @@ __all__ = [
 
 
 _FI_JOHTO_GROUP_PREFIX = "finland-johto:"
-
-
-def _require_effect_ref(value: object) -> EffectRef:
-    if not isinstance(value, EffectRef):
-        raise TypeError("Finland facade source_effects must contain EffectRef records")
-    return value
-
-
-def _require_effect_relation(value: object) -> EffectRelation:
-    if not isinstance(value, EffectRelation):
-        raise TypeError("Finland facade effect_relations must contain EffectRelation records")
-    return value
-
-
-def _require_effect_lifecycle_event(value: object) -> EffectLifecycleEvent:
-    if not isinstance(value, EffectLifecycleEvent):
-        raise TypeError(
-            "Finland facade effect_lifecycle_events must contain EffectLifecycleEvent records"
-        )
-    return value
-
-
-def _merge_unique_effect_refs(*lanes: Sequence[EffectRef]) -> tuple[EffectRef, ...]:
-    seen: dict[str, EffectRef] = {}
-    merged: list[EffectRef] = []
-    for lane in lanes:
-        for value in lane:
-            effect = _require_effect_ref(value)
-            previous = seen.get(effect.effect_id)
-            if previous is None:
-                seen[effect.effect_id] = effect
-                merged.append(effect)
-                continue
-            if previous != effect:
-                raise ValueError(f"Finland facade source_effects conflicting duplicate effect_id: {effect.effect_id!r}")
-    return tuple(merged)
-
-
-def _merge_unique_effect_relations(*lanes: Sequence[EffectRelation]) -> tuple[EffectRelation, ...]:
-    seen: dict[str, EffectRelation] = {}
-    merged: list[EffectRelation] = []
-    for lane in lanes:
-        for value in lane:
-            relation = _require_effect_relation(value)
-            previous = seen.get(relation.relation_id)
-            if previous is None:
-                seen[relation.relation_id] = relation
-                merged.append(relation)
-                continue
-            if previous != relation:
-                raise ValueError(
-                    "Finland facade effect_relations conflicting duplicate "
-                    f"relation_id: {relation.relation_id!r}"
-                )
-    return tuple(merged)
-
-
-def _merge_unique_effect_lifecycle_events(
-    *lanes: Sequence[EffectLifecycleEvent],
-) -> tuple[EffectLifecycleEvent, ...]:
-    seen: dict[str, EffectLifecycleEvent] = {}
-    merged: list[EffectLifecycleEvent] = []
-    for lane in lanes:
-        for value in lane:
-            event = _require_effect_lifecycle_event(value)
-            previous = seen.get(event.lifecycle_event_id)
-            if previous is None:
-                seen[event.lifecycle_event_id] = event
-                merged.append(event)
-                continue
-            if previous != event:
-                raise ValueError(
-                    "Finland facade effect_lifecycle_events conflicting duplicate "
-                    f"lifecycle_event_id: {event.lifecycle_event_id!r}"
-                )
-    return tuple(merged)
 
 
 @dataclass(frozen=True)
@@ -942,17 +870,20 @@ def compile_fi_facade_from_replay(
         canonical_ops=tuple(canonical_ops),
         temporal_events=resolved_temporal_events,
     )
-    source_effects = _merge_unique_effect_refs(
+    source_effects = merge_unique_effect_refs(
         replay_result.products.source_effects,
         derived_source_effects,
+        subject="Finland facade source_effects",
     )
-    effect_relations = _merge_unique_effect_relations(
+    effect_relations = merge_unique_effect_relations(
         replay_result.products.effect_relations,
         derived_effect_relations,
+        subject="Finland facade effect_relations",
     )
-    effect_lifecycle_events = _merge_unique_effect_lifecycle_events(
+    effect_lifecycle_events = merge_unique_effect_lifecycle_events(
         replay_result.products.effect_lifecycle_events,
         derived_effect_lifecycle_events,
+        subject="Finland facade effect_lifecycle_events",
     )
     bundle = CanonicalBundle(
         target_statute=parent_id,
