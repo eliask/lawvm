@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from lawvm.core.legal_surface_graph import (
+    AuthorityRole,
     LegalSurfaceGraph,
     SourceSpanRef,
     SurfaceGraphSubject,
@@ -50,12 +51,12 @@ def _node(
     status: str,
     payload: dict[str, Any],
     span: SourceSpanRef | None,
-    authority_role: str = "surface_fact",
+    authority_role: AuthorityRole = "surface_fact",
 ) -> SurfaceNode:
     return SurfaceNode(
         node_id=node_id,
         node_kind=node_kind,
-        authority_role=authority_role,  # type: ignore[arg-type]
+        authority_role=authority_role,
         jurisdiction="fi",
         source_ref=span,
         lens_id="test",
