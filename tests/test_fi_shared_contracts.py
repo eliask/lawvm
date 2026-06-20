@@ -63,7 +63,7 @@ from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.mutation_boundary_proof import mutation_boundary_evidence_report
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.ownership_closure import (
-    OwnershipClosureCertificate,
+    OwnershipClosureCoverage,
     ownership_closure_evidence_report,
 )
 from lawvm.core.payload_elaboration import (
@@ -251,8 +251,8 @@ def test_phase_local_replay_gate_blocks_mismatch_and_missing_proofs() -> None:
     ]
 
 
-def test_ownership_closure_certificate_closes_only_zero_unowned_slice() -> None:
-    certificate = OwnershipClosureCertificate(
+def test_ownership_closure_coverage_closes_only_zero_unowned_slice() -> None:
+    certificate = OwnershipClosureCoverage(
         certificate_id="closure-fi-demo",
         corpus_slice_id="fi-demo-slice",
         source_bundle_hash="sha256:source",
@@ -283,7 +283,7 @@ def test_ownership_closure_certificate_closes_only_zero_unowned_slice() -> None:
     data = certificate.to_dict()
     report = ownership_closure_evidence_report(certificate, jurisdiction="fi").to_dict()
 
-    assert data["schema"] == "lawvm.ownership_closure_certificate.v1"
+    assert data["schema"] == "lawvm.ownership_closure_coverage.v1"
     assert data["closure_status"] == "closed"
     assert data["phase_report_ids"]["execution_authorization"] == "report-auth"
     assert report["replay_claims"] is False
@@ -292,19 +292,19 @@ def test_ownership_closure_certificate_closes_only_zero_unowned_slice() -> None:
     assert report["summary"]["unowned_counts"]["candidates_without_authorization"] == 0
     assert report["summary"]["owned_counts"] == {"replay_authorized_operations": 3}
     assert report["rows"][0]["closed"] is True
-    assert report["rows"][0]["surface"] == "ownership_closure_certificate"
+    assert report["rows"][0]["surface"] == "ownership_closure_coverage"
     assert report["rows"][0]["row_id"] == "closure-fi-demo"
     assert report["rows"][0]["subject_id"] == "fi-demo-slice"
     assert report["rows"][0]["status"] == "closed"
     assert (
-        "ownership_closure_certificate_as_full_corpus_omniscience"
+        "ownership_closure_coverage_as_full_corpus_omniscience"
         in report["rows"][0]["forbidden_shortcuts"]
     )
 
 
-def test_ownership_closure_certificate_rejects_false_closed_claims() -> None:
+def test_ownership_closure_coverage_rejects_false_closed_claims() -> None:
     with pytest.raises(ValueError, match="all unowned_counts to be zero"):
-        OwnershipClosureCertificate(
+        OwnershipClosureCoverage(
             certificate_id="closure-fi-open",
             corpus_slice_id="fi-demo-slice",
             source_bundle_hash="sha256:source",
@@ -317,7 +317,7 @@ def test_ownership_closure_certificate_rejects_false_closed_claims() -> None:
         )
 
     with pytest.raises(ValueError, match="requires no failed_gates"):
-        OwnershipClosureCertificate(
+        OwnershipClosureCoverage(
             certificate_id="closure-fi-open",
             corpus_slice_id="fi-demo-slice",
             source_bundle_hash="sha256:source",
@@ -330,7 +330,7 @@ def test_ownership_closure_certificate_rejects_false_closed_claims() -> None:
         )
 
     with pytest.raises(ValueError, match="detail.closure_dimensions"):
-        OwnershipClosureCertificate(
+        OwnershipClosureCoverage(
             certificate_id="closure-fi-ambiguous",
             corpus_slice_id="fi-demo-slice",
             source_bundle_hash="sha256:source",
@@ -344,7 +344,7 @@ def test_ownership_closure_certificate_rejects_false_closed_claims() -> None:
 
 
 def test_ownership_closure_report_summarizes_open_slices_without_replay_claims() -> None:
-    certificate = OwnershipClosureCertificate(
+    certificate = OwnershipClosureCoverage(
         certificate_id="closure-fi-open",
         corpus_slice_id="fi-demo-slice",
         source_bundle_hash="sha256:source",
@@ -374,7 +374,7 @@ def test_ownership_closure_report_summarizes_open_slices_without_replay_claims()
 
     assert proof_surface["rows"][0]["row_id"] == "closure-fi-open"
     assert proof_surface["rows"][0]["subject_id"] == "fi-demo-slice"
-    assert proof_surface["rows"][0]["row_kind"] == "ownership_closure_certificate"
+    assert proof_surface["rows"][0]["row_kind"] == "ownership_closure_coverage"
     assert proof_surface["rows"][0]["status"] == "open"
 
 

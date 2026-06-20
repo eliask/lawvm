@@ -198,7 +198,7 @@ def finland_strict_report_evidence_surface(
     strict_report_candidate_set_frontier_items = mapping_sequence(
         payload.get("strict_report_candidate_set_frontier_work_items")
     )
-    ownership_closure = mapping_or_empty(payload.get("ownership_closure_certificate"))
+    ownership_closure = mapping_or_empty(payload.get("ownership_closure_coverage"))
     ownership_closure_report = mapping_or_empty(payload.get("ownership_closure_report"))
     ownership_closure_rows = mapping_sequence(ownership_closure_report.get("rows"))
     ownership_closure_summary = dict(ownership_closure_report.get("summary") or {})
@@ -267,7 +267,7 @@ def finland_strict_report_evidence_surface(
                 {"surface": "strict_report_candidate_set_frontier_work_item", **dict(row)}
                 for row in strict_report_candidate_set_frontier_items
             ),
-            *({"surface": "ownership_closure_certificate", **dict(row)} for row in ownership_closure_rows),
+            *({"surface": "ownership_closure_coverage", **dict(row)} for row in ownership_closure_rows),
         )
     )
     summary = {
@@ -421,7 +421,7 @@ def finland_strict_report_evidence_surface(
             strict_report_candidate_set_frontier_items,
             "frontier_status",
         ),
-        "ownership_closure_certificate_count": len(ownership_closure_rows),
+        "ownership_closure_coverage_count": len(ownership_closure_rows),
         "ownership_closure_status": str(ownership_closure.get("closure_status") or ""),
         "ownership_closure_failed_gate_counts": dict(
             ownership_closure_summary.get("failed_gate_counts") or {}
@@ -475,7 +475,7 @@ def finland_strict_report_evidence_surface(
                 "temporal_resolution_evidence_as_unconditional_commencement_proof",
                 "recovery_projection_as_replay_authorization",
                 "candidate_set_certificate_as_source_cue_exhaustiveness_proof",
-                "ownership_closure_certificate_as_full_corpus_omniscience",
+                "ownership_closure_coverage_as_full_corpus_omniscience",
                 "regex_coverage_as_replay_authorization",
                 "bounded_wildcard_as_semantic_proof",
             ),

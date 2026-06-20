@@ -50,7 +50,7 @@ from lawvm.finland.strict_report_evidence_projector import finland_strict_report
 from lawvm.finland.strict_report_proof_projector import (
     finland_strict_report_candidate_set_execution_authorizations,
     finland_strict_report_candidate_set_frontier_work_items,
-    finland_strict_report_ownership_closure_certificate,
+    finland_strict_report_ownership_closure_coverage,
 )
 from lawvm.finland.source_witness_proof_projector import (
     consolidated_artifact_source_witness,
@@ -1705,7 +1705,7 @@ def test_finland_strict_report_ownership_closure_can_close_declared_slice() -> N
         }
     )
 
-    certificate = finland_strict_report_ownership_closure_certificate(
+    certificate = finland_strict_report_ownership_closure_coverage(
         {
             "statute_id": "2001/1234",
             "profile": "strict",
@@ -1757,7 +1757,7 @@ def test_finland_strict_report_ownership_closure_requires_candidate_set_authoriz
         next_promotion_requires=("execution_authorization",),
     ).to_dict()
 
-    certificate = finland_strict_report_ownership_closure_certificate(
+    certificate = finland_strict_report_ownership_closure_coverage(
         {
             "statute_id": "2001/1234",
             "profile": "strict",
@@ -1817,7 +1817,7 @@ def test_finland_strict_report_ownership_closure_requires_matching_candidate_set
         }
     )
 
-    certificate = finland_strict_report_ownership_closure_certificate(
+    certificate = finland_strict_report_ownership_closure_coverage(
         {
             "statute_id": "2001/1234",
             "profile": "strict",
@@ -1884,7 +1884,7 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
             "ops": {"canonical": 0, "failed": 0},
             "strict_report_candidate_set_certificates": candidate_sets,
             "strict_report_candidate_set_execution_authorizations": authorizations,
-            "ownership_closure_certificate": finland_strict_report_ownership_closure_certificate(
+            "ownership_closure_coverage": finland_strict_report_ownership_closure_coverage(
                 {
                     "statute_id": "2001/1234",
                     "profile": "strict",

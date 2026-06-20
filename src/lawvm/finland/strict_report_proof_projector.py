@@ -15,7 +15,7 @@ from lawvm.core.candidate_set_certificate import (
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.ownership_closure import (
-    OwnershipClosureCertificate,
+    OwnershipClosureCoverage,
     ownership_closure_evidence_report,
 )
 from lawvm.core.potential_operation import (
@@ -586,7 +586,7 @@ def finland_strict_report_candidate_set_frontier_work_items(
     return frontier_items
 
 
-def finland_strict_report_ownership_closure_certificate(
+def finland_strict_report_ownership_closure_coverage(
     payload: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Build a passive ownership-closure certificate for strict-report facts.
@@ -773,7 +773,7 @@ def finland_strict_report_ownership_closure_certificate(
         "strict_report_candidate_set_authorizations": len(candidate_set_authorizations),
         "strict_report_candidate_set_frontier_items": len(candidate_set_frontier_items),
     }
-    certificate = OwnershipClosureCertificate(
+    certificate = OwnershipClosureCoverage(
         certificate_id=_strict_report_id("ownership-closure", statute_id, payload),
         corpus_slice_id=f"fi:{statute_id}:strict-report-visible-surfaces",
         source_bundle_hash=_strict_report_digest(
@@ -858,7 +858,7 @@ def finland_strict_report_ownership_closure_report(
 ) -> dict[str, Any]:
     """Wrap one strict-report closure certificate in a passive evidence report."""
 
-    cert = OwnershipClosureCertificate(
+    cert = OwnershipClosureCoverage(
         certificate_id=str(certificate.get("certificate_id") or ""),
         corpus_slice_id=str(certificate.get("corpus_slice_id") or ""),
         source_bundle_hash=str(certificate.get("source_bundle_hash") or ""),
@@ -1216,7 +1216,7 @@ __all__ = [
     "finland_strict_report_candidate_set_certificates",
     "finland_strict_report_candidate_set_execution_authorizations",
     "finland_strict_report_candidate_set_frontier_work_items",
-    "finland_strict_report_ownership_closure_certificate",
+    "finland_strict_report_ownership_closure_coverage",
     "finland_strict_report_ownership_closure_report",
     "finland_strict_report_potential_operation_rows",
     "finland_strict_report_source_unit_coverage_rows",

@@ -8,16 +8,16 @@ from typing import Any, Mapping
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
 
-OWNERSHIP_CLOSURE_SCHEMA = "lawvm.ownership_closure_certificate.v1"
+OWNERSHIP_CLOSURE_SCHEMA = "lawvm.ownership_closure_coverage.v1"
 _OWNERSHIP_CLOSURE_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
-    "ownership_closure_certificate_as_replay_authorization",
-    "ownership_closure_certificate_as_full_corpus_omniscience",
+    "ownership_closure_coverage_as_replay_authorization",
+    "ownership_closure_coverage_as_full_corpus_omniscience",
     "open_ownership_closure_as_compile_failure",
 )
 
 
 @dataclass(frozen=True, slots=True)
-class OwnershipClosureCertificate:
+class OwnershipClosureCoverage:
     """Accounting certificate for a declared source/candidate/result slice.
 
     The certificate is passive: it does not authorize replay and does not claim
@@ -53,21 +53,21 @@ class OwnershipClosureCertificate:
                 _required_string(field_name, value),
             )
         if not isinstance(self.closed, bool):
-            raise ValueError("OwnershipClosureCertificate.closed must be boolean")
+            raise ValueError("OwnershipClosureCoverage.closed must be boolean")
         failed_gates = _string_tuple("failed_gates", self.failed_gates)
         phase_report_ids = _string_mapping("phase_report_ids", self.phase_report_ids)
         unowned_counts = _int_mapping("unowned_counts", self.unowned_counts)
         owned_counts = _int_mapping("owned_counts", self.owned_counts)
         if not isinstance(self.detail, Mapping):
-            raise ValueError("OwnershipClosureCertificate.detail must be a mapping")
+            raise ValueError("OwnershipClosureCoverage.detail must be a mapping")
         if self.closed and failed_gates:
-            raise ValueError("OwnershipClosureCertificate.closed requires no failed_gates")
+            raise ValueError("OwnershipClosureCoverage.closed requires no failed_gates")
         if self.closed and any(count != 0 for count in unowned_counts.values()):
-            raise ValueError("OwnershipClosureCertificate.closed requires all unowned_counts to be zero")
+            raise ValueError("OwnershipClosureCoverage.closed requires all unowned_counts to be zero")
         if self.closed and not phase_report_ids:
-            raise ValueError("OwnershipClosureCertificate.closed requires phase_report_ids")
+            raise ValueError("OwnershipClosureCoverage.closed requires phase_report_ids")
         if self.closed and not _string_sequence(self.detail.get("closure_dimensions")):
-            raise ValueError("OwnershipClosureCertificate.closed requires detail.closure_dimensions")
+            raise ValueError("OwnershipClosureCoverage.closed requires detail.closure_dimensions")
         object.__setattr__(self, "failed_gates", failed_gates)
         object.__setattr__(self, "phase_report_ids", phase_report_ids)
         object.__setattr__(self, "unowned_counts", unowned_counts)
@@ -94,7 +94,7 @@ class OwnershipClosureCertificate:
 
 
 def ownership_closure_evidence_report(
-    certificates: OwnershipClosureCertificate | tuple[OwnershipClosureCertificate, ...],
+    certificates: OwnershipClosureCoverage | tuple[OwnershipClosureCoverage, ...],
     *,
     jurisdiction: str,
     report_kind: str = "ownership_closure",
@@ -137,16 +137,16 @@ def ownership_closure_evidence_report(
         detail={
             "safe_default": "treat_open_closure_as_declared_accounting_gap_not_replay_authority",
             "forbidden_shortcuts": _OWNERSHIP_CLOSURE_REPORT_FORBIDDEN_SHORTCUTS,
-            "included_surfaces": ("ownership_closure_certificate",),
+            "included_surfaces": ("ownership_closure_coverage",),
         },
     )
 
 
-def _ownership_closure_report_row(certificate: OwnershipClosureCertificate) -> dict[str, Any]:
+def _ownership_closure_report_row(certificate: OwnershipClosureCoverage) -> dict[str, Any]:
     row = certificate.to_dict()
     return {
         **row,
-        "surface": "ownership_closure_certificate",
+        "surface": "ownership_closure_coverage",
         "row_id": certificate.certificate_id,
         "subject_id": certificate.corpus_slice_id,
         "status": row["closure_status"],
@@ -158,19 +158,19 @@ def _ownership_closure_report_row(certificate: OwnershipClosureCertificate) -> d
 def _required_string(field_name: str, value: Any) -> str:
     text = str(value or "").strip()
     if not text:
-        raise ValueError(f"OwnershipClosureCertificate.{field_name} is required")
+        raise ValueError(f"OwnershipClosureCoverage.{field_name} is required")
     return text
 
 
 def _string_tuple(field_name: str, values: Any) -> tuple[str, ...]:
     if isinstance(values, str) or not isinstance(values, tuple):
-        raise ValueError(f"OwnershipClosureCertificate.{field_name} must be a tuple")
+        raise ValueError(f"OwnershipClosureCoverage.{field_name} must be a tuple")
     return tuple(str(value) for value in values if str(value))
 
 
 def _string_mapping(field_name: str, value: Any) -> Mapping[str, str]:
     if not isinstance(value, Mapping):
-        raise ValueError(f"OwnershipClosureCertificate.{field_name} must be a mapping")
+        raise ValueError(f"OwnershipClosureCoverage.{field_name} must be a mapping")
     normalized = {str(key): str(item) for key, item in value.items() if str(key) and str(item)}
     return freeze_mapping(normalized)
 
@@ -185,13 +185,13 @@ def _string_sequence(value: Any) -> tuple[str, ...]:
 
 def _int_mapping(field_name: str, value: Any) -> Mapping[str, int]:
     if not isinstance(value, Mapping):
-        raise ValueError(f"OwnershipClosureCertificate.{field_name} must be a mapping")
+        raise ValueError(f"OwnershipClosureCoverage.{field_name} must be a mapping")
     normalized: dict[str, int] = {}
     for key, count in value.items():
         if not isinstance(count, int) or isinstance(count, bool):
-            raise ValueError(f"OwnershipClosureCertificate.{field_name} values must be integers")
+            raise ValueError(f"OwnershipClosureCoverage.{field_name} values must be integers")
         if count < 0:
-            raise ValueError(f"OwnershipClosureCertificate.{field_name} values must be non-negative")
+            raise ValueError(f"OwnershipClosureCoverage.{field_name} values must be non-negative")
         normalized[str(key)] = count
     return freeze_mapping(normalized)
 
