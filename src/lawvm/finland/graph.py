@@ -1,9 +1,14 @@
 """Finnish-specific StatuteGraph builders.
 
 These functions build StatuteGraph objects for Finnish statutes by calling
-into the Finland frontend (grafter, amendment_index, cross_refs, delegation).
-They are separated from core/graph.py so that core/ remains
-jurisdiction-agnostic.
+into the Finland frontend (grafter, amendment_index, cross_refs, and the
+canonical forward-grant delegation parser). They are separated from
+core/graph.py so that core/ remains jurisdiction-agnostic.
+
+Delegation forward-grant source: the canonical token-native parser via
+``legal_surface.delegation_edge_adapter.extract_delegations_canonical``. The
+legacy nine-regex ``delegation.extract_delegations`` is retained as a typed
+residue / cross-check oracle (see its docstring) but is no longer the source.
 
 Entry points used by core/graph.py dispatch:
     build_statute_graph_fi(sid)             -> StatuteGraph  (with timelines)
@@ -32,7 +37,9 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
     from lawvm.core.timeline import compile_timelines
     from lawvm.finland.amendment_index import get_amendment_children
     from lawvm.finland.references.cross_refs import extract_cross_refs
-    from lawvm.finland.delegation import extract_delegations
+    from lawvm.finland.legal_surface.delegation_edge_adapter import (
+        extract_delegations_canonical,
+    )
     from lawvm.finland.corpus import get_corpus
     from lawvm.finland.helpers import _fi_label_postprocessor
     from lawvm.finland.replay_entrypoint import replay_xml
@@ -89,7 +96,7 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
     con_xml = cs.read_oracle(sid)
     if con_xml is not None:
         try:
-            delegations = list(extract_delegations(con_xml, sid))
+            delegations = list(extract_delegations_canonical(con_xml, sid))
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception:
@@ -130,7 +137,9 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
     """
     from lawvm.finland.amendment_index import get_amendment_children
     from lawvm.finland.references.cross_refs import extract_cross_refs, extract_eu_refs
-    from lawvm.finland.delegation import extract_delegations
+    from lawvm.finland.legal_surface.delegation_edge_adapter import (
+        extract_delegations_canonical,
+    )
     from lxml import etree
 
     from lawvm.finland.corpus import get_corpus
@@ -172,7 +181,7 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
     con_xml = cs.read_oracle(sid)
     if con_xml is not None:
         try:
-            delegations = list(extract_delegations(con_xml, sid))
+            delegations = list(extract_delegations_canonical(con_xml, sid))
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception:

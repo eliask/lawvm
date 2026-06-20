@@ -458,6 +458,21 @@ def extract_delegations(
     Scans at subsection (momentti) level for precise addressing. Falls back to
     section level for statutes without subsection markup.
 
+    Demoted to typed residue / cross-check (NOT the production source)
+    -----------------------------------------------------------------
+    The production StatuteGraph forward-grant source is now the canonical
+    token-native parser via
+    :func:`lawvm.finland.legal_surface.delegation_edge_adapter.extract_delegations_canonical`.
+    On a 2500-statute differential the canonical parser had materially higher
+    recall (+774 edges) at higher precision (the A-only residue was dominated by
+    A false positives), and the last genuine-drop class (published_norm over-fire)
+    was closed before the flip. This nine-regex extractor (``_DELEGATION_PATTERNS``)
+    is RETAINED — importable and available as a residue/cross-check oracle — but is
+    no longer wired into ``build_statute_graph_fi`` / ``..._lightweight``. It also
+    still backs the ``delegation_census`` differential harness and the
+    ``lawvm delegate`` CLI cross-check. Do not delete: it is the fallible regex
+    oracle the canonical parser is differentiated against.
+
     Args:
         xml_bytes:  Raw XML bytes of the statute (Akoma Ntoso / Finlex format).
         statute_id: Canonical statute ID, e.g. "2011/646".
