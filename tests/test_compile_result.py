@@ -352,6 +352,44 @@ def test_unresolved_effect_lifecycle_event_cannot_smuggle_resolved_target() -> N
         )
 
 
+def test_lifecycle_event_relation_requires_supported_kind_and_same_source_witness() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    other_witness = SourceProvisionRef(instrument=instrument, path=("2",))
+    effect = EffectRef(effect_id="effect:target", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:resolved",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    unresolved_relation = EffectRelation(
+        relation_id="relation:unresolved",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_instrument=instrument,
+    )
+
+    with pytest.raises(ValueError, match="relation is only supported"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:commence-relation",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            effective="2020-01-01",
+        )
+
+    with pytest.raises(ValueError, match="source_provision must match relation source_provision"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:unresolved-source-mismatch",
+            kind="unresolved_effect_target",
+            source_provision=other_witness,
+            relation=unresolved_relation,
+            executable=False,
+        )
+
+
 def test_resolved_effect_lifecycle_event_requires_target_effect() -> None:
     instrument = SourceInstrumentRef(instrument_id="2020/1")
 

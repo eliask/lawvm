@@ -216,6 +216,21 @@ class EffectLifecycleEvent:
             raise ValueError(
                 "unresolved EffectLifecycleEvent relation cannot name target_effect"
             )
+        relation_allowed_kinds = {
+            "change_effect_commencement",
+            "change_effect_expiry",
+            "repeal_effect",
+            "unresolved_effect_target",
+        }
+        if self.relation is not None and self.kind not in relation_allowed_kinds:
+            raise ValueError(
+                "EffectLifecycleEvent relation is only supported for "
+                "effect-modifying or unresolved target events"
+            )
+        if self.relation is not None and self.relation.source_provision != self.source_provision:
+            raise ValueError(
+                "EffectLifecycleEvent source_provision must match relation source_provision"
+            )
         if self.kind != "unresolved_effect_target" and self.effect is None:
             raise ValueError("resolved EffectLifecycleEvent requires effect")
         if self.executable and self.effect is None:
@@ -247,11 +262,6 @@ class EffectLifecycleEvent:
                 raise ValueError(
                     "effect-modifying EffectLifecycleEvent relation target "
                     "must match event effect"
-                )
-            if self.relation.source_provision != self.source_provision:
-                raise ValueError(
-                    "effect-modifying EffectLifecycleEvent source_provision "
-                    "must match relation source_provision"
                 )
         if (
             self.executable
