@@ -20,7 +20,12 @@ from lawvm.core.compile_views import (
     projection_rows_from_findings,
     source_pathology_rows_from_findings,
 )
-from lawvm.core.effect_lifecycle import EffectRef, SourceInstrumentRef
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    SourceInstrumentRef,
+)
 from lawvm.core.ir import (
     IRNode,
     LegalAddress,
@@ -44,6 +49,7 @@ from lawvm.core.observation_registry import (
 )
 from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
 from lawvm.finland.ops import AmendmentOp, FailedOp, classify_legal_operation_conversion_skip
+from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
@@ -230,6 +236,8 @@ def _replay_result_stub(
     findings: tuple[Finding, ...] = (),
     source_adjudication: Any = None,
     source_effects: tuple[EffectRef, ...] = (),
+    effect_relations: tuple[EffectRelation, ...] = (),
+    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...] = (),
 ) -> ReplayResult:
     body = IRNode(kind=IRNodeKind.BODY)
     ctx = StatuteContext(
@@ -246,6 +254,8 @@ def _replay_result_stub(
         migration_events=cast(tuple[Any, ...], migration_events),
         source_adjudication=source_adjudication,
         source_effects=source_effects,
+        effect_relations=effect_relations,
+        effect_lifecycle_events=effect_lifecycle_events,
     )
     return ReplayResult(
         ctx=ctx,
@@ -1191,6 +1201,67 @@ def test_compile_fi_facade_rejects_conflicting_duplicate_effect_ids(monkeypatch)
             compiled_ops=[],
             replay_meta={},
             canonical_ops=[canonical_op],
+            failed_ops=[],
+        )
+
+
+def test_compile_fi_facade_rejects_conflicting_duplicate_lifecycle_events(monkeypatch) -> None:
+    def fake_compile_artifacts_from_replay(*_args, **_kwargs):
+        return SimpleNamespace(
+            compiled_ops=[],
+            canonical_ops=[],
+            compile_failures=[],
+            findings=[],
+            strict_fail_reasons=[],
+            source_adjudication=None,
+            replay_meta={},
+            verdict=compute_verdict_from_registry(default_finland_strict_profile(), [], has_internal_failure=False),
+        )
+
+    monkeypatch.setattr(
+        "lawvm.finland._compile._compile_artifacts_from_replay",
+        fake_compile_artifacts_from_replay,
+    )
+    temporal = TemporalEvent(
+        event_id="event:expiry",
+        kind="expire",
+        scope=TemporalScope(
+            target_statute="2009/953",
+            exact_addresses=(LegalAddress(path=(("section", "4 a"),)),),
+        ),
+        expires="2025-01-01",
+        source=OperationSource(statute_id="2020/1", expires="2025-01-01"),
+        group_id="g:2020/1:expiry",
+    )
+    source_effects, _relations, derived_lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="2009/953",
+        canonical_ops=(),
+        temporal_events=(temporal,),
+    )
+    derived_lifecycle = derived_lifecycle_events[0]
+    conflicting_lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id=derived_lifecycle.lifecycle_event_id,
+        kind=derived_lifecycle.kind,
+        source_provision=derived_lifecycle.source_provision,
+        effect=derived_lifecycle.effect,
+        expires=derived_lifecycle.expires,
+        temporal_event=temporal,
+        executable=True,
+        detail={"projection": "product_conflict"},
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate lifecycle_event_id"):
+        compile_fi_facade_from_replay(
+            parent_id="2009/953",
+            replay_result=_replay_result_stub(
+                temporal_events=(temporal,),
+                source_effects=source_effects,
+                effect_lifecycle_events=(conflicting_lifecycle,),
+            ),
+            replay_mode="legal_pit",
+            compiled_ops=[],
+            replay_meta={},
+            canonical_ops=[],
             failed_ops=[],
         )
 
