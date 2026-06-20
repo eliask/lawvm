@@ -38,6 +38,7 @@ the architecture, keep it explanatory.
 ## Normative Core
 
 - [LAWVM_CONSTITUTION.md](LAWVM_CONSTITUTION.md)
+- [LAWVM_PIPELINE_CONTRACT.md](LAWVM_PIPELINE_CONTRACT.md) — the checkable constitution of the pipeline: the central invariant + four sub-invariants (no silent drop/guess/authority-promotion/representation-regression), the 10 waists with canonical input/output/coverage/authority types, the six type-distinct planes, the no-reach-back rule + witness exception, closed conservation vocabularies, guard-liveness as a registry rule, the authority firewall in types, identity discipline, certificate as destination. Backlog measured against it: `ARCHITECTURE_LEAK_LEDGER.md`
 - [CANONICAL_OP_SEMANTICS.md](CANONICAL_OP_SEMANTICS.md)
 - [COMPILER_OBSERVATION_STREAM.md](COMPILER_OBSERVATION_STREAM.md)
 - [LAWVM_PROOF_SURFACES.md](LAWVM_PROOF_SURFACES.md)
@@ -99,4 +100,5 @@ the architecture, keep it explanatory.
 - [LAWVM_STACK_MAP.md](LAWVM_STACK_MAP.md)
 - [REGEX_TO_GRAMMAR_MIGRATION.md](REGEX_TO_GRAMMAR_MIGRATION.md) — when string matching stays regex (lint + prefilter) vs becomes a named recognizer/spec; applies AGENTS.md §1.13
 - [IMPLEMENTATION_DIVERGENCE_LEDGER.md](IMPLEMENTATION_DIVERGENCE_LEDGER.md) — current target-vs-implementation gaps + active work queue
+- [ARCHITECTURE_LEAK_LEDGER.md](ARCHITECTURE_LEAK_LEDGER.md) — EV-ranked backlog of representation/typing/authority leaks vs `LAWVM_PIPELINE_CONTRACT.md` (audit-and-enforce, not rewrite); 27 ranked sites + 2 CI-gate specs + 2 seam candidates from the e2e architecture-coherence audit
 - [FINLAND_COVERAGE_GAP_REPORT.md](FINLAND_COVERAGE_GAP_REPORT.md) — Finland projection freshness / coverage snapshot
