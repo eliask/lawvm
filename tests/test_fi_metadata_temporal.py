@@ -820,3 +820,41 @@ def test_subsection_commencement_effective_override_chapter_range() -> None:
         "chapter:15/section:2/subsection:5",
     }
     assert effective.isoformat() == "2019-07-22"
+
+
+def test_temporary_provision_expiry_overrides_compose_subref_grammar_and_canonical_date() -> None:
+    """#22B: the scoped temporary-expiry sentence composes the shared sub-ref
+    grammar (subject) with the canonical temporal expiry-date extractor (date).
+
+    The subject's section + momentti coordination/range/letter-suffix is parsed by
+    references.sections.parse_body_provision_tail; the date by
+    temporal_lowering._extract_expiry_date_from_text. Only ``§:n``-bodied facets
+    (otsikko + momentti) are owned here — a bare whole-section ``§`` mention in
+    the same subject is NOT emitted as a provision override (it is section-scoped).
+    """
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2024. "
+        "Lain 12 a §:n 2 ja 3 momentti, 13 §:n otsikko sekä 99 § "
+        "ovat voimassa 30 päivään kesäkuuta 2025."
+    )
+
+    overrides = _temporary_provision_expiry_overrides(tree, "2024/100")
+    got = {
+        (o.section, o.subsection, o.special, o.expiry.isoformat()) for o in overrides
+    }
+    assert got == {
+        ("12a", 2, None, "2025-06-30"),
+        ("12a", 3, None, "2025-06-30"),
+        ("13", None, "otsikko", "2025-06-30"),
+    }
+    # The bare whole-section ``99 §`` (no ``§:n`` facet) is NOT a provision override.
+    assert all(o.section != "99" for o in overrides)
+
+
+def test_q3_temporal_lens_shares_canonical_month_table() -> None:
+    """Q3: the references/temporal surface lens and the production date extractor
+    share ONE canonical Finnish month table (no rival copy that can drift)."""
+    from lawvm.finland.references.temporal import _MONTHS_PARTITIVE
+    from lawvm.finland.temporal_lowering import _MONTH_MAP
+
+    assert _MONTHS_PARTITIVE is _MONTH_MAP

@@ -19,6 +19,8 @@ import lxml.etree as etree
 from lawvm.core.ir import LegalAddress
 from lawvm.core.unicode_folds import CF_FORMAT_CPS, ZS_NON_ASCII_SPACE_CPS
 from lawvm.finland.helpers import _norm_num_token, _parse_iso_date
+from lawvm.finland.references.sections import parse_body_provision_tail
+from lawvm.finland.temporal_lowering import _extract_expiry_date_from_text
 
 
 # ---------------------------------------------------------------------------
@@ -1134,36 +1136,30 @@ _TEMPORARY_TITLE_SCOPED_SECTION_RE = re.compile(
 )
 _TEMPORARY_TITLE_SECTION_LABEL_RE = re.compile(r"\d+\s*(?:[a-z](?![a-z]))?")
 _LEADING_CHAPTER_CONTEXT_RE = re.compile(r"^\s*(?:[\d\w]+\s+)*luvun\s+", re.IGNORECASE)
+# Sentence ANCHOR (§1.11 cheap prefilter, not a structural parser): locates a
+# scoped temporary-expiry sentence and splits it into the SUBJECT span (the
+# provision reference, handed to the shared sub-ref grammar) and the DATE-tail
+# span (handed to the canonical expiry-date extractor). The anchor itself does
+# NOT parse provision structure or build a calendar date — both are delegated:
+#   * subject  -> references.sections.parse_body_provision_tail (sections +
+#                 momentti coordination/ranges/letter-suffix) + an otsikko
+#                 facet detector on each section's ``§:n …`` clause;
+#   * datetail -> temporal_lowering._extract_expiry_date_from_text (the canonical
+#                 ``NN päivä[äa]n Kkkuuta YYYY`` recognizer reused across the
+#                 temporal family).
+# The ``päivästä`` start-of-range arm before the date is tolerated and skipped so
+# the bound is read from the terminal date, exactly as before.
 _TEMPORARY_EXPIRY_SENTENCE_RE = re.compile(
     r"(?:Lain|Asetuksen|Päätöksen|Sen)\s+"
     r"(?P<subject>[^.]+?)\s+"
     r"(?:ovat|on)\s+voimassa\s+"
     r"(?:\d{1,2}\s+päivästä\s+[a-zäöå]+\s+)?"
-    r"(?P<day>\d{1,2})\s+päivään\s+"
-    r"(?P<month>[a-zäöå]+)\s+"
-    r"(?P<year>\d{4})",
+    r"(?P<datetail>\d{1,2}\s+päivään\s+[a-zäöå]+\s+\d{4})",
     re.IGNORECASE,
 )
 
-
-def _parse_moment_label_list(raw: str) -> set[int]:
-    labels: set[int] = set()
-    text = _normalize_fi_parse_text(raw)
-    for token in re.split(r'\s*(?:,|ja|sekä)\s*', text.strip(), flags=re.IGNORECASE):
-        token = token.strip()
-        if not token:
-            continue
-        if "\u2013" in token:
-            left, right = token.split("\u2013", 1)
-            if left.strip().isdigit() and right.strip().isdigit():
-                start = int(left.strip())
-                end = int(right.strip())
-                if start <= end:
-                    labels.update(range(start, end + 1))
-            continue
-        if token.isdigit():
-            labels.add(int(token))
-    return labels
+# Otsikko (heading) facet detector for one section's ``N §:n …`` clause body.
+_OTSIKKO_FACET_RE = re.compile(r"\botsikko\b", flags=re.IGNORECASE)
 
 
 def _temporary_provision_expiry_overrides(
@@ -1192,23 +1188,23 @@ def _temporary_provision_expiry_overrides(
         _temporary_provision_expiry_cache[cache_key] = ()
         return ()
     text = _normalize_fi_parse_text(raw_text)
-    month_map = {
-        'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-        'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-        'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-    }
     overrides: list[TemporaryProvisionExpiryOverride] = []
     seen: set[tuple[str, str, int | None, str | None, str]] = set()
 
     for sunset in _TEMPORARY_EXPIRY_SENTENCE_RE.finditer(text):
         subject = sunset.group("subject")
-        month = month_map.get(sunset.group("month").lower())
-        if month is None:
+        # DATE: delegate to the canonical temporal-family expiry-date extractor.
+        # The anchor constrained the tail to ``NN päivään Kkkuuta YYYY`` so the
+        # extractor reads exactly that bound (no earlier essive date can shadow).
+        iso_expiry = _extract_expiry_date_from_text(sunset.group("datetail"))
+        if not iso_expiry:
             continue
-        try:
-            expiry = dt.date(int(sunset.group("year")), month, int(sunset.group("day")))
-        except ValueError:
-            continue
+        expiry = dt.date.fromisoformat(iso_expiry)
+        # SUBJECT: split into per-section ``N §:n …`` clauses (the facet scope),
+        # then delegate the section + momentti structure of each clause to the
+        # shared sub-ref grammar. Only ``§:n``-bodied facets are owned here
+        # (otsikko + momentti); whole-section / bare-``§`` scopes are handled by
+        # _temporary_section_expiry_overrides, so they are NOT emitted here.
         for scoped in re.finditer(
             r'(?P<section>\d+\s*[a-z]?)\s*§:n\s+'
             r'(?P<body>.*?)(?=(?:,\s*|\s+ja\s+|\s+sekä\s+)\d+\s*[a-z]?\s*§:n|$)',
@@ -1219,7 +1215,7 @@ def _temporary_provision_expiry_overrides(
             body = scoped.group("body")
             if not section:
                 continue
-            if re.search(r'\botsikko\b', body, flags=re.IGNORECASE):
+            if _OTSIKKO_FACET_RE.search(body):
                 key = (source_statute_id, section, None, "otsikko", expiry.isoformat())
                 if key not in seen:
                     seen.add(key)
@@ -1233,27 +1229,26 @@ def _temporary_provision_expiry_overrides(
                             rule_id="fi_temporary_exact_provision_expiry",
                         )
                     )
-            for moment in re.finditer(
-                r'(?P<labels>\d+(?:\s*\u2013\s*\d+)?(?:\s*(?:,|ja|sekä)\s*\d+(?:\s*\u2013\s*\d+)?)*)\s+moment',
-                body,
-                flags=re.IGNORECASE,
-            ):
-                for subsection in _parse_moment_label_list(moment.group("labels")):
-                    key = (source_statute_id, section, subsection, None, expiry.isoformat())
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    overrides.append(
-                        TemporaryProvisionExpiryOverride(
-                            target_mid=source_statute_id,
-                            section=section,
-                            subsection=subsection,
-                            special=None,
-                            expiry=expiry,
-                            rule_id="fi_temporary_exact_provision_expiry",
-                        )
+            # Momentti subsections: parse the section's clause through the shared
+            # body sub-ref grammar and keep this section's subsection targets.
+            for target in parse_body_provision_tail(f"{section} §:n {body}"):
+                if target.section_label != section or target.subsection_num is None:
+                    continue
+                subsection = target.subsection_num
+                key = (source_statute_id, section, subsection, None, expiry.isoformat())
+                if key in seen:
+                    continue
+                seen.add(key)
+                overrides.append(
+                    TemporaryProvisionExpiryOverride(
+                        target_mid=source_statute_id,
+                        section=section,
+                        subsection=subsection,
+                        special=None,
+                        expiry=expiry,
+                        rule_id="fi_temporary_exact_provision_expiry",
                     )
-
+                )
     result = tuple(overrides)
     _temporary_provision_expiry_cache[cache_key] = result
     return result
