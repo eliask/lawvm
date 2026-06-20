@@ -285,6 +285,24 @@ def equal_rank_same_source_conflicts(
         query_type=query_type,
         expires_as_of=expires_as_of,
     )
+    return equal_rank_same_source_conflicts_prevalidated(
+        timeline,
+        as_of=as_of,
+        query_type=query_type,
+        territory=territory,
+        expires_as_of=expires_as_of,
+    )
+
+
+def equal_rank_same_source_conflicts_prevalidated(
+    timeline: ProvisionTimeline,
+    *,
+    as_of: str,
+    query_type: str = "governing",
+    territory: Optional[str] = None,
+    expires_as_of: str = "",
+) -> tuple[VersionSelectionTie, ...]:
+    """Return active same-source ties after caller has validated the query."""
     if len(timeline.versions) < 2:
         return ()
 
@@ -623,6 +641,23 @@ def select_active_version_ex(
         query_type=query_type,
         expires_as_of=expires_as_of,
     )
+    return select_active_version_ex_prevalidated(
+        timeline,
+        as_of,
+        query_type=query_type,
+        territory=territory,
+        expires_as_of=expires_as_of,
+    )
+
+
+def select_active_version_ex_prevalidated(
+    timeline: ProvisionTimeline,
+    as_of: str,
+    query_type: str = "governing",
+    territory: Optional[str] = None,
+    expires_as_of: str = "",
+) -> VersionSelectionResult:
+    """Return active-version selection after caller has validated the query."""
     if len(timeline.versions) == 1:
         fast = _select_single_active_version(
             timeline,

@@ -4,8 +4,9 @@ from typing import Any, cast
 
 import pytest
 
-from lawvm.core.ir import IRNode, LegalAddress, ProvisionVersion
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.timeline import materialize_pit_ex
 from lawvm.core.timeline_selection import VersionSelectionCertificate, VersionSelectionResult
 
 
@@ -83,3 +84,49 @@ def test_version_selection_result_rejects_ambiguous_without_scope_dimensions() -
 def test_version_selection_result_rejects_absent_with_version() -> None:
     with pytest.raises(ValueError, match="non-selected"):
         VersionSelectionResult(status="absent", version=_version())
+
+
+def test_materialize_pit_validates_selection_query_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    import lawvm.core.timeline as timeline_mod
+
+    base = IRStatute(
+        statute_id="synthetic",
+        title="Synthetic",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="One"),
+                IRNode(kind=IRNodeKind.SECTION, label="2", text="Two"),
+            ),
+        ),
+    )
+    timelines = {
+        LegalAddress(path=(("section", "1"),)): ProvisionTimeline(
+            address=LegalAddress(path=(("section", "1"),)),
+            versions=(_version(),),
+        ),
+        LegalAddress(path=(("section", "2"),)): ProvisionTimeline(
+            address=LegalAddress(path=(("section", "2"),)),
+            versions=(
+                ProvisionVersion(
+                    effective="2024-01-01",
+                    enacted="2023-12-01",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="2", text="Selected two."),
+                ),
+            ),
+        ),
+    }
+    validate_calls = 0
+    real_validate = timeline_mod._validate_selection_query
+
+    def counting_validate(*args: object, **kwargs: object) -> None:
+        nonlocal validate_calls
+        validate_calls += 1
+        real_validate(*args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod, "_validate_selection_query", counting_validate)
+
+    result = materialize_pit_ex(timelines, "2024-06-01", base=base)
+
+    assert result.status == "materialized"
+    assert validate_calls == 1

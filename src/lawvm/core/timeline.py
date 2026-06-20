@@ -86,12 +86,14 @@ from lawvm.core.timeline_selection import (
     VersionSelectionResult,
     content_is_repeal_placeholder as _content_is_repeal_placeholder,
     eligible as _eligible,
-    equal_rank_same_source_conflicts as _equal_rank_same_source_conflicts,
+    equal_rank_same_source_conflicts_prevalidated as _equal_rank_same_source_conflicts_prevalidated,
     pick_latest as _pick_latest,
     select_active_version as _select_active_version,
     select_active_version_ex as _select_active_version_ex,
+    select_active_version_ex_prevalidated as _select_active_version_ex_prevalidated,
     select_background_version as _select_background_version,
     select_temporary_version as _select_temporary_version,
+    _validate_selection_query,
 )
 from lawvm.core.timeline_temporal_events import (
     apply_standalone_temporal_event as _apply_standalone_temporal_event,
@@ -1138,8 +1140,14 @@ def materialize_pit_ex(
     selection_states: List[_MaterializationSelectionState] = []
     selection_issues: List[TimelineIssue] = []
     inactive_expiry_by_address: Dict[LegalAddress, str] = {}
+    if timelines:
+        _validate_selection_query(
+            as_of=as_of,
+            query_type=query_type,
+            expires_as_of=expires_as_of,
+        )
     for address, tl in timelines.items():
-        for conflict in _equal_rank_same_source_conflicts(
+        for conflict in _equal_rank_same_source_conflicts_prevalidated(
             tl,
             as_of=as_of,
             query_type=query_type,
@@ -1161,7 +1169,7 @@ def materialize_pit_ex(
                 source_statute=conflict.source_statute,
                 emit_warnings=False,
             )
-        selection = select_active_version_ex(
+        selection = _select_active_version_ex_prevalidated(
             tl,
             as_of,
             query_type=query_type,
