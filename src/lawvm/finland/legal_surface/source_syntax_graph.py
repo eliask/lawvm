@@ -921,6 +921,21 @@ def _emit_construction_leaves(
     """
     tape = token_tape or build_token_tape(statute_id, body)
     index = clause_index or build_clause_index(statute_id, body, token_tape=tape)
+    segment_search_start = 0
+    segments = seg_graph.segments
+
+    def _next_segment_index_for_span(start: int, end: int) -> int | None:
+        nonlocal segment_search_start
+        while (
+            segment_search_start < len(segments)
+            and segments[segment_search_start].char_end <= start
+        ):
+            segment_search_start += 1
+        for i in range(segment_search_start, len(segments)):
+            seg = segments[i]
+            if seg.char_start <= start and end <= seg.char_end:
+                return i
+        return None
 
     for sent in index.sentences:
         off = sent.char_start
@@ -952,7 +967,7 @@ def _emit_construction_leaves(
                 status="parsed",
                 families=tuple(sorted(families)),
             )
-            seg_i = _segment_index_for_span(seg_graph, start, end)
+            seg_i = _next_segment_index_for_span(start, end)
             if seg_i is not None and seg_node_id[seg_i] is not None:
                 parent = seg_node_id[seg_i]
                 assert parent is not None  # narrowed above; for the type checker
