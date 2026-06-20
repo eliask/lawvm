@@ -2025,6 +2025,85 @@ def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections()
     assert [migration.section_label for migration in result.membership_migrations] == ["68a", "68b"]
 
 
+def test_precreate_unnumbered_chapter_heading_list_migrates_all_declared_spans() -> None:
+    """A coordinated ``1, 3 ja 6 §`` heading list creates every source chapter."""
+    from lxml import etree
+
+    from lawvm.finland.amendment_chapter_precreate import (
+        PrecreateApplyChaptersRequest,
+        precreate_apply_chapters,
+        source_chapters_from_tree,
+    )
+
+    state = ReplayState(ir=_body(*(_sec(str(idx)) for idx in range(1, 8))))
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <hcontainer name="statuteProvisionsWrapper">
+                <chapter>
+                  <num>1 luku</num>
+                  <heading>Väyläviraston asema ja tehtävät</heading>
+                  <section><num>1 §</num></section>
+                  <section><num>2 §</num></section>
+                </chapter>
+                <chapter>
+                  <num>2 luku</num>
+                  <heading>Väyläviraston organisaatio ja johtaminen</heading>
+                  <section><num>3 §</num></section>
+                  <section><num>4 §</num></section>
+                  <section><num>5 §</num></section>
+                </chapter>
+                <chapter>
+                  <num>3 luku</num>
+                  <heading>Erinäiset säännökset</heading>
+                  <section><num>6 §</num></section>
+                  <section><num>7 §</num></section>
+                </chapter>
+              </hcontainer>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+
+    result = precreate_apply_chapters(
+        PrecreateApplyChaptersRequest(
+            state=state,
+            resolved=[],
+            amendment_id="2018/936",
+            vts_ops_enrich_done=False,
+            source_chapters=source_chapters_from_tree(muutos_tree),
+            johto=(
+                "muutetaan Liikennevirastosta annetun lain nimike ja 1-7 § sekä "
+                "lisätään 1, 3 ja 6 §:n edelle uusi luvun otsikko seuraavasti:"
+            ),
+        )
+    )
+
+    chapters = {
+        child.label: [grand.label for grand in child.children if grand.kind is IRNodeKind.SECTION]
+        for child in result.state.ir.children
+        if child.kind is IRNodeKind.CHAPTER
+    }
+
+    assert chapters == {
+        "1": ["1", "2"],
+        "2": ["3", "4", "5"],
+        "3": ["6", "7"],
+    }
+    assert [migration.section_label for migration in result.membership_migrations] == [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+    ]
+
+
 def test_precreate_same_label_move_migrates_section_into_existing_chapter_from_typed_source() -> None:
     """An explicit same-label move may start an already-live destination chapter."""
     from lxml import etree
@@ -2853,3 +2932,23 @@ def test_2017_93_bench_comparable_first_subsection_replace_drops_stale_flattened
 
     assert [paragraph.label for paragraph in paragraphs] == [str(idx) for idx in range(1, 10)]
     assert "Pelastusopistosta annettu laki (607/2006)." in irnode_to_text(paragraphs[-1])
+
+
+def test_2009_862_flat_statute_2025_item_replace_strips_spurious_chapter_scope() -> None:
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2009/862",
+            mode="legal_pit",
+            as_of="2026-01-01",
+            quiet=True,
+            build_full_products=True,
+        ),
+    )
+
+    section_2 = replay.materialized_state.find_section("2")
+    assert section_2 is not None
+    text = irnode_to_text(section_2)
+
+    assert "elinvoimakeskusten toiminnallisesta ohjauksesta" in text
+    assert "elinkeino-, liikenne- ja ympäristökeskusten toiminnallisesta ohjauksesta" not in text

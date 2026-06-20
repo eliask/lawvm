@@ -872,6 +872,13 @@ def _lift_explicit_scopes_from_cited_version_ops(
             patched.append(op)
             continue
         target_part, target_chapter = scoped_target
+        if target_chapter is not None and master.find_section_path(
+            target_norm,
+            target_chapter,
+            target_part,
+        ) is None and master.find_section_path(target_norm, None, op.target_part) is not None:
+            patched.append(op)
+            continue
         patched.append(
             dc_replace(
                 op,

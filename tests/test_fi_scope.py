@@ -35,6 +35,74 @@ def test_strip_unjustified_chapter_scope_keeps_explicit_chapters_when_master_is_
     assert got[0].target.path == (("chapter", "2"), ("section", "2a"))
 
 
+def test_strip_flat_master_descendant_replace_drops_spurious_chapter_scope() -> None:
+    master = SimpleNamespace(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="2"),),
+        ),
+        find_section_path=lambda section, chapter=None, part=None: (
+            (("section", "2"),)
+            if section == "2" and chapter is None and part is None
+            else None
+        ),
+        duplicate_section_labels=set(),
+    )
+    lo = LegalOperation(
+        op_id="replace_2_1_6",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(
+            path=(("chapter", "1"), ("section", "2"), ("subsection", "1"), ("item", "6"))
+        ),
+    )
+
+    got = strip_unjustified_chapter_scope_from_unique_sections(
+        [lo],
+        "muutetaan Väylävirastosta annetun lain (862/2009) 2 §:n 1 momentin 6 kohta",
+        cast(Any, master),
+    )
+
+    assert got[0].target.path == (("section", "2"), ("subsection", "1"), ("item", "6"))
+    assert "chapter_scope_stripped_flat_unique_descendant" in got[0].provenance_tags
+
+
+def test_strip_flat_master_descendant_replace_keeps_direct_chapter_phrase() -> None:
+    master = SimpleNamespace(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="2"),),
+        ),
+        find_section_path=lambda section, chapter=None, part=None: (
+            (("section", "2"),)
+            if section == "2" and chapter is None and part is None
+            else None
+        ),
+        duplicate_section_labels=set(),
+    )
+    lo = LegalOperation(
+        op_id="replace_1_2_1_6",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(
+            path=(("chapter", "1"), ("section", "2"), ("subsection", "1"), ("item", "6"))
+        ),
+    )
+
+    got = strip_unjustified_chapter_scope_from_unique_sections(
+        [lo],
+        "muutetaan lain 1 luvun 2 §:n 1 momentin 6 kohta",
+        cast(Any, master),
+    )
+
+    assert got[0].target.path == (
+        ("chapter", "1"),
+        ("section", "2"),
+        ("subsection", "1"),
+        ("item", "6"),
+    )
+
+
 def test_strip_unjustified_chapter_scope_keeps_grouped_insert_chunk_binding() -> None:
     master = SimpleNamespace(
         ir=SimpleNamespace(

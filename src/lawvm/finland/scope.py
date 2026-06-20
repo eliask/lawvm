@@ -1001,9 +1001,7 @@ def strip_unjustified_chapter_scope_from_unique_sections(
         if (pd := _lo_path_dict(lo)).get("chapter") and "section" not in pd
     }
 
-    if not _master_has_any_chapters():
-        return los
-
+    master_has_any_chapters = _master_has_any_chapters()
     duplicate_labels = _duplicate_section_labels(master)
     result = []
     for lo in los:
@@ -1015,6 +1013,38 @@ def strip_unjustified_chapter_scope_from_unique_sections(
         scope_confidence = lo.scope_confidence
         special = lo.target.special
         facet = special.value if special is not None else None
+        if not master_has_any_chapters:
+            if not section or not chapter:
+                result.append(lo)
+                continue
+            has_descendant_target = bool(
+                pd.get("subsection")
+                or pd.get("item")
+                or pd.get("paragraph")
+                or facet in {"intro", "heading"}
+            )
+            if (
+                not has_descendant_target
+                or explicit_scope_notes.intersection(scope_tags)
+                or lo.move_clause_target_unit_kind in {"chapter", "part"}
+                or _johtolause_explicitly_binds_chapter_section(johto, str(chapter), str(section))
+                or _johtolause_explicitly_mentions_chaptered_section_target(johto, str(chapter), str(section))
+            ):
+                result.append(lo)
+                continue
+            section_norm = _norm_num_token(str(section))
+            live_path = master.find_section_path(section_norm, None, str(part) if part else None)
+            live_chapter = (
+                next((label for kind, label in live_path if kind == "chapter"), None)
+                if live_path is not None
+                else None
+            )
+            if live_path is None or live_chapter is not None or section_norm in duplicate_labels:
+                result.append(lo)
+                continue
+            lo_new = _lo_with_path_update(lo, chapter=None)
+            result.append(lo_with_added_scope_tag(lo_new, "chapter_scope_stripped_flat_unique_descendant"))
+            continue
         if not section or not chapter:
             result.append(lo)
             continue

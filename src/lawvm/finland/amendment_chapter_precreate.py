@@ -37,6 +37,14 @@ _UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE = re.compile(
     r"luvun\s+otsikko",
     re.IGNORECASE,
 )
+_UNNUMBERED_CHAPTER_HEADING_ANCHOR_PHRASE_RE = re.compile(
+    r"§:n\s+edelle\s+uusi\s+luvun\s+otsikko",
+    re.IGNORECASE,
+)
+_ANCHOR_LIST_TOKEN_RE = re.compile(
+    r"\d{1,4}\s{0,3}[a-z](?![a-z])|\d{1,4}|,|\bja\b",
+    re.IGNORECASE,
+)
 _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
     r"(?P<section>(?:\d{1,4}\s{0,3}[a-z]|\d{1,4}))\s{0,3}§\s{0,3},?\s{0,3}"
     r"joka\s{1,8}(?:samalla\s{1,8}siirretään|siirretään)\s{1,8}"
@@ -236,7 +244,45 @@ def _unnumbered_chapter_heading_anchor_labels(johto: str) -> frozenset[str]:
         _section_label_from_num_text(match.group("section"))
         for match in _UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE.finditer(johto)
     }
+    for match in _UNNUMBERED_CHAPTER_HEADING_ANCHOR_PHRASE_RE.finditer(johto):
+        labels.update(_chapter_heading_anchor_list_labels_before(johto[: match.start()]))
     return frozenset(label for label in labels if label)
+
+
+def _chapter_heading_anchor_list_labels_before(prefix: str) -> tuple[str, ...]:
+    stripped_prefix = prefix.rstrip()
+    tokens = list(_ANCHOR_LIST_TOKEN_RE.finditer(stripped_prefix))
+    if not tokens:
+        return ()
+
+    suffix_tokens: list[str] = []
+    expected_end = len(stripped_prefix)
+    for token in reversed(tokens):
+        if stripped_prefix[token.end() : expected_end].strip():
+            break
+        suffix_tokens.append(token.group(0))
+        expected_end = token.start()
+    suffix_tokens.reverse()
+
+    labels: list[str] = []
+    expect_label = True
+    saw_separator = False
+    for token in suffix_tokens:
+        token_norm = token.lower()
+        is_separator = token_norm == "," or token_norm == "ja"
+        if expect_label:
+            if is_separator:
+                return ()
+            labels.append(_section_label_from_num_text(token))
+            expect_label = False
+            continue
+        if not is_separator:
+            return ()
+        saw_separator = True
+        expect_label = True
+    if expect_label or not saw_separator:
+        return ()
+    return tuple(label for label in labels if label)
 
 
 def _singular_same_label_move_starts(johto: str) -> dict[str, str]:
