@@ -1237,24 +1237,32 @@ class _OracleReadMemoizingCorpus:
     ``read_oracle``/``read_source`` return the cached PIT consolidated artifact,
     which the store treats as immutable for the duration of a run (see
     ``TransparentStore.read_oracle``); memoizing them by ``sid`` returns the
-    byte-identical payload, so the exported DB is unchanged. The cache is
-    process-local, lives only for one export, and is bounded by the number of
-    distinct cited target statutes (the corpus already holds these bytes), so it
-    adds no unbounded memory pressure. Every other corpus method is delegated
-    untouched.
+    byte-identical payload, so the exported DB is unchanged.
+
+    Finland's transparent store also exposes ``oracle_path_index``: a
+    sid-to-selected-locator index using the same latest-cached-editorial
+    selector as ``read_oracle``. When present, read that selected locator
+    directly so preview resolution does not re-run the per-statute consolidated
+    artifact selection scan for every cited target statute. If the corpus lacks
+    that optional surface, or if the indexed locator has no bytes, fall back to
+    the old ``read_oracle`` route. The cache is process-local, lives only for
+    one export, and is bounded by the number of distinct cited target statutes
+    (the corpus already holds these bytes), so it adds no unbounded memory
+    pressure. Every other corpus method is delegated untouched.
     """
 
-    __slots__ = ("_corpus", "_oracle_cache", "_source_cache")
+    __slots__ = ("_corpus", "_oracle_cache", "_source_cache", "_oracle_path_index")
 
     def __init__(self, corpus: Any) -> None:
         self._corpus = corpus
         self._oracle_cache: Dict[str, Any] = {}
         self._source_cache: Dict[str, Any] = {}
+        self._oracle_path_index: dict[str, str] | None = None
 
     def read_oracle(self, sid: str) -> Any:
         cache = self._oracle_cache
         if sid not in cache:
-            cache[sid] = self._corpus.read_oracle(sid)
+            cache[sid] = self._read_oracle_via_selected_locator(sid)
         return cache[sid]
 
     def read_source(self, sid: str) -> Any:
@@ -1262,6 +1270,19 @@ class _OracleReadMemoizingCorpus:
         if sid not in cache:
             cache[sid] = self._corpus.read_source(sid)
         return cache[sid]
+
+    def _read_oracle_via_selected_locator(self, sid: str) -> Any:
+        oracle_path_index = getattr(self._corpus, "oracle_path_index", None)
+        read_locator = getattr(self._corpus, "read_locator", None)
+        if callable(oracle_path_index) and callable(read_locator):
+            if self._oracle_path_index is None:
+                self._oracle_path_index = dict(oracle_path_index())
+            locator = self._oracle_path_index.get(sid, "")
+            if locator:
+                data = read_locator(locator)
+                if data is not None:
+                    return data
+        return self._corpus.read_oracle(sid)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._corpus, name)

@@ -648,6 +648,68 @@ def test_export_always_persists_lawvm_interlinks(
         conn.close()
 
 
+def test_oracle_preview_proxy_reads_selected_locator_once() -> None:
+    class Corpus:
+        def __init__(self) -> None:
+            self.index_calls = 0
+            self.locator_reads: list[str] = []
+            self.oracle_reads: list[str] = []
+
+        def oracle_path_index(self) -> dict[str, str]:
+            self.index_calls += 1
+            return {
+                "2004/301": "finlex://sd-cons/2004/301/fin@20240001/main.xml",
+            }
+
+        def read_locator(self, locator: str) -> bytes | None:
+            self.locator_reads.append(locator)
+            return b"<oracle/>"
+
+        def read_oracle(self, sid: str) -> bytes | None:
+            self.oracle_reads.append(sid)
+            return b"<slow-oracle/>"
+
+        def read_source(self, sid: str) -> bytes | None:
+            return None
+
+    corpus = Corpus()
+    proxy = etg._OracleReadMemoizingCorpus(corpus)
+
+    assert proxy.read_oracle("2004/301") == b"<oracle/>"
+    assert proxy.read_oracle("2004/301") == b"<oracle/>"
+    assert corpus.index_calls == 1
+    assert corpus.locator_reads == ["finlex://sd-cons/2004/301/fin@20240001/main.xml"]
+    assert corpus.oracle_reads == []
+
+
+def test_oracle_preview_proxy_falls_back_when_indexed_locator_missing() -> None:
+    class Corpus:
+        def __init__(self) -> None:
+            self.oracle_reads: list[str] = []
+
+        def oracle_path_index(self) -> dict[str, str]:
+            return {
+                "2004/301": "finlex://sd-cons/2004/301/fin@20240001/main.xml",
+            }
+
+        def read_locator(self, locator: str) -> bytes | None:
+            return None
+
+        def read_oracle(self, sid: str) -> bytes | None:
+            self.oracle_reads.append(sid)
+            return b"<fallback-oracle/>"
+
+        def read_source(self, sid: str) -> bytes | None:
+            return None
+
+    corpus = Corpus()
+    proxy = etg._OracleReadMemoizingCorpus(corpus)
+
+    assert proxy.read_oracle("2004/301") == b"<fallback-oracle/>"
+    assert proxy.read_oracle("2004/301") == b"<fallback-oracle/>"
+    assert corpus.oracle_reads == ["2004/301"]
+
+
 def test_export_accepts_non_fi_profile_and_runtime_hooks(
     tmp_path: Path,
 ) -> None:
