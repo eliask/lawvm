@@ -4232,6 +4232,20 @@ def test_build_replay_products_accepts_lifecycle_events_for_materialization() ->
 def test_replay_products_require_typed_effect_graph_records() -> None:
     state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
 
+    with pytest.raises(TypeError, match="temporal_events"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            temporal_events=cast(Any, ("temporal:1",)),
+        )
+    with pytest.raises(TypeError, match="migration_events"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            migration_events=cast(Any, ("migration:1",)),
+        )
     with pytest.raises(TypeError, match="source_effects"):
         ReplayProducts(
             replay_fold_state=state,

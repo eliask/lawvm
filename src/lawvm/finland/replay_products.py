@@ -148,9 +148,15 @@ class ReplayProducts:
     timeline_version_dedupes: tuple["TimelineVersionDedupeRecord", ...] = ()
 
     def __post_init__(self) -> None:
+        temporal_events = tuple(self.temporal_events)
+        migration_events = tuple(self.migration_events)
         source_effects = tuple(self.source_effects)
         effect_relations = tuple(self.effect_relations)
         effect_lifecycle_events = tuple(self.effect_lifecycle_events)
+        if not all(isinstance(event, TemporalEvent) for event in temporal_events):
+            raise TypeError("ReplayProducts.temporal_events must contain TemporalEvent records")
+        if not all(isinstance(event, MigrationEvent) for event in migration_events):
+            raise TypeError("ReplayProducts.migration_events must contain MigrationEvent records")
         if not all(isinstance(effect, EffectRef) for effect in source_effects):
             raise TypeError("ReplayProducts.source_effects must contain EffectRef records")
         if not all(isinstance(relation, EffectRelation) for relation in effect_relations):
@@ -185,6 +191,8 @@ class ReplayProducts:
             effect_relations=effect_relations,
             effect_lifecycle_events=effect_lifecycle_events,
         )
+        self.temporal_events = temporal_events
+        self.migration_events = migration_events
         self.source_effects = source_effects
         self.effect_relations = effect_relations
         self.effect_lifecycle_events = effect_lifecycle_events
@@ -864,7 +872,7 @@ def _merge_temporal_events(
         if event.kind == "expire":
             exact_addresses = tuple(
                 str(address)
-                for address in getattr(event.scope, "exact_addresses", ()) or ()
+                for address in event.scope.exact_addresses
             )
             return (
                 event.kind,
