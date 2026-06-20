@@ -18,6 +18,7 @@ from __future__ import annotations
 from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction, TextPatchSpec, TextSelector
 
 import datetime as dt
+import sys
 from types import SimpleNamespace
 from typing import Any, Iterable, List, Optional, cast
 from unittest.mock import patch
@@ -273,6 +274,23 @@ def test_call_replay_xml_legacy_fallback_propagates_sinks() -> None:
         "compiled_ops_out": compiled_ops,
         "failed_ops_out": failed_ops,
     }
+
+
+def test_call_replay_xml_quiet_suppresses_stdout_and_stderr(capsys) -> None:
+    def fake_replay_xml(sid: str, *, mode: str, quiet: bool = False) -> str:
+        print("REPLACE 10 luku otsikko -> FAILED")
+        print("COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED", file=sys.stderr)
+        return f"{sid}:{mode}:{quiet}"
+
+    result = call_replay_xml(
+        fake_replay_xml,
+        request=ReplayXmlRequest(parent_id="2000/1", mode="legal_pit", quiet=True),
+    )
+
+    captured = capsys.readouterr()
+    assert result == "2000/1:legal_pit:True"
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 def test_call_replay_xml_legacy_fallback_filters_fake_signature() -> None:

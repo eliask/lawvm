@@ -332,8 +332,32 @@ def test_build_verify_facade_dedupes_duplicate_findings() -> None:
     assert facade.finding_ledger == (finding,)
 
 
-def test_verify_full_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -> None:
-    verify_full("1978/38", "legal_pit")
+def test_verify_full_suppresses_raw_replay_failed_chatter_for_1978_38(monkeypatch, capsys) -> None:
+    base_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1"),))
+
+    class FakeCorpus:
+        def read_source(self, _sid: str) -> bytes:
+            return b"<root/>"
+
+    def fake_process_muutoslaki(request, _sinks=None):
+        print("REPLACE 10 luku otsikko → FAILED")
+        print("INSERT 10 luku 16 § 2 mom → FAILED")
+        return SimpleNamespace(output=request.state)
+
+    monkeypatch.setattr("lawvm.tools.verify.get_corpus", lambda: FakeCorpus())
+    monkeypatch.setattr("lawvm.tools.verify.check_parse", lambda _tree, context="": [])
+    monkeypatch.setattr(
+        "lawvm.tools.verify.StatuteContext.from_xml",
+        lambda _xml, _postprocessor: SimpleNamespace(base_ir=base_ir, title="Synthetic"),
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.verify._resolve_applicable_amendment_records",
+        lambda _sid, _mode: ([{"statute_id": "2001/1"}], None, None),
+    )
+    monkeypatch.setattr("lawvm.tools.verify.verify_extract", lambda _sid, _amendment_id: [])
+    monkeypatch.setattr("lawvm.tools.verify.process_muutoslaki", fake_process_muutoslaki)
+
+    verify_full("1991/1", "legal_pit")
 
     captured = capsys.readouterr()
     merged = captured.out + captured.err
