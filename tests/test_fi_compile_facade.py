@@ -46,6 +46,11 @@ from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.phase_result import Finding, Observation, Obligation, PhaseResult, Violation
 from lawvm.core.timeline import select_active_version
 from lawvm.core.provenance import MigrationEvent
+from lawvm.finland._compile import (
+    _merge_unique_effect_lifecycle_events,
+    _merge_unique_effect_refs,
+    _merge_unique_effect_relations,
+)
 from lawvm.finland.strict_profile import FINLAND_INGESTION_V1
 
 
@@ -262,6 +267,14 @@ class TestFromPhaseResult:
         assert facade.bundle.source_effects == (target_effect,)
         assert facade.bundle.effect_relations == (relation,)
         assert facade.bundle.effect_lifecycle_events == (event,)
+
+    def test_finland_facade_effect_graph_merges_reject_untyped_lanes(self):
+        with pytest.raises(TypeError, match="source_effects"):
+            _merge_unique_effect_refs(cast(Any, ("effect:1",)))
+        with pytest.raises(TypeError, match="effect_relations"):
+            _merge_unique_effect_relations(cast(Any, ("relation:1",)))
+        with pytest.raises(TypeError, match="effect_lifecycle_events"):
+            _merge_unique_effect_lifecycle_events(cast(Any, ("lifecycle:1",)))
 
     def test_canonical_bundle_output_rejects_duplicate_temporal_events(self):
         explicit = TemporalEvent(

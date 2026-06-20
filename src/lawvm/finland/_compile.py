@@ -46,11 +46,32 @@ __all__ = [
 _FI_JOHTO_GROUP_PREFIX = "finland-johto:"
 
 
+def _require_effect_ref(value: object) -> EffectRef:
+    if not isinstance(value, EffectRef):
+        raise TypeError("Finland facade source_effects must contain EffectRef records")
+    return value
+
+
+def _require_effect_relation(value: object) -> EffectRelation:
+    if not isinstance(value, EffectRelation):
+        raise TypeError("Finland facade effect_relations must contain EffectRelation records")
+    return value
+
+
+def _require_effect_lifecycle_event(value: object) -> EffectLifecycleEvent:
+    if not isinstance(value, EffectLifecycleEvent):
+        raise TypeError(
+            "Finland facade effect_lifecycle_events must contain EffectLifecycleEvent records"
+        )
+    return value
+
+
 def _merge_unique_effect_refs(*lanes: Sequence[EffectRef]) -> tuple[EffectRef, ...]:
     seen: dict[str, EffectRef] = {}
     merged: list[EffectRef] = []
     for lane in lanes:
-        for effect in lane:
+        for value in lane:
+            effect = _require_effect_ref(value)
             previous = seen.get(effect.effect_id)
             if previous is None:
                 seen[effect.effect_id] = effect
@@ -65,7 +86,8 @@ def _merge_unique_effect_relations(*lanes: Sequence[EffectRelation]) -> tuple[Ef
     seen: dict[str, EffectRelation] = {}
     merged: list[EffectRelation] = []
     for lane in lanes:
-        for relation in lane:
+        for value in lane:
+            relation = _require_effect_relation(value)
             previous = seen.get(relation.relation_id)
             if previous is None:
                 seen[relation.relation_id] = relation
@@ -85,7 +107,8 @@ def _merge_unique_effect_lifecycle_events(
     seen: dict[str, EffectLifecycleEvent] = {}
     merged: list[EffectLifecycleEvent] = []
     for lane in lanes:
-        for event in lane:
+        for value in lane:
+            event = _require_effect_lifecycle_event(value)
             previous = seen.get(event.lifecycle_event_id)
             if previous is None:
                 seen[event.lifecycle_event_id] = event
