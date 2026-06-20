@@ -311,6 +311,8 @@ def test_get_unregistered_comparator_fails_loud() -> None:
 
 
 def test_run_comparator_validates_return_type() -> None:
-    register_bench_comparator("badjuris", lambda: "not a result")  # type: ignore[arg-type,return-value]
+    # Deliberately register a comparator with the wrong return type to exercise
+    # run_bench_comparator's runtime type guard.
+    register_bench_comparator("badjuris", lambda: "not a result")  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError):
         run_bench_comparator("badjuris")

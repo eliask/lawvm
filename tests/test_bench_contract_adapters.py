@@ -16,22 +16,31 @@ from lawvm.core.bench_contract import (
 # ---------------------------------------------------------------------------
 
 
-def _uk_result(**kw):
+def _uk_result(
+    *,
+    status: str = "OK",
+    n_enacted_eids: int = 10,
+    n_oracle_eids: int = 12,
+    n_common: int = 8,
+    score: float = 8 / 12,
+    text_score: float = -1.0,
+    error: str = "",
+):
     from lawvm.tools import uk_bench
 
-    base = dict(
+    return uk_bench._BenchResult(
         statute_id="ukpga/2000/1",
         act_type="ukpga",
         year=2000,
         n_effects=5,
-        n_enacted_eids=10,
-        n_oracle_eids=12,
-        n_common=8,
-        score=8 / 12,
-        status="OK",
+        n_enacted_eids=n_enacted_eids,
+        n_oracle_eids=n_oracle_eids,
+        n_common=n_common,
+        score=score,
+        status=status,
+        text_score=text_score,
+        error=error,
     )
-    base.update(kw)
-    return uk_bench._BenchResult(**base)
 
 
 def test_uk_registered() -> None:
@@ -89,23 +98,27 @@ def test_uk_err_is_crash() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _ee_result(**kw):
+def _ee_result(
+    *,
+    sec_match: float = 0.8,
+    o_secs: int = 10,
+    r_secs: int = 10,
+    status: str = "OK",
+):
     from lawvm.tools import ee_bench
 
-    base = dict(
+    return ee_bench._BenchResult(
         grupi_id="g",
         base_id="b",
         oracle_id="o",
         title="t",
         n_ops=2,
         n_divs=3,
-        sec_match=0.8,
-        r_secs=10,
-        o_secs=10,
-        status="OK",
+        sec_match=sec_match,
+        r_secs=r_secs,
+        o_secs=o_secs,
+        status=status,
     )
-    base.update(kw)
-    return ee_bench._BenchResult(**base)
 
 
 def test_ee_registered() -> None:
@@ -155,30 +168,39 @@ def test_ee_exception_is_crash() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _nz_result(**kw):
+def _nz_result(
+    *,
+    status: str = "OK",
+    slice_nodes: int = 10,
+    slice_agreements: int = 8,
+    text_similarity: float = 0.9,
+    residual_family_counts: dict[str, int] | None = None,
+):
     from lawvm.tools import nz_bench
 
-    base = dict(
+    return nz_bench._WorkResult(
         work_id="w1",
         families=(),
-        status="OK",
+        status=status,
         transitions_replayed=1,
         transitions_refused=0,
         ops_replayed=1,
-        slice_nodes=10,
-        slice_agreements=8,
+        slice_nodes=slice_nodes,
+        slice_agreements=slice_agreements,
         all_slices_agree=False,
         refusals_verification_failed=0,
         refusals_refusal_blocked=0,
         families_not_attempted=0,
         would_replay_if_refusals_ignored=0,
-        text_similarity=0.9,
+        text_similarity=text_similarity,
         tree_similarity=0.7,
         tree_similarity_stable=0.7,
-        residual_family_counts={"temporal_mismatch": 2},
+        residual_family_counts=(
+            {"temporal_mismatch": 2}
+            if residual_family_counts is None
+            else residual_family_counts
+        ),
     )
-    base.update(kw)
-    return nz_bench._WorkResult(**base)
 
 
 def test_nz_registered() -> None:
@@ -244,22 +266,29 @@ def _us_window():
     )
 
 
-def _us_result(**kw):
+def _us_result(
+    *,
+    status: str = "evaluated",
+    oracle_changed: int = 10,
+    agreements: int = 7,
+    lawvm_wrong: int = 2,
+    oracle_suspect: int = 1,
+    missing_source: int = 0,
+    sunset_reversion: int = 0,
+):
     from lawvm.us_federal import bench as us_bench
 
-    base = dict(
+    return us_bench.WindowResult(
         window=_us_window(),
-        status="evaluated",
-        oracle_changed=10,
-        agreements=7,
-        lawvm_wrong=2,
-        oracle_suspect=1,
-        missing_source=0,
-        sunset_reversion=0,
+        status=status,
+        oracle_changed=oracle_changed,
+        agreements=agreements,
+        lawvm_wrong=lawvm_wrong,
+        oracle_suspect=oracle_suspect,
+        missing_source=missing_source,
+        sunset_reversion=sunset_reversion,
         refusals=0,
     )
-    base.update(kw)
-    return us_bench.WindowResult(**base)
 
 
 def test_us_registered() -> None:
