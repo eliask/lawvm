@@ -298,6 +298,7 @@ def build_amendment_bundle(
             parent_id=statute_id,
             mode=mode,
             stop_before=source_id,
+            build_full_products=False,
             quiet=True,
         ),
     )

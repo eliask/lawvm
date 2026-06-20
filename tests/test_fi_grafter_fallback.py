@@ -108,6 +108,7 @@ from lawvm.finland.replay_horizon import (
     oracle_version_future_repeal_only_uses_cutoff_date as _oracle_version_future_repeal_only_uses_cutoff_date,
 )
 from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
+from lawvm.finland.replay_request import ReplayXmlRequest
 from lawvm.finland.restructure_plan import (
     resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan,
 )
@@ -207,6 +208,7 @@ from lawvm.finland.scope import assign_scope_from_renumber_destinations
 from lawvm.finland.source_pathology import build_container_replace_target_absent_pathology
 from lawvm.finland.statute import ReplayState, StatuteContext
 from lawvm.finland.restructure_plan import StructuralTransformPlan
+import lawvm.tools.inspect_amendment as inspect_amendment
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from lawvm.tools.trace_section import build_trace_bundle
 
@@ -6223,6 +6225,21 @@ def test_build_amendment_bundle_keeps_post_move_clause_trailing_replace_targets(
     assert any(op.endswith("80 §") for op in compiled)
     assert any(op.endswith("81 §") for op in compiled)
     assert any(op.endswith("82 §") for op in compiled)
+
+
+def test_build_amendment_bundle_requests_replay_fold_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {}
+
+    def fake_call_replay_xml(_fn: object, *, request: ReplayXmlRequest) -> object:
+        captured["build_full_products"] = request.build_full_products
+        raise RuntimeError("stop after replay request")
+
+    monkeypatch.setattr(inspect_amendment, "call_replay_xml", fake_call_replay_xml)
+
+    with pytest.raises(RuntimeError, match="stop after replay request"):
+        build_amendment_bundle("2014/917", "2020/1207", "legal_pit")
+
+    assert captured == {"build_full_products": False}
 
 
 def test_build_amendment_bundle_salvages_malformed_chapter_insert_surface() -> None:
