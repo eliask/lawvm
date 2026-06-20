@@ -14,6 +14,7 @@ from lawvm.core.effect_lifecycle import (
     EffectRelation,
     lower_lifecycle_events_to_temporal_events,
     validate_effect_graph_closure,
+    validate_effect_graph_unique_ids,
 )
 from lawvm.core.identity_ledger import IdentityLedger
 from lawvm.core.provenance import MigrationEvent
@@ -165,26 +166,12 @@ class ReplayProducts:
             raise TypeError(
                 "ReplayProducts.effect_lifecycle_events must contain EffectLifecycleEvent records"
             )
-        seen_effect_ids: set[str] = set()
-        for effect in source_effects:
-            if effect.effect_id in seen_effect_ids:
-                raise ValueError(f"ReplayProducts.source_effects duplicate effect_id: {effect.effect_id!r}")
-            seen_effect_ids.add(effect.effect_id)
-        seen_relation_ids: set[str] = set()
-        for relation in effect_relations:
-            if relation.relation_id in seen_relation_ids:
-                raise ValueError(
-                    f"ReplayProducts.effect_relations duplicate relation_id: {relation.relation_id!r}"
-                )
-            seen_relation_ids.add(relation.relation_id)
-        seen_lifecycle_event_ids: set[str] = set()
-        for event in effect_lifecycle_events:
-            if event.lifecycle_event_id in seen_lifecycle_event_ids:
-                raise ValueError(
-                    "ReplayProducts.effect_lifecycle_events duplicate "
-                    f"lifecycle_event_id: {event.lifecycle_event_id!r}"
-                )
-            seen_lifecycle_event_ids.add(event.lifecycle_event_id)
+        validate_effect_graph_unique_ids(
+            subject="ReplayProducts",
+            source_effects=source_effects,
+            effect_relations=effect_relations,
+            effect_lifecycle_events=effect_lifecycle_events,
+        )
         validate_effect_graph_closure(
             subject="ReplayProducts",
             source_effects=source_effects,

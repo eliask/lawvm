@@ -28,6 +28,7 @@ from lawvm.core.effect_lifecycle import (
     EffectRelation,
     lower_lifecycle_events_to_temporal_events,
     validate_effect_graph_closure,
+    validate_effect_graph_unique_ids,
 )
 from lawvm.core.event_summaries import (
     count_events_with_activation_rules,
@@ -670,26 +671,12 @@ class CanonicalBundle:
             raise TypeError(
                 "CanonicalBundle.effect_lifecycle_events must contain EffectLifecycleEvent records"
             )
-        seen_effect_ids: set[str] = set()
-        for effect in self.source_effects:
-            if effect.effect_id in seen_effect_ids:
-                raise ValueError(f"CanonicalBundle.source_effects duplicate effect_id: {effect.effect_id!r}")
-            seen_effect_ids.add(effect.effect_id)
-        seen_relation_ids: set[str] = set()
-        for relation in self.effect_relations:
-            if relation.relation_id in seen_relation_ids:
-                raise ValueError(
-                    f"CanonicalBundle.effect_relations duplicate relation_id: {relation.relation_id!r}"
-                )
-            seen_relation_ids.add(relation.relation_id)
-        seen_lifecycle_event_ids: set[str] = set()
-        for event in self.effect_lifecycle_events:
-            if event.lifecycle_event_id in seen_lifecycle_event_ids:
-                raise ValueError(
-                    "CanonicalBundle.effect_lifecycle_events duplicate "
-                    f"lifecycle_event_id: {event.lifecycle_event_id!r}"
-                )
-            seen_lifecycle_event_ids.add(event.lifecycle_event_id)
+        validate_effect_graph_unique_ids(
+            subject="CanonicalBundle",
+            source_effects=self.source_effects,
+            effect_relations=self.effect_relations,
+            effect_lifecycle_events=self.effect_lifecycle_events,
+        )
         validate_effect_graph_closure(
             subject="CanonicalBundle",
             source_effects=self.source_effects,

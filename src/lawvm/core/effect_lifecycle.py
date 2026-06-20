@@ -531,6 +531,40 @@ def merge_unique_effect_lifecycle_events(
     return tuple(merged)
 
 
+def validate_effect_graph_unique_ids(
+    *,
+    subject: str,
+    source_effects: tuple[EffectRef, ...],
+    effect_relations: tuple[EffectRelation, ...],
+    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...],
+) -> None:
+    """Validate that graph carriers do not contain duplicate stable IDs."""
+
+    seen_effect_ids: set[str] = set()
+    for effect in source_effects:
+        if effect.effect_id in seen_effect_ids:
+            raise ValueError(
+                f"{subject}.source_effects duplicate effect_id: {effect.effect_id!r}"
+            )
+        seen_effect_ids.add(effect.effect_id)
+    seen_relation_ids: set[str] = set()
+    for relation in effect_relations:
+        if relation.relation_id in seen_relation_ids:
+            raise ValueError(
+                f"{subject}.effect_relations duplicate relation_id: "
+                f"{relation.relation_id!r}"
+            )
+        seen_relation_ids.add(relation.relation_id)
+    seen_lifecycle_event_ids: set[str] = set()
+    for event in effect_lifecycle_events:
+        if event.lifecycle_event_id in seen_lifecycle_event_ids:
+            raise ValueError(
+                f"{subject}.effect_lifecycle_events duplicate "
+                f"lifecycle_event_id: {event.lifecycle_event_id!r}"
+            )
+        seen_lifecycle_event_ids.add(event.lifecycle_event_id)
+
+
 def legal_address_wire(address: Optional[LegalAddress]) -> Optional[dict[str, object]]:
     """Project a typed legal address into the stable effect-graph wire shape."""
 

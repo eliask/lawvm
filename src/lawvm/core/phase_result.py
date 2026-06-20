@@ -68,6 +68,7 @@ from lawvm.core.effect_lifecycle import (
     merge_unique_effect_lifecycle_events,
     merge_unique_effect_refs,
     merge_unique_effect_relations,
+    validate_effect_graph_unique_ids,
 )
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.temporal import TemporalEvent
@@ -104,32 +105,6 @@ def _checked_tuple(subject: str, values: Iterable[object], item_type: type[_C]) 
         if not isinstance(value, item_type):
             raise TypeError(f"{subject} must contain {item_type.__name__} instances")
     return cast(tuple[_C, ...], resolved)
-
-
-def _validate_effect_graph_ids(
-    *,
-    source_effects: tuple[EffectRef, ...],
-    effect_relations: tuple[EffectRelation, ...],
-    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...],
-) -> None:
-    seen_effect_ids: set[str] = set()
-    for effect in source_effects:
-        if effect.effect_id in seen_effect_ids:
-            raise ValueError(f"PhaseResult.source_effects duplicate effect_id: {effect.effect_id!r}")
-        seen_effect_ids.add(effect.effect_id)
-    seen_relation_ids: set[str] = set()
-    for relation in effect_relations:
-        if relation.relation_id in seen_relation_ids:
-            raise ValueError(f"PhaseResult.effect_relations duplicate relation_id: {relation.relation_id!r}")
-        seen_relation_ids.add(relation.relation_id)
-    seen_lifecycle_event_ids: set[str] = set()
-    for event in effect_lifecycle_events:
-        if event.lifecycle_event_id in seen_lifecycle_event_ids:
-            raise ValueError(
-                "PhaseResult.effect_lifecycle_events duplicate "
-                f"lifecycle_event_id: {event.lifecycle_event_id!r}"
-            )
-        seen_lifecycle_event_ids.add(event.lifecycle_event_id)
 
 
 @dataclass(frozen=True)
@@ -316,7 +291,8 @@ class PhaseResult(Generic[T]):
             effect_lifecycle_events,
             EffectLifecycleEvent,
         )
-        _validate_effect_graph_ids(
+        validate_effect_graph_unique_ids(
+            subject="PhaseResult",
             source_effects=resolved_source_effects,
             effect_relations=resolved_effect_relations,
             effect_lifecycle_events=resolved_effect_lifecycle_events,
