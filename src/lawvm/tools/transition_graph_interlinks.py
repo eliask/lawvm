@@ -585,6 +585,10 @@ class SurfaceTextSpanPlacer:
     _segment_groups_cache: Dict[str, list[tuple[str, list[RenderedTextSegment]]]] = (
         dataclasses.field(default_factory=dict)
     )
+    _surface_scan_groups_cache: Dict[
+        tuple[str, str],
+        list[tuple[str, list[RenderedTextSegment], int]],
+    ] = dataclasses.field(default_factory=dict)
     _locator_segment_index: dict[str, list[tuple[str, list[RenderedTextSegment]]]] | None = None
     _token_segment_groups_cache: Dict[str, list[tuple[str, list[RenderedTextSegment]]]] = (
         dataclasses.field(default_factory=dict)
@@ -593,9 +597,6 @@ class SurfaceTextSpanPlacer:
     _lower_segment_groups: list[
         tuple[str, list[tuple[RenderedTextSegment, str]]]
     ] | None = None
-    _normalized_segment_cache: dict[int, tuple[str, list[int]]] = (
-        dataclasses.field(default_factory=dict)
-    )
 
     def _build_lower_segment_groups(
         self,
@@ -739,14 +740,42 @@ class SurfaceTextSpanPlacer:
             for date, segments in self._segment_groups_for_locator(locator)
         ]
 
-    def normalized_segment(self, segment: RenderedTextSegment) -> tuple[str, list[int]]:
-        key = id(segment)
-        cached = self._normalized_segment_cache.get(key)
+    def scan_groups_for_surface(
+        self,
+        surface_text: str,
+        locator: str,
+    ) -> list[tuple[str, list[RenderedTextSegment], int]]:
+        token = _required_surface_token(surface_text)
+        key = (locator, token)
+        cached = self._surface_scan_groups_cache.get(key)
         if cached is not None:
             return cached
-        normalized = _normalize_surface_with_map(segment.text)
-        self._normalized_segment_cache[key] = normalized
-        return normalized
+        scoped_groups = self._segment_groups_for_locator(locator)
+        if not token:
+            groups = [
+                (date, segments, len(segments))
+                for date, segments in scoped_groups
+            ]
+            self._surface_scan_groups_cache[key] = groups
+            return groups
+        if not locator:
+            token_groups = dict(self._segment_groups_for_token(token))
+            groups = [
+                (date, token_groups.get(date, []), len(segments))
+                for date, segments in scoped_groups
+            ]
+            self._surface_scan_groups_cache[key] = groups
+            return groups
+        groups = [
+            (
+                date,
+                [segment for segment in segments if token in segment.text.lower()],
+                len(segments),
+            )
+            for date, segments in scoped_groups
+        ]
+        self._surface_scan_groups_cache[key] = groups
+        return groups
 
     def place(
         self,
@@ -884,20 +913,23 @@ def place_occurrence_spans(
     # ``_segment_matches_locator`` filter — both match the locator as a contiguous
     # part-window of the address — but cached across rows); else filter inline.
     if placer is not None:
-        scoped_groups = placer._segment_groups_for_locator(locator)
+        scan_groups = placer.scan_groups_for_surface(surface_text, locator)
     else:
         scoped_groups = [
             (date, [s for s in segments if _segment_matches_locator(s.address, locator)])
             for date, segments in segments_by_date.items()
         ]
-    required_token = _required_surface_token(surface_text)
-    for date, scoped in scoped_groups:
-        if required_token:
-            scan_scoped = [
-                segment for segment in scoped if required_token in segment.text.lower()
-            ]
-        else:
-            scan_scoped = scoped
+        required_token = _required_surface_token(surface_text)
+        scan_groups = []
+        for date, scoped in scoped_groups:
+            if required_token:
+                scan_scoped = [
+                    segment for segment in scoped if required_token in segment.text.lower()
+                ]
+            else:
+                scan_scoped = scoped
+            scan_groups.append((date, scan_scoped, len(scoped)))
+    for date, scan_scoped, candidate_segment_count in scan_groups:
         # 1. exact_unique — exact surface occurs exactly once across scoped segments.
         exact_hits: list[tuple[RenderedTextSegment, int]] = []
         for segment in scan_scoped:
@@ -914,17 +946,17 @@ def place_occurrence_spans(
                     char_end=start + len(surface_text),
                     status="placed_exact_unique",
                     rule_id="lawvm.viewer_place.exact_unique.v1",
-                    diagnostic={"match_count": 1, "candidate_segment_count": len(scoped)},
+                    diagnostic={
+                        "match_count": 1,
+                        "candidate_segment_count": candidate_segment_count,
+                    },
                 )
             )
             continue
         # 2/3. normalized matches with offset map back to exact rendered coords.
         norm_hits: list[tuple[RenderedTextSegment, int, int, str, list[int]]] = []
         for segment in scan_scoped:
-            if placer is not None:
-                norm_text, offset_map = placer.normalized_segment(segment)
-            else:
-                norm_text, offset_map = _normalize_surface_with_map(segment.text)
+            norm_text, offset_map = _normalize_surface_with_map(segment.text)
             for nstart in _find_all(norm_text, norm_surface):
                 nend = nstart + len(norm_surface)
                 norm_hits.append((segment, nstart, nend, norm_text, offset_map))
@@ -944,7 +976,7 @@ def place_occurrence_spans(
                     rule_id="lawvm.viewer_place.normalized_unique.v1",
                     diagnostic={
                         "match_count": 1,
-                        "candidate_segment_count": len(scoped),
+                        "candidate_segment_count": candidate_segment_count,
                         "normalization_id": PLACEMENT_NORMALIZATION_ID,
                     },
                 )
@@ -971,7 +1003,7 @@ def place_occurrence_spans(
                         rule_id="lawvm.viewer_place.ordinal_experimental.v1",
                         diagnostic={
                             "match_count": len(norm_hits),
-                            "candidate_segment_count": len(scoped),
+                            "candidate_segment_count": candidate_segment_count,
                             "normalization_id": PLACEMENT_NORMALIZATION_ID,
                             "source_occurrence_ordinal": 0,
                         },
@@ -990,7 +1022,7 @@ def place_occurrence_spans(
                         rule_id="lawvm.viewer_place.ambiguous.v1",
                         diagnostic={
                             "match_count": len(norm_hits),
-                            "candidate_segment_count": len(scoped),
+                            "candidate_segment_count": candidate_segment_count,
                             "normalization_id": PLACEMENT_NORMALIZATION_ID,
                         },
                     )
