@@ -2065,6 +2065,75 @@ def test_fold_timeline_backfill_reuses_preview_timelines_when_no_backfills(monke
     assert products.materialized_state.find_section("1") is not None
 
 
+def test_build_replay_products_reuses_static_lo_preparation_cache(monkeypatch) -> None:
+    import lawvm.finland.replay_products as replay_products_mod
+
+    base_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="base"),),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="synthetic/static-lo-prep-cache",
+        title="Synthetic static LO prep cache",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+    source = OperationSource(
+        statute_id="2020/1",
+        title="Synthetic insert",
+        enacted="2020-01-01",
+        effective="2020-01-01",
+        raw_text="lisätään 1 §:n 1 kohta, sellaisena kuin se on laissa 1/2020",
+    )
+    lo_ops = [
+        LegalOperation(
+            op_id="insert_section_2",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(
+                kind=IRNodeKind.SECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="inserted"),),
+            ),
+            source=source,
+        )
+    ]
+    real_drop = replay_products_mod._drop_cited_version_item_ancestor_snapshots
+    drop_calls = 0
+
+    def counting_drop(ops):
+        nonlocal drop_calls
+        drop_calls += 1
+        return real_drop(ops)
+
+    monkeypatch.setattr(
+        replay_products_mod,
+        "_drop_cited_version_item_ancestor_snapshots",
+        counting_drop,
+    )
+    cache: dict[object, object] = {}
+
+    for as_of in ("2020-01-01", "2021-01-01"):
+        products = build_replay_products(
+            ctx=ctx,
+            statute_id=ctx.id,
+            replay_fold_state=ReplayState(ir=base_body),
+            lo_ops_out=lo_ops,
+            as_of=as_of,
+            fold_backfill_preview_cache=cache,
+        )
+        assert products.materialized_state.find_section("1") is not None
+
+    assert drop_calls == 1
+
+
 @pytest.mark.slow
 def test_replay_xml_2017_320_emits_relabel_section_snapshots_at_live_paths() -> None:
     """2019/371 section relabels must snapshot at live IR paths, not amendment frames."""

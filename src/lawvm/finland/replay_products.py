@@ -1587,40 +1587,38 @@ def build_replay_products(
         body=ctx.base_ir,
     )
     original_lo_ops = lo_ops_out or []
-    prepared_lo_ops: tuple[LegalOperation, ...] | None = None
+    static_prepared_lo_ops: tuple[LegalOperation, ...] | None = None
     if fold_backfill_preview_cache is not None:
         prepared_cache_key = (
-            "prepared_replay_product_lo_ops",
+            "static_prepared_replay_product_lo_ops",
             statute_id,
             id(original_lo_ops),
             len(original_lo_ops),
-            as_of,
-            expires_as_of,
         )
         cached_prepared = fold_backfill_preview_cache.get(prepared_cache_key)
         if isinstance(cached_prepared, tuple):
-            prepared_lo_ops = cast(tuple[LegalOperation, ...], cached_prepared)
+            static_prepared_lo_ops = cast(tuple[LegalOperation, ...], cached_prepared)
         else:
             prepared = _normalize_repeal_op_sources(list(original_lo_ops))
-            prepared = _mark_detached_horizon_future_repeals(
-                prepared,
-                as_of=as_of,
-                expires_as_of=expires_as_of,
-            )
             prepared = _drop_cited_version_item_ancestor_snapshots(prepared)
-            prepared_lo_ops = tuple(prepared)
-            fold_backfill_preview_cache[prepared_cache_key] = prepared_lo_ops
-    if prepared_lo_ops is not None:
-        lo_ops = list(prepared_lo_ops)
-    else:
-        lo_ops = list(original_lo_ops)
-        lo_ops = _normalize_repeal_op_sources(lo_ops)
+            static_prepared_lo_ops = tuple(prepared)
+            fold_backfill_preview_cache[prepared_cache_key] = static_prepared_lo_ops
+    if static_prepared_lo_ops is not None:
+        lo_ops = list(static_prepared_lo_ops)
         lo_ops = _mark_detached_horizon_future_repeals(
             lo_ops,
             as_of=as_of,
             expires_as_of=expires_as_of,
         )
+    else:
+        lo_ops = list(original_lo_ops)
+        lo_ops = _normalize_repeal_op_sources(lo_ops)
         lo_ops = _drop_cited_version_item_ancestor_snapshots(lo_ops)
+        lo_ops = _mark_detached_horizon_future_repeals(
+            lo_ops,
+            as_of=as_of,
+            expires_as_of=expires_as_of,
+        )
     covered_commence_group_ids = frozenset(
         group_id
         for event in resolved_temporal_events
