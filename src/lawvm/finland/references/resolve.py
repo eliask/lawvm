@@ -509,6 +509,12 @@ def _rewrite_target_id(
 # statute-name registry.
 _LOCAL_BINDING_PHRASE_LEMMA = "defined_term_local_binding"
 
+# Provenance tag recorded when a ``fi-name:`` placeholder resolves via the FP-gated
+# content-word-set fallback (a head-first descriptive cite whose complement differs
+# from the official title only by premodifier inflection), after the exact-surface
+# registry lookup missed.
+_CWS_FALLBACK_PHRASE_LEMMA = "statute_name_content_word_set_fallback"
+
 
 def _ambiguity_finding(
     mention: ReferenceMention,
@@ -647,8 +653,49 @@ def _resolve_fi_name(
             rejected_candidates=(),
             finding=_ambiguity_finding(mention, candidate_ids),
         )
-    # "none" — the act name is NOT a Finnish statute the registry knows. Before
-    # declaring a genuine coverage gap, try the EU-nickname registry: a by-name
+    # "none" on the EXACT-surface index — before declaring a coverage gap, try the
+    # FP-gated content-word-set fallback: a head-first descriptive cite whose
+    # complement differs from the official title only by a premodifier INFLECTION
+    # (singular ``viranomaisen`` vs official plural ``viranomaisten``) misses the
+    # exact key but hits the base-act content-word-set index. The fallback is
+    # strict (clean head-first ``Laki/Asetus <body>`` only, head must match, >=2
+    # distinctive content stems, WHOLE-set match, no subset) and stays fail-loud:
+    # single → resolved, multiple → ambiguous (never picked), none → fall through.
+    cws_result = statute_registry.lookup_content_word_set(name, as_of)
+    if as_of is not None and cws_result.status == "none":
+        # Same as-of-vs-known reconciliation as the exact lane: a window that
+        # excludes every version is not a content miss if the whole timeline has
+        # candidates — re-check unfiltered so a known-but-out-of-window name stays
+        # AMBIGUOUS rather than falsely a coverage gap.
+        unfiltered_cws = statute_registry.lookup_content_word_set(name, None)
+        if unfiltered_cws.status != "none":
+            cws_result = unfiltered_cws
+    if cws_result.status != "none":
+        cws_ids = tuple(c.statute_id for c in cws_result.candidates)
+        if cws_result.status == "single":
+            return ResolvedReference(
+                mention=_rewrite_target_id(
+                    mention, cws_ids[0], phrase_lemma=_CWS_FALLBACK_PHRASE_LEMMA
+                ),
+                status=ResolutionStatus.RESOLVED,
+                work_id=cws_ids[0],
+                candidates=cws_ids,
+                rejected_candidates=(),
+                finding=None,
+            )
+        # multiple — genuinely ambiguous content set: list all, never pick.
+        return ResolvedReference(
+            mention=dataclasses.replace(
+                mention, cite_confidence=CiteConfidence.AMBIGUOUS
+            ),
+            status=ResolutionStatus.AMBIGUOUS,
+            work_id=None,
+            candidates=cws_ids,
+            rejected_candidates=(),
+            finding=_ambiguity_finding(mention, cws_ids),
+        )
+    # still "none" — the act name is NOT a Finnish statute the registry knows.
+    # Before declaring a genuine coverage gap, try the EU-nickname registry: a by-name
     # citation of an EU regulation carries a Finnish-shaped ``-asetus`` head
     # (``sivutuoteasetuksen``, ``vakavaraisuusasetuksen``), so the by-name lane
     # types it ``fi-name:`` even though it denotes an EU instrument. This fallback
