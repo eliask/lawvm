@@ -388,6 +388,42 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
 }
 
 
+class USConfidenceClassificationError(KeyError):
+    """A cataloged US rule id has no explicit confidence classification.
+
+    Raised by :func:`us_confidence` when asked about a rule id that IS in the
+    believed-spec catalog (``_US_RULE_SPECS``) but is neither registered as
+    ``heuristic`` (``_US_RULE_CONFIDENCE``) nor implied-``certain`` by virtue of
+    being cataloged-and-not-heuristic. This is structurally impossible while the
+    two maps agree, but the named error makes a future drift between them a loud,
+    distinct failure rather than a silent optimistic default to ``certain``.
+    """
+
+
 def us_confidence(rule_id: str) -> str:
-    """Confidence tier for a rule id (default ``certain`` for cataloged structural facts)."""
-    return _US_RULE_CONFIDENCE.get(rule_id, US_CONFIDENCE_CERTAIN)
+    """Confidence tier for a cataloged US rule id — fail loud on an uncataloged id.
+
+    The ``certain`` tier is the *complement* of the explicitly-``heuristic`` set
+    WITHIN the believed-spec catalog: a cataloged rule that is not registered as
+    heuristic is certain by construction. An UNcataloged rule id (one absent from
+    ``_US_RULE_SPECS``) is NOT silently treated as ``certain`` — that would let a
+    typo or a never-classified new rule masquerade as a maximum-confidence
+    structural fact. It raises :class:`USConfidenceClassificationError` so the
+    caller (the ledger adapter) routes it through the explicit ``legacy_unknown``
+    sentinel for uncataloged rules instead of inheriting the optimistic default.
+
+    Callers that already know a rule is cataloged (the adapter gates on
+    ``rule["cataloged"]``) never hit the raise; the raise is the fail-loud guard
+    for the optimistic-default-on-miss trap.
+    """
+    if rule_id in _US_RULE_CONFIDENCE:
+        return _US_RULE_CONFIDENCE[rule_id]
+    if rule_id in _US_RULE_SPECS:
+        # Cataloged and not registered-heuristic => certain by complement.
+        return US_CONFIDENCE_CERTAIN
+    raise USConfidenceClassificationError(
+        f"us_confidence({rule_id!r}): rule id is neither in the heuristic confidence "
+        f"map nor in the believed-spec catalog (_US_RULE_SPECS) — refusing to default "
+        f"to {US_CONFIDENCE_CERTAIN!r}. An uncataloged rule must be routed through the "
+        f"explicit 'legacy_unknown' sentinel, not silently assumed most-confident."
+    )

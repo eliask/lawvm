@@ -30,6 +30,7 @@ from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.target_scope import NeutralTargetUnitKind, resolve_internal_target_scope
 from lawvm.finland.strict_profile import default_finland_strict_profile
 from lawvm.finland.source_adjudication import build_source_adjudication
+from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 
 if TYPE_CHECKING:
     from lawvm.finland.ops import FailedOp
@@ -784,6 +785,7 @@ def _compile_artifacts_from_replay(
         canonical_ops=canonical_ops,
         failures=compile_failures,
         findings=tuple(findings_tuple),
+        effect_lifecycle_events=tuple(replay_result.products.effect_lifecycle_events),
     )
     if registry_codes_from_runtime_violations:
         gated_barrier_codes = {
@@ -857,11 +859,32 @@ def compile_fi_facade_from_replay(
     artifact_findings = tuple(artifacts.findings)
     builder.add_findings(artifact_findings)
     resolved_temporal_events = tuple(replay_result.temporal_events)
+    derived_source_effects, derived_effect_relations, derived_effect_lifecycle_events = build_finland_effect_lifecycle(
+        target_statute=parent_id,
+        canonical_ops=tuple(canonical_ops),
+        temporal_events=resolved_temporal_events,
+        findings=artifact_findings,
+    )
+    source_effects_by_id = {
+        effect.effect_id: effect
+        for effect in tuple(replay_result.products.source_effects) + tuple(derived_source_effects)
+    }
+    effect_relations_by_id = {
+        relation.relation_id: relation
+        for relation in tuple(replay_result.products.effect_relations) + tuple(derived_effect_relations)
+    }
+    effect_lifecycle_events_by_id = {
+        event.lifecycle_event_id: event
+        for event in tuple(replay_result.products.effect_lifecycle_events) + tuple(derived_effect_lifecycle_events)
+    }
     bundle = CanonicalBundle(
         target_statute=parent_id,
         structural_ops=tuple(canonical_ops),
         temporal_events=resolved_temporal_events,
         migration_events=tuple(replay_result.migration_events),
+        source_effects=tuple(source_effects_by_id.values()),
+        effect_relations=tuple(effect_relations_by_id.values()),
+        effect_lifecycle_events=tuple(effect_lifecycle_events_by_id.values()),
     )
     pr = builder.finish(bundle)
     facade = CompileFacade.from_phase_result(

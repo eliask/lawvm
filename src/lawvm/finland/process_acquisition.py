@@ -198,6 +198,10 @@ class ProcessAcquisitionContext:
                 "target_amendment_id": pending_target_mid,
                 "target_amendment_title": pending_target_title,
                 "base_parent_id": self.parent_id,
+                "effect_relation_id": (
+                    f"fi-effect-relation:{self.amendment_id}:pending_amendment:{pending_target_mid}"
+                ),
+                "effect_relation_kind": "modifies_effect",
             },
             role="observation",
             blocking=False,

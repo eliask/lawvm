@@ -11,7 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List, Optional, Sequence
 
-from lawvm.core.compile_result import SourcePathology, TemporalEvent
+from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import LegalOperation
 from lawvm.core.mutation_accounting import MutationInvariantReport as ApplyMutationInvariantReport
 from lawvm.core.observation_registry import get_finding_spec
@@ -19,10 +20,13 @@ from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
+from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     build_apply_mutation_invariant_reports,
 )
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
+from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.replay_findings import (
@@ -47,12 +51,15 @@ class ProcessSignalBuffers:
 
     process_findings: list[Finding]
     amendment_temporal_events: list[TemporalEvent]
+    source_effects: list[EffectRef]
+    effect_relations: list[EffectRelation]
+    effect_lifecycle_events: list[EffectLifecycleEvent]
     failed_ops: list[FailedOp]
     source_pathologies: list[SourcePathology]
     elaboration_observations: list[dict[str, object]]
     sparse_slot_bindings: list[dict[str, object]]
     sparse_leftovers: list[dict[str, object]]
-    commencement_expiry_override_notes: list[dict[str, object]]
+    commencement_expiry_override_notes: list[EffectLifecycleOverride]
     vts_skipped_targets: list[VtsSkippedTarget]
 
     @classmethod
@@ -60,6 +67,9 @@ class ProcessSignalBuffers:
         return cls(
             process_findings=[],
             amendment_temporal_events=[],
+            source_effects=[],
+            effect_relations=[],
+            effect_lifecycle_events=[],
             failed_ops=[],
             source_pathologies=[],
             elaboration_observations=[],
@@ -79,7 +89,7 @@ class ProcessCompatSinks:
     elaboration_observations_out: Optional[List[dict[str, object]]]
     sparse_slot_bindings_out: Optional[List[dict[str, object]]]
     sparse_leftovers_out: Optional[List[dict[str, object]]]
-    commencement_expiry_overrides_out: Optional[List[dict[str, object]]]
+    commencement_expiry_overrides_out: Optional[List[EffectLifecycleOverride]]
     mutation_events_out: Optional[List[ApplyMutationEvent]]
     mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]]
 
@@ -100,7 +110,7 @@ class ProcessAmendmentSinks:
     sparse_slot_bindings_out: Optional[List[dict[str, object]]] = None
     sparse_leftovers_out: Optional[List[dict[str, object]]] = None
     regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None
-    commencement_expiry_overrides_out: Optional[List[dict[str, object]]] = None
+    commencement_expiry_overrides_out: Optional[List[EffectLifecycleOverride]] = None
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None
     mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]] = None
     write_audits_out: Optional[List[ObservedWriteAudit]] = None
@@ -116,6 +126,7 @@ class ProcessResultBuilder:
     migration_ledger_initial_len: int
     sinks: ProcessCompatSinks
     mutation_cursor: int = 0
+    target_statute: str = ""
 
     def build(self, output_state: Any) -> PhaseResult[Any]:
         """Build PhaseResult from local phase-owned signals and project compat sinks."""
@@ -192,6 +203,7 @@ class ProcessResultBuilder:
             self.sinks.mutation_invariant_reports_out.extend(mutation_invariant_reports)
         self._append_apply_mutation_findings(merged_findings, mutation_invariant_reports)
         self._append_apply_fallback_findings(merged_findings)
+        self._append_effect_lifecycle_projection(merged_findings)
 
         self.project_compat_sinks()
         return PhaseResult(
@@ -199,7 +211,36 @@ class ProcessResultBuilder:
             findings=tuple(self._dedupe_findings(merged_findings)),
             temporal_events=tuple(amendment_temporal_events),
             migration_events=tuple(self.migration_ledger.events[self.migration_ledger_initial_len:]),
+            source_effects=tuple(self.buffers.source_effects),
+            effect_relations=tuple(self.buffers.effect_relations),
+            effect_lifecycle_events=tuple(self.buffers.effect_lifecycle_events),
         )
+
+    def _append_effect_lifecycle_projection(self, findings: Sequence[Finding]) -> None:
+        """Project process-level findings and override notes into effect evidence."""
+        _source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+            target_statute=self.target_statute,
+            canonical_ops=(),
+            temporal_events=(),
+            findings=tuple(findings),
+            lifecycle_overrides=tuple(self.buffers.commencement_expiry_override_notes),
+            known_source_effects=tuple(self.buffers.source_effects),
+        )
+        existing_relations = {relation.relation_id for relation in self.buffers.effect_relations}
+        for relation in relations:
+            if relation.relation_id in existing_relations:
+                continue
+            existing_relations.add(relation.relation_id)
+            self.buffers.effect_relations.append(relation)
+
+        existing_events = {
+            event.lifecycle_event_id for event in self.buffers.effect_lifecycle_events
+        }
+        for event in lifecycle_events:
+            if event.lifecycle_event_id in existing_events:
+                continue
+            existing_events.add(event.lifecycle_event_id)
+            self.buffers.effect_lifecycle_events.append(event)
 
     def project_compat_sinks(self) -> None:
         if self.sinks.failed_ops_out is not None:

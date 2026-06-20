@@ -22,6 +22,12 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, Mapping, Opt
 
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    lower_lifecycle_events_to_temporal_events,
+)
 from lawvm.core.event_summaries import (
     count_events_with_activation_rules,
     count_events_with_source,
@@ -38,16 +44,13 @@ from lawvm.core.target_scope import (
     TargetUnitKind,
 )
 from lawvm.core.provenance import MigrationEvent, migration_event_sort_key
-from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent
 from lawvm.core.timeline_results import MaterializationLineagePlan
 from lawvm.core.timeline import (
     materialize_pit as _materialize_pit,
     materialize_pit_ex as _materialize_pit_ex,
     provision_lineage as _provision_lineage,
 )
-
-# Compatibility re-exports while temporal carriers migrate to core.temporal.
-_TEMPORAL_COMPAT_EXPORTS = (ActivationRule, TemporalEvent, TemporalScope)
 
 if TYPE_CHECKING:
     from lawvm.core.ir import IRStatute, ProvisionTimeline, ProvisionVersion
@@ -601,6 +604,9 @@ class CanonicalBundle:
     structural_ops: tuple["LegalOperation", ...] = ()
     temporal_events: tuple[TemporalEvent, ...] = ()
     migration_events: tuple["MigrationEvent", ...] = ()
+    source_effects: tuple[EffectRef, ...] = ()
+    effect_relations: tuple[EffectRelation, ...] = ()
+    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...] = ()
     effects: tuple[CanonicalEffect, ...] = ()
     groups: tuple[EffectGroup, ...] = ()
     source: Optional["OperationSource"] = None
@@ -616,6 +622,17 @@ class CanonicalBundle:
         canonical_migration_events = _canonical_migration_events(self.migration_events)
         if canonical_migration_events != self.migration_events:
             object.__setattr__(self, "migration_events", canonical_migration_events)
+        object.__setattr__(self, "source_effects", tuple(self.source_effects))
+        object.__setattr__(self, "effect_relations", tuple(self.effect_relations))
+        object.__setattr__(self, "effect_lifecycle_events", tuple(self.effect_lifecycle_events))
+        if not all(isinstance(effect, EffectRef) for effect in self.source_effects):
+            raise TypeError("CanonicalBundle.source_effects must contain EffectRef records")
+        if not all(isinstance(relation, EffectRelation) for relation in self.effect_relations):
+            raise TypeError("CanonicalBundle.effect_relations must contain EffectRelation records")
+        if not all(isinstance(event, EffectLifecycleEvent) for event in self.effect_lifecycle_events):
+            raise TypeError(
+                "CanonicalBundle.effect_lifecycle_events must contain EffectLifecycleEvent records"
+            )
 
     def validate_purity(self) -> list[str]:
         """Return a list of purity violations (empty means pure).
@@ -650,6 +667,19 @@ class CanonicalBundle:
     def temporal_event_activation_rule_kinds(self) -> tuple[str, ...]:
         """Return the distinct activation-rule kinds carried by this bundle."""
         return distinct_activation_rule_kinds(self.temporal_events)
+
+    @property
+    def lifecycle_projected_temporal_events(self) -> tuple[TemporalEvent, ...]:
+        """Return executable temporal projections derived from lifecycle events."""
+        return lower_lifecycle_events_to_temporal_events(self.effect_lifecycle_events)
+
+    @property
+    def executable_temporal_events(self) -> tuple[TemporalEvent, ...]:
+        """Return direct temporal events plus lifecycle-derived projections."""
+        events_by_id: dict[str, TemporalEvent] = {}
+        for event in self.temporal_events + self.lifecycle_projected_temporal_events:
+            events_by_id.setdefault(event.event_id, event)
+        return tuple(events_by_id.values())
 
     def provision_lineage(
         self,
@@ -1104,6 +1134,7 @@ def strict_fail_reasons_from_finding_ledger(
     canonical_ops: Iterable[LegalOperation],
     failures: Iterable[CompileFailure],
     findings: Iterable[Finding],
+    effect_lifecycle_events: Iterable[EffectLifecycleEvent] = (),
 ) -> list[str]:
     """Derive strict-fail reasons using finding-ledger inputs instead of adjudication bags.
 
@@ -1118,6 +1149,15 @@ def strict_fail_reasons_from_finding_ledger(
         triggered.add("APPLY.FAILED_OPERATION")
 
     canonical_ops_list = list(canonical_ops)
+
+    for event in effect_lifecycle_events:
+        if event.kind != "unresolved_effect_target":
+            continue
+        source_finding = str(event.detail.get("source_finding") or "").strip()
+        if source_finding:
+            triggered.add(source_finding)
+        else:
+            triggered.add("APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED")
 
     def _as_canonical_action_value(raw_action: Any) -> str:
         if isinstance(raw_action, StructuralAction):

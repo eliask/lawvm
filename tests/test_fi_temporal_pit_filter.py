@@ -33,7 +33,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.authority import BranchContext, PROPOSAL_AUTHORITY, UNKNOWN_STATUS
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
-from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope
+from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline import compile_timelines, materialize_pit, select_active_version_ex
 from lawvm.core.timeline import select_background_version
 from lawvm.core.timeline import select_temporary_version

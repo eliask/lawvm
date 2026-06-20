@@ -122,8 +122,8 @@ class TestActivationRuleConstruction:
 
 
 def test_temporal_event_and_scope_live_in_temporal_module_with_compile_result_compat() -> None:
-    from lawvm.core.compile_result import TemporalEvent as CompatTemporalEvent
-    from lawvm.core.compile_result import TemporalScope as CompatTemporalScope
+    from lawvm.core.temporal import TemporalEvent as CompatTemporalEvent
+    from lawvm.core.temporal import TemporalScope as CompatTemporalScope
 
     scope = TemporalScope(target_statute="1991/1")
     event = TemporalEvent(event_id="ev1", kind="commence", scope=scope)
@@ -661,7 +661,7 @@ class TestFinlandTemporalEventLowering:
 
     def test_commence_with_date(self) -> None:
         from lawvm.finland.temporal_lowering import activation_rule_from_temporal_event
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
 
         event = TemporalEvent(
             event_id="e1",
@@ -676,7 +676,7 @@ class TestFinlandTemporalEventLowering:
 
     def test_commence_with_explicit_effective_payload(self) -> None:
         from lawvm.finland.temporal_lowering import activation_rule_from_temporal_event
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
         from lawvm.core.ir import OperationSource
 
         event = TemporalEvent(
@@ -693,7 +693,7 @@ class TestFinlandTemporalEventLowering:
 
     def test_commence_contingent(self) -> None:
         from lawvm.finland.temporal_lowering import activation_rule_from_temporal_event
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
 
         event = TemporalEvent(
             event_id="e2",
@@ -707,7 +707,7 @@ class TestFinlandTemporalEventLowering:
 
     def test_commence_contingent_from_activation_rule(self) -> None:
         from lawvm.finland.temporal_lowering import activation_rule_from_temporal_event
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
 
         event = TemporalEvent(
             event_id="e2-legacy",
@@ -721,7 +721,7 @@ class TestFinlandTemporalEventLowering:
 
     def test_commence_immediate(self) -> None:
         from lawvm.finland.temporal_lowering import activation_rule_from_temporal_event
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
 
         event = TemporalEvent(
             event_id="e3",
@@ -734,7 +734,7 @@ class TestFinlandTemporalEventLowering:
 
     def test_commence_immediate_does_not_need_provenance_effective_date(self) -> None:
         from lawvm.finland.temporal_lowering import activation_rule_from_temporal_event
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
         from lawvm.core.ir import OperationSource
 
         event = TemporalEvent(
@@ -750,7 +750,7 @@ class TestFinlandTemporalEventLowering:
 
     def test_non_commencement_returns_none(self) -> None:
         from lawvm.finland.temporal_lowering import activation_rule_from_temporal_event
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
 
         event = TemporalEvent(
             event_id="e4",
@@ -760,7 +760,7 @@ class TestFinlandTemporalEventLowering:
         assert activation_rule_from_temporal_event(event) is None
 
     def test_temporal_event_can_carry_activation_rule_directly(self) -> None:
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
 
         rule = ActivationRule(kind="fixed_date", effective_date="2027-01-01")
         event = TemporalEvent(
@@ -773,7 +773,7 @@ class TestFinlandTemporalEventLowering:
         assert event.activation_rule.kind == "fixed_date"
 
     def test_temporal_overrides_prefer_embedded_activation_rule(self) -> None:
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
         from lawvm.core.ir import LegalAddress, LegalOperation
         from lawvm.core.semantic_types import StructuralAction
         from lawvm.core.timeline import _temporal_overrides_for_op
@@ -797,7 +797,7 @@ class TestFinlandTemporalEventLowering:
         assert overrides.effective == "2027-01-01"
 
     def test_temporal_overrides_prefer_explicit_expiry_payload_over_provenance(self) -> None:
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
         from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
         from lawvm.core.semantic_types import StructuralAction
         from lawvm.core.timeline import _temporal_overrides_for_op
@@ -823,7 +823,7 @@ class TestFinlandTemporalEventLowering:
         assert overrides.expires == "2027-12-31"
 
     def test_temporal_overrides_use_explicit_effective_payload_for_revival(self) -> None:
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
         from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
         from lawvm.core.semantic_types import StructuralAction
         from lawvm.core.timeline import _temporal_overrides_for_op
@@ -849,7 +849,7 @@ class TestFinlandTemporalEventLowering:
         assert overrides.effective == "2027-01-01"
 
     def test_finland_batch_scoped_expiry_only_matches_targeted_address(self) -> None:
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
         from lawvm.core.ir import LegalAddress, LegalOperation
         from lawvm.core.semantic_types import StructuralAction
         from lawvm.core.timeline import _temporal_overrides_for_op
@@ -890,7 +890,7 @@ class TestFinlandTemporalEventLowering:
 
 class TestTemporalEventAccessors:
     def test_activation_rule_accessors_reflect_embedded_rule(self) -> None:
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
 
         event = TemporalEvent(
             event_id="e-summary",
@@ -902,7 +902,7 @@ class TestTemporalEventAccessors:
         assert event.activation_rule_kind == "fixed_date"
 
     def test_activation_rule_accessors_handle_absence(self) -> None:
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
 
         event = TemporalEvent(
             event_id="e-summary-none",
@@ -953,7 +953,7 @@ class TestBulkLowering:
 
     def test_lower_temporal_events_to_activation_rules(self) -> None:
         from lawvm.finland.temporal_lowering import lower_temporal_events_to_activation_rules
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
 
         events = (
             TemporalEvent(
@@ -977,7 +977,7 @@ class TestBulkLowering:
 
     def test_lower_temporal_events_to_activation_rules_with_findings_records_skipped_inputs(self) -> None:
         from lawvm.finland.temporal_lowering import lower_temporal_events_to_activation_rules_with_findings
-        from lawvm.core.compile_result import TemporalEvent, TemporalScope
+        from lawvm.core.temporal import TemporalEvent, TemporalScope
 
         events = (
             TemporalEvent(

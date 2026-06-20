@@ -34,6 +34,7 @@ from lawvm.finland.elaboration_rule_dispatch import (
     run_registered_elaboration_stage,
     validate_elaboration_pipeline,
 )
+from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.frontend_compile import (
     _enrich_ops_from_amendment_tree,
     _tree_title,
@@ -398,6 +399,8 @@ def process_muutoslaki_resolved(
             )
             ops = list(phase2_result.ops)
             amendment_temporal_events.extend(phase2_result.temporal_events)
+            runtime.source_effects.extend(phase2_result.source_effects)
+            runtime.effect_lifecycle_events.extend(phase2_result.effect_lifecycle_events)
             compat_elaboration_observations.extend(phase2_result.elaboration_observations)
             process_findings.extend(phase2_result.process_findings)
 
@@ -456,6 +459,9 @@ def process_muutoslaki_resolved(
                 resolved=resolved,
                 compile_result=compile_result,
                 amendment_temporal_events=amendment_temporal_events,
+                source_effects=runtime.source_effects,
+                effect_relations=runtime.effect_relations,
+                effect_lifecycle_events=runtime.effect_lifecycle_events,
                 source_pathologies=compat_source_pathologies,
                 elaboration_observations=compat_elaboration_observations,
                 sparse_slot_bindings=compat_sparse_slot_bindings,
@@ -504,6 +510,18 @@ def process_muutoslaki_resolved(
             ),
         )
         amendment_lo_ops = tuple((lo_ops_out or [])[lo_ops_start:])
+        source_effects, _effect_relations, _lifecycle_events = build_finland_effect_lifecycle(
+            target_statute=parent_id,
+            canonical_ops=amendment_lo_ops,
+            temporal_events=(),
+            findings=(),
+        )
+        existing_source_effect_ids = {effect.effect_id for effect in runtime.source_effects}
+        for effect in source_effects:
+            if effect.effect_id in existing_source_effect_ids:
+                continue
+            existing_source_effect_ids.add(effect.effect_id)
+            runtime.source_effects.append(effect)
         project_transition_detector_findings(
             before_ir=before_apply_ir,
             operations=amendment_lo_ops,

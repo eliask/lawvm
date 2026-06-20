@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional, cast
 
-from lawvm.core.compile_result import ActivationRule, StrictProfile, TemporalEvent
+from lawvm.core.compile_result import StrictProfile
 from lawvm.core.effect_lowering import lower_effect_intents_to_temporal_events
 from lawvm.core.elaboration_context import TargetUnitKind, snapshot_replay_lookups
 from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.temporal import ActivationRule, TemporalEvent
 from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
 from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
 from lawvm.finland.compile_group_scope_recovery import (

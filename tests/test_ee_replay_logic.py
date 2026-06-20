@@ -27,7 +27,7 @@ from lawvm.estonia.replay import (
     _ee_precompose_pending_source_act_commencements,
     replay_ee_to_pit,
 )
-from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, StructuralAction
 from lawvm.core.ir import OperationSource
 from lawvm.core.semantic_types import IRNodeKind

@@ -3060,7 +3060,10 @@ def _append_no_replay_adjudication(
     detail_message = str(raw_detail.pop("message", "") or "")
     if kind in {"replay_unsupported_action", "replay_unresolved_target", "replay_noop"}:
         family = "unsupported_or_unresolved_action"
-    elif kind == "replay_tree_invariant_violation":
+    elif kind in {
+        "replay_tree_invariant_violation",
+        "replay_tree_invariant_violation_downgraded",
+    }:
         family = "tree_invariant_violation"
     elif kind.startswith("no_replay_"):
         family = "action_family_recovery"
@@ -3222,15 +3225,51 @@ def apply_no_ops(
         return keys == sorted(keys)
 
     def _assert_no_invariant_violations(op: LegalOperation) -> None:
-        typed_violations = tuple(
-            violation
-            for violation in tree_ops.iter_tree_invariant_violations(
+        all_violations = tuple(
+            tree_ops.iter_tree_invariant_violations(
                 body,
                 sort_key=_no_sort_key,
                 families=no_replay_tree_invariant_families,
             )
+        )
+        typed_violations = tuple(
+            violation
+            for violation in all_violations
             if not _sort_order_violation_is_spurious(violation)
         )
+        # Witness-required-for-downgrade: a sort_order violation dropped from the
+        # blocking set as "spurious" must leave an attributable witness, never
+        # vanish silently. Record the downgrade (the roman-semantics re-check is
+        # its justification) so a future regression in the spurious predicate is
+        # auditable rather than invisible.
+        spurious_downgrades = tuple(
+            violation
+            for violation in all_violations
+            if violation.kind == "sort_order"
+            and _sort_order_violation_is_spurious(violation)
+        )
+        if spurious_downgrades:
+            _append_no_replay_adjudication(
+                adjudications_out,
+                kind="replay_tree_invariant_violation_downgraded",
+                message="Norway sort_order invariant violation downgraded as spurious.",
+                op=op,
+                detail={
+                    "action": _no_action_value(op.action),
+                    "target": str(op.target),
+                    "nonblocking_reclassification_rule_id": (
+                        "no_sort_order_spurious_roman_single_letter_recheck"
+                    ),
+                    "reclassification_reason": (
+                        "The flagged sibling group is correctly ordered under "
+                        "roman-numeral semantics (i, ii, ..., v, ...); the "
+                        "context-free litra sort key mis-flagged it."
+                    ),
+                    "downgraded_violations": tuple(
+                        violation.to_dict() for violation in spurious_downgrades
+                    ),
+                },
+            )
         violations = tuple(violation.message for violation in typed_violations)
         if not violations:
             return

@@ -34,7 +34,7 @@ from lawvm.core.statute_validity import (
     StatuteValidityBound,
     expires_on_from_valid_until,
 )
-from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER
+from lawvm.finland.fi_dates import fi_partitive_month_number, parse_fi_day_month_year
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
 from lawvm.finland.metadata import (
     CHAPTER_SCOPED_EXPIRY_RE,
@@ -59,7 +59,6 @@ FIXED_TERM_LATE_EXTENSION_GAP = "TEMPORAL.FIXED_TERM_LATE_EXTENSION_GAP"
 EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT = (
     "TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT"
 )
-FI_MONTH_MAP = FI_MONTH_PARTITIVE_TO_NUMBER
 # Typed residue classes for recognised-but-unresolved validity clauses. Each
 # names the missing authority or the reason the clause is not a bound at all,
 # instead of collapsing every failure into the generic unparseable bucket.
@@ -317,12 +316,7 @@ def _parse_commencement_date(sentence: str) -> Optional[dt.date]:
     """A concrete commencement date stated in ``sentence``, or None."""
     m = _COMMENCEMENT_DATE_ESSIVE_RE.search(sentence)
     if m is not None:
-        month = FI_MONTH_MAP.get(m.group(2).lower())
-        if month is not None:
-            try:
-                return dt.date(int(m.group(3)), month, int(m.group(1)))
-            except ValueError:
-                return None
+        return parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
     md = _COMMENCEMENT_DATE_DOTTED_RE.search(sentence)
     if md is not None:
         try:
@@ -500,7 +494,7 @@ def _classify_unresolved_validity_clause(
     """
     for match in _DATIVE_END_DATE_RE.finditer(clause_text):
         day = int(match.group(1))
-        month_num = FI_MONTH_MAP.get(match.group(2).lower())
+        month_num = fi_partitive_month_number(match.group(2))
         year = int(match.group(3))
         if month_num is None:
             continue

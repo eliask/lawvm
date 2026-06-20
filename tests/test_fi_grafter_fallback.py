@@ -12,7 +12,7 @@ from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource,
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.compile_result import StrictProfile
-from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.core.coverage import CoverageClaim, CoverageGap, CoverageReport, CoverageUnit
 from lawvm.core.canonical_intent import ExecutionContract, IntentKind, Move, NodeTarget, OccupancyPolicy, Relabel
 from lawvm.core.elaboration_context import (
@@ -49,6 +49,7 @@ from lawvm.finland.frontend_observations import (
     _semantic_collapse_move_or_renumber_observations,
 )
 from lawvm.finland.future_repeal import RepealTargetRef
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
 from lawvm.finland.future_repeal_prescan import (
     PreScanRepealTargetsRequest,
     PreScanRepealTargetsSinks,
@@ -480,7 +481,7 @@ def process_muutoslaki(
     sparse_slot_bindings_out: list[dict[str, object]] | None = None,
     sparse_leftovers_out: list[dict[str, object]] | None = None,
     regex_recognition_coverage_out: list[Any] | None = None,
-    commencement_expiry_overrides_out: list[dict[str, object]] | None = None,
+    commencement_expiry_overrides_out: list[EffectLifecycleOverride] | None = None,
     mutation_events_out: list[ApplyMutationEvent] | None = None,
     mutation_invariant_reports_out: list[Any] | None = None,
     write_audits_out: list[Any] | None = None,
@@ -11932,6 +11933,23 @@ def test_replay_xml_1920_26_applies_conclusions_repeal_clause_for_section_6() ->
     assert sec6.attrs.get("lawvm_repeal_placeholder") == "1"
     assert all(child.kind is IRNodeKind.NUM for child in sec6.children)
     assert replay.find_section("26") is not None
+    repeal_lifecycle_targets = {
+        event.relation.target_effect.effect_id
+        for event in replay.products.effect_lifecycle_events
+        if event.kind == "repeal_effect"
+        and event.relation is not None
+        and event.relation.target_effect is not None
+    }
+    assert "fi-effect:1958/371:lifecycle:section:1" in repeal_lifecycle_targets
+    assert (
+        "fi-effect:2000/90:lifecycle:section:21,section:22,section:23,section:23a,section:24,section:25"
+        in repeal_lifecycle_targets
+    )
+    assert all(
+        event.executable is False
+        for event in replay.products.effect_lifecycle_events
+        if event.kind == "repeal_effect"
+    )
 
 
 def test_replay_xml_2004_699_preserves_section_31_items_when_2013_984_inserts_subsection_2(
@@ -12395,6 +12413,106 @@ def test_supplement_mixed_explicit_clause_ops_recovers_skipped_targets() -> None
     recovered = got[3:]
     assert {op.witness_rule_id for op in recovered} == {"fi.mixed_explicit_target_supplement.v1"}
     assert {op.extraction_provenance_tags for op in recovered} == {("mixed_explicit_target_supplement",)}
+
+
+def test_supplement_mixed_explicit_clause_ops_recovers_terminal_section_list_and_moments() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="replace_18",
+            op_type="REPLACE",
+            target_section="18",
+            target_kind=TargetKind.SECTION,
+        ),
+        AmendmentOp(
+            op_id="replace_23",
+            op_type="REPLACE",
+            target_section="23",
+            target_kind=TargetKind.SECTION,
+        ),
+    ]
+    johto = (
+        "kumotaan työterveyslaitoksen toiminnasta ja rahoituksesta annetun "
+        "asetuksen 3-5, 13 ja 15 §, muutetaan 3 §:n edellä oleva väliotsikko, "
+        "6-9, 11, 12, 16 aja 18 §, 19 §:n 1 momentti, "
+        "20 §:n 1 momentti, 21 §:n 1 momentti ja 23 §,"
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph)
+        for op in got
+        if op.op_type == "REPLACE" and op.target_unit_kind == "section"
+    ] == [
+        ("REPLACE", "18", None),
+        ("REPLACE", "23", None),
+        ("REPLACE", "19", 1),
+        ("REPLACE", "20", 1),
+        ("REPLACE", "21", 1),
+        ("REPLACE", "6", None),
+        ("REPLACE", "7", None),
+        ("REPLACE", "8", None),
+        ("REPLACE", "9", None),
+        ("REPLACE", "11", None),
+        ("REPLACE", "12", None),
+        ("REPLACE", "16a", None),
+    ]
+    recovered = got[2:]
+    assert {op.witness_rule_id for op in recovered} == {"fi.mixed_explicit_target_supplement.v1"}
+    assert {op.extraction_provenance_tags for op in recovered} == {("mixed_explicit_target_supplement",)}
+
+
+def test_supplement_mixed_explicit_clause_ops_does_not_add_moment_for_section_with_subtarget() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="replace_7_1",
+            op_type="REPLACE",
+            target_section="7",
+            target_kind=TargetKind.SECTION,
+            target_paragraph=1,
+        )
+    ]
+    johto = (
+        "muutetaan asetuksen 7 §:n 1 momentin 2, 7 §:n 3 momentti "
+        "ja 8 §:n 1 momentti, sellaisina kuin niistä on 7 §:n 1 "
+        "momentin 2 kohta asetuksessa 869/2023, seuraavasti:"
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph)
+        for op in got
+    ] == [
+        ("REPLACE", "7", 1),
+        ("REPLACE", "8", 1),
+    ]
+
+
+def test_supplement_mixed_explicit_clause_ops_does_not_add_bare_section_for_moment_item_target() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="replace_8_2_13",
+            op_type="REPLACE",
+            target_section="8",
+            target_kind=TargetKind.SECTION,
+            target_paragraph=2,
+            target_item="13",
+        )
+    ]
+    johto = (
+        "muutetaan työterveyslaitoksen toiminnasta ja rahoituksesta "
+        "29 päivänä kesäkuuta 1978 annetun asetuksen ( 501/1978 ) "
+        "8 § 2 momentin 13 kohta, sellaisena kuin se on asetuksessa "
+        "1307/1993, seuraavasti:"
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        for op in got
+    ] == [("REPLACE", "8", 2, "13")]
 
 
 def test_supplement_mixed_explicit_clause_ops_preserves_explicit_chapter_for_moment_insert() -> None:
@@ -15881,6 +15999,21 @@ def test_process_muutoslaki_2011_1552_composes_pending_amendment_on_processed_ta
         and str(f.source_statute or "") in {"2022/708", "2022/1188"}
         for f in findings
     )
+    pending_relations = [
+        relation
+        for relation in replay.products.effect_relations
+        if relation.detail.get("source_finding")
+        == "APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET"
+    ]
+    assert {
+        relation.target_instrument.instrument_id
+        for relation in pending_relations
+        if relation.target_instrument is not None
+    } == {"2020/1233", "2022/631"}
+    assert {
+        effect.source_instrument.instrument_id
+        for effect in replay.products.source_effects
+    } >= {"2022/708", "2022/1188"}
 
 
 def test_inspect_amendment_2013_588_2025_201_owns_sparse_higher_moment_and_trailing_insert_bindings(

@@ -14,6 +14,7 @@ from lawvm.core.provenance import MigrationEvent
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.chapter_seed_targets import ChapterSeedSkipInput
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.process_request import ProcessAmendmentRequest
@@ -43,7 +44,7 @@ class ResolvedProcessAmendmentCall:
     sparse_slot_bindings_out: Optional[list[Dict[str, object]]]
     sparse_leftovers_out: Optional[list[Dict[str, object]]]
     regex_recognition_coverage_out: Optional[list[RegexRecognitionCoverage]]
-    commencement_expiry_overrides_out: Optional[list[Dict[str, object]]]
+    commencement_expiry_overrides_out: Optional[list[EffectLifecycleOverride]]
     mutation_events_out: Optional[list[ApplyMutationEvent]]
     mutation_invariant_reports_out: Optional[list[ApplyMutationInvariantReport]]
     write_audits_out: Optional[list[ObservedWriteAudit]]

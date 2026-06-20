@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Callable, Literal, Optional, cast
 
 from lawvm.core.regex_safety import compile_classifier_regex
+from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
 from lawvm.core.identity_ledger import IdentityLedger
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress
@@ -132,6 +133,9 @@ class ReplayProducts:
     timelines: Optional[Timelines]
     temporal_events: tuple[TemporalEvent, ...] = ()
     migration_events: tuple[MigrationEvent, ...] = ()
+    source_effects: tuple[EffectRef, ...] = ()
+    effect_relations: tuple[EffectRelation, ...] = ()
+    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...] = ()
     materialization_spec: Optional[MaterializationSpec] = None
     source_adjudication: Optional[SourceAdjudication] = None
     fold_timeline_backfills: tuple["FoldTimelineBackfillRecord", ...] = ()
@@ -1538,6 +1542,9 @@ def build_replay_products(
     temporal_events: tuple[TemporalEvent, ...] = (),
     strict_johto_temporal: bool = True,
     migration_events: tuple[MigrationEvent, ...] = (),
+    source_effects: tuple[EffectRef, ...] = (),
+    effect_relations: tuple[EffectRelation, ...] = (),
+    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...] = (),
     expires_as_of: str = "",
     fold_backfill_preview_raw_timelines: dict["LegalAddress", ProvisionTimeline] | None = None,
     fold_backfill_preview_cache: dict[object, object] | None = None,
@@ -1561,6 +1568,9 @@ def build_replay_products(
             timelines=None,
             temporal_events=resolved_temporal_events,
             migration_events=migration_events,
+            source_effects=source_effects,
+            effect_relations=effect_relations,
+            effect_lifecycle_events=effect_lifecycle_events,
             materialization_spec=None,
             source_adjudication=source_adjudication,
         )
@@ -1792,6 +1802,9 @@ def build_replay_products(
         timelines=timelines,
         temporal_events=resolved_temporal_events,
         migration_events=migration_events,
+        source_effects=source_effects,
+        effect_relations=effect_relations,
+        effect_lifecycle_events=effect_lifecycle_events,
         fold_timeline_backfills=fold_timeline_backfills.records,
         timeline_version_dedupes=timeline_version_dedupes,
         materialization_spec=MaterializationSpec(

@@ -20,7 +20,7 @@ from lawvm.core.ir import LegalAddress
 from lawvm.core.unicode_folds import CF_FORMAT_CPS, ZS_NON_ASCII_SPACE_CPS
 from lawvm.finland.fi_dates import (
     FI_MONTH_GENITIVE_TO_NUMBER,
-    FI_MONTH_PARTITIVE_TO_NUMBER,
+    fi_partitive_month_number,
     parse_fi_day_month_year,
 )
 from lawvm.finland.helpers import _norm_num_token, _parse_iso_date
@@ -441,9 +441,6 @@ def _normalize_johtolause_verbs(text: str) -> str:
 # Amendment and statute date extraction
 # ---------------------------------------------------------------------------
 
-# Finnish month names in partitive (the form used in "N päivään <month> YYYY").
-FI_MONTH_MAP = FI_MONTH_PARTITIVE_TO_NUMBER
-
 # Section/chapter-scoped expiry ("Lain X § ovat/on voimassa N päivään MONTH
 # YYYY"). Used only to DETECT a scoped form for diagnostics; v1 does not lift
 # scoped expiry into a statute-level bound.
@@ -493,7 +490,7 @@ _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE = re.compile(
 
 # Partitive month token, typo-tolerant: "joulukuuta" plus the recurring
 # Finlex source typos "joulukuutta" (doubled t) and the hyphenation artifact
-# "joulukuu-ta". Resolved through _fi_partitive_month, which folds the typo
+# "joulukuu-ta". Resolved through fi_partitive_month_number, which folds the typo
 # forms before the FI_MONTH_MAP lookup — an unknown month still yields no
 # candidate. "loppuun" likewise tolerates the observed "lopuun" typo via
 # lop?puun in the *_END patterns.
@@ -613,17 +610,6 @@ RULE_FI_FIXED_TERM_SAAKKA = "fi_fixed_term_saakka"
 RULE_FI_FIXED_TERM_ANAPHORIC_YEAR_END = "fi_fixed_term_anaphoric_same_sentence_year_end"
 
 
-def _fi_partitive_month(token: str) -> Optional[int]:
-    """FI_MONTH_MAP lookup with folding for the observed source typo forms:
-    doubled t ("joulukuutta") and hyphenation artifacts ("joulukuu-ta").
-    Unknown tokens stay unknown — folding never invents a month."""
-    folded = token.lower().replace("-", "")
-    month = FI_MONTH_MAP.get(folded)
-    if month is None and folded.endswith("kuutta"):
-        month = FI_MONTH_MAP.get(folded[:-3] + "ta")
-    return month
-
-
 @dataclass(frozen=True)
 class WholeLawValidityParse:
     """Structured parse of one whole-law validity clause.
@@ -725,13 +711,13 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
 
     md = _VALIDITY_DAY_FIRST_RE.search(remainder)
     if md:
-        month = _fi_partitive_month(md.group(2))
+        month = fi_partitive_month_number(md.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(md.start(), RULE_FI_FIXED_TERM_DAY_FIRST,
                  int(md.group(3)), month, int(md.group(1)))
     mde = _VALIDITY_DAY_ESSIVE_RE.search(remainder)
     if mde:
-        month = _fi_partitive_month(mde.group(2))
+        month = fi_partitive_month_number(mde.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(mde.start(), RULE_FI_FIXED_TERM_DAY_ESSIVE,
                  int(mde.group(3)), month, int(mde.group(1)))
@@ -749,7 +735,7 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
                  int(mdg.group(3)), month, int(mdg.group(2)))
     mdem = _VALIDITY_DAY_END_MONTH_RE.search(remainder)
     if mdem:
-        month = _fi_partitive_month(mdem.group(2))
+        month = fi_partitive_month_number(mdem.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(mdem.start(), RULE_FI_FIXED_TERM_DAY_END_MONTH,
                  int(mdem.group(3)), month, int(mdem.group(1)))
@@ -775,7 +761,7 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
              int(mdot.group(3)), int(mdot.group(2)), int(mdot.group(1)))
     ms = _VALIDITY_SAAKKA_RE.search(remainder)
     if ms:
-        month = _fi_partitive_month(ms.group(2))
+        month = fi_partitive_month_number(ms.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(ms.start(), RULE_FI_FIXED_TERM_SAAKKA,
                  int(ms.group(3)), month, int(ms.group(1)))
@@ -790,7 +776,7 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
     # ties because max() keeps the first maximal candidate.
     mb = _VALIDITY_BARE_DAY_MONTH_RE.search(remainder)
     if mb:
-        month = _fi_partitive_month(mb.group(2))
+        month = fi_partitive_month_number(mb.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(mb.start(), RULE_FI_FIXED_TERM_BARE_DAY_MONTH,
                  int(mb.group(3)), month, int(mb.group(1)))
@@ -938,12 +924,7 @@ def _amendment_expiry_date(
     # The character class only needs en-dash (U+2013) and ordinary space now.
     m2 = SECTION_SCOPED_EXPIRY_RE.search(eit_text)
     if m2:
-        month = FI_MONTH_MAP.get(m2.group(2).lower())
-        if month is not None:
-            try:
-                return dt.date(int(m2.group(3)), month, int(m2.group(1)))
-            except ValueError:
-                pass
+        return parse_fi_day_month_year(m2.group(1), m2.group(2), m2.group(3))
 
     # Pattern 4 (section-scoped "vuoden YYYY loppuun") is intentionally NOT implemented
     # here.  See docstring for the rationale.  When added, it belongs in
@@ -1415,12 +1396,8 @@ def _temporary_section_expiry_overrides(
 
     if "päivään" in expiry_scan_casefold:
         for m in _TEMPORARY_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            month = FI_MONTH_MAP.get(m.group(4).lower())
-            if month is None:
-                continue
-            try:
-                expiry = dt.date(int(m.group(5)), month, int(m.group(3)))
-            except ValueError:
+            expiry = parse_fi_day_month_year(m.group(3), m.group(4), m.group(5))
+            if expiry is None:
                 continue
             labels = _parse_section_list_labels(m.group(1))
             if m.group(2):
@@ -1432,12 +1409,8 @@ def _temporary_section_expiry_overrides(
         # The expiry is still section-scoped for replay stamping: the amendment op
         # target carries the exact subsection/item granularity.
         for m in _TEMPORARY_SUBSECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            month = FI_MONTH_MAP.get(m.group(3).lower())
-            if month is None:
-                continue
-            try:
-                expiry = dt.date(int(m.group(4)), month, int(m.group(2)))
-            except ValueError:
+            expiry = parse_fi_day_month_year(m.group(2), m.group(3), m.group(4))
+            if expiry is None:
                 continue
             _append_override(target_mid_from_cited, _parse_section_list_labels(m.group(1)), expiry)
 
@@ -1446,26 +1419,25 @@ def _temporary_section_expiry_overrides(
         #   "Lain 90 a § on voimassa 31 päivään heinäkuuta 2020 ja 99 a § 31 päivään
         #    toukokuuta 2021."
         for m_chain in _TEMPORARY_CHAINED_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            first_month = FI_MONTH_MAP.get(m_chain.group(3).lower())
-            if first_month is not None:
-                try:
-                    first_expiry = dt.date(int(m_chain.group(4)), first_month, int(m_chain.group(2)))
-                except ValueError:
-                    first_expiry = None
-                if first_expiry is not None:
-                    _append_override(
-                        target_mid_from_cited,
-                        _parse_section_list_labels(m_chain.group(1)),
-                        first_expiry,
-                    )
+            first_expiry = parse_fi_day_month_year(
+                m_chain.group(2),
+                m_chain.group(3),
+                m_chain.group(4),
+            )
+            if first_expiry is not None:
+                _append_override(
+                    target_mid_from_cited,
+                    _parse_section_list_labels(m_chain.group(1)),
+                    first_expiry,
+                )
             tail = m_chain.group(5)
             for m_tail in _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE.finditer(tail):
-                tail_month = FI_MONTH_MAP.get(m_tail.group(3).lower())
-                if tail_month is None:
-                    continue
-                try:
-                    tail_expiry = dt.date(int(m_tail.group(4)), tail_month, int(m_tail.group(2)))
-                except ValueError:
+                tail_expiry = parse_fi_day_month_year(
+                    m_tail.group(2),
+                    m_tail.group(3),
+                    m_tail.group(4),
+                )
+                if tail_expiry is None:
                     continue
                 _append_override(
                     target_mid_from_cited,
@@ -1578,12 +1550,8 @@ def _section_commencement_effective_override(
     if match is None:
         return None
 
-    month = FI_MONTH_MAP.get(match.group(3).lower())
-    if month is None:
-        return None
-    try:
-        effective = dt.date(int(match.group(4)), month, int(match.group(2)))
-    except ValueError:
+    effective = parse_fi_day_month_year(match.group(2), match.group(3), match.group(4))
+    if effective is None:
         return None
 
     refs_text = match.group(1)
@@ -1635,12 +1603,8 @@ def _section_subsection_commencement_effective_override(
     if match is None:
         return None
 
-    month = FI_MONTH_MAP.get(match.group(3).lower())
-    if month is None:
-        return None
-    try:
-        effective = dt.date(int(match.group(4)), month, int(match.group(2)))
-    except ValueError:
+    effective = parse_fi_day_month_year(match.group(2), match.group(3), match.group(4))
+    if effective is None:
         return None
 
     addresses: list[LegalAddress] = []
@@ -1828,12 +1792,8 @@ def _chapter_expiry_from_base(
     )
     if not m:
         return None
-    month = FI_MONTH_MAP.get(m.group(3).lower())
-    if month is None:
-        return None
-    try:
-        expiry = dt.date(int(m.group(4)), month, int(m.group(2)))
-    except ValueError:
+    expiry = parse_fi_day_month_year(m.group(2), m.group(3), m.group(4))
+    if expiry is None:
         return None
     return m.group(1), expiry
 
@@ -1873,29 +1833,19 @@ def _amendment_effective_date_with_step(
         flags=re.IGNORECASE
     )
     if m:
-        month = FI_MONTH_MAP.get(m.group(2).lower())
-        if month is not None:
-            try:
-                text_date = dt.date(int(m.group(3)), month, int(m.group(1)))
-                # Sanity: effective date must be >= issuance date
-                if issued is None or text_date >= issued:
-                    return text_date, 'text_regex'
-            except ValueError:
-                pass
+        text_date = parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
+        # Sanity: effective date must be >= issuance date
+        if text_date is not None and (issued is None or text_date >= issued):
+            return text_date, 'text_regex'
     m = re.search(
         r'Tätä\s+(?:lakia|asetusta|päätöstä)\s+sovelletaan\s+(\d{1,2})\s+päivästä\s+([a-zäöå]+)\s+(\d{4})\s+lukien',
         full_text,
         flags=re.IGNORECASE,
     )
     if m:
-        month = FI_MONTH_MAP.get(m.group(2).lower())
-        if month is not None:
-            try:
-                text_date = dt.date(int(m.group(3)), month, int(m.group(1)))
-                if issued is None or text_date >= issued:
-                    return text_date, 'text_regex'
-            except ValueError:
-                pass
+        text_date = parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
+        if text_date is not None and (issued is None or text_date >= issued):
+            return text_date, 'text_regex'
     # 2b. Decree-set or otherwise contingent commencement: we know the law was
     # not in force at issuance, but we do not know the actual force date yet.
     if re.search(
@@ -1950,13 +1900,7 @@ def _statute_issue_date(tree: "etree._Element") -> Optional[dt.date]:
         )
         if not m:
             return None
-        month = FI_MONTH_MAP.get(m.group(2).lower())
-        if month is None:
-            return None
-        try:
-            return dt.date(int(m.group(3)), month, int(m.group(1)))
-        except ValueError:
-            return None
+        return parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
 
     fallback_issued_generated: Optional[dt.date] = None
     for el in tree.findall('.//{*}FRBRdate'):

@@ -451,6 +451,7 @@ def get_consolidated_oracle_reflected_source_vts_children(
 
 
 _FINLEX_ORIGINAL_VERSION_ATTR = "{http://data.finlex.fi/schema/finlex}originalVersion"
+_FINLEX_VERSIONED_EID_SUFFIX_RE = re.compile(r"v\d{8}$")
 _ORACLE_FUTURE_REPEAL_NOTICE_RE = re.compile(r"\btulee\s+voimaan\b", re.IGNORECASE)
 
 
@@ -459,6 +460,13 @@ def _finlex_original_version_to_statute_id(value: str) -> str:
     if len(token) < 5 or not token.isdigit():
         return ""
     return f"{token[:4]}/{int(token[4:])}"
+
+
+def _finlex_section_eid_base(section_el: etree._Element) -> str:
+    eid = str(section_el.get("eId") or "").strip()
+    if not eid:
+        return ""
+    return _FINLEX_VERSIONED_EID_SUFFIX_RE.sub("", eid)
 
 
 def get_consolidated_oracle_reflected_section_original_versions(
@@ -485,10 +493,22 @@ def get_consolidated_oracle_reflected_section_original_versions(
     except etree.XMLSyntaxError:
         return set()
 
+    sections = tuple(tree.findall(".//{*}section"))
+    current_section_eid_bases = {
+        base
+        for section_el in sections
+        if not str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
+        for base in (_finlex_section_eid_base(section_el),)
+        if base
+    }
+
     reflected: set[str] = set()
-    for section_el in tree.findall(".//{*}section"):
+    for section_el in sections:
         original_version = str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
         if not original_version:
+            continue
+        section_eid_base = _finlex_section_eid_base(section_el)
+        if section_eid_base and section_eid_base in current_section_eid_bases:
             continue
         section_text = " ".join("".join(str(part) for part in section_el.itertext()).split())
         if _ORACLE_FUTURE_REPEAL_NOTICE_RE.search(section_text):

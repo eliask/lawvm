@@ -154,7 +154,7 @@ be visible.
 Constraint filters must not return only “accepted operations.” They must also
 return rejected operations with reason, source, and blocking/strictness status.
 
-### 1.9 avoid getattr and stringly-typed operations etc without a good reason
+### 1.9 Typed carriers over dynamic shape
 
 Semantic/control-plane tuples with more than two fields should normally be a
 named typed carrier, preferably `@dataclass(frozen=True, slots=True)`. This
@@ -167,7 +167,21 @@ details, mutation accounting, or any value where field order carries legal
 meaning. If a tuple needs a comment explaining slot positions, make it a
 dataclass.
 
-### 1.10 avoid try-except too particularly in non-test code
+The same rule applies to wild `dict[str, object]`, `Any`, `object`, `getattr`,
+and `hasattr`: avoid them at semantic or phase boundaries. Use typed carriers
+unless the value is explicitly local JSON/projection plumbing, test scaffolding,
+third-party adapter code, or another concrete dynamic-shape case. Dynamic shape
+is sometimes practical at the edge; inside LawVM's legal-state pipeline it
+usually hides which fields are required, which scope a label belongs to, and
+whether a caller accidentally passed a serialized view back into semantics.
+Bare labels must not imply a default `LegalAddress` level; carry the legal
+unit/scope explicitly.
+
+### 1.10 Avoid broad exception swallowing
+
+Avoid `try`/`except` in non-test code unless the boundary, failure mode, and
+diagnostic are explicit. Catching a broad exception to keep compilation moving
+is usually another form of invisible heuristic.
 
 ### 1.11 Hot-path performance discipline
 

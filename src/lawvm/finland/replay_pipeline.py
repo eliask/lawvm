@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional
 
 from lawvm.corpus_store import CorpusStore
+from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.provenance import MigrationEvent
@@ -15,6 +16,7 @@ from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallba
 from lawvm.core.tree_ops import resort_children as _resort_children
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
 from lawvm.finland.future_repeal_prescan import (
     PreScanRepealDiagnostic,
     PreScanRepealTargetsRequest,
@@ -82,12 +84,15 @@ class ReplaySignalBuffers:
     sparse_slot_bindings: list[dict[str, object]]
     sparse_leftovers: list[dict[str, object]]
     regex_recognition_coverages: list[RegexRecognitionCoverage]
-    commencement_expiry_overrides: list[dict[str, object]]
+    commencement_expiry_overrides: list[EffectLifecycleOverride]
     mutation_events: list[ApplyMutationEvent]
     mutation_invariant_reports: list[Any]
     write_audits: list[ObservedWriteAudit]
     migration_events: list[MigrationEvent]
     temporal_events: list[Any]
+    source_effects: list[EffectRef]
+    effect_relations: list[EffectRelation]
+    effect_lifecycle_events: list[EffectLifecycleEvent]
     restructure_plans: list[StructuralTransformPlan]
 
     @classmethod
@@ -105,6 +110,9 @@ class ReplaySignalBuffers:
             write_audits=[],
             migration_events=[],
             temporal_events=[],
+            source_effects=[],
+            effect_relations=[],
+            effect_lifecycle_events=[],
             restructure_plans=[],
         )
 
@@ -118,7 +126,7 @@ class ReplaySignalBuffers:
         sparse_slot_bindings_out: Optional[List[Any]] = None,
         sparse_leftovers_out: Optional[List[Any]] = None,
         regex_recognition_coverage_out: Optional[List[Any]] = None,
-        commencement_expiry_overrides_out: Optional[List[Any]] = None,
+        commencement_expiry_overrides_out: Optional[List[EffectLifecycleOverride]] = None,
         mutation_events_out: Optional[List[Any]] = None,
         write_audits_out: Optional[List[Any]] = None,
         migration_events_out: Optional[List[MigrationEvent]] = None,
@@ -156,6 +164,9 @@ class ReplaySignalBuffers:
                 migration_events_out if migration_events_out is not None else []
             ),
             temporal_events=temporal_events_out if temporal_events_out is not None else [],
+            source_effects=[],
+            effect_relations=[],
+            effect_lifecycle_events=[],
             restructure_plans=(
                 restructure_plans_out if restructure_plans_out is not None else []
             ),
@@ -505,7 +516,7 @@ def execute_replay_plan(
     sparse_slot_bindings_out: Optional[List[Any]] = None,
     sparse_leftovers_out: Optional[List[Any]] = None,
     regex_recognition_coverage_out: Optional[List[Any]] = None,
-    commencement_expiry_overrides_out: Optional[List[Any]] = None,
+    commencement_expiry_overrides_out: Optional[List[EffectLifecycleOverride]] = None,
     mutation_events_out: Optional[List[Any]] = None,
     write_audits_out: Optional[List[Any]] = None,
     migration_events_out: Optional[List[MigrationEvent]] = None,
@@ -631,6 +642,9 @@ def execute_replay_plan(
                 ir_snapshot=lambda _s=_cp_state: _s.ir,
             ))
         signals.temporal_events.extend(_pm_result.temporal_events)
+        signals.source_effects.extend(_pm_result.source_effects)
+        signals.effect_relations.extend(_pm_result.effect_relations)
+        signals.effect_lifecycle_events.extend(_pm_result.effect_lifecycle_events)
         signals.findings.extend(phase_findings)
         # Per-amendment invariant checks are expensive for heavily-amended
         # statutes (O(amendments * nodes)).  Skip them when the final

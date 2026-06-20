@@ -25,7 +25,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline import compile_timelines, materialize_pit, select_active_version_ex
 from lawvm.core.phase_result import PhaseResult
 from lawvm.core.observation_registry import FINDING_REGISTRY, finding_codes_by_role
-from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.tools.consistency import ConsistencyResult, ConsistencyIssue, _section_versions_from_timelines
 
 

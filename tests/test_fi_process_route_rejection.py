@@ -77,10 +77,18 @@ def test_route_rejection_num_collision_has_stable_rule_metadata() -> None:
 
 
 def test_route_rejection_pending_amendment_carries_target_and_rule_metadata() -> None:
-    detail = _recorded_detail(
+    ctx, findings, _prints = _route_context(
         "pending_amendment_of_parent_skip",
         target_amendment_id="2019/50",
     )
+    ctx._record_source_incomplete()
+
+    assert [finding["kind"] for finding in findings] == [
+        "APPLY.SOURCE_INCOMPLETE",
+        "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
+    ]
+    assert all(finding["role"] == "obligation" for finding in findings)
+    detail = findings[0]["detail"]
 
     assert detail["route_reason"] == "pending_amendment_of_parent_skip"
     assert detail["rule_id"] == "fi.route_rejection.pending_amendment_of_parent"
@@ -88,6 +96,7 @@ def test_route_rejection_pending_amendment_carries_target_and_rule_metadata() ->
     assert detail["target_amendment_id"] == "2019/50"
     assert detail["strict_disposition"] == "block"
     assert detail["quirks_disposition"] == "skip_with_finding"
+    assert findings[1]["detail"]["target_amendment_id"] == "2019/50"
 
 
 def test_route_rejection_delegated_authority_has_stable_rule_metadata() -> None:
@@ -111,16 +120,25 @@ def test_route_rejection_citation_mismatch_has_stable_rule_metadata() -> None:
 
 
 def test_route_rejection_meta_repeal_has_stable_rule_metadata() -> None:
-    detail = _recorded_detail(
+    ctx, findings, _prints = _route_context(
         "citation_mismatch_skip",
         johto="kumotaan eräiden lakien muuttamisesta annetun lain ( 123/2010 ) 3 §",
     )
+    ctx._record_source_incomplete()
+
+    assert [finding["kind"] for finding in findings] == [
+        "APPLY.META_REPEAL_EFFECT_RECORDED",
+        "APPLY.SOURCE_INCOMPLETE",
+    ]
+    detail = findings[1]["detail"]
 
     assert detail["route_reason"] == "citation_mismatch_skip"
     assert detail["rule_id"] == "fi.route_rejection.meta_repeal"
     assert detail["branch"] == "meta_repeal"
     assert detail["strict_disposition"] == "block"
     assert detail["quirks_disposition"] == "skip_with_finding"
+    assert findings[0]["detail"]["target_amendment_id"] == "2010/123"
+    assert findings[0]["role"] == "observation"
 
 
 def test_route_rejection_title_targets_other_statute_has_stable_rule_metadata() -> None:
