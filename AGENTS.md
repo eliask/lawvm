@@ -1,18 +1,15 @@
 # LawVM Agent Guide
 
-LawVM treats legislation as an executable state transition system.
+LawVM treats legislation as an executable state transition system: amendment
+acts are legal-language programs that replace, repeal, insert, renumber, move,
+delay commencement, restrict scope, and otherwise mutate a statute tree. LawVM
+compiles those instructions into typed operations and replays them over legal
+text structure.
 
-Amendment acts are programs written in legal language. They replace, repeal,
-insert, renumber, move, delay commencement, restrict scope, and otherwise mutate
-a statute tree. LawVM compiles those instructions into typed operations and
-replays them over legal text structure.
-
-The output is an auditable account of how legal text-state came to be, which
-source facts support it, which repairs were made, and where disagreement or
-uncertainty remains.
-
-This file is for agents working in the repository. Read it as an operating
-contract, not background prose.
+The output is an auditable account of how legal text-state came to be: source
+facts, repairs, and remaining disagreement or uncertainty. This file is for
+agents working in the repository. Read it as an operating contract, not
+background prose.
 
 ---
 
@@ -42,10 +39,9 @@ right” by guessing.
 
 ### 1.0 If existing code doesn't follow these rules, it must be replaced/fixed
 
-There may be legacy code from learning how lawvm should work.
-
-Anything that violates rules in this guide is not permission to keep doing it.
-All such code must be fixed or replaced. When encountering such code, always report it and deliberate what takes highest precedence each time.
+There may be legacy code from learning how LawVM should work. Existing
+violations are not precedent: report them, deliberate precedence, and fix or
+replace them when they fall within the task.
 
 ### 1.1 No silent target hijacking
 
@@ -156,6 +152,11 @@ return rejected operations with reason, source, and blocking/strictness status.
 
 ### 1.9 Typed carriers over dynamic shape
 
+Use typed carriers at semantic/phase boundaries; do not rely on wild
+`dict[str, object]`, `Any`, `object`, dynamic `getattr`/`hasattr`, or implicit
+default `LegalAddress` levels unless a concrete edge-case justification is
+named.
+
 Semantic/control-plane tuples with more than two fields should normally be a
 named typed carrier, preferably `@dataclass(frozen=True, slots=True)`. This
 applies especially to function return annotations and public/internal API
@@ -167,15 +168,11 @@ details, mutation accounting, or any value where field order carries legal
 meaning. If a tuple needs a comment explaining slot positions, make it a
 dataclass.
 
-The same rule applies to wild `dict[str, object]`, `Any`, `object`, `getattr`,
-and `hasattr`: avoid them at semantic or phase boundaries. Use typed carriers
-unless the value is explicitly local JSON/projection plumbing, test scaffolding,
-third-party adapter code, or another concrete dynamic-shape case. Dynamic shape
-is sometimes practical at the edge; inside LawVM's legal-state pipeline it
-usually hides which fields are required, which scope a label belongs to, and
-whether a caller accidentally passed a serialized view back into semantics.
-Bare labels must not imply a default `LegalAddress` level; carry the legal
-unit/scope explicitly.
+Dynamic shape is acceptable only for explicitly local JSON/projection plumbing,
+test scaffolding, third-party adapter code, or another concrete edge case. In
+LawVM's legal-state pipeline, dynamic shape usually hides required fields, label
+scope, or accidental passage of serialized views back into semantics. Bare
+labels must carry the legal unit/scope explicitly.
 
 ### 1.10 Avoid broad exception swallowing
 
@@ -283,6 +280,13 @@ The correct claim is **not** "always a DFA" — drafting languages with balanced
 quotes, nested parentheses, or legal-address substructure may need a recursive
 recognizer. The claim is **single-pass structured recognizer over the text, not
 N overlapping backtracking scans.**
+
+Semantic mutation filters must consume typed operations, ClauseAST/surface
+objects, findings, or source-pathology carriers; do not add raw-prose regex to
+decide target scope, action family, lifecycle effect, or whether to drop/widen a
+legal mutation when a grammar or typed parse can own that fact. If the grammar
+cannot model it yet, add the production or emit an unresolved/rejected typed
+finding.
 
 **Triggers that say "this has become a grammar — stop adding regexes, build a
 recognizer":**
@@ -608,7 +612,7 @@ changed_paths ⊆ target_region(op)
              ∪ declared_migration_paths(op)
              ∪ declared_recovery_paths(op)
              ∪ declared_editorial_projection_paths(op)
-````
+```
 
 If an operation changes anything outside its target region, that extra mutation
 must be declared by:
@@ -970,16 +974,18 @@ profile before reasoning.
 
 ## 20. Agent Final Response Contract
 
-**Before finishing, the canonical gate must pass.** Run `./scripts/ci.sh --affected <touched paths>`
-(change-scoped) or `./scripts/ci.sh` (full bounded gate). It runs the relevant pytest shards **plus ruff lint**
-and is the definition of done — a green `--affected` run is required before you report; use the full gate for
+**Before finishing, the canonical gate must pass.** Run
+`./scripts/ci.sh --affected <touched paths>` (change-scoped) or `./scripts/ci.sh`
+(full bounded gate). It runs the relevant pytest shards plus ruff lint; a green
+`--affected` run is required before you report, with the full gate reserved for
 broad work.
 
-**Do NOT use raw `pytest tests/` as your gate.** It pulls in the `network` (live-HTTP) and `slow` (full gold
-corpus) marked tests, which hang in sandboxed/headless runs — a raw full run can sit for an hour with no result
-and is *not* a code bug. `ci.sh` runs bounded shards that exclude those markers. (To exercise a marked set
-deliberately: `pytest -m network` / `pytest -m slow`.) Keep touched files ruff-clean — do not add to the lint
-debt; `--affected` scopes lint to the relevant shard.
+**Do NOT use raw `pytest tests/` as your gate.** It pulls in `network`
+(live-HTTP) and `slow` (full gold corpus) marked tests, which can hang in
+sandboxed/headless runs for an hour without indicating a code bug. `ci.sh` runs
+bounded shards that exclude those markers. To exercise a marked set deliberately,
+use `pytest -m network` or `pytest -m slow`. Keep touched files ruff-clean;
+`--affected` scopes lint to the relevant shard.
 
 When an agent finishes, it must report:
 
