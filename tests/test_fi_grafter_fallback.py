@@ -14678,6 +14678,48 @@ def test_collect_johto_mentioned_section_labels_expands_alpha_suffix_ranges() ->
     assert {"20a", "21a", "21b", "21c", "23a", "49a"} <= labels
 
 
+def test_collect_johto_mentioned_section_labels_grammar_recovers_alpha_suffix_lists() -> None:
+    # NEW-better (regex->grammar demotion): the legacy section regex dropped
+    # comma-listed alpha-suffix labels; the grammar driver recovers them.
+    labels = _collect_johto_mentioned_section_labels(
+        "muutetaan patenttiasetuksen 17 a, 17 b, 25 a, 25 b ja 25 c §"
+    )
+
+    assert {"17a", "17b", "25a", "25b", "25c"} <= labels
+
+
+def test_collect_johto_mentioned_section_labels_grammar_recovers_glued_suffix_range() -> None:
+    # NEW-better: spaced/glued alpha-suffix range "87 a - 87 c §" the legacy
+    # regex could not expand; the grammar driver yields every endpoint.
+    labels = _collect_johto_mentioned_section_labels(
+        "kumotaan alkoholilain 87 a - 87 c §"
+    )
+
+    assert {"87a", "87b", "87c"} <= labels
+
+
+def test_collect_johto_mentioned_section_labels_anchor_keeps_illative_target() -> None:
+    # The grammar deliberately declines the illative insertion target
+    # "N §:ään"; the bounded anchor supplements it so the mentioned section is
+    # not silently dropped from scope.
+    labels = _collect_johto_mentioned_section_labels(
+        "lisätään valtiopäiväjärjestyksen 16 §:ään uusi 4 momentti"
+    )
+
+    assert "16" in labels
+
+
+def test_collect_johto_mentioned_section_labels_anchor_keeps_partitive_plural_list() -> None:
+    # The lexer does not classify the partitive-plural "§:ien" as a PYKALA
+    # marker, so the grammar declines the whole list; the anchor keeps every
+    # listed section in scope.
+    labels = _collect_johto_mentioned_section_labels(
+        "vahvistanut yhtiöjärjestyksen 2, 4, 14, 17, 18, 21 ja 34 §:ien muutetun sanamuodon"
+    )
+
+    assert {"2", "4", "14", "17", "18", "21", "34"} <= labels
+
+
 def test_collect_johto_chapter_mentions_accepts_luvun_otsikko_form() -> None:
     mentions = _collect_johto_chapter_scope_mentions(
         "lisätään 1 §:n edelle uusi 1 luvun otsikko, "

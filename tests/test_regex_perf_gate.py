@@ -161,11 +161,17 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "lint even though pattern was already fixed. Pre-existing baseline."
     ),
     "src/lawvm/finland/johto_scope_mentions.py": (
-        "Section-label atoms bounded and possessive (\\d{1,4}+\\s{0,3}+[a-z]?), "
-        "so no unbounded backtracking remains. Residual flag is the intrinsic "
-        "nested quantifier of the comma-list/range groups ((?:...)+ / (?:...)?), "
-        "which the parser genuinely needs and which only ever runs on short "
-        "johtolause clauses."
+        "Section/sub-ref structural parsing is DEMOTED onto the shared grammar "
+        "driver (scan_legal_addresses) + a bounded label-run anchor; the section "
+        "list/range regexes are gone. Residual flag is the two CHAPTER-MOVE "
+        "recognizers (_MOVE_DESTINATION_CHAPTER_RE / _MOVE_SECTION_TO_CHAPTER_RE): "
+        "verb-anchored 'siirretään … N lukuun' move-pairing whose source/dest "
+        "semantics the address recognizer does not model. Their gaps are BOUNDED "
+        "lazy [^§\\n]{0,200}? / [^§\\n]{0,120}? between literal anchors "
+        "(siirretään / § / lukuun) with possessive label atoms, so per-anchor "
+        "work is capped and total is linear; the lint flags the bounded-lazy gap "
+        "adjacent to the label group, a benign-linear false positive that only "
+        "runs on short johtolause clauses."
     ),
     "src/lawvm/finland/johtolause/affected_statute.py": (
         "_AFFECTED_HEAD_RE date/title/citation quantifiers bounded and possessive; "
