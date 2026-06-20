@@ -13138,9 +13138,28 @@ def _main_impl() -> None:
 
         _default_db_sf = _Path("data/finlex.farchive")
         _db_path = _Path(args.db) if getattr(args, "db", None) else _default_db_sf
-        _db_path.parent.mkdir(parents=True, exist_ok=True)
 
         _dry = getattr(args, "dry_run", False) or getattr(args, "list_only", False)
+        if _dry:
+            _stats = _sync_changes(
+                archive=None,
+                since=args.since,
+                delay=args.delay,
+                lang=args.lang,
+                doc_type=args.doc_type,
+                dry_run=True,
+                verbose=getattr(args, "verbose", False),
+            )
+            print(
+                f"fetched={_stats['fetched']}  modified={_stats['modified']}  "
+                f"added={_stats['added']}  deleted={_stats['deleted']}  "
+                f"skipped={_stats['skipped']}  errors={_stats['errors']}"
+            )
+            if _stats["errors"]:
+                sys.exit(1)
+            return
+
+        _db_path.parent.mkdir(parents=True, exist_ok=True)
         _archive = _FA(_db_path)
         try:
             _stats = _sync_changes(

@@ -49,6 +49,55 @@ def test_cli_main_suppresses_broken_pipe(monkeypatch) -> None:
     cli.main()
 
 
+def test_sync_finlex_dry_run_does_not_create_missing_archive(
+    tmp_path, monkeypatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from lawvm.finland import finlex_api
+
+    missing_archive = tmp_path / "unused"
+
+    def fake_list_changed_since(
+        since: str,
+        *,
+        doc_type: str = "statute-consolidated",
+        lang: str = "fin",
+    ) -> list[dict[str, str]]:
+        assert since == "2026-03-01T00:00:00Z"
+        assert doc_type == "statute-consolidated"
+        assert lang == "fin"
+        return [
+            {
+                "status": "MODIFIED",
+                "year": "2026",
+                "num": "1",
+                "pit_version": "2026-03-01",
+                "akn_uri": "/akn/fi/act/2026/1",
+            }
+        ]
+
+    monkeypatch.setattr(finlex_api, "list_changed_since", fake_list_changed_since)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "lawvm",
+            "sync-finlex",
+            "--since",
+            "2026-03-01T00:00:00Z",
+            "--db",
+            str(missing_archive),
+            "--dry-run",
+        ],
+    )
+
+    cli._main_impl()
+
+    out = capsys.readouterr().out
+    assert "fetched=0" in out
+    assert "modified=1" in out
+    assert not missing_archive.exists()
+
+
 def test_bench_cli_help_matches_fi_tooling_defaults(
     cli_parser, capsys: pytest.CaptureFixture[str]
 ) -> None:
