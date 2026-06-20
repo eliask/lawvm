@@ -182,6 +182,58 @@ def test_phase_result_rejects_untyped_effect_side_channel_values() -> None:
         )
 
 
+def test_phase_result_rejects_duplicate_effect_graph_ids() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect_a = EffectRef(effect_id="effect:a", source_instrument=instrument)
+    effect_b = EffectRef(effect_id="effect:a", source_instrument=instrument)
+    target_effect = EffectRef(effect_id="effect:target", source_instrument=instrument)
+    relation_a = EffectRelation(
+        relation_id="relation:a",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    relation_b = EffectRelation(
+        relation_id="relation:a",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    lifecycle_a = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:a",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        relation=relation_a,
+        executable=False,
+    )
+    lifecycle_b = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:a",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        relation=relation_b,
+        executable=False,
+    )
+
+    with pytest.raises(ValueError, match="duplicate effect_id"):
+        PhaseResult(output=None, source_effects=(effect_a, effect_b))
+    with pytest.raises(ValueError, match="duplicate relation_id"):
+        PhaseResult(output=None, effect_relations=(relation_a, relation_b))
+    with pytest.raises(ValueError, match="duplicate lifecycle_event_id"):
+        PhaseResult(output=None, effect_lifecycle_events=(lifecycle_a, lifecycle_b))
+
+
+def test_phase_result_merge_rejects_duplicate_effect_graph_ids() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    effect_a = EffectRef(effect_id="effect:a", source_instrument=instrument)
+    effect_b = EffectRef(effect_id="effect:a", source_instrument=instrument)
+    pr_a = PhaseResult(output="a", source_effects=(effect_a,))
+    pr_b = PhaseResult(output="b", source_effects=(effect_b,))
+
+    with pytest.raises(ValueError, match="duplicate effect_id"):
+        pr_a.merge(pr_b)
+
+
 def test_phase_builder_rejects_untyped_effect_side_channel_values() -> None:
     builder: PhaseBuilder[None] = PhaseBuilder()
 
