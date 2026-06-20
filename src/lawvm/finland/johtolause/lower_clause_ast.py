@@ -62,7 +62,7 @@ from lawvm.core.clause_ast import (
 )
 from lawvm.core.ir import LegalAddress, TextPatchSpec, TextSelector
 from lawvm.core.semantic_types import FacetKind, LabelAction, StructuralAction, TextPatchKindEnum
-from lawvm.finland.johtolause.surface_model import ScopeKind, TargetKind, VerbKind
+from lawvm.finland.johtolause.surface_model import ScopeKind, SurfaceSubRef, TargetKind, VerbKind
 from lawvm.finland.johtolause.surface_resolve import (
     ResolvedDescendantCoordination,
     ResolvedHeadingPlacement,
@@ -80,6 +80,8 @@ from lawvm.finland.johtolause.surface_resolve import (
 
 FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_RULE_ID = "fi.text_amend.unlowerable_empty_selector.v1"
 FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_KIND = "JOHTOLAUSE.TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR"
+FI_SPECIAL_TARGET_UNLOWERABLE_RULE_ID = "fi.johtolause.special_target_unlowerable.v1"
+FI_SPECIAL_TARGET_UNLOWERABLE_KIND = "JOHTOLAUSE.SPECIAL_TARGET_UNLOWERABLE"
 
 
 @dataclass(frozen=True)
@@ -297,6 +299,7 @@ def _build_destination_address(
 def _lower_resolved_target_ref(
     node: ResolvedTargetRef,
     verb: VerbKind,
+    diagnostics_out: Optional[List[ClauseAstLoweringDiagnostic]] = None,
 ) -> List[ClauseNode]:
     """Lower one ResolvedTargetRef to one or more ClauseNodes.
 
@@ -397,6 +400,17 @@ def _lower_resolved_target_ref(
     # --- Per-sub_ref expansion ---
     result: List[ClauseNode] = []
     for sr in node.sub_refs:
+        if _is_unlowerable_named_subprovision(sr):
+            _record_unlowerable_special_target(
+                diagnostics_out,
+                node=node,
+                verb=verb,
+                descriptor=sr.special,
+                witness_rule_id=witness_rule_id or "",
+                source_span=source_tokens,
+            )
+            continue
+
         # Map FacetKind enum to legacy special string for _build_target_address
         special_str: str = ""
         if sr.facet is FacetKind.HEADING:
@@ -485,6 +499,56 @@ def _lower_resolved_target_ref(
         )
 
     return result
+
+
+def _is_unlowerable_named_subprovision(sub_ref: SurfaceSubRef) -> bool:
+    """True when a parsed named sub-provision has no concrete address carrier."""
+    return (
+        bool(sub_ref.special)
+        and sub_ref.facet is None
+        and not sub_ref.momentti
+        and not sub_ref.item
+    )
+
+
+def _record_unlowerable_special_target(
+    diagnostics_out: Optional[List[ClauseAstLoweringDiagnostic]],
+    *,
+    node: ResolvedTargetRef,
+    verb: VerbKind,
+    descriptor: str,
+    witness_rule_id: str,
+    source_span: Optional[Tuple[int, int]],
+) -> None:
+    if diagnostics_out is None:
+        return
+    host = _build_target_address(
+        node.kind,
+        node.label,
+        node.chapter,
+        node.part,
+        momentti=0,
+        item="",
+        special="",
+    )
+    diagnostics_out.append(
+        ClauseAstLoweringDiagnostic(
+            kind=FI_SPECIAL_TARGET_UNLOWERABLE_KIND,
+            rule_id=FI_SPECIAL_TARGET_UNLOWERABLE_RULE_ID,
+            phase="lower_clause_ast",
+            family="unsupported_target_granularity",
+            reason_code="SPECIAL_SUBPROVISION_HAS_NO_TYPED_ADDRESS",
+            strict_disposition="block",
+            quirks_disposition="record",
+            detail={
+                "descriptor": descriptor,
+                "host_target": str(host),
+                "verb": verb.value,
+                "witness_rule_id": witness_rule_id,
+                "source_span": source_span,
+            },
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -586,6 +650,7 @@ def _lower_resolved_heading_placement(
 def _lower_resolved_scope_block(
     node: ResolvedScopeBlock,
     verb: VerbKind,
+    diagnostics_out: Optional[List[ClauseAstLoweringDiagnostic]] = None,
 ) -> List[ClauseNode]:
     """Lower a ResolvedScopeBlock to a ScopedBlock preserving scope grouping.
 
@@ -616,7 +681,7 @@ def _lower_resolved_scope_block(
             effective_target = target
             if scope_kind == "chapter" and scope_part and target.part == scope_part:
                 effective_target = _dc_replace(target, part="")
-            children.extend(_lower_resolved_target_ref(effective_target, verb))
+            children.extend(_lower_resolved_target_ref(effective_target, verb, diagnostics_out))
 
     return [ScopedBlock(scope=scope, children=tuple(children))]
 
@@ -629,6 +694,7 @@ def _lower_resolved_scope_block(
 def _lower_resolved_descendant_coordination(
     node: ResolvedDescendantCoordination,
     verb: VerbKind,
+    diagnostics_out: Optional[List[ClauseAstLoweringDiagnostic]] = None,
 ) -> List[ClauseNode]:
     """Lower a ResolvedDescendantCoordination by expanding base + arms.
 
@@ -648,6 +714,17 @@ def _lower_resolved_descendant_coordination(
     action = _VERB_TO_ACTION.get(verb, StructuralAction.REPLACE)
 
     for sr in node.arms:
+        if _is_unlowerable_named_subprovision(sr):
+            _record_unlowerable_special_target(
+                diagnostics_out,
+                node=node.base,
+                verb=verb,
+                descriptor=sr.special,
+                witness_rule_id=witness_rule_id or "",
+                source_span=source_tokens,
+            )
+            continue
+
         # Map FacetKind enum to legacy special string
         special_str: str = ""
         if sr.facet is FacetKind.HEADING:
@@ -833,15 +910,15 @@ def _lower_resolved_node(
     expand into multiple ClauseNodes.
     """
     if isinstance(node, ResolvedTargetRef):
-        return _lower_resolved_target_ref(node, verb)
+        return _lower_resolved_target_ref(node, verb, diagnostics_out)
     if isinstance(node, ResolvedInsertion):
         return _lower_resolved_insertion(node, verb)
     if isinstance(node, ResolvedHeadingPlacement):
         return _lower_resolved_heading_placement(node, verb)
     if isinstance(node, ResolvedScopeBlock):
-        return _lower_resolved_scope_block(node, verb)
+        return _lower_resolved_scope_block(node, verb, diagnostics_out)
     if isinstance(node, ResolvedDescendantCoordination):
-        return _lower_resolved_descendant_coordination(node, verb)
+        return _lower_resolved_descendant_coordination(node, verb, diagnostics_out)
     if isinstance(node, ResolvedTextAmend):
         return _lower_resolved_text_amend(node, verb, diagnostics_out)
     if isinstance(node, ResolvedMetaClause):

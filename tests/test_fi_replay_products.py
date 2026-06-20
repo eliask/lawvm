@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import datetime as dt
 from contextlib import redirect_stdout
 from io import StringIO
 from typing import cast
@@ -32,7 +33,10 @@ from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_corpus
 from lawvm.finland.metadata import get_johtolause
-from lawvm.finland.kumotaan_replay import _live_suffix_section_labels_for_numeric_kumotaan_ranges
+from lawvm.finland.kumotaan_replay import (
+    _inject_pure_kumotaan_subsection_repeal_ops,
+    _live_suffix_section_labels_for_numeric_kumotaan_ranges,
+)
 from tests.corpus_pin_helpers import replay_xml_for_test
 from lawvm.core.timeline import compile_timelines
 from lawvm.core.timeline import materialize_pit_ex
@@ -707,6 +711,95 @@ def test_replay_xml_1987_1250_chapter_scoped_kumotaan_repeals_right_section() ->
     untouched = replay.materialized_state.find_node("section", "5d", "chapter", "1")
     assert untouched is not None, "1 luvun 5 d § must remain live"
     assert " ".join(irnode_to_text(untouched).split()).startswith("5 d § Pääomalainalle")
+
+
+def test_replay_xml_2011_806_pure_kumotaan_subsection_keeps_chapter_scope() -> None:
+    """2025/1104 repeals 8 luvun 21 §:n 3 momentti, not chapter 3's §21."""
+    lo_ops: list[LegalOperation] = []
+    replay = replay_xml_for_test(
+        "2011/806",
+        mode="legal_pit",
+        quiet=True,
+        lo_ops_out=lo_ops,
+        as_of="2026-01-01",
+    )
+
+    pure_ops = [
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2025/1104"
+        and op.op_id.startswith("pure_subsec_repeal_21_3_")
+    ]
+    assert len(pure_ops) == 1
+    assert pure_ops[0].target == LegalAddress(
+        path=(("chapter", "8"), ("section", "21"), ("subsection", "3"))
+    )
+    assert pure_ops[0].payload is not None
+    assert pure_ops[0].payload.attrs.get("lawvm_repeal_placeholder") == "1"
+
+    chapter_3_section_21 = replay.materialized_state.find_section("21", "3")
+    assert chapter_3_section_21 is not None
+    chapter_3_subsection_3 = next(
+        child
+        for child in chapter_3_section_21.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "3"
+    )
+    assert chapter_3_subsection_3.attrs.get("lawvm_repeal_placeholder") is None
+    assert replay.materialized_state.find_section("21", "8") is not None
+
+
+def test_pure_kumotaan_subsection_injection_skips_unscoped_duplicate_sections() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="21",
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="3"),),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="8",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="21",
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="3"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    lo_ops: list[LegalOperation] = []
+    result = _inject_pure_kumotaan_subsection_repeal_ops(
+        lo_ops,
+        amendment_id="2025/1104",
+        source_title="",
+        kumotaan_subsection_map={"21": ["3"]},
+        amendment_effective_date=dt.date(2025, 12, 15),
+        state=ReplayState(ir=body),
+        source_raw_text="kumotaan 21 §:n 3 momentti",
+    )
+
+    assert result.injected_count == 0
+    assert lo_ops == []
+    assert len(result.skipped_targets) == 1
+    skipped = result.skipped_targets[0]
+    assert skipped.reason == "ambiguous_duplicate_section_label_without_source_scope"
+    assert skipped.section_label == "21"
+    assert skipped.subsection_labels == ("3",)
+    assert {address.path for address in skipped.candidate_paths} == {
+        (("chapter", "3"), ("section", "21")),
+        (("chapter", "8"), ("section", "21")),
+    }
 
 
 def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None:

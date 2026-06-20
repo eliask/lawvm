@@ -11,6 +11,7 @@ from lawvm.finland.johtolause.clause_patterns import (
     parse_named_table_row_mixed_clauses_with_coverage,
     parse_named_table_row_single_clauses_with_coverage,
 )
+from lawvm.finland.johtolause import extract_legal_ops
 from lawvm.finland.johtolause.clause_surface import (
     parse_item_shift_after_repeal_clauses,
     parse_item_shift_clauses,
@@ -62,6 +63,12 @@ def _target(*ops: ParsedOp) -> SurfaceTarget:
 
 def test_target_kind_for_leaf_kind_rejects_unknown_leaf_kind() -> None:
     assert TargetKind.for_leaf_kind("unknown") is None
+
+
+def test_dotted_kohta_descriptor_does_not_lower_to_whole_section_repeal() -> None:
+    ops = extract_legal_ops("kumotaan 1 §:n 3.3.2. kohta")
+
+    assert ops == []
 
 
 class TestResolveSurfaceBackref:

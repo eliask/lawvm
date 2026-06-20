@@ -380,7 +380,7 @@ class ProcessTemporalPostprocessContext:
         subsection_map = _extract_kumotaan_subsection_refs(johto_for_subsection)
         if not subsection_map:
             return
-        pure_subsection_count = _inject_pure_kumotaan_subsection_repeal_ops(
+        pure_subsection_result = _inject_pure_kumotaan_subsection_repeal_ops(
             self.lo_ops_out,
             amendment_id=self.amendment_id,
             source_title=self.source_title,
@@ -390,6 +390,19 @@ class ProcessTemporalPostprocessContext:
             state=self.state,
             source_raw_text=johto_for_subsection,
         )
+        for skipped in pure_subsection_result.skipped_targets:
+            self.record_finding(
+                kind="APPLY.UNCOVERED_BODY_RECOVERY_SKIPPED",
+                message="Pure kumotaan subsection injection skipped an unresolved target.",
+                source_statute=self.amendment_id,
+                detail={
+                    "message": "Pure kumotaan subsection injection skipped an unresolved target.",
+                    **skipped.finding_detail(),
+                },
+                role="observation",
+                blocking=False,
+            )
+        pure_subsection_count = pure_subsection_result.injected_count
         if pure_subsection_count:
             self.replay_print(
                 f"  [{self.amendment_id}] pure_kumotaan_subsection_repeal_injected: "

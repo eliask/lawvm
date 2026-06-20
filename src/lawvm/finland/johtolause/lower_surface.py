@@ -152,6 +152,8 @@ def _lower_target_ref(node: SurfaceTargetRef, verb: str) -> list[ParsedOp]:
 
     ops: list[ParsedOp] = []
     for sr in node.sub_refs:
+        if sr.special and sr.facet is None and not sr.momentti and not sr.item:
+            continue
         special = _facet_to_special(sr.facet)
         op = ParsedOp(
             verb=verb,

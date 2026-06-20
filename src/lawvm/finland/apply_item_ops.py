@@ -1691,6 +1691,39 @@ def _apply_special_targets(
         logger.debug("  %s → otsikko repeal noop (no heading)", ctx_label)
         return state
 
+    if view.op_type == "REPEAL" and view.target_special == "johd":
+        intro_kinds = {IRNodeKind.INTRO, IRNodeKind.CONTENT}
+        if view.target_paragraph is None:
+            new_children = [c for c in sec.children if c.kind not in intro_kinds]
+            if len(new_children) != len(sec.children):
+                logger.debug("  %s → section johd repeal", ctx_label)
+                return _with_preserved_provision_index(
+                    state, _tops.replace_at(state.ir, sec_path, _tops._with_children(sec, new_children))
+                )
+            logger.debug("  %s → section johd repeal noop (no intro)", ctx_label)
+            return state
+
+        target_label = str(view.target_paragraph)
+        exact_live_idx = next(
+            (
+                idx
+                for idx, sub in enumerate(subsecs)
+                if sub.label and _norm_num_token(sub.label) == target_label
+            ),
+            None,
+        )
+        n = exact_live_idx if exact_live_idx is not None else _resolve_item_subsection_index(subsecs, view.target_paragraph)
+        if 0 <= n < len(subsecs):
+            sub = subsecs[n]
+            new_sub_children = [c for c in sub.children if c.kind not in intro_kinds]
+            if len(new_sub_children) != len(sub.children):
+                new_sub = _tops._with_children(sub, new_sub_children)
+                new_sec = _tops.replace_nth(sec, "subsection", n, new_sub)
+                logger.debug("  %s → subsection johd repeal", ctx_label)
+                return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
+            logger.debug("  %s → subsection johd repeal noop (no intro)", ctx_label)
+            return state
+
     if view.op_type == "REPLACE" and view.target_special == "johd" and muutos_ir is not None:
         target_label = str(view.target_paragraph or "")
         exact_live_idx = next(

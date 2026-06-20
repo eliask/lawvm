@@ -108,10 +108,6 @@ from lawvm.finland.frontend_observations import (
 from lawvm.finland.replay_notices import replay_print as _replay_print
 
 _WHITESPACE_RE = re.compile(r"\s+")
-_DEEP_REPEAL_TARGET_RE = re.compile(
-    r"§\s*:n\s+.+\b(?:kohta|kohdan|alakohta|alakohdan)\b",
-    flags=re.I,
-)
 _TEMPORARY_SECTION_PREFIX_RE = re.compile(r"^\s*(?:uusi|uudet)\s*", flags=re.IGNORECASE)
 
 logger = logging.getLogger(__name__)
@@ -304,9 +300,14 @@ def _reject_overbroad_section_repeals_for_deep_targets(
     into a parent deletion. Keep the unsupported overbroad repeal visible
     instead of mutating the parent.
     """
-    cleaned = _WHITESPACE_RE.sub(" ", johto or "").strip().lower()
-    mentions_deep_repeal = bool(_DEEP_REPEAL_TARGET_RE.search(cleaned))
-    if not mentions_deep_repeal:
+    deep_repeal_sections = {
+        _norm_num_token(op.target_section or "")
+        for op in ops
+        if op.op_type == "REPEAL"
+        and op.target_section
+        and op.target_item is not None
+    }
+    if not deep_repeal_sections:
         return ops, []
 
     kept: List[AmendmentOp] = []
@@ -318,6 +319,7 @@ def _reject_overbroad_section_repeals_for_deep_targets(
             and op.target_paragraph is None
             and op.target_item is None
             and op.target_special is None
+            and _norm_num_token(op.target_section or "") in deep_repeal_sections
         ):
             findings.append(
                 Finding(
