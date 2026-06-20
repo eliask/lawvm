@@ -10445,6 +10445,53 @@ class TestApplyItemRepeal:
         result = _apply_item_repeal(state, op, sec_path, sec, subsecs, _LEGAL_PIT, "1 § 2 mom 99 k")
         assert _unchanged(state, result)
 
+    def test_repeal_absent_item_label_witnesses_anchor_absent(self):
+        """An item REPEAL whose target label is absent from the resolved
+        subsection is structurally a no-op, but must witness the absent anchor on
+        the production source-pathology ledger rather than vanishing silently.
+        (EXIT_REAUDIT_2 V4)
+        """
+        state, sec_path, sec = self._make_sec_with_items()
+        op = _op(op_type="REPEAL", target_section="1", target_paragraph=2, target_item="99")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        result = _apply_item_repeal(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            _LEGAL_PIT,
+            "1 § 2 mom 99 k",
+            source_pathologies_out=pathologies,
+        )
+        assert _unchanged(state, result)
+        codes = [p.code for p in pathologies]
+        assert "ITEM_TARGET_ANCHOR_ABSENT" in codes, codes
+        witness = next(p for p in pathologies if p.code == "ITEM_TARGET_ANCHOR_ABSENT")
+        assert witness.detail["target_item"] == "99"
+        assert witness.detail["target_paragraph"] == "2"
+
+    def test_repeal_present_item_label_emits_no_anchor_absent_witness(self):
+        """A REPEAL whose target label IS present must stay quiet — no spurious
+        absent-anchor witness on the production ledger. (EXIT_REAUDIT_2 V4)
+        """
+        state, sec_path, sec = self._make_sec_with_items()
+        op = _op(op_type="REPEAL", target_section="1", target_paragraph=2, target_item="1")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        _apply_item_repeal(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            _LEGAL_PIT,
+            "1 § 2 mom 1 k",
+            source_pathologies_out=pathologies,
+        )
+        assert "ITEM_TARGET_ANCHOR_ABSENT" not in [p.code for p in pathologies]
+
     def test_not_applicable_for_subsection_repeal(self):
         state, sec_path, sec = self._make_sec_with_items()
         op = _op(op_type="REPEAL", target_section="1", target_paragraph=2)

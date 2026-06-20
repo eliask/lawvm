@@ -772,6 +772,23 @@ def _apply_item_repeal(
             new_sec = _tops.replace_nth(sec, "subsection", n, new_sub)
             logger.debug("  %s → kohta repeal", ctx_label)
             return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
+        # The subsection was resolved but the targeted item label is absent from
+        # its live paragraphs. The repeal is structurally a no-op, but it must
+        # not vanish from the account: witness the absent anchor as a typed
+        # source pathology on the production replay-findings ledger rather than
+        # returning state silently. (EXIT_REAUDIT_2 V4)
+        if source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_item_target_anchor_absent_pathology(
+                    source_statute=view.source_statute,
+                    target_section=view.target_section,
+                    target_paragraph=str(view.target_paragraph or ""),
+                    target_item=str(view.target_item or ""),
+                    live_label=sub.label or "",
+                    live_has_paragraphs=bool(paras),
+                    amend_has_paragraphs=False,
+                )
+            )
     return state
 
 
