@@ -24,7 +24,7 @@ from lawvm.core.target_resolution import (
     TARGET_RESOLVED,
     TARGET_UNRESOLVED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_manual_frontier,
@@ -1021,7 +1021,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
     )
     if proof_obligation_coverage:
         detail["proof_obligation_coverage"] = proof_obligation_coverage
-    detail["target_resolution_certificate"] = _target_resolution_certificate(
+    detail["target_resolution_coverage"] = _target_resolution_coverage(
         owner_phase=owner_phase,
         target_witness=target_witness,
         candidate_targets=candidate_targets,
@@ -1062,7 +1062,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
         target_witness=target_witness,
         compare_witness=compare_witness,
         candidate_set_certificate=detail["candidate_set_certificate"],
-        target_resolution_certificate=detail["target_resolution_certificate"],
+        target_resolution_coverage=detail["target_resolution_coverage"],
         owner_phase=owner_phase,
         frontier_family=frontier_family,
         frontier_status=frontier_status,
@@ -1596,7 +1596,7 @@ def _blocked_proof_certificate(
     ).to_dict()
 
 
-def _target_resolution_certificate(
+def _target_resolution_coverage(
     *,
     owner_phase: str,
     target_witness: Mapping[str, Any],
@@ -1643,7 +1643,7 @@ def _target_resolution_certificate(
                 "modeled_targets_not_replay_authorization": True,
             }
         )
-    return TargetResolutionCertificate(
+    return TargetResolutionCoverage(
         rule_id="uk_frontier_work_item_target_resolution_projection",
         phase=owner_phase or "unknown",
         reason=(
@@ -1676,7 +1676,7 @@ def _packet_completeness(
     target_witness: Mapping[str, Any],
     compare_witness: Mapping[str, Any],
     candidate_set_certificate: Mapping[str, Any],
-    target_resolution_certificate: Mapping[str, Any],
+    target_resolution_coverage: Mapping[str, Any],
     owner_phase: str,
     frontier_family: str,
     frontier_status: str,
@@ -1704,7 +1704,7 @@ def _packet_completeness(
             source_witness.get("digest") or source_witness.get("preview_digest")
         ),
         "has_target_witness": bool(target_witness),
-        "has_target_resolution_certificate": bool(target_resolution_certificate),
+        "has_target_resolution_coverage": bool(target_resolution_coverage),
         "has_compare_witness": bool(compare_witness),
         "has_candidate_set_certificate": bool(candidate_set_certificate),
         "has_candidate_operation_family": bool(candidate_operation_family),
@@ -1734,7 +1734,7 @@ def _packet_completeness(
         and checks["has_frontier_status"]
         and checks["has_source_witness"]
         and checks["has_target_witness"]
-        and checks["has_target_resolution_certificate"]
+        and checks["has_target_resolution_coverage"]
         and checks["has_candidate_set_certificate"]
         and checks["has_candidate_operation_family"]
         and checks["has_required_claim_kind"]

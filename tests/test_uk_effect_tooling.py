@@ -766,7 +766,7 @@ def test_uk_frontier_work_item_defaults_cover_grounding_corpus_families(
     assert work_item_payload["detail"]["candidate_set_certificate"][
         "next_promotion_allowed"
     ] is False
-    target_resolution = work_item_payload["detail"]["target_resolution_certificate"]
+    target_resolution = work_item_payload["detail"]["target_resolution_coverage"]
     assert target_resolution["family"] == "target_resolution"
     assert target_resolution["rule_id"] == (
         "uk_frontier_work_item_target_resolution_projection"
@@ -784,7 +784,7 @@ def test_uk_frontier_work_item_defaults_cover_grounding_corpus_families(
         }
     ]
     assert work_item_payload["detail"]["packet_completeness"][
-        "has_target_resolution_certificate"
+        "has_target_resolution_coverage"
     ] is True
 
 
@@ -856,7 +856,7 @@ def test_uk_frontier_work_item_marks_missing_target_candidates_unavailable() -> 
     ).to_dict()
 
     certificate = work_item["detail"]["candidate_set_certificate"]
-    target_resolution = work_item["detail"]["target_resolution_certificate"]
+    target_resolution = work_item["detail"]["target_resolution_coverage"]
 
     assert certificate["completeness_status"] == "unavailable"
     assert certificate["candidate_count"] == 0
@@ -868,7 +868,7 @@ def test_uk_frontier_work_item_marks_missing_target_candidates_unavailable() -> 
     assert target_resolution["candidate_count"] == 0
     assert "selected_target" not in target_resolution
     assert work_item["detail"]["packet_completeness"][
-        "has_target_resolution_certificate"
+        "has_target_resolution_coverage"
     ] is True
 
 
@@ -6142,7 +6142,7 @@ def test_uk_manual_compile_evidence_jsonl_templates_schedule_note_claim() -> Non
     ]
     assert payload["candidate_set_certificate"]["modeled_targets"] == [modeled_target]
     target_resolution = payload["frontier_work_item"]["detail"][
-        "target_resolution_certificate"
+        "target_resolution_coverage"
     ]
     assert target_resolution["modeled_targets"] == [modeled_target]
     assert target_resolution["target_resolution_not_replay_authorization"] is True

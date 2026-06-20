@@ -27,7 +27,7 @@ from lawvm.core.target_resolution import (
     TARGET_RECOVERED,
     TARGET_REJECTED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
     TargetResolutionStatus,
 )
 from lawvm.new_zealand.acquisition import open_farchive
@@ -878,7 +878,7 @@ def _target_resolution_evidence(
         if candidate.address
         else ()
     )
-    return TargetResolutionCertificate(
+    return TargetResolutionCoverage(
         rule_id=rule_id,
         phase=phase,
         reason=reason,

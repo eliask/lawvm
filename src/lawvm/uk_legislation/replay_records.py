@@ -17,7 +17,7 @@ from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_FALLBACK,
     TARGET_RECOVERED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
@@ -163,7 +163,7 @@ def uk_replay_recovery_action_target_detail(
     detail["quirks_disposition"] = "apply"
     recovery_target = str(extra.get("recovery_target") or "")
     if recovery_target:
-        detail["target_resolution"] = TargetResolutionCertificate(
+        detail["target_resolution"] = TargetResolutionCoverage(
             rule_id=str(detail.get("rule_id") or family),
             phase="replay",
             reason=str(detail.get("reason") or "recovery_selected_alternate_target"),

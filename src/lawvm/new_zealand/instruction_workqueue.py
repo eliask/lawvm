@@ -19,7 +19,7 @@ from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
     TARGET_RECOVERED,
     TARGET_RESOLVED,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.new_zealand.effect_readiness import (
     NZEffectReadinessReport,
@@ -524,7 +524,7 @@ def _latest_oracle_target_resolution_evidence(row: NZInstructionWorkQueueRow) ->
         if row.latest_oracle_target_resolution_status == "exact_source_path"
         else ""
     )
-    return TargetResolutionCertificate(
+    return TargetResolutionCoverage(
         rule_id=row.latest_oracle_target_resolution_rule_id,
         phase="oracle",
         reason="latest oracle source node resolved for instruction text witness",

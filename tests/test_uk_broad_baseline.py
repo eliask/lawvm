@@ -78,14 +78,14 @@ def test_compile_diagnostic_frontier_work_item_uses_family_defaults() -> None:
     ).to_dict()
 
     assert work_item["candidate_operation_family"] == "table_surface_mutation"
-    assert work_item["detail"]["target_resolution_certificate"][
+    assert work_item["detail"]["target_resolution_coverage"][
         "target_resolution_status"
     ] == "resolved"
-    assert work_item["detail"]["target_resolution_certificate"]["source_target"] == (
+    assert work_item["detail"]["target_resolution_coverage"]["source_target"] == (
         "Sch. 12 table"
     )
     assert work_item["detail"]["packet_completeness"][
-        "has_target_resolution_certificate"
+        "has_target_resolution_coverage"
     ] is True
     assert work_item["required_validator_checks"] == [
         "source_witness_targets_table_entry_or_column_surface",
@@ -2721,10 +2721,10 @@ def test_report_from_snapshot_can_fail_on_frontier_work_item_packet_gaps(
         "manual_frontier_work_item_packet_missing_field_counts"
     ] == {
         "execution_authorization": 1,
-        "target_resolution_certificate": 1,
+        "target_resolution_coverage": 1,
     }
     assert report["summary"][
-        "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+        "manual_frontier_work_item_packet_target_resolution_coverage_counts"
     ] == {"unproven": 1}
 
 
@@ -2768,9 +2768,9 @@ def test_report_from_snapshot_downgrades_stale_ready_frontier_packet(
     }
     assert report["summary"][
         "manual_frontier_work_item_packet_missing_field_counts"
-    ] == {"target_resolution_certificate": 1}
+    ] == {"target_resolution_coverage": 1}
     assert report["summary"][
-        "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+        "manual_frontier_work_item_packet_target_resolution_coverage_counts"
     ] == {"unproven": 1}
 
 
@@ -2794,7 +2794,7 @@ def test_report_from_snapshot_accepts_fresh_target_resolution_packet_schema(
                         "ready": 1,
                     },
                     "manual_frontier_work_item_packet_missing_field_counts": {},
-                    "manual_frontier_work_item_packet_target_resolution_certificate_counts": {
+                    "manual_frontier_work_item_packet_target_resolution_coverage_counts": {
                         "present": 1,
                     },
                 }
@@ -2819,7 +2819,7 @@ def test_report_from_snapshot_accepts_fresh_target_resolution_packet_schema(
         "manual_frontier_work_item_packet_missing_field_counts"
     ] == {}
     assert report["summary"][
-        "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+        "manual_frontier_work_item_packet_target_resolution_coverage_counts"
     ] == {"present": 1}
 
 
@@ -3010,7 +3010,7 @@ def test_report_from_snapshot_fails_closed_on_unproved_target_resolution_status(
                     "unaligned": 86.0,
                     "n_replay": 100,
                     "n_oracle": 110,
-                    "manual_frontier_work_item_packet_target_resolution_certificate_counts": {
+                    "manual_frontier_work_item_packet_target_resolution_coverage_counts": {
                         "present": 1,
                     },
                 }

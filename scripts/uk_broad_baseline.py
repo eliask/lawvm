@@ -778,8 +778,8 @@ def score_one(statute_id: str) -> dict[str, Any]:
             "frontier_work_item_validation_issues",
         )
         result[
-            "manual_frontier_work_item_packet_target_resolution_certificate_counts"
-        ] = _manual_frontier_work_item_packet_target_resolution_certificate_counts(
+            "manual_frontier_work_item_packet_target_resolution_coverage_counts"
+        ] = _manual_frontier_work_item_packet_target_resolution_coverage_counts(
             manual_frontier_records
         )
         result["manual_frontier_work_item_target_resolution_status_counts"] = (
@@ -1169,7 +1169,7 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     (
         manual_frontier_work_item_packet_ready_counts,
         manual_frontier_work_item_packet_missing_field_counts,
-        manual_frontier_work_item_packet_target_resolution_certificate_counts,
+        manual_frontier_work_item_packet_target_resolution_coverage_counts,
         manual_frontier_work_item_packet_execution_authorization_validation_issue_counts,
         manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts,
     ) = _aggregate_manual_frontier_work_item_packet_counts(results)
@@ -1456,8 +1456,8 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts": (
             manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts
         ),
-        "manual_frontier_work_item_packet_target_resolution_certificate_counts": (
-            manual_frontier_work_item_packet_target_resolution_certificate_counts
+        "manual_frontier_work_item_packet_target_resolution_coverage_counts": (
+            manual_frontier_work_item_packet_target_resolution_coverage_counts
         ),
         "manual_frontier_work_item_target_resolution_status_counts": (
             manual_frontier_work_item_target_resolution_status_counts
@@ -2734,7 +2734,7 @@ def _manual_frontier_work_item_packet_validation_issue_counts(
     return dict(sorted(counts.items()))
 
 
-def _manual_frontier_work_item_packet_target_resolution_certificate_counts(
+def _manual_frontier_work_item_packet_target_resolution_coverage_counts(
     rows: list[dict[str, Any]],
 ) -> dict[str, int]:
     counts: Counter[str] = Counter()
@@ -2745,7 +2745,7 @@ def _manual_frontier_work_item_packet_target_resolution_certificate_counts(
         if not packet:
             counts["missing_packet_completeness"] += 1
             continue
-        has_certificate = packet.get("has_target_resolution_certificate")
+        has_certificate = packet.get("has_target_resolution_coverage")
         if has_certificate is True:
             counts["present"] += 1
         elif has_certificate is False:
@@ -2770,7 +2770,7 @@ def _manual_frontier_work_item_target_resolution_status_counts(
         if not isinstance(detail, dict):
             counts["missing_detail"] += 1
             continue
-        certificate = detail.get("target_resolution_certificate")
+        certificate = detail.get("target_resolution_coverage")
         if not isinstance(certificate, dict):
             counts["missing_certificate"] += 1
             continue
@@ -2821,7 +2821,7 @@ def _target_resolution_status_for_work_item(work_item: Mapping[str, Any]) -> str
     detail = work_item.get("detail")
     if not isinstance(detail, Mapping):
         return "missing_detail"
-    certificate = detail.get("target_resolution_certificate")
+    certificate = detail.get("target_resolution_coverage")
     if not isinstance(certificate, Mapping):
         return "missing_certificate"
     return str(certificate.get("target_resolution_status") or "unproven")
@@ -2866,7 +2866,7 @@ def _aggregate_manual_frontier_work_item_packet_counts(
         row_target_resolution_counts = Counter(
             _count_mapping(
                 row.get(
-                    "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+                    "manual_frontier_work_item_packet_target_resolution_coverage_counts"
                 ),
             )
         )
@@ -2897,7 +2897,7 @@ def _aggregate_manual_frontier_work_item_packet_counts(
                 if row_ready_counts["ready"] <= 0:
                     del row_ready_counts["ready"]
                 row_ready_counts["not_ready"] += ready_count
-            row_missing_field_counts["target_resolution_certificate"] += packet_count
+            row_missing_field_counts["target_resolution_coverage"] += packet_count
             row_target_resolution_counts["unproven"] += packet_count
         ready_counts.update(row_ready_counts)
         missing_field_counts.update(row_missing_field_counts)
@@ -2937,7 +2937,7 @@ def _aggregate_manual_frontier_work_item_target_resolution_status_counts(
 
 def _target_resolution_packet_count_without_status(row: Mapping[str, Any]) -> int:
     certificate_counts = _count_mapping(
-        row.get("manual_frontier_work_item_packet_target_resolution_certificate_counts")
+        row.get("manual_frontier_work_item_packet_target_resolution_coverage_counts")
     )
     if certificate_counts:
         return sum(
@@ -3136,7 +3136,7 @@ def _manual_frontier_work_item_proof_obligation_status_counts(
     for row in rows:
         if row.get("replay_authorized") is True:
             continue
-        certificate = _proof_obligation_certificate_for_row(row)
+        certificate = _proof_obligation_coverage_for_row(row)
         if not certificate:
             continue
         status = str(certificate.get("proof_status") or "")
@@ -3151,7 +3151,7 @@ def _manual_frontier_work_item_proof_obligation_proved_counts(
     for row in rows:
         if row.get("replay_authorized") is True:
             continue
-        certificate = _proof_obligation_certificate_for_row(row)
+        certificate = _proof_obligation_coverage_for_row(row)
         if not certificate:
             continue
         counts.update(str(proof) for proof in certificate.get("proved_proofs") or ())
@@ -3165,14 +3165,14 @@ def _manual_frontier_work_item_proof_obligation_blocker_counts(
     for row in rows:
         if row.get("replay_authorized") is True:
             continue
-        certificate = _proof_obligation_certificate_for_row(row)
+        certificate = _proof_obligation_coverage_for_row(row)
         if not certificate:
             continue
         counts.update(_count_mapping(certificate.get("blocker_counts")))
     return dict(sorted(counts.items()))
 
 
-def _proof_obligation_certificate_for_row(
+def _proof_obligation_coverage_for_row(
     row: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     work_item = row.get("frontier_work_item")
@@ -3181,7 +3181,7 @@ def _proof_obligation_certificate_for_row(
     detail = work_item.get("detail")
     if not isinstance(detail, Mapping):
         return {}
-    certificate = detail.get("proof_obligation_certificate")
+    certificate = detail.get("proof_obligation_coverage")
     return certificate if isinstance(certificate, Mapping) else {}
 
 
@@ -4311,15 +4311,15 @@ def run_driver(
             "  manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts: "
             f"{counts}"
         )
-    if summary["manual_frontier_work_item_packet_target_resolution_certificate_counts"]:
+    if summary["manual_frontier_work_item_packet_target_resolution_coverage_counts"]:
         counts = ", ".join(
             f"{status}={count}"
             for status, count in summary[
-                "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+                "manual_frontier_work_item_packet_target_resolution_coverage_counts"
             ].items()
         )
         print(
-            "  manual_frontier_work_item_packet_target_resolution_certificate_counts: "
+            "  manual_frontier_work_item_packet_target_resolution_coverage_counts: "
             f"{counts}"
         )
     if summary["manual_frontier_work_item_target_resolution_status_counts"]:
@@ -4846,7 +4846,7 @@ def main(argv: list[str] | None = None) -> int:
         "--fail-on-frontier-target-resolution-gaps",
         action="store_true",
         help=(
-            "Exit nonzero when manual-frontier TargetResolutionCertificate "
+            "Exit nonzero when manual-frontier TargetResolutionCoverage "
             "status counters contain unresolved, missing, or unproven status"
         ),
     )

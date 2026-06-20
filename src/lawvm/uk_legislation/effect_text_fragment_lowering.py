@@ -12,7 +12,7 @@ from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_INFERRED_FROM_PAYLOAD,
     TARGET_RECOVERED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
@@ -1965,7 +1965,7 @@ def _refine_source_carried_child_text_target(
             "source_child_kind": child_kind,
             "source_child_label": child_label,
             "source_rule_id": str(fragment.get("rule_id") or ""),
-            "target_resolution": TargetResolutionCertificate(
+            "target_resolution": TargetResolutionCoverage(
                 rule_id="uk_effect_source_carried_child_text_target_refined",
                 phase="lowering",
                 reason=(

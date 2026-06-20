@@ -18,7 +18,7 @@ from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource,
 from lawvm.core.target_resolution import (
     TARGET_REJECTED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.replay_adjudication import CompileAdjudication
 
@@ -111,7 +111,7 @@ def _record_ee_parse_rejection(
                 quirks_disposition="record",
                 target_title=target_title,
                 statute_fragment=statute_fragment,
-                target_resolution=TargetResolutionCertificate(
+                target_resolution=TargetResolutionCoverage(
                     rule_id=rule_id,
                     phase="parse",
                     reason=reason,

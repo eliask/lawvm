@@ -11,7 +11,7 @@ from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_FALLBACK,
     TARGET_FALLBACK_RESOLVED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.core.temporal_resolution import (
     TEMPORAL_RECOVERY_FAMILY,
@@ -160,7 +160,7 @@ def _nodes_matching_address(
                         affecting_provisions=effect.affecting_provisions if effect is not None else "",
                         effect_type=effect.effect_type if effect is not None else "",
                         source_ref=source_ref,
-                        target_resolution=TargetResolutionCertificate(
+                        target_resolution=TargetResolutionCoverage(
                             rule_id=_UK_COMMENCEMENT_UNNUMBERED_SINGLE_SCHEDULE_RULE_ID,
                             phase="commencement_filter",
                             reason="unnumbered_schedule_unique_live_root",
