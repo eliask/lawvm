@@ -630,14 +630,12 @@ def test_canonical_bundle_rejects_conflicting_executable_temporal_event_ids() ->
         effect=effect,
         effective="2020-06-01",
     )
-    bundle = CanonicalBundle(
-        temporal_events=(direct,),
-        source_effects=(effect,),
-        effect_lifecycle_events=(lifecycle,),
-    )
-
     with pytest.raises(ValueError, match="conflicting duplicate event_id"):
-        _ = bundle.executable_temporal_events
+        CanonicalBundle(
+            temporal_events=(direct,),
+            source_effects=(effect,),
+            effect_lifecycle_events=(lifecycle,),
+        )
 
 
 def test_compiled_op_provenance_tags_freeze_and_validate_tag_sets() -> None:

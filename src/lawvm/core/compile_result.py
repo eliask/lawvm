@@ -603,6 +603,23 @@ def _validate_bundle_purity(
     return violations
 
 
+def _merge_executable_temporal_events(
+    direct_events: tuple[TemporalEvent, ...],
+    lifecycle_events: tuple[EffectLifecycleEvent, ...],
+) -> tuple[TemporalEvent, ...]:
+    events_by_id: dict[str, TemporalEvent] = {}
+    for event in direct_events + lower_lifecycle_events_to_temporal_events(lifecycle_events):
+        previous = events_by_id.get(event.event_id)
+        if previous is None:
+            events_by_id[event.event_id] = event
+        elif previous != event:
+            raise ValueError(
+                "CanonicalBundle.executable_temporal_events conflicting "
+                f"duplicate event_id: {event.event_id!r}"
+            )
+    return tuple(events_by_id.values())
+
+
 @dataclass(frozen=True)
 class CanonicalBundle:
     """The semantic output of compilation.
@@ -676,6 +693,10 @@ class CanonicalBundle:
             effect_relations=self.effect_relations,
             effect_lifecycle_events=self.effect_lifecycle_events,
         )
+        _merge_executable_temporal_events(
+            self.temporal_events,
+            self.effect_lifecycle_events,
+        )
 
     def validate_purity(self) -> list[str]:
         """Return a list of purity violations (empty means pure).
@@ -719,17 +740,10 @@ class CanonicalBundle:
     @property
     def executable_temporal_events(self) -> tuple[TemporalEvent, ...]:
         """Return direct temporal events plus lifecycle-derived projections."""
-        events_by_id: dict[str, TemporalEvent] = {}
-        for event in self.temporal_events + self.lifecycle_projected_temporal_events:
-            previous = events_by_id.get(event.event_id)
-            if previous is None:
-                events_by_id[event.event_id] = event
-            elif previous != event:
-                raise ValueError(
-                    "CanonicalBundle.executable_temporal_events conflicting "
-                    f"duplicate event_id: {event.event_id!r}"
-                )
-        return tuple(events_by_id.values())
+        return _merge_executable_temporal_events(
+            self.temporal_events,
+            self.effect_lifecycle_events,
+        )
 
     def provision_lineage(
         self,
