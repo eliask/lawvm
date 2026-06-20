@@ -25,7 +25,7 @@ from lawvm.core.tree_ops import check_invariants, iter_tree_invariant_violations
 _CORPUS_AVAILABLE = os.path.exists("data/finlex.farchive")
 pytestmark = pytest.mark.skipif(not _CORPUS_AVAILABLE, reason="corpus data not available")
 
-from tests.corpus_pin_helpers import pinned_replay
+from tests.corpus_pin_helpers import pinned_replay, replay_xml_for_test
 from lawvm.finland.statute import ReplayResult
 from lawvm.finland.ops import FailedOp
 
@@ -177,6 +177,34 @@ def test_2014_1194_2017_821_corrigendum_patch_keeps_late_clause_targets() -> Non
     assert "Edellä 1 momentin 3 kohdassa tarkoitettu edellytys täyttyy" not in chapter_4_sub2
     assert "1) ei ole käytännössä mahdollista kohtuullisessa ajassa" in chapter_8_sub2
     assert "2) vaarantaisi kohtuuttomasti" in chapter_8_sub2
+
+
+def test_1990_848_2017_377_section_num_corrigendum_binds_section_35_payload() -> None:
+    """Official 377/2017 corrigendum changes source body num 5 § to 35 §."""
+
+    replay = replay_xml_for_test("1990/848", quiet=True, build_full_products=False)
+    correction_findings = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "APPLY.SOURCE_CORRECTED_BY_PATCH"
+        and finding.source_statute == "2017/377"
+    ]
+
+    section_35_sub3 = _subsection_text(
+        replay.replay_fold_state,
+        part="",
+        chapter="6",
+        section="35",
+        subsection="3",
+    )
+
+    assert any(
+        finding.detail.get("op_id") == "body_patch/2017/377/0"
+        and finding.detail.get("source_role") == "amendment_source_xml"
+        for finding in correction_findings
+    )
+    assert "säädetään vahingonkorvauslaissa" in section_35_sub3
+    assert "tilusten rauhoittamisesta kotieläinten vahingonteolta" not in section_35_sub3
 
 
 def test_2014_1194_2021_234_part_scoped_body_insert_keeps_section_1_tail_once() -> None:

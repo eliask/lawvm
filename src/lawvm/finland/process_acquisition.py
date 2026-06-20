@@ -112,8 +112,25 @@ class ProcessAcquisitionContext:
         if correction_allowed:
             _, corrected = extract_inline_corrections(xml_bytes, self.amendment_id)
             patch_table = get_patch_table()
-            corrected, _ = patch_table.patch_source_xml(corrected, self.amendment_id)
-            corrected, _ = patch_table.patch_source_body_xml(corrected, self.amendment_id)
+            corrected, johtolause_patch_ids = patch_table.patch_source_xml(
+                corrected, self.amendment_id
+            )
+            corrected, body_patch_ids = patch_table.patch_source_body_xml(
+                corrected, self.amendment_id
+            )
+            for op_id in (*johtolause_patch_ids, *body_patch_ids):
+                self.finding_recorder.record(
+                    kind="APPLY.SOURCE_CORRECTED_BY_PATCH",
+                    message="A corrigendum patch corrected amendment source XML before parsing.",
+                    source_statute=self.amendment_id,
+                    detail={
+                        "op_id": op_id,
+                        "source_role": "amendment_source_xml",
+                        "corrected_by": "corrigendum_patch_table",
+                    },
+                    role="obligation",
+                    blocking=False,
+                )
             return corrected
 
         self.record_finding(
