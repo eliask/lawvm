@@ -569,9 +569,22 @@ def place_surface_text_spans_many(
                     placements[surface].append((date, segment, start))
 
     if fallback_surfaces:
+        fallback_prefilter: re.Pattern[str] | None = None
+        if len(fallback_surfaces) >= _SURFACE_GROUP_PREFILTER_MIN_SIZE:
+            fallback_prefilter = re.compile(
+                "|".join(
+                    re.escape(surface)
+                    for surface in sorted(fallback_surfaces, key=len, reverse=True)
+                )
+            )
         for date, segments in segments_by_date.items():
             matches_by_surface: dict[str, list[tuple[RenderedTextSegment, int]]] = {}
             for segment in segments:
+                if (
+                    fallback_prefilter is not None
+                    and fallback_prefilter.search(segment.text) is None
+                ):
+                    continue
                 for surface in fallback_surfaces:
                     start = segment.text.find(surface)
                     if start >= 0:

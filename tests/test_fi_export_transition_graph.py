@@ -977,6 +977,52 @@ def test_bulk_surface_text_placement_keeps_exact_token_prefilter_semantics() -> 
     ]
 
 
+def test_bulk_surface_text_placement_prefilters_no_token_fallback_surfaces() -> None:
+    segments_by_date = {
+        "2010-01-01": [
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="section:1",
+                segment_index=0,
+                text="irrelevant long text with no fallback citation",
+            ),
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="section:2",
+                segment_index=0,
+                text="47 f § applies",
+            ),
+        ],
+        "2015-01-01": [
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:1",
+                segment_index=0,
+                text="71 a §:n first copy",
+            ),
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:2",
+                segment_index=0,
+                text="71 a §:n second copy",
+            ),
+        ],
+    }
+
+    placements = place_surface_text_spans_many(
+        ["47 f §", "71 a §:n", "20 §", "58 b §", "86  §"],
+        None,
+        segments_by_date,
+    )
+
+    assert [
+        (date, segment.address, start)
+        for date, segment, start in placements["47 f §"]
+    ] == [("2010-01-01", "section:2", 0)]
+    assert placements["71 a §:n"] == []
+    assert placements["20 §"] == []
+
+
 @pytest.mark.parametrize(
     "surface_kind",
     ["xml_ref", "preparatory_ref", "effect_feed_ref", "manual_claim_ref"],
