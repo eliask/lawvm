@@ -213,7 +213,7 @@ def _build_delegation_oracle(statute_id: str, body: str) -> _DelegationOracleCon
         return _DelegationOracleContext(by_sentence_norm={})
 
     try:
-        edges = extract_delegations(xb, statute_id)
+        edges = list(extract_delegations(xb, statute_id).accepted_items)
     except Exception:
         return _DelegationOracleContext(by_sentence_norm={})
 
