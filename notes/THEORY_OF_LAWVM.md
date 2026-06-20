@@ -3,6 +3,8 @@
 Status: draft.
 Purpose: define what LawVM is, what it compiles, what its stable waists are, what kinds of proofs it can carry, and what the trusted kernels should be in a high-assurance architecture.
 
+> Vocabulary follows `LAWVM_PIPELINE_CONTRACT.md` (the normative term owner). This document is high-level philosophy; where a term here is looser than the contract, the contract governs. `LAWVM_ARCHITECTURE_INDEX.md` holds the crosswalk.
+
 ---
 
 ## 1. Thesis
@@ -145,7 +147,7 @@ So compared with a normal compiler:
 
 - the **front end is harder**, because source recovery is harder,
 - the **execution kernel is smaller**, because the operation algebra is small,
-- and the **proof surface is broader**, because uncertainty and source pathology must remain explicit.
+- and the **proof-surface (the proof/accounting read model) is broader**, because uncertainty and source pathology must remain explicit.
 
 ---
 
@@ -185,7 +187,7 @@ The “CPU” is the legal-state evaluator:
 
 LawVM has two interleaved planes.
 
-### 6.1 Semantic plane
+### 6.1 State/value plane (historically: semantic plane)
 
 This computes what the law’s text-state is.
 
@@ -197,13 +199,13 @@ SourceBundle
 → PayloadSurface
 → ElaboratedIntent
 → CanonicalOps
-→ ProvisionTimelines / TemporalGraph
+→ ProvisionTimelines (the temporal graph, informally)
 → PIT Materialization
 ```
 
-### 6.2 Epistemic plane
+### 6.2 Proof/accounting plane (historically: epistemic plane)
 
-This computes why the system believes that semantic result.
+This computes why the system believes that state/value result.
 
 Typical progression:
 
@@ -216,13 +218,13 @@ ParseWitnesses
 → EvidenceBundle
 ```
 
-Ordinary compilers mostly live on the semantic plane.
+Ordinary compilers mostly live on the state/value plane.
 
 LawVM must live on both.
 
-That is not optional. If the epistemic plane is weak, the system may still produce text, but it cannot justify that text under high-assurance conditions.
+That is not optional. If the proof/accounting plane is weak, the system may still produce text, but it cannot justify that text under high-assurance conditions.
 
-These two planes are the load-bearing axis. For enforcement they refine into the six type-distinct planes of `LAWVM_PIPELINE_CONTRACT.md` §3 (semantic → source/surface/legal-state; epistemic → evidence; plus projection and overlay as first-class planes with their own invariants). `LAWVM_ARCHITECTURE_INDEX.md` holds the bridge between the two framings.
+These two planes are the load-bearing axis. For enforcement they refine into the six type-distinct operational planes of `LAWVM_PIPELINE_CONTRACT.md` §3 (state/value → source/surface/legal-state; proof/accounting → evidence; plus projection and overlay as first-class planes with their own invariants). `LAWVM_ARCHITECTURE_INDEX.md` holds the bridge between the two framings.
 
 ---
 
@@ -419,14 +421,17 @@ A high-assurance LawVM should revolve around a small set of core objects.
 - optional temporal overlay objects
 - materialization specs
 
-### 9.7 Epistemic objects
+### 9.7 Proof/accounting objects (historically: epistemic objects)
 
 - `ParseWitness`
 - `Observation`
 - `Obligation`
+- `Violation`
 - `CompileAdjudication`
 - `SectionClaim`
 - `EvidenceBundle`
+
+A **Finding** is the governed report-facing projection over the roles `{Observation, Obligation, Violation}` (see `LAWVM_PIPELINE_CONTRACT.md` for the closed finding/residual vocabulary). The earlier listing of only Observation/Obligation omitted Violation; all three roles are first-class.
 
 The high-assurance design pressure is always toward making these objects more explicit and less stringly-typed.
 
