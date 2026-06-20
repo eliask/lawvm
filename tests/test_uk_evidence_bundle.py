@@ -31,7 +31,7 @@ def test_uk_evidence_bundle_preserves_compile_rejection_lanes(monkeypatch, tmp_p
     monkeypatch.setattr(evidence, "_DEFAULT_UK_FARCHIVE", archive_path)
 
     class FakeFarchive:
-        def __init__(self, _path: Path) -> None:
+        def __init__(self, _path: Path, *, readonly: bool = False) -> None:
             self.path = _path
 
         def __enter__(self) -> "FakeFarchive":
@@ -341,7 +341,7 @@ def test_uk_evidence_bundle_records_initial_effect_count_failure(monkeypatch, tm
     monkeypatch.setattr(evidence, "_DEFAULT_UK_FARCHIVE", archive_path)
 
     class FakeFarchive:
-        def __init__(self, _path: Path) -> None:
+        def __init__(self, _path: Path, *, readonly: bool = False) -> None:
             self.path = _path
 
         def __enter__(self) -> "FakeFarchive":
@@ -431,7 +431,7 @@ def test_uk_evidence_bundle_records_available_source_parse_failures(
     monkeypatch.setattr(evidence, "_DEFAULT_UK_FARCHIVE", archive_path)
 
     class FakeFarchive:
-        def __init__(self, _path: Path) -> None:
+        def __init__(self, _path: Path, *, readonly: bool = False) -> None:
             self.path = _path
 
         def __enter__(self) -> "FakeFarchive":
@@ -477,7 +477,7 @@ def test_uk_evidence_bundle_reports_too_small_source_without_parsing(monkeypatch
     monkeypatch.setattr(evidence, "_DEFAULT_UK_FARCHIVE", archive_path)
 
     class FakeFarchive:
-        def __init__(self, _path: Path) -> None:
+        def __init__(self, _path: Path, *, readonly: bool = False) -> None:
             self.path = _path
 
         def __enter__(self) -> "FakeFarchive":
@@ -553,7 +553,7 @@ def test_uk_evidence_bundle_classifies_missing_enacted_source_without_parsing(
     monkeypatch.setattr(evidence, "_DEFAULT_UK_FARCHIVE", archive_path)
 
     class FakeFarchive:
-        def __init__(self, _path: Path) -> None:
+        def __init__(self, _path: Path, *, readonly: bool = False) -> None:
             self.path = _path
 
         def __enter__(self) -> "FakeFarchive":

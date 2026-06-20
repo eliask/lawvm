@@ -66,7 +66,7 @@ class _FakeArchive:
 
 def test_backfill_migrates_sd_cons_old_to_canonical_versioned_sd_cons(monkeypatch) -> None:
     archive = _FakeArchive()
-    monkeypatch.setattr(backfill, "Farchive", lambda db: archive)
+    monkeypatch.setattr(backfill, "Farchive", lambda db, *, readonly=False: archive)
 
     stats = backfill.run(db=Path("data/finlex.farchive"), dry_run=False, verbose=False)
 
