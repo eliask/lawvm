@@ -33,6 +33,7 @@ from lawvm.finland.johtolause import extract_legal_ops
 # ---------------------------------------------------------------------------
 
 _DB_PATH = ".cache/pipeline_gold.db"
+_COLLECT_SLOW_GOLD = os.environ.get("LAWVM_PYTEST_COLLECT_SLOW_GOLD") == "1"
 
 # Skip the entire module when the gold DB is absent (fresh checkout without
 # a bench run).  The DB is gitignored and must be generated locally.
@@ -45,12 +46,17 @@ if not os.path.exists(_DB_PATH):
 
 _store = CaptureStore(_DB_PATH)
 
-_ALL_CAPTURES: list[AmendmentCapture] = []
-for _sid in _store.statutes():
-    _ALL_CAPTURES.extend(_store.load(_sid))
+def _load_captures(*, limit: int | None = None) -> list[AmendmentCapture]:
+    captures: list[AmendmentCapture] = []
+    for sid in _store.statutes():
+        captures.extend(_store.load(sid))
+        if limit is not None and len(captures) >= limit:
+            return captures[:limit]
+    return captures
 
 # Fast subset: first 50 captures (all 50 pass as of initial bench run).
-_FAST_CAPTURES = _ALL_CAPTURES[:50]
+_FAST_CAPTURES = _load_captures(limit=50)
+_ALL_CAPTURES = _load_captures() if _COLLECT_SLOW_GOLD else []
 
 
 def _capture_id(c: AmendmentCapture) -> str:
@@ -97,6 +103,10 @@ _STALE_PREAMBLE_RAW_OVERRIDES: dict[tuple[str, str], str] = {
         "1734/4-000",
         "1948/685",
     ): "Eduskunnan päätöksen mukaisesti muutetaan oikeudenkäymiskaaren 10 luvun 10 §, sellaisena kuin se on 13 päivänä kesäkuuta 1929 annetussa laissa, sekä\n                \n                    \n                        lisätään\n                         sanottuun lukuun 10 a § seuraavasti:",
+    (
+        "1734/4-000",
+        "1955/3",
+    ): "muutetaan\n                         oikeudenkäymiskaaren 21 luvun 4 §:n 1 momentti, sellaisena kuin se on 7 päivänä syyskuuta 1901 annetussa asetuksessa (36/01), näin kuuluvaksi:",
 }
 
 

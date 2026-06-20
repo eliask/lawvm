@@ -50,6 +50,7 @@ from lawvm.tools.divergence_heuristics import oracle_text_reduces_to_replay_by_d
 from lawvm.tools.divergence_heuristics import oracle_text_reduces_to_bare_section_stub
 from lawvm.tools.divergence_heuristics import replay_section_matches_text_at_cutoff
 from lawvm.tools.divergence_heuristics import replay_section_has_future_effective_version
+from lawvm.tools.divergence_core import has_inline_editorial_residue_marker
 from lawvm.tools._compile_report_record import report_record_from_facade
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.replay_products import fi_label_norm
@@ -471,7 +472,15 @@ def _diagnose(
             return ("EDITORIAL_CONVENTION",
                     "divergence is repeal attribution or aiempi-sanamuoto residue — oracle editorial choice")
 
-    if r_c and o_c and Levenshtein.ratio(r_c, o_c) >= 0.95:
+    if (
+        r_c
+        and o_c
+        and (
+            has_inline_editorial_residue_marker(r_text)
+            or has_inline_editorial_residue_marker(o_text)
+        )
+        and Levenshtein.ratio(r_c, o_c) >= 0.95
+    ):
         return ("EDITORIAL_CONVENTION",
                 "divergence is inline editorial residue — oracle editorial choice")
 

@@ -87,6 +87,29 @@ FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY = FrontendCapability(
 _HISTORICAL_PASSIVE_REPLACE_RULE_ID = (
     "fi.johtolause.historical_passive_preverbal_replace.v1"
 )
+_TRANSPORT_GLUED_VERB_NUMERIC_TARGET_SPACE_RULE_ID = (
+    "fi.johtolause.transport_glued_verb_numeric_target_space.v1"
+)
+_TRANSPORT_OCR_GLUED_LISATAAN_RULE_ID = (
+    "fi.johtolause.transport_ocr_glued_lisataan.v1"
+)
+_TRANSPORT_DROPPED_PYKALA_BEFORE_BOUNDARY_RULE_ID = (
+    "fi.johtolause.transport_dropped_pykala_before_boundary.v1"
+)
+_TRANSPORT_GLUED_VERB_NUMERIC_TARGET_RE = re.compile(
+    r"\b(?P<verb>kumotaan|muutetaan|lisätään|siirretään|korvataan)"
+    r"(?P<label>\d{1,4}[a-z]?)"
+    r"(?=\s*(?:§|luku\b|luvun\b|osa\b|osan\b))",
+    re.I,
+)
+_TRANSPORT_OCR_GLUED_LISATAAN_RE = re.compile(r"\b1isätään\b", re.I)
+_TRANSPORT_DROPPED_PYKALA_BEFORE_BOUNDARY_RE = re.compile(
+    r"(?P<section_list>[^)]{1,120})"
+    r"\)\s{1,12}"
+    r"(?P<boundary>sekä|ja)\s+"
+    r"(?=(?:1isätään|lisätään|muutetaan|kumotaan|siirretään|korvataan)\b)",
+    re.I,
+)
 _HISTORICAL_PASSIVE_ANAPHORS = frozenset({"näistä", "niistä", "joista"})
 _PREVERBAL_REPLACE_ENUM_CATS = frozenset(
     {
@@ -103,6 +126,60 @@ _PREVERBAL_REPLACE_ENUM_CATS = frozenset(
         "KOHTA",
     }
 )
+
+
+def _normalize_transport_glued_verb_numeric_target(
+    text: str,
+) -> tuple[str, tuple[str, ...]]:
+    rule_ids: list[str] = []
+    normalized = _TRANSPORT_GLUED_VERB_NUMERIC_TARGET_RE.sub(
+        r"\g<verb> \g<label>",
+        text,
+    )
+    if normalized != text:
+        rule_ids.append(_TRANSPORT_GLUED_VERB_NUMERIC_TARGET_SPACE_RULE_ID)
+    dropped_pykala_normalized = _TRANSPORT_DROPPED_PYKALA_BEFORE_BOUNDARY_RE.sub(
+        _restore_dropped_section_mark_before_boundary,
+        normalized,
+    )
+    if dropped_pykala_normalized != normalized:
+        rule_ids.append(_TRANSPORT_DROPPED_PYKALA_BEFORE_BOUNDARY_RULE_ID)
+    glued_lisataan_normalized = _TRANSPORT_OCR_GLUED_LISATAAN_RE.sub(
+        "lisätään",
+        dropped_pykala_normalized,
+    )
+    if glued_lisataan_normalized != dropped_pykala_normalized:
+        rule_ids.append(_TRANSPORT_OCR_GLUED_LISATAAN_RULE_ID)
+    return glued_lisataan_normalized, tuple(rule_ids)
+
+
+def _restore_dropped_section_mark_before_boundary(match: re.Match[str]) -> str:
+    section_list = match.group("section_list")
+    boundary = match.group("boundary")
+    if not _looks_like_section_label_enumeration(section_list):
+        return match.group(0)
+    return f"{section_list} § {boundary} "
+
+
+def _looks_like_section_label_enumeration(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    labels: list[str] = []
+    for comma_part in stripped.split(","):
+        labels.extend(comma_part.split(" ja "))
+    return all(_looks_like_section_label_fragment(label) for label in labels)
+
+
+def _looks_like_section_label_fragment(text: str) -> bool:
+    compact = "".join(text.split())
+    if not compact:
+        return False
+    if compact[-1:].isalpha():
+        number_part = compact[:-1]
+    else:
+        number_part = compact
+    return 1 <= len(number_part) <= 4 and number_part.isdigit()
 
 
 def infer_move_clause_target_unit_kind(
@@ -315,14 +392,19 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         SurfaceClause as SurfaceClauseModel,
     )
 
-    raw_tokens = tokenize(text)
+    parser_text, text_normalization_rule_ids = _normalize_transport_glued_verb_numeric_target(text)
+    raw_tokens = tokenize(parser_text)
     core_token_tape = _core_token_tape_from_finland_tokens(text, raw_tokens)
     target_version_bindings = extract_target_version_bindings(raw_tokens)
     tokens, _jolloin_pairs = apply_annotations_with_jolloin_pairs(raw_tokens)
-    parser_tokens, parser_normalization_rule_ids = (
+    parser_tokens, parser_token_normalization_rule_ids = (
         _normalize_historical_passive_preverbal_replace(tokens)
         if not _jolloin_pairs
         else (tokens, ())
+    )
+    parser_normalization_rule_ids = (
+        *text_normalization_rule_ids,
+        *parser_token_normalization_rule_ids,
     )
 
     # -- Phase 1: Parse -> real SurfaceClause --
@@ -940,26 +1022,26 @@ def _build_finland_frontend_diagnostics(
 ) -> tuple[FrontendDiagnostic, ...]:
     out: list[FrontendDiagnostic] = []
     for rule_id in parser_normalization_rule_ids:
+        (
+            diagnostic_id,
+            message,
+            safe_default,
+            forbidden_shortcuts,
+        ) = _parser_normalization_diagnostic_contract(rule_id)
         out.append(
             FrontendDiagnostic(
-                diagnostic_id="fi-johtolause-parser-normalization-historical-passive-preverbal-replace",
+                diagnostic_id=diagnostic_id,
                 jurisdiction="fi",
                 frontend=FINLAND_JOHTOLAUSE_FRONTEND_ID,
                 phase="surface_parse",
                 severity="info",
                 rule_id=rule_id,
-                message=(
-                    "Historical Finnish passive replacement formula with "
-                    "pre-verbal targets was normalized to verb-led target order."
-                ),
+                message=message,
                 blocking=False,
                 strict_disposition="record",
                 quirks_disposition="record",
-                safe_default="preserve_only_the_witnessed_preverbal_target_enumeration",
-                forbidden_shortcuts=(
-                    "treat_provenance_rementions_as_additional_targets",
-                    "infer_unlisted_targets_from_payload_body",
-                ),
+                safe_default=safe_default,
+                forbidden_shortcuts=forbidden_shortcuts,
                 detail={"human_diagnostics": tuple(diagnostics)},
             )
         )
@@ -1074,6 +1156,43 @@ def _build_finland_frontend_diagnostics(
     return tuple(out)
 
 
+def _parser_normalization_diagnostic_contract(
+    rule_id: str,
+) -> tuple[str, str, str, tuple[str, ...]]:
+    if rule_id == _HISTORICAL_PASSIVE_REPLACE_RULE_ID:
+        return (
+            "fi-johtolause-parser-normalization-historical-passive-preverbal-replace",
+            (
+                "Historical Finnish passive replacement formula with "
+                "pre-verbal targets was normalized to verb-led target order."
+            ),
+            "preserve_only_the_witnessed_preverbal_target_enumeration",
+            (
+                "treat_provenance_rementions_as_additional_targets",
+                "infer_unlisted_targets_from_payload_body",
+            ),
+        )
+    if rule_id == _TRANSPORT_GLUED_VERB_NUMERIC_TARGET_SPACE_RULE_ID:
+        return (
+            "fi-johtolause-parser-normalization-transport-glued-verb-numeric-target-space",
+            (
+                "Source transport glued an operative verb to a following numeric "
+                "legal target; a single parser-only space was restored."
+            ),
+            "parse_only_the_witnessed_glued_numeric_target_after_the_source_verb",
+            (
+                "infer_unlisted_targets_from_payload_body",
+                "treat_arbitrary_glued_words_as_operative_verbs",
+            ),
+        )
+    return (
+        "fi-johtolause-parser-normalization-unknown",
+        f"Parser normalization rule {rule_id} was applied.",
+        "record_the_unknown_normalization_without_expanding_targets",
+        ("infer_unlisted_targets_from_payload_body",),
+    )
+
+
 def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
     """Derive ParsedOps from ClauseAST through the Finland bridge.
 
@@ -1127,7 +1246,10 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
             path_dict[kind] = label
 
         leaf_kind = target.leaf_kind() if target.path else ""
-        kind = TargetKind.for_leaf_kind(leaf_kind)
+        maybe_kind = TargetKind.for_leaf_kind(leaf_kind)
+        if maybe_kind is None:
+            return
+        kind = maybe_kind
 
         part = path_dict.get("part", "") or scope_part
         chapter = path_dict.get("chapter", "") or scope_chapter

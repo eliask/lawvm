@@ -451,6 +451,7 @@ def get_consolidated_oracle_reflected_source_vts_children(
 
 
 _FINLEX_ORIGINAL_VERSION_ATTR = "{http://data.finlex.fi/schema/finlex}originalVersion"
+_FINLEX_VERSIONED_EID_SUFFIX_RE = re.compile(r"v\d{8}$")
 _ORACLE_FUTURE_REPEAL_NOTICE_RE = re.compile(r"\btulee\s+voimaan\b", re.IGNORECASE)
 
 
@@ -459,6 +460,13 @@ def _finlex_original_version_to_statute_id(value: str) -> str:
     if len(token) < 5 or not token.isdigit():
         return ""
     return f"{token[:4]}/{int(token[4:])}"
+
+
+def _finlex_section_eid_base(section_el: etree._Element) -> str:
+    eid = str(section_el.get("eId") or "").strip()
+    if not eid:
+        return ""
+    return _FINLEX_VERSIONED_EID_SUFFIX_RE.sub("", eid)
 
 
 def get_consolidated_oracle_reflected_section_original_versions(
@@ -485,10 +493,22 @@ def get_consolidated_oracle_reflected_section_original_versions(
     except etree.XMLSyntaxError:
         return set()
 
+    sections = tuple(tree.findall(".//{*}section"))
+    current_section_eid_bases = {
+        base
+        for section_el in sections
+        if not str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
+        for base in (_finlex_section_eid_base(section_el),)
+        if base
+    }
+
     reflected: set[str] = set()
-    for section_el in tree.findall(".//{*}section"):
+    for section_el in sections:
         original_version = str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
         if not original_version:
+            continue
+        section_eid_base = _finlex_section_eid_base(section_el)
+        if section_eid_base and section_eid_base in current_section_eid_bases:
             continue
         section_text = " ".join("".join(str(part) for part in section_el.itertext()).split())
         if _ORACLE_FUTURE_REPEAL_NOTICE_RE.search(section_text):
@@ -818,11 +838,13 @@ def get_ground_truth(
     root = body if body is not None else tree
     _strip_editorial_note_containers(root)
     # Strip historical duplicates that Finlex keeps for version history.
-    # Sections: deduplicate by <num> text. Subsections/paragraphs: by eId base
-    # (strip version suffix like "v20210680").
+    # Sections: deduplicate by <num> text. Subsections/paragraphs use the
+    # shared versioned-child helper, which preserves genuinely distinct same-slot
+    # siblings such as 2012/316 sec_1/subsec_1v20150795 + subsec_1v20240859.
+    from lawvm.finland.oracle_versioned_children import dedup_versioned_children
+
     def _norm_num(t: str | None) -> str:
         return re.sub(r'\s+', ' ', (t or '').replace('\xa0', ' ')).strip()
-    _ver_re = re.compile(r'v\d{8}$')
 
     def _dedup_children(parent, child_tag: str, key_fn):
         """Remove duplicate children of `child_tag`, keeping first by key_fn."""
@@ -838,10 +860,6 @@ def get_ground_truth(
             else:
                 seen.add(key)
 
-    def _eid_base(el) -> Optional[str]:
-        eid = el.get('eId', '')
-        return _ver_re.sub('', eid.split('__')[-1]) if eid else None
-
     for parent in cast(List[etree._Element], root.xpath(
         './/*[local-name()="hcontainer"]'
         ' | .//*[local-name()="body"]'
@@ -856,9 +874,9 @@ def get_ground_truth(
             ) or None,
         )
     for sec in root.findall('.//{*}section'):
-        _dedup_children(sec, 'subsection', _eid_base)
+        dedup_versioned_children(sec, 'subsection')
         for sub in sec.findall('{*}subsection'):
-            _dedup_children(sub, 'paragraph', _eid_base)
+            dedup_versioned_children(sub, 'paragraph')
     text = etree.tostring(root, method="text", encoding="unicode").strip()
     # Strip consolidated-only annotations before scoring.
     return normalize_finlex_oracle_comparison_text(text)

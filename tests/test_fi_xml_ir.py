@@ -1323,6 +1323,102 @@ def test_fi_xml_to_ir_node_renests_flat_digit_item_subsections() -> None:
     assert check_invariants(section) == []
 
 
+def test_normalize_source_ir_folds_content_item_subsection_run_with_relabelling() -> None:
+    """Content-only sibling subsections starting ``1)``/``2)`` can be one moment's kohdat.
+
+    Provenance: 1970/258 §12.  Finlex base XML splits the sentence "Tässä
+    laissa tarkoitettuna edunjättäjänä pidetään myös" and its numbered
+    alternatives into sibling subsections.  Legal moment numbering treats the
+    intro plus both item fragments as one moment, so later true moments must be
+    relabelled after the fold.
+    """
+    xml = etree.fromstring(
+        """
+        <section>
+          <num>12 §</num>
+          <subsection>
+            <content><p>Tämä laki tulee voimaan 1 päivänä kesäkuuta 1970.</p></content>
+          </subsection>
+          <subsection>
+            <content><p>Tässä laissa tarkoitettuna edunjättäjänä pidetään myös</p></content>
+          </subsection>
+          <subsection>
+            <content><p>1) henkilöä, jolla ei ole oikeutta eläkkeeseen, ja</p></content>
+          </subsection>
+          <subsection>
+            <content><p>2) henkilöä, joka kuollessaan sai eläkettä.</p></content>
+          </subsection>
+          <subsection>
+            <content><p>Myönnettäessä perhe-eläkettä sovelletaan palkkasääntöä.</p></content>
+          </subsection>
+        </section>
+        """
+    )
+
+    raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+    normalized, facts = normalize_source_ir(raw, "1970/258")
+
+    subsections = [ch for ch in normalized.children if ch.kind == IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in subsections] == ["1", "2", "3"]
+
+    folded = subsections[1]
+    paragraphs = [ch for ch in folded.children if ch.kind == IRNodeKind.PARAGRAPH]
+    assert [p.label for p in paragraphs] == ["1", "2"]
+    assert "henkilöä, jolla ei ole oikeutta" in irnode_to_text(paragraphs[0])
+    assert "henkilöä, joka kuollessaan sai eläkettä" in irnode_to_text(paragraphs[1])
+    assert "Myönnettäessä perhe-eläkettä" in irnode_to_text(subsections[2])
+
+    assert len(facts) == 1
+    assert facts[0].kind_value == "base_section_item_subsection_fold"
+    assert facts[0].basis_value == "profile_invalid"
+    assert "subsection:3" in facts[0].before
+    assert "5->3" in facts[0].after
+    assert check_invariants(normalized) == []
+
+
+def test_normalize_source_ir_does_not_fold_nested_content_item_subsection_run() -> None:
+    """Nested content-only item runs need separate ownership.
+
+    The sentence-continuation fold is motivated by 1970/258, where the source
+    splits "pidetään myös 1) ... 2) ..." across sibling subsection wrappers.
+    Nested part/chapter codifications often interact with later recodification
+    and relabel operations, so this rule leaves that shape visible unless
+    another owned normalization proves the wrappers are only transport splits.
+    """
+    xml = etree.fromstring(
+        """
+        <chapter>
+          <num>1 luku</num>
+          <section>
+            <num>3 §</num>
+            <subsection>
+              <content><p>Lupa myönnetään hakijalle sekä</p></content>
+            </subsection>
+            <subsection>
+              <content><p>1) joka täyttää vaatimukset;</p></content>
+            </subsection>
+            <subsection>
+              <content><p>2) jolla ei ole velkoja.</p></content>
+            </subsection>
+            <subsection>
+              <content><p>Hakijan on annettava selvitys.</p></content>
+            </subsection>
+          </section>
+        </chapter>
+        """
+    )
+
+    raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+    normalized, facts = normalize_source_ir(raw, "2017/320")
+
+    section = next(ch for ch in normalized.children if ch.kind == IRNodeKind.SECTION)
+    subsections = [ch for ch in section.children if ch.kind == IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in subsections] == ["1", "2", "3", "4"]
+    assert "1) joka täyttää vaatimukset" in irnode_to_text(subsections[1])
+    assert facts == []
+    assert check_invariants(normalized) == []
+
+
 def test_fi_xml_to_ir_node_renest_stops_at_non_digit_subsection() -> None:
     """Re-nesting must stop at the first non-digit-item subsection.
 

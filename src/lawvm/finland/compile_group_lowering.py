@@ -117,6 +117,7 @@ def lower_group(
 
     resolved: list[ResolvedOp] = []
     for op in sorted_ops:
+        resolved_target_chapter = op.target_chapter if op.target_chapter is not None else target_chapter
         target_address = op.lo.target if op.lo is not None else None
         destination_address = (op.lo.destination if op.lo is not None else None) or (
             op.lo.anchor if op.lo is not None else None
@@ -150,7 +151,7 @@ def lower_group(
             cross_ir=cross_ir,
             target_unit_kind=target_ctx.target_unit_kind,
             target_norm=remapped_target_norm,
-            target_chapter=target_chapter,
+            target_chapter=resolved_target_chapter,
             slot_assignment=slot_assignment,
             payload_completeness=elaborated.payload_completeness,
             target_address=target_address,

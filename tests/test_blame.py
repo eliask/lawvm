@@ -415,11 +415,32 @@ def test_blame_marks_failed_op_targets_unverifiable(monkeypatch, capsys) -> None
     assert "unmodified" not in out
 
 
-def test_blame_main_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -> None:
+def test_blame_main_suppresses_raw_replay_failed_chatter_for_1978_38(monkeypatch, capsys) -> None:
+    def fake_replay_xml(
+        statute_id: str,
+        *,
+        mode: str,
+        quiet: bool = False,
+        compiled_ops_out=None,
+        replay_meta_out=None,
+    ):
+        print("REPLACE 10 luku otsikko → FAILED")
+        print("INSERT 10 luku 16 § 2 mom → FAILED")
+        return SimpleNamespace(
+            title="Noisy replay",
+            ir=IRNode(
+                kind=IRNodeKind.BODY,
+                children=(IRNode(kind=IRNodeKind.SECTION, label="1e", text="Section text"),),
+            ),
+            findings=(),
+        )
+
+    monkeypatch.setattr("lawvm.tools.blame.replay_xml", fake_replay_xml)
+
     blame.main(
         Namespace(
-            statute_id="1978/38",
-            address="chapter:12/section:1e",
+            statute_id="1991/1",
+            address="section:1e",
             source=None,
             mode="legal_pit",
         )
@@ -786,7 +807,7 @@ def test_specimen_blame_1997_1412_section_11_attributes_later_child_op(capsys) -
     assert row["address"] == "chapter:2/section:11"
     assert row["status"] == "modified_by_op"
     assert row["last_op"]["source_statute"] == "2026/26"
-    assert row["last_op"]["sequence"] == 216
+    assert row["last_op"]["sequence"] == 217
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")

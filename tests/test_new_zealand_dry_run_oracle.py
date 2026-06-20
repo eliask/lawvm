@@ -298,6 +298,7 @@ _REAL_DB = (
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_dry_run_oracle_canary_repeal_slice_agrees_against_archived_oracle() -> None:
     from lawvm.new_zealand.dry_run_oracle import (
         build_archived_work_dry_run_oracle_comparison,

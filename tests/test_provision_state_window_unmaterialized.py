@@ -330,6 +330,13 @@ _FINLEX_CORPUS_AVAILABLE = (
 ).exists()
 
 
+@pytest.fixture(scope="module")
+def live_2010_1326_runtime():
+    from lawvm.provision_state import compile_provision_state_runtime
+
+    return compile_provision_state_runtime(statute_id="2010/1326")
+
+
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 @pytest.mark.parametrize(
     "provision,as_of,window_source",
@@ -339,11 +346,13 @@ _FINLEX_CORPUS_AVAILABLE = (
         ("section:51b", "2024-01-01", "2023/117"),
     ],
 )
-def test_live_twin_window_query_is_materialized(provision, as_of, window_source) -> None:
-    from lawvm.provision_state import resolve_provision_state
-
-    payload = resolve_provision_state(
-        statute_id="2010/1326",
+def test_live_twin_window_query_is_materialized(
+    live_2010_1326_runtime,
+    provision,
+    as_of,
+    window_source,
+) -> None:
+    payload = live_2010_1326_runtime.resolve(
         provision=provision,
         as_of=as_of,
         query_type="in_force",
@@ -358,9 +367,7 @@ def test_live_twin_window_query_is_materialized(provision, as_of, window_source)
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
-def test_live_78c_twin_window_boundaries() -> None:
-    from lawvm.provision_state import resolve_provision_state
-
+def test_live_78c_twin_window_boundaries(live_2010_1326_runtime) -> None:
     cases = [
         ("2022-12-31", "absent", None, None, False),
         ("2023-01-01", "selected", "temporary", "2022/1282", True),
@@ -368,8 +375,7 @@ def test_live_78c_twin_window_boundaries() -> None:
         ("2023-07-01", "selected", "permanent", "2022/1281", False),
     ]
     for as_of, status, variant_kind, source_statute, has_schedule in cases:
-        payload = resolve_provision_state(
-            statute_id="2010/1326",
+        payload = live_2010_1326_runtime.resolve(
             provision="section:78c",
             as_of=as_of,
             query_type="in_force",
@@ -386,12 +392,9 @@ def test_live_78c_twin_window_boundaries() -> None:
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
-def test_live_twin_window_is_scoped_off_window_and_off_address() -> None:
-    from lawvm.provision_state import resolve_provision_state
-
+def test_live_twin_window_is_scoped_off_window_and_off_address(live_2010_1326_runtime) -> None:
     # current date: well outside every window -> not blocked
-    after = resolve_provision_state(
-        statute_id="2010/1326",
+    after = live_2010_1326_runtime.resolve(
         provision="section:78c",
         as_of="2026-06-11",
         query_type="in_force",
@@ -400,8 +403,7 @@ def test_live_twin_window_is_scoped_off_window_and_off_address() -> None:
     assert "timeline_integrity" not in after
 
     # an unaffected address of the same statute -> not blocked
-    other = resolve_provision_state(
-        statute_id="2010/1326",
+    other = live_2010_1326_runtime.resolve(
         provision="section:22",
         as_of="2023-03-01",
         query_type="in_force",

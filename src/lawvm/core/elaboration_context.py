@@ -441,8 +441,10 @@ def snapshot_target_context(
     else:
         raw_path = master.find_section_path(target_norm, target_chapter, target_part)
 
-    node_path: Optional[Path] = _path_to_tuple(raw_path)
     live_node: Optional[IRNode] = _tops.resolve(ir, raw_path) if raw_path is not None else None
+    if raw_path is not None and live_node is None:
+        raw_path = None
+    node_path: Optional[Path] = _path_to_tuple(raw_path)
 
     # ------------------------------------------------------------------
     # Resolve parent
@@ -534,6 +536,7 @@ class PayloadElaborationContext:
     target_unit_kind: TargetUnitKind
     target_norm: str
     target_chapter: Optional[str]
+    target_part: Optional[str]
 
     # Bounded local snapshot — traversal allowed to any depth
     live_node: Optional[IRNode]
@@ -626,6 +629,7 @@ def build_payload_elaboration_context(
         target_unit_kind=target_ctx.target_unit_kind,
         target_norm=target_ctx.target_norm,
         target_chapter=target_ctx.target_chapter,
+        target_part=target_ctx.target_part,
         live_node=live_node,
         parent_node=target_ctx.parent_node,
         subsection_slots=target_ctx.subsection_slots,

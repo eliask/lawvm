@@ -15,7 +15,7 @@ Per AGENTS.md §15 test categories:
 
 Module coverage:
   - lawvm.core.inline_citation
-  - lawvm.finland.inline_citation_extractor
+  - lawvm.finland.references.inline_citation_extractor
   - lawvm.finland.conformance_corpus.inline.fixtures
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ from lawvm.core.inline_citation import (
     InlineCitationPatternMatch,
     inline_citation_to_row,
 )
-from lawvm.finland.inline_citation_extractor import (
+from lawvm.finland.references.inline_citation_extractor import (
     InlineCitationExtractionResult,
     InlineCitationRecognizer,
     extract_inline_citations,
@@ -673,7 +673,7 @@ class TestCrossFeatureComposition:
 
     def test_recognizer_single_instance_reuse(self) -> None:
         """The module-scope _RECOGNIZER is an InlineCitationRecognizer instance."""
-        from lawvm.finland.inline_citation_extractor import _RECOGNIZER
+        from lawvm.finland.references.inline_citation_extractor import _RECOGNIZER
         assert isinstance(_RECOGNIZER, InlineCitationRecognizer)
 
 

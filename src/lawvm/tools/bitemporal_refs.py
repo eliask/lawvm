@@ -59,12 +59,21 @@ def _get_store():
         from farchive import Farchive
         from lawvm.finland.transparent_store import TransparentCorpusStore
 
-        _STORE = TransparentCorpusStore(Farchive(_archive_path()))
+        _STORE = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     return _STORE
 
 
-def _statute_ids(limit: int) -> list[str]:
+def _statute_ids(limit: int, stride: int = 0) -> list[str]:
+    """Select citing statute ids: stride-sample (representative) then cap.
+
+    ``stride`` (>1) keeps every Nth id — a representative corpus-wide sample
+    rather than a contiguous prefix (the prefix is all 1734-era base codes whose
+    ids carry non-numeric tails, so they have no parseable citation-date anchor).
+    ``limit`` then caps the selection. Both are honest, documented scope knobs.
+    """
     ids = _get_store().list_statute_ids()
+    if stride and stride > 1:
+        ids = ids[::stride]
     return ids[:limit] if limit else ids
 
 
@@ -232,10 +241,18 @@ def _emit_current_json(report: CurrentStateReport, top: int, elapsed: float) -> 
         "findings_total": report.total_findings,
         "findings_by_kind": report.kind_counts,
         "unavailable_total": report.unavailable_count,
+        "skipped_out_of_scope": report.skipped_count,
+        "self_refs_excluded": report.self_refs_excluded,
+        # Statute-lifecycle layer (registry/oracle-driven, no replay): the cited
+        # ACT itself was repealed / not-yet-in-force at the citing date.
+        "lifecycle_findings_total": report.total_lifecycle_findings,
+        "lifecycle_findings_by_reason": report.lifecycle_reason_counts,
+        "lifecycle_unverifiable_total": report.lifecycle_unverifiable_count,
         "top_statutes": [
             {
                 "sid": r.sid,
                 "findings": len(r.findings),
+                "lifecycle_findings": len(r.lifecycle_findings),
                 "mentions_checked": r.mentions_checked,
                 "examples": [
                     {
@@ -244,6 +261,23 @@ def _emit_current_json(report: CurrentStateReport, top: int, elapsed: float) -> 
                         "kind": f.kind,
                     }
                     for f in r.findings[:3]
+                ],
+                "lifecycle_examples": [
+                    {
+                        "source": f.source.serialized(),
+                        "target": f.target.serialized(),
+                        "reason": f.reason.value,
+                        "cited_on": f.cited_on.isoformat(),
+                        "target_window": [
+                            f.target_window[0].isoformat()
+                            if f.target_window[0]
+                            else None,
+                            f.target_window[1].isoformat()
+                            if f.target_window[1]
+                            else None,
+                        ],
+                    }
+                    for f in r.lifecycle_findings[:3]
                 ],
             }
             for r in report.top_statutes(top)
@@ -262,35 +296,60 @@ def _emit_current_text(report: CurrentStateReport, top: int, elapsed: float) -> 
         "  (DEFAULT no-replay mode: a finding = the cited target provision is "
         "absent in the\n   target's CURRENT consolidated text-state; NOT a legal "
         "conclusion. Use --provenance\n   for the repealed/renumbered/never-existed "
-        "temporal classification via replay.)"
+        "temporal classification via replay.\n   Citers with no consolidated "
+        "text-state (amendment acts / source-only) are SKIPPED\n   as out of scope "
+        "— their internal refs are amended-law-relative, not self-refs.)"
     )
     print(f"  wall-clock (s)              : {elapsed:.2f}")
     print(f"  statutes scanned            : {report.statutes_scanned}")
     print(f"  statutes with findings      : {report.statutes_with_findings}")
     print(f"  statutes errored            : {len(report.statutes_errored)}")
+    print(f"  skipped (out of scope)      : {report.skipped_count}")
+    print(f"  self-refs excluded          : {report.self_refs_excluded}")
     print(f"  cross-statute cites checked : {report.mentions_checked}")
     print(f"  absent-target findings      : {report.total_findings}")
+    print(f"  statute-lifecycle findings  : {report.total_lifecycle_findings}")
     print(f"  undetermined (unavailable)  : {report.unavailable_count}")
+    print(f"  lifecycle unverifiable      : {report.lifecycle_unverifiable_count}")
 
-    print("\n  findings by kind:")
+    print("\n  provision-absent findings by kind:")
     if report.kind_counts:
         for kind, n in report.kind_counts.items():
             print(f"    {n:8}  {kind}")
     else:
         print("    (no absent-target references found)")
 
+    print(
+        "\n  statute-lifecycle findings by reason "
+        "(cited ACT repealed / not-yet-in-force at the citing date):"
+    )
+    if report.lifecycle_reason_counts:
+        for reason, n in report.lifecycle_reason_counts.items():
+            print(f"    {n:8}  {reason}")
+    else:
+        print("    (no dead-act references found)")
+
     worst = report.top_statutes(top)
-    print(f"\n  top {top} statutes by finding count:")
+    print(f"\n  top {top} statutes by finding count (provision + lifecycle):")
     if worst:
         for r in worst:
             print(
-                f"    {r.sid}: {len(r.findings)} findings "
+                f"    {r.sid}: {len(r.findings)} provision + "
+                f"{len(r.lifecycle_findings)} lifecycle findings "
                 f"({r.mentions_checked} cites checked)"
             )
             for f in r.findings[:3]:
                 print(
                     f"        [{f.kind}] "
                     f"{f.source.serialized()} -> {f.target.serialized()}"
+                )
+            for lf in r.lifecycle_findings[:3]:
+                vf, vt = lf.target_window
+                win = f"{vf or '...'}..{vt or '...'}"
+                print(
+                    f"        [{lf.reason.value}] "
+                    f"{lf.source.serialized()} -> {lf.target.serialized()} "
+                    f"(cited {lf.cited_on.isoformat()}; target in force {win})"
                 )
     else:
         print("    (none)")
@@ -308,12 +367,13 @@ def _emit_current_text(report: CurrentStateReport, top: int, elapsed: float) -> 
 def run(args) -> None:
     """Corpus broken-reference report (fi): current-state default / replay opt-in."""
     limit = getattr(args, "limit", 0) or 0
+    stride = getattr(args, "stride", 0) or 0
     workers = getattr(args, "workers", 0) or 0
     as_json = getattr(args, "json", False)
     top = getattr(args, "top", 20) or 20
     provenance = getattr(args, "provenance", False)
 
-    ids = _statute_ids(limit)
+    ids = _statute_ids(limit, stride)
 
     if not provenance:
         # DEFAULT: cheap current-state scan, no replay. Fast enough to run

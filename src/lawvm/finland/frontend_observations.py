@@ -20,8 +20,18 @@ from lawvm.finland.johtolause import parse_clause, derive_features
 if TYPE_CHECKING:
     from lawvm.finland.johtolause import ClauseParseResult
 
+# same-label MOVE clause ANCHOR (grammar-subordinate, observation-only residue).
+#
+# Mirrors scope._SAME_LABEL_MOVE_CLAUSE_RE. The SIIRTAA move family is modelled
+# by johtolause/grammar/moves.py, but the clause-level parser DECLINES the plural
+# ``joista … § … siirretään N lukuun`` coordination shape (legacy_reference
+# fallback, "section näistä/niistä provenance leak"), so this stays a bounded
+# residue floor for the collapse OBSERVATION emitter (non-blocking findings; not
+# replay authority). Every quantifier is explicitly bounded → provably linear;
+# the residual "nested backtracking quantifiers" flag is benign-linear
+# (bounded × bounded).
 _SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
-    r"joista\s+([^§]{0,120})\s*§\s+(?:samalla\s+)?siirretään\s+(\d+\s*[a-z]?)\s+lukuun",
+    r"joista\s{1,8}([^§]{0,120})\s{0,8}§\s{1,8}(?:samalla\s{1,8})?siirretään\s{1,8}(\d{1,4}\s{0,8}[a-z]?)\s{1,8}lukuun",
     flags=re.I,
 )
 

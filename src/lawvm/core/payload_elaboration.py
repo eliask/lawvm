@@ -64,12 +64,18 @@ class SlotBinding:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in ("binding_id", "source_slot_id", "target_slot_id", "status"):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_string(f"SlotBinding.{field_name}", getattr(self, field_name)),
-            )
+        object.__setattr__(self, "binding_id", _required_string("SlotBinding.binding_id", self.binding_id))
+        object.__setattr__(
+            self,
+            "source_slot_id",
+            _required_string("SlotBinding.source_slot_id", self.source_slot_id),
+        )
+        object.__setattr__(
+            self,
+            "target_slot_id",
+            _required_string("SlotBinding.target_slot_id", self.target_slot_id),
+        )
+        object.__setattr__(self, "status", _required_string("SlotBinding.status", self.status))
         object.__setattr__(self, "operation_id", str(self.operation_id or ""))
         object.__setattr__(self, "binding_rule_id", str(self.binding_rule_id or ""))
         if not isinstance(self.detail, Mapping):
@@ -103,12 +109,27 @@ class SlotBindingReport:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in ("subject_id", "jurisdiction", "owner_phase", "status", "completeness_kind"):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_string(f"SlotBindingReport.{field_name}", getattr(self, field_name)),
-            )
+        object.__setattr__(
+            self,
+            "subject_id",
+            _required_string("SlotBindingReport.subject_id", self.subject_id),
+        )
+        object.__setattr__(
+            self,
+            "jurisdiction",
+            _required_string("SlotBindingReport.jurisdiction", self.jurisdiction),
+        )
+        object.__setattr__(
+            self,
+            "owner_phase",
+            _required_string("SlotBindingReport.owner_phase", self.owner_phase),
+        )
+        object.__setattr__(self, "status", _required_string("SlotBindingReport.status", self.status))
+        object.__setattr__(
+            self,
+            "completeness_kind",
+            _required_string("SlotBindingReport.completeness_kind", self.completeness_kind),
+        )
         bindings = tuple(self.bindings)
         if not all(isinstance(binding, SlotBinding) for binding in bindings):
             raise ValueError("SlotBindingReport.bindings must contain SlotBinding objects")
@@ -170,28 +191,48 @@ class PayloadElaborationResult:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
+        object.__setattr__(
+            self,
             "result_id",
+            _required_string("PayloadElaborationResult.result_id", self.result_id),
+        )
+        object.__setattr__(
+            self,
             "jurisdiction",
+            _required_string("PayloadElaborationResult.jurisdiction", self.jurisdiction),
+        )
+        object.__setattr__(
+            self,
             "owner_phase",
-            "status",
+            _required_string("PayloadElaborationResult.owner_phase", self.owner_phase),
+        )
+        object.__setattr__(self, "status", _required_string("PayloadElaborationResult.status", self.status))
+        object.__setattr__(
+            self,
             "payload_surface_kind",
+            _required_string("PayloadElaborationResult.payload_surface_kind", self.payload_surface_kind),
+        )
+        object.__setattr__(
+            self,
             "completeness_kind",
+            _required_string("PayloadElaborationResult.completeness_kind", self.completeness_kind),
+        )
+        object.__setattr__(
+            self,
             "authorization_status",
+            _required_string("PayloadElaborationResult.authorization_status", self.authorization_status),
+        )
+        object.__setattr__(
+            self,
             "safe_default",
+            _required_string("PayloadElaborationResult.safe_default", self.safe_default),
+        )
+        for field_name, value in (
+            ("elaborated_op_count", self.elaborated_op_count),
+            ("rejected_op_count", self.rejected_op_count),
+            ("source_pathology_count", self.source_pathology_count),
+            ("observation_count", self.observation_count),
         ):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_string(f"PayloadElaborationResult.{field_name}", getattr(self, field_name)),
-            )
-        for field_name in (
-            "elaborated_op_count",
-            "rejected_op_count",
-            "source_pathology_count",
-            "observation_count",
-        ):
-            value = getattr(self, field_name)
             if not isinstance(value, int) or value < 0:
                 raise ValueError(f"PayloadElaborationResult.{field_name} must be a non-negative integer")
         if self.slot_binding_report is not None and not isinstance(self.slot_binding_report, SlotBindingReport):

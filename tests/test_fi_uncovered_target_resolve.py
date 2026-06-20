@@ -180,6 +180,22 @@ def test_insert_source_owned_new_chapter_beats_family_base_override(monkeypatch)
     assert r.reason == "source_owned_chapter"
 
 
+def test_insert_source_owned_new_part_beats_family_base_override(monkeypatch) -> None:
+    _patch_find_family(monkeypatch, (("part", "1"), ("chapter", "4"), ("section", "129")))
+    r = resolve_insert_chapter(
+        "129",
+        "4",
+        "5",
+        FakeIRState(),
+        [],
+        new_chapter_labels={"4"},
+        owned_chapter_labels={"4"},
+        source_owned_part_labels={"5"},
+    )
+    assert (r.effective_chapter, r.effective_part) == ("4", "5")
+    assert r.reason == "source_owned_part"
+
+
 def test_insert_family_base_repealed_keeps_declared(monkeypatch) -> None:
     _patch_find_family(monkeypatch, (("chapter", "3"), ("section", "5")))
     ops = [FakeOp("REPEAL", "5")]

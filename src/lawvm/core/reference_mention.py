@@ -141,6 +141,7 @@ class ProvisionRef:
                          Empty string if not parsed.
         subsection_num:  Subsection (momentti) number, or None.
         item_label:      Item (kohta) label, or None.
+        subitem_label:   Sub-item (alakohta) label, or None.
     """
 
     statute_id: str
@@ -148,6 +149,7 @@ class ProvisionRef:
     section_label: str = ""
     subsection_num: Optional[int] = None
     item_label: Optional[str] = None
+    subitem_label: Optional[str] = None
 
     def serialized(self) -> str:
         """Return a stable serialized form for parquet/JSONL output.
@@ -174,6 +176,11 @@ class ProvisionRef:
             section+momentti ref (``6 §:n 3 momentti`` → ``…/6/3``). Emitted
             whenever ``item_label`` is present, independent of
             ``subsection_num``.
+          * ``s{LABEL}`` — alakohta (sub-item). Typed analogously to the kohta
+            ``k{LABEL}`` segment so an item→sub-item ref (``1 kohdan a
+            alakohta`` → ``…/k1/sa``) is unambiguous. Emitted whenever
+            ``subitem_label`` is present (the alakohta always sits under a kohta,
+            so ``item_label`` is normally present too).
 
         The statute id remains the leading segment, so ``LIKE 'statute_id%'``
         prefix queries are unaffected. Bare-section refs (no ``chp_`` in
@@ -189,6 +196,8 @@ class ProvisionRef:
                 parts.append(str(self.subsection_num))
             if self.item_label:
                 parts.append(f"k{self.item_label}")
+            if self.subitem_label:
+                parts.append(f"s{self.subitem_label}")
         return "/".join(p for p in parts if p)
 
     def _chapter_from_provision_path(self) -> Optional[str]:

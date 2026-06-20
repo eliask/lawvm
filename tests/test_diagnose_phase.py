@@ -2,17 +2,46 @@ from __future__ import annotations
 
 import json
 from argparse import Namespace
+from types import SimpleNamespace
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.tools import diagnose_phase
 
 
-def test_diagnose_phase_json_suppresses_raw_replay_chatter_for_1978_38(capsys) -> None:
+def test_diagnose_phase_json_suppresses_raw_replay_chatter_for_1978_38(monkeypatch, capsys) -> None:
+    clean_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1"),))
+    clean_state = SimpleNamespace(ir=clean_ir)
+
+    class FakeCorpus:
+        def read_source(self, _sid: str) -> bytes:
+            return b"<root/>"
+
+    def fake_replay_xml(*, request, sinks=None):
+        print("COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED")
+        print("REPLACE 10 luku otsikko → FAILED")
+        return SimpleNamespace(replay_fold_state=clean_state, state=clean_state)
+
+    def fake_process_muutoslaki(request):
+        print("INSERT 10 luku 16 § 2 mom → FAILED")
+        return SimpleNamespace(output=request.state)
+
+    monkeypatch.setattr("lawvm.finland.corpus.get_corpus", lambda: FakeCorpus())
+    monkeypatch.setattr(
+        "lawvm.finland.statute.StatuteContext.from_xml",
+        lambda _xml, _postprocessor: SimpleNamespace(base_ir=clean_ir),
+    )
+    monkeypatch.setattr(
+        "lawvm.finland.amendment_selection.resolve_applicable_amendment_records",
+        lambda _sid, _mode: ([{"statute_id": "2001/1"}, {"statute_id": "2002/1"}], None, None),
+    )
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.process_muutoslaki", fake_process_muutoslaki)
+
     diagnose_phase.main(
         Namespace(
-            statute_id="1978/38",
-            source="2003/741",
+            statute_id="1991/1",
+            source="2001/1",
             target="",
             detector="duplicate_label",
             mode="legal_pit",
@@ -26,9 +55,11 @@ def test_diagnose_phase_json_suppresses_raw_replay_chatter_for_1978_38(capsys) -
     merged = captured.out + captured.err
 
     assert "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED" not in merged
+    assert "REPLACE 10 luku otsikko → FAILED" not in merged
+    assert "INSERT 10 luku 16 § 2 mom → FAILED" not in merged
     payload = json.loads(captured.out)
-    assert payload["statute_id"] == "1978/38"
-    assert payload["source_id"] == "2003/741"
+    assert payload["statute_id"] == "1991/1"
+    assert payload["source_id"] == "2001/1"
     assert "phases" in payload
 
 

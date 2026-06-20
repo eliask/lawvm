@@ -2334,9 +2334,12 @@ def _extract_uk_statute_id(locator: str, suffix: str) -> str:
 def _uk_oracle_corpus_statute_ids() -> List[str]:
     from farchive import Farchive
 
+    if not _DEFAULT_UK_FARCHIVE.exists():
+        raise RuntimeError(f"UK archive not found: {_DEFAULT_UK_FARCHIVE}")
+
     enacted: set[str] = set()
     current: set[str] = set()
-    with Farchive(_DEFAULT_UK_FARCHIVE) as archive:
+    with Farchive(_DEFAULT_UK_FARCHIVE, readonly=True) as archive:
         for locator in archive.locators("%/enacted/data.xml"):
             sid = _extract_uk_statute_id(str(locator), "/enacted/data.xml")
             if sid:
@@ -3953,7 +3956,7 @@ def build_uk_evidence_bundle(
     if not _DEFAULT_UK_FARCHIVE.exists():
         return {"statute_id": statute_id, "mode": mode, "jurisdiction": "uk", "error": "UK archive not found"}
 
-    with Farchive(_DEFAULT_UK_FARCHIVE) as archive:
+    with Farchive(_DEFAULT_UK_FARCHIVE, readonly=True) as archive:
         enacted_url = _uk_archive_url_for_statute(statute_id, enacted=True)
         current_url = _uk_archive_url_for_statute(statute_id, enacted=False)
         enacted_bytes = archive.get(enacted_url)

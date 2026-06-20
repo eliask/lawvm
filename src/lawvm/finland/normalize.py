@@ -34,6 +34,7 @@ from lawvm.finland.ops import (
     AmendmentOp,
     OpType,
 )
+from lawvm.finland.references.lemma_gate import head_case_forms
 
 # ---------------------------------------------------------------------------
 # Compiled regex patterns (module-level constants)
@@ -51,6 +52,29 @@ _RE_NUMBERED_LIST = re.compile(r"\b\d+\)\s")
 _RE_LUU_OR_OSA = re.compile(r"\b(?:luku|osa)\b")
 _RE_MUUTOS_VERBS = re.compile(r"\b(muutetaan|lisätään|korvataan|otetaan)\b")
 _RE_STATUTE_CREATION = re.compile(r"\b(?:lakiin|asetuksen)\s+uusi\s+([^§]{1,120})§")
+
+# Sub-provision unit alternation for the omnibus-repeal fallback discriminator
+# (``§:n kohta/momentti ...``). The ``kohta`` (NOM/GEN) and ``momentti`` (NOM/GEN)
+# case forms are GENERATED from the M1 morphology engine (paradigm inversion)
+# rather than hand-enumerated, so this lane shares the single source of
+# inflection truth with the reference lanes. ``johdantokappale`` is a fixed
+# nominative compound (no case enumeration), kept as an explicit literal.
+# The generated set reproduces the prior hand-written alternation byte-for-byte
+# (``kohta|kohdan|momentti|momentin``); longest-first for alternation safety.
+_SUBPROVISION_UNIT_ALT = "|".join(
+    sorted(
+        {
+            *head_case_forms("kohta", (("NOM", "SG"), ("GEN", "SG"))),
+            *head_case_forms("momentti", (("NOM", "SG"), ("GEN", "SG"))),
+            "johdantokappale",
+        },
+        key=lambda s: (-len(s), s),
+    )
+)
+_RE_SUBPROVISION_TARGET = re.compile(
+    r"§:?n?\s+(?:\d[\d.]*\s+)?(?:" + _SUBPROVISION_UNIT_ALT + r")",
+    flags=re.I,
+)
 _RE_CONTAINER_NOUN = re.compile(r"\b(luku|osa)\b")
 _RE_NEW_SUBSECTION = re.compile(
     r"\buusi\s+("
@@ -156,7 +180,12 @@ def _expand_spaced_insert_label_list_ir(text: str) -> List[str]:
     return labels
 
 
-def _sec1_fallback_peg_skip_required(johto: str, parent_id: str) -> bool:
+def _sec1_fallback_peg_skip_required(
+    johto: str,
+    parent_id: str,
+    *,
+    parser_has_structural_targets: bool = False,
+) -> bool:
     """True when sec_1 fallback text should suppress PEG extraction.
 
     The skip is only justified for omnibus repeal structures where the fallback
@@ -181,12 +210,11 @@ def _sec1_fallback_peg_skip_required(johto: str, parent_id: str) -> bool:
     lower_tail = johto.lower().split("kumotaan", 1)[1]
     has_non_repeal_ops = bool(_RE_MUUTOS_VERBS.search(lower_tail))
     has_explicit_section_targets = bool(_RE_SECTION_SIGN.search(lower_tail))
-    has_subprovision_targets = bool(
-        re.search(
-            r"§:?n?\s+(?:\d[\d.]*\s+)?(?:kohta|kohdan|momentti|momentin|johdantokappale)",
-            lower_tail,
-        )
-    )
+    has_subprovision_targets = bool(_RE_SUBPROVISION_TARGET.search(lower_tail))
+    if parser_has_structural_targets and (
+        has_explicit_section_targets or has_subprovision_targets
+    ):
+        return False
 
     try:
         parent_year, parent_num = parent_id.split("/")
@@ -195,13 +223,17 @@ def _sec1_fallback_peg_skip_required(johto: str, parent_id: str) -> bool:
         return True
 
     parent_year_short = parent_year[-2:]
+    normalized_refs: list[tuple[int, str]] = []
     for ref_num, ref_year in refs:
         try:
-            ref_num_i = int(ref_num)
+            normalized_refs.append((int(ref_num), ref_year))
         except ValueError:
             return True
-        if ref_num_i != parent_num_i or ref_year not in {parent_year, parent_year_short}:
-            return True
+
+    for ref_num_i, ref_year in normalized_refs:
+        if ref_num_i == parent_num_i and ref_year in {parent_year, parent_year_short}:
+            continue
+        return True
     if has_explicit_section_targets:
         return False
     if has_subprovision_targets:
@@ -635,7 +667,7 @@ def _extract_insert_container_ops_fallback_with_coverage(
                     "target_unit_kind": "part",
                     "target_part": part,
                 },
-                ignored_spans=(),
+                ignored_spans=[],
                 matched_text=cleaned[m.start():m.end()],
             )
         )

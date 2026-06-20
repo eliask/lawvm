@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from lawvm.finland.references.registries.statute_name import (
     StatuteNameEntry,
     all_entries_from_farchive,
     build_registry,
+    sample_entries_from_farchive,
 )
 
 
@@ -52,14 +54,27 @@ def test_enumerator_is_lazy_stream() -> None:
     assert isinstance(gen, Iterator)
 
 
+def test_farchive_entry_readers_do_not_create_missing_archive(tmp_path: Path) -> None:
+    missing = tmp_path / "unused.farchive"
+
+    with pytest.raises(sqlite3.OperationalError):
+        sample_entries_from_farchive(limit=1, archive_path=str(missing))
+    assert not missing.exists()
+
+    gen = all_entries_from_farchive(limit=1, archive_path=str(missing))
+    with pytest.raises(sqlite3.OperationalError):
+        next(gen)
+    assert not missing.exists()
+
+
 @_skip_no_corpus
 def test_enumerator_yields_temporal_entries() -> None:
     """A small ``limit`` slice yields real entries with honest temporal bounds.
 
     ``valid_from`` comes from the source ``dateIssued`` (a real date for the
-    overwhelming majority of statutes); ``valid_to`` is ALWAYS open — the farchive
-    exposes only the current consolidated title, so a title END date is never
-    fabricated.
+    overwhelming majority of statutes); ``valid_to`` is the consolidated oracle's
+    ``finlex:repealedBy`` supersession date for a repealed act, else open. Both
+    are real corpus dates or ``None`` — never fabricated.
     """
     entries = list(all_entries_from_farchive(limit=200))
     assert entries, "expected at least one statute title from the corpus"
@@ -68,15 +83,24 @@ def test_enumerator_yields_temporal_entries() -> None:
         assert isinstance(e, StatuteNameEntry)
         assert e.statute_id
         assert e.canonical_title
-        # valid_to is NEVER set from this single-version source.
-        assert e.valid_to is None
-        # valid_from, when present, is a real date (never fabricated garbage).
+        # Both bounds are either a real date or open — never fabricated garbage.
         assert e.valid_from is None or isinstance(e.valid_from, dt.date)
+        assert e.valid_to is None or isinstance(e.valid_to, dt.date)
+        # A closed window must be coherent (repeal cannot precede enactment).
+        if e.valid_from is not None and e.valid_to is not None:
+            assert e.valid_to >= e.valid_from
 
     # The corpus has dateIssued for the vast majority of statutes — at least one
     # of a 200-slice must carry a real enactment date (else extraction is broken).
     assert any(e.valid_from is not None for e in entries), (
         "no entry got a valid_from — dateIssued extraction is broken"
+    )
+
+    # The repeal-date extraction must actually fire: a low-id slice (the oldest
+    # statutes, many long-repealed) must close at least one window from the
+    # oracle's finlex:repealedBy block (else the valid_to wiring is broken).
+    assert any(e.valid_to is not None for e in entries), (
+        "no entry got a valid_to — oracle repeal-date extraction is broken"
     )
 
 
@@ -88,10 +112,6 @@ def test_full_enumerator_beats_sample_coverage() -> None:
     compare a 2000-id slice against the 500-id sample's ceiling to keep the test
     cheap while proving the enumerator is not silently truncating.
     """
-    from lawvm.finland.references.registries.statute_name import (
-        sample_entries_from_farchive,
-    )
-
     sample = sample_entries_from_farchive(limit=500)
     bigger = list(all_entries_from_farchive(limit=2000))
     assert len(bigger) > len(sample)

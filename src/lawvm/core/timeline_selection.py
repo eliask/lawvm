@@ -17,6 +17,9 @@ _VERSION_SELECTION_RAILS = frozenset(
 _QUERY_TYPES = frozenset({"governing", "in_force"})
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _BASE_SENTINEL_DATE = "0000-00-00"
+_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
+    "lawvm_materialize_as_absent_under_detached_horizon"
+)
 
 
 def _validate_query_type(query_type: str) -> None:
@@ -47,7 +50,7 @@ def _validate_selection_query(
     _validate_query_type(query_type)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class VersionSelectionCertificate:
     """Positive certificate explaining one version-selection decision."""
 
@@ -94,7 +97,7 @@ class VersionSelectionCertificate:
             )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class VersionSelectionResult:
     """Explicit selection result that can represent missing required scope."""
 
@@ -153,7 +156,7 @@ class VersionSelectionResult:
             )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class VersionSelectionTie:
     """Equal-rank active candidates where current selection would need list order."""
 
@@ -163,6 +166,16 @@ class VersionSelectionTie:
     source_statute: str
     variant_kind: str
     candidate_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _VersionSelectionConflictKey:
+    """Equal-rank dimensions for same-source version-selection conflict checks."""
+
+    variant_kind: str
+    effective: str
+    enacted: str
+    source_statute: str
 
 
 def _day_before_iso(iso_date: str) -> str:
@@ -187,6 +200,12 @@ def content_is_repeal_placeholder(content: IRNode | None) -> bool:
     return content.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
+def _projects_as_absent_under_detached_horizon(content: IRNode | None) -> bool:
+    if content is None:
+        return False
+    return content.attrs.get(_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR) == "1"
+
+
 def eligible(
     v: ProvisionVersion,
     as_of: str,
@@ -206,36 +225,43 @@ def pick_latest(versions: list[ProvisionVersion]) -> Optional[ProvisionVersion]:
     """Pick the latest version by (effective, enacted, substantive-bias, index)."""
     if not versions:
         return None
+    if len(versions) == 1:
+        return versions[0]
 
     same_source_late_placeholder_ties: set[tuple[str, str, str]] = set()
-    grouped: dict[tuple[str, str, str], list[tuple[int, ProvisionVersion]]] = {}
+    indexed: list[tuple[int, ProvisionVersion, bool, tuple[str, str, str]]] = []
+    max_placeholder_index_by_key: dict[tuple[str, str, str], int] = {}
+    min_substantive_index_by_key: dict[tuple[str, str, str], int] = {}
     for idx, version in enumerate(versions):
         source_statute = version.source.statute_id if version.source is not None else ""
         key = (version.effective, version.enacted, source_statute)
-        grouped.setdefault(key, []).append((idx, version))
-    for key, group in grouped.items():
-        placeholder_indexes = [idx for idx, version in group if content_is_repeal_placeholder(version.content)]
-        substantive_indexes = [idx for idx, version in group if not content_is_repeal_placeholder(version.content)]
-        if placeholder_indexes and substantive_indexes and max(placeholder_indexes) > min(substantive_indexes):
+        is_placeholder = content_is_repeal_placeholder(version.content)
+        indexed.append((idx, version, is_placeholder, key))
+        if is_placeholder:
+            current = max_placeholder_index_by_key.get(key)
+            if current is None or idx > current:
+                max_placeholder_index_by_key[key] = idx
+        else:
+            current = min_substantive_index_by_key.get(key)
+            if current is None or idx < current:
+                min_substantive_index_by_key[key] = idx
+    for key, max_placeholder_index in max_placeholder_index_by_key.items():
+        min_substantive_index = min_substantive_index_by_key.get(key)
+        if min_substantive_index is not None and max_placeholder_index > min_substantive_index:
             same_source_late_placeholder_ties.add(key)
 
     return max(
-        enumerate(versions),
-        key=lambda iv: (
-            iv[1].effective,
-            iv[1].enacted,
+        indexed,
+        key=lambda item: (
+            item[1].effective,
+            item[1].enacted,
             2
             if (
-                content_is_repeal_placeholder(iv[1].content)
-                and (
-                    iv[1].effective,
-                    iv[1].enacted,
-                    iv[1].source.statute_id if iv[1].source is not None else "",
-                )
-                in same_source_late_placeholder_ties
+                item[2]
+                and item[3] in same_source_late_placeholder_ties
             )
-            else (0 if content_is_repeal_placeholder(iv[1].content) else 1),
-            iv[0],
+            else (0 if item[2] else 1),
+            item[0],
         ),
     )[1]
 
@@ -259,6 +285,26 @@ def equal_rank_same_source_conflicts(
         query_type=query_type,
         expires_as_of=expires_as_of,
     )
+    return equal_rank_same_source_conflicts_prevalidated(
+        timeline,
+        as_of=as_of,
+        query_type=query_type,
+        territory=territory,
+        expires_as_of=expires_as_of,
+    )
+
+
+def equal_rank_same_source_conflicts_prevalidated(
+    timeline: ProvisionTimeline,
+    *,
+    as_of: str,
+    query_type: str = "governing",
+    territory: Optional[str] = None,
+    expires_as_of: str = "",
+) -> tuple[VersionSelectionTie, ...]:
+    """Return active same-source ties after caller has validated the query."""
+    if len(timeline.versions) < 2:
+        return ()
 
     eligible_versions = [
         version
@@ -274,15 +320,37 @@ def equal_rank_same_source_conflicts(
     selection_rail = temporary_versions or [
         version for version in eligible_versions if version.variant_kind == "permanent"
     ]
-    grouped: dict[tuple[str, str, str, str], list[ProvisionVersion]] = {}
+    if len(selection_rail) < 2:
+        return ()
+
+    first_by_key: dict[_VersionSelectionConflictKey, ProvisionVersion] = {}
+    key_order: list[_VersionSelectionConflictKey] = []
+    duplicate_groups: dict[_VersionSelectionConflictKey, list[ProvisionVersion]] = {}
     for version in selection_rail:
         source_statute = version.source.statute_id if version.source is not None else ""
-        key = (version.variant_kind, version.effective, version.enacted, source_statute)
-        grouped.setdefault(key, []).append(version)
+        key = _VersionSelectionConflictKey(
+            variant_kind=version.variant_kind,
+            effective=version.effective,
+            enacted=version.enacted,
+            source_statute=source_statute,
+        )
+        duplicate_group = duplicate_groups.get(key)
+        if duplicate_group is not None:
+            duplicate_group.append(version)
+            continue
+        first_seen = first_by_key.get(key)
+        if first_seen is not None:
+            duplicate_groups[key] = [first_seen, version]
+            continue
+        first_by_key[key] = version
+        key_order.append(key)
+    if not duplicate_groups:
+        return ()
 
     conflicts: list[VersionSelectionTie] = []
-    for (variant_kind, effective, enacted, source_statute), versions in grouped.items():
-        if len(versions) < 2:
+    for key in key_order:
+        versions = duplicate_groups.get(key)
+        if versions is None:
             continue
         content_hashes = {
             irnode_content_hash(version.content) if version.content is not None else "<absent>"
@@ -293,10 +361,10 @@ def equal_rank_same_source_conflicts(
         conflicts.append(
             VersionSelectionTie(
                 address=timeline.address,
-                effective=effective,
-                enacted=enacted,
-                source_statute=source_statute,
-                variant_kind=variant_kind,
+                effective=key.effective,
+                enacted=key.enacted,
+                source_statute=key.source_statute,
+                variant_kind=key.variant_kind,
                 candidate_count=len(versions),
             )
         )
@@ -380,6 +448,7 @@ def _select_background_version_from_eligible(
                     expires_as_of
                     and as_of > expires_as_of
                     and (v.content is None or content_is_repeal_placeholder(v.content))
+                    and not _projects_as_absent_under_detached_horizon(v.content)
                     and v.effective > expires_as_of
                 )
             )
@@ -401,6 +470,109 @@ def _select_temporary_version_from_eligible(
                 and applicability_matches(v, territory=territory)
             )
         ]
+    )
+
+
+def _select_single_active_version(
+    timeline: ProvisionTimeline,
+    version: ProvisionVersion,
+    *,
+    as_of: str,
+    query_type: str,
+    territory: Optional[str],
+    expires_as_of: str,
+) -> VersionSelectionResult | None:
+    """Fast path for one-version timelines, preserving selector certificates."""
+    if not eligible(version, as_of, query_type, expires_as_of=expires_as_of):
+        return VersionSelectionResult(
+            status="absent",
+            certificate=VersionSelectionCertificate(
+                address=timeline.address,
+                as_of=as_of,
+                query_type=query_type,
+                territory=territory,
+                selected_rail="absent",
+                candidate_count=0,
+            ),
+        )
+
+    required_dimensions = _required_scope_dimensions_from_eligible([version])
+    if territory is None and required_dimensions:
+        return VersionSelectionResult(
+            status="ambiguous_missing_scope",
+            required_dimensions=required_dimensions,
+            certificate=VersionSelectionCertificate(
+                address=timeline.address,
+                as_of=as_of,
+                query_type=query_type,
+                territory=territory,
+                selected_rail="ambiguous_missing_scope",
+                candidate_count=1,
+                required_dimensions=required_dimensions,
+            ),
+        )
+    if not applicability_matches(version, territory=territory):
+        return VersionSelectionResult(
+            status="absent",
+            certificate=VersionSelectionCertificate(
+                address=timeline.address,
+                as_of=as_of,
+                query_type=query_type,
+                territory=territory,
+                selected_rail="absent",
+                candidate_count=1,
+            ),
+        )
+
+    if version.variant_kind == "temporary":
+        selected_rail = "overlay"
+    elif version.variant_kind == "permanent":
+        expiry_horizon = expires_as_of or as_of
+        if (
+            version.expires
+            and version.expires <= expiry_horizon
+            and (
+                version.content is None
+                or content_is_repeal_placeholder(version.content)
+            )
+        ) or (
+            expires_as_of
+            and as_of > expires_as_of
+            and (
+                version.content is None
+                or content_is_repeal_placeholder(version.content)
+            )
+            and not _projects_as_absent_under_detached_horizon(version.content)
+            and version.effective > expires_as_of
+        ):
+            return VersionSelectionResult(
+                status="absent",
+                certificate=VersionSelectionCertificate(
+                    address=timeline.address,
+                    as_of=as_of,
+                    query_type=query_type,
+                    territory=territory,
+                    selected_rail="absent",
+                    candidate_count=1,
+                ),
+            )
+        selected_rail = "background"
+    else:
+        return None
+
+    return VersionSelectionResult(
+        status="selected",
+        version=version,
+        certificate=VersionSelectionCertificate(
+            address=timeline.address,
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+            selected_rail=selected_rail,
+            candidate_count=1,
+            selected_effective=version.effective,
+            selected_enacted=version.enacted,
+        ),
     )
 
 
@@ -469,6 +641,34 @@ def select_active_version_ex(
         query_type=query_type,
         expires_as_of=expires_as_of,
     )
+    return select_active_version_ex_prevalidated(
+        timeline,
+        as_of,
+        query_type=query_type,
+        territory=territory,
+        expires_as_of=expires_as_of,
+    )
+
+
+def select_active_version_ex_prevalidated(
+    timeline: ProvisionTimeline,
+    as_of: str,
+    query_type: str = "governing",
+    territory: Optional[str] = None,
+    expires_as_of: str = "",
+) -> VersionSelectionResult:
+    """Return active-version selection after caller has validated the query."""
+    if len(timeline.versions) == 1:
+        fast = _select_single_active_version(
+            timeline,
+            timeline.versions[0],
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+            expires_as_of=expires_as_of,
+        )
+        if fast is not None:
+            return fast
     eligible_versions = [
         version
         for version in timeline.versions

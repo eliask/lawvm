@@ -102,6 +102,7 @@ _DB_PATH = Path(__file__).resolve().parents[1] / "data" / "uk_legislation.farchi
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live pipeline test",
 )
+@pytest.mark.slow
 def test_uk_misses_ukpga_1978_30_matches_uk_replay() -> None:
     """uk-misses numbers for ukpga/1978/30 must equal uk-replay's oracle block.
 

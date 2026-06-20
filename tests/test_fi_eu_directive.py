@@ -108,13 +108,31 @@ def test_nickname_article_coordination_exact() -> None:
         assert r.mention.target_provision_ref.statute_id == "celex:32010L0075"
 
 
-def test_unknown_bare_head_without_formal_cite_not_emitted() -> None:
-    # A nickname-shaped head unknown to the registry AND with no adjacent formal
-    # EU cite is NOT a resolvable EU-by-nickname reference: emitting a bare
-    # ``eu-nickname:<head>`` STATUTE_ONLY would be a pure false positive (the
-    # article number is governed elsewhere) and would double-count against the
-    # formal-cite lane. Fail-loud: emit nothing.
+def test_named_eu_instrument_without_cite_typed_statute_only() -> None:
+    # A registry-MISS *named* EU instrument (a compound EU-head nickname directly
+    # governing an ``N artikla``) with no adjacent formal cite is TYPED as an EU
+    # instrument reference, STATUTE_ONLY/unresolved, routed to ``eu-nickname:`` —
+    # NOT mis-typed as a Finnish ``fi-name:`` statute. Finnish acts use § not
+    # artikla, so the article-governed compound EU-head is unambiguously EU.
+    # Tag-don't-guess: no CELEX is invented.
     refs = recognize_eu_directive_refs("foobardirektiivin 4 artiklassa")
+    assert len(refs) == 1
+    r = refs[0]
+    assert r.status is CiteConfidence.STATUTE_ONLY
+    assert r.mention.cite_kind is CiteKind.EU
+    assert r.mention.target_provision_ref is not None
+    assert r.mention.target_provision_ref.statute_id == "eu-nickname:foobardirektiivin"
+    assert not r.mention.target_provision_ref.statute_id.startswith("celex:")
+    assert r.article == "4"
+
+
+def test_bare_standalone_head_without_modifier_not_emitted() -> None:
+    # A BARE standalone EU head with NO glued compound modifier (the whole token
+    # IS an inflected ``asetus``/``direktiivi``) carries no instrument identity —
+    # it is anaphoric/domestic, its article number governed elsewhere. Emitting a
+    # bare ``eu-nickname:<head>`` STATUTE_ONLY would be a pure false positive and
+    # double-count the formal-cite lane. Fail-loud: emit nothing.
+    refs = recognize_eu_directive_refs("mainitun direktiivin 4 artiklassa")
     assert refs == []
 
 
@@ -270,8 +288,18 @@ def test_artikla_plain_list_and_range_preserved() -> None:
 
 def _ref(text: str):
     refs = recognize_eu_directive_refs(text)
-    assert len(refs) == 1, [r.mention.target_provision_ref.serialized() for r in refs]
+    assert len(refs) == 1, [
+        r.mention.target_provision_ref.serialized()
+        for r in refs
+        if r.mention.target_provision_ref is not None
+    ]
     return refs[0]
+
+
+def _target_ref(result):
+    target = result.mention.target_provision_ref
+    assert target is not None
+    return target
 
 
 def test_kohta_carried_onto_subsection_num() -> None:
@@ -305,14 +333,14 @@ def test_kohta_serializes_distinctly_from_bare_article() -> None:
     # distinct from the article-only cite.
     bare = _ref("yleisen tietosuoja-asetuksen 6 artiklassa")
     with_kohta = _ref("yleisen tietosuoja-asetuksen 6 artiklan 1 kohdassa")
-    assert bare.mention.target_provision_ref.serialized() == "celex:32016R0679/6"
+    assert _target_ref(bare).serialized() == "celex:32016R0679/6"
     assert (
-        with_kohta.mention.target_provision_ref.serialized()
+        _target_ref(with_kohta).serialized()
         == "celex:32016R0679/6/1"
     )
     assert (
-        bare.mention.target_provision_ref.serialized()
-        != with_kohta.mention.target_provision_ref.serialized()
+        _target_ref(bare).serialized()
+        != _target_ref(with_kohta).serialized()
     )
 
 
@@ -322,7 +350,7 @@ def test_kohta_coordination_enumerates() -> None:
     refs = recognize_eu_directive_refs(
         "yleisen tietosuoja-asetuksen 7 artiklan 1 ja 2 kohdassa"
     )
-    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+    assert [_target_ref(r).serialized() for r in refs] == [
         "celex:32016R0679/7/1",
         "celex:32016R0679/7/2",
     ]
@@ -336,7 +364,7 @@ def test_alakohta_coordination_enumerates() -> None:
     refs = recognize_eu_directive_refs(
         "yleisen tietosuoja-asetuksen 18 artiklan 1 kohdan a ja b alakohdassa"
     )
-    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+    assert [_target_ref(r).serialized() for r in refs] == [
         "celex:32016R0679/18/1/ka",
         "celex:32016R0679/18/1/kb",
     ]
@@ -348,7 +376,7 @@ def test_article_coordination_with_shared_kohta() -> None:
     refs = recognize_eu_directive_refs(
         "yleisen tietosuoja-asetuksen 33 ja 35 artiklan 1 kohdassa"
     )
-    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+    assert [_target_ref(r).serialized() for r in refs] == [
         "celex:32016R0679/33/1",
         "celex:32016R0679/35/1",
     ]
@@ -358,7 +386,7 @@ def test_bare_article_no_kohta_unchanged() -> None:
     # A bare "N artiklassa" (locative, no genitive, no kohta) is untouched: no
     # subsection_num / item_label fabricated.
     r = _ref("teollisuuspäästödirektiivin 12 artiklassa")
-    tgt = r.mention.target_provision_ref
+    tgt = _target_ref(r)
     assert tgt.subsection_num is None
     assert tgt.item_label is None
     assert tgt.serialized() == "celex:32010L0075/12"
@@ -369,7 +397,7 @@ def test_genitive_article_without_kohta_unchanged() -> None:
     # A genitive "N artiklan" NOT followed by a kohta tail must NOT fabricate a
     # sub-element (fail-loud): a trailing unrelated number is not a kohta.
     r = _ref("teollisuuspäästödirektiivin 12 artiklan mukaisesti")
-    tgt = r.mention.target_provision_ref
+    tgt = _target_ref(r)
     assert tgt.subsection_num is None
     assert tgt.item_label is None
     assert tgt.serialized() == "celex:32010L0075/12"
@@ -383,10 +411,10 @@ def test_alakohta_dash_range_not_fabricated() -> None:
     refs = recognize_eu_directive_refs(
         "yleisen tietosuoja-asetuksen 6 artiklan 1 kohdan a–c alakohdassa"
     )
-    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+    assert [_target_ref(r).serialized() for r in refs] == [
         "celex:32016R0679/6/1",
     ]
-    assert refs[0].mention.target_provision_ref.item_label is None
+    assert _target_ref(refs[0]).item_label is None
 
 
 def test_kohta_resolves_via_formal_cite_head() -> None:

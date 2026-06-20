@@ -780,7 +780,7 @@ def project_he_corpus(
     """
     from farchive import Farchive
 
-    farchive = Farchive(farchive_path)
+    farchive = Farchive(farchive_path, readonly=True)
 
     all_corpus: List[Dict[str, Any]] = []
     all_atoms: List[Dict[str, Any]] = []

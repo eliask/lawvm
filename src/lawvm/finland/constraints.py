@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import copy
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, Iterator, List, Optional, Tuple
 
 import lxml.etree as etree
 
@@ -30,8 +32,12 @@ from lawvm.finland.replay_notices import replay_print
 
 DEBUG = False  # set to True for per-constraint debug output
 
+if TYPE_CHECKING:
+    from lawvm.finland.source_model import AmendmentSourceModel
+
 _PART_CROSS_HEADING_RE = re.compile(
-    r"^(?P<label>[IVXLCDM]+|\d+[a-z]?)\s+(?:osa|osasto)$",
+    r"^(?P<label>(?:[IVXLCDM]{1,12}|\d{1,4}[a-z]?))\s{1,8}(?:osa|osasto)\b"
+    r"(?:$|\s{1,8}[^\n]{0,200}$)",
     flags=re.I,
 )
 _NON_WORD_DIGIT_RE = re.compile(r"[^\d\w]")
@@ -54,12 +60,81 @@ _CONSTRAINT_REASON_CODES: dict[str, str] = {
 }
 
 
+@dataclass(slots=True)
+class _MuutosNodeLookupCache:
+    """Temporary per-normalization XML lookup cache.
+
+    lxml elements are not weak-referenceable, so this cache must stay scoped to
+    one frontend normalization phase and must not be global/root-retaining.
+    """
+
+    node_queries: dict[
+        tuple[int, str, str, Optional[str], Optional[str]],
+        etree._Element | None,
+    ]
+    all_part_nodes: dict[int, list[etree._Element]]
+
+
+_MUUTOS_NODE_LOOKUP_CACHE: ContextVar[_MuutosNodeLookupCache | None] = ContextVar(
+    "lawvm_fi_muutos_node_lookup_cache",
+    default=None,
+)
+
+
+@contextmanager
+def muutos_node_lookup_cache_scope() -> Iterator[None]:
+    """Enable a temporary XML lookup cache for one frontend normalization run."""
+    token = _MUUTOS_NODE_LOOKUP_CACHE.set(
+        _MuutosNodeLookupCache(node_queries={}, all_part_nodes={})
+    )
+    try:
+        yield
+    finally:
+        _MUUTOS_NODE_LOOKUP_CACHE.reset(token)
+
+
 # ---------------------------------------------------------------------------
 # Shared lxml helper (also re-exported into grafter for _find_muutos_ir)
 # ---------------------------------------------------------------------------
 
 
 def _find_muutos_node(
+    muutos_tree: "etree._Element",
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_chapter: Optional[str] = None,
+    target_part: Optional[str] = None,
+):
+    cache = _MUUTOS_NODE_LOOKUP_CACHE.get()
+    if cache is None:
+        return _find_muutos_node_uncached(
+            muutos_tree,
+            target_unit_kind,
+            target_norm,
+            target_chapter,
+            target_part,
+        )
+    cache_key = (
+        id(muutos_tree),
+        str(target_unit_kind or ""),
+        target_norm,
+        target_chapter,
+        target_part,
+    )
+    if cache_key in cache.node_queries:
+        return cache.node_queries[cache_key]
+    result = _find_muutos_node_uncached(
+        muutos_tree,
+        target_unit_kind,
+        target_norm,
+        target_chapter,
+        target_part,
+    )
+    cache.node_queries[cache_key] = result
+    return result
+
+
+def _find_muutos_node_uncached(
     muutos_tree: "etree._Element",
     target_unit_kind: TargetUnitKind,
     target_norm: str,
@@ -237,7 +312,16 @@ def _find_muutos_node(
         return logical_parts
 
     def _all_part_nodes(root: "etree._Element") -> list["etree._Element"]:
-        return list(root.findall(".//{*}part")) + _logical_part_nodes(root)
+        cache = _MUUTOS_NODE_LOOKUP_CACHE.get()
+        if cache is None:
+            return list(root.findall(".//{*}part")) + _logical_part_nodes(root)
+        root_id = id(root)
+        cached = cache.all_part_nodes.get(root_id)
+        if cached is not None:
+            return cached
+        nodes = list(root.findall(".//{*}part")) + _logical_part_nodes(root)
+        cache.all_part_nodes[root_id] = nodes
+        return nodes
 
     def _logical_chapter_node(chapter_el: "etree._Element", wanted_label: str) -> Optional["etree._Element"]:
         segments = _logical_chapter_segments(chapter_el)
@@ -384,10 +468,11 @@ class _FilterCtx:
     """Ambient data shared by all constraint predicates for a single group."""
 
     muutos_ir: Optional[IRNode]
-    muutos_tree: "etree._Element"
     johto: str
+    muutos_tree: "etree._Element | None" = None
     slot_assignment: Optional[SubsectionSlotAssignmentResult] = None
     subsec_map: Optional[SubsectionSlotMap] = None
+    source_model: "AmendmentSourceModel | None" = None
     _has_heading: Optional[bool] = None
     _is_lang_variant: Optional[bool] = None
 
@@ -406,6 +491,38 @@ class _FilterCtx:
     @property
     def has_subsection_mapping(self) -> bool:
         return self.slot_assignment is not None
+
+    def has_source_node(
+        self,
+        target_unit_kind: TargetUnitKind,
+        target_norm: str,
+        target_chapter: Optional[str] = None,
+        target_part: Optional[str] = None,
+    ) -> bool:
+        """Return whether the source body has this target.
+
+        ``source_model`` is the compile-time path.  ``muutos_tree`` is retained
+        only as a legacy diagnostic/test fallback while XML callers migrate.
+        """
+        if self.source_model is not None:
+            return self.source_model.has_source_node(
+                target_unit_kind,
+                target_norm,
+                target_chapter,
+                target_part,
+            )
+        if self.muutos_tree is None:
+            return False
+        return (
+            _find_muutos_node(
+                self.muutos_tree,
+                target_unit_kind,
+                target_norm,
+                target_chapter,
+                target_part,
+            )
+            is not None
+        )
 
     @property
     def has_amendment_section(self) -> bool:
@@ -447,12 +564,17 @@ def _c_false_positive_reference(op: AmendmentOp, all_ops: List[AmendmentOp], ctx
     if ctx.has_amendment_section:
         return True, ""
     target_section = op.target_section
+    has_source_node = (
+        ctx.has_source_node(op.target_unit_kind, _norm_num_token(target_section))
+        if target_section
+        else False
+    )
     if (
         op.target_unit_kind == "section"
         and op.op_type != "REPEAL"
         and target_section
         and not op.target_special
-        and _find_muutos_node(ctx.muutos_tree, op.target_unit_kind, _norm_num_token(target_section)) is None
+        and not has_source_node
         and not _johtolause_mentions_section(ctx.johto, target_section)
     ):
         return False, "cross-reference false positive"

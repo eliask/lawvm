@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Tuple
 
-from lawvm.core.compile_result import ActivationRule
+from lawvm.core.temporal import ActivationRule
 from lawvm.finland.labels import (
     AlphaSequence,
     AnyFinlandLabel,

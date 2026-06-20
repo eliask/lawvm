@@ -45,7 +45,7 @@ def _project_inline_citations_for_statute(
 
     Returns (citation_rows, diagnostic_rows).
     """
-    from lawvm.finland.inline_citation_extractor import extract_inline_citations
+    from lawvm.finland.references.inline_citation_extractor import extract_inline_citations
 
     xml_bytes = _get_statute_xml(statute_id, store)
     if xml_bytes is None:
@@ -91,7 +91,7 @@ def _project_inline_citations_for_he(
 
     Returns (citation_rows, diagnostic_rows).
     """
-    from lawvm.finland.inline_citation_extractor import extract_inline_citations
+    from lawvm.finland.references.inline_citation_extractor import extract_inline_citations
 
     # Use the short form "116/2024" as doc_id (matches corpus convention)
     # He IDs like "HE 116/2024" → "116/2024"

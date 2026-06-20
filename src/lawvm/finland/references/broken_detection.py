@@ -79,6 +79,12 @@ __all__ = [
     "detect_broken",
     "default_tree_as_of",
     "default_provision_present",
+    # Statute-level (registry/lifecycle-driven) bitemporal detection.
+    "StatuteLifecycle",
+    "LifecycleLookup",
+    "StatuteLifecycleFinding",
+    "StatuteLifecycleUnverifiable",
+    "detect_statute_lifecycle_broken",
 ]
 
 
@@ -96,7 +102,21 @@ __all__ = [
 
 
 class BrokenReason(Enum):
-    """Why a resolved reference is BROKEN, as a closed enum (never a string)."""
+    """Why a resolved reference is BROKEN, as a closed enum (never a string).
+
+    Two families of reason, both bitemporal:
+
+    * PROVISION-level (tree-derived): the cited *provision* is absent from the
+      target statute's text-state (``REPEALED_SINCE`` / ``RENUMBERED_SINCE`` /
+      ``NEVER_EXISTED``). Established by point-in-time tree materialization.
+    * STATUTE-level (registry/lifecycle-derived): the cited *act* itself is not
+      in force at the citing date (``TARGET_STATUTE_REPEALED`` /
+      ``TARGET_STATUTE_NOT_YET_IN_FORCE``). Established cheaply from the statute
+      lifecycle (``valid_from`` / ``valid_to``, the oracle repeal dates) — no
+      tree replay needed. This is the bitemporal piece the registry repeal-dates
+      unlock: a citation that points at an act no longer (or not yet) in force at
+      the time the citing text is effective.
+    """
 
     REPEALED_SINCE = "repealed_since"
     """Target existed when cited; absent from the current tree (repealed)."""
@@ -114,6 +134,27 @@ class BrokenReason(Enum):
     """Target did not exist at the citation's ``valid_at`` — a citation that was
     dangling from the moment it was written (typo, premature reference, or a
     misresolution upstream)."""
+
+    TARGET_STATUTE_REPEALED = "target_statute_repealed"
+    """The cited ACT was already repealed at the citing text's effective date.
+
+    Statute-level (registry-derived): the target statute's ``valid_to`` (the
+    in-corpus oracle repeal/supersession date — the date the repealing act
+    entered into force, an exclusive end of the window) is on or before the
+    citing date. The citation points at an act that was no longer the act of that
+    name when the citing text took effect. Cheap to establish (no tree replay);
+    fail-loud when the lifecycle is unknown (→ ``StatuteLifecycleUnverifiable``,
+    never a false BROKEN)."""
+
+    TARGET_STATUTE_NOT_YET_IN_FORCE = "target_statute_not_yet_in_force"
+    """The cited ACT was not yet in force at the citing text's effective date.
+
+    Statute-level (registry-derived): the target statute's ``valid_from`` (its
+    enactment / entry-into-force date) is strictly after the citing date. The
+    citation points at an act that did not yet exist when the citing text took
+    effect (a premature reference, or — far more often — a misresolution to a
+    later same-named act). Cheap to establish; fail-loud when the lifecycle is
+    unknown."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -503,3 +544,239 @@ def default_provision_present(tree: IRNode, ref: ProvisionRef) -> bool:
         scope_label=sub_label,
     )
     return bool(item_paths)
+
+
+# ===========================================================================
+# Statute-level (registry/lifecycle-driven) bitemporal detection
+# ===========================================================================
+#
+# WHY a second, statute-level detector
+# ------------------------------------
+# ``detect_broken`` answers the PROVISION question: "is the cited section/momentti
+# present in the target's materialized text-state?" That requires a full
+# point-in-time tree replay of the target — heavy.
+#
+# A cheaper, orthogonal question the registry repeal-dates now make answerable:
+# "is the cited ACT ITSELF in force at the citing text's effective date?" The
+# statute-name registry carries each act's lifecycle window
+# (``valid_from`` = enactment, ``valid_to`` = the in-corpus oracle repeal /
+# supersession date — the date the repealing act entered into force). Comparing
+# that window against the citing date is a pure date comparison: no tree, no
+# replay. It catches a distinct dangling class the provision detector cannot see
+# as such — a citation to a whole act that was already repealed (or not yet in
+# force) when the citing text took effect.
+#
+# FAIL-LOUD (no false positives)
+# ------------------------------
+# If the target statute's lifecycle is UNKNOWN — no registry entry, or an OPEN
+# window (``valid_to is None`` = "no repeal date the corpus exposes", which is
+# the overwhelming common case and means "treat as still in force") — we never
+# call it broken. A genuinely unknown lifecycle (no entry at all) yields a
+# ``StatuteLifecycleUnverifiable`` record, NOT a finding. An open ``valid_to`` is
+# simply "in force" and produces no finding. This preserves the scope discipline
+# (broken-ref false positives were a hard-won 99.2% cut): unknown → unverifiable,
+# never broken.
+
+
+@dataclass(frozen=True, slots=True)
+class StatuteLifecycle:
+    """The in-force window of one act, as the registry knows it.
+
+    Attributes:
+        valid_from: Inclusive start (enactment / entry-into-force). ``None`` =
+            open (unknown start) — treated as "always was in force" for the
+            not-yet-in-force test (a missing start cannot prove a premature
+            citation; fail-soft).
+        valid_to: Exclusive end (the oracle repeal/supersession date — the date
+            the repealing act entered into force). ``None`` = open = still in
+            force (NOT "unknown whether repealed": the corpus exposes a repeal
+            date iff the act was repealed-and-superseded, so an open end means no
+            such supersession is recorded → treat as in force).
+        known: Whether the registry has an entry for this statute at all. When
+            ``False`` the lifecycle is genuinely unverifiable and no in-force
+            judgment is made (→ ``StatuteLifecycleUnverifiable``).
+    """
+
+    valid_from: Optional[date]
+    valid_to: Optional[date]
+    known: bool = True
+
+    def in_force_on(self, on: date) -> bool:
+        """Is the act in force on ``on`` (inclusive start, exclusive end)?
+
+        Only meaningful when ``known``. An open ``valid_from`` is treated as
+        "started before any date we test" and an open ``valid_to`` as "still in
+        force", so an entry with both ends open is in force on every date.
+        """
+        if self.valid_from is not None and on < self.valid_from:
+            return False
+        if self.valid_to is not None and on >= self.valid_to:
+            return False
+        return True
+
+
+LifecycleLookup = Callable[[str], StatuteLifecycle]
+"""``(statute_id) -> StatuteLifecycle.`` Returning ``StatuteLifecycle(None, None,
+known=False)`` signals "no lifecycle on record" (→ unverifiable), NEVER a guessed
+window."""
+
+
+@dataclass(frozen=True, slots=True)
+class StatuteLifecycleFinding:
+    """A citation whose target ACT was not in force at the citing date.
+
+    The statute-level analog of ``BrokenReferenceFinding``: established purely
+    from the target act's lifecycle window vs the citing date — no tree replay.
+
+    Attributes:
+        source: The citing provision.
+        target: The resolved target provision (the act is ``target.statute_id``).
+        reason: ``TARGET_STATUTE_REPEALED`` or ``TARGET_STATUTE_NOT_YET_IN_FORCE``.
+        cited_on: The citing text's effective date used for the comparison.
+        target_window: The target act's ``(valid_from, valid_to)`` window — the
+            evidence behind the verdict (e.g. the repeal date).
+        source_span: Provenance back into the source text, when known.
+        rule_id: Stable rule identifier.
+    """
+
+    source: ProvisionRef
+    target: ProvisionRef
+    reason: BrokenReason
+    cited_on: date
+    target_window: tuple[Optional[date], Optional[date]]
+    source_span: Optional[SourceSpan]
+    rule_id: str = "fi.refs.broken_detection.statute_lifecycle"
+
+
+@dataclass(frozen=True, slots=True)
+class StatuteLifecycleUnverifiable:
+    """The target act's in-force status could not be established (fail-loud).
+
+    Emitted instead of a (false) lifecycle finding when either the target act has
+    no registry entry (lifecycle genuinely unknown) or the citing date is unknown
+    (no temporal anchor for the comparison). Brokenness stays *undetermined* for
+    that reference — never called broken.
+
+    Attributes:
+        source: The citing provision.
+        target: The resolved target provision we could not check.
+        unavailable_for: ``"target_lifecycle"`` (no registry entry) or
+            ``"citing_date"`` (no citation anchor).
+        reason: Human-readable diagnostic.
+        rule_id: Stable rule identifier.
+    """
+
+    source: ProvisionRef
+    target: ProvisionRef
+    unavailable_for: str
+    reason: str
+    rule_id: str = "fi.refs.broken_detection.statute_lifecycle.unavailable"
+
+
+def detect_statute_lifecycle_broken(
+    mentions: Iterable[ReferenceMention],
+    *,
+    lifecycle_of: LifecycleLookup,
+) -> list[StatuteLifecycleFinding | StatuteLifecycleUnverifiable]:
+    """Detect citations to an ACT that was not in force at the citing date.
+
+    For each resolved cross-statute mention:
+
+      1. Look up the target act's lifecycle window (``lifecycle_of``).
+      2. If the lifecycle is unknown (no registry entry), or the mention carries
+         no citation start date, emit ``StatuteLifecycleUnverifiable`` — never a
+         finding.
+      3. Otherwise compare the window to the citing date:
+         * ``valid_to <= cited_on``        -> TARGET_STATUTE_REPEALED finding.
+         * ``valid_from > cited_on``        -> TARGET_STATUTE_NOT_YET_IN_FORCE.
+         * in force on the citing date      -> no finding.
+
+    Self-references (target statute == source statute) are skipped: an act's
+    lifecycle vs its own citing date is not a cross-statute dangling question.
+
+    Args:
+        mentions: Resolved reference mentions to check. Non-resolved mentions and
+            refs with no target statute identity are skipped.
+        lifecycle_of: Injected lifecycle lookup. Returning an entry with
+            ``known=False`` yields a ``StatuteLifecycleUnverifiable`` record.
+
+    Returns:
+        A list of ``StatuteLifecycleFinding`` (confirmed) and
+        ``StatuteLifecycleUnverifiable`` (undetermined). Mentions are never
+        mutated.
+    """
+    findings: list[StatuteLifecycleFinding | StatuteLifecycleUnverifiable] = []
+
+    for mention in mentions:
+        if not _is_resolved_target(mention):
+            continue
+        target = mention.target_provision_ref
+        assert target is not None  # guarded by _is_resolved_target
+        source = mention.source_provision_ref
+        target_statute = target.statute_id
+        if not target_statute:
+            continue
+        # A self-reference's own-lifecycle check is degenerate (an act always
+        # post-dates its own enactment); the statute-level question is only
+        # meaningful across acts.
+        if source.statute_id and target_statute == source.statute_id:
+            continue
+
+        lifecycle = lifecycle_of(target_statute)
+        if not lifecycle.known:
+            findings.append(
+                StatuteLifecycleUnverifiable(
+                    source=source,
+                    target=target,
+                    unavailable_for="target_lifecycle",
+                    reason=(
+                        f"no lifecycle on record for target statute "
+                        f"{target_statute!r}; in-force status undetermined"
+                    ),
+                )
+            )
+            continue
+
+        cited_on = _citation_start(mention)
+        if cited_on is None:
+            findings.append(
+                StatuteLifecycleUnverifiable(
+                    source=source,
+                    target=target,
+                    unavailable_for="citing_date",
+                    reason=(
+                        "citing text has no effective-date anchor; cannot compare "
+                        f"against target statute {target_statute!r} lifecycle"
+                    ),
+                )
+            )
+            continue
+
+        window = (lifecycle.valid_from, lifecycle.valid_to)
+        if lifecycle.valid_to is not None and cited_on >= lifecycle.valid_to:
+            findings.append(
+                StatuteLifecycleFinding(
+                    source=source,
+                    target=target,
+                    reason=BrokenReason.TARGET_STATUTE_REPEALED,
+                    cited_on=cited_on,
+                    target_window=window,
+                    source_span=mention.source_span,
+                )
+            )
+            continue
+        if lifecycle.valid_from is not None and cited_on < lifecycle.valid_from:
+            findings.append(
+                StatuteLifecycleFinding(
+                    source=source,
+                    target=target,
+                    reason=BrokenReason.TARGET_STATUTE_NOT_YET_IN_FORCE,
+                    cited_on=cited_on,
+                    target_window=window,
+                    source_span=mention.source_span,
+                )
+            )
+            continue
+        # In force on the citing date — not a finding.
+
+    return findings

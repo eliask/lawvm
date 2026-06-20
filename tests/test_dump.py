@@ -88,7 +88,7 @@ def test_dump_parse_routes_uk_statute_id_to_farchive(monkeypatch, tmp_path, caps
     seen: dict[str, Any] = {}
 
     class DummyArchive:
-        def __init__(self, path):
+        def __init__(self, path, **_kwargs: Any):
             seen["path"] = path
 
         def get(self, locator: str) -> bytes | None:
@@ -139,7 +139,7 @@ def test_dump_default_routes_uk_statute_id_to_farchive(monkeypatch, tmp_path, ca
     seen: dict[str, Any] = {}
 
     class DummyArchive:
-        def __init__(self, path):
+        def __init__(self, path, **_kwargs: Any):
             seen["path"] = path
 
         def get(self, locator: str) -> bytes | None:
@@ -180,7 +180,7 @@ def test_source_dump_parse_routes_j_uk_to_farchive(monkeypatch, tmp_path) -> Non
     db_path.write_bytes(b"")
 
     class DummyArchive:
-        def __init__(self, path):
+        def __init__(self, path, **_kwargs: Any):
             self.path = path
 
         def get(self, locator: str) -> bytes | None:
@@ -212,7 +212,7 @@ def test_source_dump_uk_parse_uses_shared_roman_label_range(monkeypatch, tmp_pat
     db_path.write_bytes(b"")
 
     class DummyArchive:
-        def __init__(self, path):
+        def __init__(self, path, **_kwargs: Any):
             self.path = path
 
         def get(self, locator: str) -> bytes | None:
@@ -250,7 +250,7 @@ def test_source_dump_uk_parse_finds_metadata_matched_archived_leaf_without_direc
     db_path.write_bytes(b"")
 
     class DummyArchive:
-        def __init__(self, path):
+        def __init__(self, path, **_kwargs: Any):
             self.path = path
 
         def get(self, locator: str) -> bytes | None:
@@ -289,7 +289,7 @@ def test_source_dump_uk_parse_scans_archive_when_multiple_choice_has_no_links(
     db_path.write_bytes(b"")
 
     class DummyArchive:
-        def __init__(self, path):
+        def __init__(self, path, **_kwargs: Any):
             self.path = path
 
         def get(self, locator: str) -> bytes | None:
@@ -342,7 +342,7 @@ The link that you've followed could mean either of the following:
     seen: dict[str, Any] = {"get": []}
 
     class DummyArchive:
-        def __init__(self, path):
+        def __init__(self, path, **_kwargs: Any):
             seen["path"] = path
 
         def get(self, locator: str) -> bytes | None:
@@ -401,7 +401,7 @@ The link that you've followed could mean either of the following:
     db_path.write_bytes(b"")
 
     class DummyArchive:
-        def __init__(self, path):
+        def __init__(self, path, **_kwargs: Any):
             self.path = path
 
         def get(self, locator: str) -> bytes | None:
@@ -442,7 +442,7 @@ def test_source_dump_uk_parse_rejects_ambiguous_bare_multiple_choice_archive_row
     db_path.write_bytes(b"")
 
     class DummyArchive:
-        def __init__(self, path):
+        def __init__(self, path, **_kwargs: Any):
             self.path = path
 
         def get(self, locator: str) -> bytes | None:
@@ -488,7 +488,7 @@ def test_source_dump_main_routes_j_uk_to_farchive(monkeypatch, tmp_path, capsys)
     seen: dict[str, Any] = {}
 
     class DummyArchive:
-        def __init__(self, path):
+        def __init__(self, path, **_kwargs: Any):
             seen["path"] = path
 
         def get(self, locator: str) -> bytes | None:

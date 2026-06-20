@@ -19,14 +19,15 @@ import pytest
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.tree_ops import check_invariants, iter_tree_invariant_violations
 
 _CORPUS_AVAILABLE = os.path.exists("data/finlex.farchive")
 pytestmark = pytest.mark.skipif(not _CORPUS_AVAILABLE, reason="corpus data not available")
 
-from tests.corpus_pin_helpers import pinned_replay
+from tests.corpus_pin_helpers import pinned_replay, replay_xml_for_test
 from lawvm.finland.statute import ReplayResult
+from lawvm.finland.ops import FailedOp
 
 def _replay(sid: str, **kwargs: Any) -> IRNode:
     master = pinned_replay(sid, quiet=True, **kwargs)
@@ -66,7 +67,13 @@ def replay_2017_320_legal_pit_with_meta() -> tuple[ReplayResult, dict[str, objec
     replay_meta: dict[str, object] = {}
     replay = cast(
         ReplayResult,
-        pinned_replay("2017/320", mode="legal_pit", quiet=True, replay_meta_out=replay_meta),
+        pinned_replay(
+            "2017/320",
+            mode="legal_pit",
+            quiet=True,
+            replay_meta_out=replay_meta,
+            build_full_products=False,
+        ),
     )
     return replay, replay_meta
 
@@ -74,6 +81,22 @@ def replay_2017_320_legal_pit_with_meta() -> tuple[ReplayResult, dict[str, objec
 @pytest.fixture(scope="module")
 def replay_2017_519() -> ReplayResult:
     return cast(ReplayResult, pinned_replay("2017/519", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_1984_602_no_full_products_with_failed() -> tuple[ReplayResult, list[FailedOp]]:
+    failed: list[FailedOp] = []
+    replay = cast(
+        ReplayResult,
+        pinned_replay(
+            "1984/602",
+            mode="official_consolidation",
+            quiet=True,
+            failed_ops_out=failed,
+            build_full_products=False,
+        ),
+    )
+    return replay, failed
 
 
 def _subsection_text(
@@ -154,6 +177,34 @@ def test_2014_1194_2017_821_corrigendum_patch_keeps_late_clause_targets() -> Non
     assert "Edellä 1 momentin 3 kohdassa tarkoitettu edellytys täyttyy" not in chapter_4_sub2
     assert "1) ei ole käytännössä mahdollista kohtuullisessa ajassa" in chapter_8_sub2
     assert "2) vaarantaisi kohtuuttomasti" in chapter_8_sub2
+
+
+def test_1990_848_2017_377_section_num_corrigendum_binds_section_35_payload() -> None:
+    """Official 377/2017 corrigendum changes source body num 5 § to 35 §."""
+
+    replay = replay_xml_for_test("1990/848", quiet=True, build_full_products=False)
+    correction_findings = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "APPLY.SOURCE_CORRECTED_BY_PATCH"
+        and finding.source_statute == "2017/377"
+    ]
+
+    section_35_sub3 = _subsection_text(
+        replay.replay_fold_state,
+        part="",
+        chapter="6",
+        section="35",
+        subsection="3",
+    )
+
+    assert any(
+        finding.detail.get("op_id") == "body_patch/2017/377/0"
+        and finding.detail.get("source_role") == "amendment_source_xml"
+        for finding in correction_findings
+    )
+    assert "säädetään vahingonkorvauslaissa" in section_35_sub3
+    assert "tilusten rauhoittamisesta kotieläinten vahingonteolta" not in section_35_sub3
 
 
 def test_2014_1194_2021_234_part_scoped_body_insert_keeps_section_1_tail_once() -> None:
@@ -248,9 +299,8 @@ def test_2017_277_2021_1163_flattened_first_moment_list_preserves_all_items() ->
         mode="legal_pit",
         quiet=True,
         stop_before="2025/1253",
-        build_full_products=False,
     )
-    section_node = replay.find_section("4", None, None)
+    section_node = replay.materialized_state.find_section("4", None, None)
     assert section_node is not None
     subsection = next(
         child
@@ -273,6 +323,21 @@ def test_2017_277_2021_1163_flattened_first_moment_list_preserves_all_items() ->
     assert [child.label for child in subparagraphs] == ["a", "b", "c", "d"]
     assert "hankkeen energian hankinta" in irnode_to_text(subparagraphs[1])
     assert "yleistajuinen ja havainnollinen tiivistelmä" in irnode_to_text(paragraphs[-1])
+
+
+def test_1997_142_item_repeal_preserves_surviving_definition_items() -> None:
+    """1999/786 repeals only 1997/142 §1 item 2, not the whole section."""
+
+    replay = pinned_replay("1997/142", quiet=True)
+    section_node = replay.materialized_state.find_section("1", None, None)
+
+    assert section_node is not None
+    assert section_node.attrs.get("lawvm_repeal_placeholder") != "1"
+    rendered = irnode_to_text(section_node)
+    assert "Määritelmät" in rendered
+    assert "kaasuöljyllä" in rendered
+    assert "kevyellä polttoöljyllä" in rendered
+    assert "dieselöljyllä" not in rendered
 
 
 def test_1966_612_section_item_subsection_fold_preserves_first_moment_items() -> None:
@@ -518,6 +583,64 @@ class TestNoDuplicatesInPIT:
             getattr(pathology, "code", "") == "DESTRUCTIVE_SHAPE_LOSS_RISK"
             and getattr(pathology, "detail", {}).get("recovery_kind")
             == "section_snapshot_preserve_fold_for_descendant_scoped_source"
+            for pathology in source_pathologies
+        )
+
+    def test_2007_1321_sec1_parent_filter_keeps_section_12_commencement(self) -> None:
+        """2009/520 sec_1 fallback must not route Ulosottokaari §12 into 1321/2007.
+
+        The source paragraph first names Ulosottokaari (705/2007) chapter 1
+        §§11-12, then separately repeals 1321/2007 §11.  Parent-restricted
+        fallback must preserve the latter while rejecting the former for this
+        replay graph, otherwise official-consolidation materialization blanks
+        the 1321/2007 commencement section.
+        """
+        compiled_ops: list[dict[str, object]] = []
+        replay = cast(
+            ReplayResult,
+            pinned_replay(
+                "2007/1321",
+                quiet=True,
+                compiled_ops_out=compiled_ops,
+            ),
+        )
+
+        assert not any(
+            row.get("source") == "2009/520"
+            and row.get("action") in {"replace", "repeal"}
+            and row.get("target_section") == "12"
+            for row in compiled_ops
+        )
+        section_12 = replay.materialized_state.find_section("12")
+        assert section_12 is not None
+        section_text = " ".join(irnode_to_text(section_12).split())
+        assert "Tämä asetus tulee voimaan 1 päivänä tammikuuta 2008." in section_text
+
+    def test_1989_819_sparse_subsection_replace_does_not_rehydrate_old_paragraphs(self) -> None:
+        """1998/1103 §15(2) must not graft stale old-register items into §15(1).
+
+        The 1998 source wrapper is sparse: it carries an omission marker plus the
+        replacement second moment.  Timeline export must rebuild the section over
+        the latest clean prior section snapshot, not over the mutable replay fold
+        that still contains old paragraph descendants from the pre-1995 §15.
+        """
+        source_pathologies: list[object] = []
+        replay = cast(
+            ReplayResult,
+            pinned_replay("1989/819", quiet=True, source_pathologies_out=source_pathologies),
+        )
+        section_15 = replay.materialized_state.find_section("15")
+        assert section_15 is not None
+        section_text = " ".join(irnode_to_text(section_15).split())
+        assert "tietoja kiinnitysasian vireilläolosta ja vahvistamisesta" in section_text
+        assert "muita tietoja siten kuin autokiinnityslaissa" in section_text
+        assert "sopimusrekisteröijän sopimuksenmukaisissa rekisteröintitehtävissä" in section_text
+        assert "poliisiviranomaisille liikennevalvontaa" not in section_text
+        assert "Ahvenanmaan maakuntahallitukselle" not in section_text
+        assert any(
+            getattr(pathology, "code", "") == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+            and getattr(pathology, "detail", {}).get("recovery_kind")
+            == "section_snapshot_single_subsection_sparse_merge"
             for pathology in source_pathologies
         )
 
@@ -1228,7 +1351,36 @@ class TestNoDuplicatesInPIT:
         ir = _replay("2000/812")
         assert check_invariants(ir) == []
 
+    def test_2002_1126_future_repeal_keeps_cutoff_temporary_section_replacements(self) -> None:
+        """Future repeal-only oracle anchors must not expire unrelated temporary text.
 
+        The selected fin@20050886 surface is dated 2005-11-11 but references
+        2005/886, whose section-19 repeal is effective 2006-01-01. Materializing
+        at 2006-01-01 is needed for that repeal, but the expiry horizon must
+        stay at the oracle cutoff so the still-live 2004/466 temporary complete
+        replacement of §2 is not reverted to the base list.
+        """
+        ir = _replay("2002/1126")
+        assert check_invariants(ir) == []
+
+        section_2 = _first_descendant(ir, IRNodeKind.SECTION, "2")
+        text = irnode_to_text(section_2)
+
+        assert "6, 10-13 ja 16-17 b §:ssä määrätyt" in text
+        assert "6 ja 9-19 §:ssä määrätyt" not in text
+        assert "sähköiseen allekirjoitukseen liittyviä laatuvarmenteita" in text
+
+    def test_1995_57_misspelled_momenti_targets_section_8_subsection_3(self) -> None:
+        """2000/235 typo ``8 §:n 3 momenti`` must not widen to whole §8."""
+        ir = _replay("1995/57")
+        assert check_invariants(ir) == []
+
+        section_8 = _first_descendant(ir, IRNodeKind.SECTION, "8")
+        text = irnode_to_text(section_8)
+
+        assert "Jos alueellisen ympäristökeskuksen toimialaan kuuluvan asian vaikutukset" in text
+        assert "hakijana ympäristölupavirastossa" in text
+        assert "hakijana vesioikeuskäsittelyssä" not in text
 
     def test_2016_673_chapters_20_21_in_part_4a_not_part_5(self) -> None:
         """2016/673 chapters 20 and 21 must appear in part:4a after 2019/209 moves them.
@@ -1309,20 +1461,36 @@ class TestSubsectionInsertChapterCarryforward:
     chapter:2. The scope strip must remove chapter:1 so the dispatch can find §5.
     """
 
-    def test_1984_602_no_failed_ops_from_1994_1317_and_1990_1367(self) -> None:
+    def test_1984_602_no_failed_ops_from_1994_1317_and_1990_1367(
+        self,
+        replay_1984_602_no_full_products_with_failed: tuple[ReplayResult, list[FailedOp]],
+    ) -> None:
         """1984/602 must not have FAILED ops from 1994/1317 (§5 mom:1 item:14,
         §13 mom:3/4) or from 1990/1367 (§47 mom:1) — chapter carry-forward must
         be stripped for subsection INSERT ops."""
-        from lawvm.finland.ops import FailedOp
-
-        failed: list[FailedOp] = []
-        pinned_replay("1984/602", quiet=True, failed_ops_out=failed, build_full_products=False)
+        _replay, failed = replay_1984_602_no_full_products_with_failed
         problem_amendments = {"1994/1317", "1990/1367"}
         bad = [f for f in failed if f.amendment_id in problem_amendments]
         assert not bad, (
             f"Unexpected FAILED ops in 1984/602 from {problem_amendments}: "
             + "; ".join(f"{f.amendment_id}: {f.description}" for f in bad)
         )
+
+    def test_1984_602_1996_666_glued_muutetaan_group_reaches_replay(
+        self,
+        replay_1984_602_no_full_products_with_failed: tuple[ReplayResult, list[FailedOp]],
+    ) -> None:
+        replay, _failed = replay_1984_602_no_full_products_with_failed
+        section_12 = replay.find_section("12")
+        section_23 = replay.find_section("23")
+        assert section_12 is not None
+        assert section_23 is not None
+
+        section_12_text = " ".join(irnode_to_text(section_12).split())
+        section_23_text = " ".join(irnode_to_text(section_23).split())
+
+        assert "seitsemää täyttä työpäivää" in section_12_text
+        assert "vakiintuneen palkan pohjalta työttömyyttä välittömästi edeltäneeltä" in section_23_text
 
 
 # ---------------------------------------------------------------------------
@@ -1356,6 +1524,34 @@ class Test1981_555Section11Split:
             "Lupapäätöksen sisällöstä ja luvan edellyttämien toimenpiteiden määräajasta säädetään "
             "tarkemmin valtioneuvoston asetuksella."
         )
+
+
+def test_1996_1260_complete_section_insert_rebirth_does_not_rehydrate_old_8b_tail() -> None:
+    lo_ops: list[Any] = []
+    replay = pinned_replay(
+        "1996/1260",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+    section = replay.materialized_state.find_section("8b")
+    assert section is not None
+    assert [child.label for child in section.children if child.kind is IRNodeKind.SUBSECTION] == ["1"]
+    section_text = irnode_to_text(section)
+    assert "verotaulukon 1 tuoteryhmien 9 ja 10" in section_text
+    assert "piiritullikamarille" not in section_text
+
+    snapshot = next(
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2022/958"
+        and op.action in {StructuralAction.INSERT, StructuralAction.REPLACE}
+        and op.target.path == (("section", "8b"),)
+    )
+    assert snapshot.payload is not None
+    assert snapshot.payload.attrs["lawvm_tail_policy"] == "replace_if_target_scope_requires"
+    assert snapshot.payload.attrs["lawvm_payload_completeness_kind"] == "complete"
 
 
 class TestFoldHcontainerOrphanSectionReconcile:

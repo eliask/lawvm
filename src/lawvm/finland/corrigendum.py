@@ -390,6 +390,7 @@ _HEADER_ID_RE = re.compile(r"säädöskokoelmaan\s+(?:n:o\s+)?(\d+/\d{4})")
 _JOHTOLAUSE_KWS = {"johtolause", "johtolauseen", "johtolauseessa", "johtolauseessa,"}
 _TABLE_KWS = {"liite", "liitteessä", "liitteen", "taulukko", "taulukossa"}
 _FOOTNOTE_KWS = {"alaviite", "alaviitteessä", "viitteessä"}
+_BARE_SECTION_NUM_RE = re.compile(r"^\s*(\d+)\s*([a-z]?)\s*§\.?\s*$", re.IGNORECASE)
 
 
 # FUTURE: LLM location parsing (Opus suggestion)
@@ -419,6 +420,19 @@ def _classify_location(location: str) -> str:
     if any(kw in loc for kw in _FOOTNOTE_KWS):
         return "footnote"
     return "prose"
+
+
+def _is_section_num_before_heading_location(location: str) -> bool:
+    loc = _WHITESPACE_RE.sub(" ", _normalize_ws(location)).strip().lower()
+    return "pykälän otsikon edellä" in loc or "pykälänumerona" in loc
+
+
+def _bare_section_num_display(text: str) -> str:
+    match = _BARE_SECTION_NUM_RE.match(_normalize_ws(text))
+    if not match:
+        return ""
+    number, suffix = match.groups()
+    return f"{number} {suffix.lower()} §".strip() if suffix else f"{number} §"
 
 
 def _effective_corrigendum_type(corr_type: str, location: str) -> str:
@@ -1763,6 +1777,42 @@ def _apply_section_num_heading_corrigendum(
     return repaired, True
 
 
+def _apply_bare_section_num_corrigendum(
+    xml_bytes: bytes, wrong: str, correct: str, location_desc: str
+) -> tuple[bytes, bool]:
+    """Patch a unique body ``<section><num>`` backed by a section-number corrigendum."""
+    if not _is_section_num_before_heading_location(location_desc):
+        return xml_bytes, False
+    wrong_num = _bare_section_num_display(wrong)
+    correct_num = _bare_section_num_display(correct)
+    if not wrong_num or not correct_num or wrong_num == correct_num:
+        return xml_bytes, False
+
+    root = _parse_fragment_root(xml_bytes)
+    if root is None:
+        return xml_bytes, False
+
+    candidates: list[etree._Element] = []
+    for section in root.findall(".//{*}section"):
+        num_el = section.find("./{*}num")
+        if num_el is None:
+            continue
+        if _normalize_section_num_display(num_el.text or "") == wrong_num:
+            candidates.append(num_el)
+
+    if len(candidates) != 1:
+        return xml_bytes, False
+
+    candidates[0].text = correct_num
+    try:
+        repaired = _serialize_fragment_root(root)
+        if _parse_fragment_root(repaired) is None:
+            return xml_bytes, False
+    except etree.XMLSyntaxError:
+        return xml_bytes, False
+    return repaired, True
+
+
 def _find_element_range(xml_bytes: bytes, sec: str, subsec: str | None) -> tuple[int, int] | None:
     """Find the byte range of the element identified by (sec, subsec) in xml_bytes.
 
@@ -1964,6 +2014,13 @@ class CorrigendumPatchTable:
             )
             wrong = str(row.get("wrong_text") or "").strip()
             correct = str(row.get("correct_text") or "").strip()
+            if (
+                corr_type == "johtolause"
+                and _is_section_num_before_heading_location(location)
+                and _bare_section_num_display(wrong)
+                and _bare_section_num_display(correct)
+            ):
+                corr_type = "prose"
             if (
                 not amendment_id_numyr
                 or not wrong
@@ -2319,6 +2376,10 @@ class CorrigendumPatchTable:
                 local_frag, local_ok = _apply_text_replace_single_text_slot(fragment, wrong, correct)
                 if local_ok:
                     new_frag = local_frag
+            if not ok:
+                new_frag, ok = _apply_bare_section_num_corrigendum(
+                    fragment, wrong, correct, location_desc
+                )
             if not ok:
                 sec, subsec = _parse_location_section(location_desc) if location_desc else (None, None)
                 if sec is not None:

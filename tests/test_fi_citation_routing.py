@@ -107,6 +107,30 @@ class TestJohtolauseCitedTargetIds:
         )
         assert johtolause_cited_target_ids(johto, 1965) == ["1958/100"]
 
+    def test_typo_selaisena_kuin_still_cuts_provenance_citation(self) -> None:
+        # 1978/676 has source typo "selaisena kuin"; the following 323/64 is
+        # version provenance for the target item, not the amended parent act.
+        johto = (
+            "muutetaan yleisistä teistä 21 päivänä toukokuuta 1954 annetun lain "
+            "11 §:n 2 momentin 1 kohta selaisena kuin se on 12 päivänä "
+            "kesäkuuta 1964 annetussa laissa (323/64), näin kuuluvaksi:"
+        )
+        surface = parse_routing_surface(johto, source_year=1978)
+
+        assert surface.normalized_target_ids() == ()
+        assert surface.references_statute("1954/243")
+        should_apply, reason = route_amendment(
+            johto,
+            "",
+            johto,
+            "1954/243",
+            "1978/676",
+            source_title="Laki yleisistä teistä annetun lain 11 §:n muuttamisesta",
+            parent_title="Laki yleisistä teistä",
+        )
+        assert should_apply is True
+        assert reason == "references_parent"
+
     def test_no_citation_returns_empty(self) -> None:
         assert johtolause_cited_target_ids("muutetaan 5 § seuraavasti:", 1965) == []
 
@@ -421,6 +445,37 @@ class TestRouteAmendmentCitationMismatchSkip:
         assert head is not None
         assert head.issue_date is not None and head.issue_date.isoformat() == "1958-08-16"
         assert head.instrument == "laki"
+
+    def test_corrupt_citation_with_valtioneuvoston_paatos_head_matches_parent_metadata(self) -> None:
+        johto_raw = (
+            "muutetaan ylimääräisistä taiteilijaeläkkeistä 24 päivänä tammikuuta "
+            "1974 annetun valtioneuvoston päätöksen (75/75) 3 §:n 1 momentin "
+            "ja 5 §:n näin kuuluviksi:"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1974/75",
+            "1984/929",
+            source_title=(
+                "Valtioneuvoston päätös ylimääräisistä taiteilijaeläkkeistä "
+                "annetun valtioneuvoston päätöksen 3 ja 5 §:n muuttamisesta"
+            ),
+            parent_title="Valtioneuvoston päätös ylimääräisistä taiteilijaeläkkeistä.",
+            parent_issue_date="1974-01-24",
+        )
+
+        assert should_apply is True
+        assert reason == "citation_typo_rewrite_parent_validated"
+        head = parse_affected_statute_head(johto_raw)
+        assert head is not None
+        assert head.title_phrase == (
+            "ylimääräisistä taiteilijaeläkkeistä annetun valtioneuvoston päätöksen"
+        )
+        assert head.issue_date is not None and head.issue_date.isoformat() == "1974-01-24"
+        assert head.instrument == "päätös"
 
     def test_title_before_date_corrupt_citation_uses_amendment_title_metadata(self) -> None:
         johto_raw = (
@@ -750,10 +805,11 @@ class TestRouteAmendmentReturnType:
 # ---------------------------------------------------------------------------
 
 _DB_PATH = ".cache/pipeline_gold.db"
+_COLLECT_SLOW_GOLD = os.environ.get("LAWVM_PYTEST_COLLECT_SLOW_GOLD") == "1"
 _GOLD_AVAILABLE = False
 _GOLD_CAPTURES: list = []
 
-if os.path.exists(_DB_PATH):
+if _COLLECT_SLOW_GOLD and os.path.exists(_DB_PATH):
     try:
         from lawvm.core.pipeline_capture import AmendmentCapture, CaptureStore
         _store = CaptureStore(_DB_PATH)

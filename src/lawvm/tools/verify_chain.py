@@ -312,8 +312,8 @@ def _fetch_html_sections(sid: str, archive_db: Optional[Path] = None) -> Tuple[L
     if archive_db is not None:
         try:
             from farchive import Farchive
-            arch = Farchive(archive_db)
-            raw = arch.get(url)
+            with Farchive(archive_db, readonly=True) as arch:
+                raw = arch.get(url)
             if raw is None:
                 return [], f"fetch failed ({url})"
             html = raw.decode("utf-8", errors="replace")

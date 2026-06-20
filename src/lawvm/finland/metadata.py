@@ -18,7 +18,14 @@ import lxml.etree as etree
 
 from lawvm.core.ir import LegalAddress
 from lawvm.core.unicode_folds import CF_FORMAT_CPS, ZS_NON_ASCII_SPACE_CPS
+from lawvm.finland.fi_dates import (
+    FI_MONTH_GENITIVE_TO_NUMBER,
+    fi_partitive_month_number,
+    parse_fi_day_month_year,
+)
 from lawvm.finland.helpers import _norm_num_token, _parse_iso_date
+from lawvm.finland.references.sections import parse_body_provision_tail
+from lawvm.finland.temporal_lowering import _extract_expiry_date_from_text
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +79,26 @@ _TYPO_TRANSLATION_TABLE: dict[int, str] = {
 }
 _NORMALIZE_FI_PARSE_TEXT_CACHE_MAX_CHARS = 4096
 _normalized_tree_text_cache: dict[tuple[int, int], str] = {}
+
+
+@dataclass(frozen=True, slots=True)
+class SeparateCommencementLawWitness:
+    """A source witness that gives an amendment act's deferred commencement date."""
+
+    target_statute_id: str
+    commencement_statute_id: str
+    source_provision_ref: str
+    effective_date: dt.date
+    rule_id: str
+    source_text: str
+
+
+_SEPARATE_COMMENCEMENT_LIST_RE = re.compile(
+    r'\bSeuraavat\s+lait\s+tulevat\s+voimaan\s+'
+    r'(?P<day>\d{1,2})\s+päivänä\s+(?P<month>[a-zäöå]+)\s+(?P<year>\d{4})\s*:',
+    flags=re.IGNORECASE,
+)
+_PAREN_STATUTE_ID_RE = re.compile(r'\((?P<sid>\d{1,4}/\d{4})\)')
 
 
 def _normalize_fi_parse_text(text: str) -> str:
@@ -202,20 +229,6 @@ _OPERATIVE_KEYWORD_PAT = re.compile(
     r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b",
     re.IGNORECASE,
 )
-_FI_MONTH_GENITIVE_TO_NUMBER: dict[str, int] = {
-    "tammikuuta": 1,
-    "helmikuuta": 2,
-    "maaliskuuta": 3,
-    "huhtikuuta": 4,
-    "toukokuuta": 5,
-    "kesäkuuta": 6,
-    "heinäkuuta": 7,
-    "elokuuta": 8,
-    "syyskuuta": 9,
-    "lokakuuta": 10,
-    "marraskuuta": 11,
-    "joulukuuta": 12,
-}
 # Anti-backtracking: the old unbounded lazy gap ``(.+?)`` before the distant
 # ``tule…kuitenkin voimaan`` anchor expands to end-of-text from every subject
 # word (``Lain``/``Sen``/…) on non-matching input — O(N²)+ on long text with
@@ -353,12 +366,22 @@ def _operative_body_repeal_candidate(tree: "etree._Element") -> str:
 def get_operative_body_repeal_candidate(xml_bytes: bytes) -> str:
     """Extract a body-prose repeal clause when no structured operative body exists."""
     tree = etree.fromstring(xml_bytes)
+    return get_operative_body_repeal_candidate_from_tree(tree)
+
+
+def get_operative_body_repeal_candidate_from_tree(tree: "etree._Element") -> str:
+    """Extract a body-prose repeal clause from an already parsed amendment tree."""
     return _operative_body_repeal_candidate(tree)
 
 
 def get_johtolause(xml_bytes: bytes) -> str:
     """Extract the enacting clause (johtolause) from amendment XML bytes."""
     tree = etree.fromstring(xml_bytes)
+    return get_johtolause_from_tree(tree)
+
+
+def get_johtolause_from_tree(tree: "etree._Element") -> str:
+    """Extract the enacting clause (johtolause) from an already parsed tree."""
     # Strip editorial corrigendum footnotes before extracting clause text. A
     # <span class="corrigendum"> wraps the CORRECTED (operative) wording and
     # carries an <authorialNote> holding only the SUPERSEDED original text
@@ -368,29 +391,36 @@ def get_johtolause(xml_bytes: bytes) -> str:
     # uusi 6 momentti"), breaking the parse. The corrigendum history itself is
     # captured separately by corrigendum.extract_inline_corrections (Population
     # A); all corpus authorialNotes live inside corrigendum spans, so dropping
-    # them all is safe and equivalent.
+    # them all is safe and equivalent. When the caller owns the parsed tree,
+    # restore notes afterward so source-model consumers keep the full witness.
+    removed_notes: list[tuple[etree._Element, etree._Element, int]] = []
     for _note in cast(List[etree._Element], tree.xpath(".//*[local-name()='authorialNote']")):
         _parent = _note.getparent()
         if _parent is not None:
+            removed_notes.append((_note, _parent, _parent.index(_note)))
             _parent.remove(_note)
-    formula = cast(List[etree._Element], tree.xpath("//*[local-name()='formula' and @name='enactingClause']"))
-    if formula:
-        formula_text = _element_text(formula[0])
-        block_text = _formula_block_text(formula[0])
-        raw = formula_text
-        if block_text:
-            outside_blocks = _formula_outside_blocks_text(formula[0])
-            if not _OPERATIVE_KEYWORD_PAT.search(outside_blocks):
-                raw = block_text
+    try:
+        formula = cast(List[etree._Element], tree.xpath("//*[local-name()='formula' and @name='enactingClause']"))
+        if formula:
+            formula_text = _element_text(formula[0])
+            block_text = _formula_block_text(formula[0])
+            raw = formula_text
+            if block_text:
+                outside_blocks = _formula_outside_blocks_text(formula[0])
+                if not _OPERATIVE_KEYWORD_PAT.search(outside_blocks):
+                    raw = block_text
+            return _strip_cross_law_description(raw)
+        blocks = cast(List[etree._Element], tree.xpath(
+            "//*[local-name()='block' and ("
+            "@name='substitutions' or "
+            "@name='repeals' or "
+            "@name='insertions' or @name='insertions-originals')]"
+        ))
+        raw = " ".join(_element_text(block) for block in blocks if _element_text(block))
         return _strip_cross_law_description(raw)
-    blocks = cast(List[etree._Element], tree.xpath(
-        "//*[local-name()='block' and ("
-        "@name='substitutions' or "
-        "@name='repeals' or "
-        "@name='insertions' or @name='insertions-originals')]"
-    ))
-    raw = " ".join(_element_text(block) for block in blocks if _element_text(block))
-    return _strip_cross_law_description(raw)
+    finally:
+        for note, parent, index in reversed(removed_notes):
+            parent.insert(index, note)
 
 
 def _normalize_johtolause_verbs(text: str) -> str:
@@ -410,13 +440,6 @@ def _normalize_johtolause_verbs(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Amendment and statute date extraction
 # ---------------------------------------------------------------------------
-
-# Finnish month names in partitive (the form used in "N päivään <month> YYYY").
-FI_MONTH_MAP: dict[str, int] = {
-    'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-    'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-    'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-}
 
 # Section/chapter-scoped expiry ("Lain X § ovat/on voimassa N päivään MONTH
 # YYYY"). Used only to DETECT a scoped form for diagnostics; v1 does not lift
@@ -467,7 +490,7 @@ _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE = re.compile(
 
 # Partitive month token, typo-tolerant: "joulukuuta" plus the recurring
 # Finlex source typos "joulukuutta" (doubled t) and the hyphenation artifact
-# "joulukuu-ta". Resolved through _fi_partitive_month, which folds the typo
+# "joulukuu-ta". Resolved through fi_partitive_month_number, which folds the typo
 # forms before the FI_MONTH_MAP lookup — an unknown month still yields no
 # candidate. "loppuun" likewise tolerates the observed "lopuun" typo via
 # lop?puun in the *_END patterns.
@@ -568,9 +591,7 @@ _VALIDITY_CAP_ENINTAAN_RE = re.compile(r'\benintään\b', flags=re.IGNORECASE)
 
 # Genitive month names ("tammikuun") alongside the partitive FI_MONTH_MAP
 # keys ("tammikuuta").
-FI_MONTH_GENITIVE_MAP: dict[str, int] = {
-    partitive[:-2] + "n": number for partitive, number in FI_MONTH_MAP.items()
-}
+FI_MONTH_GENITIVE_MAP = FI_MONTH_GENITIVE_TO_NUMBER
 
 # Per-grammar-family rule ids carried onto the extracted bound (one id per
 # date-expression family below, plus the anaphoric family).
@@ -587,17 +608,6 @@ RULE_FI_FIXED_TERM_MONTH_YEAR_END = "fi_fixed_term_month_year_end"
 RULE_FI_FIXED_TERM_DOTTED_NUMERIC = "fi_fixed_term_dotted_numeric"
 RULE_FI_FIXED_TERM_SAAKKA = "fi_fixed_term_saakka"
 RULE_FI_FIXED_TERM_ANAPHORIC_YEAR_END = "fi_fixed_term_anaphoric_same_sentence_year_end"
-
-
-def _fi_partitive_month(token: str) -> Optional[int]:
-    """FI_MONTH_MAP lookup with folding for the observed source typo forms:
-    doubled t ("joulukuutta") and hyphenation artifacts ("joulukuu-ta").
-    Unknown tokens stay unknown — folding never invents a month."""
-    folded = token.lower().replace("-", "")
-    month = FI_MONTH_MAP.get(folded)
-    if month is None and folded.endswith("kuutta"):
-        month = FI_MONTH_MAP.get(folded[:-3] + "ta")
-    return month
 
 
 @dataclass(frozen=True)
@@ -701,13 +711,13 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
 
     md = _VALIDITY_DAY_FIRST_RE.search(remainder)
     if md:
-        month = _fi_partitive_month(md.group(2))
+        month = fi_partitive_month_number(md.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(md.start(), RULE_FI_FIXED_TERM_DAY_FIRST,
                  int(md.group(3)), month, int(md.group(1)))
     mde = _VALIDITY_DAY_ESSIVE_RE.search(remainder)
     if mde:
-        month = _fi_partitive_month(mde.group(2))
+        month = fi_partitive_month_number(mde.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(mde.start(), RULE_FI_FIXED_TERM_DAY_ESSIVE,
                  int(mde.group(3)), month, int(mde.group(1)))
@@ -725,7 +735,7 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
                  int(mdg.group(3)), month, int(mdg.group(2)))
     mdem = _VALIDITY_DAY_END_MONTH_RE.search(remainder)
     if mdem:
-        month = _fi_partitive_month(mdem.group(2))
+        month = fi_partitive_month_number(mdem.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(mdem.start(), RULE_FI_FIXED_TERM_DAY_END_MONTH,
                  int(mdem.group(3)), month, int(mdem.group(1)))
@@ -751,7 +761,7 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
              int(mdot.group(3)), int(mdot.group(2)), int(mdot.group(1)))
     ms = _VALIDITY_SAAKKA_RE.search(remainder)
     if ms:
-        month = _fi_partitive_month(ms.group(2))
+        month = fi_partitive_month_number(ms.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(ms.start(), RULE_FI_FIXED_TERM_SAAKKA,
                  int(ms.group(3)), month, int(ms.group(1)))
@@ -766,7 +776,7 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
     # ties because max() keeps the first maximal candidate.
     mb = _VALIDITY_BARE_DAY_MONTH_RE.search(remainder)
     if mb:
-        month = _fi_partitive_month(mb.group(2))
+        month = fi_partitive_month_number(mb.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(mb.start(), RULE_FI_FIXED_TERM_BARE_DAY_MONTH,
                  int(mb.group(3)), month, int(mb.group(1)))
@@ -889,12 +899,6 @@ def _amendment_expiry_date(
     if "voimassa" not in raw_text.casefold():
         return None
     full_text = _normalized_tree_text(tree, raw_text)
-    month_map = {
-        'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-        'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-        'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-    }
-
     # IMPORTANT: ALL patterns must be restricted to the entryIntoForce element,
     # not the full document text.  Some amendments MODIFY another statute's
     # voimaantulo clause and embed text like "Tämä laki on voimassa 31 päivään
@@ -920,12 +924,7 @@ def _amendment_expiry_date(
     # The character class only needs en-dash (U+2013) and ordinary space now.
     m2 = SECTION_SCOPED_EXPIRY_RE.search(eit_text)
     if m2:
-        month = month_map.get(m2.group(2).lower())
-        if month is not None:
-            try:
-                return dt.date(int(m2.group(3)), month, int(m2.group(1)))
-            except ValueError:
-                pass
+        return parse_fi_day_month_year(m2.group(1), m2.group(2), m2.group(3))
 
     # Pattern 4 (section-scoped "vuoden YYYY loppuun") is intentionally NOT implemented
     # here.  See docstring for the rationale.  When added, it belongs in
@@ -955,6 +954,110 @@ def _normalize_textual_statute_id(raw: str) -> Optional[str]:
     if 1800 <= left_int <= 2100 and not (1800 <= right_int <= 2100):
         return f"{left_int}/{right_int}"
     return f"{right_int}/{left_int}"
+
+
+def _statute_id_from_doc_number(tree: "etree._Element") -> str | None:
+    doc_number_el = tree.find('.//{*}docNumber')
+    if doc_number_el is None:
+        return None
+    return _normalize_textual_statute_id(
+        etree.tostring(doc_number_el, method="text", encoding="unicode").strip()
+    )
+
+
+def _date_from_fi_day_month_year_match(match: re.Match[str]) -> dt.date | None:
+    return parse_fi_day_month_year(
+        match.group("day"),
+        match.group("month"),
+        match.group("year"),
+    )
+
+
+def _section_label_for_source_ref(section: "etree._Element") -> str:
+    num_el = section.find("./{*}num")
+    if num_el is None:
+        return ""
+    label = _normalize_fi_parse_text(etree.tostring(num_el, method="text", encoding="unicode"))
+    label = label.strip().removesuffix("§").strip()
+    return label
+
+
+def _separate_commencement_witnesses_from_tree(
+    *,
+    commencement_statute_id: str,
+    tree: "etree._Element",
+) -> tuple[SeparateCommencementLawWitness, ...]:
+    witnesses: list[SeparateCommencementLawWitness] = []
+    for section in tree.findall('.//{*}section'):
+        section_text = _normalize_fi_parse_text(
+            etree.tostring(section, method="text", encoding="unicode")
+        )
+        if "tulevat voimaan" not in section_text.casefold():
+            continue
+        match = _SEPARATE_COMMENCEMENT_LIST_RE.search(section_text)
+        if not match:
+            continue
+        effective = _date_from_fi_day_month_year_match(match)
+        if effective is None:
+            continue
+        source_provision_ref = commencement_statute_id
+        section_label = _section_label_for_source_ref(section)
+        if section_label:
+            source_provision_ref = f"{commencement_statute_id}/{section_label}"
+        for cited in _PAREN_STATUTE_ID_RE.finditer(section_text[match.end():]):
+            target_id = _normalize_textual_statute_id(cited.group("sid"))
+            if target_id is None:
+                continue
+            witnesses.append(
+                SeparateCommencementLawWitness(
+                    target_statute_id=target_id,
+                    commencement_statute_id=commencement_statute_id,
+                    source_provision_ref=source_provision_ref,
+                    effective_date=effective,
+                    rule_id="fi_separate_commencement_law_list",
+                    source_text=match.group(0).strip(),
+                )
+            )
+    return tuple(witnesses)
+
+
+@lru_cache(maxsize=1)
+def _separate_commencement_witness_index() -> dict[str, tuple[SeparateCommencementLawWitness, ...]]:
+    from lawvm.finland.corpus import get_corpus
+
+    corpus = get_corpus()
+    statute_ids = tuple(sorted(corpus.list_statute_ids()))
+    index: dict[str, list[SeparateCommencementLawWitness]] = {}
+    for source_id in statute_ids:
+        xml_bytes = corpus.read_source(source_id)
+        if xml_bytes is None or b"tulevat voimaan" not in xml_bytes:
+            continue
+        tree = etree.fromstring(xml_bytes)
+        for witness in _separate_commencement_witnesses_from_tree(
+            commencement_statute_id=source_id,
+            tree=tree,
+        ):
+            index.setdefault(witness.target_statute_id, []).append(witness)
+    return {
+        target_id: tuple(sorted(rows, key=lambda row: (row.effective_date, row.commencement_statute_id)))
+        for target_id, rows in index.items()
+    }
+
+
+def separate_commencement_law_witness(
+    target_statute_id: str,
+) -> SeparateCommencementLawWitness | None:
+    """Return the deterministic separate-law commencement witness for *target*.
+
+    Finland has amendment acts whose own entry-into-force clause says only that
+    commencement is enacted separately by law. A later voimaanpano act may list
+    those amendment acts under a shared fixed date. This helper resolves only
+    that explicit list shape; absent or ambiguous witnesses stay unresolved.
+    """
+    rows = _separate_commencement_witness_index().get(target_statute_id, ())
+    if len(rows) != 1:
+        return None
+    return rows[0]
 
 
 def _expand_section_range(start: str, end: str) -> Set[str]:
@@ -1117,26 +1220,30 @@ _TEMPORARY_TITLE_SCOPED_SECTION_RE = re.compile(
 )
 _TEMPORARY_TITLE_SECTION_LABEL_RE = re.compile(r"\d+\s*(?:[a-z](?![a-z]))?")
 _LEADING_CHAPTER_CONTEXT_RE = re.compile(r"^\s*(?:[\d\w]+\s+)*luvun\s+", re.IGNORECASE)
+# Sentence ANCHOR (§1.11 cheap prefilter, not a structural parser): locates a
+# scoped temporary-expiry sentence and splits it into the SUBJECT span (the
+# provision reference, handed to the shared sub-ref grammar) and the DATE-tail
+# span (handed to the canonical expiry-date extractor). The anchor itself does
+# NOT parse provision structure or build a calendar date — both are delegated:
+#   * subject  -> references.sections.parse_body_provision_tail (sections +
+#                 momentti coordination/ranges/letter-suffix) + an otsikko
+#                 facet detector on each section's ``§:n …`` clause;
+#   * datetail -> temporal_lowering._extract_expiry_date_from_text (the canonical
+#                 ``NN päivä[äa]n Kkkuuta YYYY`` recognizer reused across the
+#                 temporal family).
+# The ``päivästä`` start-of-range arm before the date is tolerated and skipped so
+# the bound is read from the terminal date, exactly as before.
+_TEMPORARY_EXPIRY_SENTENCE_RE = re.compile(
+    r"(?:Lain|Asetuksen|Päätöksen|Sen)\s+"
+    r"(?P<subject>[^.]+?)\s+"
+    r"(?:ovat|on)\s+voimassa\s+"
+    r"(?:\d{1,2}\s+päivästä\s+[a-zäöå]+\s+)?"
+    r"(?P<datetail>\d{1,2}\s+päivään\s+[a-zäöå]+\s+\d{4})",
+    re.IGNORECASE,
+)
 
-
-def _parse_moment_label_list(raw: str) -> set[int]:
-    labels: set[int] = set()
-    text = _normalize_fi_parse_text(raw)
-    for token in re.split(r'\s*(?:,|ja|sekä)\s*', text.strip(), flags=re.IGNORECASE):
-        token = token.strip()
-        if not token:
-            continue
-        if "\u2013" in token:
-            left, right = token.split("\u2013", 1)
-            if left.strip().isdigit() and right.strip().isdigit():
-                start = int(left.strip())
-                end = int(right.strip())
-                if start <= end:
-                    labels.update(range(start, end + 1))
-            continue
-        if token.isdigit():
-            labels.add(int(token))
-    return labels
+# Otsikko (heading) facet detector for one section's ``N §:n …`` clause body.
+_OTSIKKO_FACET_RE = re.compile(r"\botsikko\b", flags=re.IGNORECASE)
 
 
 def _temporary_provision_expiry_overrides(
@@ -1165,28 +1272,23 @@ def _temporary_provision_expiry_overrides(
         _temporary_provision_expiry_cache[cache_key] = ()
         return ()
     text = _normalize_fi_parse_text(raw_text)
-    month_map = {
-        'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-        'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-        'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-    }
     overrides: list[TemporaryProvisionExpiryOverride] = []
     seen: set[tuple[str, str, int | None, str | None, str]] = set()
 
-    for sunset in re.finditer(
-        r'(?:Lain|Asetuksen|Päätöksen|Sen)\s+(.+?)\s+(?:ovat|on)\s+voimassa\s+'
-        r'(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
-        text,
-        flags=re.IGNORECASE,
-    ):
-        subject = sunset.group(1)
-        month = month_map.get(sunset.group(3).lower())
-        if month is None:
+    for sunset in _TEMPORARY_EXPIRY_SENTENCE_RE.finditer(text):
+        subject = sunset.group("subject")
+        # DATE: delegate to the canonical temporal-family expiry-date extractor.
+        # The anchor constrained the tail to ``NN päivään Kkkuuta YYYY`` so the
+        # extractor reads exactly that bound (no earlier essive date can shadow).
+        iso_expiry = _extract_expiry_date_from_text(sunset.group("datetail"))
+        if not iso_expiry:
             continue
-        try:
-            expiry = dt.date(int(sunset.group(4)), month, int(sunset.group(2)))
-        except ValueError:
-            continue
+        expiry = dt.date.fromisoformat(iso_expiry)
+        # SUBJECT: split into per-section ``N §:n …`` clauses (the facet scope),
+        # then delegate the section + momentti structure of each clause to the
+        # shared sub-ref grammar. Only ``§:n``-bodied facets are owned here
+        # (otsikko + momentti); whole-section / bare-``§`` scopes are handled by
+        # _temporary_section_expiry_overrides, so they are NOT emitted here.
         for scoped in re.finditer(
             r'(?P<section>\d+\s*[a-z]?)\s*§:n\s+'
             r'(?P<body>.*?)(?=(?:,\s*|\s+ja\s+|\s+sekä\s+)\d+\s*[a-z]?\s*§:n|$)',
@@ -1197,7 +1299,7 @@ def _temporary_provision_expiry_overrides(
             body = scoped.group("body")
             if not section:
                 continue
-            if re.search(r'\botsikko\b', body, flags=re.IGNORECASE):
+            if _OTSIKKO_FACET_RE.search(body):
                 key = (source_statute_id, section, None, "otsikko", expiry.isoformat())
                 if key not in seen:
                     seen.add(key)
@@ -1211,27 +1313,26 @@ def _temporary_provision_expiry_overrides(
                             rule_id="fi_temporary_exact_provision_expiry",
                         )
                     )
-            for moment in re.finditer(
-                r'(?P<labels>\d+(?:\s*\u2013\s*\d+)?(?:\s*(?:,|ja|sekä)\s*\d+(?:\s*\u2013\s*\d+)?)*)\s+moment',
-                body,
-                flags=re.IGNORECASE,
-            ):
-                for subsection in _parse_moment_label_list(moment.group("labels")):
-                    key = (source_statute_id, section, subsection, None, expiry.isoformat())
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    overrides.append(
-                        TemporaryProvisionExpiryOverride(
-                            target_mid=source_statute_id,
-                            section=section,
-                            subsection=subsection,
-                            special=None,
-                            expiry=expiry,
-                            rule_id="fi_temporary_exact_provision_expiry",
-                        )
+            # Momentti subsections: parse the section's clause through the shared
+            # body sub-ref grammar and keep this section's subsection targets.
+            for target in parse_body_provision_tail(f"{section} §:n {body}"):
+                if target.section_label != section or target.subsection_num is None:
+                    continue
+                subsection = target.subsection_num
+                key = (source_statute_id, section, subsection, None, expiry.isoformat())
+                if key in seen:
+                    continue
+                seen.add(key)
+                overrides.append(
+                    TemporaryProvisionExpiryOverride(
+                        target_mid=source_statute_id,
+                        section=section,
+                        subsection=subsection,
+                        special=None,
+                        expiry=expiry,
+                        rule_id="fi_temporary_exact_provision_expiry",
                     )
-
+                )
     result = tuple(overrides)
     _temporary_provision_expiry_cache[cache_key] = result
     return result
@@ -1293,19 +1394,10 @@ def _temporary_section_expiry_overrides(
     )
     expiry_scan_casefold = expiry_scan_text.casefold()
 
-    month_map = {
-        'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-        'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-        'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-    }
     if "päivään" in expiry_scan_casefold:
         for m in _TEMPORARY_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            month = month_map.get(m.group(4).lower())
-            if month is None:
-                continue
-            try:
-                expiry = dt.date(int(m.group(5)), month, int(m.group(3)))
-            except ValueError:
+            expiry = parse_fi_day_month_year(m.group(3), m.group(4), m.group(5))
+            if expiry is None:
                 continue
             labels = _parse_section_list_labels(m.group(1))
             if m.group(2):
@@ -1317,12 +1409,8 @@ def _temporary_section_expiry_overrides(
         # The expiry is still section-scoped for replay stamping: the amendment op
         # target carries the exact subsection/item granularity.
         for m in _TEMPORARY_SUBSECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            month = month_map.get(m.group(3).lower())
-            if month is None:
-                continue
-            try:
-                expiry = dt.date(int(m.group(4)), month, int(m.group(2)))
-            except ValueError:
+            expiry = parse_fi_day_month_year(m.group(2), m.group(3), m.group(4))
+            if expiry is None:
                 continue
             _append_override(target_mid_from_cited, _parse_section_list_labels(m.group(1)), expiry)
 
@@ -1331,26 +1419,25 @@ def _temporary_section_expiry_overrides(
         #   "Lain 90 a § on voimassa 31 päivään heinäkuuta 2020 ja 99 a § 31 päivään
         #    toukokuuta 2021."
         for m_chain in _TEMPORARY_CHAINED_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            first_month = month_map.get(m_chain.group(3).lower())
-            if first_month is not None:
-                try:
-                    first_expiry = dt.date(int(m_chain.group(4)), first_month, int(m_chain.group(2)))
-                except ValueError:
-                    first_expiry = None
-                if first_expiry is not None:
-                    _append_override(
-                        target_mid_from_cited,
-                        _parse_section_list_labels(m_chain.group(1)),
-                        first_expiry,
-                    )
+            first_expiry = parse_fi_day_month_year(
+                m_chain.group(2),
+                m_chain.group(3),
+                m_chain.group(4),
+            )
+            if first_expiry is not None:
+                _append_override(
+                    target_mid_from_cited,
+                    _parse_section_list_labels(m_chain.group(1)),
+                    first_expiry,
+                )
             tail = m_chain.group(5)
             for m_tail in _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE.finditer(tail):
-                tail_month = month_map.get(m_tail.group(3).lower())
-                if tail_month is None:
-                    continue
-                try:
-                    tail_expiry = dt.date(int(m_tail.group(4)), tail_month, int(m_tail.group(2)))
-                except ValueError:
+                tail_expiry = parse_fi_day_month_year(
+                    m_tail.group(2),
+                    m_tail.group(3),
+                    m_tail.group(4),
+                )
+                if tail_expiry is None:
                     continue
                 _append_override(
                     target_mid_from_cited,
@@ -1463,12 +1550,8 @@ def _section_commencement_effective_override(
     if match is None:
         return None
 
-    month = _FI_MONTH_GENITIVE_TO_NUMBER.get(match.group(3).lower())
-    if month is None:
-        return None
-    try:
-        effective = dt.date(int(match.group(4)), month, int(match.group(2)))
-    except ValueError:
+    effective = parse_fi_day_month_year(match.group(2), match.group(3), match.group(4))
+    if effective is None:
         return None
 
     refs_text = match.group(1)
@@ -1520,12 +1603,8 @@ def _section_subsection_commencement_effective_override(
     if match is None:
         return None
 
-    month = _FI_MONTH_GENITIVE_TO_NUMBER.get(match.group(3).lower())
-    if month is None:
-        return None
-    try:
-        effective = dt.date(int(match.group(4)), month, int(match.group(2)))
-    except ValueError:
+    effective = parse_fi_day_month_year(match.group(2), match.group(3), match.group(4))
+    if effective is None:
         return None
 
     addresses: list[LegalAddress] = []
@@ -1713,17 +1792,8 @@ def _chapter_expiry_from_base(
     )
     if not m:
         return None
-    month_map = {
-        'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-        'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-        'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-    }
-    month = month_map.get(m.group(3).lower())
-    if month is None:
-        return None
-    try:
-        expiry = dt.date(int(m.group(4)), month, int(m.group(2)))
-    except ValueError:
+    expiry = parse_fi_day_month_year(m.group(2), m.group(3), m.group(4))
+    if expiry is None:
         return None
     return m.group(1), expiry
 
@@ -1763,39 +1833,19 @@ def _amendment_effective_date_with_step(
         flags=re.IGNORECASE
     )
     if m:
-        month_map = {
-            'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-            'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-            'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-        }
-        month = month_map.get(m.group(2).lower())
-        if month is not None:
-            try:
-                text_date = dt.date(int(m.group(3)), month, int(m.group(1)))
-                # Sanity: effective date must be >= issuance date
-                if issued is None or text_date >= issued:
-                    return text_date, 'text_regex'
-            except ValueError:
-                pass
+        text_date = parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
+        # Sanity: effective date must be >= issuance date
+        if text_date is not None and (issued is None or text_date >= issued):
+            return text_date, 'text_regex'
     m = re.search(
         r'Tätä\s+(?:lakia|asetusta|päätöstä)\s+sovelletaan\s+(\d{1,2})\s+päivästä\s+([a-zäöå]+)\s+(\d{4})\s+lukien',
         full_text,
         flags=re.IGNORECASE,
     )
     if m:
-        month_map = {
-            'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-            'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-            'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-        }
-        month = month_map.get(m.group(2).lower())
-        if month is not None:
-            try:
-                text_date = dt.date(int(m.group(3)), month, int(m.group(1)))
-                if issued is None or text_date >= issued:
-                    return text_date, 'text_regex'
-            except ValueError:
-                pass
+        text_date = parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
+        if text_date is not None and (issued is None or text_date >= issued):
+            return text_date, 'text_regex'
     # 2b. Decree-set or otherwise contingent commencement: we know the law was
     # not in force at issuance, but we do not know the actual force date yet.
     if re.search(
@@ -1809,6 +1859,11 @@ def _amendment_effective_date_with_step(
         full_text,
         flags=re.IGNORECASE,
     ):
+        target_id = _statute_id_from_doc_number(tree)
+        if target_id is not None:
+            witness = separate_commencement_law_witness(target_id)
+            if witness is not None:
+                return witness.effective_date, 'separate_commencement_law'
         return None, 'contingent_text'
     # 3. Fall back to publication metadata (publication date, not effective date,
     #    but better than nothing when text regex fails or matched wrong text)
@@ -1845,18 +1900,7 @@ def _statute_issue_date(tree: "etree._Element") -> Optional[dt.date]:
         )
         if not m:
             return None
-        month_map = {
-            'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-            'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-            'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-        }
-        month = month_map.get(m.group(2).lower())
-        if month is None:
-            return None
-        try:
-            return dt.date(int(m.group(3)), month, int(m.group(1)))
-        except ValueError:
-            return None
+        return parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
 
     fallback_issued_generated: Optional[dt.date] = None
     for el in tree.findall('.//{*}FRBRdate'):

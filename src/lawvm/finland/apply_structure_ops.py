@@ -76,6 +76,7 @@ from lawvm.finland.apply_runtime_support import (
     _parent_direct_child_path_with_same_label,
     _same_norm_label,
     _with_preserved_provision_index,
+    _with_replaced_provision_subtree_index,
 )
 from lawvm.finland.migration_ledger import migration_lower_bound_for_op
 
@@ -95,6 +96,12 @@ from lawvm.finland.merge import (
 )
 
 logger = logging.getLogger(__name__)
+
+_PART_HEADING_MARKER_RE = re.compile(
+    r"^(?P<label>(?:[IVXLCDM]{1,12}|\d{1,4}[a-z]?))\s{1,8}(?P<unit>osa|osasto)\b"
+    r"(?:$|\s{1,8}(?P<title>[^\n]{0,200})$)",
+    flags=re.I,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -629,6 +636,43 @@ def _insert_or_replace_same_labeled_child(
     return _tops.insert_sorted(tree, parent_path, child), False
 
 
+def _part_scaffold_from_cross_heading_marker(
+    payload: IRNode | None,
+    *,
+    part_label: str,
+) -> IRNode | None:
+    """Convert a source part marker into a legal part scaffold.
+
+    Some Finland amendment bodies encode a new part as a direct
+    ``crossHeading`` sibling followed by chapter/section payloads, not as a
+    ``part`` XML element.  The cross-heading is evidence for the legal
+    container; it is not itself a legal top-level node.
+    """
+    if payload is None or payload.kind is not IRNodeKind.CROSS_HEADING:
+        return payload
+    marker_text = irnode_to_text(payload).strip()
+    match = _PART_HEADING_MARKER_RE.match(" ".join(marker_text.split()))
+    if match is None:
+        return payload
+    source_label = _normalize_part_label_for_scaffold(match.group("label"))
+    if source_label != part_label:
+        return payload
+    unit_text = match.group("unit")
+    title = (match.group("title") or "").strip()
+    children: list[IRNode] = [
+        IRNode(kind=IRNodeKind.NUM, text=f"{match.group('label')} {unit_text}".strip())
+    ]
+    if title:
+        children.append(IRNode(kind=IRNodeKind.HEADING, text=title))
+    return IRNode(kind=IRNodeKind.PART, label=part_label, children=tuple(children))
+
+
+def _normalize_part_label_for_scaffold(label: str) -> str:
+    normalized = _norm_num_token(label).lower()
+    arabic = _roman_label_to_arabic(normalized)
+    return str(arabic) if arabic is not None else normalized
+
+
 def _move_section_payload_to_target_chapter(
     tree: IRNode,
     existing_path: Path,
@@ -689,6 +733,7 @@ def _find_scoped_section_insert_parent_path(
         ),
         missing_part_policy="not_found",
         missing_chapter_in_part_policy="not_found",
+        provision_index=state.provision_index,
     )
 
 
@@ -701,6 +746,36 @@ def _find_direct_body_part_path(ir: IRNode, target_part: str | None) -> Path | N
         kind=IRNodeKind.PART,
         label=target_part,
     )
+
+
+def _insert_missing_chapter_scaffold_under_part(
+    state: "ReplayState",
+    *,
+    target_part: str,
+    target_chapter: str,
+) -> tuple["ReplayState", Path] | None:
+    """Create a chapter scaffold under an explicit existing part scope."""
+    part_path = _find_direct_body_part_path(state.ir, target_part) or state.find("part", target_part)
+    if part_path is None:
+        return None
+    part_node = _tops.resolve(state.ir, part_path)
+    if part_node is None:
+        return None
+    existing_chapter = _parent_direct_child_path_with_same_label(
+        state.ir,
+        _tops._as_path(part_path),
+        kind=IRNodeKind.CHAPTER,
+        label=target_chapter,
+    )
+    if existing_chapter is not None:
+        return state, _tops._as_path(existing_chapter)
+    chapter = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label=target_chapter,
+        children=(IRNode(kind=IRNodeKind.NUM, text=f"{target_chapter} luku"),),
+    )
+    new_ir = _tops.insert_sorted(state.ir, _tops._as_path(part_path), chapter)
+    return state.with_ir(new_ir), _tops._as_path(part_path) + (("chapter", target_chapter),)
 
 
 @dataclass(frozen=True)
@@ -965,6 +1040,11 @@ def _apply_container_op(
         if container_binding is not None and container_binding.target_path is not None
         else container_resolution.path
     )
+    if _op_type == "INSERT" and kind == "part" and path is None:
+        muutos_ir = _part_scaffold_from_cross_heading_marker(
+            muutos_ir,
+            part_label=section_label,
+        )
 
     def _timeline_container_path(p: Path | None) -> tuple[tuple[str, str], ...]:
         return tuple((kind, label) for kind, label in (p or ()) if kind != "hcontainer" and label)
@@ -1608,6 +1688,7 @@ def _apply_whole_section_op(
     _target_unit_kind = view.target_unit_kind
     _op_type = view.op_type
     _target_paragraph = view.target_paragraph
+    _target_item = view.target_item
     _target_special = view.target_special
     _target_chapter = view.target_chapter
     _target_part = view.target_part
@@ -1677,6 +1758,7 @@ def _apply_whole_section_op(
     if (
         _target_unit_kind != "section"
         or _target_paragraph
+        or _target_item
         or (_target_special and _target_special not in {"otsikko", "otsikko_edella"})
     ):
         return None
@@ -1731,7 +1813,10 @@ def _apply_whole_section_op(
             children=tuple(new_children),
         )
         logger.debug("  %s → section otsikko %s", ctx_label, _op_type)
-        return state.with_ir(_tops.replace_at(state.ir, sec_path, new_sec))
+        return _with_preserved_provision_index(
+            state,
+            _tops.replace_at(state.ir, sec_path, new_sec),
+        )
 
     if _target_special == "otsikko_edella":
         if _op_type == "INSERT" and sec_path is not None and muutos_ir is not None:
@@ -2481,7 +2566,16 @@ def _apply_whole_section_op(
                             )
                         )
                 logger.debug("  %s → section insert via chapter merge (%s luku)", ctx_label, _target_chapter)
-                return state.with_ir(_tops.replace_at(absorbed_ir, ch_path, merged_for_replace))
+                new_ir = _tops.replace_at(absorbed_ir, ch_path, merged_for_replace)
+                if not absorbed_paths:
+                    return _with_replaced_provision_subtree_index(
+                        state,
+                        new_ir,
+                        path=_tops._as_path(ch_path),
+                        old_subtree=ch_node,
+                        new_subtree=merged_for_replace,
+                    )
+                return state.with_ir(new_ir)
 
         if not profile.replace_same_numbered_section_insert:
             replace_path = None
@@ -2681,7 +2775,44 @@ def _apply_whole_section_op(
             parent_path = family_path[:-1]
             new_ir = state.ir
         else:
-            parent_path = _tops._as_path(_find_insert_parent_path(state.ir, _target_chapter, label_index=_idx))
+            parent_path = _find_scoped_section_insert_parent_path(
+                state,
+                target_chapter=_target_chapter,
+                target_part=_target_part,
+            )
+            if parent_path is None:
+                scaffolded_parent = None
+                if view.uncovered_body_recovery and _target_part and _target_chapter:
+                    scaffolded_parent = _insert_missing_chapter_scaffold_under_part(
+                        state,
+                        target_part=_target_part,
+                        target_chapter=_target_chapter,
+                    )
+                if scaffolded_parent is not None:
+                    state, parent_path = scaffolded_parent
+                    if source_pathologies_out is not None:
+                        source_pathologies_out.append(
+                            build_destructive_shape_loss_risk_pathology(
+                                source_statute=_source_statute or "",
+                                target_unit_kind=view.target_unit_kind,
+                                target_label=f"{_target_part} osa {_target_chapter} luku",
+                                recovery_kind="uncovered_section_insert_source_owned_part_chapter_scaffold",
+                                live_sibling_count=0,
+                                payload_sibling_count=1,
+                            )
+                        )
+                else:
+                    logger.debug(
+                        "  %s → section insert rejected (missing scoped parent)",
+                        ctx_label,
+                    )
+                    return state
+            if parent_path is None:
+                logger.debug(
+                    "  %s → section insert rejected (missing scoped parent)",
+                    ctx_label,
+                )
+                return state
             new_ir = state.ir
             if cross_ir is not None:
                 cross_same_path = _parent_direct_child_path_with_same_label(
@@ -2782,6 +2913,7 @@ def _apply_materialization(
     _target_item = view.target_item
     _target_special = view.target_special
     _op_type = view.op_type
+    _target_part = view.target_part
     _scope_confidence = runtime_scope_confidence_for_op(op)
     if _target_unit_kind != "section":
         return None
@@ -2889,9 +3021,20 @@ def _apply_materialization(
                         ),
                     )
                 )
-            moved_parent_path = _tops._as_path(
-                _find_insert_parent_path(state.ir, _target_chapter, label_index=state.provision_index)
+            moved_parent_path = (
+                _find_scoped_section_insert_parent_path(
+                    state,
+                    target_chapter=_target_chapter,
+                    target_part=_target_part,
+                )
+                or ()
             )
+            if not moved_parent_path:
+                logger.debug(
+                    "  %s → section materialization root move rejected (missing scoped parent)",
+                    ctx_label,
+                )
+                return None
             moved_ir = _move_section_payload_to_target_chapter(
                 state.ir,
                 existing_path,
@@ -2926,7 +3069,14 @@ def _apply_materialization(
                 )
             return state.with_ir(moved_ir)
 
-    parent_path = _tops._as_path(_find_insert_parent_path(state.ir, _target_chapter, label_index=state.provision_index))
+    parent_path = _find_scoped_section_insert_parent_path(
+        state,
+        target_chapter=_target_chapter,
+        target_part=_target_part,
+    )
+    if parent_path is None:
+        logger.debug("  %s → section materialization rejected (missing scoped parent)", ctx_label)
+        return None
     logger.debug("  %s → section materialized", ctx_label)
     if source_pathologies_out is not None:
         source_pathologies_out.append(

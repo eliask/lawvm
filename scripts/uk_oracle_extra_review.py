@@ -53,7 +53,7 @@ def load_reviews(candidates_path: Path, *, archive_path: Path) -> list[UKOracleE
     from farchive import Farchive
 
     rows = _load_rows(candidates_path)
-    archive = Farchive(archive_path)
+    archive = Farchive(archive_path, readonly=True)
     try:
         out: list[UKOracleExtraReviewRow] = []
         for row in rows:

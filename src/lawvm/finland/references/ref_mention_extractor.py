@@ -75,6 +75,7 @@ from lawvm.finland.references.sections import (
     chapter_akn_path,
     parse_body_provision_tail,
 )
+from lawvm.finland.references.lemma_gate import head_case_forms
 from lawvm.finland.references.eu_directive import recognize_eu_directive_refs
 from lawvm.finland.references.eu_nickname_binding import (
     build_statute_local_nicknames,
@@ -84,8 +85,11 @@ from lawvm.finland.references.treaty_article import recognize_treaty_article_ref
 from lawvm.finland.references.vague import recognize_vague_refs
 from lawvm.finland.references.internal_refs import recognize_internal_refs
 from lawvm.finland.references.by_name import (
-    name_head_np_start_before_paren,
     recognize_by_name_refs,
+)
+from lawvm.finland.references.shared_reference_orchestrator import (
+    inline_id_provision_key,
+    lift_inline_id_construction_mentions,
 )
 from lawvm.core.preparatory_reference import (
     PreparatoryReference,
@@ -94,9 +98,8 @@ from lawvm.core.preparatory_reference import (
 from lawvm.finland.references.preparatory_reference_extractor import (
     extract_preparatory_refs,
 )
-from lawvm.finland.legal_surface.sentence_parse import parse_citation_sentence
 from lawvm.finland.legal_surface.delegation_parse import extract_authority_bases
-from lawvm.finland.delegation import _classify_authority_kind, _normalize_year
+from lawvm.finland.authority_basis import _classify_authority_kind, _normalize_year
 
 # ---------------------------------------------------------------------------
 # Module-scope compiled patterns (AGENTS.md §1.11)
@@ -204,19 +207,94 @@ _SECTION_NUM_LABEL_RE = re.compile(
 # with the SAME expressiveness as the johtolause amendment grammar. The regex
 # remains the prefilter/anchor only (statute identity), per AGENTS.md §1.13.
 #
+# STATUTE-HEAD INFLECTION DEMOTION (single source of inflection truth):
+#   The head-inflection alternations are no longer hand-written suffix lists.
+#   They are GENERATED from the M1 morphology engine (``head_case_forms``,
+#   paradigm inversion) for a CURATED ``(case, number)`` set per head — exactly
+#   the case set each arm historically recognized — killing the consonant-
+#   gradation substring bug class and giving the by-name / inline lanes ONE
+#   source of statute-head inflection truth (mirrors
+#   ``inline_citation_extractor._STATUTE_HEAD_FORMS``).
+#
+#   The curated case sets reproduce the prior hand-written alternations
+#   BYTE-FOR-BYTE (verified superset with zero extra, zero dropped), so this is
+#   a pure refactor with no output change. Where M1's ``reference_v1`` profile
+#   cannot generate a form (it omits the ESSIVE), the form is supplied as a
+#   closed explicit supplement, same pattern as the inline lane.
+#
 #   group 1 = statute number, group 2 = statute year.
+_STEM = r"[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]"
+
+def _head_alt(
+    lemma: str,
+    case_numbers: tuple[tuple[str, str], ...],
+    *,
+    supplement: tuple[str, ...] = (),
+) -> str:
+    """Morphology-generated inflection alternation body for one statute head.
+
+    Produces the ``form|form|...`` alternation (longest-first, for suffix-
+    alternation safety) of the M1 surfaces of ``lemma`` for the curated
+    ``(case, number)`` set, plus an explicit ``supplement`` for forms M1's
+    ``reference_v1`` profile cannot generate (the ESSIVE — supplied per call
+    only where the original arm carried it). This replaces the hand-written
+    suffix lists with the single morphology source of truth; the curated case
+    set + per-call supplement reproduce the prior alternation byte-for-byte.
+    """
+    forms = set(head_case_forms(lemma, case_numbers)) | set(supplement)
+    if not forms:  # pragma: no cover - reference_v1 always emits these heads
+        raise AssertionError(f"M1 generated no surfaces for statute head {lemma!r}")
+    return "|".join(sorted(forms, key=lambda s: (-len(s), s)))
+
+
+# Curated (case, number) sets — exactly the cases each arm historically matched.
+_LAKI_CASES = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"),
+    ("TRA", "SG"), ("ALL", "SG"), ("ADE", "SG"), ("ABL", "SG"), ("ILL", "SG"),
+)
+_LAKI_BARE_CASES = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"),
+    ("TRA", "SG"), ("ALL", "SG"), ("ADE", "SG"), ("ABL", "SG"),
+)
+_ASETUS_CASES = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"),
+    ("TRA", "SG"), ("ADE", "SG"), ("ALL", "SG"), ("ABL", "SG"), ("ILL", "SG"),
+)
+_ASETUS_BARE_CASES = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"),
+    ("TRA", "SG"), ("ADE", "SG"), ("ALL", "SG"), ("ABL", "SG"),
+)
+_PAATOS_CASES = (
+    ("GEN", "SG"), ("INE", "SG"), ("ELA", "SG"), ("TRA", "SG"),
+    ("ADE", "SG"), ("ALL", "SG"), ("ABL", "SG"), ("PART", "SG"),
+)
+_SAADOS_CASES = (("GEN", "SG"), ("PART", "SG"), ("ILL", "SG"))
+_GEN_ONLY = (("GEN", "SG"),)
+
 _PLAIN_TEXT_FI_STATUTE_RE = re.compile(
     r"""
     (?:
-        # Named law/statute word with inflection suffix (nominative and case forms)
-        [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
-        (?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|lakia|lain)
-      | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
-        (?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta|asetuksen)
-      | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{0,60}
-        (?:p\xe4\xe4t\xf6ksen|p\xe4\xe4t\xf6ksess\xe4|p\xe4\xe4t\xf6ksest\xe4|p\xe4\xe4t\xf6kseksi|p\xe4\xe4t\xf6ksell\xe4|p\xe4\xe4t\xf6kselle|p\xe4\xe4t\xf6kselt\xe4|p\xe4\xe4t\xf6st\xe4)
-      | \b(?:lain|lakia|laissa|laiksi|laille|laista|lailla|lailta)
-      | \b(?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta)
+        # Named law/statute word with inflection suffix (case forms; NOM is NOT
+        # in these arms — bare ``laki``/``asetus`` are handled by the discriminating
+        # ``annettu``-participle arm below). Alternations are M1-generated.
+        #   ``laki``    GEN/PART/INE/ELA/TRA/ALL/ADE/ABL/ILL + ESS ``lakina``
+    """ + _STEM + r"""{1,60}
+        (?:""" + _head_alt("laki", _LAKI_CASES, supplement=("lakina",)) + r""")
+      | """ + _STEM + r"""{1,60}
+        #   ``asetus``  GEN/PART/INE/ELA/TRA/ADE/ALL/ABL/ILL + ESS ``asetuksena``
+        (?:""" + _head_alt("asetus", _ASETUS_CASES, supplement=("asetuksena",)) + r""")
+      | """ + _STEM + r"""{0,60}
+        #   ``päätös``  GEN/INE/ELA/TRA/ADE/ALL/ABL/PART
+        (?:""" + _head_alt("päätös", _PAATOS_CASES) + r""")
+      | """ + _STEM + r"""{1,60}
+        #   ``säädös``  GEN/PART/ILL
+        (?:""" + _head_alt("säädös", _SAADOS_CASES) + r""")
+      | """ + _STEM + r"""{1,60}
+        #   ``määräys`` GEN  (määräyksen)   ``direktiivi`` GEN  (direktiivin)
+        (?:""" + _head_alt("määräys", _GEN_ONLY) + r"""|"""
+        + _head_alt("direktiivi", _GEN_ONLY) + r""")
+      | \b(?:""" + _head_alt("laki", _LAKI_BARE_CASES) + r""")
+      | \b(?:""" + _head_alt("asetus", _ASETUS_BARE_CASES) + r""")
       # NOMINATIVE head ``laki`` / ``asetus`` — the repeal/description johtolause
       # form ``[…sta/stä] annettu asetus/laki (NNN/YYYY)`` (``kumotaan … annettu
       # asetus (875/1983)``). The nominative heads are extremely common bare
@@ -439,6 +517,24 @@ class PlainTextStatuteCitationRecognizer:
             # ``(id)`` by the ``<ref>`` boundary becomes adjacent again. Bounded
             # (whitespace only — never merges across intervening words).
             text = _WHITESPACE_RUN_RE.sub(" ", text)
+
+        return self.scan_text(text)
+
+    def scan_text(self, text: str) -> List[PlainTextStatuteHit]:
+        """Scan a plain text STRING for provision-precise statute citation hits.
+
+        Text-level twin of :meth:`scan_precise` (which first extracts non-``<ref>``
+        text from a ``<p>`` element, then delegates here). This is the shared
+        statute-cite recognizer surface for any caller that already holds the body
+        text as a string — e.g. the inline-citation lane, which scans ``<p>`` text
+        nodes directly. Routing both lanes through this one method keeps the
+        statute-id + section/momentti grammar UNIFIED (AGENTS.md §1.13): there is
+        exactly one structural parser for ``name (NNN/YYYY) <provision tail>``.
+
+        Per AGENTS.md §1.11: substring guard applied before regex scan.
+        """
+        if not text:
+            return []
 
         # Substring guard (fast path — eliminates ~99% of non-matching calls).
         # A statute citation always carries the ``(NUMBER/YEAR)`` parenthetical,
@@ -1806,66 +1902,11 @@ def extract_preparatory_reference_mentions(
 # letters / hyphens (the inflected statute name ``arvonlisäverolain`` /
 # ``-kaaressa`` / the descriptive ``päätös``), optionally one space off the paren.
 # Bounded (§1.11): a single trailing run, length-capped.
-_NAME_HEAD_BEFORE_PAREN_RE = re.compile(
-    r"([A-Za-z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60})\s?$"
-)
-
-
-def _extend_surface_to_name_head(text: str, paren_start: int, anchor_end: int) -> str:
-    """Surface for a construction cite, extended LEFT to the statute-name head.
-
-    The construction parse's anchor begins at the ``(id)`` paren (the name head is
-    owned as benign prose for total-ownership accounting). The PRODUCTION mention,
-    however, must carry the SAME name-head-inclusive surface the demoted regex lane
-    carried (``arvonlisäverolain (1767/95) 128 §``), so downstream span-overlap
-    consumers (the surface graph, the census by-name dedup) anchor it identically to
-    the old lane.
-
-    The name head is parsed as a proper inflected NP via the shared by-name
-    recognizer (``by_name.name_head_np_start_before_paren``), so an intervening
-    modifier between the head and the paren is INCLUDED in the surface
-    (``annettu opetusministeriön asetus (253/2001)`` — the genitive
-    ``opetusministeriön``; ``valvotusta koevapaudesta annetun lain (629/2013)`` —
-    the descriptive complement). When the NP recognizer finds no clean name head
-    abutting the paren, it falls back to the contiguous single-token left-scan (the
-    prior behaviour: ``arvonlisäverolain``, ``perintökaaren``); when even that finds
-    nothing (a bare paren) the surface is unchanged (starts at the paren).
-    Tag-don't-guess: the NP path never fabricates a boundary — it returns ``None``
-    and the single-token fallback (itself bounded) applies.
-    """
-    np_start = name_head_np_start_before_paren(text, paren_start)
-    if np_start is not None:
-        return text[np_start:anchor_end]
-    left = text[max(0, paren_start - 61) : paren_start]
-    m = _NAME_HEAD_BEFORE_PAREN_RE.search(left)
-    if m is None:
-        return text[paren_start:anchor_end]
-    head_start = paren_start - (len(left) - m.start(1))
-    return text[head_start:anchor_end]
-
-
-def _inline_id_provision_key(ref: Optional[ProvisionRef]) -> Optional[str]:
-    """Statute+provision dedup key for one inline-(id) citation TARGET.
-
-    Built from the final ``ProvisionRef`` fields (statute id + AKN provision path +
-    section/momentti/kohta labels), so the construction-primary lane and the demoted
-    regex-fallback lane — which build IDENTICAL ``ProvisionRef``s for the same
-    citation — agree on what "the same citation" is regardless of how each lane
-    derived the chapter. Returns None for a target with no statute id (nothing to
-    dedup on; the caller keeps such a mention).
-    """
-    if ref is None or not ref.statute_id:
-        return None
-    return "/".join(
-        part
-        for part in (
-            ref.statute_id,
-            ref.provision_path or "",
-            ref.section_label or "",
-            str(ref.subsection_num) if ref.subsection_num is not None else "",
-            ref.item_label or "",
-        )
-    )
+# The inline-(id) citation-construction surface/dedup helpers live in the shared
+# orchestrator (ONE lifter for the lens lane AND the forest projection). The
+# regex-fallback dedup below reuses the SAME key fn so both lanes agree on what
+# "the same citation" is.
+_inline_id_provision_key = inline_id_provision_key
 
 
 def extract_inline_id_construction_mentions(
@@ -1904,33 +1945,28 @@ def extract_inline_id_construction_mentions(
         return result, covered_keys
 
     covered: set[str] = ref_covered_statute_ids or set()
-    valid_start, valid_end = valid_at_interval
 
+    # Byte-offset locator into ``xml_bytes`` for a cite's name-inclusive surface
+    # (the lens coordinate system). A left-to-right byte cursor maps repeated
+    # identical surfaces to successive byte positions; the per-<p> span cache (held
+    # by the shared lifter) keeps several targets from one anchor on one span.
     surface_byte_cursor: dict[bytes, int] = {}
 
-    def _locate_surface_span(
-        surface: str,
-        local_cache: dict[str, Optional[SourceSpan]],
-    ) -> Optional[SourceSpan]:
+    def _locate_surface_span(surface: str) -> Optional[SourceSpan]:
         if not surface:
             return None
-        if surface in local_cache:
-            return local_cache[surface]
         needle = surface.encode("utf-8")
         start = _find_with_left_boundary(
             xml_bytes, needle, surface_byte_cursor.get(needle, 0)
         )
         if start < 0:
-            local_cache[surface] = None
             return None
         surface_byte_cursor[needle] = start + 1
-        span = SourceSpan(
+        return SourceSpan(
             source_file=statute_id,
             byte_offset=start,
             byte_len=len(needle),
         )
-        local_cache[surface] = span
-        return span
 
     for p_el in root.iter():
         local = p_el.tag.split("}")[-1] if "}" in p_el.tag else p_el.tag
@@ -1939,78 +1975,21 @@ def extract_inline_id_construction_mentions(
         text = _PLAIN_TEXT_RECOGNIZER._collect_non_ref_text(p_el)
         if not text or _PLAIN_TEXT_GUARD_PAREN not in text:
             continue
-        # Thread the CITING statute id so the construction lane's 2-digit-year
-        # century pivot is bounded causally — a cited act cannot post-date the
-        # statute that cites it (e.g. a 1950 statute's ``(1/19)`` is 1919, not
-        # 2019). Unknown citing year falls back to the legacy fixed pivot.
-        sp = parse_citation_sentence(text, source_statute_id=statute_id)
-        if not sp.citations:
-            continue
-        # Per-<p> span cache so multiple targets from one anchor share a span.
-        p_span_cache: dict[str, Optional[SourceSpan]] = {}
-        seen_keys: set[str] = set()
-        for c in sp.citations:
-            # The construction keys the cited act NUMBER/YEAR (canonical Finnish
-            # surface). Re-orient to the canonical corpus key YEAR/NUMBER via the
-            # SAME helper the <ref> and regex lanes use, so this lane dedups onto
-            # the SAME entity node (no re-inverted id).
-            num_str, year_str = c.statute_id.split("/", 1)
-            target_statute_id = _make_statute_id(year_str, num_str)
-            if target_statute_id in covered:
-                continue
-            if target_statute_id == statute_id:
-                continue
-            # Extend the surface LEFT to the statute-name head so the production
-            # mention carries the SAME name-inclusive surface the demoted regex lane
-            # did (``arvonlisäverolain (1767/95) 128 §``) — downstream span-overlap
-            # consumers anchor it identically. ``c.anchor_start`` is the paren start.
-            surface_text = _extend_surface_to_name_head(
-                text, c.anchor_start, c.anchor_end
-            )
-            targets = list(c.targets) or [BodyProvisionTarget(section_label="")]
-            for tgt in targets:
-                src_ref = ProvisionRef(
-                    statute_id=statute_id,
-                    provision_path="",
-                    section_label="",
-                )
-                target_provision_path = (
-                    chapter_akn_path(tgt.chapter, tgt.section_label)
-                    if tgt.chapter is not None
-                    else ""
-                )
-                tgt_ref = ProvisionRef(
-                    statute_id=target_statute_id,
-                    provision_path=target_provision_path,
-                    section_label=tgt.section_label,
-                    subsection_num=tgt.subsection_num,
-                    item_label=tgt.item_label,
-                )
-                key = _inline_id_provision_key(tgt_ref)
-                if key is not None:
-                    if key in seen_keys:
-                        continue
-                    seen_keys.add(key)
-                    covered_keys.add(key)
-
-                cite_confidence = (
-                    CiteConfidence.EXACT
-                    if tgt.section_label
-                    else CiteConfidence.STATUTE_ONLY
-                )
-                result.mentions.append(
-                    ReferenceMention(
-                        source_provision_ref=src_ref,
-                        target_provision_ref=tgt_ref,
-                        cite_kind=CiteKind.CROSS_STATUTE,
-                        cite_confidence=cite_confidence,
-                        phrase_lemma="citation_construction",
-                        source_span=_locate_surface_span(surface_text, p_span_cache),
-                        valid_at_interval=(valid_start, valid_end),
-                        edge_subtype="CITES",
-                        surface_text=surface_text,
-                    )
-                )
+        # The canonical inline-(id) citation lift, shared with the forest's
+        # reference projection (ONE lifter — no rival parser). The CITING statute id
+        # bounds the 2-digit-year century pivot causally and skips self-cites; the
+        # byte-offset locator anchors each surface in ``xml_bytes`` (the lens
+        # coordinate); targets already owned by the <ref> lane (``covered``) are
+        # dropped so the occurrence is single-sourced.
+        p_mentions, p_keys = lift_inline_id_construction_mentions(
+            text,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+            covered_statute_ids=covered,
+            span_for_surface=_locate_surface_span,
+        )
+        result.mentions.extend(p_mentions)
+        covered_keys.update(p_keys)
 
     return result, covered_keys
 
@@ -2296,16 +2275,25 @@ def extract_all_reference_mentions(
     # dropped here so the covered basis is single-sourced (no double-emission and no
     # sectionless-regex shadow of a sectioned construction basis). The regex-derived
     # ``domestic`` ISSUED_UNDER mention is KEPT only for the construction-DECLINED
-    # residue — the genuine shapes the construction refuses (fail-loud on noise):
-    # the ``… N §:n, sellaisena kuin se on laissa NNN/YYYY, nojalla`` amendment-
-    # history interjection (the dominant residue class) and OCR/abbreviation noise
-    # (``§;n`` / ``§.n``, ``mom.`` / ``mom:n``, ``7§:n``, ``sekä. 33 §:n``, glued
-    # ``nojallapäättänyt``). Empirically (full Finlex corpus) the construction owns
-    # the overwhelming majority of bases with their sections; the regex residue is
-    # ~727 source statutes / ~1076 (parent, section) tuples, ~92% the ``sellaisena
-    # kuin`` interjection. NOTHING the regex shipped at the PARENT level is lost
-    # (§1.8); the demotion only prefers the construction's typing/sections where
-    # both cover the same parent. The cross_refs ``_merge_authority_basis``
+    # residue — the genuine shapes the construction refuses (fail-loud on noise).
+    # The construction now ALSO owns the ``… N §:n, sellaisena kuin se on laissa
+    # NNN/YYYY, nojalla`` amendment-history interjection: it blanks the interjection
+    # (amendment-version metadata about WHICH act amended the basis provision — the
+    # inner ``(NNN/YYYY)`` is the AMENDING act, never the basis) and binds the OUTER
+    # ``[act] (NUM/YEAR) N §:n … nojalla``. So the interjection is no longer residue.
+    # What genuinely REMAINS for the regex fallback is: voimaantulo-/siirtymäsäännös
+    # bases (a ``voimaantulosäännöksen nojalla`` with no ``§`` provision path),
+    # momentti-only/budget-momentti bases (``… momentin 28.37.40 nojalla``), prose
+    # provision paths (``10 §:n nimikkeen … kohdalla olevan säännöksen nojalla``),
+    # and OCR/abbreviation noise (``§;n`` / ``§.n``, ``mom.`` / ``mom:n``, ``7§:n``,
+    # ``sekä. 33 §:n``, ``#:n``, glued ``nojallapäättänyt``). Empirically (full
+    # Finlex corpus) the construction owns the overwhelming majority of bases with
+    # their sections; the sellaisena interjection class (~707 parents / ~476
+    # statutes, formerly the dominant regex residue) is now construction-owned with
+    # NO loss and NO amending-act mis-binding, leaving a smaller genuine-residue
+    # tail. NOTHING the regex shipped at the PARENT level is lost (§1.8); the
+    # demotion only prefers the construction's typing/sections where both cover the
+    # same parent. The cross_refs ``_merge_authority_basis``
     # enrichment of the StatuteGraph is untouched — this demotion is purely at the
     # ``extract_all_reference_mentions`` surface. Skipped in annotation-independence
     # measurement mode (the ISSUED_UNDER metadata lane is part of the suppressed

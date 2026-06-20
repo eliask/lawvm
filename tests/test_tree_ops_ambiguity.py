@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.tree_ops import (
     AmbiguousLookupError,
     MissingPathError,
     build_label_index,
+    build_provision_label_index,
     find,
     find_all,
     find_unique,
@@ -68,6 +71,31 @@ def test_find_remains_compatibility_first_match_surface() -> None:
     assert got == (("chapter", "1"), ("section", "5"))
 
 
+def test_build_provision_label_index_prunes_section_descendants() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="5",
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = build_provision_label_index(body)
+
+    assert got[("chapter", "1")] == [(("chapter", "1"),)]
+    assert got[("section", "5")] == [(("chapter", "1"), ("section", "5"))]
+    assert ("subsection", "1") not in got
+
+
 def test_resolve_accepts_list_paths_and_returns_matching_node() -> None:
     body = _body_with_duplicate_sections()
 
@@ -76,6 +104,38 @@ def test_resolve_accepts_list_paths_and_returns_matching_node() -> None:
     assert node is not None
     assert node.kind == IRNodeKind.SECTION
     assert node.label == "5"
+
+
+def test_resolve_matches_enum_path_kind_and_normalized_label() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1.",
+                children=(IRNode(kind=IRNodeKind.SECTION, label="5 a"),),
+            ),
+        ),
+    )
+
+    node = resolve(body, cast(Any, [(IRNodeKind.CHAPTER, "1"), (IRNodeKind.SECTION, "5-a")]))
+
+    assert node is not None
+    assert node.kind == IRNodeKind.SECTION
+    assert node.label == "5 a"
+
+
+def test_resolve_matches_string_stored_kind_with_enum_path_kind() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=cast(Any, "section"), label="3.", text="legacy string kind"),),
+    )
+
+    node = resolve(body, cast(Any, [(IRNodeKind.SECTION, "3")]))
+
+    assert node is not None
+    assert node.kind == "section"
+    assert node.label == "3."
 
 
 def test_resolve_required_raises_on_missing_path() -> None:

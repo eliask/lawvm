@@ -1096,7 +1096,10 @@ def fetch_statsrad_index(
     evidence and operator workflows, not become the hidden replay substrate.
     """
     fetcher = fetcher or fetch_statsrad_url
-    archive = open_no_archive(resolve_no_source_path(Path(db_path) if db_path else None))
+    archive = open_no_archive(
+        resolve_no_source_path(Path(db_path) if db_path else None),
+        readonly=False,
+    )
     discovered: dict[str, dict[str, Any]] = {}
     fetched_page_count = 0
     stored_page_count = 0
@@ -1155,7 +1158,10 @@ def fetch_statsrad_articles(
     skip_existing: bool = False,
 ) -> dict[str, Any]:
     fetcher = fetcher or fetch_statsrad_url
-    archive = open_no_archive(resolve_no_source_path(Path(db_path) if db_path else None))
+    archive = open_no_archive(
+        resolve_no_source_path(Path(db_path) if db_path else None),
+        readonly=False,
+    )
     fetch_timestamp = _now_iso()
     try:
         manifest_bytes = archive.get(no_statsrad_manifest_locator())
@@ -1212,7 +1218,10 @@ def extract_statsrad_events(
     bulletin_ids: Iterable[str] | None = None,
     limit: int | None = None,
 ) -> dict[str, Any]:
-    archive = open_no_archive(resolve_no_source_path(Path(db_path) if db_path else None))
+    archive = open_no_archive(
+        resolve_no_source_path(Path(db_path) if db_path else None),
+        readonly=False,
+    )
     try:
         ids = sorted(
             locator.split("/")[4]

@@ -343,6 +343,54 @@ def test_coverage_by_title_class_partitions_the_denominator_exactly() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Unified bench contract render (default headline)
+# ---------------------------------------------------------------------------
+
+
+def test_unified_render_summary_is_the_default_us_headline() -> None:
+    """``main`` renders the shared unified summary; assert its meaningful shape.
+
+    The unified headline is the worst-of-axes summary over the contract
+    ``BenchUnitResult``s — for US that is the structural (verified-agreement)
+    axis only (no text axis). Asserts the status partition counts, the
+    residue-reconciliation honesty line, and that the per-window structural
+    error reconciles with the typed disposition residue (no silent error).
+    """
+    from lawvm.core.bench_aggregate import compute_distribution, render_summary
+    from lawvm.core.bench_contract import BenchStatus, check_residue_reconciliation
+    from lawvm.us_federal.bench import us_bench_unit_result
+
+    windows = [_synthetic_window(), _synthetic_window(include=False)]
+    report = run_bench(_synthetic_archive(), windows, corpus_path="fixture")
+
+    unit_results = [us_bench_unit_result(r) for r in report.results]
+    # One window evaluates (1 agreement / 2 oracle-changed = structural_err 0.5);
+    # the excluded window is a typed non-scored skip, not a failure.
+    scored = [u for u in unit_results if u.status is BenchStatus.SCORED]
+    assert len(scored) == 1
+    assert scored[0].structural_err == pytest.approx(0.5)
+    assert scored[0].text_err is None  # US has no text axis
+    for u in unit_results:
+        check_residue_reconciliation(u)
+
+    dist = compute_distribution(unit_results)
+    assert dist.n == 1  # one scored unit
+    assert dist.errors == 1  # the excluded window has no headline accuracy
+
+    lines = render_summary(unit_results, "fixture", jurisdiction="us")
+    text = "\n".join(lines)
+    assert "=== UNIFIED BENCH SUMMARY" in text
+    assert "jurisdiction=us" in text
+    # worst-of headline error = 1 - mean accuracy = 50.00% on this fixture.
+    assert "Mean error : 50.00%" in text
+    assert "1 scored" in text and "excluded(non-scored): 1" in text
+    # Honesty property surfaced: structural error explained by typed residue.
+    assert "Residue reconciliation: OK" in text
+    # No spurious text-axis line for an axis the jurisdiction does not attempt.
+    assert "text" not in text.lower()
+
+
+# ---------------------------------------------------------------------------
 # Real committed corpus over the canonical archive (archive-gated, no network)
 # ---------------------------------------------------------------------------
 

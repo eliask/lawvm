@@ -86,12 +86,14 @@ from lawvm.core.timeline_selection import (
     VersionSelectionResult,
     content_is_repeal_placeholder as _content_is_repeal_placeholder,
     eligible as _eligible,
-    equal_rank_same_source_conflicts as _equal_rank_same_source_conflicts,
+    equal_rank_same_source_conflicts_prevalidated as _equal_rank_same_source_conflicts_prevalidated,
     pick_latest as _pick_latest,
     select_active_version as _select_active_version,
     select_active_version_ex as _select_active_version_ex,
+    select_active_version_ex_prevalidated as _select_active_version_ex_prevalidated,
     select_background_version as _select_background_version,
     select_temporary_version as _select_temporary_version,
+    _validate_selection_query,
 )
 from lawvm.core.timeline_temporal_events import (
     apply_standalone_temporal_event as _apply_standalone_temporal_event,
@@ -109,8 +111,17 @@ _TIMELINE_CONSISTENCY_COMPAT_EXPORTS = (ConsistencyDivergence, ingest_consolidat
 _BODY_TOP_LEVEL_KINDS: frozenset[str] = frozenset(
     {"part", "chapter", "section", "division", "recital", "preamble", "p1group", "final"}
 )
+_IR_NODE_KIND_BY_VALUE: dict[str, IRNodeKind] = {kind.value: kind for kind in IRNodeKind}
+_PARENT_STRUCTURAL_CHILD_KINDS: dict[str, frozenset[IRNodeKind]] = {
+    "part": frozenset((IRNodeKind.CHAPTER,)),
+    "chapter": frozenset((IRNodeKind.SECTION,)),
+    "section": frozenset((IRNodeKind.SUBSECTION, IRNodeKind.ITEM)),
+}
 _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
     "lawvm_materialize_as_absent_under_detached_horizon"
+)
+_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG = (
+    "lawvm:materialize_as_absent_under_detached_horizon"
 )
 
 
@@ -889,7 +900,18 @@ def compile_timelines(
         elif op.action is StructuralAction.TEXT_REPLACE:
             content = op.payload
         elif op.action is StructuralAction.REPEAL:
-            content = None  # tombstone
+            if _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG in op.provenance_tags:
+                kind, label = target.path[-1] if target.path else ("section", "")
+                content = IRNode(
+                    kind=IRNodeKind(kind),
+                    label=label or None,
+                    attrs={
+                        "lawvm_repeal_placeholder": "1",
+                        _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR: "1",
+                    },
+                )
+            else:
+                content = None  # tombstone
         else:
             _src_id = op.source.statute_id if op.source else "?"
             _record_timeline_issue(
@@ -1118,8 +1140,14 @@ def materialize_pit_ex(
     selection_states: List[_MaterializationSelectionState] = []
     selection_issues: List[TimelineIssue] = []
     inactive_expiry_by_address: Dict[LegalAddress, str] = {}
+    if timelines:
+        _validate_selection_query(
+            as_of=as_of,
+            query_type=query_type,
+            expires_as_of=expires_as_of,
+        )
     for address, tl in timelines.items():
-        for conflict in _equal_rank_same_source_conflicts(
+        for conflict in _equal_rank_same_source_conflicts_prevalidated(
             tl,
             as_of=as_of,
             query_type=query_type,
@@ -1141,7 +1169,7 @@ def materialize_pit_ex(
                 source_statute=conflict.source_statute,
                 emit_warnings=False,
             )
-        selection = select_active_version_ex(
+        selection = _select_active_version_ex_prevalidated(
             tl,
             as_of,
             query_type=query_type,
@@ -1236,25 +1264,21 @@ def materialize_pit_ex(
         parent_addr: LegalAddress,
         child_addr: LegalAddress,
     ) -> bool:
-        if parent_addr.leaf_kind() not in {"chapter", "part", "section"}:
+        parent_leaf = parent_addr.leaf_kind()
+        if parent_leaf not in {"chapter", "part", "section"}:
             return True
 
         relative_path = child_addr.path[len(parent_addr.path) :]
         if not relative_path:
             return True
 
-        parent_leaf = parent_addr.leaf_kind()
-        if parent_leaf == "part":
-            child_kinds = {"chapter"}
-        elif parent_leaf == "chapter":
-            child_kinds = {"section"}
-        else:
-            child_kinds = {"subsection", "item"}
-        has_structural_children = any(
-            getattr(child, "label", None) and child.kind.value in child_kinds
-            for child in content.children
-        )
-        if parent_addr.leaf_kind() == "section":
+        child_kinds = _PARENT_STRUCTURAL_CHILD_KINDS[parent_leaf]
+        has_structural_children = False
+        for child in content.children:
+            if child.label and child.kind in child_kinds:
+                has_structural_children = True
+                break
+        if parent_leaf == "section":
             tail_policy = str(content.attrs.get("lawvm_tail_policy") or "")
             if tail_policy == "replace_if_target_scope_requires":
                 return True
@@ -1264,22 +1288,26 @@ def materialize_pit_ex(
             # materialization.
             if not has_structural_children:
                 return parent_addr in base_addresses
-        if parent_addr.leaf_kind() in {"chapter", "part"} and not has_structural_children:
+        if parent_leaf in {"chapter", "part"} and not has_structural_children:
             return parent_addr in base_addresses
 
         node = content
         for kind_name, label in relative_path:
-            child = next(
-                (
-                    candidate
-                    for candidate in node.children
-                    if candidate.kind.value == kind_name and candidate.label == label
-                ),
-                None,
-            )
-            if child is None:
+            found_child = None
+            expected_kind = _IR_NODE_KIND_BY_VALUE.get(kind_name)
+            if expected_kind is None:
+                for candidate in node.children:
+                    if candidate.kind.value == kind_name and candidate.label == label:
+                        found_child = candidate
+                        break
+            else:
+                for candidate in node.children:
+                    if candidate.kind is expected_kind and candidate.label == label:
+                        found_child = candidate
+                        break
+            if found_child is None:
                 return False
-            node = child
+            node = found_child
         return True
 
     def _same_source_section_snapshot_masks_child(
@@ -1415,6 +1443,8 @@ def materialize_pit_ex(
     }
     for addr in list(active):
         if len(addr.path) >= 3 or not addr.path or addr.path[-1][0] != "section":
+            continue
+        if active.get(addr) is None:
             continue
         deeper_addr = unique_deeper_section_labels.get(addr.path[-1])
         if deeper_addr is None:

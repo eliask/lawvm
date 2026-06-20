@@ -500,10 +500,14 @@ def se_legacy_sfspdf_search_url() -> str:
     return "https://rkrattsdb.gov.se/sfspdf/sql_search_rsp.asp"
 
 
-def open_se_archive(db_path: Path | None = None):  # returns Farchive
+def open_se_archive(db_path: Path | None = None, *, readonly: bool = True):  # returns Farchive
     from farchive import Farchive
+    from lawvm.corpus_store import validate_farchive_create_path
 
-    return Farchive(db_path or _DEFAULT_CACHE)
+    path = db_path or _DEFAULT_CACHE
+    if not readonly and not path.exists() and not path.suffix:
+        validate_farchive_create_path(path)
+    return Farchive(path, readonly=readonly)
 
 
 def se_official_doc_locator(sfs_id: str) -> str:

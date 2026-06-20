@@ -5,8 +5,6 @@ from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from lawvm.core.regex_recognition_coverage import (
     REGEX_RECOGNITION_UNCLASSIFIED_GAP,
     RegexRecognitionCoverage,
@@ -1871,11 +1869,29 @@ def test_compile_one_hydrates_source_adjudication_from_replay_meta(monkeypatch) 
     assert row["source_available"] == 1
 
 
-@pytest.mark.slow
-def test_strict_report_main_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -> None:
+def test_strict_report_main_suppresses_raw_replay_failed_chatter_for_1978_38(monkeypatch, capsys) -> None:
+    def fake_replay_xml(_statute_id: str, **_kwargs):
+        print("REPLACE 10 luku otsikko → FAILED")
+        print("INSERT 10 luku 16 § 2 mom → FAILED")
+        return SimpleNamespace(source_adjudication=None)
+
+    def fake_compile_fi_facade_from_replay(**_kwargs):
+        return SimpleNamespace(
+            finding_ledger=(),
+            verdict=None,
+            bundle=SimpleNamespace(structural_ops=(), temporal_events=()),
+            source_pathology_rows=lambda: (),
+        )
+
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
+    monkeypatch.setattr(
+        "lawvm.finland.compile.compile_fi_facade_from_replay",
+        fake_compile_fi_facade_from_replay,
+    )
+
     strict_report.main(
         Namespace(
-            statute_id="1978/38",
+            statute_id="1991/1",
             mode="legal_pit",
             facade=False,
             json_output=False,

@@ -48,7 +48,7 @@ class IntentTargetValidationError(ValueError):
 # UnitSpec and UnitRegistry
 # ---------------------------------------------------------------------------
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class UnitSpec:
     """Specification for a single structural unit kind.
 
@@ -121,7 +121,7 @@ class UnitSpec:
             raise ValueError("UnitSpec.insertion_policy is not a supported value")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class UnitRegistry:
     """Registry of valid unit_kind strings and typed facet values for a jurisdiction.
 

@@ -22,9 +22,9 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
-from lawvm.corpus_store import akn_path_to_url
+from lawvm.corpus_store import akn_path_to_url, validate_farchive_create_path
 from lawvm.finland.consolidated_artifacts import (
     build_canonical_consolidated_locator,
     extract_consolidated_xml_identity,
@@ -43,6 +43,31 @@ _AKN_CONSOL_CORRIGENDUM_PATH_RE = re.compile(
     r"akn/fi/act/statute-consolidated/(\d{4}/[^/]+)/media/corrigenda/([^/]+\.pdf)"
 )
 _CORRIGENDUM_LANG: dict[str, str] = {"sk": "fin", "fs": "swe"}
+
+
+class _MissingDryRunArchive:
+    """Resolve-only archive facade for dry-runs against a missing destination."""
+
+    def resolve(self, _locator: str) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+class _ClosableArchive(Protocol):
+    def close(self) -> None: ...
+
+
+def _open_import_archive(dest: Path, *, dry_run: bool) -> _ClosableArchive:
+    from farchive import Farchive
+
+    if dry_run:
+        if dest.exists():
+            return Farchive(dest, readonly=True)
+        return _MissingDryRunArchive()
+    validate_farchive_create_path(dest)
+    return Farchive(dest)
 
 
 @dataclass
@@ -523,8 +548,6 @@ def import_consolidated_zip(
 
 def main(args: object) -> None:
     """CLI entry point for lawvm import-zip."""
-    from farchive import Farchive
-
     _statute_zip_raw = getattr(args, "statute_zip", None)
     _consolidated_zip_raw = getattr(args, "consolidated_zip", None)
     statute_zip = _statute_zip_raw if _statute_zip_raw else None
@@ -564,7 +587,7 @@ def main(args: object) -> None:
     print(f"Opening farchive: {dest}", file=sys.stderr)
     if dry_run:
         print("  (--dry-run: no writes will be performed)", file=sys.stderr)
-    archive = Farchive(dest)
+    archive = _open_import_archive(dest, dry_run=dry_run)
 
     overall = ImportReport()
 

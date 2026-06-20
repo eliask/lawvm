@@ -170,9 +170,15 @@ def test_negative_paradigm_jokin_obliques_indexed() -> None:
 def test_negative_paradigm_agent_nouns_indexed() -> None:
     """oppilas / sotilas / kokelas plural obliques resolve to the agent noun."""
     np = negative_paradigms()
-    assert np.longest_suffix_match("oppilaille").lemma == "oppilas"  # type: ignore[union-attr]
-    assert np.longest_suffix_match("rintamasotilaille").lemma == "sotilas"  # type: ignore[union-attr]
-    assert np.longest_suffix_match("kokelaiksi").lemma == "kokelas"  # type: ignore[union-attr]
+    oppilas = np.longest_suffix_match("oppilaille")
+    sotilas = np.longest_suffix_match("rintamasotilaille")
+    kokelas = np.longest_suffix_match("kokelaiksi")
+    assert oppilas is not None
+    assert sotilas is not None
+    assert kokelas is not None
+    assert oppilas.lemma == "oppilas"
+    assert sotilas.lemma == "sotilas"
+    assert kokelas.lemma == "kokelas"
 
 
 def test_negative_paradigm_alainen_generated_via_m1() -> None:
@@ -259,6 +265,44 @@ def test_chapter_head_alternation_is_m1_backed_table() -> None:
     got = set(chapter_head_alternation().split("|"))
     hand = {"luvun", "luvussa", "luvusta", "lukuun", "luvut", "luvuissa", "luku"}
     assert got == hand
+
+
+def test_definitions_header_unit_alternation_is_m1_backed_table() -> None:
+    """The definitions-block header scope-unit set equals the old hand table.
+
+    Replaces the verbatim
+    ``laissa|luvussa|pykälässä|momentissa|asetuksessa|päätöksessä`` duplicated
+    across ``defined_terms._SCOPE_CUE_TASSA`` and ``_ENUM_HEADER`` with one
+    M1-generated INE-SG set (paradigm inversion, gradation-correct: ``päätös`` ->
+    ``päätökse-`` -> ``päätöksessä``). Strict-equal to the old table — no recall
+    change, only the rule-of-three duplication retired and the gradation substring
+    bug class killed.
+    """
+    from lawvm.finland.references.lemma_gate import (
+        definitions_header_unit_alternation,
+        definitions_header_unit_scope_map,
+    )
+
+    got = set(definitions_header_unit_alternation().split("|"))
+    hand = {"laissa", "luvussa", "pykälässä", "momentissa", "asetuksessa", "päätöksessä"}
+    assert got == hand
+    assert definitions_header_unit_scope_map() == {
+        "laissa": "statute",
+        "luvussa": "chapter",
+        "pykälässä": "section",
+        "momentissa": "subsection",
+        "asetuksessa": "statute",
+        "päätöksessä": "statute",
+    }
+
+
+def test_definitions_header_unit_alternation_longest_first() -> None:
+    """Alternation is longest-first so a regex prefers the most-specific surface."""
+    from lawvm.finland.references.lemma_gate import definitions_header_unit_alternation
+
+    surfaces = definitions_header_unit_alternation().split("|")
+    lengths = [len(s) for s in surfaces]
+    assert lengths == sorted(lengths, reverse=True)
 
 
 def test_chapter_head_shared_across_lanes() -> None:

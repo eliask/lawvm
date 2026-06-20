@@ -59,25 +59,26 @@ class FrontierWorkItem:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "work_item_id",
-            "jurisdiction",
-            "source_artifact_id",
-            "source_unit_id",
-            "owner_phase",
-            "frontier_family",
-            "frontier_status",
-            "required_claim_kind",
-            "safe_default",
+        object.__setattr__(self, "work_item_id", str(self.work_item_id or ""))
+        object.__setattr__(self, "jurisdiction", str(self.jurisdiction or ""))
+        object.__setattr__(self, "source_artifact_id", str(self.source_artifact_id or ""))
+        object.__setattr__(self, "source_unit_id", str(self.source_unit_id or ""))
+        object.__setattr__(self, "owner_phase", str(self.owner_phase or ""))
+        object.__setattr__(self, "frontier_family", str(self.frontier_family or ""))
+        object.__setattr__(self, "frontier_status", str(self.frontier_status or ""))
+        object.__setattr__(self, "required_claim_kind", str(self.required_claim_kind or ""))
+        object.__setattr__(self, "safe_default", str(self.safe_default or ""))
+        object.__setattr__(
+            self,
             "candidate_operation_family",
-            "authorization_status",
+            str(self.candidate_operation_family or ""),
+        )
+        object.__setattr__(self, "authorization_status", str(self.authorization_status or ""))
+        object.__setattr__(
+            self,
             "suggested_claim_template_status",
-        ):
-            object.__setattr__(
-                self,
-                field_name,
-                str(getattr(self, field_name) or ""),
-            )
+            str(self.suggested_claim_template_status or ""),
+        )
         object.__setattr__(
             self,
             "candidate_targets",

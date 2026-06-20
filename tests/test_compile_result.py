@@ -15,12 +15,18 @@ from typing import Any, cast
 
 from types import SimpleNamespace
 
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    SourceInstrumentRef,
+    SourceProvisionRef,
+)
 from lawvm.core.compile_result import (
-    TemporalEvent,
-    TemporalScope,
     AdmissibleBindingCertificate,
     CanonicalBundle,
     CanonicalEffect,
+    CompiledOpEvidenceRow,
     CompiledOpProvenanceTags,
     CompiledOpScopeWitness,
     StrictProfile,
@@ -32,12 +38,14 @@ from lawvm.core.compile_result import (
     _compiled_op_scope_witness,
     _compiled_op_source_statute,
     _compiled_op_matches_section,
+    _compiled_op_provenance_tag_sets,
     _operation_matches_section,
     _validate_bundle_purity,
     strict_fail_reasons_from_finding_ledger,
     strict_fail_reasons_from_findings_and_verdict,
 )
 from lawvm.core.phase_result import Finding, VIOLATION_ROLE
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.core.ir import (
     IRNode,
     IRNodeKind,
@@ -92,6 +100,9 @@ def _impure_bundle(*, structural_ops: tuple[object, ...]) -> CanonicalBundle:
     object.__setattr__(bundle, "structural_ops", structural_ops)
     object.__setattr__(bundle, "temporal_events", ())
     object.__setattr__(bundle, "migration_events", ())
+    object.__setattr__(bundle, "source_effects", ())
+    object.__setattr__(bundle, "effect_relations", ())
+    object.__setattr__(bundle, "effect_lifecycle_events", ())
     object.__setattr__(bundle, "effects", ())
     object.__setattr__(bundle, "groups", ())
     object.__setattr__(bundle, "source", None)
@@ -140,6 +151,160 @@ def test_source_completeness_info_rejects_impossible_counts() -> None:
         SourceCompletenessInfo(chain_length=2, source_available=3, dates_available=1)
 
 
+def test_effect_relation_requires_source_witness_and_target_identifier() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1 §",))
+
+    with pytest.raises(ValueError, match="target_effect or target_instrument"):
+        EffectRelation(
+            relation_id="rel:1",
+            kind="extends_effect_expiry",
+            source_provision=witness,
+        )
+
+    relation = EffectRelation(
+        relation_id="rel:2",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_instrument=SourceInstrumentRef(instrument_id="2019/1"),
+    )
+
+    assert relation.source_provision.witness_id == "2020/1:1 §"
+    assert relation.target_instrument is not None
+    assert relation.target_instrument.instrument_id == "2019/1"
+
+
+def test_canonical_bundle_requires_source_effect_records() -> None:
+    with pytest.raises(TypeError, match="source_effects"):
+        CanonicalBundle(source_effects=cast(Any, ("not-an-effect",)))
+
+
+def test_unresolved_effect_lifecycle_event_cannot_emit_executable_projection() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    event = EffectLifecycleEvent(
+        lifecycle_event_id="life:1",
+        kind="unresolved_effect_target",
+        source_provision=SourceProvisionRef(instrument=instrument),
+        executable=False,
+    )
+    bundle = CanonicalBundle(effect_lifecycle_events=(event,))
+
+    assert bundle.lifecycle_projected_temporal_events == ()
+
+
+def test_resolved_effect_lifecycle_event_requires_target_effect() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+
+    with pytest.raises(ValueError, match="resolved EffectLifecycleEvent requires effect"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:1",
+            kind="change_effect_expiry",
+            source_provision=SourceProvisionRef(instrument=instrument),
+            executable=False,
+        )
+
+
+def test_pending_amendment_effect_unresolved_blocks_strict_mode() -> None:
+    finding = Finding(
+        kind="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
+        role="obligation",
+        stage="process_muutoslaki",
+        detail={"target_amendment_id": "2020/1"},
+        source_statute="2021/2",
+        blocking=True,
+    )
+
+    assert strict_fail_reasons_from_finding_ledger(
+        StrictProfile(name="strict"),
+        compiled_ops=(),
+        canonical_ops=(),
+        failures=(),
+        findings=(finding,),
+    ) == ["APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED"]
+
+
+def test_unresolved_effect_lifecycle_event_blocks_strict_mode_without_finding() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    event = EffectLifecycleEvent(
+        lifecycle_event_id="life:unresolved",
+        kind="unresolved_effect_target",
+        source_provision=SourceProvisionRef(instrument=instrument),
+        executable=False,
+    )
+
+    assert strict_fail_reasons_from_finding_ledger(
+        StrictProfile(name="strict"),
+        compiled_ops=(),
+        canonical_ops=(),
+        failures=(),
+        findings=(),
+        effect_lifecycle_events=(event,),
+    ) == ["APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED"]
+
+
+def test_effect_lifecycle_event_lowers_to_temporal_event_semantics() -> None:
+    instrument = SourceInstrumentRef(
+        instrument_id="2020/1",
+        title="Amending Act",
+        enacted="2020-01-01",
+        effective="2020-06-01",
+    )
+    witness = SourceProvisionRef(instrument=instrument, path=("2 §",), text_excerpt="Tulee voimaan 1.6.2020.")
+    effect = EffectRef(
+        effect_id="effect:2020/1:op-1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        source_provision=witness,
+    )
+    event = EffectLifecycleEvent(
+        lifecycle_event_id="life:2020/1:op-1:commence",
+        kind="commence_effect",
+        source_provision=witness,
+        effect=effect,
+        effective="2020-06-01",
+    )
+    bundle = CanonicalBundle(effect_lifecycle_events=(event,))
+
+    (temporal_event,) = bundle.lifecycle_projected_temporal_events
+    assert temporal_event.kind == "commence"
+    assert temporal_event.effective == "2020-06-01"
+    assert temporal_event.scope.target_statute == "1999/1"
+    assert temporal_event.scope.exact_addresses == (LegalAddress(path=(("section", "1"),)),)
+    assert temporal_event.source is not None
+    assert temporal_event.source.statute_id == "2020/1"
+
+
+def test_canonical_bundle_executable_temporal_events_dedupes_lifecycle_projection() -> None:
+    direct = TemporalEvent(
+        event_id="life:2020/1:op-1:commence:temporal",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-06-01",
+        source=OperationSource(statute_id="2020/1", effective="2020-06-01"),
+    )
+    instrument = SourceInstrumentRef(instrument_id="2020/1", effective="2020-06-01")
+    witness = SourceProvisionRef(instrument=instrument, path=("2 §",))
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="life:2020/1:op-1:commence",
+        kind="commence_effect",
+        source_provision=witness,
+        effect=EffectRef(
+            effect_id="effect:2020/1:op-1",
+            source_instrument=instrument,
+            target_statute="1999/1",
+            source_provision=witness,
+        ),
+        effective="2020-06-01",
+    )
+    bundle = CanonicalBundle(
+        temporal_events=(direct,),
+        effect_lifecycle_events=(lifecycle,),
+    )
+
+    assert bundle.executable_temporal_events == (direct,)
+
+
 def test_compiled_op_provenance_tags_freeze_and_validate_tag_sets() -> None:
     tags = CompiledOpProvenanceTags(extraction_tags=cast(Any, ["xml", "feed"]))
 
@@ -148,6 +313,30 @@ def test_compiled_op_provenance_tags_freeze_and_validate_tag_sets() -> None:
         CompiledOpProvenanceTags(scope_tags=cast(Any, ["ok", 1]))
     with pytest.raises(ValueError, match="not a string"):
         CompiledOpProvenanceTags(scope_sources=cast(Any, "explicit_chunk"))
+
+
+def test_compiled_op_evidence_row_requires_typed_carriers_and_drives_tag_sets() -> None:
+    evidence = CompiledOpEvidenceRow(
+        source_statute=" 2024/1 ",
+        provenance_tags=CompiledOpProvenanceTags(
+            extraction_tags=frozenset({"extraction_fallback_heuristic"}),
+            scope_sources=frozenset({"explicit_chunk"}),
+        ),
+        scope_witness=CompiledOpScopeWitness(
+            kind="LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED",
+            source="explicit_chunk",
+            confidence="explicit",
+        ),
+    )
+
+    assert evidence.source_statute == "2024/1"
+    assert _compiled_op_provenance_tag_sets((evidence,)).extraction_tags == frozenset(
+        {"extraction_fallback_heuristic"}
+    )
+    with pytest.raises(ValueError, match="provenance_tags"):
+        CompiledOpEvidenceRow(provenance_tags=cast(Any, object()))
+    with pytest.raises(ValueError, match="scope_witness"):
+        CompiledOpEvidenceRow(scope_witness=cast(Any, object()))
 
 
 def test_compiled_op_scope_witness_rejects_empty_or_untyped_fields() -> None:
@@ -669,19 +858,6 @@ class TestStrictFailReasonsFromFindingLedger:
                     target=LegalAddress(path=(("section", "1"),)),
                 ),
             ),
-            failures=(),
-            findings=(),
-        )
-
-        assert reasons == ["APPLY.WORD_SUBSTITUTION"]
-
-    def test_strict_fail_reasons_detects_text_substitution_from_canonical_string(self) -> None:
-        profile = StrictProfile(name="test")
-        canonical_action_op = SimpleNamespace(action="text_repeal")
-        reasons = strict_fail_reasons_from_finding_ledger(
-            profile,
-            compiled_ops=(),
-            canonical_ops=cast(tuple[LegalOperation, ...], (canonical_action_op,)),
             failures=(),
             findings=(),
         )

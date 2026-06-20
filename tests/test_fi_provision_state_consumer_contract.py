@@ -67,11 +67,11 @@ _PINS: list[tuple[str, str, str, str, str]] = [
     ("2016/1397", "section:163", _AS_OF, _QT,
      "9f2f3e81c8b8650ef570dfbb969363d832f227d11c188fd2b2c5cc084080d443"),  # § 163 (2021 amendment version)
     ("2011/948", "section:30a", _AS_OF, _QT,
-     "949530eda7760e116ade5aefa7e4d9109059c2a2d544f9fe19931449cb42a0ee"),  # kilpailulaki 30a § (chapter:4a/section:30a)
+     "11bb9ad6db2d85872e15bbbd3a2dd6bbf9bb798c1a618a03c01a9ba86c1e8f45"),  # kilpailulaki 30a §; re-pinned after 2021/546 chapter-start migration evidence was corrected from five bogus moves to one owned move; text/content hash and selected version stayed stable.
     ("2011/948", "section:30b", _AS_OF, _QT,
-     "f0e02ec78a75db353b543f4702aba0c207613326571699d280379cb4064f0e65"),  # kilpailulaki 30b §
+     "d6e62f59a4dca2a20ea07acaf2fdd4a456f75db7ae0b098cca6affdcfdc7523c"),  # kilpailulaki 30b §; same 2011/948 lineage-count re-pin, no text-state drift.
     ("2011/948", "section:30c", _AS_OF, _QT,
-     "edae65fbe051666bd1ae6f7da4b228c6e5e14154f45324454fa92251e3513098"),  # kilpailulaki 30c §
+     "b33f8201311c1e4a9702d1c830e48e6f326a268b6e402f62be86b31f6306d85a"),  # kilpailulaki 30c §; same 2011/948 lineage-count re-pin, no text-state drift.
     # --- RE-CONVERGED original-enactment-base pins (see history note below) ---
     # These were a single instability class: every pin whose governing version is
     # the ORIGINAL-ENACTMENT BASE. The build briefly seeded base-provision
@@ -116,6 +116,22 @@ _PINS: list[tuple[str, str, str, str, str]] = [
 _KNOWN_DIVERGENT: list[tuple[str, str, str, str, str, str]] = [
     # (statute, provision, as_of, qt, pinned_hash, reason)
 ]
+
+
+@pytest.fixture(scope="module")
+def provision_state_runtime_for_statute():
+    from lawvm.provision_state import compile_provision_state_runtime
+
+    runtimes = {}
+
+    def runtime_for(statute_id: str):
+        runtime = runtimes.get(statute_id)
+        if runtime is None:
+            runtime = compile_provision_state_runtime(statute_id=statute_id)
+            runtimes[statute_id] = runtime
+        return runtime
+
+    return runtime_for
 
 
 def _resolve_hash(statute_id: str, provision: str, as_of: str, query_type: str) -> tuple[str, str, str]:
@@ -164,13 +180,15 @@ def _assert_source_locator_span(payload: dict) -> None:
     ids=[f"{p[0]}:{p[1]}@{p[2]}" for p in _PINS],
 )
 def test_provision_state_consumer_pin_reproduces(
-    statute_id: str, provision: str, as_of: str, query_type: str, pinned_hash: str
+    provision_state_runtime_for_statute,
+    statute_id: str,
+    provision: str,
+    as_of: str,
+    query_type: str,
+    pinned_hash: str,
 ) -> None:
     """A CONFIRMED consumer pin must reproduce its hash on the current build."""
-    from lawvm.provision_state import resolve_provision_state
-
-    payload = resolve_provision_state(
-        statute_id=statute_id,
+    payload = provision_state_runtime_for_statute(statute_id).resolve(
         provision=provision,
         as_of=as_of,
         query_type=query_type,
@@ -232,13 +250,13 @@ _BASE_ENACTED_CASES: list[tuple[str, str, str]] = [
     ids=[f"{c[0]}:{c[1]}" for c in _BASE_ENACTED_CASES],
 )
 def test_base_version_reports_populated_enacted_date(
-    statute_id: str, provision: str, expected_enacted: str
+    provision_state_runtime_for_statute,
+    statute_id: str,
+    provision: str,
+    expected_enacted: str,
 ) -> None:
     """Un-amended provisions must report the statute enactment date as `enacted`."""
-    from lawvm.provision_state import resolve_provision_state
-
-    payload = resolve_provision_state(
-        statute_id=statute_id,
+    payload = provision_state_runtime_for_statute(statute_id).resolve(
         provision=provision,
         as_of=_AS_OF,
         query_type=_QT,

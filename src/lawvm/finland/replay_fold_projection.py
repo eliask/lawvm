@@ -22,6 +22,9 @@ from lawvm.finland.replay_findings import _emit_structural_dedup_warning
 from lawvm.finland.replay_pipeline import build_tree_invariant_finding
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
 from lawvm.finland.statute import ReplayState
+from lawvm.finland.tree_invariant_allowances import (
+    is_terminal_fi_commencement_section_violation,
+)
 
 _FI_REPLAY_FOLD_TREE_PROFILE = FI_REPLAY_FOLD_SURFACE.tree_profile
 _FI_REPLAY_FOLD_INVARIANT_PROFILE = FI_REPLAY_FOLD_SURFACE.replay_profile
@@ -76,6 +79,11 @@ def project_replay_fold(request: ReplayFoldProjectionRequest) -> ReplayState:
     typed_invariant_violations = collect_tree_invariant_violations(
         replay_fold_state.ir,
         _FI_REPLAY_FOLD_TREE_PROFILE,
+    )
+    typed_invariant_violations = tuple(
+        violation
+        for violation in typed_invariant_violations
+        if not is_terminal_fi_commencement_section_violation(replay_fold_state.ir, violation)
     )
     invariant_violations = [violation.message for violation in typed_invariant_violations]
     if request.replay_meta_out is not None and invariant_violations:

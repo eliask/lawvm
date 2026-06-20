@@ -13,10 +13,13 @@ from datetime import date
 from functools import lru_cache
 import re
 
+from lawvm.finland.fi_dates import parse_fi_day_month_year
 from lawvm.finland.morphology import MorphNumber, generate_forms, head_entry
 
 _TARGET_ZONE_CUT_RE = re.compile(
-    r"\bsellais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b",
+    # Historical OCR/source typo seen in 1978/676: ``selaisena kuin``.  It
+    # still marks a version-provenance clause, not the amended statute target.
+    r"\bsell?ais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b",
     re.IGNORECASE,
 )
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -30,28 +33,12 @@ _AFFECTED_HEAD_TITLE_DATE_RE = re.compile(
     r"(?P<day>\d{1,2})\s{1,4}+päivänä\s{1,4}+"
     r"(?P<month>[a-zäöå]{1,15})\s{1,4}+"
     r"(?P<year>\d{4})\s{1,4}+annetun\s{1,4}+"
-    r"(?P<instrument>lain|asetuksen|päätöksen)\s{0,4}+"
+    r"(?P<instrument>lain|asetuksen|(?:valtioneuvoston\s{1,4}+)?päätöksen)\s{0,4}+"
     r"\(\s{0,4}+(?P<num>\d{1,5})\s{0,4}+/\s{0,4}+(?P<cite_year>\d{2,4})\s{0,4}+\)",
     re.IGNORECASE,
 )
 _CITATION_RE = re.compile(r"\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)")
 _NOJALLA_RE = re.compile(r"\bnojalla\b", re.IGNORECASE)
-
-_FI_MONTH_GENITIVE_TO_NUMBER: dict[str, int] = {
-    "tammikuuta": 1,
-    "helmikuuta": 2,
-    "maaliskuuta": 3,
-    "huhtikuuta": 4,
-    "toukokuuta": 5,
-    "kesäkuuta": 6,
-    "heinäkuuta": 7,
-    "elokuuta": 8,
-    "syyskuuta": 9,
-    "lokakuuta": 10,
-    "marraskuuta": 11,
-    "joulukuuta": 12,
-}
-
 
 @dataclass(frozen=True, slots=True)
 class AffectedStatuteHead:
@@ -166,15 +153,7 @@ def target_zone(text: str) -> str:
 
 
 def _parse_finnish_date(day_s: str | None, month_s: str | None, year_s: str | None) -> date | None:
-    if not day_s or not month_s or not year_s:
-        return None
-    month = _FI_MONTH_GENITIVE_TO_NUMBER.get(month_s.lower())
-    if month is None:
-        return None
-    try:
-        return date(int(year_s), month, int(day_s))
-    except ValueError:
-        return None
+    return parse_fi_day_month_year(day_s, month_s, year_s)
 
 
 def normalize_source_citation_id(raw: str, source_year: int) -> str | None:

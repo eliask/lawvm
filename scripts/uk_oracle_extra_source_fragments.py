@@ -282,7 +282,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
 
-    archive = Farchive(args.archive)
+    archive = Farchive(args.archive, readonly=True)
     try:
         rows = build_supplement_rows(args.review, archive=archive)
     finally:

@@ -27,14 +27,15 @@ from lawvm.finland.citation_routing import (
     johtolause_cited_target_ids,
 )
 from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.constraints import muutos_node_lookup_cache_scope
 from lawvm.finland.elaboration_rule_dispatch import (
     PROCESS_AMENDMENT_PIPELINE,
     emit_elaboration_pipeline_observation,
     run_registered_elaboration_stage,
     validate_elaboration_pipeline,
 )
+from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.frontend_compile import (
-    _amendment_tree_metadata,
     _enrich_ops_from_amendment_tree,
     _tree_title,
     normalize_and_compile_ops,
@@ -56,8 +57,9 @@ from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareCon
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 from lawvm.finland.replay_notices import replay_print as _replay_print
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
-from lawvm.finland.vts import extract_vts_cross_statute_repeals, extract_vts_repeals_fallback
+from lawvm.finland.vts import extract_vts_repeals_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +114,7 @@ def _accepted_route_should_use_vts_side_repeal_only(
     parent_title: str,
     source_title: str,
     johto: str,
-    xml_bytes: bytes,
+    source_model: AmendmentSourceModel,
     strict_profile: StrictProfile | None,
 ) -> bool:
     """Detect accepted routes whose only parent effect is a VTS side repeal."""
@@ -125,11 +127,10 @@ def _accepted_route_should_use_vts_side_repeal_only(
     if johtolause_cited_target_ids(johto, source_year):
         return False
     return bool(
-        extract_vts_cross_statute_repeals(
-            xml_bytes,
-            parent_id,
-            parent_title,
-            strict_profile,
+        source_model.extract_vts_cross_statute_repeals(
+            parent_id=parent_id,
+            parent_title=parent_title,
+            strict_profile=strict_profile,
             skipped_targets_out=None,
         )
     )
@@ -231,6 +232,7 @@ def process_muutoslaki_resolved(
                 xml_bytes=xml_bytes,
                 strict_profile=strict_profile,
                 processed_amendment_titles=processed_amendment_titles,
+                effect_relation_signals=runtime.effect_relation_signals,
                 finding_recorder=finding_recorder,
                 record_finding=record_process_finding,
                 replay_print=_replay_print,
@@ -241,8 +243,7 @@ def process_muutoslaki_resolved(
             parent_id=parent_id,
             amendment_id=amendment_id,
         )
-        xml_bytes = acquired.xml_bytes
-        muutos_tree = acquired.muutos_tree
+        source_model = acquired.source_model
         lacks_operative_structure = acquired.lacks_operative_structure
         operative_tags = list(acquired.operative_tags)
         johto = acquired.johto
@@ -263,8 +264,7 @@ def process_muutoslaki_resolved(
                     parent_title=ctx.title,
                     source_title=source_title,
                     johto=johto,
-                    xml_bytes=xml_bytes,
-                    muutos_tree=muutos_tree,
+                    source_model=source_model,
                     route_reason=route_reason,
                     route_target_amendment_id=acquisition.decision.route_target_amendment_id,
                     strict_profile=strict_profile,
@@ -272,6 +272,7 @@ def process_muutoslaki_resolved(
                     lo_ops_out=lo_ops_out,
                     vts_skipped_targets=vts_skipped_targets,
                     commencement_expiry_override_notes=commencement_expiry_override_notes,
+                    effect_relation_signals=runtime.effect_relation_signals,
                     record_finding=record_process_finding,
                     replay_print=_replay_print,
                 ).handle(),
@@ -296,7 +297,7 @@ def process_muutoslaki_resolved(
             parent_title=ctx.title,
             source_title=source_title,
             johto=johto,
-            xml_bytes=xml_bytes,
+            source_model=source_model,
             strict_profile=strict_profile,
         ):
             route_rejection = _run_process_stage(
@@ -307,8 +308,7 @@ def process_muutoslaki_resolved(
                     parent_title=ctx.title,
                     source_title=source_title,
                     johto=johto,
-                    xml_bytes=xml_bytes,
-                    muutos_tree=muutos_tree,
+                    source_model=source_model,
                     route_reason="citation_mismatch_skip",
                     route_target_amendment_id="",
                     strict_profile=strict_profile,
@@ -316,6 +316,7 @@ def process_muutoslaki_resolved(
                     lo_ops_out=lo_ops_out,
                     vts_skipped_targets=vts_skipped_targets,
                     commencement_expiry_override_notes=commencement_expiry_override_notes,
+                    effect_relation_signals=runtime.effect_relation_signals,
                     record_finding=record_process_finding,
                     replay_print=_replay_print,
                 ).handle(),
@@ -337,10 +338,7 @@ def process_muutoslaki_resolved(
         else:
             skip_to_compile = False
 
-        amendment_tree_metadata = _amendment_tree_metadata(
-            amendment_id=amendment_id,
-            muutos_tree=muutos_tree,
-        )
+        amendment_tree_metadata = source_model.amendment_tree_metadata(amendment_id)
 
         precompile_selection = _run_process_stage(
             "fi.process.precompile_selection",
@@ -350,8 +348,7 @@ def process_muutoslaki_resolved(
                 parent_title=ctx.title,
                 source_title=source_title,
                 johto=johto,
-                xml_bytes=xml_bytes,
-                muutos_tree=muutos_tree,
+                source_model=source_model,
                 strict_profile=strict_profile,
                 acquisition=acquisition,
                 skip_to_compile=skip_to_compile,
@@ -387,7 +384,7 @@ def process_muutoslaki_resolved(
                 "fi.process.frontend_normalization",
                 lambda: ProcessFrontendNormalizationContext(
                     johto=johto,
-                    muutos_tree=muutos_tree,
+                    source_model=source_model,
                     state=state,
                     base_ir=ctx.base_ir,
                     amendment_id=amendment_id,
@@ -405,6 +402,8 @@ def process_muutoslaki_resolved(
             )
             ops = list(phase2_result.ops)
             amendment_temporal_events.extend(phase2_result.temporal_events)
+            runtime.source_effects.extend(phase2_result.source_effects)
+            runtime.effect_lifecycle_events.extend(phase2_result.effect_lifecycle_events)
             compat_elaboration_observations.extend(phase2_result.elaboration_observations)
             process_findings.extend(phase2_result.process_findings)
 
@@ -429,7 +428,7 @@ def process_muutoslaki_resolved(
             lambda: ProcessTemporalAuthorityContext(
                 amendment_id=amendment_id,
                 johto=johto,
-                muutos_tree=muutos_tree,
+                source_model=source_model,
                 record_finding=record_process_finding,
             ).derive(),
             process_findings=process_findings,
@@ -440,18 +439,19 @@ def process_muutoslaki_resolved(
         amendment_expiry_date = temporal_authority.expiry_date
         amendment_issue_date = temporal_authority.issue_date
 
-        compile_result = compile_amendment_ops(
-            state,
-            ops,
-            muutos_tree,
-            johto,
-            replay_mode,
-            compiled_ops_out=compiled_ops_out,
-            strict_profile=strict_profile,
-            source_ref=amendment_id,
-            source_title=source_title,
-            target_statute=ctx.id,
-        )
+        with muutos_node_lookup_cache_scope():
+            compile_result = compile_amendment_ops(
+                state,
+                ops,
+                source_model,
+                johto,
+                replay_mode,
+                compiled_ops_out=compiled_ops_out,
+                strict_profile=strict_profile,
+                source_ref=amendment_id,
+                source_title=source_title,
+                target_statute=ctx.id,
+            )
         resolved = compile_result.output
 
         _run_process_stage(
@@ -462,6 +462,9 @@ def process_muutoslaki_resolved(
                 resolved=resolved,
                 compile_result=compile_result,
                 amendment_temporal_events=amendment_temporal_events,
+                source_effects=runtime.source_effects,
+                effect_relations=runtime.effect_relations,
+                effect_lifecycle_events=runtime.effect_lifecycle_events,
                 source_pathologies=compat_source_pathologies,
                 elaboration_observations=compat_elaboration_observations,
                 sparse_slot_bindings=compat_sparse_slot_bindings,
@@ -483,7 +486,7 @@ def process_muutoslaki_resolved(
                 ctx=ctx,
                 resolved=resolved,
                 ops=ops,
-                muutos_tree=muutos_tree,
+                source_model=source_model,
                 johto=johto,
                 amendment_id=amendment_id,
                 source_title=source_title,
@@ -510,6 +513,17 @@ def process_muutoslaki_resolved(
             ),
         )
         amendment_lo_ops = tuple((lo_ops_out or [])[lo_ops_start:])
+        source_effects, _effect_relations, _lifecycle_events = build_finland_effect_lifecycle(
+            target_statute=parent_id,
+            canonical_ops=amendment_lo_ops,
+            temporal_events=(),
+        )
+        existing_source_effect_ids = {effect.effect_id for effect in runtime.source_effects}
+        for effect in source_effects:
+            if effect.effect_id in existing_source_effect_ids:
+                continue
+            existing_source_effect_ids.add(effect.effect_id)
+            runtime.source_effects.append(effect)
         project_transition_detector_findings(
             before_ir=before_apply_ir,
             operations=amendment_lo_ops,
@@ -544,8 +558,7 @@ def process_muutoslaki_resolved(
                 ctx_id=ctx.id,
                 source_title=source_title,
                 johto=johto,
-                xml_bytes=xml_bytes,
-                muutos_tree=muutos_tree,
+                source_model=source_model,
                 base_ir=ctx.base_ir,
                 state=state,
                 replay_mode=replay_mode,

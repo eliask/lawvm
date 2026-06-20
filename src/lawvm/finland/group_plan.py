@@ -18,6 +18,8 @@ from lawvm.finland.ops import (
 )
 from lawvm.finland.helpers import _norm_num_token
 
+_GROUP_KEY_NON_WORD_RE = re.compile(r"[^\d\w]")
+
 
 class SectionPathLookup(Protocol):
     def find_section_path(
@@ -83,7 +85,7 @@ _GroupKeyType = TypeVar(
 
 def target_group_key(op: AmendmentOp) -> GroupTargetKey:
     def norm(s: str) -> str:
-        return re.sub(r"[^\d\w]", "", s).lower()
+        return _GROUP_KEY_NON_WORD_RE.sub("", s).lower()
 
     # For osa/part targets, use _norm_num_token which converts Roman numerals
     # to Arabic (III→3, V→5). The master tree stores parts with Arabic labels
@@ -193,7 +195,6 @@ def coalesce_same_target_mixed_scope_section_groups(
                 scope_confidence=merged_scope_confidence,
                 lo=_lo_with_path_update(op.lo, chapter=scoped_chapter) if op.lo is not None else op.lo,
             )
-            object.__setattr__(tagged_op, "scope_confidence", merged_scope_confidence)
             if _op_merge_signature(tagged_op) not in scoped_signatures:
                 unique_tagged_unscoped_ops.append(tagged_op)
 

@@ -73,7 +73,7 @@ _RESERVED_TARGET_RESOLUTION_KEYS = frozenset(
 _RESERVED_TARGET_CANDIDATE_KEYS = frozenset({"target", "reason"})
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TargetResolutionCandidate:
     """One frontend-owned candidate considered during target resolution."""
 
@@ -100,7 +100,7 @@ class TargetResolutionCandidate:
         return row
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TargetResolutionCertificate:
     """Evidence envelope for frontend-owned target/slot selection decisions."""
 

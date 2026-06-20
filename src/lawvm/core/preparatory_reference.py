@@ -25,7 +25,7 @@ HE canonical_id join note:
   edges.
 
 This module has no Finland-specific imports. Finland extraction lives in
-``lawvm.finland.preparatory_reference_extractor``.
+``lawvm.finland.references.preparatory_reference_extractor``.
 This module only holds the shared typed primitive and observation types.
 """
 from __future__ import annotations

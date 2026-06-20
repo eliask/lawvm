@@ -65,19 +65,19 @@ class PotentialOperation:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "potential_operation_id",
-            "jurisdiction",
-            "source_artifact_id",
-            "source_unit_id",
-            "owner_phase",
-            "classification",
-            "operation_family",
+        for field_name, value in (
+            ("potential_operation_id", self.potential_operation_id),
+            ("jurisdiction", self.jurisdiction),
+            ("source_artifact_id", self.source_artifact_id),
+            ("source_unit_id", self.source_unit_id),
+            ("owner_phase", self.owner_phase),
+            ("classification", self.classification),
+            ("operation_family", self.operation_family),
         ):
             object.__setattr__(
                 self,
                 field_name,
-                _required_string(field_name, getattr(self, field_name)),
+                _required_string(field_name, value),
             )
         if self.classification not in _VALID_CLASSIFICATIONS:
             raise ValueError(

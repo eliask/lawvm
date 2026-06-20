@@ -26,6 +26,9 @@ from lawvm.semantic.model import (
 # We import them lazily inside the functions that build the combined kumottu
 # regexes, to avoid top-level import cycles with the registration code.
 
+_KUMOTTU_EDITORIAL_TEXT_RE = re.compile(r"\bon\s+kumottu\b", re.IGNORECASE)
+_KUMOTTU_EDITORIAL_LAW_REF_RE = re.compile(r"\b[LAP]:ll[äa]\b", re.IGNORECASE)
+
 
 # ---------------------------------------------------------------------------
 # Jurisdiction dispatch: inline repeal stub detectors
@@ -192,8 +195,8 @@ def _is_kumottu_editorial_node(text: str, kind: str) -> bool:
     # Treat these as the same editorial repeal notice family even when the
     # stricter citation regex in editorial_hygiene does not match verbatim.
     return bool(
-        re.search(r"\bon\s+kumottu\b", stripped, re.IGNORECASE)
-        and re.search(r"\b[LAP]:ll[äa]\b", stripped, re.IGNORECASE)
+        _KUMOTTU_EDITORIAL_TEXT_RE.search(stripped)
+        and _KUMOTTU_EDITORIAL_LAW_REF_RE.search(stripped)
     )
 
 

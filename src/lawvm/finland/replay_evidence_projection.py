@@ -22,6 +22,7 @@ from lawvm.finland.evidence_projector import (
     MetaProjection,
     project_evidence,
 )
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
 from lawvm.finland.mutation_boundary_proof_projector import mutation_boundary_proof_rows
 from lawvm.finland.replay_findings import (
     _apply_mutation_boundary_violation_finding,
@@ -46,7 +47,7 @@ class ReplayEvidenceProjectionRequest:
     sparse_slot_bindings: list[Dict[str, object]]
     sparse_leftovers: list[Dict[str, object]]
     regex_recognition_coverages: list[RegexRecognitionCoverage]
-    commencement_expiry_overrides: list[Dict[str, object]]
+    commencement_expiry_overrides: list[EffectLifecycleOverride]
     write_audits: list[ObservedWriteAudit]
     mutation_events: list[ApplyMutationEvent]
     restructure_plans: list[StructuralTransformPlan]
@@ -239,7 +240,7 @@ def _replay_evidence_meta_projections(
         projections.append(
             MetaProjection(
                 meta_key="commencement_expiry_overrides",
-                rows=tuple(dict(row) for row in request.commencement_expiry_overrides),
+                rows=tuple(row.to_meta_row() for row in request.commencement_expiry_overrides),
             )
         )
     if request.write_audits:

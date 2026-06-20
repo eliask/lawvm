@@ -275,16 +275,25 @@ def test_check_citation_unit_cases() -> None:
     sections = _parse_target_sections(_B_XML)
     assert sections is not None
 
+    path_5_2 = _parse_address_tail("5/2")
+    path_5_9 = _parse_address_tail("5/9")
+    path_7_1 = _parse_address_tail("7/1")
+    path_5 = _parse_address_tail("5")
+    assert path_5_2 is not None
+    assert path_5_9 is not None
+    assert path_7_1 is not None
+    assert path_5 is not None
+
     # 5/2 exists (5 § has 2 momenttia) → no finding.
-    assert _check_citation(_parse_address_tail("5/2"), sections) is None  # type: ignore[arg-type]
+    assert _check_citation(path_5_2, sections) is None
     # 5/9 out of range → absent.
-    f_absent = _check_citation(_parse_address_tail("5/9"), sections)  # type: ignore[arg-type]
+    f_absent = _check_citation(path_5_9, sections)
     assert f_absent is not None and f_absent.kind == KIND_ABSENT
     # 7/1 into flat 7 § → type mismatch.
-    f_mismatch = _check_citation(_parse_address_tail("7/1"), sections)  # type: ignore[arg-type]
+    f_mismatch = _check_citation(path_7_1, sections)
     assert f_mismatch is not None and f_mismatch.kind == KIND_MISMATCH
     # bare 5 § → nothing deeper to disagree about.
-    assert _check_citation(_parse_address_tail("5"), sections) is None  # type: ignore[arg-type]
+    assert _check_citation(path_5, sections) is None
 
 
 def test_unparseable_target_body_is_silent() -> None:

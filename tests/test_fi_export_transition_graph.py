@@ -32,7 +32,11 @@ from lawvm.finland.interlink_targets import (
 )
 from lawvm.finland.ops import FailedOp
 from lawvm.tools import export_transition_graph as etg
-from lawvm.tools.transition_graph_interlinks import LawvmInterlinkTargetRow
+from lawvm.tools.transition_graph_interlinks import (
+    LawvmInterlinkTargetRow,
+    SurfaceTextSpanPlacer,
+    place_surface_text_spans_many,
+)
 from lawvm.tools.transition_graph_jurisdictions import transition_graph_adapter_for_jurisdiction
 
 
@@ -827,6 +831,198 @@ def test_export_places_unambiguous_lawvm_interlinks_in_rendered_text(
         conn.close()
 
 
+def test_lawvm_interlink_placement_token_index_keeps_subtoken_candidates() -> None:
+    row_data = _placeable_interlink_row()
+    row_data["source_locator"] = None
+    row_data["surface_text"] = "2014"
+    row = etg.LawvmInterlinkRow.from_mapping(row_data)
+    segments_by_date = {
+        "2010-01-01": [
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="section:1",
+                segment_index=0,
+                text="x2014y",
+            )
+        ],
+        "2015-01-01": [
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:1",
+                segment_index=0,
+                text="x2014y",
+            ),
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:2",
+                segment_index=0,
+                text="2014",
+            ),
+        ],
+    }
+
+    placed = etg.place_lawvm_interlinks(
+        [row],
+        statute_id="100/2010",
+        segments_by_date=segments_by_date,
+    )
+
+    assert [
+        (
+            link.rendered_effective_date,
+            link.rendered_address,
+            link.rendered_segment_index,
+            link.rendered_char_start,
+            link.rendered_char_end,
+        )
+        for link in placed
+    ] == [("2010-01-01", "section:1", 0, 1, 5)]
+
+
+def test_surface_text_placer_known_locator_index_matches_default_index() -> None:
+    segments_by_date = {
+        "2010-01-01": [
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="part:1/chapter:2/section:3/subsection:4",
+                segment_index=0,
+                text="alpha beta",
+            ),
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="part:1/chapter:2/section:5",
+                segment_index=1,
+                text="alpha beta",
+            ),
+        ],
+        "2015-01-01": [
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="part:1/chapter:2/section:3/subsection:4",
+                segment_index=0,
+                text="alpha beta",
+            )
+        ],
+    }
+
+    default = SurfaceTextSpanPlacer(segments_by_date).place(
+        "alpha beta",
+        "section:3/subsection:4",
+    )
+    known = SurfaceTextSpanPlacer(
+        segments_by_date,
+        known_locators=frozenset({"section:3/subsection:4"}),
+    ).place(
+        "alpha beta",
+        "section:3/subsection:4",
+    )
+
+    assert known == default
+    assert [(date, segment.address, start) for date, segment, start in known] == [
+        ("2010-01-01", "part:1/chapter:2/section:3/subsection:4", 0),
+        ("2015-01-01", "part:1/chapter:2/section:3/subsection:4", 0),
+    ]
+
+
+def test_bulk_surface_text_placement_keeps_exact_token_prefilter_semantics() -> None:
+    segments_by_date = {
+        "2010-01-01": [
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="section:1",
+                segment_index=0,
+                text="x2014y alpha",
+            )
+        ],
+        "2015-01-01": [
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:1",
+                segment_index=0,
+                text="2014 alpha",
+            ),
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:2",
+                segment_index=0,
+                text="2014 alpha",
+            ),
+        ],
+        "2020-01-01": [
+            etg.RenderedTextSegment(
+                date="2020-01-01",
+                address="section:1",
+                segment_index=0,
+                text="2014 alpha",
+            )
+        ],
+    }
+
+    placements = place_surface_text_spans_many(
+        ["2014", "alpha"],
+        None,
+        segments_by_date,
+    )
+
+    assert [
+        (date, segment.address, start)
+        for date, segment, start in placements["2014"]
+    ] == [("2020-01-01", "section:1", 0)]
+    assert [
+        (date, segment.address, start)
+        for date, segment, start in placements["alpha"]
+    ] == [
+        ("2010-01-01", "section:1", 7),
+        ("2020-01-01", "section:1", 5),
+    ]
+
+
+def test_bulk_surface_text_placement_prefilters_no_token_fallback_surfaces() -> None:
+    segments_by_date = {
+        "2010-01-01": [
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="section:1",
+                segment_index=0,
+                text="irrelevant long text with no fallback citation",
+            ),
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="section:2",
+                segment_index=0,
+                text="47 f § applies",
+            ),
+        ],
+        "2015-01-01": [
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:1",
+                segment_index=0,
+                text="71 a §:n first copy",
+            ),
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:2",
+                segment_index=0,
+                text="71 a §:n second copy",
+            ),
+        ],
+    }
+
+    placements = place_surface_text_spans_many(
+        ["47 f §", "71 a §:n", "20 §", "58 b §", "86  §"],
+        None,
+        segments_by_date,
+    )
+
+    assert [
+        (date, segment.address, start)
+        for date, segment, start in placements["47 f §"]
+    ] == [("2010-01-01", "section:2", 0)]
+    assert placements["71 a §:n"] == []
+    assert placements["20 §"] == []
+
+
 @pytest.mark.parametrize(
     "surface_kind",
     ["xml_ref", "preparatory_ref", "effect_feed_ref", "manual_claim_ref"],
@@ -976,6 +1172,50 @@ def test_export_places_surface_overlays_in_rendered_text(
             ).fetchall()
         ]
         assert len(ids) == len(set(ids)) == len(_CHANGE_DATES)
+    finally:
+        conn.close()
+
+
+def test_export_places_duplicate_surface_overlay_labels_independently(
+    patched_engine: None, tmp_path: Path
+) -> None:
+    """Rows that share a label may reuse placement work, but remain distinct
+    semantic overlays with distinct overlay_ids."""
+    overlays = [
+        _overlay_row(
+            overlay_id="fi.overlay:alpha:def",
+            kind="defined_term",
+            node_id="def_alpha",
+            label="alpha",
+        ),
+        _overlay_row(
+            overlay_id="fi.overlay:alpha:temporal",
+            kind="temporal",
+            node_id="temporal_alpha",
+            label="alpha",
+        ),
+    ]
+    out = tmp_path / "synth_overlay_duplicate_labels.db"
+    stats = etg.export_transition_graph(
+        "100/2010",
+        out,
+        quiet=True,
+        overlay_provider=_overlay_provider_for_rows(overlays),
+    )
+
+    assert stats.n_lawvm_surface_overlays == 2 * len(_CHANGE_DATES)
+
+    conn = sqlite3.connect(str(out))
+    try:
+        rows = conn.execute(
+            "SELECT overlay_id, kind, rendered_effective_date, rendered_address, "
+            "rendered_char_start, rendered_char_end "
+            "FROM lawvm_surface_overlays ORDER BY overlay_id, rendered_effective_date"
+        ).fetchall()
+        assert len(rows) == 2 * len(_CHANGE_DATES)
+        assert len({row[0] for row in rows}) == len(rows)
+        assert {row[1] for row in rows} == {"defined_term", "temporal"}
+        assert {row[3:] for row in rows} == {("section:1", 0, 5)}
     finally:
         conn.close()
 

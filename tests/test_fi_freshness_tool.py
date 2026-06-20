@@ -27,12 +27,25 @@ def test_replay_section_count_replays_quietly(monkeypatch) -> None:
     assert seen["quiet"] is True
 
 
-def test_replay_section_count_suppresses_raw_replay_chatter_for_1978_38(capsys) -> None:
+def test_replay_section_count_suppresses_raw_replay_chatter_for_1978_38(monkeypatch, capsys) -> None:
+    class DummyMaster:
+        ir = IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
+        )
+
+    def fake_replay_xml(_sid: str, **_kwargs):
+        print("Master 1978/38 rehydrated.")
+        print("Applying 57 muutoslait...")
+        return DummyMaster()
+
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
+
     count, err = freshness._replay_section_count("1978/38")
     out = capsys.readouterr().out
 
     assert err == ""
-    assert count >= 0
+    assert count == 1
     assert "Master 1978/38 rehydrated." not in out
     assert "Applying 57 muutoslait..." not in out
 

@@ -80,7 +80,7 @@ from lawvm.core.timeline_lineage import (
     rekey_timelines_with_migration_events,
 )
 from lawvm.core.provenance import MigrationEvent
-from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope
+from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.finland.replay_products import _rekey_timelines_with_migration_events
 
 
@@ -1686,6 +1686,77 @@ def test_materialize_pit_removes_unique_shallow_section_alias_after_deeper_proje
 
     assert "159 § deeper projected section" in text
     assert "stale shallow alias" not in text
+
+
+def test_materialize_pit_keeps_unique_shallow_section_tombstone_after_deeper_projection() -> None:
+    shallow_addr = LegalAddress(path=(("chapter", "5"), ("section", "32")))
+    deeper_chapter_addr = LegalAddress(path=(("chapter", "6"),))
+    deeper_addr = LegalAddress(path=(("chapter", "6"), ("section", "32")))
+    base = IRStatute(
+        statute_id="test/shallow-section-tombstone",
+        title="Shallow section tombstone",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="5 luku"),
+                        IRNode(kind=IRNodeKind.SECTION, label="31", text="31 § surviving section"),
+                        IRNode(kind=IRNodeKind.SECTION, label="32", text="32 § repealed shallow section"),
+                    ),
+                ),
+            ),
+        ),
+    )
+    timelines = {
+        shallow_addr: ProvisionTimeline(
+            address=shallow_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2000-01-01",
+                    enacted="2000-01-01",
+                    content=None,
+                    source=OperationSource(statute_id="2000/1", effective="2000-01-01"),
+                )
+            ],
+        ),
+        deeper_chapter_addr: ProvisionTimeline(
+            address=deeper_chapter_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2001-01-01",
+                    enacted="2001-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="6",
+                        children=(IRNode(kind=IRNodeKind.NUM, text="6 luku"),),
+                    ),
+                    source=OperationSource(statute_id="2001/1", effective="2001-01-01"),
+                )
+            ],
+        ),
+        deeper_addr: ProvisionTimeline(
+            address=deeper_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2001-01-01",
+                    enacted="2001-01-01",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="32", text="32 § deeper live section"),
+                    source=OperationSource(statute_id="2001/1", effective="2001-01-01"),
+                )
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2002-01-01", base=base)
+    text = irnode_to_text(pit.body)
+
+    assert "32 § deeper live section" in text
+    assert "32 § repealed shallow section" not in text
+    chapter_5 = next(child for child in pit.body.children if child.kind == IRNodeKind.CHAPTER and child.label == "5")
+    assert [child.label for child in chapter_5.children if child.kind == IRNodeKind.SECTION] == ["31"]
 
 
 # ---------------------------------------------------------------------------
@@ -4091,7 +4162,7 @@ from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import StatuteContext, ReplayState
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.tools.diff import _extract_sections_ir
-from tests.corpus_pin_helpers import pinned_replay
+from tests.corpus_pin_helpers import pinned_replay, replay_xml_for_test
 
 
 @pytest.fixture(scope="module")
@@ -4313,6 +4384,23 @@ def test_mixed_muutetaan_tail_supplement_recovers_1988_718_base_section_updates(
     assert "31 päivään joulukuuta 1996" in text
 
 
+def test_mixed_muutetaan_tail_supplement_recovers_1978_501_section_list_and_moments() -> None:
+    """The 1993/1307 source typo ``16 aja 18 §`` must not drop explicit targets."""
+    master = replay_xml_for_test("1978/501", mode="official_consolidation", quiet=True)
+
+    sec16a = master.find_section("16a")
+    assert sec16a is not None
+    sec16a_text = irnode_to_text(sec16a)
+    assert "Hyväksyessään laitoksen talousarvion" in sec16a_text
+    assert "yhden viidesosan 1 momentissa tarkoitetuista valtionosuuteen" in sec16a_text
+
+    sec19 = master.find_section("19")
+    assert sec19 is not None
+    sec19_text = irnode_to_text(sec19)
+    assert "vuosikertomus, tilinpäätös, tilintarkastajien lausunto" in sec19_text
+    assert "toiminnastaan muitakin tietoja" in sec19_text
+
+
 def test_archaic_a_separator_recovers_1966_332_update_for_1956_463() -> None:
     """Old orthographic `a` between targets should not drop the later subsection replace."""
     master = pinned_replay("1956/463", mode="legal_pit")
@@ -4464,6 +4552,22 @@ def test_sec1_repeal_guard_keeps_citation_free_explicit_section_repeal_lists() -
         "23 a—23 e, 24, 26, 26 a ja 27 § sekä 28 §:n 1 ja 2 momentti."
     )
     assert not _sec1_fallback_peg_skip_required(johto, "1994/1466")
+
+
+def test_sec1_repeal_guard_keeps_parent_targets_with_keeper_act_citation() -> None:
+    """Typed parser target evidence lets 2015/521 stay on the PEG path."""
+    johto = (
+        "Tällä lailla kumotaan eläintautilailla (441/2013) voimaan jätetyt "
+        "kumotun eläintautilain (55/1980) 12 §:n 1 momentin johdantokappale "
+        "ja 9 kohta sekä 2-4 momentti, 12 f § ja 15 §:n 5 momentti, "
+        "sellaisina kuin ne ovat laissa 303/2006."
+    )
+    assert _sec1_fallback_peg_skip_required(johto, "1980/55")
+    assert not _sec1_fallback_peg_skip_required(
+        johto,
+        "1980/55",
+        parser_has_structural_targets=True,
+    )
 
 
 def test_item_insert_renumbers_numeric_suffix_in_same_subsection() -> None:

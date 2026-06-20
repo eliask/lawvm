@@ -31,13 +31,18 @@ from lawvm.finland.legal_surface.bundle import build_surface_bundle
 from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
 from lawvm.finland.legal_surface.norm_composition import (
     ATTACHMENT_AMBIGUOUS_BY_PROVISION_REF,
+    ATTACHMENT_PROXIMITY_FALLBACK,
+    ATTACHMENT_RESOLVED_BY_CHAPEAU,
+    ATTACHMENT_RESOLVED_BY_FOREST_SEGMENT,
     ATTACHMENT_RESOLVED_BY_PROVISION_REF,
     EDGE_CONDITION_ATTACHES,
     EDGE_EXCEPTION_EXCEPTS,
     NO_CORE_IN_SENTENCE,
     NO_INTERNAL_PROVISION_REF,
     ConditionAttachmentPass,
+    ForestStructuralAttachmentPass,
     condition_attachment_passes,
+    forest_structural_attachment_passes,
 )
 
 _AKN = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
@@ -175,12 +180,21 @@ def test_candidate_no_core_emits_no_edge_but_is_tagged() -> None:
     # the P4 "jos ... asia raukeaa" sentence has NO deontic core → tagged candidate
     no_core = [u for u in pass_.unattached if u.reason == NO_CORE_IN_SENTENCE]
     assert no_core, "expected a NO_CORE_IN_SENTENCE unattached qualifier (P4)"
-    # and that qualifier produced NO edge anywhere in the graph
+    # and that qualifier produced NO edge from the INTRA-SENTENCE construction pass
+    # (its own `construction_attachment` source). The forest-structural pass MAY
+    # later recover it (see test_forest_structural_recovers_candidate_residue), but
+    # the intra-sentence pass itself never fabricates a target for a zero-core
+    # sentence.
+    intra_edges = [
+        e
+        for e in _norm_edges(graph)
+        if e.payload.get("source") == "construction_attachment"
+    ]
     for u in no_core:
-        for edge in _norm_edges(graph):
+        for edge in intra_edges:
             assert not (
                 edge.payload.get("cue_span") == [u.cue_char_start, u.cue_char_end]
-            ), "a no-core candidate qualifier must NOT yield an asserted edge"
+            ), "the intra-sentence pass must NOT yield an edge for a no-core candidate"
 
 
 # ── (e) firewall over every NORM edge ────────────────────────────────────────
@@ -427,6 +441,10 @@ def test_cross_sentence_is_strict_superset_intra_unchanged() -> None:
             assert edge.payload.get("source") in (
                 "construction_attachment",
                 _XSENT_BACKREF_SOURCE,
+                # the forest-structural pass may recover a non-backref candidate
+                # via the enclosing structural segment / proximity fallback; it
+                # never relabels an intra/cross-sentence edge.
+                "construction_forest_structural",
             )
 
 
@@ -442,3 +460,198 @@ def test_cross_sentence_is_deterministic() -> None:
 
     assert _keys(first) == _keys(second)
     assert first.graph_id == second.graph_id
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FOREST-STRUCTURAL attachment (the proximity / sentence-local blind spot fix)
+#
+# The intra-sentence pass attaches a qualifier to a deontic core in its OWN
+# clause-segmented sentence; when ``build_clause_index`` splits the governing
+# core into a NEIGHBOURING sentence of the same provision, the cue is left
+# CANDIDATE (no edge). The forest-structural pass recovers it via the
+# SourceSyntaxGraph forest's structural segment + inherits_chapeau edges:
+#   * a chapeau-governed list-item condition attaches to the CHAPEAU's frame via
+#     inheritance, not the nearest char (resolved_by_chapeau_inheritance);
+#   * an in-segment exception attaches to its enclosing prose segment's core
+#     (resolved_by_forest_segment);
+#   * a candidate with no parseable structure FALLS BACK to proximity (never
+#     dropped), status ambiguous (a fallback is never asserted).
+# It fires ONLY on previously-edgeless candidates → NEW-BETTER, 0 regressions.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_FOREST_SOURCE = "construction_forest_structural"
+
+# A chapeau ("voi … :") governing two list items, each carrying a condition/
+# exception cue but NO own deontic core — the governing norm is the chapeau's
+# ``voi`` core, reachable only via inherits_chapeau (a different sentence).
+_LIST_XML = (
+    f'<?xml version="1.0" encoding="UTF-8"?>'
+    f'<akomaNtoso xmlns="{_AKN}"><act><body>'
+    + _section(
+        "sec_1",
+        "1 §",
+        "Viranomainen voi myöntää luvan, jos seuraavat edellytykset täyttyvät:",
+        "1) hakija on täysi-ikäinen, jos hakemus koskee ajolupaa;",
+        "2) maksu on suoritettu, ellei vapautusta ole myönnetty.",
+    )
+    + "</body></act></akomaNtoso>"
+).encode("utf-8")
+
+# A norm followed (in the SAME prose paragraph) by an exception whose own
+# sentence carries no core: "… on oltava … henkilö. Tämä ei kuitenkaan koske …".
+_SEG_XML = _xml(
+    "Säilytystilassa on oltava vastaava henkilö. Tämä ei kuitenkaan koske pieniä tiloja.",
+)
+
+# A candidate cue in a section with NO core, but a core in ANOTHER section of the
+# same body → no enclosing-segment / chapeau structure → proximity fallback.
+_FALLBACK_XML = (
+    f'<?xml version="1.0" encoding="UTF-8"?>'
+    f'<akomaNtoso xmlns="{_AKN}"><act><body>'
+    + _section("sec_1", "1 §", "Viranomainen voi myöntää luvan.")
+    + _section("sec_2", "2 §", "Jos hakemus on puutteellinen, asia raukeaa.")
+    + "</body></act></akomaNtoso>"
+).encode("utf-8")
+
+
+def _forest_edges(graph):
+    return [
+        e
+        for e in graph.edges
+        if e.edge_kind in _NORM_KINDS
+        and e.payload.get("source") == _FOREST_SOURCE
+    ]
+
+
+def test_list_item_condition_attaches_via_chapeau_inheritance_not_proximity() -> None:
+    # A chapeau-governed list-item condition/exception (its own sentence has no
+    # core) attaches to the CHAPEAU's deontic core via inherits_chapeau, NOT by
+    # char-distance — the syntactic attachment the proximity pass cannot make.
+    graph = build_legal_surface_graph(_LIST_XML, "1/2025")
+    forest = _forest_edges(graph)
+    chap = [
+        e
+        for e in forest
+        if e.payload.get("attachment") == ATTACHMENT_RESOLVED_BY_CHAPEAU
+    ]
+    assert chap, "expected a chapeau-inheritance attachment for the list items"
+    for edge in chap:
+        assert graph.nodes[edge.src].node_kind == "exception_condition_cue"
+        assert graph.nodes[edge.dst].node_kind == "deontic_core"
+        assert edge.status == "asserted"
+        # the attached core is the chapeau's ``voi`` — its span PRECEDES the cue
+        # (a different, earlier sentence): proximity-within-sentence could not find
+        # it; only the structural inheritance does.
+        assert edge.payload["core_span"][0] < edge.payload["cue_span"][0]
+
+
+def test_enclosing_segment_exception_attaches_to_segment_core() -> None:
+    # An exception whose own sentence carries no core attaches to the deontic core
+    # in the SAME forest prose segment (the previous sentence's "on oltava").
+    graph = build_legal_surface_graph(_SEG_XML, "2/2025")
+    seg = [
+        e
+        for e in _forest_edges(graph)
+        if e.payload.get("attachment") == ATTACHMENT_RESOLVED_BY_FOREST_SEGMENT
+    ]
+    assert seg, "expected a forest-segment attachment for the in-segment exception"
+    for edge in seg:
+        assert edge.edge_kind == EDGE_EXCEPTION_EXCEPTS
+        assert graph.nodes[edge.dst].node_kind == "deontic_core"
+        assert edge.status == "asserted"
+
+
+def test_no_structure_candidate_falls_back_to_proximity_never_dropped() -> None:
+    # A candidate cue with no enclosing-segment / chapeau core must NOT be dropped:
+    # it falls back to the nearest core in the unit, status ambiguous (a fallback
+    # is never asserted), attachment=proximity_fallback.
+    graph = build_legal_surface_graph(_FALLBACK_XML, "3/2025")
+    fb = [
+        e
+        for e in _forest_edges(graph)
+        if e.payload.get("attachment") == ATTACHMENT_PROXIMITY_FALLBACK
+    ]
+    assert fb, "expected a proximity-fallback edge (candidate never dropped)"
+    for edge in fb:
+        assert edge.status == "ambiguous", "a proximity fallback is never asserted"
+        assert graph.nodes[edge.dst].node_kind == "deontic_core"
+
+
+def test_forest_structural_recovers_candidate_residue() -> None:
+    # The _XML P4 candidate ("Jos hakemus on puutteellinen, asia raukeaa …") has no
+    # core in its sentence; the forest-structural pass now recovers it (the
+    # intra-sentence pass tagged it NO_CORE_IN_SENTENCE and the test
+    # test_candidate_no_core_emits_no_edge_but_is_tagged checks the intra pass emits
+    # nothing). Here the forest pass DOES attach it (NEW-BETTER, never dropped).
+    bundle = build_surface_bundle(_XML, "999/2025")
+    graph = _build()
+    (intra,) = condition_attachment_passes(bundle)
+    intra.run(graph)
+    no_core = [u for u in intra.unattached if u.reason == NO_CORE_IN_SENTENCE]
+    assert no_core, "expected a NO_CORE_IN_SENTENCE candidate (P4)"
+    forest = _forest_edges(graph)
+    # every intra-sentence NO_CORE candidate is now covered by a forest edge (the
+    # no-silent-drop guarantee: recovered, never lost).
+    for u in no_core:
+        covered = [
+            e
+            for e in forest
+            if e.payload.get("cue_span") == [u.cue_char_start, u.cue_char_end]
+        ]
+        assert covered, (
+            f"a NO_CORE_IN_SENTENCE candidate (cue={u.cue!r}) must be recovered "
+            f"by the forest-structural pass, not silently dropped"
+        )
+
+
+def test_forest_structural_is_strict_addition_zero_regressions() -> None:
+    # The forest pass NEVER alters an incumbent (intra/cross/enclosing) edge: the
+    # incumbent NORM edge set is byte-identical whether or not the forest pass ran.
+    # Because the forest pass uses a DISTINCT rule_id/source, its edges can never
+    # share an edge id with an incumbent — the strict-addition / 0-regression
+    # guarantee, asserted directly on the assembled graph.
+    graph = build_legal_surface_graph(_LIST_XML, "1/2025")
+    incumbent_ids = {
+        e.edge_id
+        for e in graph.edges
+        if e.edge_kind in _NORM_KINDS
+        and e.payload.get("source")
+        in ("construction_attachment", "construction_cross_sentence_backref",
+            "construction_enclosing_anaphora")
+    }
+    forest_ids = {e.edge_id for e in _forest_edges(graph)}
+    assert incumbent_ids, "expected incumbent intra-sentence edges in the fixture"
+    assert forest_ids, "expected forest-structural edges in the fixture"
+    assert not (incumbent_ids & forest_ids), (
+        "a forest-structural edge must never reuse an incumbent edge id "
+        "(strict addition, 0 regressions)"
+    )
+
+
+def test_forest_structural_edges_obey_firewall_and_are_deterministic() -> None:
+    first = build_legal_surface_graph(_LIST_XML, "1/2025")
+    second = build_legal_surface_graph(_LIST_XML, "1/2025")
+    fe = _forest_edges(first)
+    assert fe, "expected forest-structural edges"
+    for edge in fe:
+        assert edge.surface_only is True
+        assert edge.replay_authorized is False
+        assert edge.status in ("asserted", "ambiguous")
+    assert first.graph_id == second.graph_id
+
+    def _fkeys(graph):
+        return sorted(
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            for e in _forest_edges(graph)
+        )
+
+    assert _fkeys(first) == _fkeys(second)
+
+
+def test_forest_pass_declares_its_kinds() -> None:
+    bundle = build_surface_bundle(_LIST_XML, "1/2025")
+    (pass_,) = forest_structural_attachment_passes(bundle)
+    assert isinstance(pass_, ForestStructuralAttachmentPass)
+    assert set(pass_.emits_edge_kinds) == _NORM_KINDS
+    assert "exception_condition_cue" in pass_.reads_node_kinds
+    assert "deontic_core" in pass_.reads_node_kinds

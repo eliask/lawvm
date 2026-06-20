@@ -45,6 +45,7 @@ from lawvm.finland.payload_normalize import (
     elaborate_payload_against_live,
     summarize_slot_assignment,
 )
+from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
 
 
@@ -486,6 +487,7 @@ def _mock_ctx(
     target_norm: str,
     target_chapter: Optional[str] = None,
     *,
+    target_part: Optional[str] = None,
     live_node: Optional[IRNode] = None,
     parent_node: Optional[IRNode] = None,
 ) -> PayloadElaborationContext:
@@ -531,6 +533,7 @@ def _mock_ctx(
         target_unit_kind=target_kind,
         target_norm=target_norm,
         target_chapter=target_chapter,
+        target_part=target_part,
         live_node=live_node,
         parent_node=parent_node,
         subsection_slots=subsection_slots,
@@ -3533,6 +3536,50 @@ def test_build_subsection_slot_assignment_binds_mixed_intro_and_plain_by_source_
     assert got.unassigned_payload_slots == ()
 
 
+def test_build_subsection_slot_assignment_prefers_exact_intro_label_when_moments_match() -> None:
+    """Regression: 1987/990 §17 / 1994/1420.
+
+    The amendment body has real legal moment labels 1 and 2. The scoped
+    ``2 momentin johdantokappale`` must bind to slot 2, not consume slot 1
+    merely because it appears before exact plain-slot assignment.
+    """
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="17",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Uusi 1 momentti."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.INTRO, text="Uusi 2 momentin johdanto:"),),
+            ),
+        ),
+    )
+    op1_plain = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="17",
+        target_paragraph=1,
+    )
+    op2_intro = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="17",
+        target_paragraph=2,
+        target_special="johd",
+    )
+
+    got = _build_subsection_slot_assignment(muutos_ir, [op1_plain, op2_intro])
+
+    assert got.subsec_map[id(op1_plain)].label == "1"
+    assert got.subsec_map[id(op2_intro)].label == "2"
+    assert got.unassigned_payload_slots == ()
+
+
 def test_build_subsection_slot_assignment_shares_plain_and_item_ops_on_same_moment() -> None:
     """Plain subsection ops and item ops for the same moment must share one slot.
 
@@ -3873,6 +3920,79 @@ def test_assign_subsection_slots_binds_lone_sparse_insert_to_trailing_slot() -> 
     assert got.sparse_slot_bindings[0].payload_slot_index == 3
     assert got.sparse_slot_bindings[0].payload_slot_label == "4"
     assert got.unassigned_payload_slots == ("1:1", "2:2")
+
+
+def test_prepare_payload_surface_does_not_merge_new_subsection_insert_inner_omission() -> None:
+    """A new-moment INSERT with inner omission must not import live siblings.
+
+    Mirrors 1994/1384 §3 under 2012/221: the source says to add a new 3 mom,
+    while live §3 only has moments 1 and 2.  The inner omission belongs to the
+    amendment-local list payload.  Treating it as an item insertion into an
+    existing live subsection splices live moment 2 into the payload and lets the
+    trailing sparse binding rule hijack the new 3 mom target.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="3",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Live heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="old first moment"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="old second moment"),),
+            ),
+        ),
+    )
+    amendment = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="3",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="New heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="new third moment intro"),
+                    IRNode(kind=IRNodeKind.OMISSION),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="new third moment item"),
+                ),
+            ),
+        ),
+    )
+    op_insert = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="3",
+        target_paragraph=3,
+    )
+    ctx = _mock_ctx("section", "3", live_node=live_sec)
+
+    prepared = prepare_payload_surface(
+        ctx,
+        [op_insert],
+        amendment,
+        _replay_profile_stub(),
+        strict_profile=None,
+    )
+
+    assert prepared is not None
+    assert "old second moment" not in irnode_to_text(prepared)
+    slot_inputs = _collect_subsection_slot_inputs(prepared, [op_insert])
+    assert slot_inputs is not None
+
+    got = _assign_subsection_slots(slot_inputs)
+
+    mapped = got.subsec_map.for_op(op_insert)
+    assert mapped is not None
+    assert mapped.label == "1"
+    assert "new third moment intro" in irnode_to_text(mapped)
+    assert "old second moment" not in irnode_to_text(mapped)
+    assert not any(obs.kind == "ELAB.TRAILING_SPARSE_INSERT_BINDING" for obs in got.binding_observations)
 
 
 def test_assign_subsection_slots_marks_singleton_higher_moment_local_dense_binding_owned() -> None:
@@ -4523,6 +4643,111 @@ def test_normalize_group_payload_surfaces_unassigned_sparse_payload_slots() -> N
     assert first_detail is not None
     assert [obs.kind for obs in observations] == ["ELAB.UNASSIGNED_SPARSE_SLOTS"]
     assert first_detail["unassigned_slots"] == ("2:2", "3:(unlabeled)")
+
+
+def test_normalize_group_payload_folds_split_target_subsection_intro_list_tail() -> None:
+    """A single legal moment may be split into prefix + intro/list source slots.
+
+    Mirrors `1990/848 <- 2000/54` section 34: the johtolause owns only
+    `1 momentti`, while Finlex XML serializes that one moment as two adjacent
+    AKN subsections.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="34",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Vanha vahingonkorvausintro:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="1)"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="vanha ensimmainen kohta;"),
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="2)"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="vanha toinen kohta."),
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Erillinen toinen momentti."),),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "34", live_node=live_sec)
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="34",
+        target_paragraph=1,
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="34",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="34 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Korvattava vahinko"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Uusi korvauspaalause."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Vahingonkorvausta ei kuitenkaan suoriteta:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="1)"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="valtiolle aiheutuneesta vahingosta;"),
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="2)"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="muusta vahingosta."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    assignment = _slot_assignment_result(got)
+    mapped = assignment.for_op(got.group_ops[0])
+    assert mapped is not None
+    assert mapped.label == "1"
+    assert assignment.unassigned_payload_slots == ()
+    assert "Uusi korvauspaalause." in irnode_to_text(mapped)
+    assert "Vahingonkorvausta ei kuitenkaan suoriteta:" in irnode_to_text(mapped)
+    assert _slot_ir_has_item(mapped, "1")
+    assert _slot_ir_has_item(mapped, "2")
+    observations = _observations(got)
+    assert [obs.kind for obs in observations] == ["ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL"]
+    detail = observations[0].detail
+    assert detail is not None
+    assert detail["prefix_payload_slot_label"] == "1"
+    assert detail["tail_payload_slot_label"] == "2"
+    assert _completeness(got).kind == "sparse_certified"
 
 
 def test_group_payload_normalization_result_defaults_unassigned_sparse_payload_slots() -> None:
@@ -5344,7 +5569,7 @@ def test_normalize_group_payload_keeps_explicit_heading_and_subsection_replace_s
     assert got.rejected_ops == ()
     assert _pathologies(got) == ()
     assert got.subsec_map is not None
-    mapped = got.subsec_map.get(subsection_op)
+    mapped = got.subsec_map.for_op(subsection_op)
     assert mapped is not None
     assert mapped.label == "1"
     assert "New first moment" in " ".join(irnode_to_text(mapped).split())
@@ -5852,6 +6077,279 @@ def test_normalize_group_payload_treats_new_container_prune_as_expected_split() 
     ]
     assert all(len(witness["structural_hash"]) == 64 for witness in witnesses)
     assert completeness.kind == "complete"
+
+
+def test_normalize_group_payload_prunes_foreign_descendant_insert_from_new_container() -> None:
+    ctx = _mock_ctx("chapter", "6a", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.CHAPTER,
+        target_section="6a",
+        source_statute="2014/1020",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="6a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="6 a luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="15a"),
+            IRNode(kind=IRNodeKind.SECTION, label="15b"),
+            IRNode(kind=IRNodeKind.SECTION, label="26"),
+        ),
+    )
+
+    got = elaborate_payload_against_live(
+        ctx,
+        [op],
+        muutos_ir,
+        {"26"},
+        foreign_scoped_descendant_section_targets={"26"},
+    )
+
+    observations = _observations(got)
+    assert _pathologies(got) == ()
+    assert [obs.kind for obs in observations] == ["ELAB.CONTAINER_PRUNED_SHADOWED"]
+    assert observations[0].detail is not None
+    assert observations[0].detail["pruned_sections"] == ["26"]
+    assert [child.label for child in _muutos_ir(got).children if child.kind is IRNodeKind.SECTION] == [
+        "15a",
+        "15b",
+    ]
+    assert _completeness(got).kind == "complete"
+
+
+def test_normalize_group_payload_keeps_new_container_members_shadowed_only_by_foreign_replaces() -> None:
+    ctx = _mock_ctx("chapter", "5a", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.CHAPTER,
+        target_section="5a",
+        source_statute="2019/581",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="5a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="5 a luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="43"),
+            IRNode(kind=IRNodeKind.SECTION, label="44"),
+        ),
+    )
+
+    got = elaborate_payload_against_live(
+        ctx,
+        [op],
+        muutos_ir,
+        {"44"},
+        foreign_scoped_replace_section_targets={"44"},
+        foreign_scoped_replace_section_target_scopes=frozenset(
+            {StandaloneSectionTarget(part=None, chapter="5", label="44")}
+        ),
+    )
+
+    assert _pathologies(got) == ()
+    assert [obs.kind for obs in _observations(got)] == []
+    assert [child.label for child in _muutos_ir(got).children if child.kind is IRNodeKind.SECTION] == [
+        "43",
+        "44",
+    ]
+    assert _completeness(got).kind == "complete"
+
+
+def test_normalize_group_payload_prunes_new_container_members_in_dense_foreign_replace_bridge() -> None:
+    ctx = _mock_ctx("chapter", "7a", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.CHAPTER,
+        target_section="7a",
+        source_statute="2013/1194",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 a luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="49"),
+            IRNode(kind=IRNodeKind.SECTION, label="50"),
+            IRNode(kind=IRNodeKind.SECTION, label="51"),
+        ),
+    )
+
+    got = elaborate_payload_against_live(
+        ctx,
+        [op],
+        muutos_ir,
+        {"50"},
+        foreign_scoped_replace_section_targets={"50"},
+    )
+
+    observations = _observations(got)
+    assert _pathologies(got) == ()
+    assert [obs.kind for obs in observations] == ["ELAB.CONTAINER_PRUNED_SHADOWED"]
+    assert observations[0].detail is not None
+    assert observations[0].detail["pruned_sections"] == ["50"]
+    assert [child.label for child in _muutos_ir(got).children if child.kind is IRNodeKind.SECTION] == [
+        "49",
+        "51",
+    ]
+    assert _completeness(got).kind == "complete"
+
+
+def test_normalize_group_payload_prunes_new_container_members_in_broad_foreign_replace_run() -> None:
+    ctx = _mock_ctx("chapter", "5", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.CHAPTER,
+        target_section="5",
+        source_statute="1999/527",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="5",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="5 luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="19"),
+            IRNode(kind=IRNodeKind.SECTION, label="24"),
+            IRNode(kind=IRNodeKind.SECTION, label="25"),
+            IRNode(kind=IRNodeKind.SECTION, label="27"),
+            IRNode(kind=IRNodeKind.SECTION, label="34"),
+        ),
+    )
+
+    got = elaborate_payload_against_live(
+        ctx,
+        [op],
+        muutos_ir,
+        {"24", "25", "27", "34"},
+        foreign_scoped_replace_section_targets={"24", "25", "27", "34"},
+        foreign_scoped_replace_section_target_scopes=frozenset(
+            {
+                StandaloneSectionTarget(part=None, chapter="6", label="24"),
+                StandaloneSectionTarget(part=None, chapter="6", label="25"),
+                StandaloneSectionTarget(part=None, chapter="6", label="27"),
+                StandaloneSectionTarget(part=None, chapter="7", label="34"),
+            }
+        ),
+    )
+
+    observations = _observations(got)
+    assert _pathologies(got) == ()
+    assert [obs.kind for obs in observations] == ["ELAB.CONTAINER_PRUNED_SHADOWED"]
+    assert observations[0].detail is not None
+    assert observations[0].detail["pruned_sections"] == ["24", "25", "27", "34"]
+    assert [child.label for child in _muutos_ir(got).children if child.kind is IRNodeKind.SECTION] == ["19"]
+    assert _completeness(got).kind == "complete"
+
+
+def test_normalize_group_payload_prunes_part_scoped_suffixed_container_when_foreign_base_lacks_part_scope() -> None:
+    ctx = _mock_ctx("chapter", "9a", target_part="2", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.CHAPTER,
+        target_section="9a",
+        target_part="2",
+        source_statute="1993/1158",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="9a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="9 a luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="78"),
+        ),
+    )
+
+    got = elaborate_payload_against_live(
+        ctx,
+        [op],
+        muutos_ir,
+        {"78"},
+        foreign_scoped_replace_section_targets={"78"},
+        foreign_scoped_replace_section_target_scopes=frozenset(
+            {StandaloneSectionTarget(part=None, chapter="9", label="78")}
+        ),
+    )
+
+    observations = _observations(got)
+    assert _pathologies(got) == ()
+    assert [obs.kind for obs in observations] == ["ELAB.CONTAINER_PRUNED_SHADOWED"]
+    assert observations[0].detail is not None
+    assert observations[0].detail["pruned_sections"] == ["78"]
+    assert [child.label for child in _muutos_ir(got).children if child.kind is IRNodeKind.SECTION] == []
+    assert _completeness(got).kind == "complete"
+
+
+def test_normalize_group_payload_prunes_base_scope_overlap_in_recodification_transfer_context() -> None:
+    ctx = _mock_ctx("chapter", "9a", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.CHAPTER,
+        target_section="9a",
+        source_statute="1993/1158",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="9a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="9 a luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="78"),
+        ),
+    )
+
+    got = elaborate_payload_against_live(
+        ctx,
+        [op],
+        muutos_ir,
+        {"78"},
+        foreign_scoped_replace_section_targets={"78"},
+        foreign_scoped_replace_section_target_scopes=frozenset(
+            {StandaloneSectionTarget(part=None, chapter="9", label="78")}
+        ),
+        recodification_transfer_context=True,
+    )
+
+    observations = _observations(got)
+    assert _pathologies(got) == ()
+    assert [obs.kind for obs in observations] == ["ELAB.CONTAINER_PRUNED_SHADOWED"]
+    assert observations[0].detail is not None
+    assert observations[0].detail["pruned_sections"] == ["78"]
+    assert [child.label for child in _muutos_ir(got).children if child.kind is IRNodeKind.SECTION] == []
+    assert _completeness(got).kind == "complete"
+
+
+def test_normalize_group_payload_prunes_plain_foreign_replaces_from_suffixed_new_container_payload() -> None:
+    ctx = _mock_ctx("chapter", "7a", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.CHAPTER,
+        target_section="7a",
+        source_statute="2013/1194",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 a luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="46a"),
+            IRNode(kind=IRNodeKind.SECTION, label="49"),
+        ),
+    )
+
+    got = elaborate_payload_against_live(
+        ctx,
+        [op],
+        muutos_ir,
+        {"49"},
+        foreign_scoped_replace_section_targets={"49"},
+    )
+
+    observations = _observations(got)
+    assert _pathologies(got) == ()
+    assert [obs.kind for obs in observations] == ["ELAB.CONTAINER_PRUNED_SHADOWED"]
+    assert observations[0].detail is not None
+    assert observations[0].detail["pruned_sections"] == ["49"]
+    assert [child.label for child in _muutos_ir(got).children if child.kind is IRNodeKind.SECTION] == ["46a"]
+    assert _completeness(got).kind == "complete"
 
 
 def test_normalize_group_payload_expands_single_tail_insert_across_post_omission_subsections() -> None:
@@ -6650,11 +7148,99 @@ def test_assign_subsection_slots_binds_carried_renumber_destination_payload_slot
 
     assignment = _assign_subsection_slots(slot_inputs)
 
-    assert assignment.for_op(insert2).label == "2"
-    assert assignment.for_op(replace3).label == "3"
-    assert assignment.for_op(renumber3).label == "4"
-    assert assignment.for_op(renumber4).label == "5"
+    insert2_slot = assignment.for_op(insert2)
+    replace3_slot = assignment.for_op(replace3)
+    renumber3_slot = assignment.for_op(renumber3)
+    renumber4_slot = assignment.for_op(renumber4)
+    assert insert2_slot is not None
+    assert replace3_slot is not None
+    assert renumber3_slot is not None
+    assert renumber4_slot is not None
+    assert insert2_slot.label == "2"
+    assert replace3_slot.label == "3"
+    assert renumber3_slot.label == "4"
+    assert renumber4_slot.label == "5"
     assert assignment.unassigned_payload_slots == ()
     assert [obs.kind for obs in assignment.binding_observations].count(
         "ELAB.RENUMBER_DESTINATION_PAYLOAD_SLOT"
     ) == 2
+
+
+def test_assign_subsection_slots_binds_same_target_insert_before_moved_replace() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="45",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="45 §"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Changed item list."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="New inserted third moment."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Changed old third moment."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="4", text="Carried old fourth moment."),
+        ),
+    )
+    replace_item = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="45",
+        target_paragraph=1,
+        target_item="4",
+    )
+    insert3 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="45",
+        target_paragraph=3,
+    )
+    replace3 = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="45",
+        target_paragraph=3,
+    )
+    renumber3 = AmendmentOp(
+        op_id="renumber_3_to_4",
+        op_type="RENUMBER",
+        target_kind=TargetKind.SECTION,
+        target_section="45",
+        target_paragraph=3,
+        lo=LegalOperation(
+            op_id="renumber_3_to_4",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "45"), ("subsection", "3"))),
+            destination=LegalAddress(path=(("section", "45"), ("subsection", "4"))),
+        ),
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(
+        muutos_ir,
+        [replace_item, renumber3, insert3, replace3],
+    )
+    assert slot_inputs is not None
+
+    assignment = _assign_subsection_slots(slot_inputs)
+    replace_item_slot = assignment.for_op(replace_item)
+    insert3_slot = assignment.for_op(insert3)
+    replace3_slot = assignment.for_op(replace3)
+    renumber3_slot = assignment.for_op(renumber3)
+
+    assert replace_item_slot is not None
+    assert insert3_slot is not None
+    assert replace3_slot is not None
+    assert renumber3_slot is not None
+    assert replace_item_slot.label == "1"
+    assert insert3_slot.label == "2"
+    assert replace3_slot.label == "3"
+    assert renumber3_slot.label == "4"
+    assert assignment.unassigned_payload_slots == ()
+    found_binding_observation = False
+    for obs in assignment.binding_observations:
+        if obs.kind != "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT" or obs.detail is None:
+            continue
+        if (
+            obs.detail["target_paragraph"] == 3
+            and obs.detail["insert_payload_slot_label"] == "2"
+            and obs.detail["replace_payload_slot_label"] == "3"
+        ):
+            found_binding_observation = True
+    assert found_binding_observation

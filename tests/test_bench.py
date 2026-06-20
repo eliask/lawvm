@@ -33,7 +33,14 @@ def test_bench_levenshtein_ratio_helper_matches_python_levenshtein() -> None:
         )
 
 
-def test_fi_bench_worker_count_defaults_to_sequential() -> None:
+def test_fi_bench_worker_count_defaults_to_bounded_cpu_count(monkeypatch) -> None:
+    monkeypatch.setattr(bench.os, "cpu_count", lambda: 32)
+    assert bench._fi_bench_worker_count(argparse.Namespace(parallel=None)) == 16
+
+    monkeypatch.setattr(bench.os, "cpu_count", lambda: 8)
+    assert bench._fi_bench_worker_count(argparse.Namespace(parallel=None)) == 8
+
+    monkeypatch.setattr(bench.os, "cpu_count", lambda: None)
     assert bench._fi_bench_worker_count(argparse.Namespace(parallel=None)) == 1
 
 
@@ -47,6 +54,22 @@ def test_fi_bench_worker_count_rejects_zero(capsys: pytest.CaptureFixture[str]) 
 
     assert raised.value.code == 2
     assert "--parallel must be a positive integer" in capsys.readouterr().err
+
+
+def test_fi_bench_banner_reports_worker_count() -> None:
+    banner = bench._format_bench_run_banner(
+        statute_count=3545,
+        label="run_test",
+        mode="official_consolidation",
+        workers=16,
+        section_score_mode=False,
+        fast_mode=False,
+        text_scores=True,
+        diagnostic_replay=False,
+    )
+
+    assert "workers=16" in banner
+    assert "[quiet-replay]" in banner
 
 
 def test_save_run_preserves_non_scored_status_labels(tmp_path, monkeypatch) -> None:
@@ -341,7 +364,7 @@ def test_run_benchmark_prints_warning_summary_per_row(monkeypatch, capsys) -> No
     monkeypatch.setattr(
         bench,
         "_score_one_with_warning_summary",
-        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False: (
+        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False, text_scores=True: (
             sid,
             0.9,
             "OK",
@@ -420,6 +443,45 @@ def test_save_bench_diagnostic_sidecar_writes_structured_rows(tmp_path, monkeypa
     assert '"diagnostic_tier": "audit"' in text
 
 
+def test_oracle_check_diagnostics_are_oracle_tier() -> None:
+    from lawvm.tools import bench_diagnostic_tiers
+
+    key = "oracle_check:top_diagnosis:ORACLE_STALE"
+
+    assert bench_diagnostic_tiers.classify_bench_diagnostic_key(key) == "oracle"
+    summary = bench_diagnostic_tiers.format_tiered_bench_warning_summary(Counter({key: 1}))
+    assert "oracle: oracle_check:ORACLE_STALE×1" in summary
+
+
+def test_oracle_stale_adjusted_stats_enriches_diagnostic_counts(monkeypatch) -> None:
+    monkeypatch.setattr(
+        bench,
+        "_run_oracle_checks_parallel",
+        lambda sids, workers, mode="official_consolidation", progress=False: {
+            "2000/1": {"top_diagnosis": "ORACLE_STALE"},
+            "2000/2": {"top_diagnosis": "REPLAY_EXTRA"},
+            "2000/3": {"top_diagnosis": "UNKNOWN"},
+        },
+    )
+    diagnostic_counts: dict[str, dict[str, int]] = {}
+
+    summary = bench._oracle_stale_adjusted_stats(
+        [
+            (1, "2000/1", 0.8, "OK", 0.1),
+            (1, "2000/2", 0.7, "OK", 0.1),
+            (1, "2000/3", 0.6, "OK", 0.1),
+        ],
+        workers=1,
+        diagnostic_counts=diagnostic_counts,
+    )
+
+    assert summary is not None
+    assert summary["excluded"] == ["2000/1"]
+    assert diagnostic_counts["2000/1"]["oracle_check:top_diagnosis:ORACLE_STALE"] == 1
+    assert diagnostic_counts["2000/2"]["oracle_check:top_diagnosis:REPLAY_EXTRA"] == 1
+    assert "2000/3" not in diagnostic_counts
+
+
 def test_print_bench_diagnostic_tier_rollup(capsys: pytest.CaptureFixture[str]) -> None:
     from lawvm.tools import bench_diagnostic_tiers
 
@@ -487,8 +549,15 @@ def test_score_one_with_warning_summary_preserves_structural_event_counts(monkey
         "_run_replay_with_bench_warning_capture",
         lambda sid, *, mode, diagnostic_replay, replay_kwargs: (_DummyReplay(), Counter({"coverage_degraded": 1})),
     )
-    monkeypatch.setattr(bench, "_lev_sim_fast", lambda sid, master: 0.95)
-    monkeypatch.setattr(bench, "_structural_sim", lambda sid, master: (0.9, {"missing_section": 2}))
+    monkeypatch.setattr(
+        bench,
+        "_semantic_section_score",
+        lambda sid, master, *, text_scores: bench._BenchSemanticScore(
+            structural_similarity=0.9,
+            adjusted_levenshtein_similarity=0.95,
+            event_counts=Counter({"missing_section": 2}),
+        ),
+    )
 
     sid, sim, status, lev_sim, counts = bench._score_one_with_warning_summary("2000/1")
 
@@ -497,11 +566,36 @@ def test_score_one_with_warning_summary_preserves_structural_event_counts(monkey
     assert counts["structural:missing_section"] == 2
 
 
+def test_score_one_with_warning_summary_can_skip_text_score(monkeypatch) -> None:
+    monkeypatch.setattr(bench, "is_known_missing_source", lambda sid: False)
+    monkeypatch.setattr(
+        bench,
+        "_run_replay_with_bench_warning_capture",
+        lambda sid, *, mode, diagnostic_replay, replay_kwargs: (_DummyReplay(), Counter()),
+    )
+    def fake_semantic_score(sid, master, *, text_scores):
+        assert text_scores is False
+        return bench._BenchSemanticScore(
+            structural_similarity=0.9,
+            adjusted_levenshtein_similarity=-1.0,
+            event_counts=Counter(),
+        )
+
+    monkeypatch.setattr(bench, "_semantic_section_score", fake_semantic_score)
+
+    sid, sim, status, lev_sim, _counts = bench._score_one_with_warning_summary(
+        "2000/1",
+        text_scores=False,
+    )
+
+    assert (sid, sim, status, lev_sim) == ("2000/1", 0.9, "OK", -1.0)
+
+
 def test_run_benchmark_can_emit_diagnostic_summaries_for_persistence(monkeypatch) -> None:
     monkeypatch.setattr(
         bench,
         "_score_one_with_warning_summary",
-        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False: (
+        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False, text_scores=True: (
             sid,
             0.9,
             "OK",
@@ -520,6 +614,70 @@ def test_run_benchmark_can_emit_diagnostic_summaries_for_persistence(monkeypatch
 
     assert results[0][:4] == (1, "2000/1", 0.9, "OK")
     assert diagnostics_out == {"2000/1": "  warnings: audit: coverage_degraded×2"}
+
+
+def test_run_benchmark_can_skip_levenshtein_collection(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        bench,
+        "_score_one_with_warning_summary",
+        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False, text_scores=True: (
+            sid,
+            0.9,
+            "OK",
+            -1.0,
+            {},
+        ),
+    )
+
+    results, lev_sims = bench._run_benchmark(
+        [(1, "2000/1")],
+        verbose=True,
+        workers=1,
+        text_scores=False,
+    )
+
+    assert results[0][:4] == (1, "2000/1", 0.9, "OK")
+    assert lev_sims is None
+    assert " lev " not in capsys.readouterr().out
+
+
+def test_fi_bench_main_no_save_skips_persistence(tmp_path, monkeypatch, capsys) -> None:
+    corpus = tmp_path / "corpus.csv"
+    corpus.write_text("amendments,statute_id\n1,2000/1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        bench,
+        "_run_benchmark",
+        lambda *args, **kwargs: ([(1, "2000/1", 0.9, "OK", 0.1)], None),
+    )
+    monkeypatch.setattr(bench, "_show_summary", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_show_worst", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_show_errors", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_load_verified_statutes", lambda: {})
+    monkeypatch.setattr(bench, "_save_run", lambda *args, **kwargs: pytest.fail("run CSV should not be saved"))
+    monkeypatch.setattr(bench, "_append_history", lambda *args, **kwargs: pytest.fail("history should not be appended"))
+    monkeypatch.setattr(
+        bench,
+        "_write_bench_evidence_surface",
+        lambda *args, **kwargs: pytest.fail("evidence should not be written"),
+    )
+    monkeypatch.setattr(
+        bench,
+        "_save_bench_diagnostic_sidecar",
+        lambda *args, **kwargs: pytest.fail("diagnostics sidecar should not be written"),
+    )
+
+    bench.main(
+        argparse.Namespace(
+            corpus=str(corpus),
+            label="nosave",
+            top=5,
+            no_save=True,
+            no_text_scores=True,
+            parallel=None,
+        )
+    )
+
+    assert "Run not saved (--no-save)" in capsys.readouterr().out
 
 
 def test_save_run_persists_diagnostics_summary_column(tmp_path, monkeypatch) -> None:
@@ -661,3 +819,121 @@ def test_show_summary_prints_oracle_aware_headline(capsys) -> None:
     out = capsys.readouterr().out
     assert "Oracle-aware mean error" in out
     assert "Raw mean error" in out
+
+
+# ---------------------------------------------------------------------------
+# FI unified-summary env-var gate (default = legacy output unchanged)
+# ---------------------------------------------------------------------------
+
+
+def test_fi_unified_summary_disabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv(bench._FI_BENCH_UNIFIED_ENV, raising=False)
+    assert bench._fi_bench_unified_enabled() is False
+
+
+def test_fi_unified_summary_enabled_by_env(monkeypatch) -> None:
+    for truthy in ("1", "true", "YES", "on"):
+        monkeypatch.setenv(bench._FI_BENCH_UNIFIED_ENV, truthy)
+        assert bench._fi_bench_unified_enabled() is True
+    monkeypatch.setenv(bench._FI_BENCH_UNIFIED_ENV, "0")
+    assert bench._fi_bench_unified_enabled() is False
+
+
+def test_fi_unit_results_from_rows_maps_axes_and_statuses() -> None:
+    from lawvm.core.bench_contract import BenchStatus
+
+    flat = [
+        ("2004/1037", 0.9, "OK"),  # scored, text-only
+        ("2012/916", -1.0, "NO_TRUTH"),  # non-scored exclusion
+        ("2018/1", -1.0, "SOURCE_UNAVAILABLE"),  # non-scored exclusion
+        ("2020/5", -1.0, "ValueError: boom"),  # genuine crash
+    ]
+    units = bench._fi_unit_results_from_rows(flat)
+    by_id = {u.unit_id: u for u in units}
+
+    scored = by_id["2004/1037"]
+    assert scored.status is BenchStatus.SCORED
+    assert scored.text_err == pytest.approx(0.1)
+    assert scored.structural_err is None  # no section score on a text-only run
+    assert by_id["2012/916"].status is BenchStatus.NO_TRUTH
+    assert by_id["2018/1"].status is BenchStatus.SOURCE_UNAVAILABLE
+    crash = by_id["2020/5"]
+    assert crash.status is BenchStatus.CRASH
+    assert crash.witnesses == ("ValueError: boom",)
+
+
+def test_fi_unit_results_fold_in_section_structural_axis() -> None:
+    # When section scoring ran, the structural axis is the worse axis and binds
+    # the worst-of headline (Liebig): section 0.80 (20% err) > text 0.95 (5% err).
+    flat = [("2004/1037", 0.95, "OK")]
+    units = bench._fi_unit_results_from_rows(flat, section_sims={"2004/1037": 0.80})
+    u = units[0]
+    assert u.structural_err == pytest.approx(0.20)
+    assert u.text_err == pytest.approx(0.05)
+    assert u.headline_error() == pytest.approx(0.20)
+
+
+def _drive_fi_main(monkeypatch, tmp_path):
+    corpus = tmp_path / "corpus.csv"
+    corpus.write_text("amendments,statute_id\n1,2000/1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        bench,
+        "_run_benchmark",
+        lambda *args, **kwargs: ([(1, "2000/1", 0.9, "OK", 0.1)], None),
+    )
+    monkeypatch.setattr(bench, "_show_worst", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_show_errors", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_load_verified_statutes", lambda: {})
+    monkeypatch.setattr(bench, "_save_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_append_history", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_write_bench_evidence_surface", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_save_bench_diagnostic_sidecar", lambda *args, **kwargs: None)
+    bench.main(
+        argparse.Namespace(
+            corpus=str(corpus),
+            label="gate",
+            top=5,
+            no_save=True,
+            no_text_scores=True,
+            parallel=None,
+        )
+    )
+
+
+def test_fi_main_default_output_has_no_unified_summary(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.delenv(bench._FI_BENCH_UNIFIED_ENV, raising=False)
+    _drive_fi_main(monkeypatch, tmp_path)
+    out = capsys.readouterr().out
+    # Legacy summary is present; the unified summary is NOT (default unchanged).
+    assert "=== BENCHMARK SUMMARY" in out
+    assert "UNIFIED BENCH SUMMARY" not in out
+
+
+def test_fi_main_unified_summary_renders_under_env_var(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv(bench._FI_BENCH_UNIFIED_ENV, "1")
+    _drive_fi_main(monkeypatch, tmp_path)
+    out = capsys.readouterr().out
+    # Both summaries present: legacy unchanged AND the opt-in unified headline.
+    assert "=== BENCHMARK SUMMARY" in out
+    assert "=== UNIFIED BENCH SUMMARY" in out
+    assert "jurisdiction=fi" in out
+    assert "1 scored" in out
+    assert "Mean error : 10.00%" in out
+
+
+def test_fi_unified_summary_render_is_gated_and_meaningful(capsys) -> None:
+    # The render path itself (gating is exercised in main; here we assert the
+    # rendered headline carries the worst-of mean error + partition + honesty).
+    flat = [
+        ("a", 0.90, "OK"),  # text 10% err
+        ("b", -1.0, "NO_TRUTH"),  # excluded
+        ("c", -1.0, "boom"),  # crash
+    ]
+    bench._show_unified_summary_fi(flat, "demo")
+    out = capsys.readouterr().out
+    assert "=== UNIFIED BENCH SUMMARY" in out
+    assert "jurisdiction=fi" in out
+    assert "1 scored" in out
+    assert "crashed: 1" in out
+    assert "excluded(non-scored): 1" in out
+    assert "Mean error : 10.00%" in out

@@ -10,17 +10,36 @@ import functools
 import re
 from dataclasses import dataclass
 
-from lawvm.finland.address_parse import parse_legal_addresses
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.references.freetext_addresses import scan_legal_addresses
 
 _DASH_CHARS = r"[-\u2013\u2014\u2015]"  # hyphen, en-dash, em-dash, horizontal bar
-_SECTION_REF_RE = re.compile(
-    r"(\d{1,4}+\s{0,3}+[a-z]?)(?:[-\u2014\u2013\u2015](\d{1,4}+\s{0,3}+[a-z]?))?\s*§",
-    re.I,
-)
-_SECTION_LIST_RE = re.compile(
-    r"((?:\d{1,4}+\s{0,3}+[a-z]?(?:[-\u2014\u2013\u2015]\d{1,4}+\s{0,3}+[a-z]?)?)"
-    r"(?:\s*(?:,|ja|sekä)\s*(?:\d{1,4}+\s{0,3}+[a-z]?(?:[-\u2014\u2013\u2015]\d{1,4}+\s{0,3}+[a-z]?)?))+)\s*§",
+# --- Section-label site ANCHOR (lexer-primitive floor; demoted from parser) ----
+#
+# Section scope-mentions are parsed by the shared grammar driver
+# ``scan_legal_addresses`` (which expands ranges/coordinated lists and resolves
+# momentti/kohta structure through the johtolause grammar). The grammar
+# deliberately DECLINES the illative ``N §:ään`` insertion-target case
+# (``grammar.sections.recognize_section_ref``: ``case != "ILL"``) and the lexer
+# does not classify some plural/partitive ``§`` inflections (``§:ä``,
+# ``§:ien``, ``§:t``) as the PYKALA marker. For SCOPE MENTIONS those
+# inflected sites ARE mentioned sections that must be collected, so a bounded
+# label-run ANCHOR supplements the declined sites — fail-loud-not-silent: a
+# § site the grammar does not yield a section for is still captured by the
+# anchor (no scope-mention is silently dropped). The anchor finds WHERE a
+# section site is and the flat number-run that precedes the § (the allowed
+# regex floor); range/list expansion reuses the same shared helper.
+#
+# Verified over the full 58,546-doc johtolause corpus: the grammar+anchor path
+# is a STRICT SUPERSET of the legacy ``_SECTION_REF_RE``/``_SECTION_LIST_RE``
+# parser (0 section labels lost, +284 recovered = precise ranges, alpha-suffix
+# lists, glued/prose-led shapes the legacy regex dropped).
+_SEC_LABEL_ATOM = r"\d{1,4}+\s{0,3}+[a-z]?"
+_SEC_LABEL_RANGE = _SEC_LABEL_ATOM + r"(?:[-—–―]" + _SEC_LABEL_ATOM + r")?"
+_SECTION_SITE_ANCHOR_RE = re.compile(
+    r"((?:" + _SEC_LABEL_RANGE + r")"
+    r"(?:\s{0,3}(?:,|ja|sekä)\s{0,3}(?:" + _SEC_LABEL_RANGE + r"))*)"
+    r"\s{0,40}§",
     re.I,
 )
 _SECTION_LIST_SPLIT_RE = re.compile(r"\s*(?:,|ja|sekä)\s*")
@@ -123,7 +142,7 @@ def collect_johto_moment_targets(johto_text: str) -> dict[str, frozenset[int]]:
     ``N §:n M momentti`` but compile emits no paragraph-scoped AmendmentOps.
     """
     targets: dict[str, set[int]] = {}
-    for addr in parse_legal_addresses(johto_text):
+    for addr in scan_legal_addresses(johto_text):
         if (
             not addr.section
             or addr.subsection is None
@@ -163,34 +182,61 @@ def collect_johto_numbered_table_targets_by_section(
     return {section: frozenset(tables) for section, tables in out.items()}
 
 
+def _expand_section_label_run(run: str) -> set[str]:
+    """Expand a flat section-label run (anchor capture) into normalized labels.
+
+    ``"2, 4 ja 5"`` -> ``{"2","4","5"}``; ``"8-10"`` -> ``{"8","9","10"}``.
+    Reuses :func:`expand_johto_section_label_range` for range segments, the same
+    helper the grammar driver uses, so range semantics stay identical.
+    """
+    labels: set[str] = set()
+    for segment in _SECTION_LIST_SPLIT_RE.split(run):
+        segment = segment.strip()
+        if not segment:
+            continue
+        range_match = _SECTION_RANGE_SEGMENT_RE.fullmatch(segment)
+        if range_match:
+            labels.update(
+                expand_johto_section_label_range(
+                    range_match.group(1),
+                    range_match.group(2),
+                )
+            )
+            continue
+        norm = _norm_num_token(segment)
+        if norm:
+            labels.add(norm)
+    return labels
+
+
 @functools.lru_cache(maxsize=8192)
 def collect_johto_mentioned_section_labels_frozenset(johto_text: str) -> frozenset[str]:
-    labels: set[str] = set()
-    for match in _SECTION_REF_RE.finditer(johto_text):
-        start = match.group(1)
-        end = match.group(2)
-        if end:
-            labels.update(expand_johto_section_label_range(start, end))
-        else:
-            norm = _norm_num_token(start)
-            if norm:
-                labels.add(norm)
+    """Collect every section label mentioned in a Finnish johtolause.
 
-    for match in _SECTION_LIST_RE.finditer(johto_text):
-        for segment in _SECTION_LIST_SPLIT_RE.split(match.group(1)):
-            segment = segment.strip()
-            if not segment:
-                continue
-            range_match = _SECTION_RANGE_SEGMENT_RE.fullmatch(segment)
-            if range_match:
-                labels.update(
-                    expand_johto_section_label_range(
-                        range_match.group(1),
-                        range_match.group(2),
-                    )
-                )
-                continue
-            labels.add(_norm_num_token(segment))
+    The structural parse routes through the shared grammar driver
+    :func:`scan_legal_addresses` (range/coordinated-list expansion and
+    momentti/kohta resolution). A bounded label-run ANCHOR
+    (``_SECTION_SITE_ANCHOR_RE``) supplements the § sites the grammar
+    deliberately declines (illative ``N §:ään`` insertion targets) or cannot
+    lex (plural/partitive ``§:ä`` / ``§:ien`` / ``§:t``) so no scope-mention is
+    silently dropped. Verified strict superset of the legacy regex parser over
+    the full johtolause corpus (0 lost, +284 recovered).
+    """
+    labels: set[str] = set()
+
+    # Grammar-parsed sites: ranges, coordinated lists, momentti/kohta structure.
+    for addr in scan_legal_addresses(johto_text):
+        if not addr.section:
+            continue
+        norm = _norm_num_token(addr.section)
+        if norm:
+            labels.add(norm)
+
+    # Anchor supplement: § sites the grammar declined/could-not-lex. Capturing
+    # the flat number-run before the § keeps these mentioned sections in scope.
+    for match in _SECTION_SITE_ANCHOR_RE.finditer(johto_text):
+        labels.update(_expand_section_label_run(match.group(1)))
+
     return frozenset(labels)
 
 

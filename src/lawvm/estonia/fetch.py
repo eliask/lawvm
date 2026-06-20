@@ -234,14 +234,20 @@ def _partial_commencement_dates(muutm: ET.Element[str]) -> list[str]:
     return dates
 
 
-def open_rt_archive(db_path: Optional[Path] = None, *, readonly: bool = False) -> Any:
+def open_rt_archive(db_path: Optional[Path] = None, *, readonly: bool | None = None) -> Any:
     """Open the Riigi Teataja fetch archive.
 
-    Use ``readonly=True`` for reporting and cache-only tooling that must not
-    trigger WAL or write-path initialization.
+    By default, existing archives keep the historical writable cache behavior,
+    while missing paths open read-only so accidental diagnostic names do not
+    materialize empty SQLite archives. Pass ``readonly=False`` from intentional
+    acquisition/write paths.
     """
     from farchive import Farchive
-    return Farchive(db_path or _DEFAULT_RT_DB, readonly=readonly)
+
+    path = db_path or _DEFAULT_RT_DB
+    if readonly is None:
+        readonly = not path.exists()
+    return Farchive(path, readonly=readonly)
 
 
 # ---------------------------------------------------------------------------

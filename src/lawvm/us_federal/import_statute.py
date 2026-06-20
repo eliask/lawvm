@@ -50,7 +50,7 @@ from lxml import etree
 from lawvm.us_federal.sources import (
     GOVINFO_PLAW_MEMBER_URL,
     content_digest,
-    open_us_federal_farchive,
+    open_us_federal_import_farchive,
     plaw_locator,
     resolve_us_federal_farchive_path,
 )
@@ -519,7 +519,7 @@ def import_statute_sources(
     for s in sources:
         expanded.extend(_expand_volume_arg(s))
 
-    archive = open_us_federal_farchive(db_path, allow_create=True)
+    archive = open_us_federal_import_farchive(db_path, dry_run=dry_run)
     try:
         for source in expanded:
             print(f"\nImporting STATUTE source: {source}", file=sys.stderr)

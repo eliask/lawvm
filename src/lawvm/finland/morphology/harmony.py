@@ -20,12 +20,25 @@ _FRONT_VOWELS = frozenset("äöy")  # a-umlaut, o-umlaut, y
 def is_back_harmony(stem: str) -> bool:
     """Return True if ``stem`` selects back-vowel suffixes.
 
-    Right-to-left is irrelevant for the boolean decision (presence of any back
-    vowel suffices), but the spec phrases it as a right-to-left scan; the result
-    is identical.  Neutral vowels (e, i) never tip the decision; an all-neutral
-    stem defaults to front (returns False).
+    Harmony is fixed by the **rightmost non-neutral vowel** of the stem: a back
+    vowel (a, o, u) -> back suffixes; a front vowel (a-umlaut, o-umlaut, y) ->
+    front.  The neutral vowels e, i never tip the decision and are skipped; an
+    all-neutral stem defaults to front (returns False).
+
+    Scanning right-to-left (rather than left-to-right and stopping at the first
+    non-neutral vowel) is what makes mixed-harmony **compounds** correct: a
+    Finnish suffix harmonizes with the FINAL constituent, so ``väliotsikko``
+    (front ``väli`` + back ``otsikko``) takes back suffixes (``väliotsikossa``,
+    not ``*väliotsikkossä``).  For any simplex word all non-neutral vowels agree,
+    so the rightmost equals the leftmost -> behaviour is identical to a single
+    presence test.  For an all-neutral final constituent (e.g. ``kaivovesi``)
+    the scan reaches an earlier back vowel; this is the documented limitation
+    of the surface heuristic (it would wrongly back-harmonize an all-neutral
+    final), but bare ``-i`` / ``-e`` finals after a back-vowel modifier are a
+    classify-level wall and do not reach generation as compounds here, and the
+    all-neutral-only case (no non-neutral vowel anywhere) still defaults front.
     """
-    for ch in stem.lower():
+    for ch in reversed(stem.lower()):
         if ch in _BACK_VOWELS:
             return True
         if ch in _FRONT_VOWELS:

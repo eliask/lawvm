@@ -61,6 +61,14 @@ class _FakeArchiveStore:
         return None
 
 
+def test_transparent_corpus_store_close_tolerates_archive_without_close() -> None:
+    from lawvm.finland.transparent_store import TransparentCorpusStore
+
+    store = TransparentCorpusStore(cast(Any, object()))
+
+    store.close()
+
+
 def _consolidated_xml(*, version: str, date_consolidated: str) -> bytes:
     return f"""
     <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -383,6 +391,73 @@ def test_oracle_reflected_section_original_versions_excludes_future_repeal_overl
     got = corpus.get_consolidated_oracle_reflected_section_original_versions(sid, cast(Any, fake))
 
     assert got == {"2003/537"}
+
+
+def test_oracle_reflected_section_original_versions_excludes_shadow_when_current_section_exists() -> None:
+    sid = "2012/960"
+    oracle_path = "akn/fi/act/statute-consolidated/2012/960/fin@20251505/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="sec_5">
+          <num>5 §</num>
+          <subsection><content><p>Current pre-effective text.</p></content></subsection>
+        </section>
+        <section eId="sec_5v20251505" finlex:originalVersion="@20251505">
+          <num>5 §</num>
+          <subsection><content><p>Future shadow text.</p></content></subsection>
+        </section>
+        <section eId="sec_9">
+          <num>9 §</num>
+          <subsection eId="sec_9__subsec_1v20251505" finlex:originalVersion="@20251505">
+            <content><p>Subsection-level preview text.</p></content>
+          </subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    got = corpus.get_consolidated_oracle_reflected_section_original_versions(sid, cast(Any, fake))
+
+    assert got == set()
+
+
+def test_get_ground_truth_preserves_distinct_same_slot_versioned_subsections() -> None:
+    """Full-text oracle extraction must preserve distinct same-eId-base siblings.
+
+    This is the 2012/316 pattern: Finlex encodes an existing unnumbered
+    subsection and a later inserted unnumbered fee subsection with the same
+    positional eId base. They are distinct live provisions, not historical
+    duplicates.
+    """
+    sid = "2012/316"
+    oracle_path = "akn/fi/act/statute-consolidated/2012/316/fin@20240859/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="sec_1v20150795" finlex:originalVersion="@20150795">
+          <num>1 §</num>
+          <subsection eId="sec_1v20150795__subsec_1v20150795">
+            <intro><p>Chargeable decisions are:</p></intro>
+            <paragraph eId="sec_1v20150795__subsec_1v20150795__para_1v20150795">
+              <num>1)</num>
+              <content><p>operating licence;</p></content>
+            </paragraph>
+          </subsection>
+          <subsection eId="sec_1v20150795__subsec_1v20240859" finlex:originalVersion="@20240859">
+            <content><p>The fee is 7 135 euros.</p></content>
+          </subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    text = corpus.get_ground_truth(sid, cast(Any, fake))
+
+    assert "Chargeable decisions are" in text
+    assert "The fee is 7 135 euros." in text
 
 
 # ---------------------------------------------------------------------------

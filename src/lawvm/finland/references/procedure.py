@@ -242,6 +242,16 @@ def _build_actor_phrases() -> Tuple[Tuple[str, ...], ...]:
 
 
 _ACTOR_PHRASES_LONGEST_FIRST: Tuple[Tuple[str, ...], ...] = _build_actor_phrases()
+_ACTOR_PHRASES_BY_FIRST_WORD: dict[str, Tuple[Tuple[str, ...], ...]] = {
+    first_word: tuple(
+        phrase
+        for phrase in _ACTOR_PHRASES_LONGEST_FIRST
+        if phrase[0] == first_word
+    )
+    for first_word in {
+        phrase[0] for phrase in _ACTOR_PHRASES_LONGEST_FIRST if phrase
+    }
+}
 
 # ---------------------------------------------------------------------------
 # Deadline cue family (NORMATIVE, closed) — for deadline-span detection.
@@ -414,8 +424,12 @@ def _scan_actors(tokens: Tuple[Token, ...]) -> List[Tuple[int, int]]:
         if tokens[i].category != "word":
             i += 1
             continue
+        phrases = _ACTOR_PHRASES_BY_FIRST_WORD.get(tokens[i].normalized)
+        if phrases is None:
+            i += 1
+            continue
         best_end_idx: Optional[int] = None
-        for phrase in _ACTOR_PHRASES_LONGEST_FIRST:
+        for phrase in phrases:
             end_idx = _match_word_phrase(tokens, i, phrase)
             if end_idx is not None:
                 best_end_idx = end_idx

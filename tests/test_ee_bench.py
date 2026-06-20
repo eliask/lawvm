@@ -370,3 +370,65 @@ def test_print_report_prioritizes_open_unexplained_rows(capsys) -> None:
     assert open_index < adjudicated_index
     assert "matched=2 open=3" in out
     assert "matched=7 open=0" in out
+
+
+def test_unified_summary_renders_structural_only_headline(capsys) -> None:
+    """EE renders the shared unified headline (structural axis only).
+
+    Asserts meaningful properties: the worst-of mean error equals
+    ``1 - mean(sec_match)`` (the legacy EE headline, error-framed), the status
+    partition (scored vs non-scored vs crashed) counts, and the
+    residue-reconciliation honesty line. EE has no text axis, so no text line.
+    """
+    results = [
+        ee_bench._BenchResult(
+            grupi_id="g1",
+            base_id="b1",
+            oracle_id="o1",
+            title="OK pair",
+            n_ops=10,
+            n_divs=5,
+            sec_match=0.90,
+            r_secs=10,
+            o_secs=10,
+            status="OK",
+            core_benchmark=True,
+        ),
+        ee_bench._BenchResult(
+            grupi_id="g2",
+            base_id="b2",
+            oracle_id="o2",
+            title="Empty oracle",
+            n_ops=0,
+            n_divs=0,
+            sec_match=0.0,
+            r_secs=0,
+            o_secs=0,
+            status="EMPTY_ORACLE",
+        ),
+        ee_bench._BenchResult(
+            grupi_id="g3",
+            base_id="b3",
+            oracle_id="o3",
+            title="Crashed",
+            n_ops=0,
+            n_divs=0,
+            sec_match=0.0,
+            r_secs=0,
+            o_secs=0,
+            status="EXC:boom",
+        ),
+    ]
+
+    ee_bench._render_unified_summary(results, "demo")
+
+    out = capsys.readouterr().out
+    assert "=== UNIFIED BENCH SUMMARY" in out
+    assert "jurisdiction=ee" in out
+    # One scored OK row (sec_match 0.90 -> 10.00% error), one EMPTY_ORACLE
+    # excluded (non-scored, not a failure), one EXC crash.
+    assert "1 scored" in out
+    assert "crashed: 1" in out
+    assert "excluded(non-scored): 1" in out
+    assert "Mean error : 10.00%" in out
+    assert "Residue reconciliation: OK" in out

@@ -380,6 +380,22 @@ def test_run_single_statute_reports_not_found(monkeypatch, capsys) -> None:
     Path(csv_path).unlink()
 
 
+def test_ee_corpus_acquire_refuses_extensionless_create_path(tmp_path) -> None:
+    missing_archive = tmp_path / "unused"
+
+    args = argparse.Namespace(
+        db=str(missing_archive),
+        parts="2",
+        phase=1,
+        delay=0.0,
+        workers=1,
+    )
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        ee_corpus.run_acquire(args)
+    assert not missing_archive.exists()
+
+
 def test_ee_corpus_run_stats_falls_back_when_archive_stats_breaks(tmp_path, capsys) -> None:
     import sqlite3
 

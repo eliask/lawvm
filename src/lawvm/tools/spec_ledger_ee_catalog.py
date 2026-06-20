@@ -186,6 +186,7 @@ _EE_RULE_SPECS: Dict[str, str] = {
     "ee_source_local_global_text_replace_selector_composition": "A source-local global text replace composes its selector from the in-clause explicit target list.",
     "ee_source_local_global_text_replace_selector_composition_skipped_for_excluded_target": "A source-local global selector composition skips a structurally excluded target named in the source.",
     "ee_source_local_global_text_replace_selector_exclusion_inferred": "An exclusion in a source-local global text replace is inferred from the clause's 'välja arvatud' surface.",
+    "ee_source_local_global_text_replace_payload_authors_rename_target_surface_skipped": "A source-local global text replacement that would only rename the target surface is recorded as skipped instead of emitting an unsupported global mutation.",
     "ee_source_local_payload_composition_quoted_title_skipped": "A quoted legal title inside a source-local payload composition is skipped, not folded into the rewrite surface.",
     "ee_generic_ministry_reorganization_explicit_exceptions": "An inferred global ministry-reorganization rewrite carries the source's explicit exception paths and never mutates them (living spec §48).",
 

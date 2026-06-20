@@ -59,18 +59,18 @@ class RegexRecognitionCoverage:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "coverage_id",
-            "jurisdiction",
-            "recognizer_id",
-            "owner_phase",
-            "source_text_hash",
-            "coverage_status",
+        for field_name, value in (
+            ("coverage_id", self.coverage_id),
+            ("jurisdiction", self.jurisdiction),
+            ("recognizer_id", self.recognizer_id),
+            ("owner_phase", self.owner_phase),
+            ("source_text_hash", self.source_text_hash),
+            ("coverage_status", self.coverage_status),
         ):
             object.__setattr__(
                 self,
                 field_name,
-                _required_string(field_name, getattr(self, field_name)),
+                _required_string(field_name, value),
             )
         object.__setattr__(self, "source_artifact_id", str(self.source_artifact_id or ""))
         if self.coverage_status not in _VALID_STATUSES:

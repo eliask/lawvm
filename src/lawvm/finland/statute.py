@@ -16,7 +16,7 @@ import lxml.etree as etree
 
 from lawvm.core.ir import IRNode
 from lawvm.core import tree_ops as _tops
-from lawvm.core.tree_ops import LabelIndex, Path, build_label_index
+from lawvm.core.tree_ops import LabelIndex, Path, build_label_index, normalized_label_key
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.xml_ir import fi_xml_to_ir_node, detect_unnumbered_paragraph_peers, detect_label_eid_divergence
 from lawvm.finland.source_normalize import normalize_source_ir
@@ -206,6 +206,138 @@ class StatuteContext:
 
 _PROVISION_INDEXED_KINDS: FrozenSet[str] = frozenset({"section", "chapter", "part"})
 
+
+def _collect_provision_index_entries(node: IRNode, path: Path) -> LabelIndex:
+    index: LabelIndex = {}
+
+    def _walk(current: IRNode, current_path: Path) -> None:
+        kind = current.kind.value
+        if current.label and kind in _PROVISION_INDEXED_KINDS:
+            key = (kind, normalized_label_key(current.label))
+            index.setdefault(key, []).append(current_path)
+        for child in current.children:
+            child_path = current_path + ((child.kind.value, child.label or ""),)
+            _walk(child, child_path)
+
+    _walk(node, path)
+    return index
+
+
+def _subtree_insertion_positions_by_key(
+    tree: IRNode,
+    subtree_path: Path,
+    wanted_keys: FrozenSet[tuple[str, str]],
+) -> tuple[dict[tuple[str, str], int], bool]:
+    counts = {key: 0 for key in wanted_keys}
+    insertion_positions: dict[tuple[str, str], int] = {}
+    found_subtree = False
+
+    def _walk(current: IRNode, current_path: Path) -> None:
+        nonlocal found_subtree
+        if current_path == subtree_path:
+            found_subtree = True
+            for key, count in counts.items():
+                insertion_positions.setdefault(key, count)
+            return
+        kind = current.kind.value
+        if current.label and kind in _PROVISION_INDEXED_KINDS:
+            key = (kind, normalized_label_key(current.label))
+            if key in counts:
+                counts[key] += 1
+        for child in current.children:
+            child_path = current_path + ((child.kind.value, child.label or ""),)
+            _walk(child, child_path)
+
+    _walk(tree, ())
+    return insertion_positions, found_subtree
+
+
+def _replace_provision_index_subtree(
+    *,
+    tree: IRNode,
+    new_tree: IRNode,
+    provision_index: LabelIndex,
+    subtree_path: Path,
+    old_subtree: IRNode,
+    new_subtree: IRNode,
+) -> LabelIndex | None:
+    old_entries = _collect_provision_index_entries(old_subtree, subtree_path)
+    new_subtree_path = subtree_path[:-1] + ((new_subtree.kind.value, new_subtree.label or ""),)
+    new_entries = _collect_provision_index_entries(new_subtree, new_subtree_path)
+    changed_keys = frozenset(old_entries.keys() | new_entries.keys())
+    if not changed_keys:
+        return provision_index
+
+    next_index: LabelIndex = {}
+    first_removed_index: dict[tuple[str, str], int] = {}
+    for key, paths in provision_index.items():
+        if key not in changed_keys:
+            next_index[key] = paths
+            continue
+        old_path_set = set(old_entries.get(key, ()))
+        if not old_path_set:
+            next_index[key] = list(paths)
+            continue
+        kept: list[Path] = []
+        for path in paths:
+            if path in old_path_set:
+                first_removed_index.setdefault(key, len(kept))
+            else:
+                kept.append(path)
+        if kept:
+            next_index[key] = kept
+        elif key in new_entries:
+            next_index[key] = []
+
+    new_only_keys = frozenset(
+        key
+        for key in new_entries
+        if key not in first_removed_index and key in provision_index
+    )
+    insertion_positions: dict[tuple[str, str], int] = {}
+    if new_only_keys:
+        insertion_positions, found_subtree = _subtree_insertion_positions_by_key(
+            tree,
+            subtree_path,
+            new_only_keys,
+        )
+        if not found_subtree:
+            return None
+
+    for key, new_paths in new_entries.items():
+        existing = list(next_index.get(key, ()))
+        insert_at = first_removed_index.get(key)
+        if insert_at is None:
+            insert_at = insertion_positions.get(key, len(existing))
+        next_index[key] = existing[:insert_at] + list(new_paths) + existing[insert_at:]
+
+    updated_index = {key: paths for key, paths in next_index.items() if paths}
+    if not _changed_provision_index_paths_resolve(
+        new_tree,
+        updated_index,
+        changed_keys,
+    ):
+        return None
+    return updated_index
+
+
+def _changed_provision_index_paths_resolve(
+    tree: IRNode,
+    provision_index: LabelIndex,
+    changed_keys: FrozenSet[tuple[str, str]],
+) -> bool:
+    for key in changed_keys:
+        expected_kind, expected_norm_label = key
+        for path in provision_index.get(key, ()):
+            node = _tops.resolve(tree, path)
+            if node is None:
+                return False
+            if node.kind.value != expected_kind:
+                return False
+            if normalized_label_key(node.label) != expected_norm_label:
+                return False
+    return True
+
 @dataclass
 class ReplayState:
     """Current state of the replay tree.
@@ -250,6 +382,40 @@ class ReplayState:
             ),
         )
 
+    def with_replaced_provision_subtree_index(
+        self,
+        new_ir: IRNode,
+        *,
+        path: Path,
+        old_subtree: IRNode,
+        new_subtree: IRNode,
+    ) -> "ReplayState":
+        """Return a new state with a provision index updated for one subtree replacement.
+
+        This is only for exact same-path subtree replacement. Section-path and
+        duplicate-label caches are invalidated because the replacement can add,
+        remove, or relabel indexed provisions under that path.
+        """
+        if self._provision_index is None or not path:
+            return self.with_ir(new_ir)
+        next_index = _replace_provision_index_subtree(
+            tree=self.ir,
+            new_tree=new_ir,
+            provision_index=self._provision_index,
+            subtree_path=path,
+            old_subtree=old_subtree,
+            new_subtree=new_subtree,
+        )
+        if next_index is None:
+            return self.with_ir(new_ir)
+        return ReplayState(
+            ir=new_ir,
+            revision=self.revision + 1,
+            _provision_index=next_index,
+            _duplicate_section_labels=None,
+            _section_path_cache=None,
+        )
+
     @property
     def snapshot_rev(self) -> int:
         """Compatibility alias for elaboration snapshot freshness."""
@@ -266,11 +432,16 @@ class ReplayState:
     def provision_index(self) -> LabelIndex:
         """Lazy sparse index for section/chapter/part lookups only."""
         if self._provision_index is None:
-            self._provision_index = build_label_index(
+            self._provision_index = _tops.build_provision_label_index(
                 self.ir,
                 indexed_kinds=_PROVISION_INDEXED_KINDS,
             )
         return self._provision_index
+
+    def _drop_provision_lookup_caches(self) -> None:
+        self._provision_index = None
+        self._duplicate_section_labels = None
+        self._section_path_cache = None
 
     @property
     def duplicate_section_labels(self) -> Set[str]:
@@ -318,6 +489,18 @@ class ReplayState:
             scope_label=scope_label,
             label_index=label_index,
         )
+        if path is not None and self.resolve(path) is None and label_index is self._provision_index:
+            self._drop_provision_lookup_caches()
+            path = _tops.find(
+                self.ir,
+                kind,
+                label,
+                scope_kind=scope_kind,
+                scope_label=scope_label,
+                label_index=self.provision_index,
+            )
+            if path is not None and self.resolve(path) is None:
+                return None
         return path
 
     def resolve(self, path: Path) -> Optional[IRNode]:
@@ -356,7 +539,11 @@ class ReplayState:
         if self._section_path_cache is None:
             self._section_path_cache = {}
         elif cache_key in self._section_path_cache:
-            return self._section_path_cache[cache_key]
+            cached_path = self._section_path_cache[cache_key]
+            if cached_path is None or self.resolve(cached_path) is not None:
+                return cached_path
+            self._drop_provision_lookup_caches()
+            self._section_path_cache = {}
         path = find_scoped_section_path(
             self.ir,
             target_section=target_norm,
@@ -365,6 +552,20 @@ class ReplayState:
             find_path=self.find,
             provision_index=self.provision_index,
         )
+        if path is not None and self.resolve(path) is None:
+            self._drop_provision_lookup_caches()
+            path = find_scoped_section_path(
+                self.ir,
+                target_section=target_norm,
+                target_chapter=target_chapter,
+                target_part=target_part,
+                find_path=self.find,
+                provision_index=self.provision_index,
+            )
+            if path is not None and self.resolve(path) is None:
+                path = None
+        if self._section_path_cache is None:
+            self._section_path_cache = {}
         self._section_path_cache[cache_key] = path
         return path
 

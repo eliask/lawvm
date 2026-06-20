@@ -6,6 +6,8 @@ assembler mints them into a firewall-safe graph whose intrinsic edges resolve.
 """
 from __future__ import annotations
 
+import datetime as dt
+
 from lawvm.core.legal_surface_assembler import assemble_surface_graph
 from lawvm.core.legal_surface_graph import SourceUnitRef
 from lawvm.core.legal_surface_lens import SurfaceAnalysisContext
@@ -264,6 +266,66 @@ def test_unit_effective_interval_narrows_multitemporal_resolution() -> None:
     )
 
 
+def test_build_surface_bundle_threads_surface_time_to_effective_interval() -> None:
+    # The fix: ``build_surface_bundle(surface_time=X)`` populates the unit's
+    # effective_interval START (was always (None, None), leaving the as-of-citing
+    # disambiguation lever inert). End-to-end, with NO manual interval injection,
+    # a supplied surface_time now resolves a two-version by-name collision to the
+    # version in force as-of the citing text — excluding a not-yet-enacted one.
+    registry = _VersionedStubRegistry(
+        {
+            "lannoitelaki": [
+                ("1990/111", dt.date(1990, 1, 1)),
+                ("2010/222", dt.date(2010, 1, 1)),
+            ]
+        }
+    )
+    bundle = build_surface_bundle(_XML, _STATUTE_ID, surface_time="2000-06-01")
+    # The fix point: the START is the supplied surface_time, the right edge open.
+    assert bundle.units[0].effective_interval == ("2000-06-01", None)
+
+    lens = ReferenceLens()
+    ctx = SurfaceAnalysisContext(
+        surface_time="2000-06-01", options={"statute_registry": registry}
+    )
+    result = lens.analyze(bundle, context=ctx)
+    refers_to = [e for e in result.edge_seeds if e.edge_kind == "refers_to"]
+    has_candidate = [e for e in result.edge_seeds if e.edge_kind == "has_candidate"]
+    # 2000 window selects the 1990 version only -> resolved, the 2010 version is
+    # excluded (not-yet-enacted as-of the citing text), no ambiguity candidates.
+    assert any(e.payload.get("work_id") == "1990/111" for e in refers_to)
+    assert not any(
+        e.payload.get("candidate_id") in {"1990/111", "2010/222"}
+        for e in has_candidate
+    )
+
+
+def test_build_surface_bundle_no_surface_time_stays_ambiguous() -> None:
+    # Negative / fail-loud case: with NO surface_time the effective_interval stays
+    # open, the as-of lever cannot fire, and a two-version name stays AMBIGUOUS
+    # (every candidate listed, no guessed "now", no pick).
+    registry = _VersionedStubRegistry(
+        {
+            "lannoitelaki": [
+                ("1990/111", dt.date(1990, 1, 1)),
+                ("2010/222", dt.date(2010, 1, 1)),
+            ]
+        }
+    )
+    bundle = build_surface_bundle(_XML, _STATUTE_ID)
+    assert bundle.units[0].effective_interval == (None, None)
+    lens = ReferenceLens()
+    ctx = SurfaceAnalysisContext(options={"statute_registry": registry})
+    result = lens.analyze(bundle, context=ctx)
+    has_candidate = [e for e in result.edge_seeds if e.edge_kind == "has_candidate"]
+    candidate_ids = {e.payload.get("candidate_id") for e in has_candidate}
+    assert {"1990/111", "2010/222"} <= candidate_ids
+    refers_to = [e for e in result.edge_seeds if e.edge_kind == "refers_to"]
+    assert not any(
+        e.payload.get("work_id") in {"1990/111", "2010/222"} for e in refers_to
+    )
+
+
 def test_unit_open_interval_keeps_multitemporal_ambiguous() -> None:
     # SAME name + registry, but the unit window is open (None, None): every
     # version survives the (absent) instant -> stays ambiguous (has_candidate,
@@ -304,15 +366,15 @@ class _VersionedStubRegistry:
     ``valid_from <= as_of`` so a past instant narrows a multi-version name.
     """
 
-    def __init__(self, table: dict[str, list[tuple[str, object]]]) -> None:
+    def __init__(self, table: dict[str, list[tuple[str, dt.date]]]) -> None:
         self._table = table
 
-    def lookup(self, name: str, as_of: object = None) -> _StubLookupResult:
+    def lookup(self, name: str, as_of: dt.date | None = None) -> _StubLookupResult:
         versions = self._table.get(name, [])
         if as_of is None:
             ids = [sid for sid, _vf in versions]
         else:
-            ids = [sid for sid, vf in versions if vf <= as_of]  # type: ignore[operator]
+            ids = [sid for sid, vf in versions if vf <= as_of]
         return _StubLookupResult(ids)
 
 

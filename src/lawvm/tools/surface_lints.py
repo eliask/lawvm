@@ -67,7 +67,7 @@ def _get_store():
         from farchive import Farchive
         from lawvm.finland.transparent_store import TransparentCorpusStore
 
-        _STORE = TransparentCorpusStore(Farchive(_archive_path()))
+        _STORE = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     return _STORE
 
 

@@ -286,7 +286,8 @@ def test_corpus_run_cache_memoizes_parse_locators_and_bytes() -> None:
     )
 
     class _FakeArchive:
-        def __init__(self) -> None:
+        def __init__(self, name: str = "archive") -> None:
+            self.name = name
             self.locator_calls: list[str] = []
             self.get_calls: list[str] = []
             self.closed = 0
@@ -316,6 +317,14 @@ def test_corpus_run_cache_memoizes_parse_locators_and_bytes() -> None:
         # Same path returns the same shared handle (no re-open).
         again = cache.open_archive(Path("data/nz_legislation.farchive"), lambda _p: real)
         assert shared is again
+        writable_real = _FakeArchive("writable")
+        writable = cache.open_archive(
+            Path("data/nz_legislation.farchive"),
+            lambda _p: writable_real,
+            readonly=False,
+        )
+        assert writable is not shared
+        assert writable.name == "writable"
 
         # locators() memoized per pattern.
         assert shared.locators("pre%") == ["loc-a", "loc-b"]
@@ -398,6 +407,7 @@ _DETERMINISM_WORK_IDS = (
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_run_cache_produces_identical_report_to_uncached_path(monkeypatch: pytest.MonkeyPatch) -> None:
     # The run-scoped parse/archive cache is a pure performance layer: the report
     # built with the cache active must be byte-identical (same JSON) to the report
@@ -430,6 +440,7 @@ def test_run_cache_produces_identical_report_to_uncached_path(monkeypatch: pytes
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_north_star_over_real_work_matches_pinned_ground_truth() -> None:
     # The pinned denominator must equal the operation surface's ground-truth
     # family counts, and the agreeing numerator must be bounded by it.

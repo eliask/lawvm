@@ -361,6 +361,34 @@ def test_enumerated_block_decision_header_items_are_statute() -> None:
     assert {b.term for b in tk} == {"räjähdysaineella", "välineellä"}
 
 
+def test_enumerated_block_sovellettaessa_application_cue_header() -> None:
+    # The APPLICATION-cue enumerated header "… sovellettaessa tarkoitetaan:" opens
+    # a statute-wide definitions block exactly like "Tässä laissa tarkoitetaan:".
+    # Previously dropped by both lanes (the "Tässä <unit>" arm did not match), so
+    # the items were silently lost. Statute scope (application cue = whole
+    # instrument, identical to "Tätä lakia sovellettaessa").
+    text = (
+        "Valvontalakia ja tätä asetusta sovellettaessa tarkoitetaan: "
+        "työsuojeluviranomaisella valvovaa viranomaista; "
+        "työpaikalla työn tekemisen paikkaa;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert {b.scope for b in tk} == {"statute"}
+    assert {b.term for b in tk} == {"työsuojeluviranomaisella", "työpaikalla"}
+
+
+def test_sovellettaessa_referential_noudatetaan_is_not_a_block_header() -> None:
+    # The ambiguity guard: a "… sovellettaessa noudatetaan …" referential clause
+    # ("when applying …, the following is observed") lacks the "tarkoitetaan:"
+    # tail and must NOT open a definitions block (no fabrication).
+    text = (
+        "Tätä lakia sovellettaessa noudatetaan seuraavaa: "
+        "viranomaisella on oikeus saada tietoja;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert tk == []
+
+
 def test_decree_inline_definiendum_before_verb_is_statute() -> None:
     # Inline decree definition with the definiendum (adessive) BEFORE the verb,
     # mirroring the "Tässä laissa X:llä tarkoitetaan …" inline shape.

@@ -116,6 +116,81 @@ def test_application_clause():
     assert_total_ownership(tp)
 
 
+def test_coordinated_commencement_and_application_both_owned():
+    # "tulee voimaan X ja sitä sovelletaan Y" — ONE sub-sentence carrying BOTH a
+    # commencement and an application clause. Production keeps only the first
+    # (break-after-first) so the "sitä sovelletaan Y" half was unowned; the
+    # construction now owns BOTH halves (the L0 ruler's dominant unowned span).
+    text = (
+        "Tämä laki tulee voimaan 13 päivänä heinäkuuta 1988 "
+        "ja sitä sovelletaan 16 päivästä toukokuuta 1988 lukien."
+    )
+    tp = parse_temporal_sentence(text)
+    assert tp.kind == "temporal"
+    roles = {c.role for c in tp.clauses}
+    assert roles == {ROLE_COMMENCEMENT, ROLE_APPLICATION}
+    # the commencement date is the production-extracted ISO date
+    com = next(c for c in tp.clauses if c.role == ROLE_COMMENCEMENT)
+    assert com.date == "1988-07-13"
+    # the application clause owns its applicability date span (elative form) but
+    # carries NO census date (production never dates a transition)
+    app = next(c for c in tp.clauses if c.role == ROLE_APPLICATION)
+    assert app.date == ""
+    assert app.cue.lower() == "sitä sovelletaan"
+    assert app.date_start is not None
+    assert "16 päivästä toukokuuta 1988" in text[app.date_start : app.date_end]
+    assert_total_ownership(tp)
+
+
+def test_coordinated_first_time_application_owned():
+    text = (
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 1991 "
+        "ja sitä sovelletaan ensimmäisen kerran vuodelta 1991 toimitettavassa verotuksessa."
+    )
+    tp = parse_temporal_sentence(text)
+    assert {c.role for c in tp.clauses} == {ROLE_COMMENCEMENT, ROLE_APPLICATION}
+    app = next(c for c in tp.clauses if c.role == ROLE_APPLICATION)
+    assert app.date_start is not None
+    assert text[app.date_start : app.date_end].lower() == "ensimmäisen kerran"
+    assert_total_ownership(tp)
+
+
+def test_standalone_application_clause_owned():
+    # "Lakia sovelletaan …" — production (which keys only "tätä lakia sovelletaan")
+    # left this entirely unparsed; the broadened cue now owns it as an application
+    # clause.
+    text = "Lakia sovelletaan vakuutusmaksuun, joka on kertynyt vuoden 1991 loppuun."
+    tp = parse_temporal_sentence(text)
+    assert tp.kind == "temporal"
+    assert tp.parser_lane == TEMPORAL_LANE_CONSTRUCTION_OWNED
+    assert tp.clauses[0].role == ROLE_APPLICATION
+    assert tp.clauses[0].cue.lower() == "lakia sovelletaan"
+    assert_total_ownership(tp)
+
+
+def test_standalone_application_non_laki_statute_kind_owned():
+    # The non-laki statute kinds (asetus / päätös) the production cue omitted.
+    for text in (
+        "Tätä asetusta sovelletaan ulkomaan viranomaisen pyytäessä.",
+        "Tätä päätöstä sovelletaan ensimmäisen kerran määrättäessä veroa.",
+    ):
+        tp = parse_temporal_sentence(text)
+        assert tp.clauses[0].role == ROLE_APPLICATION, text
+        assert_total_ownership(tp)
+
+
+def test_application_cue_without_date_owns_only_cue_fail_loud():
+    # Fail-loud: an application cue with no parseable date/scope owns ONLY its cue
+    # span — no guessed date span, no fabricated census date.
+    text = "Lakia sovelletaan vakuutusmaksuun, joka on kertynyt vuoden 1991 loppuun."
+    tp = parse_temporal_sentence(text)
+    c = tp.clauses[0]
+    assert c.role == ROLE_APPLICATION
+    assert c.date == ""
+    assert c.date_start is None and c.date_end is None
+    assert_total_ownership(tp)
+
+
 def test_validity_precedence_over_commencement():
     # A sentence carrying BOTH "on voimassa" and "tulee voimaan" classifies as
     # validity (production precedence: EXPIRY pattern checked before COMMENCEMENT).
@@ -227,6 +302,29 @@ def test_census_match_multi_clause_unit():
 def test_census_match_numeric_commencement():
     # Both projection and oracle record commencement with empty date → match.
     assert _bucket("Tämä laki tulee voimaan 1.1.2027.") == "match"
+
+
+def test_census_coordinated_is_superset_not_miss():
+    # The coordinated commencement+application sentence: production keys ONLY the
+    # commencement; the projection adds the transition key → SUPERSET (miss=0
+    # preserved — the projection never DROPS an oracle key).
+    text = (
+        "Tämä laki tulee voimaan 13 päivänä heinäkuuta 1988 "
+        "ja sitä sovelletaan 16 päivästä toukokuuta 1988 lukien."
+    )
+    tp = parse_temporal_sentence(text)
+    assert "commencement:1988-07-13" in projection_temporal_keys(tp)
+    assert "transition:" in projection_temporal_keys(tp)
+    assert _temporal_oracle_keys_for_span(text) == {"commencement:1988-07-13"}
+    assert _bucket(text) == "superset"
+
+
+def test_census_standalone_application_is_superset_not_miss():
+    # "Lakia sovelletaan …" — production finds nothing; the projection adds the
+    # transition key → superset, never a miss.
+    text = "Lakia sovelletaan vakuutusmaksuun, joka on kertynyt vuoden 1991 loppuun."
+    assert _temporal_oracle_keys_for_span(text) == set()
+    assert _bucket(text) == "superset"
 
 
 def test_oracle_keys_shape():

@@ -10,7 +10,7 @@ the underlying expander helper.
 """
 from __future__ import annotations
 
-from lawvm.finland.cross_refs import extract_cross_refs
+from lawvm.finland.references.cross_refs import extract_cross_refs
 from lawvm.finland.references.sections import (
     coordinated_member_paths_from_ref_surface,
     parse_body_provision_tail,

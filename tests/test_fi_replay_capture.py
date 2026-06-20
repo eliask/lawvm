@@ -104,6 +104,29 @@ def test_replay_legal_operation_capture_list_invalidates_snapshot_index_on_rewri
     assert _snapshot_section_los_for_identity(history, section_2) == [rewritten]
 
 
+def test_replay_legal_operation_capture_list_preserves_snapshot_index_on_metadata_rewrite() -> None:
+    payload = IRNode(kind=IRNodeKind.SECTION, label="1", text="one")
+    op = LegalOperation(
+        op_id="snapshot_section_1",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=payload,
+        source=OperationSource(statute_id="1999/1", effective="2000-01-01"),
+    )
+    history = ReplayLegalOperationCaptureList()
+    history.append(op)
+    section_1 = SectionSnapshotIdentity(part="", chapter="", section="1")
+    assert _snapshot_section_los_for_identity(history, section_1) == [op]
+    snapshot_index = history.snapshot_index
+
+    rewritten = replace(op, source=OperationSource(statute_id="1999/1", effective="2001-01-01"))
+    history[0] = rewritten
+
+    assert history.snapshot_index is snapshot_index
+    assert _snapshot_section_los_for_identity(history, section_1) == [rewritten]
+
+
 def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> None:
     history = ReplayLegalOperationCaptureList()
     history.base_provision_index_cache = {("base",): object()}

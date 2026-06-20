@@ -15,8 +15,8 @@ from lawvm.finland.citation_routing import (
 )
 from lawvm.finland.metadata import (
     _normalize_johtolause_verbs,
-    get_johtolause,
-    get_operative_body_repeal_candidate,
+    get_johtolause_from_tree,
+    get_operative_body_repeal_candidate_from_tree,
 )
 from lawvm.finland.scope import restrict_sec1_fallback_to_parent
 
@@ -215,6 +215,7 @@ def _extract_body_lead_text(muutos_tree: etree._Element) -> str:
 def build_amendment_acquisition_result(
     *,
     xml_bytes: bytes,
+    muutos_tree: etree._Element | None = None,
     parent_id: str,
     amendment_id: str,
     source_title: str,
@@ -224,11 +225,12 @@ def build_amendment_acquisition_result(
     lacks_operative_structure: Optional[bool] = None,
     operative_structure_tags: Optional[Sequence[str]] = None,
 ) -> AmendmentAcquisitionResult:
-    muutos_tree = etree.fromstring(xml_bytes)
+    if muutos_tree is None:
+        muutos_tree = etree.fromstring(xml_bytes)
     if lacks_operative_structure is None or operative_structure_tags is None:
         lacks_operative_structure, operative_structure_tags = amendment_lacks_operative_structure(muutos_tree)
 
-    preamble_text = get_johtolause(xml_bytes)
+    preamble_text = get_johtolause_from_tree(muutos_tree)
     preamble_normalized = _normalize_johtolause_verbs(preamble_text or "")
     sec1_text = _extract_sec1_text(muutos_tree, parent_id)
     sec1_normalized = _normalize_johtolause_verbs(sec1_text) if sec1_text else ""
@@ -237,7 +239,7 @@ def build_amendment_acquisition_result(
 
     body_repeal_candidate = ""
     if lacks_operative_structure:
-        body_repeal_candidate = get_operative_body_repeal_candidate(xml_bytes)
+        body_repeal_candidate = get_operative_body_repeal_candidate_from_tree(muutos_tree)
     body_repeal_candidate_normalized = _normalize_johtolause_verbs(body_repeal_candidate) if body_repeal_candidate else ""
 
     pre_routing_sec1_requested = bool(should_use_sec1_fallback_pre_routing(preamble_text) and sec1_text)

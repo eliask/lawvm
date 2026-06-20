@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional, Protocol, Sequence
-
-import lxml.etree as etree
+from typing import TYPE_CHECKING, Callable, Optional, Protocol, Sequence
 
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.finland.acquisition import AmendmentAcquisitionResult
@@ -13,8 +11,12 @@ from lawvm.finland.citation_routing import OP_KEYWORDS
 from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree, _is_body_only_amendment_surface
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.process_findings import ProcessFindingRecorder
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.source_pathology import build_empty_operative_body_pathology
 from lawvm.finland.vts import VtsSkippedTarget, extract_vts_repeals_fallback
+
+if TYPE_CHECKING:
+    from lawvm.finland.frontend_compile import _AmendmentTreeMetadata
 
 ReplayPrint = Callable[[str], None]
 OpsEnricher = Callable[..., list[AmendmentOp]]
@@ -46,8 +48,7 @@ class ProcessPrecompileSelectionContext:
     parent_title: str
     source_title: str
     johto: str
-    xml_bytes: bytes
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     strict_profile: Optional[StrictProfile]
     acquisition: AmendmentAcquisitionResult
     skip_to_compile: bool
@@ -59,7 +60,7 @@ class ProcessPrecompileSelectionContext:
     vts_skipped_targets: list[VtsSkippedTarget]
     finding_recorder: ProcessFindingRecorder
     replay_print: ReplayPrint
-    amendment_metadata: object | None = None
+    amendment_metadata: "_AmendmentTreeMetadata | None" = None
     extract_vts_repeals: VtsExtractor = extract_vts_repeals_fallback
     enrich_ops_from_amendment_tree: OpsEnricher = _enrich_ops_from_amendment_tree
 
@@ -71,21 +72,21 @@ class ProcessPrecompileSelectionContext:
             )
 
         self._record_post_routing_sec1_fallback()
-        vts_ops = self.extract_vts_repeals(
-            self.johto,
-            self.xml_bytes,
-            self.parent_id,
-            self.parent_title,
-            self.strict_profile,
+        vts_ops = self.source_model.extract_vts_repeals(
+            extract_vts_repeals=self.extract_vts_repeals,
+            johto=self.johto,
+            parent_id=self.parent_id,
+            parent_title=self.parent_title,
+            strict_profile=self.strict_profile,
             skipped_targets_out=self.vts_skipped_targets,
         )
         if vts_ops:
-            ops = self.enrich_ops_from_amendment_tree(
-                vts_ops,
-                self.amendment_id,
-                self.muutos_tree,
-                None,
-                self.johto,
+            ops = self.source_model.enrich_ops_from_amendment_tree(
+                enrich_ops=self.enrich_ops_from_amendment_tree,
+                ops=vts_ops,
+                amendment_id=self.amendment_id,
+                master=None,
+                johto=self.johto,
                 metadata=self.amendment_metadata,
             )
             self.replay_print(
@@ -136,11 +137,10 @@ class ProcessPrecompileSelectionContext:
         normalized_johto = " ".join(self.johto.split()).lower()
         is_enacting_formula = normalized_johto == "eduskunnan päätöksen mukaisesti"
         is_body_only_amendment = _is_body_only_amendment_surface(self.johto, self.source_title)
-        sections = self.muutos_tree.findall(".//{*}section[@eId]") or self.muutos_tree.findall(".//{*}section")
-        has_eid_free_body_sections = bool(sections) and not any(
-            section.get("eId") for section in self.muutos_tree.findall(".//{*}section")
+        return bool(
+            (is_enacting_formula or is_body_only_amendment)
+            and self.source_model.has_eid_free_body_sections()
         )
-        return bool((is_enacting_formula or is_body_only_amendment) and has_eid_free_body_sections)
 
     def _record_empty_body_pathology_if_needed(self) -> None:
         if not self.lacks_operative_structure or self.acquisition.sec1_text.strip():

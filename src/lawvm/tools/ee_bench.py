@@ -21,7 +21,10 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Any, List, Optional, Protocol, cast
+
+if TYPE_CHECKING:
+    from lawvm.core.bench_contract import BenchUnitResult
 
 from lawvm.estonia.compare import irnode_to_ee_comparison_text
 from lawvm.estonia.compare import normalize_ee_comparison_text
@@ -375,6 +378,65 @@ def _score_one_pair(gid: str, base_id: str, oracle_id: str, title: str, archive:
         )
 
 
+# ---------------------------------------------------------------------------
+# Unified cross-jurisdiction bench contract — Estonia adapter
+#
+# Re-house the existing EE section exact-match accuracy into a contract
+# BenchUnitResult without changing it. EE has no separate text-similarity axis
+# (its section comparison is byte-exact), so text_err is left unattempted.
+# See lawvm.core.bench_comparator_registry and notes/UNIFIED_BENCH_CONTRACT.md.
+# ---------------------------------------------------------------------------
+
+
+def ee_bench_unit_result(result: _BenchResult) -> "BenchUnitResult":
+    """Map an EE ``_BenchResult`` onto a contract ``BenchUnitResult``.
+
+    - ``structural_err = 1 - sec_match`` (section exact-match accuracy).
+    - ``text_err = None`` — EE has no continuous text axis.
+    - ``residue_buckets`` count the mismatched sections
+      (``o_secs - matching == round(o_secs * structural_err)``), which is
+      non-zero iff ``sec_match < 1`` — so the structural error reconciles.
+
+    Only ``OK`` rows with ``o_secs > 0`` are scored, exactly matching the EE
+    aggregate's own ``ok`` filter; everything else is non-scored or a crash.
+    """
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
+
+    unit_id = result.base_id or result.grupi_id
+    if result.status == "OK":
+        if result.o_secs <= 0:
+            # OK row but oracle has no body sections — nothing to score against.
+            return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
+        structural_err = 1.0 - result.sec_match
+        mismatched = round(result.o_secs * structural_err)
+        residue: dict[str, int] = {}
+        if mismatched > 0:
+            residue["section_mismatch"] = mismatched
+        elif structural_err > 0:
+            residue["section_mismatch"] = 1
+        return BenchUnitResult(
+            unit_id=unit_id,
+            status=BenchStatus.SCORED,
+            structural_err=structural_err,
+            text_err=None,
+            residue_buckets=residue,
+        )
+    if result.status == "EMPTY_ORACLE":
+        return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
+    # "ERR" (replay error set) or "EXC:..." (caught exception) — a genuine failure.
+    witnesses = (result.status,) if result.status.startswith("EXC") else ()
+    return BenchUnitResult(unit_id=unit_id, status=BenchStatus.CRASH, witnesses=witnesses)
+
+
+def _register_ee_bench_comparator() -> None:
+    from lawvm.core.bench_comparator_registry import register_bench_comparator
+
+    register_bench_comparator("ee", ee_bench_unit_result)
+
+
+_register_ee_bench_comparator()
+
+
 def _score_one_pair_worker(item: tuple[str, str, str]) -> _BenchResult:
     """Top-level picklable wrapper for parallel execution.
 
@@ -445,6 +507,21 @@ def _run_bench(
 # ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
+
+
+def _render_unified_summary(results: list[_BenchResult], label: str) -> None:
+    """Print the shared cross-jurisdiction headline via the bench contract.
+
+    EE scores only the structural (section exact-match) axis — it has no
+    continuous text axis — so the worst-of headline is the structural axis and
+    ``render_summary`` omits a text line. The detailed bespoke EE report
+    (``_print_report``) follows and is preserved in full.
+    """
+    from lawvm.core.bench_aggregate import render_summary
+
+    unit_results = [ee_bench_unit_result(r) for r in results]
+    for line in render_summary(unit_results, label, jurisdiction="ee"):
+        print(line)
 
 
 def _print_report(results: list[_BenchResult], label: str) -> None:
@@ -811,5 +888,6 @@ def main(args) -> None:
     results = _run_bench(pairs, meta, archive, workers=workers)
     archive.close()
 
+    _render_unified_summary(results, label)
     _print_report(results, label)
     _save_results(results, label)

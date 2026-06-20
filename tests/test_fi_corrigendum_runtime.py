@@ -271,6 +271,69 @@ def test_patch_table_keeps_johtolauseen_jalkeen_in_body_patch_lane(tmp_path: Pat
     ]
 
 
+def test_patch_table_routes_section_num_before_heading_corrigendum_to_body_patch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    records_path = tmp_path / "corrigendum_official_fi.jsonl"
+    manual_path = tmp_path / "corrigendum_manual.yaml"
+    manual_path.write_text("[]\n", encoding="utf-8")
+    records_path.write_text(
+        json.dumps(
+            {
+                "stable_id": "official#0",
+                "source_pdf": "x",
+                "statute_id": "1990/848",
+                "amendment_id": "377/2017",
+                "lang": "fi",
+                "correction_index": 0,
+                "correction_type": "johtolause",
+                "location_desc": "Sivulla 1, pykälän otsikon edellä",
+                "wrong_text": "5 §.",
+                "correct_text": "35 §",
+                "parse_error": None,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+
+    table = corr.CorrigendumPatchTable.load_from_source(records_path)
+
+    assert "2017/377" not in table._patches
+    assert table._body_patches["2017/377"] == [
+        ("5 §.", "35 §", "Sivulla 1, pykälän otsikon edellä")
+    ]
+
+
+def test_patch_source_body_xml_corrects_unique_section_num_before_heading() -> None:
+    xml = b"""\
+<?xml version="1.0" encoding="UTF-8"?>
+<akomaNtoso><act><body>
+  <section>
+    <num>5 \xc2\xa7</num>
+    <heading>Vahingonkorvausvastuu</heading>
+    <hcontainer name="omission"/>
+    <subsection><content><p>uusi kolmas momentti</p></content></subsection>
+  </section>
+</body></act></akomaNtoso>"""
+    table = corr.CorrigendumPatchTable()
+    table._body_patches["2017/377"] = [
+        ("5 §.", "35 §", "Sivulla 1, pykälän otsikon edellä")
+    ]
+    corr.clear_misapplied_records()
+
+    patched, applied = table.patch_source_body_xml(xml, "2017/377")
+
+    assert applied == ["body_patch/2017/377/0"]
+    assert b"<num>35 \xc2\xa7</num>" in patched
+    assert b"<num>5 \xc2\xa7</num>" not in patched
+    assert corr.get_misapplied_records() == []
+
+
 def test_patch_table_preserves_unsupported_table_corrections(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
     manual_path = tmp_path / "corrigendum_manual.yaml"

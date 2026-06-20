@@ -288,6 +288,7 @@ def test_bench_dash_j_nz_routes_to_nz_bench_not_finland(monkeypatch: pytest.Monk
 
 
 @pytest.mark.skipif(not _FARCHIVE.exists(), reason="NZ farchive not available")
+@pytest.mark.slow
 def test_scan_keeps_only_amendment_bearing_works() -> None:
     # A narrow prefix keeps the scan fast. Every kept row must have >0 ops and
     # the stats must account for every scanned work (no silent drops).

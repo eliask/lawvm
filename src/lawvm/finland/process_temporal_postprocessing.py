@@ -13,9 +13,7 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Set
 
-from lxml import etree
-
-from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope
+from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.phase_result import Finding
@@ -31,12 +29,11 @@ from lawvm.finland.kumotaan_replay import (
     _live_suffix_section_labels_for_numeric_kumotaan_ranges,
     _rewrite_kumotaan_snapshot_replaces_to_repeal,
 )
-from lawvm.finland.metadata import (
-    _commencement_expiry_override,
-    _section_commencement_effective_override,
-    _section_subsection_commencement_effective_override,
-    get_operative_body_repeal_candidate,
+from lawvm.finland.effect_lifecycle_signals import (
+    EffectLifecycleOverride,
+    EffectLifecycleOverrideScope,
 )
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import (
     _rewrite_compiled_op_activation_rule_effective,
     _rewrite_compiled_op_activation_rule_effective_for_addresses,
@@ -63,8 +60,7 @@ class ProcessTemporalPostprocessContext:
     ctx_id: str
     source_title: str
     johto: str
-    xml_bytes: bytes
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     base_ir: IRNode
     state: ReplayState
     replay_mode: str
@@ -73,7 +69,7 @@ class ProcessTemporalPostprocessContext:
     lo_ops_out: Optional[List[_LegalOperation]]
     compiled_ops_out: Optional[List[Dict[str, object]]]
     amendment_temporal_events: list[TemporalEvent]
-    commencement_expiry_override_notes: list[dict[str, object]]
+    commencement_expiry_override_notes: list[EffectLifecycleOverride]
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
     section_expiry_overrides: tuple[tuple[str, Set[str], dt.date], ...] = ()
@@ -107,14 +103,23 @@ class ProcessTemporalPostprocessContext:
             for target_mid, _labels, _expiry in self.section_expiry_overrides
         )
         accepted = None
-        if has_foreign_scoped_expiry or b"voimaantulos" in self.xml_bytes.lower():
-            accepted = _commencement_expiry_override(
-                self.muutos_tree,
+        if has_foreign_scoped_expiry or self.source_model.source_text_contains("voimaantulos"):
+            accepted = self.source_model.commencement_expiry_override(
                 self.amendment_id,
                 section_expiry_overrides=self.section_expiry_overrides,
             )
         if accepted is not None:
             target_mid, labels, expiry = accepted
+            if target_mid != self.amendment_id:
+                self.commencement_expiry_override_notes.append(
+                    EffectLifecycleOverride(
+                        source_statute=self.amendment_id,
+                        target_statute=target_mid,
+                        scope=_section_override_scope(labels),
+                        expiry=expiry.isoformat(),
+                        context="accepted_amendment",
+                    )
+                )
             if target_mid != self.amendment_id and _rewrite_lo_op_source_expiry(
                 self.lo_ops_out,
                 target_mid,
@@ -129,17 +134,18 @@ class ProcessTemporalPostprocessContext:
                     f"  [{self.amendment_id}] voimaantulo_expiry_override (accepted): "
                     f"{target_mid} {scope} -> {expiry.isoformat()}"
                 )
-                self.commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": self.amendment_id,
-                        "target_statute": target_mid,
-                        "labels": scope,
-                        "expiry": expiry.isoformat(),
-                        "context": "accepted_amendment",
-                    }
-                )
 
         for target_mid, labels, expiry in self.section_expiry_overrides:
+            if target_mid == self.amendment_id:
+                self.commencement_expiry_override_notes.append(
+                    EffectLifecycleOverride(
+                        source_statute=self.amendment_id,
+                        target_statute=target_mid,
+                        scope=_section_override_scope(labels),
+                        expiry=expiry.isoformat(),
+                        context="accepted_section_temporary",
+                    )
+                )
             if target_mid == self.amendment_id and _rewrite_lo_op_source_expiry(
                 self.lo_ops_out,
                 target_mid,
@@ -154,21 +160,9 @@ class ProcessTemporalPostprocessContext:
                     f"  [{self.amendment_id}] temporary_section_expiry_override (accepted): "
                     f"{target_mid} {scope} -> {expiry.isoformat()}"
                 )
-                self.commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": self.amendment_id,
-                        "target_statute": target_mid,
-                        "labels": scope,
-                        "expiry": expiry.isoformat(),
-                        "context": "accepted_section_temporary",
-                    }
-                )
 
     def apply_section_commencement_overrides(self) -> None:
-        override = _section_commencement_effective_override(
-            self.muutos_tree,
-            self.amendment_id,
-        )
+        override = self.source_model.section_commencement_effective_override(self.amendment_id)
         if override is not None:
             target_mid, chapter_section_map, effective = override
             lo_updated = _rewrite_lo_op_source_effective(
@@ -210,18 +204,17 @@ class ProcessTemporalPostprocessContext:
                     f"{target_mid} {scope} -> {effective.isoformat()}"
                 )
                 self.commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": self.amendment_id,
-                        "target_statute": target_mid,
-                        "labels": scope,
-                        "effective": effective.isoformat(),
-                        "context": "accepted_section_commencement",
-                    }
+                    EffectLifecycleOverride(
+                        source_statute=self.amendment_id,
+                        target_statute=target_mid,
+                        scope=_chapter_section_override_scope(chapter_section_map),
+                        effective=effective.isoformat(),
+                        context="accepted_section_commencement",
+                    )
                 )
 
-        subsection_override = _section_subsection_commencement_effective_override(
-            self.muutos_tree,
-            self.amendment_id,
+        subsection_override = self.source_model.section_subsection_commencement_effective_override(
+            self.amendment_id
         )
         if subsection_override is None:
             return
@@ -255,13 +248,13 @@ class ProcessTemporalPostprocessContext:
                 f"{target_mid} {scope} -> {effective.isoformat()}"
             )
             self.commencement_expiry_override_notes.append(
-                {
-                    "source_statute": self.amendment_id,
-                    "target_statute": target_mid,
-                    "labels": scope,
-                    "effective": effective.isoformat(),
-                    "context": "accepted_subsection_commencement",
-                }
+                EffectLifecycleOverride(
+                    source_statute=self.amendment_id,
+                    target_statute=target_mid,
+                    scope=EffectLifecycleOverrideScope.exact_addresses(scoped_addresses),
+                    effective=effective.isoformat(),
+                    context="accepted_subsection_commencement",
+                )
             )
 
     def apply_later_effective_group_rewrites(self) -> None:
@@ -331,6 +324,16 @@ class ProcessTemporalPostprocessContext:
                 if chap_map_sets is not None:
                     chap_map_sets.setdefault(chapter, set()).update(labels)
 
+        if kumotaan_labels:
+            self.commencement_expiry_override_notes.append(
+                EffectLifecycleOverride(
+                    source_statute=self.amendment_id,
+                    target_statute=self.amendment_id,
+                    scope=_kumotaan_override_scope(kumotaan_labels, chap_map_sets),
+                    expiry=self.amendment_effective_date.isoformat(),
+                    context="repeal_clause",
+                )
+            )
         if kumotaan_labels and _rewrite_lo_op_source_expiry(
             self.lo_ops_out,
             self.amendment_id,
@@ -345,15 +348,6 @@ class ProcessTemporalPostprocessContext:
             self.replay_print(
                 f"  [{self.amendment_id}] kumotaan_section_expiry_override: "
                 f"{self.amendment_id} {scope} -> {self.amendment_effective_date.isoformat()}"
-            )
-            self.commencement_expiry_override_notes.append(
-                {
-                    "source_statute": self.amendment_id,
-                    "target_statute": self.amendment_id,
-                    "labels": scope,
-                    "expiry": self.amendment_effective_date.isoformat(),
-                    "context": "repeal_clause",
-                }
             )
             _rewrite_kumotaan_snapshot_replaces_to_repeal(
                 self.lo_ops_out,
@@ -380,13 +374,13 @@ class ProcessTemporalPostprocessContext:
 
         johto_for_subsection = self.johto
         if not _extract_kumotaan_subsection_refs(self.johto):
-            body_repeal = get_operative_body_repeal_candidate(self.xml_bytes)
+            body_repeal = self.source_model.operative_body_repeal_candidate()
             if body_repeal:
                 johto_for_subsection = self.johto + " " + body_repeal
         subsection_map = _extract_kumotaan_subsection_refs(johto_for_subsection)
         if not subsection_map:
             return
-        pure_subsection_count = _inject_pure_kumotaan_subsection_repeal_ops(
+        pure_subsection_result = _inject_pure_kumotaan_subsection_repeal_ops(
             self.lo_ops_out,
             amendment_id=self.amendment_id,
             source_title=self.source_title,
@@ -396,6 +390,19 @@ class ProcessTemporalPostprocessContext:
             state=self.state,
             source_raw_text=johto_for_subsection,
         )
+        for skipped in pure_subsection_result.skipped_targets:
+            self.record_finding(
+                kind="APPLY.UNCOVERED_BODY_RECOVERY_SKIPPED",
+                message="Pure kumotaan subsection injection skipped an unresolved target.",
+                source_statute=self.amendment_id,
+                detail={
+                    "message": "Pure kumotaan subsection injection skipped an unresolved target.",
+                    **skipped.finding_detail(),
+                },
+                role="observation",
+                blocking=False,
+            )
+        pure_subsection_count = pure_subsection_result.injected_count
         if pure_subsection_count:
             self.replay_print(
                 f"  [{self.amendment_id}] pure_kumotaan_subsection_repeal_injected: "
@@ -430,3 +437,53 @@ class ProcessTemporalPostprocessContext:
             ),
             group_id=event_group_id,
         )
+
+
+def _section_override_scope(labels: Set[str] | None) -> EffectLifecycleOverrideScope:
+    return EffectLifecycleOverrideScope.sections(sorted(labels or ()))
+
+
+def _chapter_section_override_scope(
+    chapter_section_map: Dict[Optional[str], Set[str]]
+) -> EffectLifecycleOverrideScope:
+    addresses: list[LegalAddress] = []
+    for chapter, sections in sorted(
+        chapter_section_map.items(), key=lambda item: str(item[0] or "")
+    ):
+        for section in sorted(sections):
+            path: list[tuple[str, str]] = []
+            if chapter:
+                path.append(("chapter", str(chapter)))
+            path.append(("section", str(section)))
+            addresses.append(LegalAddress(path=tuple(path)))
+    return EffectLifecycleOverrideScope.exact_addresses(addresses)
+
+
+def _kumotaan_override_scope(
+    labels: list[str],
+    chapter_section_map: Optional[Dict[Optional[str], Set[str]]],
+) -> EffectLifecycleOverrideScope:
+    if not chapter_section_map:
+        return EffectLifecycleOverrideScope.sections(sorted(set(labels)))
+
+    addresses: list[LegalAddress] = []
+    uncovered_labels: list[str] = []
+    covered: set[str] = set()
+    for chapter, sections in sorted(
+        chapter_section_map.items(), key=lambda item: str(item[0] or "")
+    ):
+        for section in sorted(sections):
+            label = str(section)
+            covered.add(label.lower())
+            if chapter is None:
+                uncovered_labels.append(label)
+                continue
+            path: list[tuple[str, str]] = []
+            path.append(("chapter", str(chapter)))
+            path.append(("section", label))
+            addresses.append(LegalAddress(path=tuple(path)))
+    for label in sorted(set(labels)):
+        if label.lower() in covered:
+            continue
+        uncovered_labels.append(str(label))
+    return EffectLifecycleOverrideScope.mixed(labels=uncovered_labels, addresses=addresses)

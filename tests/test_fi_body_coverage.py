@@ -14,9 +14,10 @@ from lxml import etree
 
 from lawvm.core.coverage import CoverageClaim, CoverageGap, CoverageReport, CoverageUnit
 from lawvm.finland.body_coverage import (
-    extract_body_coverage,
-    collect_coverage_claims,
+    BodyCoveragePayloadRef,
     analyze_coverage,
+    collect_coverage_claims,
+    extract_body_coverage,
 )
 from lawvm.finland.ops import AmendmentOp, OpType, TargetKind
 
@@ -103,6 +104,78 @@ def test_extract_two_sections() -> None:
     # No nonoperative tags on plain sections
     for u in units:
         assert "nonoperative" not in u.tags
+
+
+def test_extract_body_coverage_payload_ref_is_typed_and_part_scoped() -> None:
+    tree = _body(
+        """
+        <crossHeading>V osa</crossHeading>
+        <chapter>
+          <num>3 luku</num>
+          <section>
+            <num>9 §</num>
+            <subsection><content><p>Text.</p></content></subsection>
+          </section>
+        </chapter>
+        """
+    )
+
+    unit = extract_body_coverage(tree)[1]
+
+    assert unit.unit_id == "section_3_9"
+    assert isinstance(unit.payload_ref, BodyCoveragePayloadRef)
+    assert unit.payload_ref == BodyCoveragePayloadRef(
+        unit_id="section_3_9",
+        unit_kind="section",
+        label="9",
+        chapter="3",
+        part="5",
+        source_tag="section",
+    )
+
+
+def test_extract_body_coverage_part_heading_with_title_scopes_payload_ref() -> None:
+    tree = _body(
+        """
+        <crossHeading>V OSA KANSAINVÄLISEN YKSITYISOIKEUDEN SÄÄNNÖKSET</crossHeading>
+        <chapter>
+          <num>4 luku</num>
+          <section>
+            <num>129 §</num>
+            <subsection><content><p>Text.</p></content></subsection>
+          </section>
+        </chapter>
+        """
+    )
+
+    units = extract_body_coverage(tree)
+    section = [unit for unit in units if unit.kind == "section"][0]
+
+    assert section.unit_id == "section_4_129"
+    assert isinstance(section.payload_ref, BodyCoveragePayloadRef)
+    assert section.payload_ref.part == "5"
+    assert section.payload_ref.chapter == "4"
+
+
+def test_extract_body_coverage_cross_heading_without_part_marker_does_not_scope_part() -> None:
+    tree = _body(
+        """
+        <crossHeading>Voimaantulosäännökset</crossHeading>
+        <chapter>
+          <num>4 luku</num>
+          <section>
+            <num>129 §</num>
+            <subsection><content><p>Text.</p></content></subsection>
+          </section>
+        </chapter>
+        """
+    )
+
+    units = extract_body_coverage(tree)
+    section = [unit for unit in units if unit.kind == "section"][0]
+
+    assert isinstance(section.payload_ref, BodyCoveragePayloadRef)
+    assert section.payload_ref.part is None
 
 
 # ---------------------------------------------------------------------------

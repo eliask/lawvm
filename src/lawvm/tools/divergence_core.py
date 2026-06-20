@@ -27,6 +27,22 @@ DiagnosisCode = Literal[
 ]
 
 
+_INLINE_EDITORIAL_RESIDUE_MARKERS = (
+    "aiempi sanamuoto",
+    "l:lla",
+    "tulee voimaan",
+    "tuli voimaan",
+    "väliaikaisesti voimassa",
+    "oli väliaikaisesti",
+    "on kumottu",
+)
+
+
+def has_inline_editorial_residue_marker(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in _INLINE_EDITORIAL_RESIDUE_MARKERS)
+
+
 def clean_comparison_text(text: str) -> str:
     return re.sub(r"[^a-z0-9äöå]", "", text.lower())
 
@@ -95,7 +111,15 @@ def diagnose_section_divergence(
                 include_explanation,
             )
 
-    if replay_clean and oracle_clean and Levenshtein.ratio(replay_clean, oracle_clean) >= 0.95:
+    if (
+        replay_clean
+        and oracle_clean
+        and (
+            has_inline_editorial_residue_marker(replay_text)
+            or has_inline_editorial_residue_marker(oracle_text)
+        )
+        and Levenshtein.ratio(replay_clean, oracle_clean) >= 0.95
+    ):
         return _finish(
             "EDITORIAL_CONVENTION",
             "divergence is inline editorial residue — oracle editorial choice",
@@ -121,7 +145,7 @@ def diagnose_section_divergence(
 
     clean_len_diff = len(clean_comparison_text(replay_text)) - len(clean_comparison_text(oracle_text))
     source = _blame_field(blame_op, "source_statute", "?")
-    action = _blame_field(blame_op, "action", "")
+    action = _blame_field(blame_op, "action", "").upper()
 
     if clean_len_diff > 40:
         if blame_op and action in ("REPLACE", "INSERT"):

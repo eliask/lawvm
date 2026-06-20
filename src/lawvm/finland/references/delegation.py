@@ -59,22 +59,64 @@ permissive modals are matched as closed-set ``word`` tokens; clause windows are
 token-index ranges between clause-terminator tokens; nearest-actor selection and
 subject capture are token-index operations. Emitted spans are whole-token aligned
 (re-baselined vs. the old char-regex spans). The frame PAYLOAD shape is UNCHANGED.
+
+CANONICAL CUTOVER (DELEGATION-UNIFY-VERDICT step 4)
+==================================================
+The forward-grant RECOGNITION is no longer this module's own token walk. The
+single canonical forward-grant construction parser
+(:func:`lawvm.finland.legal_surface.delegation_canonical.parse_delegation_grants`,
+substrate decision Q1: B's TokenTape wins) is now the SOLE producer of the
+forward-grant fact; ``recognize_delegation_frames`` is a thin ADAPTER that calls
+it and projects each canonical :class:`DelegationGrant` back to the existing
+:class:`DelegationFrame` shape (delegate_actor / instrument_kind /
+binding_strength / subject_span / source_span – PAYLOAD UNCHANGED), preserving
+``delegation_frame`` node identity for every grant B already recognized.
+
+Adjudicated DELTAS vs. the old self-contained B walk (each is allowed by the
+DELEGATION_UNIFY_FRONTIER_2026_06_20 adjudication, never a silent change):
+
+  * **old_C_correct additions** -- the old B's typed-actor REQUIREMENT
+    residualized a bare / impersonal ``asetuksella säädetään`` (no registered
+    actor), the ``Opetusministeriön`` issuer the registry lacks verbatim, the
+    ``vahvistetaan`` / ``määritellään`` verb shapes, and the sentence-initial
+    capitalized ``Asetuksella`` as ``delegation_without_actor`` – emitting NO
+    frame and LOSING the genuine grant. The canonical parser binds those issuers
+    (registry → issuer-head fallback → underspecified-NEVER-absent) and emits
+    the grant. The adapter therefore now emits a frame for them; ``delegate_actor``
+    carries the bound issuer surface, or ``""`` when the issuer is underspecified
+    (the impersonal register: the issuer EXISTS in the grant, left unfixed by the
+    text – NOT absent).
+  * **old_B_false_positive removals** -- the old B keyed off the bare genitive
+    ``asetuksen`` and emitted a FALSE grant for an existing-instrument
+    cross-reference (``valtioneuvoston asetuksen 34 §:n … säädetään``). The
+    canonical section-path / statute-id cross-reference guard correctly DECLINES
+    them (typed ``cross_reference_instrument`` residue, no frame).
+
+The ``ambiguous_delegate_actor`` residual is PRESERVED: a canonical grant whose
+bound holder surface resolves to >1 registry candidate (and is not a closed role)
+is still handed back as a typed residual rather than a frame with a guessed id.
+Canonical residuals for the shapes the OLD B silently skipped (cross-reference,
+postposition complement, instrument-without-verb) are NOT re-surfaced as B
+residuals – the old B emitted no residual for them, so neither does the adapter.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple
 
-from lawvm.core.legal_surface_tokens import Token, TokenTape
+from lawvm.core.legal_surface_tokens import TokenTape
 from lawvm.core.reference_mention import SourceSpan
 from lawvm.finland.canonical_actor_registry import REGISTRY
 from lawvm.finland.references.role_actors import (
     DELEGATION_ROLE_ACTORS as _ROLE_ACTORS,
 )
-from lawvm.finland.references.role_actors import (
-    expand_role_actor_phrases,
+
+# The single canonical forward-grant construction parser (substrate Q1: token-
+# native). Unguarded import = fail loud (a missing canonical parser is a real
+# defect, never a silent fallback to a private token walk).
+from lawvm.finland.legal_surface.delegation_canonical import (
+    parse_delegation_grants,
 )
-from lawvm.finland.references.token_actor_match import TokenActorMatcher
 
 # ---------------------------------------------------------------------------
 # Closed vocabularies (NORMATIVE)
@@ -89,18 +131,12 @@ from lawvm.finland.references.token_actor_match import TokenActorMatcher
 #:   päätös    "decision"                    (päätöksellä / päättää)
 InstrumentKind = Literal["asetus", "määräys", "ohje", "päätös"]
 
-_INSTRUMENT_KINDS: Tuple[InstrumentKind, ...] = ("asetus", "määräys", "ohje", "päätös")
-
 #: Closed binding-strength vocabulary, read off the modal surface ONLY. This is
 #: a SURFACE classification of the modal token, NOT a legal force assertion:
 #:   must  the clause uses säädetään / annetaan / antaa / määrätään / päättää
 #:         (passive "is provided" or neutral active "issues") — no permissive modal
 #:   may   the clause uses voidaan / voi (permissive modal surface)
 BindingStrength = Literal["must", "may"]
-
-#: Permissive modal surfaces → binding_strength="may". Longest-first matters so
-#: "voidaan" is preferred over a hypothetical shorter prefix.
-_MAY_MODALS: Tuple[str, ...] = ("voidaan", "voi")
 
 # ---------------------------------------------------------------------------
 # Closed generic role-actor list (NORMATIVE)
@@ -120,55 +156,6 @@ _MAY_MODALS: Tuple[str, ...] = ("voidaan", "voi")
 # generic role here rather than an arbitrary single ministry.
 
 
-def _build_actor_phrases() -> Tuple[str, ...]:
-    """Union of registry phrase variants and closed role actors, longest-first.
-
-    The institutional vocabulary is read READ-ONLY from the shared ``REGISTRY``;
-    we do not mutate it. Role actors are the narrow delegation subset of the
-    shared closed list, expanded with their sentence-initial capitalized variant.
-    """
-    phrases = set(REGISTRY.all_phrases_longest_first())
-    phrases.update(expand_role_actor_phrases(_ROLE_ACTORS))
-    return tuple(sorted(phrases, key=len, reverse=True))
-
-
-_ACTOR_PHRASES_LONGEST_FIRST: Tuple[str, ...] = _build_actor_phrases()
-
-# Shared token-native actor matcher (longest-first, case-sensitive verbatim text).
-_ACTOR_MATCHER = TokenActorMatcher(_ACTOR_PHRASES_LONGEST_FIRST)
-
-# ---------------------------------------------------------------------------
-# Delegation surface shape patterns (CLOSED set)
-# ---------------------------------------------------------------------------
-#
-# Each pattern captures the actor surface and instrument-kind surface. Binding
-# strength is derived from whether a permissive modal (voidaan/voi) is present.
-# We require the actor and the instrument noun to be in the SAME clause window
-# (no clause terminator between them); a delegation-shaped clause that names an
-# instrument but cannot tie it to a typeable actor becomes a residual.
-#
-# A "delegation-shaped clause" is one carrying both an instrument-kind surface
-# AND a delegation verb surface (säätää/säädetään/antaa/annetaan/määrätään/
-# päättää) — that conjunction is what makes the clause a delegation candidate.
-
-#: Delegation verb surfaces (CLOSED, lowercase) that, together with an instrument
-#: noun, mark the clause as a delegation candidate. Matched as exact ``word``
-#: tokens (verbatim Token.text), mirroring the old case-sensitive regex.
-_DELEGATION_VERBS: frozenset[str] = frozenset(
-    {
-        "säädetään",
-        "säätää",
-        "säädettävä",
-        "annetaan",
-        "antaa",
-        "annettava",
-        "määrätään",
-        "määrätä",
-        "päättää",
-        "päätetään",
-    }
-)
-
 # Map an instrument surface token (verbatim) to its canonical InstrumentKind.
 # Used after a match to canonicalize. Longest roots checked first.
 _INSTRUMENT_SURFACE_TO_KIND: Tuple[Tuple[str, InstrumentKind], ...] = (
@@ -186,76 +173,6 @@ def _instrument_kind_for_surface(surface: str) -> Optional[InstrumentKind]:
         if low.startswith(root):
             return kind
     return None
-
-
-#: Instrument-noun surfaces (the noun naming the instrument), CLOSED lowercase
-#: set. Verb-only forms ("säädetään"/"määrätään") are NOT instrument nouns and are
-#: matched separately as delegation verbs. Matched as exact ``word`` tokens.
-_INSTRUMENT_NOUNS: frozenset[str] = frozenset(
-    {
-        "asetuksella",
-        "asetuksen",
-        "asetus",
-        "määräyksiä",
-        "määräyksen",
-        "määräykset",
-        "määräys",
-        "ohjeita",
-        "ohjeet",
-        "ohjeen",
-        "ohje",
-        "päätöksellä",
-        "päätöksen",
-        "päätös",
-    }
-)
-
-#: Permissive modal surfaces → binding_strength="may" (exact ``word`` tokens).
-_MAY_MODAL_SET: frozenset[str] = frozenset(_MAY_MODALS)
-
-#: Postposition surfaces (CLOSED, lowercase) that take a genitive complement. An
-#: instrument noun in the genitive immediately FOLLOWED by one of these is the
-#: complement of the postposition phrase, NOT the object of a delegation verb.
-#: This excludes the standard enacting preamble
-#: ``<actor> päätöksen mukaisesti säädetään`` (= "is provided in accordance with
-#: the decision of <actor>"), where ``päätöksen`` is the postposition complement
-#: and not a delegated instrument, and the ``… nojalla …`` authority-basis shape.
-_POSTPOSITIONS: frozenset[str] = frozenset(
-    {
-        "mukaisesti",
-        "mukaan",
-        "nojalla",
-        "perusteella",
-        "estämättä",
-    }
-)
-
-#: Demonstrative-determiner surfaces (CLOSED, lowercase) heading a cross-reference
-#: to an EXISTING instrument (``tätä asetusta``, ``tämän asetuksen``, ``tässä
-#: asetuksessa`` = "this decree"). An instrument noun immediately PRECEDED by one
-#: of these is naming an already-existing instrument, not a newly-delegated one,
-#: so it must not seed a second delegation frame in the clause.
-_DEMONSTRATIVES: frozenset[str] = frozenset(
-    {
-        "tätä",
-        "tämän",
-        "tässä",
-        "tästä",
-        "tähän",
-        "tällä",
-        "tuota",
-        "tuon",
-        "tuossa",
-        "sitä",
-        "sen",
-        "siinä",
-        "siihen",
-    }
-)
-
-#: Maximum subject-span length (characters) captured as the trailing subject
-#: surface. The subject is a SURFACE span only; it is not parsed.
-_MAX_SUBJECT_SPAN = 200
 
 
 # ---------------------------------------------------------------------------
@@ -349,70 +266,6 @@ def _span(source_file: str, start: int, end: int) -> SourceSpan:
     )
 
 
-def _is_terminator(tok: Token) -> bool:
-    """A token that bounds a clause window (token-side mirror of ``.;:`` / newline)."""
-    if tok.category == "punct" and tok.text in ".;:":
-        return True
-    if tok.category == "whitespace" and "\n" in tok.text:
-        return True
-    return False
-
-
-def _clause_token_bounds(
-    tokens: Tuple[Token, ...], idx: int
-) -> Tuple[int, int]:
-    """Return (lo, hi) token-index bounds of the clause containing token ``idx``.
-
-    A clause is bounded by the nearest clause-terminator tokens on either side (or
-    the tape boundaries); the terminator itself is excluded. Leading/trailing
-    whitespace tokens inside the window are trimmed. This is a SURFACE window.
-    """
-    lo = idx
-    while lo > 0 and not _is_terminator(tokens[lo - 1]):
-        lo -= 1
-    hi = idx
-    n = len(tokens)
-    while hi < n and not _is_terminator(tokens[hi]):
-        hi += 1
-    # trim whitespace tokens at the window edges
-    while lo < hi and tokens[lo].category == "whitespace":
-        lo += 1
-    while hi > lo and tokens[hi - 1].category == "whitespace":
-        hi -= 1
-    return (lo, hi)
-
-
-def _capture_subject_span(
-    tokens: Tuple[Token, ...], after_index: int, clause_hi: int
-) -> Optional[Tuple[int, int]]:
-    """Capture a trailing subject surface span after the instrument/verb token.
-
-    SURFACE ONLY: the run of tokens from ``after_index`` to the clause end token,
-    bounded by :data:`_MAX_SUBJECT_SPAN` characters from the run start. Returns
-    (char_start, char_end) or None if empty. Whole-token aligned, whitespace
-    trimmed.
-    """
-    i = after_index
-    while i < clause_hi and tokens[i].category == "whitespace":
-        i += 1
-    if i >= clause_hi:
-        return None
-    char_start = tokens[i].char_start
-    limit = char_start + _MAX_SUBJECT_SPAN
-    last_nonspace_end: Optional[int] = None
-    j = i
-    while j < clause_hi:
-        tok = tokens[j]
-        if tok.char_start >= limit:
-            break
-        if tok.category != "whitespace":
-            last_nonspace_end = tok.char_end
-        j += 1
-    if last_nonspace_end is None:
-        return None
-    return (char_start, last_nonspace_end)
-
-
 def _resolve_actor(
     actor_surface: str,
 ) -> Tuple[Optional[str], List[str], bool]:
@@ -438,198 +291,70 @@ def _resolve_actor(
     return None, [], False
 
 
-def _prev_word_token(tokens: Tuple[Token, ...], idx: int) -> Optional[Token]:
-    """The nearest preceding ``word`` token before ``idx`` (skipping whitespace)."""
-    j = idx - 1
-    while j >= 0:
-        if tokens[j].category == "word":
-            return tokens[j]
-        if tokens[j].category != "whitespace":
-            return None
-        j -= 1
-    return None
-
-
-def _next_word_token(tokens: Tuple[Token, ...], idx: int) -> Optional[Token]:
-    """The nearest following ``word`` token after ``idx`` (skipping whitespace)."""
-    n = len(tokens)
-    j = idx + 1
-    while j < n:
-        if tokens[j].category == "word":
-            return tokens[j]
-        if tokens[j].category != "whitespace":
-            return None
-        j += 1
-    return None
-
-
-def _is_cross_reference_instrument(
-    tokens: Tuple[Token, ...], inst_idx: int
-) -> bool:
-    """True if the instrument-noun token names an EXISTING instrument, not a
-    newly-delegated one — so it must NOT seed a delegation frame.
-
-    Two CLOSED surface shapes are excluded:
-
-      * postposition complement — the instrument is immediately FOLLOWED by a
-        genitive-governing postposition (``päätöksen mukaisesti``, ``… nojalla``).
-        This is the enacting preamble / authority-basis shape, where the noun is
-        the complement of the postposition, not the object of the delegation verb.
-      * demonstrative cross-reference — the instrument is immediately PRECEDED by
-        a demonstrative determiner (``tätä asetusta``, ``tämän asetuksen``),
-        naming an instrument that already exists rather than delegating a new one.
-    """
-    nxt = _next_word_token(tokens, inst_idx)
-    if nxt is not None and nxt.text.lower() in _POSTPOSITIONS:
-        return True
-    prev = _prev_word_token(tokens, inst_idx)
-    if prev is not None and prev.text.lower() in _DEMONSTRATIVES:
-        return True
-    return False
-
-
-def _first_delegation_verb_index(
-    tokens: Tuple[Token, ...], lo: int, hi: int
-) -> Optional[int]:
-    """First delegation-verb word-token index in [lo, hi), or None."""
-    for j in range(lo, hi):
-        tok = tokens[j]
-        if tok.category == "word" and tok.text in _DELEGATION_VERBS:
-            return j
-    return None
-
-
-def _clause_has_may_modal(
-    tokens: Tuple[Token, ...], lo: int, hi: int
-) -> bool:
-    for j in range(lo, hi):
-        tok = tokens[j]
-        if tok.category == "word" and tok.text in _MAY_MODAL_SET:
-            return True
-    return False
-
-
 def _scan_tape(tape: TokenTape, source_file: str) -> DelegationScan:
-    tokens = tape.tokens
+    """Adapt the canonical forward-grant scan into B's frame/residual shape.
+
+    DELEGATION-UNIFY-VERDICT step 4: the forward-grant recognition is the
+    canonical parser's; this adapter projects each canonical
+    :class:`~lawvm.finland.legal_surface.delegation_canonical.DelegationGrant`
+    back to a :class:`DelegationFrame`, preserving the PAYLOAD shape and the
+    ``delegation_frame`` node identity for grants B already recognized.
+
+    The ``ambiguous_delegate_actor`` residual is preserved: a grant whose bound
+    holder surface resolves to >1 registry candidate (and is not a closed role)
+    is handed back as a typed residual, never a frame with a guessed id.
+    """
+    source_text = "".join(t.text for t in tape.tokens)
+    scan = parse_delegation_grants(tape, source_text)
 
     frames: List[DelegationFrame] = []
     residuals: List[DelegationResidual] = []
 
-    consumed_instrument_idx: set[int] = set()
-
-    for inst_idx, inst_tok in enumerate(tokens):
-        if inst_idx in consumed_instrument_idx:
-            continue
-        if inst_tok.category != "word" or inst_tok.text not in _INSTRUMENT_NOUNS:
-            continue
-
-        instrument_kind = _instrument_kind_for_surface(inst_tok.text)
+    for grant in scan.grants:
+        instrument_kind = _instrument_kind_for_surface(grant.instrument)
         if instrument_kind is None:
-            continue  # not a closed-set instrument; impossible by construction
-
-        # The instrument noun must be a DELEGATED instrument (the object of the
-        # delegation verb), not the complement of a postposition (the enacting
-        # preamble ``päätöksen mukaisesti säädetään`` / ``… nojalla …``) nor a
-        # demonstrative cross-reference to an already-existing instrument
-        # (``tätä asetusta``, ``tämän asetuksen``). Such tokens are skipped: they
-        # are not delegation candidates and must not seed a (possibly second)
-        # frame in the clause.
-        if _is_cross_reference_instrument(tokens, inst_idx):
+            # impossible: canonical instrument vocab is the same closed set.
             continue
 
-        clause_lo, clause_hi = _clause_token_bounds(tokens, inst_idx)
-        if clause_lo >= clause_hi:
-            continue
-        clause_char_start = tokens[clause_lo].char_start
-        clause_char_end = tokens[clause_hi - 1].char_end
-        clause_text = "".join(t.text for t in tokens[clause_lo:clause_hi])
-
-        # A delegation-shaped clause requires a delegation verb in the clause.
-        verb_idx = _first_delegation_verb_index(tokens, clause_lo, clause_hi)
-        if verb_idx is None:
-            # An instrument noun without a delegation verb is not a delegation
-            # clause (e.g. a bare cross-reference to "asetuksen 3 §"). Skip.
-            continue
-
-        consumed_instrument_idx.add(inst_idx)
-
-        # Binding strength from the modal surface in the clause.
         binding: BindingStrength = (
-            "may" if _clause_has_may_modal(tokens, clause_lo, clause_hi) else "must"
+            "may" if grant.binding_strength == "may" else "must"
         )
 
-        # Find the delegate actor in the clause window.
-        actor_matches = _ACTOR_MATCHER.find_in_window(tokens, clause_lo, clause_hi)
-        if not actor_matches:
-            residuals.append(
-                DelegationResidual(
-                    kind="delegation_without_actor",
-                    surface_text=clause_text,
-                    source_span=_span(
-                        source_file, clause_char_start, clause_char_end
-                    ),
-                    detail=(
-                        f"delegation-shaped clause names instrument "
-                        f"{instrument_kind!r} under a delegation verb but no "
-                        f"known delegate actor appears in the clause: "
-                        f"{clause_text!r}"
-                    ),
+        clause_text = source_text[grant.frame_start : grant.frame_end]
+        actor_surface = grant.holder_surface
+
+        # AMBIGUOUS-ACTOR PRESERVATION. The old B residualized a clause whose
+        # nearest actor surface resolved to >1 registry candidate (and was not a
+        # closed role). The canonical parser binds the same surface as the holder
+        # and emits a grant; to keep B's identity we re-apply B's actor typing to
+        # the bound holder and residualize the ambiguous case instead of emitting
+        # a frame with a guessed canonical id. An underspecified holder ("") and
+        # an issuer-head-fallback holder are NOT registry-ambiguous (they never
+        # resolve to >1 candidate), so they flow through as frames (the
+        # adjudicated old_C_correct additions).
+        if actor_surface:
+            canonical_id, candidates, is_role = _resolve_actor(actor_surface)
+            if not is_role and canonical_id is None and len(candidates) > 1:
+                residuals.append(
+                    DelegationResidual(
+                        kind="ambiguous_delegate_actor",
+                        surface_text=clause_text,
+                        source_span=_span(
+                            source_file, grant.frame_start, grant.frame_end
+                        ),
+                        detail=(
+                            f"delegate-actor surface {actor_surface!r} is "
+                            f"ambiguous across {len(candidates)} canonical actors "
+                            f"({', '.join(candidates)}) in clause: {clause_text!r}"
+                        ),
+                    )
                 )
-            )
-            continue
+                continue
 
-        # Prefer the actor nearest the instrument noun (by source-char distance).
-        inst_char = inst_tok.char_start
-        actor_m = min(
-            actor_matches,
-            key=lambda m: abs(m.char_start - inst_char),
-        )
-        actor_surface = actor_m.surface
-
-        canonical_id, candidates, is_role = _resolve_actor(actor_surface)
-
-        if not is_role and canonical_id is None and len(candidates) > 1:
-            residuals.append(
-                DelegationResidual(
-                    kind="ambiguous_delegate_actor",
-                    surface_text=clause_text,
-                    source_span=_span(
-                        source_file, clause_char_start, clause_char_end
-                    ),
-                    detail=(
-                        f"delegate-actor surface {actor_surface!r} is ambiguous "
-                        f"across {len(candidates)} canonical actors "
-                        f"({', '.join(candidates)}) in clause: {clause_text!r}"
-                    ),
-                )
-            )
-            continue
-
-        if not is_role and canonical_id is None and not candidates:
-            # Actor surface matched the alternation but resolved to neither a
-            # single registry id nor a closed role. This should not happen given
-            # the alternation is built from exactly those sources, but fail loud.
-            residuals.append(
-                DelegationResidual(
-                    kind="delegation_with_untypeable_actor",
-                    surface_text=clause_text,
-                    source_span=_span(
-                        source_file, clause_char_start, clause_char_end
-                    ),
-                    detail=(
-                        f"delegate-actor surface {actor_surface!r} could not be "
-                        f"typed to a canonical actor or a closed role in clause: "
-                        f"{clause_text!r}"
-                    ),
-                )
-            )
-            continue
-
-        # Subject span: trailing surface after the later of instrument/verb end.
-        subject_after = max(inst_idx + 1, verb_idx + 1)
-        subj = _capture_subject_span(tokens, subject_after, clause_hi)
         subject_span = (
-            _span(source_file, subj[0], subj[1]) if subj is not None else None
+            _span(source_file, grant.subject_start, grant.subject_end)
+            if grant.subject_start is not None and grant.subject_end is not None
+            else None
         )
 
         frames.append(
@@ -638,7 +363,9 @@ def _scan_tape(tape: TokenTape, source_file: str) -> DelegationScan:
                 instrument_kind=instrument_kind,
                 binding_strength=binding,
                 subject_span=subject_span,
-                source_span=_span(source_file, clause_char_start, clause_char_end),
+                source_span=_span(
+                    source_file, grant.frame_start, grant.frame_end
+                ),
                 status="surface_fact_only",
                 rule_id=_RULE_ID,
             )

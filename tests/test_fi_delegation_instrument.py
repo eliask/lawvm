@@ -137,24 +137,34 @@ def test_coordinated_grant_is_ambiguous_with_full_set() -> None:
         assert [iref.char_start, iref.char_end] in cand
 
 
-# ── (d) ohje frame -> no edge, typed diagnostic ──────────────────────────────
+# ── (d) ohje frame -> NOW anchored to an ohje delegated_instrument node ───────
 
 
-def test_unanchored_instrument_kind_is_diagnostic_not_an_edge() -> None:
+def test_ohje_frame_is_anchored_after_canonical_cutover() -> None:
+    # DELEGATION-UNIFY-VERDICT step 5 / FRONTIER adjudication: ``ohje`` IS in the
+    # canonical instrument set. The construction parse (delegated_instrument lens)
+    # now calls the canonical parser, which mints an ``ohje`` delegated_instrument
+    # node for ``antaa … ohjeet …``. The ohje delegation_frame is therefore no
+    # longer "unanchored": the containment pass joins it to its ohje instrument
+    # node with a real edge. The old test asserted no edge could exist because the
+    # old two-anchor C model lacked ``ohje``; that miss is now adjudicated-fixed.
     graph = build_legal_surface_graph(_XML_DIAGNOSTIC, "102/2025")
-    # the recognizer typed a delegation_frame (instrument_kind=ohje) ...
     frames = [n for n in graph.nodes.values() if n.node_kind == "delegation_frame"]
     assert frames, "expected the recognizer to type the ohje delegation frame"
-    # ... but no delegation_grants_instrument edge was minted (ohje is outside the
-    # construction parse's instrument set, so no delegated_instrument node backs it).
-    assert not _instr_edges(graph), "no edge may be invented for an unanchored frame"
-    # and it is recorded as a typed diagnostic, never silently dropped.
+    instr = [
+        n
+        for n in graph.nodes.values()
+        if n.node_kind == DELEGATED_INSTRUMENT_NODE_KIND
+        and n.payload.get("instrument_kind") == "ohje"
+    ]
+    assert instr, "the canonical parser now mints an ohje delegated_instrument node"
+    edges = [e for e in _instr_edges(graph) if e.status == "asserted"]
+    assert edges, "the ohje frame is now anchored -> a real containment edge"
+    # no NO_INSTRUMENT_IN_FRAME diagnostic remains for the (now anchored) ohje frame
     bundle = build_surface_bundle(_XML_DIAGNOSTIC, "102/2025")
     (pass_,) = delegation_instrument_passes(bundle)
     pass_.run(graph)
-    diags = [u for u in pass_.unattached if u.reason == NO_INSTRUMENT_IN_FRAME]
-    assert diags, "expected a NO_INSTRUMENT_IN_FRAME diagnostic for the ohje frame"
-    assert any(u.instrument_kind == "ohje" for u in diags)
+    assert not [u for u in pass_.unattached if u.reason == NO_INSTRUMENT_IN_FRAME]
 
 
 # ── (e) firewall ─────────────────────────────────────────────────────────────

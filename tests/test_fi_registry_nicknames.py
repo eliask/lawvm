@@ -251,6 +251,47 @@ def test_eu_cross_domain_directive_is_multiple() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Inflected-surface expansion: bounded + case-agreeing (no Cartesian blowup).
+# ---------------------------------------------------------------------------
+
+
+def test_multiword_seed_nickname_is_case_synchronized_diagonal() -> None:
+    """``yleinen tietosuoja-asetus`` expands on the case-AGREEING diagonal.
+
+    Both words inflect into the SAME case (``yleisen tietosuoja-asetuksen``),
+    never the Cartesian product of independent per-word variants (which would
+    fabricate incoherent mixed-case combos like ``yleisen tietosuoja-asetus``).
+    The bare nominative is always present; the count stays tiny (~one per case).
+    """
+    surfaces = eu_nickname._inflected_surfaces("yleinen tietosuoja-asetus")
+    assert "yleinen tietosuoja-asetus" in surfaces  # bare lemma
+    assert "yleisen tietosuoja-asetuksen" in surfaces  # genitive diagonal
+    # No fabricated mixed-case surface (head inflected, modifier in nominative).
+    assert "yleinen tietosuoja-asetuksen" not in surfaces
+    assert len(surfaces) <= 16  # O(cases), not a product
+
+
+def test_long_document_alias_is_bounded_head_only() -> None:
+    """A long document-derived alias inflects ONLY its head; no blowup.
+
+    ``build_statute_local_nicknames`` reuses ``_inflected_surfaces`` on
+    arbitrary-length, already-inflected coined aliases. The full Cartesian
+    product of per-word variants here is ~2e8 strings (OOM). The fix inflects
+    only the head noun (``asetus``) and holds the modifier fragment invariant.
+    """
+    alias = "tutkimuslääkkeiden hyviä tuotantotapoja koskeva delegoitu asetus"
+    surfaces = eu_nickname._inflected_surfaces(alias)
+    assert alias in surfaces  # bare lemma
+    # Head inflects (genitive); the modifier fragment is held verbatim.
+    assert (
+        "tutkimuslääkkeiden hyviä tuotantotapoja koskeva delegoitu asetuksen"
+        in surfaces
+    )
+    # Bounded: O(cases), nowhere near the ~2e8-string Cartesian product.
+    assert len(surfaces) <= 16
+
+
 def test_eu_bare_vesidirektiivi_is_ambiguous_not_single() -> None:
     """``vesidirektiivi`` is not a stable term-of-art — seeded MULTIPLE.
 

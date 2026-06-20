@@ -380,6 +380,80 @@ def test_eu_nickname_miss_is_statute_only() -> None:
 
 
 # ---------------------------------------------------------------------------
+# fi-name -> EU-nickname fallback (a Finnish-shaped citation of an EU instrument)
+# ---------------------------------------------------------------------------
+#
+# An EU regulation is often cited in Finnish prose by a Finnish-shaped ``-asetus``
+# nickname (``sivutuoteasetuksen``); the by-name lane types that ``fi-name:`` even
+# though it denotes an EU instrument. When the statute-name registry misses such a
+# placeholder, the resolver falls back to the EU-nickname registry BEFORE declaring
+# a coverage gap — statute-first (a real Finnish act is never shadowed), fail-loud.
+
+
+def test_fi_name_miss_falls_back_to_eu_nickname_single() -> None:
+    """A fi-name miss that IS a known EU nickname -> resolved to its CELEX."""
+    reg = _statute_registry()  # knows no ``sivutuoteasetus`` (a Finnish miss)
+    [rr] = resolve_mentions(
+        [_mention("fi-name:sivutuoteasetus", section_label="3")],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+    )
+    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "celex:32009R1069"
+    assert rr.mention.target_provision_ref is not None
+    assert rr.mention.target_provision_ref.statute_id == "celex:32009R1069"
+    assert rr.mention.target_provision_ref.section_label == "3"
+    assert rr.mention.cite_confidence is CiteConfidence.EXACT
+    assert rr.mention.phrase_lemma == "eu_nickname_fallback_from_fi_name"
+
+
+def test_fi_name_miss_eu_fallback_multiple_is_ambiguous() -> None:
+    """A fi-name miss that is an ambiguous EU nickname -> ambiguous, all CELEX listed."""
+    reg = _statute_registry()
+    [rr] = resolve_mentions(
+        [_mention("fi-name:tietosuojadirektiivi")],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+    )
+    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.work_id is None
+    assert set(rr.candidates) == {"celex:31995L0046", "celex:32016L0680"}
+    assert rr.finding is not None
+
+
+def test_fi_name_miss_not_an_eu_nickname_stays_statute_only() -> None:
+    """A fi-name miss unknown to BOTH registries stays a STATUTE_ONLY coverage gap."""
+    reg = _statute_registry()
+    [rr] = resolve_mentions(
+        [_mention("fi-name:tuntematonlaki")],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+    )
+    assert rr.status is ResolutionStatus.STATUTE_ONLY
+    assert rr.work_id is None
+    # The placeholder is left intact — no EU CELEX was fabricated for it.
+    assert rr.mention.target_provision_ref is not None
+    assert rr.mention.target_provision_ref.statute_id == "fi-name:tuntematonlaki"
+
+
+def test_fi_name_hit_not_shadowed_by_eu_fallback() -> None:
+    """A fi-name that resolves as a Finnish statute is NOT diverted to the EU lane.
+
+    The EU fallback fires ONLY on a statute-registry miss, so a name the statute
+    registry knows resolves to its Finnish id even if an EU nickname existed.
+    """
+    reg = _statute_registry()  # knows ``luonnonsuojelulaki`` -> 1096/1996
+    [rr] = resolve_mentions(
+        [_mention("fi-name:luonnonsuojelulaki")],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+    )
+    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "1096/1996"
+    assert rr.mention.phrase_lemma != "eu_nickname_fallback_from_fi_name"
+
+
+# ---------------------------------------------------------------------------
 # pass-through cases
 # ---------------------------------------------------------------------------
 
@@ -665,3 +739,93 @@ def test_name_id_anaphora_beats_registry_with_explicit_source_id() -> None:
     results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
     assert results[1].status is ResolutionStatus.RESOLVED
     assert results[1].work_id == "28/1972"
+
+
+# ---------------------------------------------------------------------------
+# Content-word-set fallback through the resolution projection
+# ---------------------------------------------------------------------------
+
+
+def test_fi_name_content_word_set_fallback_resolves_inflection_diff() -> None:
+    """A descriptive cite missing the exact key resolves via the content-word set.
+
+    Official ``Laki maatalousyrittäjien luopumiskorvauksesta`` (sg) cited as the
+    plural ``laki maatalousyrittäjien luopumiskorvauksista``: the exact index
+    misses, the content-word-set fallback resolves to the unique id, and the
+    rewritten mention carries the fallback provenance tag.
+    """
+    reg = build_registry(
+        [
+            StatuteNameEntry(
+                "1992/1330", "Laki maatalousyrittäjien luopumiskorvauksesta"
+            )
+        ]
+    )
+    m = _mention(
+        "fi-name:laki maatalousyrittäjien luopumiskorvauksista",
+        surface_text="maatalousyrittäjien luopumiskorvauksista annetun lain",
+    )
+    [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
+    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "1992/1330"
+    assert rr.mention.cite_confidence is CiteConfidence.EXACT
+    assert (
+        rr.mention.phrase_lemma == "statute_name_content_word_set_fallback"
+    )
+
+
+def test_fi_name_content_word_set_multiple_is_ambiguous() -> None:
+    """Two acts sharing a content-word set -> ambiguous, a finding, no pick."""
+    reg = build_registry(
+        [
+            StatuteNameEntry("1990/100", "Laki valtiontalouden tarkastuksesta"),
+            StatuteNameEntry("1993/267", "Laki valtiontalouden tarkastuksessa"),
+        ]
+    )
+    m = _mention("fi-name:laki valtiontalouden tarkastuksista")
+    [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
+    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.work_id is None
+    assert set(rr.candidates) == {"1990/100", "1993/267"}
+    assert rr.finding is not None
+
+
+def test_fi_name_content_word_set_garbage_complement_stays_statute_only() -> None:
+    """A garbage complement is NOT resolved by the fallback (no fabrication)."""
+    reg = build_registry(
+        [StatuteNameEntry("2018/1", "Laki finanssivalvonnan järjestämisestä")]
+    )
+    m = _mention("fi-name:laki kun finanssivalvonnasta")
+    [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
+    assert rr.status is ResolutionStatus.STATUTE_ONLY
+    assert rr.work_id is None
+
+
+def test_fi_name_content_word_set_does_not_override_exact_match() -> None:
+    """An exact-key resolution is NOT changed by the content-word-set fallback.
+
+    The fallback is consulted only AFTER the exact lookup misses; a name that
+    resolves exactly keeps that resolution unchanged.
+    """
+    reg = build_registry(
+        [
+            StatuteNameEntry(
+                "1992/1330", "Laki maatalousyrittäjien luopumiskorvauksesta"
+            )
+        ]
+    )
+    # exact (sg) surface — resolves via the normal index, NOT the fallback tag
+    m = _mention("fi-name:laki maatalousyrittäjien luopumiskorvauksesta")
+    [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
+    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "1992/1330"
+    assert rr.mention.phrase_lemma != "statute_name_content_word_set_fallback"
+
+
+def test_trailing_period_title_resolves_inflected_cite_through_projection() -> None:
+    """A period-stored title resolves a period-free inflected cite end-to-end."""
+    reg = build_registry([StatuteNameEntry("1960/465", "Palolaki.")])
+    m = _mention("fi-name:palolaki", section_label="26")
+    [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
+    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "1960/465"

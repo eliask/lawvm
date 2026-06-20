@@ -34,6 +34,20 @@ def _paths(text: str) -> list[str]:
     return out
 
 
+def test_cached_internal_results_return_fresh_lists() -> None:
+    first = recognize_internal_refs("104 §:n 2 momentissa säädetään", _SID)
+    assert first
+
+    first.clear()
+
+    second = recognize_internal_refs("104 §:n 2 momentissa säädetään", _SID)
+    assert len(second) == 1
+    tr = second[0].target_provision_ref
+    assert tr is not None
+    assert tr.section_label == "104"
+    assert tr.subsection_num == 2
+
+
 # ---------------------------------------------------------------------------
 # DOES emit (internal shapes)
 # ---------------------------------------------------------------------------

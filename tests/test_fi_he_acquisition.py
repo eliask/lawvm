@@ -480,6 +480,23 @@ def test_non_strict_continues_after_failure(tmp_path: Path) -> None:
     assert run.added >= 1  # good HE has at least main.xml stored
 
 
+def test_acquire_fi_proposals_rejects_extensionless_dest(tmp_path: Path) -> None:
+    xml = _make_he_xml(year=2020, number=1)
+    zip_bytes = _make_zip_with_entries(
+        {
+            "akn/fi/doc/government-proposal/2020/1/fin@/main.xml": xml,
+        }
+    )
+    zip_path = tmp_path / "he.zip"
+    zip_path.write_bytes(zip_bytes)
+    farchive_path = tmp_path / "unused"
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        acquire_fi_proposals(source=str(zip_path), dest=str(farchive_path), workers=1)
+
+    assert not farchive_path.exists()
+
+
 # ---------------------------------------------------------------------------
 # 6. No-leak test: synthetic markers don't appear in non-test farchive
 # ---------------------------------------------------------------------------
@@ -565,6 +582,7 @@ def test_reproducibility_same_zip_same_metadata(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(_SKIP_REAL_CORPUS, reason=_SKIP_REASON)
+@pytest.mark.slow
 class TestRealCorpus:
     """Ingest at least 3 real HEs from government-proposal.zip and verify metadata."""
 

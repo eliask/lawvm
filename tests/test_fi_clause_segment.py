@@ -20,7 +20,46 @@ from lawvm.finland.legal_surface.clause_segment import (
     bound_scope_hint,
     build_clause_index,
     is_clause_initial_ish,
+    sentence_terminator_between,
 )
+from lawvm.finland.legal_surface.tokenize import build_token_tape
+
+
+def _terminator_between(text: str, lo: int, hi: int) -> bool:
+    return sentence_terminator_between(
+        build_token_tape("u#body", text).tokens, lo, hi
+    )
+
+
+def test_sentence_terminator_between_detects_period() -> None:
+    text = "Valtioneuvosto asettaa määräajan. Päätös voidaan peruuttaa."
+    actor_end = len("Valtioneuvosto")
+    modal_start = text.index("voidaan")
+    assert _terminator_between(text, actor_end, modal_start)
+
+
+def test_sentence_terminator_between_same_sentence_false() -> None:
+    text = "Valtioneuvosto voi antaa tarkemmat säännökset asiasta."
+    actor_end = len("Valtioneuvosto")
+    modal_start = text.index("voi")
+    assert not _terminator_between(text, actor_end, modal_start)
+
+
+def test_sentence_terminator_between_abutting_actor_end() -> None:
+    # A '.' immediately after the actor (at lo) counts (half-open [lo, hi)).
+    text = "päättää tuomioistuin. Laillisuus voidaan tutkia."
+    actor_end = text.index("tuomioistuin") + len("tuomioistuin")
+    modal_start = text.index("voidaan")
+    assert text[actor_end] == "."
+    assert _terminator_between(text, actor_end, modal_start)
+
+
+def test_sentence_terminator_between_ignores_abbreviation_dot() -> None:
+    # An abbreviation dot ("esim.") is NOT a sentence end and must not fire.
+    text = "viranomainen esim. ministeriö voi antaa määräyksiä."
+    lo = len("viranomainen")
+    hi = text.index("voi")
+    assert not _terminator_between(text, lo, hi)
 
 
 def _sentences(text: str) -> list[str]:

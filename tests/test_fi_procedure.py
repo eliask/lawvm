@@ -11,6 +11,8 @@ import dataclasses
 import pytest
 
 from lawvm.finland.references.procedure import (
+    _ACTOR_PHRASES_BY_FIRST_WORD,
+    _ACTOR_PHRASES_LONGEST_FIRST,
     ProcedureFrame,
     ProcedureResidual,
     ProcessKind,
@@ -102,6 +104,28 @@ def test_frame_without_actor_has_none() -> None:
         f.process_kind is ProcessKind.HAKEMUS and f.actor_span is None
         for f in frames
     )
+
+
+def test_actor_phrase_first_word_index_preserves_phrase_order() -> None:
+    flattened = [
+        phrase
+        for phrase in _ACTOR_PHRASES_LONGEST_FIRST
+        if phrase
+    ]
+    from_index = [
+        phrase
+        for first_word in _ACTOR_PHRASES_BY_FIRST_WORD
+        for phrase in _ACTOR_PHRASES_BY_FIRST_WORD[first_word]
+    ]
+
+    assert set(from_index) == set(flattened)
+    for first_word, phrases in _ACTOR_PHRASES_BY_FIRST_WORD.items():
+        assert all(phrase[0] == first_word for phrase in phrases)
+        assert list(phrases) == [
+            phrase
+            for phrase in _ACTOR_PHRASES_LONGEST_FIRST
+            if phrase and phrase[0] == first_word
+        ]
 
 
 # ---------------------------------------------------------------------------

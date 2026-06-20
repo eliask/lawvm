@@ -30,7 +30,7 @@ LEG_BASE = "https://www.legislation.gov.uk"
 def statute_ids_from_archive(db_path: Path, *, classes: list[str] | None = None) -> list[str]:
     from farchive import Farchive
 
-    with Farchive(db_path) as archive:
+    with Farchive(db_path, readonly=True) as archive:
         current: set[str] = set()
         suffix = "/data.xml"
         for loc in archive.locators(f"{LEG_BASE}/%/data.xml"):
@@ -80,7 +80,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     statute_payloads: list[dict[str, Any]] = []
     overall_state_counts: Counter[str] = Counter()
     n_affecting_si = 0
-    with Farchive(args.db) as archive:
+    with Farchive(args.db, readonly=True) as archive:
         for statute_id in ids:
             audit = audit_si_commencement_for_statute(
                 statute_id,

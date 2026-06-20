@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 from dataclasses import dataclass
 from inspect import Parameter, signature
 from typing import Any, Callable, Dict, Literal, Optional
@@ -103,6 +105,24 @@ def _filter_legacy_kwargs(fn: Callable[..., Any], kwargs: dict[str, object]) -> 
 
 
 def call_replay_xml(
+    replay_xml_func: Callable[..., Any],
+    *,
+    request: ReplayXmlRequest,
+    sinks: ReplayXmlSinks | None = None,
+) -> Any:
+    """Call ``replay_xml`` through the typed surface.
+
+    ``quiet=True`` is a real boundary contract: tools that request quiet replay
+    must not leak raw replay chatter, even when a legacy adapter or test fake
+    writes directly to stdout/stderr.
+    """
+    if request.quiet:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return _call_replay_xml_unsuppressed(replay_xml_func, request=request, sinks=sinks)
+    return _call_replay_xml_unsuppressed(replay_xml_func, request=request, sinks=sinks)
+
+
+def _call_replay_xml_unsuppressed(
     replay_xml_func: Callable[..., Any],
     *,
     request: ReplayXmlRequest,

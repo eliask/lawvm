@@ -74,6 +74,7 @@ ScopeResolutionSource = Literal[
     "grouped_part",
     "grouped_chapter",
     "explicit_scope_rewrite",
+    "live_stem_host",
 ]
 SectionPathResolutionReason = Literal[
     "live_unique_global_fallback",
@@ -339,7 +340,7 @@ def scope_authority_parity_for_op(
 def lo_scope_confidence(lo: _LegalOperation) -> ScopeConfidence | None:
     """Return the Finland-local scope witness stored on one LegalOperation."""
     chapter = _lo_path_dict(lo).get("chapter")
-    stored = cast(ScopeConfidence | None, getattr(lo, "scope_confidence", None))
+    stored = cast(ScopeConfidence | None, lo.scope_confidence)
     return normalize_scope_confidence(stored, resolved_chapter=chapter)
 
 
@@ -348,15 +349,13 @@ def lo_with_scope_confidence(
     scope_confidence: ScopeConfidence | None,
 ) -> _LegalOperation:
     """Attach the Finland-local scope witness to one LegalOperation."""
-    object.__setattr__(
+    return dc_replace(
         lo,
-        "scope_confidence",
-        normalize_scope_confidence(
+        scope_confidence=normalize_scope_confidence(
             scope_confidence,
             resolved_chapter=_lo_path_dict(lo).get("chapter"),
         ),
     )
-    return lo
 
 
 def lo_with_move_clause_target_unit_kind(
@@ -372,13 +371,9 @@ def lo_with_move_clause_target_unit_kind(
     it to evaluate a destination-scoped REPLACE against the move ORIGIN slot.
     Same Finland-local transport pattern as ``lo_with_scope_confidence``.
     """
-    if move_clause_target_unit_kind is not None:
-        object.__setattr__(
-            lo,
-            "move_clause_target_unit_kind",
-            move_clause_target_unit_kind,
-        )
-    return lo
+    if move_clause_target_unit_kind is None:
+        return lo
+    return dc_replace(lo, move_clause_target_unit_kind=move_clause_target_unit_kind)
 
 
 def lo_with_added_scope_tag(lo: _LegalOperation, tag: str) -> _LegalOperation:
@@ -453,7 +448,10 @@ def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
         target_unit_kind = "part"
         chapter = None
     else:
-        section, target_unit_kind, chapter = "", "section", None
+        raise ValueError(
+            "LegalOperation target path has no Finland-supported primary unit "
+            f"(part/chapter/section): {tuple(lo.target.path)!r}"
+        )
     sub_val = pd.get("subsection", "")
     special = lo.target.special
     if special == FacetKind.HEADING or str(special) == "heading":
@@ -578,6 +576,19 @@ def classify_legal_operation_conversion_skip(
             target_path=target_path,
             reason_code="ELAB.EMPTY_LEGAL_OPERATION_TARGET",
             message="LegalOperation had an empty target path; no AmendmentOp was emitted.",
+            blocking=True,
+        )
+    if target_kinds.isdisjoint({"part", "chapter", "section"}):
+        return LegalOperationConversionSkip(
+            finding_kind="ELAB.REJECTED_OPERATION",
+            op_id=lo.op_id,
+            action=action,
+            target_path=target_path,
+            reason_code="ELAB.UNSUPPORTED_DESCENDANT_ONLY_TARGET",
+            message=(
+                "LegalOperation target has subsection/item scope without a "
+                "part, chapter, or section anchor; no AmendmentOp was emitted."
+            ),
             blocking=True,
         )
 
@@ -744,7 +755,7 @@ class AmendmentOp:
         self.witness_rule_id = witness_rule_id
 
         derived_move_clause_target_unit_kind: TargetUnitKind | None = (
-            getattr(self.lo, "move_clause_target_unit_kind", None)
+            cast(TargetUnitKind | None, self.lo.move_clause_target_unit_kind)
             if self.lo is not None
             else None
         )
@@ -833,9 +844,7 @@ class AmendmentOp:
         }
         op_type: OpType = _ACTION_MAP.get(lo.action, "REPLACE")
         base_id = lo.op_id or f"op_{idx}"
-        move_clause_target_unit_kind: TargetUnitKind | None = getattr(
-            lo, "move_clause_target_unit_kind", None
-        )
+        move_clause_target_unit_kind = cast(TargetUnitKind | None, lo.move_clause_target_unit_kind)
         all_ops: List[AmendmentOp] = []
 
         target = lo.target
@@ -860,7 +869,11 @@ class AmendmentOp:
                 target_unit_kind = unit_kind
                 break
         else:
-            raw_section, path_key, target_unit_kind = "", "section", "section"
+            logging.getLogger("lawvm.finland.ops").debug(
+                "Skipping LegalOperation conversion for %s: no primary target unit",
+                lo.op_id,
+            )
+            return []
 
         sections = _expand_section_range(raw_section) if target_unit_kind == "section" else [raw_section]
         for s_idx, sec in enumerate(sections):

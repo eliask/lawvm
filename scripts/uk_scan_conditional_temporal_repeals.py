@@ -60,7 +60,9 @@ def main(argv: list[str] | None = None) -> int:
     from lawvm.uk_legislation.uk_amendment_replay import UKReplayPipeline
 
     db_path = Path(args.db) if args.db else _archive_path()
-    archive = farchive.Farchive(str(db_path))
+    if not db_path.exists():
+        raise SystemExit(f"archive not found: {db_path}")
+    archive = farchive.Farchive(str(db_path), readonly=True)
 
     if args.corpus:
         statute_ids = [

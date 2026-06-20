@@ -565,6 +565,33 @@ def test_diagnose_treats_bench_comparable_temporary_residue_stub_as_editorial() 
     assert "temporary-law editorial residue" in explanation
 
 
+def test_explain_diagnose_does_not_treat_substantive_high_similarity_as_editorial() -> None:
+    replay = (
+        "3 § Muut maksulliset suoritteet Valtion maksuperustelain 7 §:ssä "
+        "tarkoitettuja suoritteita, jotka opetus- ja kulttuuriministeriö "
+        "hinnoittelee liiketaloudellisin perustein, ovat seuraavat tilauksesta "
+        "toimitetut suoritteet: 1) opetus- ja kulttuuriministeriön hallinnassa "
+        "olevien toimitilojen ja laitteiden käyttö; 5) selvitykset, arvioinnit "
+        "ja tutkimukset."
+    )
+    oracle = (
+        "3 § Muut maksulliset suoritteet Valtion maksuperustelain 7 §:ssä "
+        "tarkoitettuja suoritteita, jotka opetusministeriö hinnoittelee "
+        "liiketaloudellisin perustein, ovat seuraavat tilauksesta toimitetut "
+        "suoritteet: 1) opetusministeriön hallinnassa olevien toimitilojen ja "
+        "laitteiden käyttö; 5) selvitykset ja tutkimukset."
+    )
+
+    diagnosis, explanation = _diagnose(
+        replay,
+        oracle,
+        {"action": "REPLACE", "source_statute": "2011/250"},
+    )
+
+    assert diagnosis == "UNKNOWN"
+    assert "different content" in explanation
+
+
 @pytest.mark.slow
 def test_explain_sync_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -> None:
     _explain_sync(

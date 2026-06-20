@@ -430,6 +430,7 @@ _REAL_DB = (
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_chain_replay_repeal_only_canary_act_public_1989_157() -> None:
     report = build_archived_work_chain_replay(
         _REAL_DB, "act_public_1989_157", families="repeal"
@@ -467,6 +468,7 @@ def test_chain_replay_repeal_only_canary_act_public_1989_157() -> None:
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_chain_replay_all_families_beats_repeal_only_canary() -> None:
     repeal_only = build_archived_work_chain_replay(
         _REAL_DB, "act_public_1989_157", families="repeal"

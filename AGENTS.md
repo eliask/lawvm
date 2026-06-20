@@ -1,40 +1,26 @@
 # LawVM Agent Guide
 
-LawVM treats legislation as an executable state transition system.
+LawVM treats legislation as an executable state transition system: amendment acts are legal-language programs that replace, repeal, insert, renumber, move, delay commencement, restrict scope, and otherwise mutate a statute tree. LawVM compiles those instructions into typed operations and replays them over legal text structure.
 
-Amendment acts are programs written in legal language. They replace, repeal,
-insert, renumber, move, delay commencement, restrict scope, and otherwise mutate
-a statute tree. LawVM compiles those instructions into typed operations and
-replays them over legal text structure.
-
-The output is an auditable account of how legal text-state came to be, which
-source facts support it, which repairs were made, and where disagreement or
-uncertainty remains.
-
-This file is for agents working in the repository. Read it as an operating
-contract, not background prose.
+The output is an auditable account of how legal text-state came to be: source facts, repairs, and remaining disagreement or uncertainty. This file is for agents working in the repository. Read it as an operating contract, not background prose.
 
 ---
 
 ## 0. The Prime Directive
 
-**Do not silently delete, mutate, reroute, widen, reorder, or invent legal
-state.**
+**Do not silently delete, mutate, reroute, widen, reorder, or invent legal state.**
 
 If a repair changes legal structure or text, it must be owned:
 
 1. give the repair a stable rule or finding name;
-2. emit a typed observation, finding, source-pathology record, mutation event,
-   or failed operation;
+2. emit a typed observation, finding, source-pathology record, mutation event, or failed operation;
 3. make strict mode able to reject it when appropriate;
 4. add a regression test;
 5. explain the source witness or legal reason that makes the repair defensible.
 
 A heuristic is allowed. An invisible heuristic is not.
 
-If the system cannot prove the requested mutation is valid, preserve the
-uncertainty. Emit a failure or unresolved finding. Do not “make the tree look
-right” by guessing.
+If the system cannot prove the requested mutation is valid, preserve the uncertainty. Emit a failure or unresolved finding. Do not “make the tree look right” by guessing.
 
 ---
 
@@ -42,10 +28,7 @@ right” by guessing.
 
 ### 1.0 If existing code doesn't follow these rules, it must be replaced/fixed
 
-There may be legacy code from learning how lawvm should work.
-
-Anything that violates rules in this guide is not permission to keep doing it.
-All such code must be fixed or replaced. When encountering such code, always report it and deliberate what takes highest precedence each time.
+There may be legacy code from learning how LawVM should work. Existing violations are not precedent: report them, deliberate precedence, and fix or replace them when they fall within the task.
 
 ### 1.1 No silent target hijacking
 
@@ -57,9 +40,7 @@ If source says:
 - a heading facet,
 - a chapter container,
 
-then the operation may not be silently applied to some other chapter,
-subsection, item, facet, or container because that happens to be the only live
-candidate.
+then the operation may not be silently applied to some other chapter, subsection, item, facet, or container because that happens to be the only live candidate.
 
 Allowed:
 
@@ -69,10 +50,8 @@ Allowed:
 
 Forbidden:
 
-- “target not found in chapter 2, but section 5 exists in chapter 8, so apply
-  there”;
-- “item 3 not found in subsection 2, but item 3 exists in subsection 4, so use
-  that”;
+- “target not found in chapter 2, but section 5 exists in chapter 8, so apply there”;
+- “item 3 not found in subsection 2, but item 3 exists in subsection 4, so use that”;
 - “subsection intro target missing, so replace the section intro instead.”
 
 ### 1.2 No action-family mutation without ownership
@@ -84,8 +63,7 @@ Do not convert legislative verbs invisibly:
 - `REPEAL item` must not become `REPEAL subsection`;
 - range expansion must not drop canonical typed intent.
 
-If recovery really requires changing the executable action, emit a named
-finding and keep the original operation traceable.
+If recovery really requires changing the executable action, emit a named finding and keep the original operation traceable.
 
 ### 1.3 No granularity escalation
 
@@ -99,8 +77,7 @@ Examples of forbidden silent escalation:
 - child operation mutates parent metadata;
 - heading or intro operation falls back to whole-node replacement.
 
-If the source payload is flat or malformed, normalize the payload first with a
-named rule, or fail the operation.
+If the source payload is flat or malformed, normalize the payload first with a named rule, or fail the operation.
 
 ### 1.4 No sibling deletion by coincidence
 
@@ -113,213 +90,123 @@ Never delete, merge, or relabel adjacent legal units based only on:
 - “same label appears twice”;
 - “probably a publisher artifact.”
 
-If sibling deletion or absorption is correct, it must be a named source
-normalization or elaboration rule with before/after evidence.
+If sibling deletion or absorption is correct, it must be a named source normalization or elaboration rule with before/after evidence.
 
 ### 1.5 No payload smuggling
 
-A claim on one child does not automatically authorize an entire parent
-container.
+A claim on one child does not automatically authorize an entire parent container.
 
-If an amendment targets section 5, and the source XML wraps it in a chapter
-payload, do not admit unrelated sections in that chapter unless they are
-claimed, covered by a valid broad target, or explicitly classified as carried
-context.
+If an amendment targets section 5, and the source XML wraps it in a chapter payload, do not admit unrelated sections in that chapter unless they are claimed, covered by a valid broad target, or explicitly classified as carried context.
 
 Payload ownership is decided in extraction/elaboration, not late in apply.
 
 ### 1.6 No unstated migration
 
-Renumbering, moving, reparenting, or placing existing provisions under a new
-container changes identity over time. It must emit migration/lineage evidence.
+Renumbering, moving, reparenting, or placing existing provisions under a new container changes identity over time. It must emit migration/lineage evidence.
 
-If code moves existing chapters into a new part, moves a section to a chapter,
-or resolves a same-label rebirth, it must leave a lineage trail. Finland may
-emit migration events; core should own their PIT/materialization semantics.
+If code moves existing chapters into a new part, moves a section to a chapter, or resolves a same-label rebirth, it must leave a lineage trail. Finland may emit migration events; core should own their PIT/materialization semantics.
 
 ### 1.7 No legal conflict resolved by Python accident
 
-Do not resolve competing versions by list order, parser order, dictionary
-iteration, or “last one wins” unless the rule is explicitly documented,
-tested, and legally/pipeline justified.
+Do not resolve competing versions by list order, parser order, dictionary iteration, or “last one wins” unless the rule is explicitly documented, tested, and legally/pipeline justified.
 
-Same effective date + same target + incompatible payload is an ambiguity until
-a precedence rule proves otherwise.
+Same effective date + same target + incompatible payload is an ambiguity until a precedence rule proves otherwise.
 
 ### 1.8 No unsupported source lane disappears
 
-If a parsed operation is filtered out, rejected, skipped, or downgraded, it must
-be visible.
+If a parsed operation is filtered out, rejected, skipped, or downgraded, it must be visible.
 
-Constraint filters must not return only “accepted operations.” They must also
-return rejected operations with reason, source, and blocking/strictness status.
+Constraint filters must not return only “accepted operations.” They must also return rejected operations with reason, source, and blocking/strictness status.
 
-### 1.9 avoid getattr and stringly-typed operations etc without a good reason
+### 1.9 Typed carriers over dynamic shape
 
-Semantic/control-plane tuples with more than two fields should normally be a
-named typed carrier, preferably `@dataclass(frozen=True, slots=True)`. This
-applies especially to function return annotations and public/internal API
-boundaries such as `list[tuple[A, B, C, D, str, str]]`: if callers must remember
-slot positions, the value needs field names. Positional tuples are acceptable
-for small mathematical pairs, coordinates, or local iteration keys, but not for
-phase-boundary evidence, operation state, authorization/status rows, invariant
-details, mutation accounting, or any value where field order carries legal
-meaning. If a tuple needs a comment explaining slot positions, make it a
-dataclass.
+Use typed carriers at semantic/phase boundaries; do not rely on wild `dict[str, object]`, `Any`, `object`, dynamic `getattr`/`hasattr`, or implicit default `LegalAddress` levels unless a concrete edge-case justification is named.
 
-### 1.10 avoid try-except too particularly in non-test code
+Semantic/control-plane tuples with more than two fields should normally be a named typed carrier, preferably `@dataclass(frozen=True, slots=True)`. This applies especially to function return annotations and public/internal API boundaries such as `list[tuple[A, B, C, D, str, str]]`: if callers must remember slot positions, the value needs field names. Positional tuples are acceptable for small mathematical pairs, coordinates, or local iteration keys, but not for phase-boundary evidence, operation state, authorization/status rows, invariant details, mutation accounting, or any value where field order carries legal meaning. If a tuple needs a comment explaining slot positions, make it a dataclass.
+
+Dynamic shape is acceptable only for explicitly local JSON/projection plumbing, test scaffolding, third-party adapter code, or another concrete edge case. In LawVM's legal-state pipeline, dynamic shape usually hides required fields, label scope, or accidental passage of serialized views back into semantics. Bare labels must carry the legal unit/scope explicitly.
+
+### 1.10 Avoid broad exception swallowing
+
+Avoid `try`/`except` in non-test code unless the boundary, failure mode, and diagnostic are explicit. Catching a broad exception to keep compilation moving is usually another form of invisible heuristic.
 
 ### 1.11 Hot-path performance discipline
 
-Do not make broad performance rewrites without a profiler witness or a bounded
-hot-path reason. See §19.1 for the general performance contract; this section
-covers regex specifically because catastrophic backtracking has caused most
-LawVM slowdowns historically.
+Do not make broad performance rewrites without a profiler witness or a bounded hot-path reason. See §19.1 for the general performance contract; this section covers regex specifically because catastrophic backtracking has caused most LawVM slowdowns historically.
 
 Regex policy:
 
-- compile reused regexes at module scope. Do not rely on Python's internal
-  recent-call cache — it thrashes once a hot path mixes many patterns;
-- never construct regex strings dynamically inside loops over provisions,
-  effects, source XML, or tree descendants. For target-specific patterns,
-  use an `@functools.lru_cache`-wrapped compile factory keyed on the
-  parametrized inputs;
-- always substring-guard before any regex scan on long legal text:
-  `if "keyword" not in text: return False` eliminates ~99% of calls and
-  costs nanoseconds. New hot-path classifiers should prefer
-  `compile_classifier_regex` over hand-written substring guards — it runs the
-  backtracking lint and attaches a sound predicate-tree prefilter automatically
-  (see `src/lawvm/core/regex_safety.py`);
-- replace regex with direct string operations only when the equivalence is
-  obvious, tested, and not semantic guesswork.
+- compile reused regexes at module scope. Do not rely on Python's internal recent-call cache — it thrashes once a hot path mixes many patterns;
+- never construct regex strings dynamically inside loops over provisions, effects, source XML, or tree descendants. For target-specific patterns, use an `@functools.lru_cache`-wrapped compile factory keyed on the parametrized inputs;
+- always substring-guard before any regex scan on long legal text: `if "keyword" not in text: return False` eliminates ~99% of calls and costs nanoseconds. New hot-path classifiers should prefer `compile_classifier_regex` over hand-written substring guards — it runs the backtracking lint and attaches a sound predicate-tree prefilter automatically (see `src/lawvm/core/regex_safety.py`);
+- replace regex with direct string operations only when the equivalence is obvious, tested, and not semantic guesswork.
 
 Catastrophic-backtracking discipline:
 
-- never write two or more adjacent unbounded quantifiers (`.+.+`, `.*.*`,
-  `[^x]+[^y]+`) in the same pattern — even with tempered-greedy anchors;
-- bound every quantifier in long-text patterns with explicit ceilings
-  (`.{0,400}?`, `[^"]{0,500}`). Typical legal-text segments are well under
-  500 chars; pick generously but pick a number;
-- the tempered-greedy idiom `(?:(?!anchor).){0,N}?` is the canonical safe
-  pattern for "match up to the next anchor;" the unbounded version is unsafe;
-- every new boolean classifier pattern in a hot path needs an adversarial
-  perf test: long worst-case input, tight wall budget (e.g. <100 ms);
-- module-scope `_NAME_RE` / `_NAME_PATTERN` constants are validated by
-  `tests/test_regex_perf_gate.py` against `lawvm_regex_risks()`
-  (see `src/lawvm/core/regex_safety.py`).
+- never write two or more adjacent unbounded quantifiers (`.+.+`, `.*.*`, `[^x]+[^y]+`) in the same pattern — even with tempered-greedy anchors;
+- bound every quantifier in long-text patterns with explicit ceilings (`.{0,400}?`, `[^"]{0,500}`). Typical legal-text segments are well under 500 chars; pick generously but pick a number;
+- the tempered-greedy idiom `(?:(?!anchor).){0,N}?` is the canonical safe pattern for "match up to the next anchor;" the unbounded version is unsafe;
+- every new boolean classifier pattern in a hot path needs an adversarial perf test: long worst-case input, tight wall budget (e.g. <100 ms);
+- module-scope `_NAME_RE` / `_NAME_PATTERN` constants are validated by `tests/test_regex_perf_gate.py` against `lawvm_regex_risks()` (see `src/lawvm/core/regex_safety.py`).
 
-LawVM stays on stdlib `re`. Lookarounds are load-bearing for Estonian
-morphology (`(?<![A-Za-zÄÖÕÜäöõüŠŽšž-])`) and Finnish `§(?!:)` discrimination,
-so `re2` is not feasible. The cost of staying on `re` is the discipline above.
+LawVM stays on stdlib `re` because jurisdiction lexers rely on lookaround and section-token discrimination that linear regex engines do not support. The cost of staying on `re` is the discipline above.
 
-Performance changes must preserve findings, rejected operations, diagnostics,
-and strict-mode behavior. Do not optimize away evidence to improve benchmark
-scores or wall time.
+Performance changes must preserve findings, rejected operations, diagnostics, and strict-mode behavior. Do not optimize away evidence to improve benchmark scores or wall time.
 
 ### 1.12 Statute compile-cost ceiling
 
-A single-statute compile + replay should not take longer than ~10 seconds.
-This is not a hard SLA but a reality check: legal amendment streams are not
-algorithmically hard. When a single statute exceeds this ceiling, the cause
-is almost always a single fixable hotspot — catastrophic regex backtracking,
-an O(N²) tree walk that should be an O(1) index lookup, a string normalization
-recomputed millions of times — not "the problem is fundamentally large."
+A single-statute compile + replay should not take longer than ~10 seconds. This is not a hard SLA but a reality check: legal amendment streams are not algorithmically hard. When a single statute exceeds this ceiling, the cause is almost always a single fixable hotspot — catastrophic regex backtracking, an O(N²) tree walk that should be an O(1) index lookup, a string normalization recomputed millions of times — not "the problem is fundamentally large."
 
 Agents encountering a slow statute should:
 
-- run `cProfile` against the single-statute path before reasoning about the
-  cause. Code-reading hypotheses about hot paths are usually wrong;
+- run `cProfile` against the single-statute path before reasoning about the cause. Code-reading hypotheses about hot paths are usually wrong;
 - treat "this statute is just hard" as a last resort, not a first hypothesis;
-- if a fix cannot bring a statute under ~10s, document the specific
-  algorithmic reason so the next agent does not re-investigate.
+- if a fix cannot bring a statute under ~10s, document the specific algorithmic reason so the next agent does not re-investigate.
 
 When wall time looks absurd, it almost certainly is.
 
-**Source-root lifecycle pattern (UK compile):** UK `compile_ops_for_statute`
-evicts affecting-act XML parse trees (ET.Element roots) after each act's last
-effect via `try/finally` + `evict_source_root_caches(root)`.  Without eviction,
-all 229 roots for a large statute accumulate (~2.6 GB peak RSS).  After eviction
-the peak drops to single-digit live roots at any point (~860 MB).  The pattern
-also clears `_source_parent_map_cache`, `_source_ancestor_chain_cache`, and
-`_EXTRACTION_CONTEXT_CACHE` explicitly because their values hold back-references
-to root (parent_map values, ancestor tuples) that defeat Python reference-count
-GC without explicit removal.
+**Source-root lifecycle pattern (UK compile):** UK `compile_ops_for_statute` evicts affecting-act XML parse trees (ET.Element roots) after each act's last effect via `try/finally` + `evict_source_root_caches(root)`.  Without eviction, all 229 roots for a large statute accumulate (~2.6 GB peak RSS).  After eviction the peak drops to single-digit live roots at any point (~860 MB).  The pattern also clears `_source_parent_map_cache`, `_source_ancestor_chain_cache`, and `_EXTRACTION_CONTEXT_CACHE` explicitly because their values hold back-references to root (parent_map values, ancestor tuples) that defeat Python reference-count GC without explicit removal.
 
 ### 1.13 Regex versus bespoke recognizer: choosing the right IR
 
-Most performance and correctness pain around string matching in LawVM comes
-from lowering the wrong kind of problem into regex, not from regex itself. The
-deciding question is never "regex or bespoke?" It is:
+Most performance and correctness pain around string matching in LawVM comes from lowering the wrong kind of problem into regex, not from regex itself. The deciding question is never "regex or bespoke?" It is:
 
 **Is this a single string predicate, or a small language/grammar?**
 
-- **Single string predicate** ("does drafting pattern P appear / extract X,Y
-  from one fixed phrase shape?") → keep regex, but compile it through the
-  safety layer (`compile_classifier_regex` / `compile_with_prefilter` in
-  `src/lawvm/core/regex_safety.py`), never raw `re.compile` for classifier
-  patterns. The wrapper adds the catastrophic-backtracking lint and a sound
-  required-literal prefilter.
-- **A family of related extraction patterns** (a drafting "language" with
-  productions) → regex is the wrong IR. Build one single-pass structured
-  recognizer (scanner / recursive descent), not dozens of overlapping
-  backtracking passes. The recognizer is still linear; it just stops being a
-  pile of `re.finditer` calls racing each other with span-overlap dedup.
+- **Single string predicate** ("does drafting pattern P appear / extract X,Y from one fixed phrase shape?") → keep regex, but compile it through the safety layer (`compile_classifier_regex` / `compile_with_prefilter` in `src/lawvm/core/regex_safety.py`), never raw `re.compile` for classifier patterns. The wrapper adds the catastrophic-backtracking lint and a sound required-literal prefilter.
+- **A family of related extraction patterns** (a drafting "language" with productions) → regex is the wrong IR. Build one single-pass structured recognizer (scanner / recursive descent), not dozens of overlapping backtracking passes. The recognizer is still linear; it just stops being a pile of `re.finditer` calls racing each other with span-overlap dedup.
 
-The correct claim is **not** "always a DFA" — drafting languages with balanced
-quotes, nested parentheses, or legal-address substructure may need a recursive
-recognizer. The claim is **single-pass structured recognizer over the text, not
-N overlapping backtracking scans.**
+The correct claim is **not** "always a DFA" — drafting languages with balanced quotes, nested parentheses, or legal-address substructure may need a recursive recognizer. The claim is **single-pass structured recognizer over the text, not N overlapping backtracking scans.**
 
-**Triggers that say "this has become a grammar — stop adding regexes, build a
-recognizer":**
+Semantic mutation filters must consume typed operations, ClauseAST/surface objects, findings, or source-pathology carriers; do not add raw-prose regex to decide target scope, action family, lifecycle effect, or whether to drop/widen a legal mutation when a grammar or typed parse can own that fact. If the grammar cannot model it yet, add the production or emit an unresolved/rejected typed finding.
+
+Conjoined substring checks are prefilters only; they never prove semantic state, source lane, target statute, action family, lifecycle, negation, or legal-address scope. The proof must be typed: parsed references/clauses, citation resolution, operation/effect carriers, findings, or a rejected/unresolved record.
+
+**Triggers that say "this has become a grammar — stop adding regexes, build a recognizer":**
 
 - the same phrase family appears as 3+ regex variants;
 - the same text is scanned repeatedly for sibling patterns;
-- captures are legal-domain objects (targets, anchors, replacements), not just
-  strings;
+- captures are legal-domain objects (targets, anchors, replacements), not just strings;
 - pattern names correspond to grammar productions;
 - adding a new legal variant requires another full-text regex pass;
-- profiling shows cumulative regex time across many patterns, not one obvious
-  bad pattern;
-- correctness needs evidence spans, precedence, or conflict resolution between
-  patterns.
+- profiling shows cumulative regex time across many patterns, not one obvious bad pattern;
+- correctness needs evidence spans, precedence, or conflict resolution between patterns.
 
-**Rule of three:** when the same matching patch (a substring guard, a bound, a
-recovery) lands for the third time, that is a defect in the abstraction, not
-three independent fixes. Stop and build the general thing. The substring-guard
-discipline that became `regex_safety`'s prefilter was hand-written across many
-classifiers before it was recognized as one missing abstraction; the UK
-drafting-phrase recognizer is the same lesson at grammar scale.
+**Rule of three:** when the same matching patch (a substring guard, a bound, a recovery) lands for the third time, that is a defect in the abstraction, not three independent fixes. Stop and build the general thing. The substring-guard discipline that became `regex_safety`'s prefilter was hand-written across many classifiers before it was recognized as one missing abstraction; the UK drafting-phrase recognizer is the same lesson at grammar scale.
 
-LawVM sits at an intersection no off-the-shelf engine serves: PCRE-like features
-(load-bearing lookaround) + owned-pattern corpus + adversarial legal text +
-hot-loop classification + no migration to a linear engine. So the matching
-infrastructure (`regex_safety.py`) is an in-tree, standalone-ready library, and
-domain grammars get bespoke recognizers. Neither "wrap every regex forever" nor
-"rewrite everything bespoke" is correct — match the mechanism to whether the
-problem is a predicate or a language.
+LawVM sits at an intersection no off-the-shelf engine serves: PCRE-like features (load-bearing lookaround) + owned-pattern corpus + adversarial legal text + hot-loop classification + no migration to a linear engine. So the matching infrastructure (`regex_safety.py`) is an in-tree, standalone-ready library, and domain grammars get bespoke recognizers. Neither "wrap every regex forever" nor "rewrite everything bespoke" is correct — match the mechanism to whether the problem is a predicate or a language.
 
-**Classify before rewriting (five kinds).** When you find a regex family, name
-which kind it is — only the last three justify grammar work:
+**Classify before rewriting (five kinds).** When you find a regex family, name which kind it is — only the last three justify grammar work:
 
 1. lexical recognizer → keep regex (+ safety wrapper);
 2. boolean classifier → keep regex (+ `compile_classifier_regex` prefilter);
 3. parser for a hidden domain language → extract a named recognizer/spec;
-4. string encoding of typed semantic objects (e.g. `TEXT_*` sentinels) → extract
-   typed objects;
-5. ambiguity/conflict policy disguised as post-processing (span-overlap dedup,
-   recognizer-order-dependent meaning) → extract an explicit policy.
+4. string encoding of typed semantic objects (e.g. `TEXT_*` sentinels) → extract typed objects;
+5. ambiguity/conflict policy disguised as post-processing (span-overlap dedup, recognizer-order-dependent meaning) → extract an explicit policy.
 
-**Two value axes — judge every candidate on both.** *Implementation value*
-(faster / safer / less duplication) and *specification value* (the hidden grammar
-becomes visible, semantic objects get named, the ambiguity/precedence policy
-becomes explicit, residuals become classifiable). A rewrite with neutral runtime
-but high spec yield is still worth doing — specifying the operational grammar of
-legislation is itself a LawVM output, not incidental cleanup. The standing rule:
-**do not let surface notation masquerade as the semantic object.**
+**Two value axes — judge every candidate on both.** *Implementation value* (faster / safer / less duplication) and *specification value* (the hidden grammar becomes visible, semantic objects get named, the ambiguity/precedence policy becomes explicit, residuals become classifiable). A rewrite with neutral runtime but high spec yield is still worth doing — specifying the operational grammar of legislation is itself a LawVM output, not incidental cleanup. The standing rule: **do not let surface notation masquerade as the semantic object.**
 
-Full ranked targets, keep-list, and spec-first ordering:
-`notes/REGEX_TO_GRAMMAR_MIGRATION.md`.
+Full ranked targets, keep-list, and spec-first ordering: `notes/REGEX_TO_GRAMMAR_MIGRATION.md`.
 
 ---
 
@@ -334,57 +221,21 @@ LawVM optimizes for:
 - bounded investigation over unbounded architecture expansion;
 - explicit unresolved states over guessed success.
 
-The correct outcome of a hard case is often not “make replay match the oracle.”
-It is “classify why replay, source, and oracle differ.”
+The correct outcome of a hard case is often not “make replay match the oracle.” It is “classify why replay, source, and oracle differ.”
 
 ### 2.1 The North Star: correct-by-construction compilation
 
-The terminal product is a **correct-by-construction consolidation**: given the
-authoritative source — amendment acts, effect feeds, and, where the source is
-genuinely ambiguous, owned human claims — LawVM derives the consolidated legal
-text deterministically, every output node traceable to the operation and source
-instruction that produced it. The end state is that this compilation is itself
-authoritative (adopted as the official consolidation), at which point there is
-no external oracle left to match.
+The terminal product is a **correct-by-construction consolidation**: given the authoritative source — amendment acts, effect feeds, and, where the source is genuinely ambiguous, owned human claims — LawVM derives the consolidated legal text deterministically, every output node traceable to the operation and source instruction that produced it. The end state is that this compilation is itself authoritative (adopted as the official consolidation), at which point there is no external oracle left to match.
 
-Divergence is the **interim** product, not the goal. Before that adoption, the
-gap between LawVM’s compilation and a jurisdiction’s current official
-consolidation is the evidence of correctness and the wedge for adoption. Once a
-frontend has closed the divergences it can deterministically resolve, every
-remaining divergence resolves to one of three buckets:
+Divergence is the **interim** product, not the goal. Before that adoption, the gap between LawVM’s compilation and a jurisdiction’s current official consolidation is the evidence of correctness and the wedge for adoption. Once a frontend has closed the divergences it can deterministically resolve, every remaining divergence resolves to one of three buckets:
 
 - **deterministic gap** — LawVM’s compiler is wrong; fix it.
-- **manual-compilation frontier** — the source does not deterministically
-  specify the result (savings/exceptions, prospective or contingent commencement,
-  point-in-time selection, cross-act placement, span-vs-enumeration ambiguity in
-  effect-feed range notation). It needs an owned claim that becomes part of the
-  authoritative input — not a guessed op.
-- **oracle-suspect** — LawVM is right and the official consolidation is
-  stale/editorial/wrong. This is a finding, not a failure.
+- **manual-compilation frontier** — the source does not deterministically specify the result (savings/exceptions, prospective or contingent commencement, point-in-time selection, cross-act placement, span-vs-enumeration ambiguity in effect-feed range notation). It needs an owned claim that becomes part of the authoritative input — not a guessed op.
+- **oracle-suspect** — LawVM is right and the official consolidation is stale/editorial/wrong. This is a finding, not a failure.
 
-Because correctness is by construction, the gate is **source faithfulness and
-invariant preservation, not oracle overlap.** Every structural mutation must
-trace to a provision named in a source instruction (or an owned claim). A score
-that measures replay-vs-oracle overlap (e.g. EID-set similarity) is a regression
-guard, not an objective: maximizing it rewards deleting oracle-present legal
-state to match a possibly-wrong oracle (over-repeal) and force-compiling
-manual-frontier cases that should stay claims. Over-retention (failing to delete)
-is the safe wrong; over-repeal (destroying state) is the forbidden one.
+Because correctness is by construction, the gate is **source faithfulness and invariant preservation, not oracle overlap.** Every structural mutation must trace to a provision named in a source instruction (or an owned claim). A score that measures replay-vs-oracle overlap (e.g. EID-set similarity) is a regression guard, not an objective: maximizing it rewards deleting oracle-present legal state to match a possibly-wrong oracle (over-repeal) and force-compiling manual-frontier cases that should stay claims. Over-retention (failing to delete) is the safe wrong; over-repeal (destroying state) is the forbidden one.
 
-**A saturated metric is not a stop condition.** When a frontend reaches its
-source-faithful frontier — the remaining divergence being oracle-editorial,
-manual-frontier, or missing-source — the high-value work *shifts*, it does not
-end. Strengthening invariants, harmonizing structure and tooling across frontends
-(core-owned primitives, consistent CLI surfaces, shared addressing/lineage/corpus
-conventions), deepening diagnosis and classification, and converting
-statute-by-statute lore into reusable families are first-class outputs in their
-own right — not consolation prizes for a stalled score. Insight and
-core-harmonization are welcome even when the benchmark does not move. Do not
-declare a jurisdiction “done” because the number stopped climbing; declare a
-specific question *resolved* and move to the next structural improvement. The
-only forbidden “continuations” are the ones that violate the discipline itself:
-rebuilding what already exists (verify first), adding guards for bugs with no
-failing case, or benchmaxxing an oracle convention.
+**A saturated metric is not a stop condition.** When a frontend reaches its source-faithful frontier — the remaining divergence being oracle-editorial, manual-frontier, or missing-source — the high-value work *shifts*, it does not end. Strengthening invariants, harmonizing structure and tooling across frontends (core-owned primitives, consistent CLI surfaces, shared addressing/lineage/corpus conventions), deepening diagnosis and classification, and converting statute-by-statute lore into reusable families are first-class outputs in their own right — not consolation prizes for a stalled score. Insight and core-harmonization are welcome even when the benchmark does not move. Do not declare a jurisdiction “done” because the number stopped climbing; declare a specific question *resolved* and move to the next structural improvement. The only forbidden “continuations” are the ones that violate the discipline itself: rebuilding what already exists (verify first), adding guards for bugs with no failing case, or benchmaxxing an oracle convention.
 
 ---
 
@@ -409,15 +260,12 @@ The legal role of each surface differs by jurisdiction.
 
 Examples:
 
-- Finland is replay-first from amendment acts against a non-authoritative
-  editorial consolidation.
-- Estonia uses replay partly as consistency verification against authoritative
-  consolidated law.
+- Finland is replay-first from amendment acts against a non-authoritative editorial consolidation.
+- Estonia uses replay partly as consistency verification against authoritative consolidated law.
 - The UK is effect-feed and version-graph heavy.
 - Norway and Sweden have their own source authority and acquisition problems.
 
-When a replay differs from an oracle, do not assume either side is wrong. First
-classify the disagreement.
+When a replay differs from an oracle, do not assume either side is wrong. First classify the disagreement.
 
 ---
 
@@ -432,8 +280,7 @@ classify the disagreement.
 - compile/replay/evidence contracts;
 - cross-jurisdiction abstractions.
 
-`src/lawvm/finland/`, `estonia/`, `uk_legislation/`, `norway/`, `sweden/`,
-`eu/`, and `us_federal/` hold jurisdiction frontends.
+`src/lawvm/finland/`, `estonia/`, `uk_legislation/`, `norway/`, `sweden/`, `eu/`, and `us_federal/` hold jurisdiction frontends.
 
 A frontend owns:
 
@@ -447,17 +294,13 @@ A frontend owns:
 - oracle/editorial adjudication;
 - emission of canonical operations, temporal events, and migration events.
 
-A frontend should not grow its own hidden replay kernel when the issue belongs
-in core.
+A frontend should not grow its own hidden replay kernel when the issue belongs in core.
 
 `src/lawvm/tools/` is the CLI and developer/debug surface.
 
-`notes/` is live architecture. Specs, postmortems, work queues, corrigenda, and
-case studies there are part of the machine. If you change semantics, update or
-read the relevant notes first.
+`notes/` is live architecture. Specs, postmortems, work queues, corrigenda, and case studies there are part of the machine. If you change semantics, update or read the relevant notes first.
 
-`jurisdiction_starter/` is the contract-first path for new frontends. Do not
-copy Finland blindly.
+`jurisdiction_starter/` is the contract-first path for new frontends. Do not copy Finland blindly.
 
 ---
 
@@ -486,12 +329,9 @@ For current architectural hazards and recent lessons:
 - `notes/SOURCE_PATHOLOGY_AND_ADJUDICATION_SPEC.md`
 - any note explicitly named by the user
 
-Historical handoffs, dated case studies, and superseded work queues are not
-part of the public v0.1 source tree. Current specs are the authority unless the
-user explicitly provides an additional local note.
+Historical handoffs, dated case studies, and superseded work queues are not part of the public v0.1 source tree. Current specs are the authority unless the user explicitly provides an additional local note.
 
-If a note says a decision is binding, treat it as binding unless the user
-explicitly tells you to supersede it.
+If a note says a decision is binding, treat it as binding unless the user explicitly tells you to supersede it.
 
 ---
 
@@ -500,8 +340,7 @@ explicitly tells you to supersede it.
 A frontend is a phased compiler. Do not blur these phases.
 
 1. **Acquire** source artifacts.
-2. **Clean** source artifacts without changing legal meaning, or emit source
-   pathology.
+2. **Clean** source artifacts without changing legal meaning, or emit source pathology.
 3. **Parse** operative language into clause/effect surface.
 4. **Extract** payloads.
 5. **Normalize source-local payload shape.**
@@ -527,11 +366,9 @@ If a bug is found late, first ask which earlier phase should have exposed it.
 
 ## 7. Heuristics Policy
 
-Heuristics are unavoidable in historical legal corpora. They are not shameful.
-Unowned heuristics are forbidden.
+Heuristics are unavoidable in historical legal corpora. They are not shameful. Unowned heuristics are forbidden.
 
-A heuristic that affects legal text, legal structure, target resolution,
-timeline selection, or operation filtering must have:
+A heuristic that affects legal text, legal structure, target resolution, timeline selection, or operation filtering must have:
 
 - stable rule ID;
 - family tag where relevant;
@@ -544,12 +381,9 @@ timeline selection, or operation filtering must have:
 
 Recommended rule families:
 
-- `transport_cleanup`: mechanical XML/HTML/PDF cleanup with no legal ontology
-  implication.
-- `ontology_normalization`: source shape violates legal-unit ontology but can
-  be repaired.
-- `historical_tolerance`: source shape is historically real but outside modern
-  drafting expectations.
+- `transport_cleanup`: mechanical XML/HTML/PDF cleanup with no legal ontology implication.
+- `ontology_normalization`: source shape violates legal-unit ontology but can be repaired.
+- `historical_tolerance`: source shape is historically real but outside modern drafting expectations.
 - `presentation_cleanup`: editorial/oracle display artifact, not law.
 - `target_resolution_recovery`: target was under-specified or context-dependent.
 - `temporal_recovery`: date/effect/expiry was inferred or corrected.
@@ -560,8 +394,7 @@ If you cannot classify the heuristic, do not add it.
 
 ## 8. Debug and Evidence Contract
 
-When fixing or adding a behavior, ensure the relevant debug/evidence path can
-answer:
+When fixing or adding a behavior, ensure the relevant debug/evidence path can answer:
 
 - Which source artifact was used?
 - Which acquisition lane won?
@@ -578,8 +411,7 @@ answer:
 - What oracle/witness was compared?
 - What finding/adjudication explains the divergence?
 
-A user diagnosing one statute should not need to reverse-engineer the phase
-from final text.
+A user diagnosing one statute should not need to reverse-engineer the phase from final text.
 
 ---
 
@@ -594,10 +426,9 @@ changed_paths ⊆ target_region(op)
              ∪ declared_migration_paths(op)
              ∪ declared_recovery_paths(op)
              ∪ declared_editorial_projection_paths(op)
-````
+```
 
-If an operation changes anything outside its target region, that extra mutation
-must be declared by:
+If an operation changes anything outside its target region, that extra mutation must be declared by:
 
 * a migration event;
 * a named recovery/normalization rule;
@@ -627,8 +458,7 @@ Target scope is not binary. Track how it was obtained.
 Useful categories:
 
 * `explicit_source`: source text explicitly named the target.
-* `explicit_source_with_context`: source named target plus explicit carried
-  chapter/part context.
+* `explicit_source_with_context`: source named target plus explicit carried chapter/part context.
 * `inferred_from_group`: target inherited from a grouped amendment formula.
 * `inferred_from_payload`: payload shape supplied missing context.
 * `inferred_from_live_unique`: live tree had exactly one plausible candidate.
@@ -704,10 +534,7 @@ Frontend should own:
 * local oracle/editorial conventions;
 * emission of core events and operations.
 
-Do not put Finnish, Estonian, UK, Norwegian, or Swedish drafting idioms into
-core unless they are proven as a genuinely shared abstraction. If core must
-host an enum or hook used by frontends, document that core does not interpret
-frontend-local values.
+Do not put Finnish, Estonian, UK, Norwegian, or Swedish drafting idioms into core unless they are proven as a genuinely shared abstraction. If core must host an enum or hook used by frontends, document that core does not interpret frontend-local values.
 
 ---
 
@@ -715,14 +542,11 @@ frontend-local values.
 
 Provision identity over time is central.
 
-Do not patch identity by address-only rekeying unless it is explicitly marked
-as temporary technical debt.
+Do not patch identity by address-only rekeying unless it is explicitly marked as temporary technical debt.
 
-Moves, renumbers, same-label rebirths, native-vs-migrated collisions, and
-repeal/reinsert cycles must be represented by lineage/migration semantics.
+Moves, renumbers, same-label rebirths, native-vs-migrated collisions, and repeal/reinsert cycles must be represented by lineage/migration semantics.
 
-Core should consume migration events. Frontends should emit them. Frontends
-should not compensate forever by late materialization hacks.
+Core should consume migration events. Frontends should emit them. Frontends should not compensate forever by late materialization hacks.
 
 If a fix changes address continuity, add:
 
@@ -735,8 +559,7 @@ If a fix changes address continuity, add:
 
 ## 14. Strict Mode Meaning
 
-Strict mode is not “run without bugs.” It means LawVM refuses unproven
-recoveries.
+Strict mode is not “run without bugs.” It means LawVM refuses unproven recoveries.
 
 Strict mode should reject or block:
 
@@ -750,8 +573,7 @@ Strict mode should reject or block:
 * ambiguous temporal precedence;
 * source-pathology repairs that are not explicitly allowed.
 
-Quirks mode may proceed through historical mess. But it must record every
-quirk.
+Quirks mode may proceed through historical mess. But it must record every quirk.
 
 ---
 
@@ -761,27 +583,19 @@ Every semantic change needs tests at the right level.
 
 Minimum for a new family fix:
 
-1. **Synthetic unit test**
-   Small constructed IR/source that isolates the family.
+1. **Synthetic unit test** Small constructed IR/source that isolates the family.
 
-2. **Real corpus regression**
-   If the bug was found in a statute, pin that statute/amendment/section.
+2. **Real corpus regression** If the bug was found in a statute, pin that statute/amendment/section.
 
-3. **Finding/observation test**
-   Assert the right rule/finding is emitted.
+3. **Finding/observation test** Assert the right rule/finding is emitted.
 
-4. **Negative test**
-   Show that the rule does not fire on a nearby valid shape.
+4. **Negative test** Show that the rule does not fire on a nearby valid shape.
 
-5. **Strict-mode test** where applicable
-   Assert strict mode rejects or records the barrier.
+5. **Strict-mode test** where applicable Assert strict mode rejects or records the barrier.
 
-6. **No-leak test** where synthetic internal markers are used
-   Opaque labels must not leak into user output, persisted artifacts,
-   `LegalAddress`, or `ProvisionTimeline`.
+6. **No-leak test** where synthetic internal markers are used Opaque labels must not leak into user output, persisted artifacts, `LegalAddress`, or `ProvisionTimeline`.
 
-Do not add a corpus-only fix with no synthetic explanation. Do not add a
-synthetic-only fix when a real statute motivated it.
+Do not add a corpus-only fix with no synthetic explanation. Do not add a synthetic-only fix when a real statute motivated it.
 
 ---
 
@@ -883,8 +697,7 @@ If you cannot fill this out, the fix is probably too ad hoc.
 Do not:
 
 * hide source defects behind silent cleanup;
-* add statute-ID special cases except as tests or documented source-pathology
-  fixtures;
+* add statute-ID special cases except as tests or documented source-pathology fixtures;
 * use exact text coincidence as identity;
 * use punctuation as the sole structural signal;
 * treat missing target as permission to mutate a parent or sibling;
@@ -921,51 +734,33 @@ A bad task:
 * “handle weird XML”;
 * “make this match Finlex.”
 
-Agents should not launch architecture expansions opportunistically. If a task
-reveals a larger family, stop and write the family diagnosis before coding a
-broad fix.
+Agents should not launch architecture expansions opportunistically. If a task reveals a larger family, stop and write the family diagnosis before coding a broad fix.
 
 ---
 
 ## 19.1 Performance Discipline
 
-Performance fixes must preserve the same evidence contract as semantic fixes.
-Do not optimize by skipping findings, observations, rejected operations,
-strict-mode barriers, source-pathology records, or adjudication detail.
+Performance fixes must preserve the same evidence contract as semantic fixes. Do not optimize by skipping findings, observations, rejected operations, strict-mode barriers, source-pathology records, or adjudication detail.
 
 In hot replay, benchmark, extraction, and source-scan paths:
 
-* see §1.11 for regex discipline (module-scope compile, substring guards,
-  bounded quantifiers, catastrophic-backtracking rules);
+* see §1.11 for regex discipline (module-scope compile, substring guards, bounded quantifiers, catastrophic-backtracking rules);
 * avoid repeated full-tree XML or mutable-IR walks inside per-operation loops;
-* build explicit indexes for repeated `eId`, sequence, label, table, or source
-  lookups;
-* stream benchmark rows and reports instead of retaining full-corpus artifacts
-  unless a command explicitly needs them;
-* make expensive fallback paths visible in timing or diagnostic output when
-  they can dominate corpus runs.
+* build explicit indexes for repeated `eId`, sequence, label, table, or source lookups;
+* stream benchmark rows and reports instead of retaining full-corpus artifacts unless a command explicitly needs them;
+* make expensive fallback paths visible in timing or diagnostic output when they can dominate corpus runs.
 
-Exceptions are allowed for cold code, one-shot scripts, tests, and genuinely
-dynamic patterns. If a dynamic pattern appears in a hot loop, document why it
-cannot be precompiled or cached.
+Exceptions are allowed for cold code, one-shot scripts, tests, and genuinely dynamic patterns. If a dynamic pattern appears in a hot loop, document why it cannot be precompiled or cached.
 
-Single-statute compile cost: see §1.12. When a statute exceeds ~10s wall,
-profile before reasoning.
+Single-statute compile cost: see §1.12. When a statute exceeds ~10s wall, profile before reasoning.
 
 ---
 
 ## 20. Agent Final Response Contract
 
-**Before finishing, the canonical gate must pass.** Run `./scripts/ci.sh --affected <touched paths>`
-(change-scoped) or `./scripts/ci.sh` (full bounded gate). It runs the relevant pytest shards **plus ruff lint**
-and is the definition of done — a green `--affected` run is required before you report; use the full gate for
-broad work.
+**Before finishing, the canonical gate must pass.** Run `./scripts/ci.sh --affected <touched paths>` (change-scoped) or `./scripts/ci.sh` (full bounded gate). It runs the relevant pytest shards plus ruff lint; a green `--affected` run is required before you report, with the full gate reserved for broad work.
 
-**Do NOT use raw `pytest tests/` as your gate.** It pulls in the `network` (live-HTTP) and `slow` (full gold
-corpus) marked tests, which hang in sandboxed/headless runs — a raw full run can sit for an hour with no result
-and is *not* a code bug. `ci.sh` runs bounded shards that exclude those markers. (To exercise a marked set
-deliberately: `pytest -m network` / `pytest -m slow`.) Keep touched files ruff-clean — do not add to the lint
-debt; `--affected` scopes lint to the relevant shard.
+**Do NOT use raw `pytest tests/` as your gate.** It pulls in `network` (live-HTTP) and `slow` (full gold corpus) marked tests, which can hang in sandboxed/headless runs for an hour without indicating a code bug. `ci.sh` runs bounded shards that exclude those markers. To exercise a marked set deliberately, use `pytest -m network` or `pytest -m slow`. Keep touched files ruff-clean; `--affected` scopes lint to the relevant shard.
 
 When an agent finishes, it must report:
 
@@ -985,8 +780,7 @@ Never report only “tests pass.”
 
 ## 21. Current Practical Priority
 
-LawVM has already accumulated enough clever heuristics. The next tier of
-quality is explicit ownership of repairs, findings, and phase boundaries.
+LawVM has already accumulated enough clever heuristics. The next tier of quality is explicit ownership of repairs, findings, and phase boundaries.
 
 Highest-value work usually falls into one of these:
 
@@ -1034,8 +828,7 @@ uv run lawvm no-verify <BASE_ID> --as-of 2024-01-01
 uv run lawvm sweden --help
 ```
 
-Many workflows require local archived sources under `data/*.farchive`.
-Reproducibility should be archive-first whenever possible.
+Many workflows require local archived sources under `data/*.farchive`. Reproducibility should be archive-first whenever possible.
 
 ---
 
@@ -1051,7 +844,6 @@ The long-term output of LawVM is a legal execution substrate:
 * cross-statute references, delegations, and breakage as graph queries;
 * jurisdiction frontends that make bounded, source-backed claims.
 
-The text is not decoration. The notes are not decoration. The findings are not
-decoration.
+The text is not decoration. The notes are not decoration. The findings are not decoration.
 
 They are part of the machine.

@@ -16,6 +16,8 @@ from lawvm.core.ir_helpers import _kind_str, irnode_content_hash
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.roman import roman_to_arabic
 
+_LETTER_SUFFIX_LABEL_RE = _re.compile(r"^(\d+)([a-z]+)$", _re.IGNORECASE)
+
 
 def _sort_label_key(label: Optional[str]) -> Tuple[Tuple[int, int, str], ...]:
     """Sort key that orders labels in legal-family order."""
@@ -27,7 +29,7 @@ def _sort_label_key(label: Optional[str]) -> Tuple[Tuple[int, int, str], ...]:
         try:
             result.append((0, int(p), ""))
         except ValueError:
-            m = _re.match(r"^(\d+)([a-z]+)$", p, _re.IGNORECASE)
+            m = _LETTER_SUFFIX_LABEL_RE.match(p)
             if m:
                 result.append((0, int(m.group(1)), m.group(2).lower()))
             else:

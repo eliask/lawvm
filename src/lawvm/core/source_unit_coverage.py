@@ -59,19 +59,19 @@ class SourceUnitCoverage:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "coverage_id",
-            "jurisdiction",
-            "source_artifact_id",
-            "source_unit_id",
-            "owner_phase",
-            "coverage_status",
-            "unit_family",
+        for field_name, value in (
+            ("coverage_id", self.coverage_id),
+            ("jurisdiction", self.jurisdiction),
+            ("source_artifact_id", self.source_artifact_id),
+            ("source_unit_id", self.source_unit_id),
+            ("owner_phase", self.owner_phase),
+            ("coverage_status", self.coverage_status),
+            ("unit_family", self.unit_family),
         ):
             object.__setattr__(
                 self,
                 field_name,
-                _required_string(field_name, getattr(self, field_name)),
+                _required_string(field_name, value),
             )
         if self.coverage_status not in _VALID_STATUSES:
             raise ValueError(

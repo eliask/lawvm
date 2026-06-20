@@ -22,9 +22,6 @@ from lawvm.finland.group_plan import (
     coalesce_same_target_mixed_scope_section_groups as _coalesce_same_target_mixed_scope_section_groups,
     group_ops_by_target as _group_ops_by_target,
 )
-from lawvm.finland.lowering_scope_recovery import (
-    resolve_group_surface_scope as _resolve_group_surface_scope,
-)
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.citation_routing import extract_pending_amendment_target_id
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
@@ -37,6 +34,7 @@ from lawvm.finland.ops import (
 )
 from lawvm.finland.scope import restrict_sec1_fallback_to_parent as _restrict_sec1_fallback_to_parent
 from lawvm.finland.scope import find_body_section_chapter as _find_body_section_chapter
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
     group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
     group_shadow_pruning_section_targets as _group_shadow_pruning_section_targets,
@@ -300,6 +298,7 @@ def build_amendment_bundle(
             parent_id=statute_id,
             mode=mode,
             stop_before=source_id,
+            build_full_products=False,
             quiet=True,
         ),
     )
@@ -319,6 +318,10 @@ def build_amendment_bundle(
         source_id,
         xml_bytes,
         source_title,
+    )
+    source_model = AmendmentSourceModel.from_tree(
+        muutos_tree,
+        source_ref=source_id,
     )
 
     route_target_amendment_id = ""
@@ -384,7 +387,7 @@ def build_amendment_bundle(
         _resolved_compile_result = compile_amendment_ops(
             before_master.replay_fold_state,
             ops,
-            muutos_tree,
+            source_model,
             johto,
             mode,
             compiled_ops_out=_compiled_rows,
@@ -419,8 +422,7 @@ def build_amendment_bundle(
             target_norm = group_key.target_norm
             target_chapter = group_key.target_chapter
             target_part = group_key.target_part
-            surface_target_chapter, surface_target_part = _resolve_group_surface_scope(
-                muutos_tree=muutos_tree,
+            surface_target_chapter, surface_target_part = source_model.resolve_group_surface_scope(
                 target_unit_kind=target_unit_kind_value,
                 target_norm=target_norm,
                 target_chapter=target_chapter,

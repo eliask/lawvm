@@ -738,7 +738,7 @@ def build_full_extractor_oracle(statute_id: str, body: str) -> _FullOracleContex
     from lawvm.tools.parse_bench import _archive_path
 
     try:
-        store = TransparentCorpusStore(Farchive(_archive_path()))
+        store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
         xb = store.read_source(statute_id) or store.read_amendment(statute_id)
     except Exception:
         xb = None

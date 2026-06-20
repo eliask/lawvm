@@ -111,6 +111,7 @@ def _statute_xml(store: CorpusStore, sid: str) -> bytes | None:
     not _corpus_available(),
     reason="LAWVM_CANONICAL_DATA_ROOT not set; real-corpus frame-id sweep skipped",
 )
+@pytest.mark.slow
 def test_no_frame_id_collisions_over_corpus_sweep() -> None:
     """No ``SurfaceAssemblyError`` over the first 1000 real corpus statutes."""
     from lawvm.finland.corpus import get_corpus_store
@@ -143,6 +144,7 @@ def test_no_frame_id_collisions_over_corpus_sweep() -> None:
     not _corpus_available(),
     reason="LAWVM_CANONICAL_DATA_ROOT not set; real-corpus determinism check skipped",
 )
+@pytest.mark.slow
 def test_frame_graph_id_stable_across_rebuilds() -> None:
     """The added occurrence index is deterministic: graph_id is rebuild-stable.
 

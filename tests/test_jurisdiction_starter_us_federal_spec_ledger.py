@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 
 from lawvm.tools.spec_ledger import SpecLedger
+from lawvm.tools.spec_ledger_discovery import format_uncataloged, locate_rule_ids
 from lawvm.tools.spec_ledger_us_catalog import (
     _US_RULE_SPECS,
     US_NON_RULE_LITERALS,
@@ -111,9 +112,11 @@ def test_every_discovered_rule_id_is_cataloged() -> None:
     discovered = _discover_us_rule_ids()
     assert discovered, "AST discovery found no US rule-id literals"
     uncataloged = sorted(discovered - set(_US_RULE_SPECS))
+    locations = locate_rule_ids(US_DIR, uncataloged, repo_root=REPO_ROOT / "src")
     assert not uncataloged, (
         f"{len(uncataloged)} US witness rule id(s) have no believed_spec entry in "
-        f"_US_RULE_SPECS (cataloged fraction < 100%): {uncataloged}"
+        "_US_RULE_SPECS (cataloged fraction < 100%) (id <- emit site):\n"
+        f"{format_uncataloged(uncataloged, locations)}"
     )
 
 
@@ -292,6 +295,75 @@ def test_uncataloged_rule_is_a_loud_legacy_unknown_blind_spot() -> None:
 def test_skipped_result_contributes_nothing() -> None:
     skipped = _result(None, status="skipped")
     assert us_ledger_inputs_from_reports([skipped]) == []
+
+
+# ---------------------------------------------------------------------------
+# Lane B: us_confidence is fail-loud on an uncataloged rule id (no optimistic
+# default-to-certain on a missing key).
+# ---------------------------------------------------------------------------
+
+
+def test_us_confidence_certain_is_the_cataloged_non_heuristic_complement() -> None:
+    """A cataloged, non-heuristic rule resolves to ``certain`` (behaviour preserved)."""
+    from lawvm.tools.spec_ledger_us_catalog import (
+        US_CONFIDENCE_CERTAIN,
+        US_CONFIDENCE_HEURISTIC,
+        us_confidence,
+    )
+
+    # An explicitly-heuristic cataloged rule stays heuristic.
+    assert us_confidence("us_amend_strike_insert") == US_CONFIDENCE_HEURISTIC
+    # A cataloged rule with no heuristic registration is certain by complement.
+    assert us_confidence(US_DRY_RUN_SECTION_AGREES_RULE_ID) == US_CONFIDENCE_CERTAIN
+
+
+def test_us_confidence_fails_loud_on_uncataloged_rule() -> None:
+    """An uncataloged rule id must NOT silently default to the most-confident tier.
+
+    The optimistic-default-on-miss trap: previously a rule id absent from the
+    confidence map returned ``certain``. Now an id absent from BOTH the heuristic
+    map and the believed-spec catalog raises a distinct named error so a typo /
+    never-classified rule cannot masquerade as a maximum-confidence fact.
+    """
+    from lawvm.tools.spec_ledger_us_catalog import (
+        USConfidenceClassificationError,
+        us_confidence,
+    )
+
+    with pytest.raises(USConfidenceClassificationError, match="refusing to default"):
+        us_confidence("us_a_brand_new_rule_nobody_classified")
+
+
+def test_every_cataloged_us_rule_resolves_without_raising() -> None:
+    """Self-evidencing completeness: every cataloged rule has a confidence tier.
+
+    This is the dual-registration completeness gate for the US confidence split:
+    the heuristic map and the certain-complement together must classify every
+    believed-spec rule, with no cataloged rule falling through to the fail-loud
+    raise.
+    """
+    from lawvm.tools.spec_ledger_us_catalog import (
+        US_CONFIDENCE_CERTAIN,
+        US_CONFIDENCE_HEURISTIC,
+        us_confidence,
+    )
+
+    for rid in _US_RULE_SPECS:
+        tier = us_confidence(rid)
+        assert tier in {US_CONFIDENCE_CERTAIN, US_CONFIDENCE_HEURISTIC}, (rid, tier)
+
+
+def test_no_dead_heuristic_confidence_entries() -> None:
+    """Every heuristic-registered rule must be cataloged (no stale confidence keys)."""
+    from lawvm.tools.spec_ledger_us_catalog import (
+        _US_RULE_CONFIDENCE,
+    )
+
+    dead = sorted(set(_US_RULE_CONFIDENCE) - set(_US_RULE_SPECS))
+    assert not dead, (
+        f"{len(dead)} _US_RULE_CONFIDENCE key(s) are not in _US_RULE_SPECS "
+        f"(stale heuristic registrations): {dead}"
+    )
 
 
 # ---------------------------------------------------------------------------

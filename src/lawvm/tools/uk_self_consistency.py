@@ -66,7 +66,9 @@ def build_uk_store() -> Any:
     """
     from farchive import Farchive
 
-    return Farchive(_DEFAULT_DB)
+    if not _DEFAULT_DB.exists():
+        raise FileNotFoundError(f"UK archive not found: {_DEFAULT_DB}")
+    return Farchive(_DEFAULT_DB, readonly=True)
 
 
 # ---------------------------------------------------------------------------

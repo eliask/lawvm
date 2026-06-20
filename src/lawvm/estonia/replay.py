@@ -24,12 +24,9 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, List, Optional
 
-from lawvm.core.compile_result import (
-    TemporalEvent,
-)
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
-from lawvm.core.temporal import TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline, StructuralAction
 from lawvm.core.timeline import compile_timelines, materialize_pit

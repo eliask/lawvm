@@ -16,10 +16,11 @@ def run_fi_transition_graph_replay(
     profile: TransitionGraphExportProfile,
 ) -> ReplayBundle:
     """Run the Finnish engine once and capture L2 ops plus timelines."""
+    from lawvm.finland.replay_capture import ReplayLegalOperationCaptureList
     from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
-    lo_ops: list[Any] = []
+    lo_ops: list[Any] = ReplayLegalOperationCaptureList()
     replay_findings: list[Any] = []
     failed_ops: list[Any] = []
     source_pathologies: list[Any] = []
@@ -69,5 +70,6 @@ def materialize_fi_transition_graph_tree(bundle: ReplayBundle, as_of: str):
         synthesize_repeal_placeholders=True,
         temporal_events=result.products.temporal_events,
         migration_events=result.products.migration_events,
+        fold_backfill_preview_cache=bundle.materialization_cache,
     )
     return products.materialized_state.ir

@@ -219,6 +219,7 @@ def resolve_insert_chapter(
     new_chapter_labels: Optional[Set[str]],
     owned_chapter_labels: Sequence[str] | Set[str],
     source_owned_chapter_labels: Optional[Set[str]] = None,
+    source_owned_part_labels: Optional[Set[str]] = None,
 ) -> InsertChapter:
     """Decide the effective chapter/part for a NEW section INSERT.
 
@@ -235,6 +236,8 @@ def resolve_insert_chapter(
 
     if not amend_chapter:
         return InsertChapter(effective_chapter, effective_part, "no_chapter_context")
+    if amend_part and amend_part in set(source_owned_part_labels or ()):
+        return InsertChapter(effective_chapter, effective_part, "source_owned_part")
 
     if new_chapter_labels is not None:
         chapter_is_new = amend_chapter in new_chapter_labels

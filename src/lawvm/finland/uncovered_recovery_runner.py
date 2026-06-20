@@ -7,14 +7,13 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
-import lxml.etree as etree
-
 from lawvm.core import tree_ops as _tops
+from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.apply_ir_ops import _relabel_section_ir
 from lawvm.finland.constraints import DEBUG
 from lawvm.finland.future_repeal import RepealTargetRef
-from lawvm.finland.helpers import _fi_label_postprocessor, _norm_num_token
+from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.merge import merge_section_with_omission_invariants
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 from lawvm.finland.replay_notices import replay_print as _replay_print
@@ -43,18 +42,18 @@ from lawvm.finland.uncovered_recovery_support import (
     _part_label_from_path,
     _section_heading_text,
     _uncovered_disposition_for_op_id,
-    _xml_part_label,
     merge_group_ops_for_section,
 )
+from lawvm.finland.uncovered_recovery_iteration import UncoveredSectionCandidate
 from lawvm.finland.uncovered_target_resolve import (
     TargetVerdict,
     resolve_insert_chapter,
     resolve_target,
 )
 from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
-from lawvm.finland.xml_ir import fi_xml_to_ir_node
 
 if TYPE_CHECKING:
+    from lawvm.finland.source_model import AmendmentSourceModel
     from lawvm.finland.statute import ReplayState
 
 logger = logging.getLogger(__name__)
@@ -71,6 +70,7 @@ class UncoveredRecoveryRun:
     """
 
     state: "ReplayState"
+    source_model: "AmendmentSourceModel"
     ops: List[AmendmentOp]
     amendment_id: str
     future_repeals: Optional[Set["RepealTargetRef"]]
@@ -137,13 +137,16 @@ class UncoveredRecoveryRun:
         disposition, reason = _uncovered_disposition_for_op_id(rop.op_id or "")
         self.rstate.append_recovered_rop(rop, disposition=disposition, reason=reason)
 
-    def process_section_candidate(
-        self,
-        sec: etree._Element,
-        label: str,
-        amend_chapter_label: Optional[str],
-    ) -> None:
+    def section_payload_ir(self, candidate: UncoveredSectionCandidate) -> IRNode | None:
+        """Resolve one candidate's section payload through the source model."""
+        payload_lookup = self.source_model.lookup_payload_ir_for_coverage_ref(candidate.source_ref)
+        return payload_lookup.payload_ir
+
+    def process_section_candidate(self, candidate: UncoveredSectionCandidate) -> None:
         """Process one uncovered section candidate and commit a typed disposition."""
+        label = candidate.label
+        amend_chapter_label = candidate.amend_chapter_label
+        amend_part_label = candidate.amend_part_label
         debug_recovery = os.environ.get("LAWVM_DEBUG_RECOVERY") == "1"
         if debug_recovery:
             print(
@@ -151,7 +154,6 @@ class UncoveredRecoveryRun:
                 f"label={label!r}, chapter={amend_chapter_label!r}"
             )
 
-        amend_part_label = _xml_part_label(sec)
         pre = _evaluate_pre_guards(
             PreGuardRequest(
                 label=label,
@@ -208,7 +210,15 @@ class UncoveredRecoveryRun:
                     f"{label!r} in chapter {amend_chapter_label!r}"
                 )
             if payload.outcome is ChapterPayloadOutcome.ADOPT:
-                adopt_sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
+                adopt_sec_ir = self.section_payload_ir(candidate)
+                if adopt_sec_ir is None:
+                    self.record_skip(
+                        "source_payload_missing",
+                        label,
+                        amend_chapter_label,
+                        amend_part_label,
+                    )
+                    return
                 self.rstate.mark_covered(
                     part=amend_part_label,
                     chapter=amend_chapter_label,
@@ -250,7 +260,15 @@ class UncoveredRecoveryRun:
             self.record_skip("ambiguous_duplicate_label_no_chapter", label, amend_chapter_label)
             return
 
-        sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
+        sec_ir = self.section_payload_ir(candidate)
+        if sec_ir is None:
+            self.record_skip(
+                "source_payload_missing",
+                label,
+                amend_chapter_label,
+                amend_part_label,
+            )
+            return
         if resolved.existing_path is not None:
             existing = _tops.resolve(self.state.ir, resolved.existing_path)
             if existing is not None:
@@ -493,6 +511,7 @@ class UncoveredRecoveryRun:
             self.new_chapter_labels,
             self.owned_chapter_labels,
             self.source_owned_insert_chapter_labels,
+            self.part_insert_labels,
         )
         effective_chapter = insert_ch.effective_chapter
         effective_part = insert_ch.effective_part

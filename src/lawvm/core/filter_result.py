@@ -14,7 +14,7 @@ from typing import Generic, Iterable, TypeVar
 T = TypeVar("T")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RejectedItem(Generic[T]):
     item: T
     reason: str
@@ -28,7 +28,7 @@ class RejectedItem(Generic[T]):
             raise ValueError("RejectedItem.blocking must be a boolean")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FilterResult(Generic[T]):
     accepted_items: tuple[T, ...] = ()
     rejected_items: tuple[RejectedItem[T], ...] = ()

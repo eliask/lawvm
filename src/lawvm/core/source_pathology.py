@@ -45,19 +45,19 @@ class SourcePathologyProjection:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "pathology_id",
-            "jurisdiction",
-            "source_artifact_id",
-            "pathology_kind",
-            "affected_phase",
-            "suggested_lane",
-            "safe_default",
+        for field_name, value in (
+            ("pathology_id", self.pathology_id),
+            ("jurisdiction", self.jurisdiction),
+            ("source_artifact_id", self.source_artifact_id),
+            ("pathology_kind", self.pathology_kind),
+            ("affected_phase", self.affected_phase),
+            ("suggested_lane", self.suggested_lane),
+            ("safe_default", self.safe_default),
         ):
             object.__setattr__(
                 self,
                 field_name,
-                _required_string(f"SourcePathologyProjection.{field_name}", getattr(self, field_name)),
+                _required_string(f"SourcePathologyProjection.{field_name}", value),
             )
         if not isinstance(self.blocks_execution, bool):
             raise ValueError("SourcePathologyProjection.blocks_execution must be boolean")
