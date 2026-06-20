@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
-from lawvm.core.authority import BranchGraphEdge, LegalBranch, branch_graph_edges_from_operations
+from lawvm.core.branch_authority import BranchGraphEdge, LegalBranch, branch_graph_edges_from_operations
 from lawvm.core.frozen_values import freeze_mapping
 
 if TYPE_CHECKING:

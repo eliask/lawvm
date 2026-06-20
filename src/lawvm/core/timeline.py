@@ -29,7 +29,7 @@ from lawvm.core.ir import (
     ProvisionTimeline,
     ProvisionVersion,
 )
-from lawvm.core.authority import (
+from lawvm.core.branch_authority import (
     BranchContext,
     DEFAULT_ENACTED_CONTEXT,
     branch_context_from_operation,

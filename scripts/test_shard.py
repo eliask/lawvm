@@ -372,7 +372,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_address_parse.py",
         "test_irnodekind_stringly_typed_gate.py",
         "test_fi_admissible_binding.py",
-        "test_authority.py",
+        "test_branch_authority.py",
         "test_core_identity_ledger.py",
         "test_fi_branch_graph_parser.py",
         "test_fi_bitemporal.py",

@@ -31,7 +31,7 @@ from lawvm.core.ir import (
     ProvisionVersion,
     ScopePredicate,
 )
-from lawvm.core.authority import BranchContext, PROPOSAL_AUTHORITY, UNKNOWN_STATUS
+from lawvm.core.branch_authority import BranchContext, PROPOSAL_AUTHORITY, UNKNOWN_STATUS
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline import compile_timelines, materialize_pit, select_active_version_ex

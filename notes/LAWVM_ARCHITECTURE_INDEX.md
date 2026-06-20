@@ -133,7 +133,7 @@ payload IR, witnesses, and temporal/johto surfaces.
 - `src/lawvm/core/canonical_intent.py` — typed canonical operation intent.
 - `src/lawvm/core/phase_result.py` — stage output plus findings/events.
 - `src/lawvm/core/timeline*.py` — timelines, selection, lineage, materialization.
-- `src/lawvm/core/authority.py` — authority layers, branch contexts, and branch
+- `src/lawvm/core/branch_authority.py` — authority layers, branch contexts, and branch
   graph edges.
 - `src/lawvm/core/branch_projection.py` — branch impact projection payloads.
 - `src/lawvm/finland/` — deepest reference frontend and replay pipeline.

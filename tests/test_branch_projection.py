@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import pytest
 
-from lawvm.core.authority import BranchGraphEdge, LegalBranch
+from lawvm.core.branch_authority import BranchGraphEdge, LegalBranch
 from lawvm.core.branch_projection import (
     BranchImpactProjection,
     BranchImpactRow,

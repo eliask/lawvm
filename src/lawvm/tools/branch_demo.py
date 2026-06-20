@@ -12,7 +12,7 @@ import json
 import sys
 from typing import Any
 
-from lawvm.core.authority import (
+from lawvm.core.branch_authority import (
     PROPOSAL_AUTHORITY,
     UNKNOWN_STATUS,
     LegalBranch,
