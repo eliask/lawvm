@@ -18,7 +18,7 @@ from lawvm.finland.metadata import (
     get_johtolause_from_tree,
     get_operative_body_repeal_candidate_from_tree,
 )
-from lawvm.finland.scope import restrict_sec1_fallback_to_parent
+from lawvm.finland.scope import fi_statute_citation_spans, restrict_sec1_fallback_to_parent
 
 _OPERATIVE_BODY_TAGS = {
     "section",
@@ -90,6 +90,17 @@ class AmendmentAcquisitionResult:
     rejected_lanes: tuple[tuple[str, str], ...]
     diagnostics: tuple[AcquisitionDiagnostic, ...]
     decision: OperativeLaneDecision
+
+
+@dataclass(frozen=True, slots=True)
+class Sec1ParentTargetSpanEvidence:
+    parent_citation_span: tuple[int, int] | None
+    target_token_starts: tuple[int, ...]
+    target_char_starts: tuple[int, ...]
+    structural_target_count: int
+    parser_lane: str
+    usable_full_text: bool
+    reason: str
 
 
 def operative_lane_selection_evidence(result: AmendmentAcquisitionResult) -> dict[str, object]:
@@ -179,12 +190,130 @@ def should_use_sec1_fallback_post_routing(johto: str, sec1_text: str) -> bool:
     return bool(any(kw in sec1_text.lower() for kw in OP_KEYWORDS) and (not has_subprov or pure_repeal_subprov))
 
 
+def _sec1_parent_target_span_evidence(sec1_text: str, parent_id: str) -> Sec1ParentTargetSpanEvidence:
+    """Decide whether the full sec_1 fallback is parent-owned from parser spans."""
+    if not sec1_text or not parent_id:
+        return Sec1ParentTargetSpanEvidence(
+            parent_citation_span=None,
+            target_token_starts=(),
+            target_char_starts=(),
+            structural_target_count=0,
+            parser_lane="",
+            usable_full_text=False,
+            reason="missing_text_or_parent",
+        )
+
+    span_text = " ".join(sec1_text.split())
+    parent_citations = fi_statute_citation_spans(span_text, parent_id)
+    if not parent_citations:
+        return Sec1ParentTargetSpanEvidence(
+            parent_citation_span=None,
+            target_token_starts=(),
+            target_char_starts=(),
+            structural_target_count=0,
+            parser_lane="",
+            usable_full_text=False,
+            reason="parent_citation_not_found",
+        )
+
+    from lawvm.finland.johtolause.api import parse_clause
+    from lawvm.finland.johtolause.lexer import tokenize
+    from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs
+
+    parse_result = parse_clause(span_text, statute_id=parent_id)
+    if parse_result.parse_error is not None:
+        return Sec1ParentTargetSpanEvidence(
+            parent_citation_span=None,
+            target_token_starts=(),
+            target_char_starts=(),
+            structural_target_count=0,
+            parser_lane=parse_result.parser_lane,
+            usable_full_text=False,
+            reason="parse_error",
+        )
+
+    parsed_ops = tuple(parse_result.parsed_ops)
+    if not parsed_ops:
+        return Sec1ParentTargetSpanEvidence(
+            parent_citation_span=None,
+            target_token_starts=(),
+            target_char_starts=(),
+            structural_target_count=0,
+            parser_lane=parse_result.parser_lane,
+            usable_full_text=False,
+            reason="no_structural_targets",
+        )
+
+    parser_tokens, _jolloin_pairs = apply_annotations_with_jolloin_pairs(tokenize(span_text))
+    token_starts: list[int] = []
+    char_starts: list[int] = []
+    for parsed_op in parsed_ops:
+        if parsed_op.source_tokens is None:
+            return Sec1ParentTargetSpanEvidence(
+                parent_citation_span=None,
+                target_token_starts=tuple(token_starts),
+                target_char_starts=tuple(char_starts),
+                structural_target_count=len(parsed_ops),
+                parser_lane=parse_result.parser_lane,
+                usable_full_text=False,
+                reason="missing_source_tokens",
+            )
+        token_start = parsed_op.source_tokens[0]
+        if token_start < 0 or token_start >= len(parser_tokens):
+            return Sec1ParentTargetSpanEvidence(
+                parent_citation_span=None,
+                target_token_starts=tuple(token_starts),
+                target_char_starts=tuple(char_starts),
+                structural_target_count=len(parsed_ops),
+                parser_lane=parse_result.parser_lane,
+                usable_full_text=False,
+                reason="source_token_out_of_range",
+            )
+        char_start = parser_tokens[token_start].char_start
+        if char_start < 0:
+            return Sec1ParentTargetSpanEvidence(
+                parent_citation_span=None,
+                target_token_starts=tuple(token_starts),
+                target_char_starts=tuple(char_starts),
+                structural_target_count=len(parsed_ops),
+                parser_lane=parse_result.parser_lane,
+                usable_full_text=False,
+                reason="source_token_without_char_span",
+            )
+        token_starts.append(token_start)
+        char_starts.append(char_start)
+
+    for citation_span in parent_citations:
+        if all(char_start >= citation_span[1] for char_start in char_starts):
+            return Sec1ParentTargetSpanEvidence(
+                parent_citation_span=citation_span,
+                target_token_starts=tuple(token_starts),
+                target_char_starts=tuple(char_starts),
+                structural_target_count=len(parsed_ops),
+                parser_lane=parse_result.parser_lane,
+                usable_full_text=True,
+                reason="all_parser_targets_after_parent_citation",
+            )
+
+    return Sec1ParentTargetSpanEvidence(
+        parent_citation_span=parent_citations[-1],
+        target_token_starts=tuple(token_starts),
+        target_char_starts=tuple(char_starts),
+        structural_target_count=len(parsed_ops),
+        parser_lane=parse_result.parser_lane,
+        usable_full_text=False,
+        reason="parser_targets_before_parent_citation",
+    )
+
+
 def _extract_sec1_text(muutos_tree: etree._Element, parent_id: str) -> str:
     sec1_el = muutos_tree.find(".//{*}section[@eId='sec_1']")
     if sec1_el is None:
         return ""
     sec1_text = etree.tostring(sec1_el, method="text", encoding="unicode").strip()
     sec1_text = re.sub(r"^\d+\s*[a-zäöå]?\s*§\s*", "", sec1_text).strip()
+    if _sec1_parent_target_span_evidence(sec1_text, parent_id).usable_full_text:
+        return sec1_text
     return restrict_sec1_fallback_to_parent(sec1_text, parent_id)
 
 

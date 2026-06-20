@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Dict, Literal, cast
 
 from lxml import etree
@@ -10,10 +9,8 @@ from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.source_normalize import normalize_source_ir
 from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
 from lawvm.finland.acquisition import (
-    should_use_sec1_fallback_post_routing,
-    should_use_sec1_fallback_pre_routing,
+    build_amendment_acquisition_result,
 )
-from lawvm.finland.citation_routing import route_amendment
 from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.constraints import _FilterCtx, _filter_ops_by_constraints
 from lawvm.finland.corpus import get_corpus
@@ -26,13 +23,12 @@ from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.citation_routing import extract_pending_amendment_target_id
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
 from lawvm.finland.helpers import _norm_row_anchor_text
-from lawvm.finland.metadata import _normalize_johtolause_verbs, get_johtolause
+from lawvm.finland.metadata import get_johtolause
 from lawvm.finland.ops import (
     get_replay_profile,
     legacy_target_kind_for_unit_kind,
     scope_authority_parity_for_op,
 )
-from lawvm.finland.scope import restrict_sec1_fallback_to_parent as _restrict_sec1_fallback_to_parent
 from lawvm.finland.scope import find_body_section_chapter as _find_body_section_chapter
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
@@ -247,44 +243,23 @@ def _working_johtolause(
     xml_bytes: bytes,
     source_title: str,
 ) -> tuple[etree._Element, str, bool, bool, str]:
-    johto = get_johtolause(xml_bytes)
-    citation_guard_johto = _normalize_johtolause_verbs(johto or "")
-    citation_guard_sec1 = ""
     muutos_tree = etree.fromstring(xml_bytes)
-
-    used_sec1_fallback = False
-    sec1_text = ""
-    sec1_el = muutos_tree.find(".//{*}section[@eId='sec_1']")
-    if sec1_el is not None:
-        sec1_text = etree.tostring(sec1_el, method="text", encoding="unicode").strip()
-        sec1_text = re.sub(r"^\d+\s*[a-zäöå]?\s*§\s*", "", sec1_text).strip()
-        sec1_text = _restrict_sec1_fallback_to_parent(sec1_text, parent_id)
-
-    if should_use_sec1_fallback_pre_routing(johto):
-        if sec1_text:
-            johto = sec1_text
-            used_sec1_fallback = True
-    elif sec1_text:
-        citation_guard_sec1 = _normalize_johtolause_verbs(sec1_text)
-
-    johto = _normalize_johtolause_verbs(johto)
-    should_apply, route_reason = route_amendment(
-        citation_guard_johto=citation_guard_johto,
-        citation_guard_sec1=citation_guard_sec1,
-        johto=johto,
+    acquisition = build_amendment_acquisition_result(
+        xml_bytes=xml_bytes,
+        muutos_tree=muutos_tree,
         parent_id=parent_id,
         amendment_id=source_id,
         source_title=source_title,
         parent_title=parent_title,
     )
-    if (
-        should_apply
-        and sec1_text
-        and should_use_sec1_fallback_post_routing(johto, _normalize_johtolause_verbs(sec1_text))
-    ):
-        johto = _normalize_johtolause_verbs(sec1_text)
-        used_sec1_fallback = True
-    return muutos_tree, johto, used_sec1_fallback, should_apply, route_reason
+    used_sec1_fallback = acquisition.decision.selected_lane.startswith("sec1_fallback")
+    return (
+        muutos_tree,
+        acquisition.decision.chosen_normalized_text,
+        used_sec1_fallback,
+        acquisition.decision.should_apply,
+        acquisition.decision.route_reason,
+    )
 
 
 def build_amendment_bundle(

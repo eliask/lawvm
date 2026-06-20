@@ -749,6 +749,34 @@ def test_replay_xml_2011_806_pure_kumotaan_subsection_keeps_chapter_scope() -> N
     assert replay.materialized_state.find_section("21", "8") is not None
 
 
+@pytest.mark.slow
+def test_replay_xml_1980_55_sec1_keeper_repeal_list_reaches_section_12f() -> None:
+    """2015/521 sec_1 fallback must not truncate parent-owned targets after a conjunction."""
+    lo_ops: list[LegalOperation] = []
+    replay = replay_xml_for_test(
+        "1980/55",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    repeal_markers = [
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2015/521"
+        and op.target == LegalAddress(path=(("section", "12f"),))
+        and op.payload is not None
+        and op.payload.attrs.get("lawvm_repeal_placeholder") == "1"
+    ]
+    assert len(repeal_markers) == 1
+
+    section = replay.materialized_state.find_node("section", "12f")
+    assert section is not None
+    assert section.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert " ".join(irnode_to_text(section).split()) == "12 f §"
+
+
 def test_pure_kumotaan_subsection_injection_skips_unscoped_duplicate_sections() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
