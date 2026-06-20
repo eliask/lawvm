@@ -569,16 +569,25 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "info", "frontend_phase_surface",
                 "frontend phase diagnostic projected into the governed finding ledger",
                 ("parse_witness",), role="observation"),
+    # Non-blocking observations. The sole producer
+    # (tools/consistency.py:ConsistencyResult.to_phase_result) emits these as
+    # role=observation/blocking=False and is not wired into the compile/replay
+    # pipeline, so registering them at hard_fail made them blocking guards that
+    # could never be driven into their firing state from production. The
+    # enforcement is downgraded to warn to match the only real producer; the
+    # family stays "violation" (an internal-incoherence signal) as a
+    # non-blocking observation, the same shape as APPLY.OCCUPANCY_POLICY_VIOLATION
+    # and APPLY.INTENT_COMPAT_MISMATCH.
     FindingSpec("TIME.SECTION_NO_TIMELINE", "check_consistency",
-                "violation", "hard_fail", "consistency",
+                "violation", "warn", "consistency",
                 "section present in PIT-materialized replay state has no corresponding timeline entry",
                 ("safety_invariant", "comparative"), role="observation"),
     FindingSpec("TIME.TIMELINE_NO_SECTION", "check_consistency",
-                "violation", "hard_fail", "consistency",
+                "violation", "warn", "consistency",
                 "timeline entry has no corresponding section in PIT-materialized replay state",
                 ("safety_invariant", "comparative"), role="observation"),
     FindingSpec("TIME.CONTENT_DRIFT", "check_consistency",
-                "violation", "hard_fail", "consistency",
+                "violation", "warn", "consistency",
                 "section exists in both replay state and timeline but their text content differs",
                 ("safety_invariant", "comparative"), role="observation"),
     FindingSpec("text_duplication_warning", "replay_lints",
