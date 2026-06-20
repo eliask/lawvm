@@ -1,7 +1,7 @@
 """EU replay pipeline-focused regression tests."""
 from __future__ import annotations
 
-from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.eu.ops_parser import EUOpsParser

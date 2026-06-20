@@ -882,7 +882,13 @@ NO_FIRE_DRILL_YET: frozenset[str] = frozenset({
     "TEMPORAL.SOURCE_IMPOSSIBLE_DATE",
     "APPLY.FALLBACK_WHOLE_SECTION_REPLACE",
     "APPLY.LEGACY_DISPATCH_FALLBACK",
+    # Effect-lifecycle unresolved target blockers currently have synthetic
+    # projection coverage in test_fi_effect_lifecycle_projection.py; add
+    # production fire-drills when amendment-of-amendment fixtures are small
+    # enough for this harness.
+    "APPLY.META_REPEAL_EFFECT_UNRESOLVED",
     "APPLY.METADATA_ATTRIBUTION_CORRECTED_BY_ATTESTATION",
+    "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
     "APPLY.REF_TARGET_CORRECTED_BY_ATTESTATION",
     "APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION",  # also in XFAIL (cross-act case)
     "APPLY.RELABEL_SKIPPED",

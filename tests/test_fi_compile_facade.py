@@ -17,14 +17,18 @@ from lawvm.contracts import ArtifactEnvelope, ProcessingStatus
 from lawvm.core.compile_facade import (
     CompileFacade,
 )
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    SourceInstrumentRef,
+    SourceProvisionRef,
+)
 from lawvm.core.compile_result import (
-    ActivationRule,
     CanonicalBundle,
     CanonicalEffect,
     CompileVerdict,
     EffectGroup,
-    TemporalEvent,
-    TemporalScope,
 )
 from lawvm.core.compile_views import (
     projection_rows_from_findings,
@@ -38,6 +42,7 @@ from lawvm.core.compile_views import (
 from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.phase_result import Finding, Observation, Obligation, PhaseResult, Violation
 from lawvm.core.timeline import select_active_version
 from lawvm.core.provenance import MigrationEvent
@@ -228,6 +233,36 @@ class TestFromPhaseResult:
 
         assert facade.bundle.temporal_events == (explicit,)
 
+    def test_phase_result_effect_lifecycle_side_channels_are_preserved(self):
+        instrument = SourceInstrumentRef(instrument_id="2024/1")
+        witness = SourceProvisionRef(instrument=instrument, path=("1",))
+        target_effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+        relation = EffectRelation(
+            relation_id="relation:1",
+            kind="modifies_effect",
+            source_provision=witness,
+            target_effect=target_effect,
+        )
+        event = EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:1",
+            kind="unresolved_effect_target",
+            source_provision=witness,
+            relation=relation,
+            executable=False,
+        )
+        pr = PhaseResult(
+            output=None,
+            source_effects=(target_effect,),
+            effect_relations=(relation,),
+            effect_lifecycle_events=(event,),
+        )
+
+        facade = CompileFacade.from_phase_result(pr, replay_mode="legal_pit")
+
+        assert facade.bundle.source_effects == (target_effect,)
+        assert facade.bundle.effect_relations == (relation,)
+        assert facade.bundle.effect_lifecycle_events == (event,)
+
     def test_canonical_bundle_output_rejects_duplicate_temporal_events(self):
         explicit = TemporalEvent(
             event_id="explicit:1",
@@ -241,6 +276,49 @@ class TestFromPhaseResult:
 
         with pytest.raises(TypeError, match="canonical bundle owns temporal events"):
             CompileFacade.from_phase_result(pr, replay_mode="legal_pit")
+
+    def test_canonical_bundle_output_rejects_duplicate_effect_lifecycle_side_channels(self):
+        instrument = SourceInstrumentRef(instrument_id="2024/1")
+        witness = SourceProvisionRef(instrument=instrument, path=("1",))
+        target_effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+        relation = EffectRelation(
+            relation_id="relation:1",
+            kind="modifies_effect",
+            source_provision=witness,
+            target_effect=target_effect,
+        )
+        event = EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:1",
+            kind="unresolved_effect_target",
+            source_provision=witness,
+            relation=relation,
+            executable=False,
+        )
+
+        with pytest.raises(TypeError, match="canonical bundle owns source effects"):
+            CompileFacade.from_phase_result(
+                PhaseResult(
+                    output=CanonicalBundle(source_effects=(target_effect,)),
+                    source_effects=(target_effect,),
+                ),
+                replay_mode="legal_pit",
+            )
+        with pytest.raises(TypeError, match="canonical bundle owns effect relations"):
+            CompileFacade.from_phase_result(
+                PhaseResult(
+                    output=CanonicalBundle(effect_relations=(relation,)),
+                    effect_relations=(relation,),
+                ),
+                replay_mode="legal_pit",
+            )
+        with pytest.raises(TypeError, match="canonical bundle owns effect lifecycle events"):
+            CompileFacade.from_phase_result(
+                PhaseResult(
+                    output=CanonicalBundle(effect_lifecycle_events=(event,)),
+                    effect_lifecycle_events=(event,),
+                ),
+                replay_mode="legal_pit",
+            )
 
     def test_facade_exposes_bundle_temporal_and_migration_summaries(self):
         migration_event = MigrationEvent(

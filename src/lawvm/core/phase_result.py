@@ -75,6 +75,7 @@ from lawvm.core.event_summaries import (
 )
 
 if TYPE_CHECKING:
+    from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
     from lawvm.core.provenance import MigrationEvent
     from lawvm.core.temporal import TemporalEvent
 
@@ -230,12 +231,18 @@ class PhaseResult(Generic[T]):
     finding_ledger: Tuple[Finding, ...]
     temporal_events: Tuple["TemporalEvent", ...]
     migration_events: Tuple["MigrationEvent", ...]
+    source_effects: Tuple["EffectRef", ...]
+    effect_relations: Tuple["EffectRelation", ...]
+    effect_lifecycle_events: Tuple["EffectLifecycleEvent", ...]
 
     def __init__(
         self,
         output: T,
         temporal_events: Tuple["TemporalEvent", ...] = (),
         migration_events: Tuple["MigrationEvent", ...] = (),
+        source_effects: Tuple["EffectRef", ...] = (),
+        effect_relations: Tuple["EffectRelation", ...] = (),
+        effect_lifecycle_events: Tuple["EffectLifecycleEvent", ...] = (),
         findings: Tuple[Finding, ...] = (),
     ) -> None:
         finding_ledger = tuple(findings)
@@ -247,10 +254,16 @@ class PhaseResult(Generic[T]):
             validate_finding_projection(finding.kind, finding.role, finding.blocking)
         resolved_temporal_events = tuple(temporal_events)
         resolved_migration_events = tuple(migration_events)
+        resolved_source_effects = tuple(source_effects)
+        resolved_effect_relations = tuple(effect_relations)
+        resolved_effect_lifecycle_events = tuple(effect_lifecycle_events)
         object.__setattr__(self, "output", output)
         object.__setattr__(self, "finding_ledger", finding_ledger)
         object.__setattr__(self, "temporal_events", resolved_temporal_events)
         object.__setattr__(self, "migration_events", resolved_migration_events)
+        object.__setattr__(self, "source_effects", resolved_source_effects)
+        object.__setattr__(self, "effect_relations", resolved_effect_relations)
+        object.__setattr__(self, "effect_lifecycle_events", resolved_effect_lifecycle_events)
 
     @property
     def has_blocking(self) -> bool:
@@ -319,6 +332,9 @@ class PhaseResult(Generic[T]):
             findings=self.finding_ledger + other.finding_ledger,
             temporal_events=self.temporal_events + other.temporal_events,
             migration_events=self.migration_events + other.migration_events,
+            source_effects=self.source_effects + other.source_effects,
+            effect_relations=self.effect_relations + other.effect_relations,
+            effect_lifecycle_events=self.effect_lifecycle_events + other.effect_lifecycle_events,
         )
 
     def findings(self) -> "Tuple[Finding, ...]":
@@ -357,6 +373,9 @@ class PhaseBuilder(Generic[T]):
     _findings: List[Finding] = field(default_factory=list)
     _temporal_events: List["TemporalEvent"] = field(default_factory=list)
     _migration_events: List["MigrationEvent"] = field(default_factory=list)
+    _source_effects: List["EffectRef"] = field(default_factory=list)
+    _effect_relations: List["EffectRelation"] = field(default_factory=list)
+    _effect_lifecycle_events: List["EffectLifecycleEvent"] = field(default_factory=list)
 
     def _append_finding(
         self,
@@ -444,6 +463,24 @@ class PhaseBuilder(Generic[T]):
     def add_migration_events(self, events: Iterable["MigrationEvent"]) -> None:
         self._migration_events.extend(events)
 
+    def add_source_effect(self, effect: "EffectRef") -> None:
+        self._source_effects.append(effect)
+
+    def add_source_effects(self, effects: Iterable["EffectRef"]) -> None:
+        self._source_effects.extend(effects)
+
+    def add_effect_relation(self, relation: "EffectRelation") -> None:
+        self._effect_relations.append(relation)
+
+    def add_effect_relations(self, relations: Iterable["EffectRelation"]) -> None:
+        self._effect_relations.extend(relations)
+
+    def add_effect_lifecycle_event(self, event: "EffectLifecycleEvent") -> None:
+        self._effect_lifecycle_events.append(event)
+
+    def add_effect_lifecycle_events(self, events: Iterable["EffectLifecycleEvent"]) -> None:
+        self._effect_lifecycle_events.extend(events)
+
     @icontract.ensure(
         lambda self, result: (
             len(result.findings()) == len(self._findings)
@@ -456,4 +493,7 @@ class PhaseBuilder(Generic[T]):
             findings=tuple(self._findings),
             temporal_events=tuple(self._temporal_events),
             migration_events=tuple(self._migration_events),
+            source_effects=tuple(self._source_effects),
+            effect_relations=tuple(self._effect_relations),
+            effect_lifecycle_events=tuple(self._effect_lifecycle_events),
         )

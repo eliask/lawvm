@@ -22,7 +22,7 @@ from typing import Any, cast
 
 import pytest
 
-from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.effect_intent import (
     Applicability,
@@ -36,7 +36,7 @@ from lawvm.core.effect_lowering import (
     lower_effect_intents_to_temporal_events,
     temporal_event_from_effect_intent,
 )
-from lawvm.core.compile_result import ActivationRule
+from lawvm.core.temporal import ActivationRule
 from lawvm.core.phase_result import PhaseResult
 from lawvm.core.clause_ast import MetaClause
 from lawvm.core.semantic_types import MetaClauseKind, IRNodeKind

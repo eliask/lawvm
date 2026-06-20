@@ -12,8 +12,6 @@ import pytest
 from lawvm.core.compile_result import (
     CompileFailure,
     StrictProfile,
-    TemporalEvent,
-    TemporalScope,
     barrier_family_from_registry,
     compute_verdict_from_registry,
     strict_fail_reasons_from_finding_ledger,
@@ -33,6 +31,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.phase_result import Finding
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.replay_adjudication import SourceAdjudication
 from lawvm.finland.strict_profile import default_finland_strict_profile
 from lawvm.core.observation_registry import (
@@ -2313,6 +2312,17 @@ def test_replay_xml_exposes_replay_time_projection_rows_without_explicit_sink() 
         "2005/544",
         "2006/1322",
     ]
+    override_lifecycle = [
+        event
+        for event in replay.products.effect_lifecycle_events
+        if event.kind == "change_effect_expiry"
+        and event.relation is not None
+        and event.relation.relation_id
+        == "fi-effect-relation:2006/1322:extends_effect_expiry:2006/1322:section:4"
+    ]
+    assert len(override_lifecycle) == 1
+    assert override_lifecycle[0].expires == "2009-12-31"
+    assert override_lifecycle[0].executable is False
 
 
 def test_replay_xml_1970_258_folds_base_item_subsection_run_before_renumber_insert() -> None:

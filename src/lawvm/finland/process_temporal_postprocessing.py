@@ -13,7 +13,7 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Set
 
-from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope
+from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.phase_result import Finding
@@ -28,6 +28,10 @@ from lawvm.finland.kumotaan_replay import (
     _inject_pure_kumotaan_subsection_repeal_ops,
     _live_suffix_section_labels_for_numeric_kumotaan_ranges,
     _rewrite_kumotaan_snapshot_replaces_to_repeal,
+)
+from lawvm.finland.effect_lifecycle_signals import (
+    EffectLifecycleOverride,
+    EffectLifecycleOverrideScope,
 )
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import (
@@ -65,7 +69,7 @@ class ProcessTemporalPostprocessContext:
     lo_ops_out: Optional[List[_LegalOperation]]
     compiled_ops_out: Optional[List[Dict[str, object]]]
     amendment_temporal_events: list[TemporalEvent]
-    commencement_expiry_override_notes: list[dict[str, object]]
+    commencement_expiry_override_notes: list[EffectLifecycleOverride]
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
     section_expiry_overrides: tuple[tuple[str, Set[str], dt.date], ...] = ()
@@ -121,13 +125,13 @@ class ProcessTemporalPostprocessContext:
                     f"{target_mid} {scope} -> {expiry.isoformat()}"
                 )
                 self.commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": self.amendment_id,
-                        "target_statute": target_mid,
-                        "labels": scope,
-                        "expiry": expiry.isoformat(),
-                        "context": "accepted_amendment",
-                    }
+                    EffectLifecycleOverride(
+                        source_statute=self.amendment_id,
+                        target_statute=target_mid,
+                        scope=_section_override_scope(labels),
+                        expiry=expiry.isoformat(),
+                        context="accepted_amendment",
+                    )
                 )
 
         for target_mid, labels, expiry in self.section_expiry_overrides:
@@ -146,13 +150,13 @@ class ProcessTemporalPostprocessContext:
                     f"{target_mid} {scope} -> {expiry.isoformat()}"
                 )
                 self.commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": self.amendment_id,
-                        "target_statute": target_mid,
-                        "labels": scope,
-                        "expiry": expiry.isoformat(),
-                        "context": "accepted_section_temporary",
-                    }
+                    EffectLifecycleOverride(
+                        source_statute=self.amendment_id,
+                        target_statute=target_mid,
+                        scope=_section_override_scope(labels),
+                        expiry=expiry.isoformat(),
+                        context="accepted_section_temporary",
+                    )
                 )
 
     def apply_section_commencement_overrides(self) -> None:
@@ -198,13 +202,13 @@ class ProcessTemporalPostprocessContext:
                     f"{target_mid} {scope} -> {effective.isoformat()}"
                 )
                 self.commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": self.amendment_id,
-                        "target_statute": target_mid,
-                        "labels": scope,
-                        "effective": effective.isoformat(),
-                        "context": "accepted_section_commencement",
-                    }
+                    EffectLifecycleOverride(
+                        source_statute=self.amendment_id,
+                        target_statute=target_mid,
+                        scope=_chapter_section_override_scope(chapter_section_map),
+                        effective=effective.isoformat(),
+                        context="accepted_section_commencement",
+                    )
                 )
 
         subsection_override = self.source_model.section_subsection_commencement_effective_override(
@@ -242,13 +246,13 @@ class ProcessTemporalPostprocessContext:
                 f"{target_mid} {scope} -> {effective.isoformat()}"
             )
             self.commencement_expiry_override_notes.append(
-                {
-                    "source_statute": self.amendment_id,
-                    "target_statute": target_mid,
-                    "labels": scope,
-                    "effective": effective.isoformat(),
-                    "context": "accepted_subsection_commencement",
-                }
+                EffectLifecycleOverride(
+                    source_statute=self.amendment_id,
+                    target_statute=target_mid,
+                    scope=EffectLifecycleOverrideScope.exact_addresses(scoped_addresses),
+                    effective=effective.isoformat(),
+                    context="accepted_subsection_commencement",
+                )
             )
 
     def apply_later_effective_group_rewrites(self) -> None:
@@ -334,13 +338,13 @@ class ProcessTemporalPostprocessContext:
                 f"{self.amendment_id} {scope} -> {self.amendment_effective_date.isoformat()}"
             )
             self.commencement_expiry_override_notes.append(
-                {
-                    "source_statute": self.amendment_id,
-                    "target_statute": self.amendment_id,
-                    "labels": scope,
-                    "expiry": self.amendment_effective_date.isoformat(),
-                    "context": "repeal_clause",
-                }
+                EffectLifecycleOverride(
+                    source_statute=self.amendment_id,
+                    target_statute=self.amendment_id,
+                    scope=_kumotaan_override_scope(kumotaan_labels, chap_map_sets),
+                    expiry=self.amendment_effective_date.isoformat(),
+                    context="repeal_clause",
+                )
             )
             _rewrite_kumotaan_snapshot_replaces_to_repeal(
                 self.lo_ops_out,
@@ -417,3 +421,50 @@ class ProcessTemporalPostprocessContext:
             ),
             group_id=event_group_id,
         )
+
+
+def _section_override_scope(labels: Set[str] | None) -> EffectLifecycleOverrideScope:
+    return EffectLifecycleOverrideScope.sections(sorted(labels or ()))
+
+
+def _chapter_section_override_scope(
+    chapter_section_map: Dict[Optional[str], Set[str]]
+) -> EffectLifecycleOverrideScope:
+    addresses: list[LegalAddress] = []
+    for chapter, sections in sorted(
+        chapter_section_map.items(), key=lambda item: str(item[0] or "")
+    ):
+        for section in sorted(sections):
+            path: list[tuple[str, str]] = []
+            if chapter:
+                path.append(("chapter", str(chapter)))
+            path.append(("section", str(section)))
+            addresses.append(LegalAddress(path=tuple(path)))
+    return EffectLifecycleOverrideScope.exact_addresses(addresses)
+
+
+def _kumotaan_override_scope(
+    labels: list[str],
+    chapter_section_map: Optional[Dict[Optional[str], Set[str]]],
+) -> EffectLifecycleOverrideScope:
+    if not chapter_section_map:
+        return EffectLifecycleOverrideScope.sections(sorted(set(labels)))
+
+    addresses: list[LegalAddress] = []
+    covered: set[str] = set()
+    for chapter, sections in sorted(
+        chapter_section_map.items(), key=lambda item: str(item[0] or "")
+    ):
+        for section in sorted(sections):
+            label = str(section)
+            covered.add(label.lower())
+            path: list[tuple[str, str]] = []
+            if chapter:
+                path.append(("chapter", str(chapter)))
+            path.append(("section", label))
+            addresses.append(LegalAddress(path=tuple(path)))
+    for label in sorted(set(labels)):
+        if label.lower() in covered:
+            continue
+        addresses.append(LegalAddress(path=(("section", str(label)),)))
+    return EffectLifecycleOverrideScope.exact_addresses(addresses)

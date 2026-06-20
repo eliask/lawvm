@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from lawvm.core.compile_result import SourcePathology, TemporalEvent
+from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.compile_result import SourcePathology
 from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.temporal import TemporalEvent
+from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.ops import ResolvedOp
 from lawvm.finland.temporal_rewrites import _normalize_frontend_temporal_events
 
@@ -21,6 +24,9 @@ class ProcessCompileSignalsContext:
     resolved: list[ResolvedOp]
     compile_result: PhaseResult[list[ResolvedOp]]
     amendment_temporal_events: list[TemporalEvent]
+    source_effects: list[EffectRef]
+    effect_relations: list[EffectRelation]
+    effect_lifecycle_events: list[EffectLifecycleEvent]
     source_pathologies: list[SourcePathology]
     elaboration_observations: list[dict[str, object]]
     sparse_slot_bindings: list[dict[str, object]]
@@ -29,13 +35,23 @@ class ProcessCompileSignalsContext:
     record_finding: RecordProcessFinding
 
     def project(self) -> None:
-        self.amendment_temporal_events.extend(
-            _normalize_frontend_temporal_events(
-                self.compile_result.temporal_events,
-                amendment_id=self.amendment_id,
-                target_statute=self.parent_id,
-            )
+        temporal_events = _normalize_frontend_temporal_events(
+            self.compile_result.temporal_events,
+            amendment_id=self.amendment_id,
+            target_statute=self.parent_id,
         )
+        self.amendment_temporal_events.extend(temporal_events)
+        self.source_effects.extend(self.compile_result.source_effects)
+        self.effect_relations.extend(self.compile_result.effect_relations)
+        self.effect_lifecycle_events.extend(self.compile_result.effect_lifecycle_events)
+        source_effects, _relations, lifecycle_events = build_finland_effect_lifecycle(
+            target_statute=self.parent_id,
+            canonical_ops=(),
+            temporal_events=temporal_events,
+            findings=(),
+        )
+        self.source_effects.extend(source_effects)
+        self.effect_lifecycle_events.extend(lifecycle_events)
         self._cover_temporal_coverage()
         self._project_observations()
         self._project_obligations_and_violations()

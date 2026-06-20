@@ -971,7 +971,7 @@ def test_execute_replay_plan_passes_sparse_slot_bindings_sink_to_process_muutosl
 
 def test_execute_replay_plan_collects_temporal_events_from_phase_result() -> None:
     """execute_replay_plan reads temporal authority from the PhaseResult contract."""
-    from lawvm.core.compile_result import TemporalEvent, TemporalScope
+    from lawvm.core.temporal import TemporalEvent, TemporalScope
 
     plan = ReplayPlan(
         parent_id="test/1",
@@ -1064,7 +1064,7 @@ def test_execute_replay_plan_handles_empty_temporal_events_without_side_channels
 
 def test_execute_replay_plan_uses_phase_result_contract_without_optional_side_bags() -> None:
     """execute_replay_plan does not require legacy side-bag arguments."""
-    from lawvm.core.compile_result import TemporalEvent, TemporalScope
+    from lawvm.core.temporal import TemporalEvent, TemporalScope
 
     plan = ReplayPlan(
         parent_id="test/1",

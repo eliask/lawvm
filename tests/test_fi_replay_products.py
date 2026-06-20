@@ -19,7 +19,7 @@ from lawvm.core.ir import ProvisionVersion
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.ir import LegalOperation
 from lawvm.core.provenance import MigrationEvent
-from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.finland.apply import apply_op
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.compile_amendment import compile_amendment_ops

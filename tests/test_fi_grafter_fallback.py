@@ -12,7 +12,7 @@ from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource,
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.compile_result import StrictProfile
-from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.core.coverage import CoverageClaim, CoverageGap, CoverageReport, CoverageUnit
 from lawvm.core.canonical_intent import ExecutionContract, IntentKind, Move, NodeTarget, OccupancyPolicy, Relabel
 from lawvm.core.elaboration_context import (
@@ -49,6 +49,7 @@ from lawvm.finland.frontend_observations import (
     _semantic_collapse_move_or_renumber_observations,
 )
 from lawvm.finland.future_repeal import RepealTargetRef
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
 from lawvm.finland.future_repeal_prescan import (
     PreScanRepealTargetsRequest,
     PreScanRepealTargetsSinks,
@@ -480,7 +481,7 @@ def process_muutoslaki(
     sparse_slot_bindings_out: list[dict[str, object]] | None = None,
     sparse_leftovers_out: list[dict[str, object]] | None = None,
     regex_recognition_coverage_out: list[Any] | None = None,
-    commencement_expiry_overrides_out: list[dict[str, object]] | None = None,
+    commencement_expiry_overrides_out: list[EffectLifecycleOverride] | None = None,
     mutation_events_out: list[ApplyMutationEvent] | None = None,
     mutation_invariant_reports_out: list[Any] | None = None,
     write_audits_out: list[Any] | None = None,
@@ -11932,6 +11933,23 @@ def test_replay_xml_1920_26_applies_conclusions_repeal_clause_for_section_6() ->
     assert sec6.attrs.get("lawvm_repeal_placeholder") == "1"
     assert all(child.kind is IRNodeKind.NUM for child in sec6.children)
     assert replay.find_section("26") is not None
+    repeal_lifecycle_targets = {
+        event.relation.target_effect.effect_id
+        for event in replay.products.effect_lifecycle_events
+        if event.kind == "repeal_effect"
+        and event.relation is not None
+        and event.relation.target_effect is not None
+    }
+    assert "fi-effect:1958/371:lifecycle:section:1" in repeal_lifecycle_targets
+    assert (
+        "fi-effect:2000/90:lifecycle:section:21,section:22,section:23,section:23a,section:24,section:25"
+        in repeal_lifecycle_targets
+    )
+    assert all(
+        event.executable is False
+        for event in replay.products.effect_lifecycle_events
+        if event.kind == "repeal_effect"
+    )
 
 
 def test_replay_xml_2004_699_preserves_section_31_items_when_2013_984_inserts_subsection_2(
@@ -15981,6 +15999,21 @@ def test_process_muutoslaki_2011_1552_composes_pending_amendment_on_processed_ta
         and str(f.source_statute or "") in {"2022/708", "2022/1188"}
         for f in findings
     )
+    pending_relations = [
+        relation
+        for relation in replay.products.effect_relations
+        if relation.detail.get("source_finding")
+        == "APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET"
+    ]
+    assert {
+        relation.target_instrument.instrument_id
+        for relation in pending_relations
+        if relation.target_instrument is not None
+    } == {"2020/1233", "2022/631"}
+    assert {
+        effect.source_instrument.instrument_id
+        for effect in replay.products.source_effects
+    } >= {"2022/708", "2022/1188"}
 
 
 def test_inspect_amendment_2013_588_2025_201_owns_sparse_higher_moment_and_trailing_insert_bindings(

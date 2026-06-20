@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Literal, Optional, cast
 
 import lxml.etree as etree
 
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.metadata import _chapter_expiry_from_base
 from lawvm.finland.ops import AmendmentOp, _apply_law_level_text_patches
 from lawvm.finland.corpus import get_consolidated_oracle_reflected_section_original_versions
@@ -116,6 +117,9 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
         temporal_events=tuple(request.signals.temporal_events),
         strict_johto_temporal=request.strict_johto_temporal,
         migration_events=tuple(request.signals.migration_events),
+        source_effects=tuple(request.signals.source_effects),
+        effect_relations=tuple(request.signals.effect_relations),
+        effect_lifecycle_events=tuple(request.signals.effect_lifecycle_events),
         expires_as_of=horizon.expires_as_of,
     )
     products = _normalize_product_trees(products)
@@ -192,6 +196,9 @@ def _normalize_product_trees(products: ReplayProducts) -> ReplayProducts:
         timelines=products.timelines,
         temporal_events=products.temporal_events,
         migration_events=products.migration_events,
+        source_effects=products.source_effects,
+        effect_relations=products.effect_relations,
+        effect_lifecycle_events=products.effect_lifecycle_events,
         fold_timeline_backfills=products.fold_timeline_backfills,
         timeline_version_dedupes=products.timeline_version_dedupes,
         materialization_spec=products.materialization_spec,
@@ -206,10 +213,16 @@ def _split_provisions_section_labels(ir: Any) -> tuple[str, ...]:
         labels = [
             str(grandchild.label)
             for grandchild in getattr(child, "children", ())
+            if _is_section_node(grandchild)
             if str(getattr(grandchild, "label", "") or "")
         ]
         return tuple(labels)
     return ()
+
+
+def _is_section_node(node: Any) -> bool:
+    kind = getattr(node, "kind", None)
+    return kind is IRNodeKind.SECTION or str(kind) == "section"
 
 
 def _apply_law_level_patches_if_needed(

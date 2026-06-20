@@ -12,7 +12,7 @@ from dataclasses import replace as dc_replace
 from typing import Dict, List, Literal, Optional, Set
 
 from lawvm.core import tree_ops as _tops
-from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import StructuralAction

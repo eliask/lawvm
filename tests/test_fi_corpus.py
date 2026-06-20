@@ -393,6 +393,36 @@ def test_oracle_reflected_section_original_versions_excludes_future_repeal_overl
     assert got == {"2003/537"}
 
 
+def test_oracle_reflected_section_original_versions_excludes_shadow_when_current_section_exists() -> None:
+    sid = "2012/960"
+    oracle_path = "akn/fi/act/statute-consolidated/2012/960/fin@20251505/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="sec_5">
+          <num>5 §</num>
+          <subsection><content><p>Current pre-effective text.</p></content></subsection>
+        </section>
+        <section eId="sec_5v20251505" finlex:originalVersion="@20251505">
+          <num>5 §</num>
+          <subsection><content><p>Future shadow text.</p></content></subsection>
+        </section>
+        <section eId="sec_9">
+          <num>9 §</num>
+          <subsection eId="sec_9__subsec_1v20251505" finlex:originalVersion="@20251505">
+            <content><p>Subsection-level preview text.</p></content>
+          </subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    got = corpus.get_consolidated_oracle_reflected_section_original_versions(sid, cast(Any, fake))
+
+    assert got == set()
+
+
 def test_get_ground_truth_preserves_distinct_same_slot_versioned_subsections() -> None:
     """Full-text oracle extraction must preserve distinct same-eId-base siblings.
 

@@ -214,7 +214,7 @@ class CompileFacade:
             list(self.bundle.structural_ops),
             base_date=base_date,
             label_norm=label_norm,
-            temporal_events=self.bundle.temporal_events,
+            temporal_events=self.bundle.executable_temporal_events,
             authority_context=authority_context or DEFAULT_ENACTED_CONTEXT,
         )
 
@@ -390,6 +390,9 @@ class CompileFacade:
                     "temporal_event_activation_rule_kinds": self.temporal_event_activation_rule_kinds,
                     "migration_events_count": len(self.bundle.migration_events),
                     "migration_event_kinds": self.migration_event_kinds,
+                    "source_effects_count": len(self.bundle.source_effects),
+                    "effect_relations_count": len(self.bundle.effect_relations),
+                    "effect_lifecycle_events_count": len(self.bundle.effect_lifecycle_events),
                     "effects_count": len(self.bundle.effects),
                     "groups_count": len(self.bundle.groups),
                     "has_source": self.bundle.source is not None,
@@ -451,11 +454,32 @@ class CompileFacade:
                     "to be empty when pr.output is already a CanonicalBundle; "
                     "the canonical bundle owns temporal events"
                 )
+            if pr.source_effects:
+                raise TypeError(
+                    "CompileFacade.from_phase_result requires PhaseResult.source_effects "
+                    "to be empty when pr.output is already a CanonicalBundle; "
+                    "the canonical bundle owns source effects"
+                )
+            if pr.effect_relations:
+                raise TypeError(
+                    "CompileFacade.from_phase_result requires PhaseResult.effect_relations "
+                    "to be empty when pr.output is already a CanonicalBundle; "
+                    "the canonical bundle owns effect relations"
+                )
+            if pr.effect_lifecycle_events:
+                raise TypeError(
+                    "CompileFacade.from_phase_result requires PhaseResult.effect_lifecycle_events "
+                    "to be empty when pr.output is already a CanonicalBundle; "
+                    "the canonical bundle owns effect lifecycle events"
+                )
             bundle = pr.output
         elif pr.output is None:
             bundle = CanonicalBundle(
                 temporal_events=pr.temporal_events,
                 migration_events=pr.migration_events,
+                source_effects=pr.source_effects,
+                effect_relations=pr.effect_relations,
+                effect_lifecycle_events=pr.effect_lifecycle_events,
             )
         else:
             raise TypeError(

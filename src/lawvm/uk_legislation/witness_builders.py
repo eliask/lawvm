@@ -19,7 +19,7 @@ from lawvm.uk_legislation.witnesses import (
 from lawvm.uk_legislation.xml_helpers import _tag
 
 if TYPE_CHECKING:
-    from lawvm.core.compile_result import TemporalEvent
+    from lawvm.core.temporal import TemporalEvent
 
 
 def _uk_temporal_group_id(effect: UKEffectRecord) -> str:
@@ -39,7 +39,7 @@ def _uk_temporal_events_from_ops(
     temporal authority so the core bridge can eventually be retired without
     changing the matcher again.
     """
-    from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope
+    from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
     from lawvm.core.temporal import FIXED_DATE_KIND
 
     events: list[TemporalEvent] = []

@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from lawvm.core.compile_result import StrictProfile
     from lawvm.core.phase_result import PhaseResult
     from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
+    from lawvm.finland.metadata import SeparateCommencementLawWitness
     from lawvm.finland.amendment_chapter_precreate import (
         PrecreateApplyChaptersResult,
         PrecreatedChaptersResult,
@@ -1176,6 +1177,12 @@ class AmendmentSourceModel:
     def expiry_date(self) -> dt.date | None:
         """Return the source amendment expiry date through the source-model adapter."""
         return self.metadata_surface().expiry_date
+
+    def separate_commencement_law_witness(self) -> "SeparateCommencementLawWitness | None":
+        """Return the separate-law commencement witness through the source-model adapter."""
+        from lawvm.finland.metadata import separate_commencement_law_witness
+
+        return separate_commencement_law_witness(self.source_ref)
 
     def metadata_surface(self) -> SourceMetadataSurface:
         """Return cached source metadata facts used by compile and temporal phases."""

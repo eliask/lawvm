@@ -80,7 +80,7 @@ from lawvm.core.timeline_lineage import (
     rekey_timelines_with_migration_events,
 )
 from lawvm.core.provenance import MigrationEvent
-from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope
+from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.finland.replay_products import _rekey_timelines_with_migration_events
 
 

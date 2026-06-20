@@ -7,10 +7,9 @@ import logging
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from lawvm.core.compile_result import ActivationRule
+from lawvm.core.temporal import ActivationRule
 from lawvm.core.phase_result import Finding
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
-from lawvm.finland.metadata import separate_commencement_law_witness
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_lowering import (
     activation_rules_from_meta_clauses,
@@ -73,7 +72,7 @@ class ProcessTemporalAuthorityContext:
                 },
             )
         elif effective_step == "separate_commencement_law":
-            witness = separate_commencement_law_witness(self.amendment_id)
+            witness = self.source_model.separate_commencement_law_witness()
             self.record_finding(
                 kind="TIME.RESOLVED_CONTINGENT_EFFECTIVE_DATE",
                 message=(
