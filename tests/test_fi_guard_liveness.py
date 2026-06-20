@@ -254,6 +254,86 @@ def drill_effect_lifecycle_target_unresolved_verdict_barrier() -> None:
     assert "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED" in barrier_codes
 
 
+def _route_rejection_findings(
+    *,
+    route_reason: str,
+    route_target_amendment_id: str = "",
+    johto: str = "",
+) -> list[Finding]:
+    """Drive Finland's production route-rejection handler and collect findings."""
+    from lxml import etree
+
+    from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
+
+    findings: list[Finding] = []
+
+    def record_finding(**kwargs: Any) -> Finding:
+        finding = Finding(
+            kind=kwargs["kind"],
+            role=kwargs["role"],
+            stage="process_muutoslaki.route_rejection",
+            detail=kwargs.get("detail") or {},
+            source_statute=kwargs["source_statute"],
+            blocking=bool(kwargs.get("blocking", kwargs["role"] == "obligation")),
+        )
+        findings.append(finding)
+        return finding
+
+    ctx = ProcessRouteRejectionContext(
+        amendment_id="2020/100",
+        parent_id="2021/100",
+        parent_title="Guard Liveness Parent",
+        source_title="Guard Liveness Amendment",
+        johto=johto,
+        source_model=AmendmentSourceModel.from_tree(etree.Element("Laki")),
+        route_reason=route_reason,
+        route_target_amendment_id=route_target_amendment_id,
+        strict_profile=None,
+        replay_mode="legal_pit",
+        lo_ops_out=None,
+        vts_skipped_targets=[],
+        commencement_expiry_override_notes=[],
+        effect_relation_signals=[],
+        record_finding=record_finding,
+        replay_print=lambda _message: None,
+    )
+    ctx.handle()
+    return findings
+
+
+def drill_pending_amendment_effect_unresolved_route_rejection_barrier() -> None:
+    """APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED fires from route rejection.
+
+    Production lane: ``ProcessRouteRejectionContext.handle`` classifies a
+    pending amendment-of-amendment skip, emits the typed effect-relation signal
+    and blocking finding, then the real strict verdict mapping exposes the code
+    in ``CompileVerdict.barrier_codes``.
+    """
+    findings = _route_rejection_findings(
+        route_reason="pending_amendment_of_parent_skip",
+        route_target_amendment_id="2019/50",
+    )
+    assert any(f.kind == "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED" for f in findings)
+    barrier_codes = _verdict_barrier_codes_from_findings(findings=findings)
+    assert "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED" in barrier_codes
+
+
+def drill_meta_repeal_effect_unresolved_route_rejection_barrier() -> None:
+    """APPLY.META_REPEAL_EFFECT_UNRESOLVED fires from route rejection.
+
+    Production lane: a meta-repeal-shaped route rejection with malformed target
+    citation reaches the unresolved meta-repeal branch, records the blocking
+    effect-lifecycle finding, and the real strict verdict mapping exposes it.
+    """
+    findings = _route_rejection_findings(
+        route_reason="citation_mismatch_skip",
+        johto="kumotaan eräiden lakien muuttamisesta annetun lain ( 123/ ) 3 §",
+    )
+    assert any(f.kind == "APPLY.META_REPEAL_EFFECT_UNRESOLVED" for f in findings)
+    barrier_codes = _verdict_barrier_codes_from_findings(findings=findings)
+    assert "APPLY.META_REPEAL_EFFECT_UNRESOLVED" in barrier_codes
+
+
 def drill_frontend_internal_error_parse_surface() -> None:
     """PARSE.FRONTEND_INTERNAL_ERROR reaches the parse-layer findings surface.
 
@@ -824,6 +904,8 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.TREE_INVARIANT_VIOLATION": drill_tree_invariant_violation_duplicate_label,
     "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": drill_effect_lifecycle_target_unresolved_verdict_barrier,
     "APPLY.FAILED_OPERATION": drill_failed_operation_verdict_barrier,
+    "APPLY.META_REPEAL_EFFECT_UNRESOLVED": drill_meta_repeal_effect_unresolved_route_rejection_barrier,
+    "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED": drill_pending_amendment_effect_unresolved_route_rejection_barrier,
     "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_verdict_barrier,
     "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_parse_surface,
     "REPLAY_UNKNOWN_MUTATION_OUTCOME": drill_replay_unknown_mutation_outcome_apply_lane,
@@ -906,13 +988,7 @@ NO_FIRE_DRILL_YET: frozenset[str] = frozenset({
     "TEMPORAL.SOURCE_IMPOSSIBLE_DATE",
     "APPLY.FALLBACK_WHOLE_SECTION_REPLACE",
     "APPLY.LEGACY_DISPATCH_FALLBACK",
-    # Effect-lifecycle unresolved target blockers currently have synthetic
-    # projection coverage in test_fi_effect_lifecycle_projection.py; add
-    # production fire-drills when amendment-of-amendment fixtures are small
-    # enough for this harness.
-    "APPLY.META_REPEAL_EFFECT_UNRESOLVED",
     "APPLY.METADATA_ATTRIBUTION_CORRECTED_BY_ATTESTATION",
-    "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
     "APPLY.REF_TARGET_CORRECTED_BY_ATTESTATION",
     "APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION",  # also in XFAIL (cross-act case)
     "APPLY.RELABEL_SKIPPED",
