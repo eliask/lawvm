@@ -66,6 +66,205 @@ _UK_EFFECT_PAYLOAD_KIND_REALIGNED_TO_TARGET_LEAF_RULE_ID = (
 )
 
 
+_UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID = (
+    "uk_effect_schedule_part_paragraph_p1group_wrapper_lowered"
+)
+_UK_EFFECT_SCHEDULE_SUBPARAGRAPH_DEFINITION_ENTRIES_RULE_ID = (
+    "uk_effect_schedule_subparagraph_definition_entries_lowered"
+)
+
+
+def _is_schedule_target(target: LegalAddress) -> bool:
+    """Return whether the target address lives under a schedule."""
+    return bool(target.path) and _addr_container(target) == "schedule"
+
+
+def _normalize_inserted_schedule_part_p1group_wrapping(
+    payload_node_mut: Optional[UKMutableNode],
+    curr_action: str,
+    target: LegalAddress,
+    effect: UKEffectRecord,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> Optional[UKMutableNode]:
+    """Wrap direct paragraph-level children of an inserted schedule part in p1group.
+
+    UK affecting XML sometimes places ``P1`` paragraphs directly inside a
+    ``<Part>`` of a schedule (e.g. ``after Part 3 insert— Part 3A ... 15A``).
+    Canonical UK schedule structure requires an intermediate ``P1group`` between
+    ``Part`` and ``paragraph``.  When a schedule-part insert payload lacks that
+    wrapper, this normalization inserts one p1group per contiguous run of
+    paragraph-level children and records the transformation.
+    """
+    if payload_node_mut is None:
+        return None
+    if curr_action not in ("insert", "replace"):
+        return payload_node_mut
+    if not _is_schedule_target(target):
+        return payload_node_mut
+    if _addr_leaf_kind(target) != "part":
+        return payload_node_mut
+    if payload_node_mut.kind.value != "part":
+        return payload_node_mut
+
+    children_needing_wrap = {"paragraph", "subparagraph", "item", "point"}
+    existing_grouping_kinds = {"p1group", "pblock", "crossheading", "crossHeading"}
+    wrapped_run_count = 0
+    new_children: list[UKMutableNode] = []
+    current_run: list[UKMutableNode] = []
+
+    def _flush_run() -> None:
+        nonlocal current_run, wrapped_run_count
+        if not current_run:
+            return
+        if len(current_run) == 1 and current_run[0].kind.value == "p1group":
+            new_children.append(current_run[0])
+        else:
+            wrapper = UKMutableNode(
+                kind=IRNodeKind.P1GROUP,
+                label=None,
+                text="",
+                attrs={
+                    "source_rule_id": _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
+                    "source_tag": "synthetic",
+                },
+                children=list(current_run),
+            )
+            new_children.append(wrapper)
+            wrapped_run_count += 1
+        current_run = []
+
+    for child in payload_node_mut.children:
+        if child.kind.value in children_needing_wrap:
+            current_run.append(child)
+        elif child.kind.value in existing_grouping_kinds:
+            _flush_run()
+            new_children.append(child)
+        else:
+            _flush_run()
+            new_children.append(child)
+    _flush_run()
+
+    if wrapped_run_count == 0:
+        return payload_node_mut
+
+    payload_node_mut.children = new_children
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
+        family="payload_normalization",
+        reason_code="schedule_part_paragraph_run_wrapped_in_p1group",
+        reason=(
+            "UK schedule part insert/replace payload carried paragraph-level children "
+            "directly under the part; lowering wrapped them in p1group to match "
+            "canonical schedule structure."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "wrapped_run_count": wrapped_run_count,
+            "action": curr_action,
+            "strict_disposition": "record",
+            "quirks_disposition": "apply",
+        },
+    )
+    return payload_node_mut
+
+
+def _normalize_schedule_subparagraph_definition_schedule_entries(
+    payload_node_mut: Optional[UKMutableNode],
+    curr_action: str,
+    target: LegalAddress,
+    effect: UKEffectRecord,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> Optional[UKMutableNode]:
+    """Promote schedule_entry definition items out of schedule subparagraphs.
+
+    In schedule-paragraph source XML, ``<UnorderedList Class="Definition">``
+    items inside a ``P2para`` are currently lowered as ``schedule_entry``
+    children of the enclosing ``subparagraph``.  That nesting is structurally
+    invalid (``subparagraph`` does not admit ``schedule_entry``).  Because such
+    definition lists are semantically clause text, this normalization promotes
+    each ``schedule_entry`` child to a sibling ``paragraph`` under the nearest
+    paragraph ancestor, preserving source order and text.
+    """
+    if payload_node_mut is None:
+        return None
+    if curr_action not in ("insert", "replace"):
+        return payload_node_mut
+    if not _is_schedule_target(target):
+        return payload_node_mut
+
+    promoted_count = 0
+
+    def _walk(node: UKMutableNode, parent: Optional[UKMutableNode], idx: int) -> None:
+        nonlocal promoted_count
+        if node.kind.value == "subparagraph" and parent is not None:
+            entries: list[UKMutableNode] = []
+            other_children: list[UKMutableNode] = []
+            for child in node.children:
+                if child.kind.value == "schedule_entry" and not child.children:
+                    entries.append(child)
+                else:
+                    other_children.append(child)
+            if entries:
+                node.children = other_children
+                insert_at = idx + 1
+                for entry in reversed(entries):
+                    para = UKMutableNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label=None,
+                        text=entry.text,
+                        attrs=dict(entry.attrs),
+                    )
+                    para.attrs["source_rule_id"] = (
+                        _UK_EFFECT_SCHEDULE_SUBPARAGRAPH_DEFINITION_ENTRIES_RULE_ID
+                    )
+                    para.attrs["source_tag"] = entry.attrs.get("source_tag", "ListItem")
+                    para.attrs["promoted_from_kind"] = "schedule_entry"
+                    parent.children.insert(insert_at, para)
+                    promoted_count += 1
+        for child_idx, child in enumerate(list(node.children)):
+            _walk(child, node, child_idx)
+
+    _walk(payload_node_mut, None, 0)
+    if promoted_count == 0:
+        return payload_node_mut
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_EFFECT_SCHEDULE_SUBPARAGRAPH_DEFINITION_ENTRIES_RULE_ID,
+        family="payload_normalization",
+        reason_code="schedule_subparagraph_definition_entries_promoted_to_paragraph",
+        reason=(
+            "UK schedule-paragraph definition list items were lowered as "
+            "schedule_entry children of a subparagraph; lowering promoted them to "
+            "paragraph siblings under the enclosing paragraph to match canonical "
+            "nesting."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "promoted_count": promoted_count,
+            "action": curr_action,
+            "strict_disposition": "record",
+            "quirks_disposition": "apply",
+        },
+    )
+    return payload_node_mut
+
+
 @dataclass(frozen=True)
 class UKFlatP1paraScheduleParagraphInsertLowering:
     content_ir: Optional[dict[str, Any]]
@@ -557,6 +756,28 @@ def prepare_uk_operation_payload_node(
                 },
             )
             payload_node_mut.kind = uk_ir_node_kind(leaf_kind)
+
+    if payload_node_mut is not None and curr_action in ("insert", "replace"):
+        payload_node_mut = _normalize_inserted_schedule_part_p1group_wrapping(
+            payload_node_mut,
+            curr_action=curr_action,
+            target=target,
+            effect=effect,
+            target_ref=target_ref,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        payload_node_mut = _normalize_schedule_subparagraph_definition_schedule_entries(
+            payload_node_mut,
+            curr_action=curr_action,
+            target=target,
+            effect=effect,
+            target_ref=target_ref,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
 
     if payload_node_mut is not None and curr_action in ("insert", "replace"):
         payload_identity_target = payload_match_target if curr_action == "replace" else target

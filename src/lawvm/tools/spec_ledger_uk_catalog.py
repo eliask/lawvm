@@ -400,6 +400,14 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A schedule list-entry whose payload is table rows is lowered to a table-row insert.",
     "uk_effect_schedule_table_end_rows_lowered":
         "A schedule table-end rows instruction is lowered to append the rows at the table end.",
+    "uk_effect_schedule_part_paragraph_p1group_wrapper_lowered":
+        "A schedule-part insert/replace payload carrying paragraph-level children directly "
+        "under the part wraps each contiguous run in a synthetic p1group to match canonical "
+        "schedule nesting.",
+    "uk_effect_schedule_subparagraph_definition_entries_lowered":
+        "Schedule definition-list items lowered as schedule_entry children of a subparagraph "
+        "are promoted to paragraph siblings under the enclosing paragraph to match canonical "
+        "nesting.",
 
     # -- Repeal-table feeds (Schedule of repeals; OPC §6.1) ---------------------
     "uk_effect_repeal_table_structural_repeal":
