@@ -345,6 +345,22 @@ class CompiledOpScopeWitness:
 
 
 @dataclass(frozen=True)
+class CompiledOpEvidenceRow:
+    """Typed strict-check evidence normalized from a compiled-op transport row."""
+
+    source_statute: str = ""
+    provenance_tags: CompiledOpProvenanceTags = field(default_factory=CompiledOpProvenanceTags)
+    scope_witness: CompiledOpScopeWitness | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "source_statute", str(self.source_statute or "").strip())
+        if not isinstance(self.provenance_tags, CompiledOpProvenanceTags):
+            raise ValueError("CompiledOpEvidenceRow.provenance_tags must be CompiledOpProvenanceTags")
+        if self.scope_witness is not None and not isinstance(self.scope_witness, CompiledOpScopeWitness):
+            raise ValueError("CompiledOpEvidenceRow.scope_witness must be CompiledOpScopeWitness when provided")
+
+
+@dataclass(frozen=True)
 class AdmissibleBindingCertificate:
     """Certificate that a subsection slot binding was deterministic."""
 
@@ -816,7 +832,7 @@ class CompileVerdict:
 
 
 def _compiled_op_provenance_tag_sets(
-    compiled_ops: Iterable[dict[str, Any]],
+    compiled_ops: Iterable[CompiledOpEvidenceRow | Mapping[str, Any]],
 ) -> CompiledOpProvenanceTags:
     """Collect normalized typed provenance tags from compiled-op rows.
 
@@ -832,25 +848,12 @@ def _compiled_op_provenance_tag_sets(
     compiled_scope_confidences: set[str] = set()
 
     for row in compiled_ops:
-        extraction_tags = row.get("extraction_provenance_tags")
-        if isinstance(extraction_tags, list):
-            compiled_extraction_tags.update(str(part).strip() for part in extraction_tags if str(part).strip())
-        target_guessing_tags = row.get("target_guessing_provenance_tags")
-        if isinstance(target_guessing_tags, list):
-            compiled_target_guessing_tags.update(
-                str(part).strip() for part in target_guessing_tags if str(part).strip()
-            )
-        scope_tags = row.get("scope_provenance_tags")
-        if isinstance(scope_tags, list):
-            compiled_scope_tags.update(
-                str(part).strip() for part in scope_tags if str(part).strip()
-            )
-        scope_source = row.get("scope_source")
-        if isinstance(scope_source, str) and scope_source.strip():
-            compiled_scope_sources.add(scope_source.strip())
-        scope_confidence = row.get("scope_confidence")
-        if isinstance(scope_confidence, str) and scope_confidence.strip():
-            compiled_scope_confidences.add(scope_confidence.strip())
+        evidence = row if isinstance(row, CompiledOpEvidenceRow) else _compiled_op_evidence_row(row)
+        compiled_extraction_tags.update(evidence.provenance_tags.extraction_tags)
+        compiled_target_guessing_tags.update(evidence.provenance_tags.target_guessing_tags)
+        compiled_scope_tags.update(evidence.provenance_tags.scope_tags)
+        compiled_scope_sources.update(evidence.provenance_tags.scope_sources)
+        compiled_scope_confidences.update(evidence.provenance_tags.scope_confidences)
 
     return CompiledOpProvenanceTags(
         extraction_tags=frozenset(compiled_extraction_tags),
@@ -861,7 +864,7 @@ def _compiled_op_provenance_tag_sets(
     )
 
 
-def _compiled_op_source_statute(op: dict[str, Any]) -> str:
+def _compiled_op_source_statute(op: Mapping[str, Any]) -> str:
     """Return the amendment id associated with a compiled-op row, if any."""
 
     for key in ("source_statute", "amendment_id", "source"):
@@ -872,6 +875,37 @@ def _compiled_op_source_statute(op: dict[str, Any]) -> str:
     if isinstance(source, OperationSource):
         return str(source.statute_id or "").strip()
     return ""
+
+
+def _string_set_from_row_list(row: Mapping[str, Any], key: str) -> frozenset[str]:
+    value = row.get(key)
+    if not isinstance(value, list):
+        return frozenset()
+    return frozenset(str(part).strip() for part in value if str(part).strip())
+
+
+def _compiled_op_evidence_row(row: Mapping[str, Any]) -> CompiledOpEvidenceRow:
+    scope_source = row.get("scope_source")
+    scope_confidence = row.get("scope_confidence")
+    return CompiledOpEvidenceRow(
+        source_statute=_compiled_op_source_statute(row),
+        provenance_tags=CompiledOpProvenanceTags(
+            extraction_tags=_string_set_from_row_list(row, "extraction_provenance_tags"),
+            target_guessing_tags=_string_set_from_row_list(row, "target_guessing_provenance_tags"),
+            scope_tags=_string_set_from_row_list(row, "scope_provenance_tags"),
+            scope_sources=(
+                frozenset({scope_source.strip()})
+                if isinstance(scope_source, str) and scope_source.strip()
+                else frozenset()
+            ),
+            scope_confidences=(
+                frozenset({scope_confidence.strip()})
+                if isinstance(scope_confidence, str) and scope_confidence.strip()
+                else frozenset()
+            ),
+        ),
+        scope_witness=_compiled_op_scope_witness(row),
+    )
 
 
 def _compiled_op_scope_witness(row: Mapping[str, Any]) -> CompiledOpScopeWitness | None:
@@ -1149,6 +1183,7 @@ def strict_fail_reasons_from_finding_ledger(
         triggered.add("APPLY.FAILED_OPERATION")
 
     canonical_ops_list = list(canonical_ops)
+    compiled_evidence_rows = tuple(_compiled_op_evidence_row(row) for row in compiled_ops)
 
     for event in effect_lifecycle_events:
         if event.kind != "unresolved_effect_target":
@@ -1165,7 +1200,7 @@ def strict_fail_reasons_from_finding_ledger(
     ):
         triggered.add("APPLY.WORD_SUBSTITUTION")
 
-    compiled_provenance_tags = _compiled_op_provenance_tag_sets(compiled_ops)
+    compiled_provenance_tags = _compiled_op_provenance_tag_sets(compiled_evidence_rows)
 
     if compiled_provenance_tags.target_guessing_tags:
         triggered.add("PARSE.TARGET_GUESSING")
@@ -1184,10 +1219,9 @@ def strict_fail_reasons_from_finding_ledger(
     if compiled_provenance_tags.extraction_tags & extraction_fallback_tags:
         triggered.add("PARSE.EXTRACTION_FALLBACK")
 
-    for row in compiled_ops:
-        scope_witness = _compiled_op_scope_witness(row)
-        if scope_witness is not None:
-            triggered.add(scope_witness.kind)
+    for row in compiled_evidence_rows:
+        if row.scope_witness is not None:
+            triggered.add(row.scope_witness.kind)
 
     _runtime_finding_to_strict_code = {
         "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY": "APPLY.SOURCE_PATHOLOGY_DETECTED",

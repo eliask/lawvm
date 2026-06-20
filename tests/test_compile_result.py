@@ -26,6 +26,7 @@ from lawvm.core.compile_result import (
     AdmissibleBindingCertificate,
     CanonicalBundle,
     CanonicalEffect,
+    CompiledOpEvidenceRow,
     CompiledOpProvenanceTags,
     CompiledOpScopeWitness,
     StrictProfile,
@@ -37,6 +38,7 @@ from lawvm.core.compile_result import (
     _compiled_op_scope_witness,
     _compiled_op_source_statute,
     _compiled_op_matches_section,
+    _compiled_op_provenance_tag_sets,
     _operation_matches_section,
     _validate_bundle_purity,
     strict_fail_reasons_from_finding_ledger,
@@ -311,6 +313,30 @@ def test_compiled_op_provenance_tags_freeze_and_validate_tag_sets() -> None:
         CompiledOpProvenanceTags(scope_tags=cast(Any, ["ok", 1]))
     with pytest.raises(ValueError, match="not a string"):
         CompiledOpProvenanceTags(scope_sources=cast(Any, "explicit_chunk"))
+
+
+def test_compiled_op_evidence_row_requires_typed_carriers_and_drives_tag_sets() -> None:
+    evidence = CompiledOpEvidenceRow(
+        source_statute=" 2024/1 ",
+        provenance_tags=CompiledOpProvenanceTags(
+            extraction_tags=frozenset({"extraction_fallback_heuristic"}),
+            scope_sources=frozenset({"explicit_chunk"}),
+        ),
+        scope_witness=CompiledOpScopeWitness(
+            kind="LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED",
+            source="explicit_chunk",
+            confidence="explicit",
+        ),
+    )
+
+    assert evidence.source_statute == "2024/1"
+    assert _compiled_op_provenance_tag_sets((evidence,)).extraction_tags == frozenset(
+        {"extraction_fallback_heuristic"}
+    )
+    with pytest.raises(ValueError, match="provenance_tags"):
+        CompiledOpEvidenceRow(provenance_tags=cast(Any, object()))
+    with pytest.raises(ValueError, match="scope_witness"):
+        CompiledOpEvidenceRow(scope_witness=cast(Any, object()))
 
 
 def test_compiled_op_scope_witness_rejects_empty_or_untyped_fields() -> None:
