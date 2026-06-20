@@ -66,7 +66,13 @@ def replay_2017_320_legal_pit_with_meta() -> tuple[ReplayResult, dict[str, objec
     replay_meta: dict[str, object] = {}
     replay = cast(
         ReplayResult,
-        pinned_replay("2017/320", mode="legal_pit", quiet=True, replay_meta_out=replay_meta),
+        pinned_replay(
+            "2017/320",
+            mode="legal_pit",
+            quiet=True,
+            replay_meta_out=replay_meta,
+            build_full_products=False,
+        ),
     )
     return replay, replay_meta
 
