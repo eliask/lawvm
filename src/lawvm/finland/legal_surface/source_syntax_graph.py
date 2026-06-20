@@ -952,7 +952,7 @@ def _emit_construction_leaves(
         if not su.owners:
             continue
         # Per-family parse kind tags, so a condexc run can be refined to exception.
-        parse_kinds = _sentence_parse_kinds(seg_text)
+        parse_kinds = su.family_kinds
         body_owners = {off + i: fams for i, fams in su.owners.items()}
         runs = _coalesce_runs(body_owners)
         # leaf nodes per run; coordinates_with for the multi-family ones
@@ -986,30 +986,6 @@ def _emit_construction_leaves(
                 # owners on ``families``; a self-loop ``coordinates_with`` edge is the
                 # explicit, queryable coordination marker (via :meth:`edges_of_kind`).
                 edges.append(SyntaxEdge(kind="coordinates_with", src=nid, dst=nid))
-
-
-def _sentence_parse_kinds(seg_text: str) -> dict[str, str]:
-    """The per-family parse ``kind`` tag for one sentence (for leaf-kind refinement).
-
-    Only the condition_exception family needs its kind disambiguated (condition vs
-    exception); we read it from that family's parse. Other families' kind is
-    implied by the family id. Returns ``{family_id: kind}`` for the condexc family
-    when its first qualifier is an exception shape.
-    """
-    from lawvm.finland.legal_surface.condition_exception_parse import (
-        parse_condition_exception_sentence,
-    )
-
-    out: dict[str, str] = {}
-    parse = parse_condition_exception_sentence(seg_text)
-    qualifiers = getattr(parse, "qualifiers", ())
-    for q in qualifiers:
-        q_kind = getattr(q, "kind", "")
-        if q_kind == "exception":
-            out["condition_exception"] = "exception"
-            break
-    return out
-
 
 # ---------------------------------------------------------------------------
 # ListConstruction + chapeau-frame inheritance (the L2 construction).

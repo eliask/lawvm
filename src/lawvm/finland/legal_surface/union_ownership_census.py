@@ -396,6 +396,8 @@ class _SentenceUnion:
     owners: dict[int, frozenset[str]]
     #: explicit typed-residual char ranges (sentence-local).
     typed_residual: list[tuple[int, int]]
+    #: family_id -> parse-kind tag recovered from the family parse object.
+    family_kinds: dict[str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,8 +438,14 @@ def union_over_sentence(sentence_text: str) -> _SentenceUnion:
     """
     owners: dict[int, set[str]] = {}
     typed_residual: list[tuple[int, int]] = []
+    family_kinds: dict[str, str] = {}
     for family_id, parse_fn in FAMILY_PARSERS:
         parse_obj = parse_fn(sentence_text)
+        if family_id == "condition_exception":
+            for q in getattr(parse_obj, "qualifiers", ()):
+                if getattr(q, "kind", "") == "exception":
+                    family_kinds[family_id] = "exception"
+                    break
         for s, e in _family_owned_spans(parse_obj):
             for i in range(s, e):
                 owners.setdefault(i, set()).add(family_id)
@@ -453,6 +461,7 @@ def union_over_sentence(sentence_text: str) -> _SentenceUnion:
     return _SentenceUnion(
         owners={i: frozenset(fams) for i, fams in owners.items()},
         typed_residual=typed_residual,
+        family_kinds=family_kinds,
     )
 
 
