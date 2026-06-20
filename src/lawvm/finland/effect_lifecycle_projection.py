@@ -633,11 +633,7 @@ def _relation_from_signal(
             kind=signal.relation_kind,
             source_provision=witness,
             target_effect=target_effect,
-            detail={
-                **signal.to_meta_row(),
-                **(detail or {}),
-                "target_effect_id": target_effect.effect_id,
-            },
+            detail={**signal.to_meta_row(), **(detail or {})},
         )
     target_instrument = (
         SourceInstrumentRef(instrument_id=signal.target_statute, title=signal.target_title)

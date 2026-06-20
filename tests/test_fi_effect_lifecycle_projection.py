@@ -403,7 +403,7 @@ def test_finland_pending_amendment_relation_signal_binds_known_effect() -> None:
     assert relations[0].kind == "modifies_effect"
     assert relations[0].target_effect == source_effects[0]
     assert relations[0].target_instrument is None
-    assert relations[0].detail["target_effect_id"] == source_effects[0].effect_id
+    assert "target_effect_id" not in relations[0].detail
     assert lifecycle_events == ()
 
 
