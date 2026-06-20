@@ -124,6 +124,8 @@ from lawvm.finland.ops import (
     OpType,
     ResolvedOp,
     ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
     get_replay_profile,
     scope_authority_parity_for_op,
     runtime_scope_confidence_for_op,
@@ -1383,8 +1385,8 @@ def test_legacy_dispatch_shell_for_rop_prefers_late_waist_fields() -> None:
     rop.scope_provenance_tags = ("typed_scope",)
     rop.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="2",
     )
     rop.is_temporary = False
@@ -8505,8 +8507,8 @@ def test_amendment_op_resolved_scope_confidence_prefers_stored_carrier_over_tags
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="3",
     )
 
@@ -8524,8 +8526,8 @@ def test_resolved_op_resolved_scope_confidence_prefers_stored_carrier_over_tags(
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="3",
     )
     rop = ResolvedOp.from_amendment_op(
@@ -8551,8 +8553,8 @@ def test_resolved_op_stores_projection_scope_confidence_over_runtime_tag_rail() 
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="3",
     )
     rop = ResolvedOp.from_amendment_op(
@@ -8576,8 +8578,8 @@ def test_runtime_scope_confidence_for_op_prefers_stored_carrier_for_both_shells(
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="3",
     )
     rop = ResolvedOp.from_amendment_op(
@@ -8610,8 +8612,8 @@ def test_scope_authority_parity_for_op_reports_runtime_projection_disagreement()
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="7",
     )
 
@@ -8742,7 +8744,7 @@ def test_resolve_section_path_with_fallbacks_allows_unique_global_descendant_ins
 def test_apply_op_uses_apply_fallback_tag_not_source_pathology_for_live_unique_scope_fallback(monkeypatch) -> None:
     from lawvm.core.canonical_intent import ExecutionContract, IntentKind, NodeTarget, OccupancyPolicy, Replace
     from lawvm.core.ir import LegalAddress
-    from lawvm.finland.ops import SectionPathResolution
+    from lawvm.finland.ops import SectionPathResolution, SectionPathResolutionReason
 
     state = _make_state(_body(_sec("23", _content("old section"))))
     op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
@@ -8760,7 +8762,10 @@ def test_apply_op_uses_apply_fallback_tag_not_source_pathology_for_live_unique_s
     mutation_events: list[ApplyMutationEvent] = []
 
     def fake_resolve(*_args, **_kwargs) -> SectionPathResolution:
-        return SectionPathResolution(path=(("section", "23"),), reason_code="live_unique_global_fallback")
+        return SectionPathResolution(
+            path=(("section", "23"),),
+            reason_code=SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK,
+        )
 
     monkeypatch.setattr(
         "lawvm.finland.apply_typed_dispatch._resolve_section_path_with_fallbacks",

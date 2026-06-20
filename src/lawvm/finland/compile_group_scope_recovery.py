@@ -21,6 +21,8 @@ from lawvm.finland.ops import (
     AmendmentOp,
     FailedOp,
     ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
     normalize_scope_confidence,
     projection_scope_confidence,
     _lo_with_path_update,
@@ -354,8 +356,8 @@ def _retargeted_live_section_ops(
                 scope_confidence=(
                     ScopeConfidence(
                         tag="body_container_membership_rewrite",
-                        source="explicit_scope_rewrite",
-                        confidence="rewritten",
+                        source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                        confidence=ScopeResolutionConfidence.REWRITTEN,
                         resolved_chapter=live_chapter,
                     )
                     if retarget_scope_source == "explicit_chunk"

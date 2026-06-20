@@ -22,6 +22,8 @@ from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inv
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import (
     ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
     _lo_path_dict,
     _lo_with_path_update,
     lo_with_added_scope_tag,
@@ -1276,8 +1278,8 @@ def assign_chapter_scope_from_johtolause(
                     ),
                     ScopeConfidence(
                         tag="chapter_scope_from_letter_suffix_stem_host",
-                        source="live_stem_host",
-                        confidence="inferred",
+                        source=ScopeResolutionSource.LIVE_STEM_HOST,
+                        confidence=ScopeResolutionConfidence.INFERRED,
                         resolved_chapter=stem_host_chapter,
                     ),
                 )
@@ -1340,14 +1342,14 @@ def assign_chapter_scope_from_johtolause(
                         ScopeConfidence(
                             tag=note,
                             source=(
-                                "preamble"
+                                ScopeResolutionSource.PREAMBLE
                                 if note == "chapter_scope_from_preamble"
-                                else "explicit_chunk"
+                                else ScopeResolutionSource.EXPLICIT_CHUNK
                             ),
                             confidence=(
-                                "inferred"
+                                ScopeResolutionConfidence.INFERRED
                                 if note == "chapter_scope_from_preamble"
-                                else "explicit"
+                                else ScopeResolutionConfidence.EXPLICIT
                             ),
                             resolved_chapter=chapter_label,
                         ),
@@ -1481,11 +1483,11 @@ def assign_scope_from_renumber_destinations(
                             else "chapter_scope_carry_forward"
                         ),
                         source=(
-                            "grouped_part"
+                            ScopeResolutionSource.GROUPED_PART
                             if "part" in updates
-                            else "carry_forward"
+                            else ScopeResolutionSource.CARRY_FORWARD
                         ),
-                        confidence="inferred",
+                        confidence=ScopeResolutionConfidence.INFERRED,
                         resolved_chapter=updates.get("chapter", chapter),
                     )
                     result[i] = lo_with_scope_confidence(

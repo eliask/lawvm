@@ -18,6 +18,7 @@ removed; top-level dossier consumers should use ``lawvm.core.compile_facade``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, Mapping, Optional, cast
 
 from lawvm.core.frozen_values import freeze_mapping
@@ -318,6 +319,45 @@ class CompiledOpProvenanceTags:
             "scope_confidences",
             _string_frozenset("CompiledOpProvenanceTags", "scope_confidences", self.scope_confidences),
         )
+
+
+class CompiledOpScopeSource(StrEnum):
+    """Scope-source rail carried by a compiled-op transport row.
+
+    Mirrors ``lawvm.finland.ops.ScopeResolutionSource`` by value. It is
+    redeclared here (rather than imported) because ``finland`` depends on this
+    core module; the values are the transport contract between the two layers.
+    """
+
+    PREAMBLE = "preamble"
+    EXPLICIT_CHUNK = "explicit_chunk"
+    CARRY_FORWARD = "carry_forward"
+    GROUPED_PART = "grouped_part"
+    GROUPED_CHAPTER = "grouped_chapter"
+    EXPLICIT_SCOPE_REWRITE = "explicit_scope_rewrite"
+
+
+class CompiledOpScopeWitnessKind(StrEnum):
+    """Finding-code rail a compiled-op scope source resolves to."""
+
+    CONTEXT_DEPENDENT_ANCHOR_RESOLUTION = "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION"
+    EXPLICIT_CHUNK_SCOPE_REQUIRED = "LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED"
+    EXPLICIT_SCOPE_REWRITE_REQUIRED = "LOWER.EXPLICIT_SCOPE_REWRITE_REQUIRED"
+
+
+# Single source-rail → witness-kind table. Replaces the prior string if/elif
+# chain so the mapping is enum-keyed and a new source value is a typed miss
+# (None) instead of a silent string fall-through.
+_COMPILED_OP_SCOPE_WITNESS_KIND_BY_SOURCE: Mapping[
+    CompiledOpScopeSource, CompiledOpScopeWitnessKind
+] = {
+    CompiledOpScopeSource.CARRY_FORWARD: CompiledOpScopeWitnessKind.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION,
+    CompiledOpScopeSource.PREAMBLE: CompiledOpScopeWitnessKind.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION,
+    CompiledOpScopeSource.GROUPED_PART: CompiledOpScopeWitnessKind.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION,
+    CompiledOpScopeSource.GROUPED_CHAPTER: CompiledOpScopeWitnessKind.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION,
+    CompiledOpScopeSource.EXPLICIT_CHUNK: CompiledOpScopeWitnessKind.EXPLICIT_CHUNK_SCOPE_REQUIRED,
+    CompiledOpScopeSource.EXPLICIT_SCOPE_REWRITE: CompiledOpScopeWitnessKind.EXPLICIT_SCOPE_REWRITE_REQUIRED,
+}
 
 
 @dataclass(frozen=True)
@@ -928,62 +968,60 @@ def _compiled_op_scope_witness(row: Mapping[str, Any]) -> CompiledOpScopeWitness
     source_value = str(scope_source).strip() if isinstance(scope_source, str) else ""
     confidence_value = str(scope_confidence).strip() if isinstance(scope_confidence, str) else ""
     if source_value and confidence_value:
-        if source_value in {"carry_forward", "preamble", "grouped_part", "grouped_chapter"}:
-            scope_kind = "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION"
-        elif source_value == "explicit_chunk":
-            scope_kind = "LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED"
-        elif source_value == "explicit_scope_rewrite":
-            scope_kind = "LOWER.EXPLICIT_SCOPE_REWRITE_REQUIRED"
-        else:
+        scope_source_member = _compiled_op_scope_source_member(source_value)
+        if scope_source_member is None:
             return None
+        scope_kind = _COMPILED_OP_SCOPE_WITNESS_KIND_BY_SOURCE[scope_source_member]
         return CompiledOpScopeWitness(
-            kind=scope_kind,
-            source=source_value,
+            kind=str(scope_kind),
+            source=str(scope_source_member),
             confidence=confidence_value,
             tag=next(iter(scope_tag_list), ""),
             used_legacy_tag_fallback=False,
         )
 
-    if "chapter_scope_from_explicit_chunk" in scope_tag_list:
-        return CompiledOpScopeWitness(
-            kind="LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED",
-            source="explicit_chunk",
-            confidence="explicit",
-            tag="chapter_scope_from_explicit_chunk",
-            used_legacy_tag_fallback=True,
-        )
-
-    for tag in (
-        "chapter_scope_stripped_subsection_insert",
-        "chapter_scope_stripped_section_facet_insert",
-        "chapter_scope_stripped_unique_section",
-        "chapter_scope_stripped_duplicate_label_outside_stated_chapter",
-    ):
+    for tag, source_member, confidence in _COMPILED_OP_SCOPE_LEGACY_TAG_WITNESSES:
         if tag in scope_tag_list:
             return CompiledOpScopeWitness(
-                kind="LOWER.EXPLICIT_SCOPE_REWRITE_REQUIRED",
-                source="explicit_scope_rewrite",
-                confidence="rewritten",
-                tag=tag,
-                used_legacy_tag_fallback=True,
-            )
-
-    for tag, source_value in (
-        ("chapter_scope_carry_forward", "carry_forward"),
-        ("chapter_scope_from_preamble", "preamble"),
-        ("grouped_part_scope", "grouped_part"),
-        ("grouped_chapter_scope", "grouped_chapter"),
-    ):
-        if tag in scope_tag_list:
-            return CompiledOpScopeWitness(
-                kind="LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION",
-                source=source_value,
-                confidence="inferred",
+                kind=str(_COMPILED_OP_SCOPE_WITNESS_KIND_BY_SOURCE[source_member]),
+                source=str(source_member),
+                confidence=confidence,
                 tag=tag,
                 used_legacy_tag_fallback=True,
             )
 
     return None
+
+
+def _compiled_op_scope_source_member(value: str) -> CompiledOpScopeSource | None:
+    """Return the typed scope-source member for a transport-row source string."""
+    try:
+        return CompiledOpScopeSource(value)
+    except ValueError:
+        return None
+
+
+# Legacy provenance-tag fallback, evaluated in priority order. Each entry binds
+# a scope tag to its typed (source, confidence); the witness kind is derived
+# from the same source→kind table used by the structured carrier path so the
+# two rails cannot drift.
+_COMPILED_OP_SCOPE_LEGACY_TAG_WITNESSES: tuple[
+    tuple[str, CompiledOpScopeSource, str], ...
+] = (
+    ("chapter_scope_from_explicit_chunk", CompiledOpScopeSource.EXPLICIT_CHUNK, "explicit"),
+    ("chapter_scope_stripped_subsection_insert", CompiledOpScopeSource.EXPLICIT_SCOPE_REWRITE, "rewritten"),
+    ("chapter_scope_stripped_section_facet_insert", CompiledOpScopeSource.EXPLICIT_SCOPE_REWRITE, "rewritten"),
+    ("chapter_scope_stripped_unique_section", CompiledOpScopeSource.EXPLICIT_SCOPE_REWRITE, "rewritten"),
+    (
+        "chapter_scope_stripped_duplicate_label_outside_stated_chapter",
+        CompiledOpScopeSource.EXPLICIT_SCOPE_REWRITE,
+        "rewritten",
+    ),
+    ("chapter_scope_carry_forward", CompiledOpScopeSource.CARRY_FORWARD, "inferred"),
+    ("chapter_scope_from_preamble", CompiledOpScopeSource.PREAMBLE, "inferred"),
+    ("grouped_part_scope", CompiledOpScopeSource.GROUPED_PART, "inferred"),
+    ("grouped_chapter_scope", CompiledOpScopeSource.GROUPED_CHAPTER, "inferred"),
+)
 
 
 def _operation_section_labels(op: LegalOperation) -> set[str]:

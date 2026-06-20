@@ -45,6 +45,8 @@ from lawvm.finland.johtolause.surface_resolve import (
 )
 from lawvm.finland.ops import (
     ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
     lo_with_move_clause_target_unit_kind,
     lo_with_scope_confidence,
 )
@@ -74,8 +76,8 @@ def _explicit_chunk_scope_confidence_for_target(
         return None
     return ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter=chapter,
     )
 
@@ -109,8 +111,8 @@ def _resolved_node_scope_confidences(node: ResolvedNode) -> list[ScopeConfidence
             return [
                 ScopeConfidence(
                     tag="chapter_scope_from_explicit_chunk",
-                    source="explicit_chunk",
-                    confidence="explicit",
+                    source=ScopeResolutionSource.EXPLICIT_CHUNK,
+                    confidence=ScopeResolutionConfidence.EXPLICIT,
                     resolved_chapter=node.chapter,
                 )
             ]
@@ -124,8 +126,8 @@ def _resolved_node_scope_confidences(node: ResolvedNode) -> list[ScopeConfidence
             return [
                 ScopeConfidence(
                     tag="chapter_scope_from_explicit_chunk",
-                    source="explicit_chunk",
-                    confidence="explicit",
+                    source=ScopeResolutionSource.EXPLICIT_CHUNK,
+                    confidence=ScopeResolutionConfidence.EXPLICIT,
                     resolved_chapter=node.chapter,
                 )
             ]

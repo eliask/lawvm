@@ -1955,7 +1955,12 @@ def test_build_amendment_bundle_suppresses_temporary_amendment_notice(capsys) ->
 
 
 def test_serialize_scope_authority_parity_surfaces_runtime_projection_agreement() -> None:
-    from lawvm.finland.ops import AmendmentOp, ScopeConfidence
+    from lawvm.finland.ops import (
+        AmendmentOp,
+        ScopeConfidence,
+        ScopeResolutionConfidence,
+        ScopeResolutionSource,
+    )
 
     op = AmendmentOp(
         op_type="REPLACE",
@@ -1966,8 +1971,8 @@ def test_serialize_scope_authority_parity_surfaces_runtime_projection_agreement(
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         )
 

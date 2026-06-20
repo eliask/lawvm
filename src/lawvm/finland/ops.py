@@ -19,6 +19,7 @@ import datetime as dt
 import logging
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
+from enum import StrEnum
 from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Tuple, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource, TextPatchSpec
@@ -66,21 +67,37 @@ _TARGET_GUESSING_PROVENANCE_TAGS = frozenset(
     }
 )
 
-ScopeResolutionConfidence = Literal["explicit", "inferred", "rewritten"]
-ScopeResolutionSource = Literal[
-    "preamble",
-    "explicit_chunk",
-    "carry_forward",
-    "grouped_part",
-    "grouped_chapter",
-    "explicit_scope_rewrite",
-    "live_stem_host",
-]
-SectionPathResolutionReason = Literal[
-    "live_unique_global_fallback",
-    "live_unique_substantive_over_placeholder",
-    "follow_same_wave_migration",
-]
+class ScopeResolutionConfidence(StrEnum):
+    """Confidence rail for a Finland chapter-scope resolution witness.
+
+    A ``StrEnum`` (not a bare ``Literal``) so confidence comparisons are
+    member-vs-member and survive renames as a type error rather than a silent
+    string mismatch.
+    """
+
+    EXPLICIT = "explicit"
+    INFERRED = "inferred"
+    REWRITTEN = "rewritten"
+
+
+class ScopeResolutionSource(StrEnum):
+    """Source rail for a Finland chapter-scope resolution witness."""
+
+    PREAMBLE = "preamble"
+    EXPLICIT_CHUNK = "explicit_chunk"
+    CARRY_FORWARD = "carry_forward"
+    GROUPED_PART = "grouped_part"
+    GROUPED_CHAPTER = "grouped_chapter"
+    EXPLICIT_SCOPE_REWRITE = "explicit_scope_rewrite"
+    LIVE_STEM_HOST = "live_stem_host"
+
+
+class SectionPathResolutionReason(StrEnum):
+    """Reason rail for a Finland late apply-time section-path fallback."""
+
+    LIVE_UNIQUE_GLOBAL_FALLBACK = "live_unique_global_fallback"
+    LIVE_UNIQUE_SUBSTANTIVE_OVER_PLACEHOLDER = "live_unique_substantive_over_placeholder"
+    FOLLOW_SAME_WAVE_MIGRATION = "follow_same_wave_migration"
 
 
 @dataclass(frozen=True)
@@ -95,11 +112,11 @@ class ScopeConfidence:
 
     @property
     def is_explicit(self) -> bool:
-        return self.confidence == "explicit"
+        return self.confidence is ScopeResolutionConfidence.EXPLICIT
 
     @property
     def is_rewritten(self) -> bool:
-        return self.confidence == "rewritten"
+        return self.confidence is ScopeResolutionConfidence.REWRITTEN
 
 
 @dataclass(frozen=True)
@@ -132,8 +149,8 @@ class SectionPathResolution:
     @property
     def used_live_unique_global_fallback(self) -> bool:
         return self.reason_code in {
-            "live_unique_global_fallback",
-            "live_unique_substantive_over_placeholder",
+            SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK,
+            SectionPathResolutionReason.LIVE_UNIQUE_SUBSTANTIVE_OVER_PLACEHOLDER,
         }
 
 
@@ -174,43 +191,43 @@ def scope_confidence_from_tags(
         }:
             return ScopeConfidence(
                 tag=tag,
-                source="explicit_scope_rewrite",
-                confidence="rewritten",
+                source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                confidence=ScopeResolutionConfidence.REWRITTEN,
                 resolved_chapter=resolved_chapter,
             )
     if "chapter_scope_from_explicit_chunk" in normalized:
         return ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter=resolved_chapter,
         )
     if "chapter_scope_carry_forward" in normalized:
         return ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=resolved_chapter,
         )
     if "chapter_scope_from_preamble" in normalized:
         return ScopeConfidence(
             tag="chapter_scope_from_preamble",
-            source="preamble",
-            confidence="inferred",
+            source=ScopeResolutionSource.PREAMBLE,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=resolved_chapter,
         )
     if "grouped_part_scope" in normalized:
         return ScopeConfidence(
             tag="grouped_part_scope",
-            source="grouped_part",
-            confidence="inferred",
+            source=ScopeResolutionSource.GROUPED_PART,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=resolved_chapter,
         )
     if "grouped_chapter_scope" in normalized:
         return ScopeConfidence(
             tag="grouped_chapter_scope",
-            source="grouped_chapter",
-            confidence="inferred",
+            source=ScopeResolutionSource.GROUPED_CHAPTER,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=resolved_chapter,
         )
     return None

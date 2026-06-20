@@ -27,7 +27,13 @@ from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
-from lawvm.finland.ops import FailedOp, ReplayProfile, ResolvedOp, _assert_intent_compat
+from lawvm.finland.ops import (
+    FailedOp,
+    ReplayProfile,
+    ResolvedOp,
+    SectionPathResolutionReason,
+    _assert_intent_compat,
+)
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 from lawvm.finland.apply_policy import (
     _check_occupancy_policy,
@@ -622,12 +628,12 @@ def _apply_intent_section_level(
     if section_resolution.used_live_unique_global_fallback:
         used_fallback_tags = (
             "APPLY.SCOPE_CONFIDENCE_GLOBAL_FALLBACK",
-            section_resolution.reason_code or "live_unique_global_fallback",
+            str(section_resolution.reason_code or SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK),
         )
-    elif section_resolution.reason_code == "follow_same_wave_migration":
+    elif section_resolution.reason_code is SectionPathResolutionReason.FOLLOW_SAME_WAVE_MIGRATION:
         used_fallback_tags = (
             "APPLY.SAME_WAVE_MIGRATION_REBASE",
-            "follow_same_wave_migration",
+            str(SectionPathResolutionReason.FOLLOW_SAME_WAVE_MIGRATION),
         )
     mixed_sparse_insert = (
         rop.slot_assignment is not None

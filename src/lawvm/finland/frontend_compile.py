@@ -50,6 +50,7 @@ from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.ops import ScopeConfidence
+from lawvm.finland.ops import ScopeResolutionConfidence, ScopeResolutionSource
 from lawvm.finland.ops import classify_legal_operation_conversion_skip
 from lawvm.finland.ops import normalize_scope_confidence, projection_scope_confidence
 from lawvm.finland.ops import _lo_with_path_update
@@ -904,8 +905,8 @@ def _lift_explicit_scopes_from_cited_version_ops(
                 target_chapter=target_chapter,
                 scope_confidence=ScopeConfidence(
                     tag="chapter_scope_from_cited_version_binding",
-                    source="explicit_chunk",
-                    confidence="explicit",
+                    source=ScopeResolutionSource.EXPLICIT_CHUNK,
+                    confidence=ScopeResolutionConfidence.EXPLICIT,
                     resolved_chapter=target_chapter,
                 ),
                 lo=_lo_with_path_update(op.lo, part=target_part, chapter=target_chapter) if op.lo is not None else op.lo,
@@ -1856,8 +1857,8 @@ def _add_inferred_section_chapter_scope(
         scope_provenance_tags=tags,
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=chapter,
         ),
         lo=scoped_lo,
@@ -2439,11 +2440,12 @@ def _enrich_ops_from_amendment_tree(
                         scope_confidence=(
                             ScopeConfidence(
                                 tag="body_container_membership_rewrite",
-                                source="explicit_scope_rewrite",
-                                confidence="rewritten",
+                                source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                                confidence=ScopeResolutionConfidence.REWRITTEN,
                                 resolved_chapter=retargeted_chapter,
                             )
-                            if scope_witness is not None and scope_witness.source == "explicit_chunk"
+                            if scope_witness is not None
+                            and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
                             else normalize_scope_confidence(
                                 projection_scope_confidence(
                                     scope_confidence=scoped_op.scope_confidence,
