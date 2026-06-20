@@ -969,6 +969,7 @@ def place_occurrence_spans(
     if not surface_text.strip():
         return []
     locator = _normalize_interlink_locator(source_locator)
+    cache_key: tuple[str, str | None, bool] | None = None
     if placer is not None:
         cache_key = (surface_text, locator, enable_ordinal_experimental)
         cached = placer._occurrence_cache.get(cache_key)
@@ -1106,7 +1107,7 @@ def place_occurrence_spans(
                         },
                     )
                 )
-    if placer is not None:
+    if placer is not None and cache_key is not None:
         placer._occurrence_cache[cache_key] = placements
     return placements
 
