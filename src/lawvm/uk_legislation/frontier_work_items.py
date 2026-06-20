@@ -14,7 +14,7 @@ from lawvm.core.execution_authorization import validate_execution_authorization
 from lawvm.core.frontier_work_item import FrontierWorkItem, validate_frontier_work_item
 from lawvm.core.proof_obligations import (
     PROOF_OBLIGATION_BLOCKED,
-    ProofObligationCertificate,
+    ProofObligationCoverage,
 )
 from lawvm.core.source_witness import source_witness_from_mapping
 from lawvm.core.target_resolution import (
@@ -1011,7 +1011,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
     )
     if exclusion_scope_certificate:
         detail["exclusion_scope_certificate"] = exclusion_scope_certificate
-    proof_obligation_certificate = _proof_obligation_certificate(
+    proof_obligation_coverage = _proof_obligation_coverage(
         work_item_id=work_item_id,
         owner_phase=owner_phase,
         frontier_family=frontier_family,
@@ -1019,8 +1019,8 @@ def uk_frontier_work_item_from_manual_frontier_row(
         source_membership_certificate=source_membership_certificate,
         exclusion_scope_certificate=exclusion_scope_certificate,
     )
-    if proof_obligation_certificate:
-        detail["proof_obligation_certificate"] = proof_obligation_certificate
+    if proof_obligation_coverage:
+        detail["proof_obligation_coverage"] = proof_obligation_coverage
     detail["target_resolution_certificate"] = _target_resolution_certificate(
         owner_phase=owner_phase,
         target_witness=target_witness,
@@ -1479,7 +1479,7 @@ def _scoped_occurrence_exclusion_scope_facts(
     return ()
 
 
-def _proof_obligation_certificate(
+def _proof_obligation_coverage(
     *,
     work_item_id: str,
     owner_phase: str,
@@ -1578,7 +1578,7 @@ def _blocked_proof_certificate(
     missing_proofs: tuple[str, ...],
     blocker_counts: Mapping[str, int],
 ) -> Mapping[str, Any]:
-    return ProofObligationCertificate(
+    return ProofObligationCoverage(
         scope_id=f"uk-frontier-work-item:{work_item_id}:proof-obligations",
         phase=owner_phase or "unknown",
         rule_id=rule_id,

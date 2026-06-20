@@ -927,7 +927,7 @@ def test_uk_frontier_work_item_multi_enactment_records_source_membership_certifi
     assert (
         certificate["source_membership_not_replay_authorization"] is True
     )
-    proof_certificate = work_item["detail"]["proof_obligation_certificate"]
+    proof_certificate = work_item["detail"]["proof_obligation_coverage"]
     assert proof_certificate["proof_status"] == "blocked"
     assert proof_certificate["proved_proofs"] == [
         "target_candidate_set_completeness",
@@ -1199,7 +1199,7 @@ def test_uk_frontier_work_item_multi_enactment_keeps_source_feed_target_reconcil
     assert certificate["source_membership_status"] == (
         "proved_in_bounded_source_preview"
     )
-    proof_obligations = work_item["detail"]["proof_obligation_certificate"]
+    proof_obligations = work_item["detail"]["proof_obligation_coverage"]
     assert proof_obligations["proof_status"] == "blocked"
     assert proof_obligations["blocker_counts"] == {
         "canonical_operation_compilation": 1,
@@ -1254,7 +1254,7 @@ def test_uk_frontier_work_item_multi_enactment_keeps_unproved_membership_blocked
         "unproved_from_bounded_source_preview"
     )
     assert certificate["next_promotion_allowed"] is False
-    proof_certificate = work_item["detail"]["proof_obligation_certificate"]
+    proof_certificate = work_item["detail"]["proof_obligation_coverage"]
     assert proof_certificate["proved_proofs"] == [
         "target_candidate_set_completeness"
     ]
@@ -1326,7 +1326,7 @@ def test_uk_frontier_work_item_scoped_occurrence_records_exclusion_scope_certifi
     assert certificate["exclusion_reference_kinds"] == ["source_sibling_reference"]
     assert certificate["source_sibling_exclusion_resolution_required"] is True
     assert certificate["exclusion_scope_not_replay_authorization"] is True
-    proof_certificate = work_item["detail"]["proof_obligation_certificate"]
+    proof_certificate = work_item["detail"]["proof_obligation_coverage"]
     assert proof_certificate["proof_status"] == "blocked"
     assert proof_certificate["proved_proofs"] == [
         "target_candidate_set_completeness",
@@ -1384,7 +1384,7 @@ def test_uk_frontier_work_item_scoped_occurrence_keeps_unproved_exclusion_blocke
         "unproved_from_bounded_source_preview"
     )
     assert certificate["next_promotion_allowed"] is False
-    proof_certificate = work_item["detail"]["proof_obligation_certificate"]
+    proof_certificate = work_item["detail"]["proof_obligation_coverage"]
     assert proof_certificate["proved_proofs"] == [
         "target_candidate_set_completeness"
     ]
@@ -1437,7 +1437,7 @@ def test_uk_frontier_work_item_scoped_occurrence_prefers_source_fragment_for_exc
     assert certificate["source_witness_preview_digest"] == "fragment-digest"
     assert certificate["exclusion_reference_kinds"] == ["source_sibling_reference"]
     assert certificate["source_sibling_exclusion_resolution_required"] is True
-    proof_certificate = work_item["detail"]["proof_obligation_certificate"]
+    proof_certificate = work_item["detail"]["proof_obligation_coverage"]
     assert "source_exclusion_scope" in proof_certificate["proved_proofs"]
     assert "source_exclusion_scope" not in proof_certificate["blocker_counts"]
     assert work_item["replay_authorized"] is False

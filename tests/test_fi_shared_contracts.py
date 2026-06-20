@@ -83,7 +83,7 @@ from lawvm.core.potential_operation import (
 from lawvm.core.proof_obligations import (
     PROOF_OBLIGATION_BLOCKED,
     PROOF_OBLIGATION_COMPLETE,
-    ProofObligationCertificate,
+    ProofObligationCoverage,
 )
 from lawvm.core.regex_recognition_coverage import (
     REGEX_RECOGNITION_FULLY_CLASSIFIED,
@@ -2038,8 +2038,8 @@ def test_frontier_work_item_report_projects_to_proof_surface_frontier_ref() -> N
     ]
 
 
-def test_proof_obligation_certificate_records_blocked_promotion() -> None:
-    certificate = ProofObligationCertificate(
+def test_proof_obligation_coverage_records_blocked_promotion() -> None:
+    certificate = ProofObligationCoverage(
         scope_id="uk-frontier:eff-1:proofs",
         phase="typed_elaboration",
         rule_id="test_proof_boundary",
@@ -2062,9 +2062,9 @@ def test_proof_obligation_certificate_records_blocked_promotion() -> None:
     assert data["proof_obligation_not_replay_authorization"] is True
 
 
-def test_proof_obligation_certificate_complete_rejects_missing_proofs() -> None:
+def test_proof_obligation_coverage_complete_rejects_missing_proofs() -> None:
     with pytest.raises(ValueError, match="requires no missing_proofs"):
-        ProofObligationCertificate(
+        ProofObligationCoverage(
             scope_id="uk-frontier:eff-1:proofs",
             phase="typed_elaboration",
             rule_id="test_proof_boundary",
