@@ -549,8 +549,15 @@ def test_score_one_with_warning_summary_preserves_structural_event_counts(monkey
         "_run_replay_with_bench_warning_capture",
         lambda sid, *, mode, diagnostic_replay, replay_kwargs: (_DummyReplay(), Counter({"coverage_degraded": 1})),
     )
-    monkeypatch.setattr(bench, "_lev_sim_fast", lambda sid, master: 0.95)
-    monkeypatch.setattr(bench, "_structural_sim", lambda sid, master: (0.9, {"missing_section": 2}))
+    monkeypatch.setattr(
+        bench,
+        "_semantic_section_score",
+        lambda sid, master, *, text_scores: bench._BenchSemanticScore(
+            structural_similarity=0.9,
+            adjusted_levenshtein_similarity=0.95,
+            event_counts=Counter({"missing_section": 2}),
+        ),
+    )
 
     sid, sim, status, lev_sim, counts = bench._score_one_with_warning_summary("2000/1")
 
@@ -566,12 +573,15 @@ def test_score_one_with_warning_summary_can_skip_text_score(monkeypatch) -> None
         "_run_replay_with_bench_warning_capture",
         lambda sid, *, mode, diagnostic_replay, replay_kwargs: (_DummyReplay(), Counter()),
     )
-    monkeypatch.setattr(
-        bench,
-        "_lev_sim_fast",
-        lambda sid, master: pytest.fail("Levenshtein score should be skipped"),
-    )
-    monkeypatch.setattr(bench, "_structural_sim", lambda sid, master: (0.9, {}))
+    def fake_semantic_score(sid, master, *, text_scores):
+        assert text_scores is False
+        return bench._BenchSemanticScore(
+            structural_similarity=0.9,
+            adjusted_levenshtein_similarity=-1.0,
+            event_counts=Counter(),
+        )
+
+    monkeypatch.setattr(bench, "_semantic_section_score", fake_semantic_score)
 
     sid, sim, status, lev_sim, _counts = bench._score_one_with_warning_summary(
         "2000/1",
