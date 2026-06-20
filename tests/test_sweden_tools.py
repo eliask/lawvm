@@ -54,6 +54,15 @@ def test_open_se_archive_defaults_readonly_without_creating_missing_archive(tmp_
     assert not missing.exists()
 
 
+def test_open_se_archive_rejects_extensionless_writable_create_path(tmp_path) -> None:
+    missing = tmp_path / "unused"
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        open_se_archive(missing, readonly=False)
+
+    assert not missing.exists()
+
+
 def _write_json(tmp_path, payload: dict) -> str:
     path = tmp_path / "sample.json"
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
