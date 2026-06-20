@@ -5,6 +5,7 @@ from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.mutation_boundary import TreePath
+from lawvm.core.tree_ops import _NESTING_ORDER
 from lawvm.roman import roman_to_arabic
 
 UK_TRANSPARENT_WRAPPER_KINDS = frozenset(
@@ -524,6 +525,15 @@ def uk_find_body_predecessor_parent(
     return UKBodyPredecessorParent(best.parent, best.index, best.label)
 
 
+def _uk_parent_allows_child_kind(parent: IRNode, node_kind: str) -> bool:
+    """Return True when *node_kind* is a structurally valid child of *parent*."""
+    parent_kind_value = str(parent.kind or "").lower()
+    allowed = _NESTING_ORDER.get(parent_kind_value)
+    if allowed is None:
+        return False
+    return str(node_kind or "").lower() in {str(k).lower() for k in allowed}
+
+
 def uk_resolve_insertion_parent(
     *,
     target: LegalAddress,
@@ -538,11 +548,11 @@ def uk_resolve_insertion_parent(
 ) -> UKInsertionParentResolution:
     if preceding_eid:
         _, sib_p, sib_idx = find_node_and_parent_statute(preceding_eid)
-        if sib_p and sib_idx is not None:
+        if sib_p and sib_idx is not None and _uk_parent_allows_child_kind(sib_p, node_kind):
             return UKInsertionParentResolution(sib_p, sib_idx + 1)
     if following_eid:
         _, sib_p, sib_idx = find_node_and_parent_statute(following_eid)
-        if sib_p and sib_idx is not None:
+        if sib_p and sib_idx is not None and _uk_parent_allows_child_kind(sib_p, node_kind):
             return UKInsertionParentResolution(sib_p, sib_idx)
 
     parent_addr = target.parent() if len(target.path) > 1 else None
