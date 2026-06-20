@@ -1065,6 +1065,53 @@ def place_occurrence_spans(
                 )
             )
             continue
+        if norm_surface == surface_text and all(
+            placer.segment_normalization_is_identity(segment)
+            if placer is not None
+            else _surface_normalization_is_identity(segment.text)
+            for segment in scan_scoped
+        ):
+            if not exact_hits:
+                continue
+            ordinal_used = False
+            if enable_ordinal_experimental:
+                segment, start = exact_hits[0]
+                placements.append(
+                    OccurrencePlacement(
+                        date=date,
+                        address=segment.address,
+                        segment_index=segment.segment_index,
+                        char_start=start,
+                        char_end=start + len(surface_text),
+                        status="placed_ordinal_experimental",
+                        rule_id="lawvm.viewer_place.ordinal_experimental.v1",
+                        diagnostic={
+                            "match_count": len(exact_hits),
+                            "candidate_segment_count": candidate_segment_count,
+                            "normalization_id": PLACEMENT_NORMALIZATION_ID,
+                            "source_occurrence_ordinal": 0,
+                        },
+                    )
+                )
+                ordinal_used = True
+            if not ordinal_used:
+                placements.append(
+                    OccurrencePlacement(
+                        date=date,
+                        address=exact_hits[0][0].address,
+                        segment_index=exact_hits[0][0].segment_index,
+                        char_start=-1,
+                        char_end=-1,
+                        status="unplaced_ambiguous",
+                        rule_id="lawvm.viewer_place.ambiguous.v1",
+                        diagnostic={
+                            "match_count": len(exact_hits),
+                            "candidate_segment_count": candidate_segment_count,
+                            "normalization_id": PLACEMENT_NORMALIZATION_ID,
+                        },
+                    )
+                )
+            continue
         # 2/3. normalized matches with offset map back to exact rendered coords.
         norm_hits: list[tuple[RenderedTextSegment, int, int, list[int] | None]] = []
         for segment in scan_scoped:
