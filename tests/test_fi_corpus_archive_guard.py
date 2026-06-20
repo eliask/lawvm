@@ -206,7 +206,10 @@ def test_source_tree_does_not_open_default_archive_writable():
     root = Path(__file__).resolve().parents[1] / "src" / "lawvm"
     offenders: list[str] = []
     for path in sorted(root.rglob("*.py")):
-        tree = ast.parse(path.read_text(), filename=str(path))
+        source = path.read_text()
+        if "Farchive" not in source or "_archive_path" not in source:
+            continue
+        tree = ast.parse(source, filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
