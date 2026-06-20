@@ -417,6 +417,7 @@ def _relation_from_signal(
     signal: EffectRelationSignal,
     *,
     target_effect: EffectRef | None = None,
+    detail: dict[str, object] | None = None,
 ) -> EffectRelation | None:
     witness = _source_witness(
         source_statute=signal.source_statute,
@@ -438,6 +439,7 @@ def _relation_from_signal(
             target_effect=target_effect,
             detail={
                 **signal.to_meta_row(),
+                **(detail or {}),
                 "target_effect_id": target_effect.effect_id,
             },
         )
@@ -453,7 +455,7 @@ def _relation_from_signal(
         kind=signal.relation_kind,
         source_provision=witness,
         target_instrument=target_instrument,
-        detail=signal.to_meta_row(),
+        detail={**signal.to_meta_row(), **(detail or {})},
     )
 
 
@@ -466,11 +468,25 @@ def _relations_from_signals(
     seen: set[str] = set()
     for signal in _typed_relation_signals(relation_signals):
         matched_effects = _effects_matching_relation_signal(signal, source_effects)
-        relation_candidates = tuple(
-            relation
-            for effect in matched_effects
-            if (relation := _relation_from_signal(signal, target_effect=effect)) is not None
-        )
+        if signal.signal_kind == "pending_amendment" and len(matched_effects) > 1:
+            relation = _relation_from_signal(
+                signal,
+                detail={
+                    "target_effect_resolution": "ambiguous_multiple_effects",
+                    "matched_effect_count": len(matched_effects),
+                    "non_executable_reason": (
+                        "pending amendment signal names an instrument but not "
+                        "a unique source-backed effect"
+                    ),
+                },
+            )
+            relation_candidates = (relation,) if relation is not None else ()
+        else:
+            relation_candidates = tuple(
+                relation
+                for effect in matched_effects
+                if (relation := _relation_from_signal(signal, target_effect=effect)) is not None
+            )
         if not relation_candidates:
             relation = _relation_from_signal(signal)
             relation_candidates = (relation,) if relation is not None else ()

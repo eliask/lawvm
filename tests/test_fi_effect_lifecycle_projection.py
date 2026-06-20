@@ -164,6 +164,45 @@ def test_finland_pending_amendment_relation_signal_binds_known_effect() -> None:
     assert lifecycle_events == ()
 
 
+def test_finland_pending_amendment_signal_does_not_bind_multiple_effects_by_instrument() -> None:
+    op_a = _op()
+    op_b = LegalOperation(
+        op_id="op-2",
+        sequence=2,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "5"),)),
+        source=OperationSource(statute_id="2020/1", effective="2020-01-01"),
+        group_id="g:2020/1:op-2",
+    )
+
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(op_a, op_b),
+        temporal_events=(),
+        relation_signals=(
+            EffectRelationSignal.pending_amendment(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                target_title="Target amendment",
+                base_parent_id="1990/1",
+                source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
+                resolved=True,
+            ),
+        ),
+    )
+
+    assert len(source_effects) == 2
+    assert len(relations) == 1
+    relation = relations[0]
+    assert relation.kind == "modifies_effect"
+    assert relation.target_effect is None
+    assert relation.target_instrument is not None
+    assert relation.target_instrument.instrument_id == "2020/1"
+    assert relation.detail["target_effect_resolution"] == "ambiguous_multiple_effects"
+    assert relation.detail["matched_effect_count"] == 2
+    assert lifecycle_events == ()
+
+
 def test_finland_meta_repeal_relation_signal_is_authority_input() -> None:
     _source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
         target_statute="1990/1",
