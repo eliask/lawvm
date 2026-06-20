@@ -220,6 +220,9 @@ class SourceBodyInventoryIndex:
         tuple[ObservedBodyUnit, ...],
     ]
     section_scopes_by_label: dict[str, frozenset[tuple[str | None, str | None]]]
+    section_parts_by_label: dict[str, frozenset[str | None]]
+    section_chapters_by_label: dict[str, frozenset[str]]
+    section_chapters_by_label_part: dict[tuple[str, str | None], frozenset[str]]
     first_section_chapter_by_label: dict[str, str]
     pseudo_chapter_labels: frozenset[str]
     real_chapter_labels: frozenset[str]
@@ -261,6 +264,9 @@ def _source_body_inventory_index(
         list[ObservedBodyUnit],
     ] = {}
     scope_sets: dict[str, set[tuple[str | None, str | None]]] = {}
+    part_sets: dict[str, set[str | None]] = {}
+    chapter_sets: dict[str, set[str]] = {}
+    chapter_sets_by_part: dict[tuple[str, str | None], set[str]] = {}
     first_chapter: dict[str, str] = {}
     pseudo_chapters: set[str] = set()
     real_chapters: set[str] = set()
@@ -281,6 +287,10 @@ def _source_body_inventory_index(
 
         if kind == "section":
             scope_sets.setdefault(label, set()).add((part, chapter))
+            part_sets.setdefault(label, set()).add(part)
+            if chapter is not None:
+                chapter_sets.setdefault(label, set()).add(chapter)
+                chapter_sets_by_part.setdefault((label, part), set()).add(chapter)
             if chapter is not None and label not in first_chapter:
                 first_chapter[label] = unit.chapter_label
         elif kind == "chapter":
@@ -293,6 +303,16 @@ def _source_body_inventory_index(
         units_by_lookup_key={key: tuple(units) for key, units in by_key_lists.items()},
         section_scopes_by_label={
             label: frozenset(scopes) for label, scopes in scope_sets.items()
+        },
+        section_parts_by_label={
+            label: frozenset(parts) for label, parts in part_sets.items()
+        },
+        section_chapters_by_label={
+            label: frozenset(chapters) for label, chapters in chapter_sets.items()
+        },
+        section_chapters_by_label_part={
+            key: frozenset(chapters)
+            for key, chapters in chapter_sets_by_part.items()
         },
         first_section_chapter_by_label=first_chapter,
         pseudo_chapter_labels=frozenset(pseudo_chapters),
@@ -695,13 +715,11 @@ class AmendmentSourceModel:
         target_part: str | None = None,
     ) -> bool:
         """Return True when the observed body carries a section in any chapter."""
-        return (
-            self.lookup_body_unit(
-                "section",
-                target_norm,
-                target_part=target_part,
-            ).status
-            != "missing"
+        wanted = _norm_num_token(target_norm)
+        part = _norm_num_token(target_part) if target_part else None
+        return part in self._body_inventory_index().section_parts_by_label.get(
+            wanted,
+            frozenset(),
         )
 
     def unique_body_section_chapter(
@@ -711,16 +729,16 @@ class AmendmentSourceModel:
         target_part: str | None = None,
     ) -> str | None:
         """Return the unique chapter wrapper for an observed body section."""
-        lookup = self.lookup_body_unit(
-            "section",
-            target_norm,
-            target_part=target_part,
-        )
-        chapters = {
-            _norm_num_token(unit.chapter_label).removesuffix("luku")
-            for unit in lookup.candidates
-            if unit.chapter_label
-        }
+        wanted = _norm_num_token(target_norm)
+        index = self._body_inventory_index()
+        if target_part is None:
+            chapters = index.section_chapters_by_label.get(wanted, frozenset())
+        else:
+            part = _norm_num_token(target_part)
+            chapters = index.section_chapters_by_label_part.get(
+                (wanted, part),
+                frozenset(),
+            )
         if len(chapters) != 1:
             return None
         return next(iter(chapters)) or None
