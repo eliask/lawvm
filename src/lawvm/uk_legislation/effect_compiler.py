@@ -15,6 +15,7 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     append_no_targets_rejection,
     append_source_parent_at_end_added_observation,
     append_unlowered_overlap_substitution_rejection,
+    augment_extracted_text_with_instruction_context,
     build_crossheading_insert_ops,
     build_trailing_repeal_ops,
     source_shape_blocks_before_text_patch_lowering,
@@ -772,11 +773,27 @@ def _compile_effect_to_ir_ops_impl(
     replacement_leaf_kind = target_prelude.replacement_leaf_kind
     label_changing_substitutions = target_prelude.label_changing_substitutions
 
+    # Some UK source extractions resolve to a bare payload fragment (e.g. one
+    # enumerated item of a multi-item repeal/insert list) while the parent
+    # amendment container supplies the missing instruction verb.  When we can
+    # safely reconstruct a complete instruction, augment extracted_text before
+    # shape classification and fragment parsing so the operation is not gated
+    # purely because the verb lives in the ancestor.
+    if action in {"replace", "text_replace"}:
+        augmented_extracted_text = augment_extracted_text_with_instruction_context(
+            extracted_text=extracted_text,
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+        lowering_extracted_text = augmented_extracted_text or extracted_text
+    else:
+        lowering_extracted_text = extracted_text
+
     if (
         action in {"replace", "text_replace"}
         and is_word_level
         and source_shape_blocks_before_text_patch_lowering(
-            extracted_text,
+            lowering_extracted_text,
             original_targets_str,
         )
     ):
@@ -812,7 +829,7 @@ def _compile_effect_to_ir_ops_impl(
         ops.extend(crossheading_insert_ops)
     source_replaced_sibling_count = (
         _source_replaced_sibling_count_from_substitution_text(
-            extracted_text=extracted_text,
+            extracted_text=lowering_extracted_text,
             target_refs=targets_str,
         )
         if action == "replace"
@@ -844,6 +861,7 @@ def _compile_effect_to_ir_ops_impl(
                 extraction_witness=extraction_witness,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
+                lowering_extracted_text=lowering_extracted_text,
                 source_root=source_root,
                 chained_insert_anchor=chained_insert_anchor,
                 lowering_rejections_out=lowering_rejections_out,

@@ -153,6 +153,7 @@ class _EffectTargetLoweringInput:
     extraction_witness: UKProvisionExtractionWitness
     extracted_el: Optional[ET._Element]
     extracted_text: Optional[str]
+    lowering_extracted_text: Optional[str]
     source_root: Optional[ET._Element]
     chained_insert_anchor: _ChainedInsertAnchorState
     lowering_rejections_out: Optional[list[dict[str, Any]]]
@@ -867,6 +868,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         extracted_el=extracted_el,
         source_root=ctx.source_root,
         extracted_text=extracted_text,
+        lowering_extracted_text=ctx.lowering_extracted_text,
         lowering_rejections_out=lowering_rejections_out,
     )
     if text_fragment_lowering.skip_effect:
