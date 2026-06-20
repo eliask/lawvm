@@ -2449,6 +2449,27 @@ def test_parse_clause_anaphoric_sanottu_pykala_keeps_downstream_arms() -> None:
     assert "L P 15b" in codes
 
 
+def test_parse_clause_transport_dropped_pykala_and_ocr_lisataan_keeps_replace_list() -> None:
+    """1994/1265 has OCR damage in the section-list boundary before ``lisätään``."""
+    text = (
+        "muutetaan 1 päivänä joulukuuta 1989 annetun säätiöasetuksen "
+        "( 1045/89 ) 2, 3, 5, 7 ja 9 ) sekä 1isätään uusi 9 a § seuraavasti:"
+    )
+
+    result = parse_clause(text, statute_id="1989/1045")
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert result.parse_error is None
+    assert codes == ["M P 2", "M P 3", "M P 5", "M P 7", "M P 9", "L P 9a"]
+    assert (
+        "parser_normalization=fi.johtolause.transport_dropped_pykala_before_boundary.v1"
+        in result.diagnostics
+    )
+    assert "parser_normalization=fi.johtolause.transport_ocr_glued_lisataan.v1" in (
+        result.diagnostics
+    )
+
+
 def test_parse_clause_anaphoric_saman_pykala_momentti_resolves_section() -> None:
     """``saman pykälän M momenttiin uusi K kohta`` resolves to the last section."""
     text = (

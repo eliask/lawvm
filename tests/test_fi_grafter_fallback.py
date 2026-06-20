@@ -12020,6 +12020,26 @@ def test_replay_xml_retargets_1962_420_section_22_heading_insert_to_chapter_four
     assert row["target_chapter"] == "4"
 
 
+def test_replay_xml_1989_1045_recovers_damaged_1994_section_list() -> None:
+    compiled_ops: list[dict[str, object]] = []
+    replay_xml("1989/1045", mode="legal_pit", quiet=True, compiled_ops_out=compiled_ops)
+
+    got = {
+        (row.get("action"), row.get("target_norm"))
+        for row in compiled_ops
+        if row.get("source_statute") == "1994/1265"
+    }
+
+    assert {
+        ("replace", "2"),
+        ("replace", "3"),
+        ("replace", "5"),
+        ("replace", "7"),
+        ("replace", "9"),
+        ("insert", "9a"),
+    } <= got
+
+
 @pytest.mark.slow
 def test_replay_xml_dedupes_duplicate_amendment_records_for_1978_38() -> None:
     replay_meta: dict[str, object] = {}
