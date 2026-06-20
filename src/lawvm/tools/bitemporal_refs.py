@@ -364,6 +364,180 @@ def _emit_current_text(report: CurrentStateReport, top: int, elapsed: float) -> 
             print(f"    {sid}: {first_line}")
 
 
+def _ledger_rows(report: CurrentStateReport) -> list[dict]:
+    """Flatten EVERY statute-lifecycle (target_statute_repealed / not-yet) finding.
+
+    The complete dangling-reference ledger: one row per finding (a live
+    consolidated text citing an act not in force at the citing date), carrying the
+    citing statute, the source span, the dead target, the verdict reason and the
+    target act's in-force window (the repeal date is ``target_valid_to``). Rows are
+    deterministically sorted (citer, then target, then source span) so the artifact
+    is stable and diff-friendly. No truncation — this is the full täyslaskenta dump,
+    not the summarized ``--top`` view.
+    """
+    rows: list[dict] = []
+    for r in report.per_statute:
+        if r.error is not None or r.skipped is not None:
+            continue
+        for lf in r.lifecycle_findings:
+            vf, vt = lf.target_window
+            rows.append(
+                {
+                    "citing_statute": r.sid,
+                    "source": lf.source.serialized(),
+                    "target": lf.target.serialized(),
+                    "target_statute": lf.target.statute_id,
+                    "reason": lf.reason.value,
+                    "cited_on": lf.cited_on.isoformat(),
+                    "target_valid_from": vf.isoformat() if vf else None,
+                    "target_valid_to": vt.isoformat() if vt else None,
+                }
+            )
+    rows.sort(
+        key=lambda d: (
+            d["citing_statute"],
+            d["target_statute"],
+            d["source"],
+            d["target"],
+        )
+    )
+    return rows
+
+
+def _ledger_summary(rows: list[dict]) -> dict:
+    """Headline stats over the flattened ledger rows."""
+    import collections
+
+    citers = {d["citing_statute"] for d in rows}
+    dead_targets: collections.Counter[str] = collections.Counter(
+        d["target_statute"] for d in rows
+    )
+    reasons: collections.Counter[str] = collections.Counter(d["reason"] for d in rows)
+    # Inbound-citation count = distinct citing statutes per dead target (a dead act
+    # cited from many statutes is ranked above one cited many times by a single act).
+    inbound: dict[str, set[str]] = {}
+    repeal_of: dict[str, str | None] = {}
+    for d in rows:
+        inbound.setdefault(d["target_statute"], set()).add(d["citing_statute"])
+        repeal_of.setdefault(d["target_statute"], d["target_valid_to"])
+    top_targets = sorted(
+        (
+            {
+                "target_statute": tgt,
+                "inbound_citing_statutes": len(citers_set),
+                "total_findings": dead_targets[tgt],
+                "repeal_date": repeal_of.get(tgt),
+            }
+            for tgt, citers_set in inbound.items()
+        ),
+        key=lambda d: (
+            -d["inbound_citing_statutes"],
+            -d["total_findings"],
+            d["target_statute"],
+        ),
+    )
+    return {
+        "total_findings": len(rows),
+        "distinct_citing_statutes": len(citers),
+        "distinct_dead_targets": len(dead_targets),
+        "findings_by_reason": dict(sorted(reasons.items())),
+        "top_dead_targets_by_inbound_citation_count": top_targets[:50],
+    }
+
+
+def _write_ledger_md(path: str, summary: dict, rows: list[dict]) -> None:
+    """Render the ledger as a Markdown report (summary + the full sorted table)."""
+    import os
+
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    lines: list[str] = []
+    lines.append("# Dangling-reference ledger (Finland) — täyslaskenta")
+    lines.append("")
+    lines.append(
+        "Every place a live Finnish consolidated statute text cites an act that "
+        "was repealed (or not yet in force) at the citing date. A finding is a "
+        "surface fact (live text -> dead act), not a legal conclusion. "
+        "Deterministic, fail-loud, no false positives (unknown lifecycle is "
+        "reported unverifiable, never as a finding)."
+    )
+    lines.append("")
+    lines.append("## Summary")
+    lines.append("")
+    lines.append(f"- Total findings: **{summary['total_findings']}**")
+    lines.append(
+        f"- Distinct citing statutes: **{summary['distinct_citing_statutes']}**"
+    )
+    lines.append(f"- Distinct dead targets: **{summary['distinct_dead_targets']}**")
+    lines.append(f"- Findings by reason: {summary['findings_by_reason']}")
+    lines.append("")
+    lines.append("### Top dead targets by inbound-citation count")
+    lines.append("")
+    lines.append(
+        "| Dead act | Inbound citing statutes | Total findings | Repeal date |"
+    )
+    lines.append("|---|---:|---:|---|")
+    for t in summary["top_dead_targets_by_inbound_citation_count"]:
+        lines.append(
+            f"| {t['target_statute']} | {t['inbound_citing_statutes']} | "
+            f"{t['total_findings']} | {t['repeal_date'] or '(open)'} |"
+        )
+    lines.append("")
+    lines.append("## Full ledger")
+    lines.append("")
+    lines.append(
+        "| Citing statute | Source span | Cited (dead) target | Reason | "
+        "Repeal date (valid_to) |"
+    )
+    lines.append("|---|---|---|---|---|")
+    for d in rows:
+        lines.append(
+            f"| {d['citing_statute']} | {d['source']} | {d['target']} | "
+            f"{d['reason']} | {d['target_valid_to'] or '(open)'} |"
+        )
+    lines.append("")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
+def _write_ledger(report: CurrentStateReport, path: str) -> None:
+    """Write the complete dangling-reference ledger to ``path`` (JSON, + .md if asked).
+
+    JSON is always written (to ``path`` as-is when it does not end ``.md``, else
+    alongside with a ``.json`` extension). When ``path`` ends ``.md`` a
+    human-readable Markdown table is ALSO written, so one ``--ledger-out X.md``
+    yields both artifacts.
+    """
+    import os
+
+    rows = _ledger_rows(report)
+    summary = _ledger_summary(rows)
+    payload = {
+        "jurisdiction": "fi",
+        "artifact": "dangling_reference_ledger",
+        "unit": "cross_statute_citation_to_dead_act",
+        "discipline": (
+            "deterministic, fail-loud, no false positives: a row is a live "
+            "consolidated text citing an act whose in-corpus oracle repeal date "
+            "(target_valid_to) is at/before the citing date; an unknown lifecycle "
+            "is reported UNVERIFIABLE, never as a finding"
+        ),
+        "summary": summary,
+        "findings": rows,
+    }
+
+    is_md = path.lower().endswith(".md")
+    json_path = (os.path.splitext(path)[0] + ".json") if is_md else path
+    os.makedirs(os.path.dirname(os.path.abspath(json_path)) or ".", exist_ok=True)
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    print(f"broken-refs: wrote ledger JSON -> {json_path}", file=sys.stderr)
+
+    if is_md:
+        _write_ledger_md(path, summary, rows)
+        print(f"broken-refs: wrote ledger Markdown -> {path}", file=sys.stderr)
+
+
 def run(args) -> None:
     """Corpus broken-reference report (fi): current-state default / replay opt-in."""
     limit = getattr(args, "limit", 0) or 0
@@ -372,6 +546,7 @@ def run(args) -> None:
     as_json = getattr(args, "json", False)
     top = getattr(args, "top", 20) or 20
     provenance = getattr(args, "provenance", False)
+    ledger_out = getattr(args, "ledger_out", "") or ""
 
     ids = _statute_ids(limit, stride)
 
@@ -387,11 +562,21 @@ def run(args) -> None:
         start = time.perf_counter()
         current_report = scan_current_state(ids, store)
         elapsed = time.perf_counter() - start
+        if ledger_out:
+            _write_ledger(current_report, ledger_out)
         if as_json:
             _emit_current_json(current_report, top, elapsed)
             return
         _emit_current_text(current_report, top, elapsed)
         return
+
+    if ledger_out:
+        print(
+            "broken-refs: --ledger-out is a current-state-mode artifact "
+            "(the statute-lifecycle dangling-act ledger); ignored under "
+            "--provenance.",
+            file=sys.stderr,
+        )
 
     # --provenance: heavy point-in-time replay path (the temporal premium).
     if not workers:
