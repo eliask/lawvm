@@ -444,6 +444,11 @@ def _maybe_apply_body_chapter_insert_correction(
             body_chapter,
             request.master,
         )
+        and not (
+            body_chapter_is_subchapter
+            and body_chapter_is_inserted
+            and live_stem_host_scoped
+        )
         and _group_has_scope_that_overrides_body_wrapper(
             request.group_ops,
             target_chapter=request.target_chapter,
@@ -466,6 +471,24 @@ def _maybe_apply_body_chapter_insert_correction(
             target_part=request.target_part,
         )
     )
+    source_owned_inserted_subchapter_scope = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter_is_subchapter
+        and body_chapter_is_inserted
+        and request.source_model.body_has_real_chapter_container(body_chapter)
+        and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
+        and not carry_forward_scoped
+    )
+    source_owned_unscoped_inserted_chapter_scope = (
+        body_chapter is not None
+        and request.target_chapter is None
+        and body_chapter_is_inserted
+        and request.source_model.body_has_real_chapter_container(body_chapter)
+        and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
+        and not explicit_chapter_scoped
+        and not carry_forward_scoped
+    )
     group_targets_whole_section = any(
         op.target_unit_kind == "section"
         and _norm_num_token(op.target_section or "") == request.target_norm
@@ -479,7 +502,7 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and request.target_chapter is not None
         and (
-            body_chapter_is_subchapter
+            source_owned_inserted_subchapter_scope
             or (
                 (
                     (
@@ -517,7 +540,9 @@ def _maybe_apply_body_chapter_insert_correction(
         and not body_wrapper_overridden_by_live_target
     )
     if body_chapter is not None and (
-        group_targets_whole_section
+        not source_owned_inserted_subchapter_scope
+        and not source_owned_unscoped_inserted_chapter_scope
+        and group_targets_whole_section
         and (
             not request.target_chapter
             or body_chapter_is_subchapter
@@ -553,7 +578,10 @@ def _maybe_apply_body_chapter_insert_correction(
     ):
         apply_correction = True
     elif not request.target_chapter:
-        apply_correction = request.master.find("chapter", resolved_body_chapter) is not None
+        apply_correction = (
+            request.master.find("chapter", resolved_body_chapter) is not None
+            or source_owned_unscoped_inserted_chapter_scope
+        )
     elif source_owned_inserted_chapter_scope:
         apply_correction = True
     elif source_owned_existing_chapter_scope:

@@ -11974,6 +11974,9 @@ def test_replay_xml_2010_1048_repeals_6a_lane_and_keeps_live_18b_26() -> None:
     assert state.find_section("15a", "6a") is None
     assert state.find_section("15b", "6a") is None
     assert state.find_section("15c", "6a") is None
+    assert state.find_section("15a", "6") is None
+    assert state.find_section("15b", "6") is None
+    assert state.find_section("15c", "6") is None
     assert state.find_section("18b", "6a") is None
     assert state.find_section("26", "6a") is None
     assert state.find_section("18b", "7") is not None
