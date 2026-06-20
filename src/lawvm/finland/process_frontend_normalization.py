@@ -90,6 +90,7 @@ class ProcessFrontendNormalizationContext:
             target_statute=self.parent_id,
             canonical_ops=(),
             temporal_events=temporal_events,
+            known_source_effects=phase_result.source_effects,
         )
         source_effects: list[EffectRef] = []
         effect_relations: list[EffectRelation] = []

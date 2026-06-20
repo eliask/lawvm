@@ -262,8 +262,10 @@ def _source_effects_from_ops_and_temporal_events(
     target_statute: str,
     canonical_ops: Sequence[LegalOperation],
     temporal_events: Sequence[TemporalEvent],
+    known_source_effects: Sequence[EffectRef] = (),
 ) -> tuple[EffectRef, ...]:
     effects: list[EffectRef] = []
+    known_effects = tuple(known_source_effects)
     duplicated_op_keys = _duplicated_operation_effect_keys(canonical_ops)
     duplicated_temporal_keys = _duplicated_temporal_effect_keys(temporal_events)
     for op in canonical_ops:
@@ -301,7 +303,7 @@ def _source_effects_from_ops_and_temporal_events(
         effect = _effect_ref_for_temporal_event(
             event,
             target_statute=target_statute,
-            source_effects=tuple(effects),
+            source_effects=(*known_effects, *effects),
             effect_id=(
                 _temporal_event_effect_id(
                     event,
@@ -312,6 +314,8 @@ def _source_effects_from_ops_and_temporal_events(
             ),
         )
         if effect is not None:
+            if effect in known_effects:
+                continue
             append_unique_effect_ref(
                 effects,
                 effect,
@@ -833,6 +837,7 @@ def build_finland_effect_lifecycle(
         target_statute=target_statute,
         canonical_ops=canonical_ops,
         temporal_events=temporal_events,
+        known_source_effects=known_source_effects,
     )
     source_effect_context = _merge_unique_source_effect_context(known_source_effects, source_effects)
     relations = merge_unique_effect_relations(

@@ -67,6 +67,7 @@ class ProcessCompileSignalsContext:
             target_statute=self.parent_id,
             canonical_ops=(),
             temporal_events=temporal_events,
+            known_source_effects=tuple(self.source_effects),
         )
         append_unique_effect_refs(
             self.source_effects,

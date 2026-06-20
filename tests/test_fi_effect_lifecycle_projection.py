@@ -157,6 +157,48 @@ def test_known_source_effect_context_rejects_conflicting_duplicate_ids() -> None
         )
 
 
+def test_temporal_projection_reuses_known_source_effect_identity_without_reminting() -> None:
+    target = LegalAddress(path=(("section", "4 a"),))
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(
+        instrument=instrument,
+        path=("phase", "effect"),
+        rule_id="test.phase_source_effect",
+    )
+    known_effect = EffectRef(
+        effect_id="phase-effect:2020/1:custom",
+        source_instrument=instrument,
+        target_statute="1990/1",
+        target_address=target,
+        projection_group_id="g:phase-custom",
+        source_provision=witness,
+    )
+    temporal = TemporalEvent(
+        event_id="fi-temporal:2020/1:custom:expire",
+        kind="expire",
+        scope=TemporalScope(
+            target_statute="1990/1",
+            exact_addresses=(target,),
+        ),
+        expires="2022-01-01",
+        source=OperationSource(statute_id="2020/1"),
+        group_id="g:phase-custom",
+    )
+
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(),
+        temporal_events=(temporal,),
+        known_source_effects=(known_effect,),
+    )
+
+    assert source_effects == ()
+    assert relations == ()
+    assert len(lifecycle_events) == 1
+    assert lifecycle_events[0].effect == known_effect
+    assert lifecycle_events[0].temporal_event is temporal
+
+
 def test_duplicate_operation_ids_use_full_effect_discriminator() -> None:
     source = OperationSource(statute_id="2020/1")
     first = LegalOperation(
@@ -1059,6 +1101,71 @@ def test_process_compile_signals_rejects_conflicting_source_effect_id() -> None:
 
     with pytest.raises(ValueError, match="conflicting duplicate effect_id"):
         context.project()
+
+
+def test_process_compile_signals_temporal_lifecycle_reuses_phase_source_effect() -> None:
+    target = LegalAddress(path=(("section", "4 a"),))
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(
+        instrument=instrument,
+        path=("phase", "effect"),
+        rule_id="test.phase_source_effect",
+    )
+    phase_effect = EffectRef(
+        effect_id="phase-effect:2020/1:custom",
+        source_instrument=instrument,
+        target_statute="1990/1",
+        target_address=target,
+        projection_group_id="g:phase-custom",
+        source_provision=witness,
+    )
+    temporal = TemporalEvent(
+        event_id="fi-temporal:2020/1:custom:expire",
+        kind="expire",
+        scope=TemporalScope(
+            target_statute="1990/1",
+            exact_addresses=(target,),
+        ),
+        expires="2022-01-01",
+        source=OperationSource(statute_id="2020/1"),
+        group_id="g:phase-custom",
+    )
+    source_effects: list[EffectRef] = []
+    lifecycle_events: list[EffectLifecycleEvent] = []
+
+    context = ProcessCompileSignalsContext(
+        amendment_id="2020/1",
+        parent_id="1990/1",
+        resolved=[],
+        compile_result=PhaseResult(
+            output=[],
+            temporal_events=(temporal,),
+            source_effects=(phase_effect,),
+        ),
+        amendment_temporal_events=[],
+        source_effects=source_effects,
+        effect_relations=[],
+        effect_lifecycle_events=lifecycle_events,
+        source_pathologies=[],
+        elaboration_observations=[],
+        sparse_slot_bindings=[],
+        sparse_leftovers=[],
+        process_findings=[],
+        record_finding=lambda **_kwargs: Finding(
+            kind="test.unused",
+            role="obligation",
+            stage="test",
+            detail={},
+            blocking=True,
+        ),
+    )
+
+    context.project()
+
+    assert source_effects == [phase_effect]
+    assert len(lifecycle_events) == 1
+    assert lifecycle_events[0].effect == phase_effect
+    assert lifecycle_events[0].temporal_event is temporal
 
 
 def test_build_finland_effect_lifecycle_merges_final_graph_lanes(monkeypatch) -> None:
