@@ -22,7 +22,7 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 from lawvm.corpus_store import akn_path_to_url
 from lawvm.finland.consolidated_artifacts import (
@@ -55,7 +55,11 @@ class _MissingDryRunArchive:
         return None
 
 
-def _open_import_archive(dest: Path, *, dry_run: bool) -> object:
+class _ClosableArchive(Protocol):
+    def close(self) -> None: ...
+
+
+def _open_import_archive(dest: Path, *, dry_run: bool) -> _ClosableArchive:
     from farchive import Farchive
 
     if dry_run:

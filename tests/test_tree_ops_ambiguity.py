@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.tree_ops import (
@@ -116,7 +118,7 @@ def test_resolve_matches_enum_path_kind_and_normalized_label() -> None:
         ),
     )
 
-    node = resolve(body, [(IRNodeKind.CHAPTER, "1"), (IRNodeKind.SECTION, "5-a")])
+    node = resolve(body, cast(Any, [(IRNodeKind.CHAPTER, "1"), (IRNodeKind.SECTION, "5-a")]))
 
     assert node is not None
     assert node.kind == IRNodeKind.SECTION
@@ -126,10 +128,10 @@ def test_resolve_matches_enum_path_kind_and_normalized_label() -> None:
 def test_resolve_matches_string_stored_kind_with_enum_path_kind() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
-        children=(IRNode(kind="section", label="3.", text="legacy string kind"),),  # type: ignore[arg-type]
+        children=(IRNode(kind=cast(Any, "section"), label="3.", text="legacy string kind"),),
     )
 
-    node = resolve(body, [(IRNodeKind.SECTION, "3")])
+    node = resolve(body, cast(Any, [(IRNodeKind.SECTION, "3")]))
 
     assert node is not None
     assert node.kind == "section"
