@@ -391,7 +391,29 @@ def _lifecycle_events_from_lifecycle_overrides(
     return tuple(events)
 
 
-def _relation_from_signal(signal: EffectRelationSignal) -> EffectRelation | None:
+def _effects_matching_relation_signal(
+    signal: EffectRelationSignal,
+    source_effects: Sequence[EffectRef],
+) -> tuple[EffectRef, ...]:
+    if not signal.resolved or not signal.target_statute:
+        return ()
+    matches: list[EffectRef] = []
+    seen: set[str] = set()
+    for effect in source_effects:
+        if effect.effect_id in seen:
+            continue
+        if effect.source_instrument.instrument_id != signal.target_statute:
+            continue
+        seen.add(effect.effect_id)
+        matches.append(effect)
+    return tuple(matches)
+
+
+def _relation_from_signal(
+    signal: EffectRelationSignal,
+    *,
+    target_effect: EffectRef | None = None,
+) -> EffectRelation | None:
     witness = _source_witness(
         source_statute=signal.source_statute,
         path=("routing",),
@@ -404,6 +426,17 @@ def _relation_from_signal(signal: EffectRelationSignal) -> EffectRelation | None
     )
     if witness is None:
         return None
+    if target_effect is not None:
+        return EffectRelation(
+            relation_id=_relation_id(signal.source_statute, signal.signal_kind, target_effect.effect_id),
+            kind=signal.relation_kind,
+            source_provision=witness,
+            target_effect=target_effect,
+            detail={
+                **signal.to_meta_row(),
+                "target_effect_id": target_effect.effect_id,
+            },
+        )
     target_instrument = (
         SourceInstrumentRef(instrument_id=signal.target_statute, title=signal.target_title)
         if signal.target_statute
@@ -420,15 +453,28 @@ def _relation_from_signal(signal: EffectRelationSignal) -> EffectRelation | None
     )
 
 
-def _relations_from_signals(relation_signals: Sequence[EffectRelationSignal]) -> tuple[EffectRelation, ...]:
+def _relations_from_signals(
+    relation_signals: Sequence[EffectRelationSignal],
+    *,
+    source_effects: Sequence[EffectRef] = (),
+) -> tuple[EffectRelation, ...]:
     relations: list[EffectRelation] = []
     seen: set[str] = set()
     for signal in _typed_relation_signals(relation_signals):
-        relation = _relation_from_signal(signal)
-        if relation is None or relation.relation_id in seen:
-            continue
-        seen.add(relation.relation_id)
-        relations.append(relation)
+        matched_effects = _effects_matching_relation_signal(signal, source_effects)
+        relation_candidates = tuple(
+            relation
+            for effect in matched_effects
+            if (relation := _relation_from_signal(signal, target_effect=effect)) is not None
+        )
+        if not relation_candidates:
+            relation = _relation_from_signal(signal)
+            relation_candidates = (relation,) if relation is not None else ()
+        for relation in relation_candidates:
+            if relation.relation_id in seen:
+                continue
+            seen.add(relation.relation_id)
+            relations.append(relation)
     return tuple(relations)
 
 
@@ -510,7 +556,7 @@ def build_finland_effect_lifecycle(
             target_statute=target_statute,
             source_effects=source_effect_context,
         )
-        + _relations_from_signals(relation_signals)
+        + _relations_from_signals(relation_signals, source_effects=source_effect_context)
     )
     lifecycle_events = (
         _lifecycle_from_temporal_events(temporal_events, target_statute=target_statute)

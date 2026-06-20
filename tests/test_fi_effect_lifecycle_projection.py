@@ -138,6 +138,32 @@ def test_finland_pending_amendment_relation_signal_is_authority_input() -> None:
     assert lifecycle_events[0].detail["projection"] == "effect_relation_signal"
 
 
+def test_finland_pending_amendment_relation_signal_binds_known_effect() -> None:
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(_op(),),
+        temporal_events=(),
+        relation_signals=(
+            EffectRelationSignal.pending_amendment(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                target_title="Target amendment",
+                base_parent_id="1990/1",
+                source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
+                resolved=True,
+            ),
+        ),
+    )
+
+    assert len(source_effects) == 1
+    assert len(relations) == 1
+    assert relations[0].kind == "modifies_effect"
+    assert relations[0].target_effect == source_effects[0]
+    assert relations[0].target_instrument is None
+    assert relations[0].detail["target_effect_id"] == source_effects[0].effect_id
+    assert lifecycle_events == ()
+
+
 def test_finland_meta_repeal_relation_signal_is_authority_input() -> None:
     _source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
         target_statute="1990/1",
@@ -160,6 +186,39 @@ def test_finland_meta_repeal_relation_signal_is_authority_input() -> None:
     assert relations[0].target_instrument is not None
     assert relations[0].target_instrument.instrument_id == "2020/1"
     assert relations[0].detail["source_finding"] == "APPLY.META_REPEAL_EFFECT_RECORDED"
+    assert lifecycle_events == ()
+
+
+def test_finland_meta_repeal_relation_signal_binds_known_effect() -> None:
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(
+            LegalOperation(
+                op_id="op-old-amendment-4a",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=(("section", "4 a"),)),
+                source=OperationSource(statute_id="2020/1", effective="2020-01-01"),
+                group_id="g:2020/1:old",
+            ),
+        ),
+        temporal_events=(),
+        relation_signals=(
+            EffectRelationSignal.meta_repeal(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                route_reason="citation_mismatch_skip",
+                source_finding="APPLY.META_REPEAL_EFFECT_RECORDED",
+                resolved=True,
+            ),
+        ),
+    )
+
+    assert len(source_effects) == 1
+    assert len(relations) == 1
+    assert relations[0].kind == "repeals_effect"
+    assert relations[0].target_effect == source_effects[0]
+    assert relations[0].target_instrument is None
     assert lifecycle_events == ()
 
 
