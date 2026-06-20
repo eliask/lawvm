@@ -99,11 +99,16 @@ from lawvm.core.semantic_types import (
     SourceNormalizationKind,
 )
 from lawvm.finland.helpers import _norm_num_token, may_attach_post_list_loppukappale
-from lawvm.xml_ingest import _paragraph_is_content_only
+from lawvm.xml_ingest import (
+    _paragraph_ends_with_terminal_punctuation,
+    _paragraph_has_num,
+    _paragraph_is_content_only,
+)
 from lawvm.finland.source_normalization_kinds import (
     BASE_DIGIT_RESET_SPLIT,
     BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION,
     BASE_INTRO_LIST_RESTART_SPLIT,
+    BASE_INTRO_LIST_TAIL_MOMENT_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
     BASE_NUM_IN_INTRO_MISMATCH,
@@ -503,6 +508,112 @@ def _promote_dotted_paragraph_subsections(
         expected_next = None
 
     return rewritten if changed else children
+
+
+def _first_tail_starts_with_prior_moment_anaphora(node: IRNode) -> bool:
+    text = irnode_to_text(node).strip().lower()
+    return text.startswith("edellä 1 momentissa tarkoitet")
+
+
+def _split_intro_list_tail_moment_subsections(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Split multi-moment tail prose after a one-moment intro-list section payload.
+
+    Some Finlex section payloads encode the first moment's intro and numbered
+    kohdat correctly but leave following momentit as unnumbered CONTENT/WRAP_UP
+    children inside the same first subsection wrapper.  A single generic
+    first-moment reference is not enough to split, but multiple tail prose
+    children after a closed numbered list give a local section-level witness
+    that these are peer momentit.
+    """
+    subsection_indices = [
+        idx for idx, child in enumerate(children) if child.kind == IRNodeKind.SUBSECTION
+    ]
+    if len(subsection_indices) != 1:
+        return children
+
+    idx = subsection_indices[0]
+    subsection = children[idx]
+    base_label = _numeric_label_value(subsection.label)
+    if base_label is None:
+        return children
+
+    numbered_positions = [
+        child_idx
+        for child_idx, child in enumerate(subsection.children)
+        if child.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num(child)
+    ]
+    if not numbered_positions or not any(
+        child.kind == IRNodeKind.INTRO for child in subsection.children[: numbered_positions[0]]
+    ):
+        return children
+
+    last_numbered_idx = numbered_positions[-1]
+    paragraph_values = _paragraph_label_values(subsection)
+    if paragraph_values != list(range(1, len(paragraph_values) + 1)):
+        return children
+    if not _paragraph_ends_with_terminal_punctuation(subsection.children[last_numbered_idx]):
+        return children
+
+    trailing = tuple(subsection.children[last_numbered_idx + 1 :])
+    if len(trailing) < 2:
+        return children
+    if not all(child.kind in {IRNodeKind.CONTENT, IRNodeKind.WRAP_UP} for child in trailing):
+        return children
+    if not _first_tail_starts_with_prior_moment_anaphora(trailing[0]):
+        return children
+
+    split_subsections: list[IRNode] = [
+        IRNode(
+            kind=subsection.kind,
+            label=subsection.label,
+            text=subsection.text,
+            attrs=subsection.attrs,
+            children=subsection.children[: last_numbered_idx + 1],
+        )
+    ]
+    new_labels: list[str] = []
+    for offset, node in enumerate(trailing, start=1):
+        label = str(base_label + offset)
+        attrs = dict(node.attrs)
+        attrs["lawvm_source_normalization_rule"] = "fi_intro_list_tail_moment_split_v1"
+        new_labels.append(label)
+        split_subsections.append(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=label,
+                attrs=attrs,
+                children=(IRNode(kind=IRNodeKind.CONTENT, text=irnode_to_text(node).strip()),),
+            )
+        )
+
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=BASE_INTRO_LIST_TAIL_MOMENT_SPLIT,
+            basis=SourceNormalizationBasis.PROFILE_INVALID,
+            before=(
+                f"{_node_path_label(subsection)} carried {len(trailing)} unnumbered "
+                "tail prose children after a closed intro-list moment"
+            ),
+            after=f"split tail prose into peer subsections {new_labels!r}",
+            explanation=(
+                "The source encoded later momentti prose as content/wrap-up children "
+                "inside the first subsection after an intro plus consecutive numbered "
+                "kohta list.  The first tail starts with an explicit prior-moment "
+                "anaphora and multiple tail children follow, so they are split into "
+                "peer momentti subsections rather than preserved as list wrap-up."
+            ),
+            path=parent_path + (_node_path_label(subsection),),
+            confidence=0.94,
+        )
+    )
+
+    return children[:idx] + split_subsections + children[idx + 1 :]
 
 
 def _fold_section_scoped_item_style_subsections(
@@ -2624,6 +2735,9 @@ def normalize_source_ir(
             initial_children, statute_id, current_path, facts
         )
     if ir.kind == IRNodeKind.SECTION:
+        initial_children = _split_intro_list_tail_moment_subsections(
+            initial_children, statute_id, current_path, facts
+        )
         initial_children = _split_intro_then_numbered_list_subsections(
             initial_children, statute_id, current_path, facts
         )

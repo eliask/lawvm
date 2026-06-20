@@ -37,6 +37,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_INTRO_LIST_RESTART_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
+    BASE_INTRO_LIST_TAIL_MOMENT_SPLIT,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
     TRAILING_CHAPTER_REPARENT,
@@ -54,6 +55,10 @@ def test_source_normalization_fact_finding_kind_resolves_registered_base_codes()
     assert (
         source_normalization_fact_finding_kind("base_dotted_paragraph_subsection_promotion")
         == "BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION"
+    )
+    assert (
+        source_normalization_fact_finding_kind("base_intro_list_tail_moment_split")
+        == "BASE_INTRO_LIST_TAIL_MOMENT_SPLIT"
     )
     assert source_normalization_fact_finding_kind("") is None
     assert source_normalization_fact_finding_kind("not_registered") is None
@@ -105,6 +110,114 @@ def _plain_subsection_node() -> IRNode:
 
 
 class TestTagReclassify:
+    def test_splits_intro_list_tail_moments_into_peer_subsections(self) -> None:
+        """Multiple explicit first-moment tail prose children are later momentit."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="11",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="11 §"),
+                IRNode(kind=IRNodeKind.HEADING, text="Luoton enimmäismäärä"),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="Luoton määrä saa olla:"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="ensimmäinen kohta;"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="2)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="toinen kohta."),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text="Edellä 1 momentissa tarkoitetun luoton määrä saa olla enintään 90 prosenttia.",
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text="Finanssivalvonta voi alentaa 2 momentissa säädettyjä enimmäismääriä.",
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.WRAP_UP,
+                            text="Päätös on voimassa enintään vuoden kerrallaan.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "2014/610")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3", "4"]
+        assert [child.kind for child in subsections[0].children] == [
+            IRNodeKind.INTRO,
+            IRNodeKind.PARAGRAPH,
+            IRNodeKind.PARAGRAPH,
+        ]
+        assert "tarkoitetun luoton määrä" in irnode_to_text(subsections[1])
+        assert "alentaa 2 momentissa" in irnode_to_text(subsections[2])
+        assert check_invariants(normalized) == []
+
+        split_facts = [
+            fact for fact in facts if fact.kind_value == BASE_INTRO_LIST_TAIL_MOMENT_SPLIT
+        ]
+        assert len(split_facts) == 1
+        assert split_facts[0].basis_value == SourceNormalizationBasis.PROFILE_INVALID.value
+        assert "subsection:1" in split_facts[0].path
+
+    def test_keeps_single_generic_first_moment_tail_inside_intro_list(self) -> None:
+        """A lone generic first-moment tail remains ordinary wrap-up prose."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="1",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="Verovapaita ovat:"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="vuokra-asunnot;"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="2)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="asumisoikeusasunnot."),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.WRAP_UP,
+                            text="Edellä 1 momentissa tarkoitettu verovapaus koskee myös osakkeita.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "2000/1")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        assert not any(fact.kind_value == BASE_INTRO_LIST_TAIL_MOMENT_SPLIT for fact in facts)
+
     def test_reclassifies_item_style_subsection(self) -> None:
         """normalize_source_ir corrects <subsection num='9)'> with letter paragraphs."""
         raw = fi_xml_to_ir_node(_subsection_xml_with_item_num("9", 3), _fi_label_postprocessor)
