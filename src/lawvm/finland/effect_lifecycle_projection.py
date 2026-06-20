@@ -41,6 +41,39 @@ def _typed_relation_signals(
     return tuple(rows)
 
 
+def _typed_legal_operations(
+    canonical_ops: Sequence[LegalOperation],
+) -> tuple[LegalOperation, ...]:
+    rows: list[LegalOperation] = []
+    for row in canonical_ops:
+        if not isinstance(row, LegalOperation):
+            raise TypeError("canonical_ops must contain LegalOperation rows")
+        rows.append(row)
+    return tuple(rows)
+
+
+def _typed_temporal_events(
+    temporal_events: Sequence[TemporalEvent],
+) -> tuple[TemporalEvent, ...]:
+    rows: list[TemporalEvent] = []
+    for row in temporal_events:
+        if not isinstance(row, TemporalEvent):
+            raise TypeError("temporal_events must contain TemporalEvent rows")
+        rows.append(row)
+    return tuple(rows)
+
+
+def _typed_source_effects(
+    source_effects: Sequence[EffectRef],
+) -> tuple[EffectRef, ...]:
+    rows: list[EffectRef] = []
+    for row in source_effects:
+        if not isinstance(row, EffectRef):
+            raise TypeError("known_source_effects must contain EffectRef rows")
+        rows.append(row)
+    return tuple(rows)
+
+
 def _source_instrument(source_statute: str, title: str = "") -> SourceInstrumentRef | None:
     source_statute = str(source_statute or "").strip()
     if not source_statute:
@@ -847,6 +880,9 @@ def build_finland_effect_lifecycle(
     ``temporal_events``, which are already the replay-owned projection of those
     operations.
     """
+    canonical_ops = _typed_legal_operations(canonical_ops)
+    temporal_events = _typed_temporal_events(temporal_events)
+    known_source_effects = _typed_source_effects(known_source_effects)
     source_effects = _source_effects_from_ops_and_temporal_events(
         target_statute=target_statute,
         canonical_ops=canonical_ops,

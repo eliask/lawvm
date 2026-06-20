@@ -782,6 +782,28 @@ def test_finland_lifecycle_projection_rejects_serialized_override_meta() -> None
         )
 
 
+def test_finland_lifecycle_projection_rejects_untyped_primary_lanes() -> None:
+    with pytest.raises(TypeError, match="LegalOperation"):
+        build_finland_effect_lifecycle(
+            target_statute="1990/1",
+            canonical_ops=cast(Any, ({"op_id": "op-1"},)),
+            temporal_events=(),
+        )
+    with pytest.raises(TypeError, match="TemporalEvent"):
+        build_finland_effect_lifecycle(
+            target_statute="1990/1",
+            canonical_ops=(),
+            temporal_events=cast(Any, ({"event_id": "event-1"},)),
+        )
+    with pytest.raises(TypeError, match="EffectRef"):
+        build_finland_effect_lifecycle(
+            target_statute="1990/1",
+            canonical_ops=(),
+            temporal_events=(),
+            known_source_effects=cast(Any, ("effect:1",)),
+        )
+
+
 def test_process_result_builder_preserves_effect_lifecycle_side_channels() -> None:
     instrument = SourceInstrumentRef(instrument_id="2024/1")
     witness = SourceProvisionRef(instrument=instrument, path=("1",))
