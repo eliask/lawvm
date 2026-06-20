@@ -167,10 +167,25 @@ class EffectRef:
     source_provision: Optional[SourceProvisionRef] = None
 
     def __post_init__(self) -> None:
-        if not self.effect_id:
+        effect_id = _normalized_source_ref_string("EffectRef.effect_id", self.effect_id)
+        if not effect_id:
             raise ValueError("EffectRef.effect_id must be non-empty")
         if not isinstance(self.source_instrument, SourceInstrumentRef):
             raise ValueError("EffectRef.source_instrument must be a SourceInstrumentRef")
+        object.__setattr__(self, "effect_id", effect_id)
+        object.__setattr__(
+            self,
+            "target_statute",
+            _normalized_source_ref_string("EffectRef.target_statute", self.target_statute),
+        )
+        object.__setattr__(
+            self,
+            "projection_group_id",
+            _normalized_source_ref_string(
+                "EffectRef.projection_group_id",
+                self.projection_group_id,
+            ),
+        )
         if self.target_address is not None and not isinstance(self.target_address, LegalAddress):
             raise ValueError("EffectRef.target_address must be a LegalAddress when provided")
         if self.source_provision is not None and not isinstance(self.source_provision, SourceProvisionRef):
@@ -190,7 +205,11 @@ class EffectRelation:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.relation_id:
+        relation_id = _normalized_source_ref_string(
+            "EffectRelation.relation_id",
+            self.relation_id,
+        )
+        if not relation_id:
             raise ValueError("EffectRelation.relation_id must be non-empty")
         if self.kind not in {
             "modifies_effect",
@@ -213,6 +232,7 @@ class EffectRelation:
             raise ValueError("EffectRelation.target_instrument must be a SourceInstrumentRef when provided")
         if self.source_effect is not None and not isinstance(self.source_effect, EffectRef):
             raise ValueError("EffectRelation.source_effect must be an EffectRef when provided")
+        object.__setattr__(self, "relation_id", relation_id)
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
 
@@ -233,7 +253,11 @@ class EffectLifecycleEvent:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.lifecycle_event_id:
+        lifecycle_event_id = _normalized_source_ref_string(
+            "EffectLifecycleEvent.lifecycle_event_id",
+            self.lifecycle_event_id,
+        )
+        if not lifecycle_event_id:
             raise ValueError("EffectLifecycleEvent.lifecycle_event_id must be non-empty")
         if self.kind not in {
             "commence_effect",
@@ -254,10 +278,20 @@ class EffectLifecycleEvent:
             raise ValueError("EffectLifecycleEvent.relation must be an EffectRelation when provided")
         if self.temporal_event is not None and not isinstance(self.temporal_event, TemporalEvent):
             raise ValueError("EffectLifecycleEvent.temporal_event must be a TemporalEvent when provided")
+        effective = _normalized_source_ref_string(
+            "EffectLifecycleEvent.effective",
+            self.effective,
+        )
+        expires = _normalized_source_ref_string("EffectLifecycleEvent.expires", self.expires)
         if self.expiry_convention not in {"exclusive_cutoff", "inclusive_valid_until"}:
             raise ValueError(f"unsupported EffectLifecycleEvent.expiry_convention: {self.expiry_convention!r}")
-        if self.expiry_convention == "inclusive_valid_until" and self.expires:
-            dt.date.fromisoformat(self.expires)
+        if not isinstance(self.executable, bool):
+            raise TypeError("EffectLifecycleEvent.executable must be a bool")
+        if self.expiry_convention == "inclusive_valid_until" and expires:
+            dt.date.fromisoformat(expires)
+        object.__setattr__(self, "lifecycle_event_id", lifecycle_event_id)
+        object.__setattr__(self, "effective", effective)
+        object.__setattr__(self, "expires", expires)
         if self.executable and self.kind == "unresolved_effect_target":
             raise ValueError("unresolved EffectLifecycleEvent cannot be executable")
         if self.kind == "unresolved_effect_target" and self.effect is not None:

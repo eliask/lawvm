@@ -208,6 +208,86 @@ def test_effect_source_refs_reject_untyped_identity_fields() -> None:
     assert witness.text_excerpt == "  exact witness text  "
 
 
+def test_effect_lifecycle_carriers_reject_untyped_identity_fields() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id=" effect:1 ", source_instrument=instrument)
+
+    assert effect.effect_id == "effect:1"
+
+    with pytest.raises(TypeError, match="effect_id"):
+        EffectRef(effect_id=cast(Any, 1), source_instrument=instrument)
+    with pytest.raises(TypeError, match="target_statute"):
+        EffectRef(
+            effect_id="effect:target",
+            source_instrument=instrument,
+            target_statute=cast(Any, object()),
+        )
+    with pytest.raises(TypeError, match="projection_group_id"):
+        EffectRef(
+            effect_id="effect:group",
+            source_instrument=instrument,
+            projection_group_id=cast(Any, object()),
+        )
+
+    relation = EffectRelation(
+        relation_id=" relation:1 ",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    assert relation.relation_id == "relation:1"
+
+    with pytest.raises(TypeError, match="relation_id"):
+        EffectRelation(
+            relation_id=cast(Any, 1),
+            kind="extends_effect_expiry",
+            source_provision=witness,
+            target_effect=effect,
+        )
+
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id=" lifecycle:1 ",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires=" 2021-12-31 ",
+    )
+    assert lifecycle.lifecycle_event_id == "lifecycle:1"
+    assert lifecycle.expires == "2021-12-31"
+
+    with pytest.raises(TypeError, match="lifecycle_event_id"):
+        EffectLifecycleEvent(
+            lifecycle_event_id=cast(Any, 1),
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2021-12-31",
+        )
+    with pytest.raises(TypeError, match="effective"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:bad-effective",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            effective=cast(Any, object()),
+            expires="2021-12-31",
+        )
+    with pytest.raises(TypeError, match="executable"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:bad-executable",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2021-12-31",
+            executable=cast(Any, "true"),
+        )
+
+
 def test_canonical_bundle_requires_source_effect_records() -> None:
     with pytest.raises(TypeError, match="source_effects"):
         CanonicalBundle(source_effects=cast(Any, ("not-an-effect",)))
