@@ -268,6 +268,8 @@ _TARKOITETAAN = re.compile(
     r"(?P<expansion>[^.;]{0,200})",
     re.IGNORECASE,
 )
+_TARKOITETAAN_LOOKBACK = 512
+_TARKOITETAAN_LOOKAHEAD = len("tarkoitetaan") + 200
 
 # Leading scope locatives that may precede the definiendum in an inline shape-3
 # capture ("Tässä laissa X:llä tarkoitetaan …") — never part of the term surface.
@@ -997,43 +999,65 @@ def _recognize_parenthetical_alias(
 
 def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBinding]:
     out: list[DefinedTermBinding] = []
-    for m in _TARKOITETAAN.finditer(text):
-        raw_term = m.group("term").strip()
-        if not raw_term:
-            continue
-        expansion_text = m.group("expansion").strip()
-        # Scope inherits from the nearest preceding definitions-header cue
-        # ("Tässä laissa/luvussa/pykälässä/momentissa … tarkoitetaan" / "Tätä
-        # lakia sovellettaessa …"); conservative ``statute`` default when no such
-        # header cue is recognised.  Anchor the look-back on the END of THIS
-        # binding's ``tarkoitetaan`` verb (start of the expansion group) so an
-        # INLINE cue whose verb is this very binding's verb — "Tässä pykälässä
-        # viranomaisella tarkoitetaan …" — is matched contiguously, while a block
-        # header above an enumerated definiendum is still seen within the window.
-        scope = _scope_cue_before(text, m.start("expansion"))
-        # The CANONICAL inline pipeline (shared with the forest): the HEAD must be
-        # a definitional adessive definiendum (the referential idiom is declined),
-        # leading scope-locatives are stripped, the left edge is trimmed, and a
-        # swept clause fragment is declined.  ``None`` = no binding (no fabrication).
-        entry = inline_entry_from_match(text, raw_term, expansion_text, scope)
-        if entry is None:
-            continue
-        act_id = entry.target_ref
-        # The definiendum surface is an INFLECTED (adessive) form; M1 is
-        # generation-only and cannot reverse it to a nominative, so the term is
-        # matched by its exact written surface, not generated inflections.
-        status = STATUS_UNSUPPORTED_MORPHOLOGY
-        out.append(
-            DefinedTermBinding(
-                term=entry.term,
-                target_ref=act_id,
-                expansion=None if act_id is not None else (entry.definiens or None),
-                scope=entry.scope,
-                source_span=SourceSpan(source_file, m.start(), m.end() - m.start()),
-                binding_kind=BINDING_TARKOITETAAN,
-                status=status,
+    low = text.lower()
+    cursor = 0
+    seen: set[tuple[int, int]] = set()
+    while True:
+        verb_pos = low.find(_GUARD_TARKOITETAAN, cursor)
+        if verb_pos < 0:
+            break
+        window_start = max(0, verb_pos - _TARKOITETAAN_LOOKBACK)
+        window_end = min(len(text), verb_pos + _TARKOITETAAN_LOOKAHEAD)
+        window = text[window_start:window_end]
+        for m in _TARKOITETAAN.finditer(window):
+            # Keep exactly the match anchored on this literal occurrence; a
+            # bounded window may include a neighbouring definition verb too.
+            match_verb_pos = window_start + m.start("expansion") - len(_GUARD_TARKOITETAAN)
+            if match_verb_pos != verb_pos:
+                continue
+            match_start = window_start + m.start()
+            match_end = window_start + m.end()
+            match_key = (match_start, match_end)
+            if match_key in seen:
+                continue
+            seen.add(match_key)
+            raw_term = m.group("term").strip()
+            if not raw_term:
+                continue
+            expansion_text = m.group("expansion").strip()
+            # Scope inherits from the nearest preceding definitions-header cue
+            # ("Tässä laissa/luvussa/pykälässä/momentissa … tarkoitetaan" / "Tätä
+            # lakia sovellettaessa …"); conservative ``statute`` default when no such
+            # header cue is recognised.  Anchor the look-back on the END of THIS
+            # binding's ``tarkoitetaan`` verb (start of the expansion group) so an
+            # INLINE cue whose verb is this very binding's verb — "Tässä pykälässä
+            # viranomaisella tarkoitetaan …" — is matched contiguously, while a block
+            # header above an enumerated definiendum is still seen within the window.
+            scope = _scope_cue_before(text, window_start + m.start("expansion"))
+            # The CANONICAL inline pipeline (shared with the forest): the HEAD must be
+            # a definitional adessive definiendum (the referential idiom is declined),
+            # leading scope-locatives are stripped, the left edge is trimmed, and a
+            # swept clause fragment is declined.  ``None`` = no binding (no fabrication).
+            entry = inline_entry_from_match(text, raw_term, expansion_text, scope)
+            if entry is None:
+                continue
+            act_id = entry.target_ref
+            # The definiendum surface is an INFLECTED (adessive) form; M1 is
+            # generation-only and cannot reverse it to a nominative, so the term is
+            # matched by its exact written surface, not generated inflections.
+            status = STATUS_UNSUPPORTED_MORPHOLOGY
+            out.append(
+                DefinedTermBinding(
+                    term=entry.term,
+                    target_ref=act_id,
+                    expansion=None if act_id is not None else (entry.definiens or None),
+                    scope=entry.scope,
+                    source_span=SourceSpan(source_file, match_start, match_end - match_start),
+                    binding_kind=BINDING_TARKOITETAAN,
+                    status=status,
+                )
             )
-        )
+        cursor = verb_pos + len(_GUARD_TARKOITETAAN)
     return out
 
 

@@ -1043,6 +1043,7 @@ def _local_item_target_re(target_label: str):
     )
 
 
+@lru_cache(maxsize=8192)
 def _raw_text_has_local_item_cited_version(raw_text: str, target_label: str) -> bool:
     for match in _local_item_target_re(target_label).finditer(raw_text):
         tail = raw_text[match.end() : match.end() + 220]
