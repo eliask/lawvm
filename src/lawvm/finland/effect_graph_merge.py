@@ -5,13 +5,33 @@ from __future__ import annotations
 from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
 
 
+def _require_effect_ref(subject: str, value: object) -> EffectRef:
+    if not isinstance(value, EffectRef):
+        raise TypeError(f"{subject} must contain EffectRef records")
+    return value
+
+
+def _require_effect_relation(subject: str, value: object) -> EffectRelation:
+    if not isinstance(value, EffectRelation):
+        raise TypeError(f"{subject} must contain EffectRelation records")
+    return value
+
+
+def _require_effect_lifecycle_event(subject: str, value: object) -> EffectLifecycleEvent:
+    if not isinstance(value, EffectLifecycleEvent):
+        raise TypeError(f"{subject} must contain EffectLifecycleEvent records")
+    return value
+
+
 def append_unique_effect_ref(
     target: list[EffectRef],
     effect: EffectRef,
     *,
     subject: str,
 ) -> None:
-    for existing in target:
+    effect = _require_effect_ref(subject, effect)
+    for existing_value in target:
+        existing = _require_effect_ref(subject, existing_value)
         if existing.effect_id != effect.effect_id:
             continue
         if existing != effect:
@@ -36,7 +56,9 @@ def append_unique_effect_relation(
     *,
     subject: str,
 ) -> None:
-    for existing in target:
+    relation = _require_effect_relation(subject, relation)
+    for existing_value in target:
+        existing = _require_effect_relation(subject, existing_value)
         if existing.relation_id != relation.relation_id:
             continue
         if existing != relation:
@@ -61,7 +83,9 @@ def append_unique_effect_lifecycle_event(
     *,
     subject: str,
 ) -> None:
-    for existing in target:
+    event = _require_effect_lifecycle_event(subject, event)
+    for existing_value in target:
+        existing = _require_effect_lifecycle_event(subject, existing_value)
         if existing.lifecycle_event_id != event.lifecycle_event_id:
             continue
         if existing != event:
