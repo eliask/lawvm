@@ -587,6 +587,23 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "info", "frontend_phase_surface",
                 "frontend phase diagnostic projected into the governed finding ledger",
                 ("parse_witness",), role="observation"),
+    # Rank-17 silent-drop closure (canonical_op plane). The clause_ast ingress
+    # seam (fi extract_legal_ops_from_parse_result) and the legacy lower_surface
+    # bridge previously dropped unsupported clause/surface nodes
+    # (MetaClause/ItemShiftClause/NamedRowClause; SurfaceMetaClause/
+    # SurfaceTextAmend/SurfaceValiotsikkoRef/unresolved SurfaceBackRef) by
+    # returning None/[] with no receipt. These observations make every such
+    # drop visible. Non-blocking by design: routing through the diagnostic twin
+    # must not change which ops replay — only add a receipt for the already-
+    # dropped node — so bench stays flat.
+    FindingSpec("LOWER.CLAUSE_AST_NODE_UNSUPPORTED_GENERIC_LOWERING", "frontend_compile",
+                "source_pathology", "warn", "extract_legal_ops_from_parse_result",
+                "clause AST node has no generic LegalOperation lowering at the ingress seam",
+                ("parse_witness", "preservation"), role="observation"),
+    FindingSpec("LOWER.SURFACE_NODE_UNLOWERABLE_TO_PARSED_OP", "lower_surface",
+                "source_pathology", "warn", "lower_surface_clause_to_parsed_ops",
+                "surface node kind has no ParsedOp representation in the legacy lowering bridge",
+                ("parse_witness", "preservation"), role="observation"),
     # Non-blocking observations. The sole producer
     # (tools/consistency.py:ConsistencyResult.to_phase_result) emits these as
     # role=observation/blocking=False and is not wired into the compile/replay

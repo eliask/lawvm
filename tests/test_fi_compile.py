@@ -3225,7 +3225,7 @@ def test_act_wide_body_section_replace_formula_uses_body_section_witness(
         )
     )
 
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -3530,7 +3530,7 @@ def test_normalize_and_compile_ops_strictly_rejects_late_fallback_chains(
 
     # normalize_and_compile_ops calls extract_johtolause_legal_ops_from_parse_result
     # (the result-based variant), not the older string-based extract_johtolause_legal_ops.
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -3590,7 +3590,7 @@ def test_normalize_and_compile_ops_forwards_fallback_regex_coverage(
 ) -> None:
     import lawvm.finland.frontend_compile as frontend_compile
 
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     muutos_tree = etree.fromstring("<root/>")
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
     coverage_rows: list[Any] = []
@@ -3897,7 +3897,7 @@ def test_normalize_and_compile_ops_records_empty_extraction_observation(
     muutos_tree = etree.fromstring("<root/>")
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
 
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -3957,7 +3957,7 @@ def test_normalize_and_compile_ops_records_unowned_enacting_formula_body_section
         )
     )
 
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -4017,7 +4017,7 @@ def test_normalize_and_compile_ops_does_not_record_unowned_body_section_for_full
     )
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
 
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",

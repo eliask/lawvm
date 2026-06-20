@@ -60,6 +60,7 @@ from lawvm.finland.normalize import (
     parse_ops_fallback_heuristic_with_coverage,
     parse_ops_title_fallback,
 )
+from lawvm.core.clause_ast import ClauseAstLoweringDiagnostic
 from lawvm.finland.johtolause import (
     extract_legal_ops_from_parse_result as extract_johtolause_legal_ops_from_parse_result,
     parse_clause as parse_johtolause_clause,
@@ -3621,10 +3622,16 @@ def normalize_and_compile_ops(
     parse_result_local = parse_result
     prechecked_legal_ops: List[LegalOperation] | None = None
     parser_has_structural_targets = False
+    # Rank-17: collect typed receipts for clause nodes the ingress seam cannot
+    # lower (MetaClause/ItemShiftClause/NamedRowClause) so they stop being a
+    # silent drop. Filled by whichever extraction call actually runs.
+    _ingress_lowering_diagnostics: List[ClauseAstLoweringDiagnostic] = []
     if used_sec1_fallback:
         if parse_result_local is None:
             parse_result_local = parse_johtolause_clause(johto, statute_id=parent_id or amendment_id)
-        prechecked_legal_ops = extract_johtolause_legal_ops_from_parse_result(parse_result_local)
+        prechecked_legal_ops = extract_johtolause_legal_ops_from_parse_result(
+            parse_result_local, diagnostics_out=_ingress_lowering_diagnostics
+        )
         parser_has_structural_targets = _parser_produced_structural_targets(prechecked_legal_ops)
 
     peg_skip_for_sec1_repeal_list = used_sec1_fallback and _sec1_fallback_peg_skip_required(
@@ -3636,10 +3643,30 @@ def normalize_and_compile_ops(
     if not peg_skip_for_sec1_repeal_list:
         if parse_result_local is None:
             parse_result_local = parse_johtolause_clause(johto, statute_id=parent_id or amendment_id)
-        legal_ops = (
-            prechecked_legal_ops
-            if prechecked_legal_ops is not None
-            else extract_johtolause_legal_ops_from_parse_result(parse_result_local)
+        if prechecked_legal_ops is not None:
+            legal_ops = prechecked_legal_ops
+        else:
+            legal_ops = extract_johtolause_legal_ops_from_parse_result(
+                parse_result_local, diagnostics_out=_ingress_lowering_diagnostics
+            )
+    for _ld in _ingress_lowering_diagnostics:
+        frontend_findings_out.append(
+            Finding(
+                kind=_ld.kind,
+                role="observation",
+                stage="frontend_compile",
+                detail={
+                    "message": _ld.reason,
+                    "node_kind": _ld.node_kind,
+                    "rule_id": _ld.rule_id,
+                    "sequence": _ld.sequence,
+                    "scope": str(_ld.scope) if _ld.scope is not None else "",
+                    "detail": _ld.detail or "",
+                    "source_statute": amendment_id,
+                },
+                source_statute=amendment_id,
+                blocking=False,
+            )
         )
     if parse_result_local is not None:
         # Conservation across the frontend boundary: parse-layer findings are

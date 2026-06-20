@@ -589,7 +589,7 @@ class TestNormalizeAndCompileOps:
                 replacement="uusi",
             ),
         )
-        monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [lo])
+        monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [lo])
         monkeypatch.setattr(frontend_compile, "parse_johtolause_clause", lambda _johto, statute_id="": None)
         monkeypatch.setattr(
             frontend_compile,

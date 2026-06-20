@@ -21,7 +21,10 @@ from lawvm.core.elaboration_context import TargetUnitKind
 
 from lawvm.finland.johtolause.types import ParsedOp
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, TextPatchSpec, TextSelector
-from lawvm.core.clause_ast import clause_ast_to_legal_ops
+from lawvm.core.clause_ast import (
+    ClauseAstLoweringDiagnostic,
+    clause_ast_to_legal_ops_with_diagnostics,
+)
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.finland.johtolause.api import (
     _extract_text_amend_clauses,
@@ -228,14 +231,28 @@ def _resolved_scope_confidences(resolved: ResolvedSurfaceClause | None) -> list[
     return out
 
 
-def extract_legal_ops_from_parse_result(result: ClauseParseResult) -> List[LegalOperation]:
+def extract_legal_ops_from_parse_result(
+    result: ClauseParseResult,
+    diagnostics_out: List[ClauseAstLoweringDiagnostic] | None = None,
+) -> List[LegalOperation]:
     """Extract amendment ops from one precomputed ClauseParseResult.
 
     This is the Finland-local ingress seam for callers that already have the
     resolved surface/clause AST and want to avoid reparsing while preserving
     Finland-only scope-carrier transport.
+
+    The seam routes through ``clause_ast_to_legal_ops_with_diagnostics`` so that
+    every clause node generic core lowering cannot own (MetaClause,
+    ItemShiftClause, NamedRowClause) becomes a typed
+    ``ClauseAstLoweringDiagnostic`` receipt instead of a silent drop. The op
+    list is identical to the silent variant — the diagnostics carry only the
+    already-dropped nodes — so downstream replay and the scope-carrier length
+    invariant are unchanged. Callers that pass ``diagnostics_out`` collect the
+    receipts; the compile path projects them into the governed finding ledger.
     """
-    ops = clause_ast_to_legal_ops(result.clause_ast)
+    ops, lowering_diagnostics = clause_ast_to_legal_ops_with_diagnostics(result.clause_ast)
+    if diagnostics_out is not None:
+        diagnostics_out.extend(lowering_diagnostics)
     scope_confidences = _resolved_scope_confidences(result.resolved)
     if scope_confidences:
         if len(scope_confidences) != len(ops):
