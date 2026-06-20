@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from functools import lru_cache
 from typing import List, Optional
 
 from lawvm.core.reference_mention import (
@@ -792,6 +793,21 @@ def recognize_internal_refs(
     statute_id: str,
     known_sections: Optional[frozenset[str]] = None,
 ) -> List[ReferenceMention]:
+    """Recognize bare / internal same-statute section references in ``text``."""
+    if not text:
+        return []
+    known_sections_key = (
+        frozenset(known_sections) if known_sections is not None else None
+    )
+    return list(_recognize_internal_refs_cached(text, statute_id, known_sections_key))
+
+
+@lru_cache(maxsize=8192)
+def _recognize_internal_refs_cached(
+    text: str,
+    statute_id: str,
+    known_sections: Optional[frozenset[str]] = None,
+) -> tuple[ReferenceMention, ...]:
     """Recognize bare / internal same-statute section references in ``text``.
 
     Emits one :class:`ReferenceMention` per resolved provision, all targeting
@@ -816,14 +832,12 @@ def recognize_internal_refs(
     parsed. A trigger that yields no provision at all is dropped (prefer
     not-emitting over guessing).
     """
-    if not text:
-        return []
     lower = text.lower()
     has_section = _GUARD_SECTION in text
     has_momentti = _GUARD_MOMENTTI in lower
     has_chapter = _GUARD_CHAPTER in lower
     if not has_section and not has_momentti and not has_chapter:
-        return []
+        return ()
 
     mentions: List[ReferenceMention] = []
     # Track byte/char spans already consumed by the §-anchored pass so the
@@ -950,7 +964,7 @@ def recognize_internal_refs(
                     )
                 )
 
-    return mentions
+    return tuple(mentions)
 
 
 def _bare_subref_targets(surface: str) -> List[ProvisionRef]:
