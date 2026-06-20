@@ -1159,25 +1159,10 @@ def strict_fail_reasons_from_finding_ledger(
         else:
             triggered.add("APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED")
 
-    def _as_canonical_action_value(raw_action: Any) -> str:
-        if isinstance(raw_action, StructuralAction):
-            return raw_action.value
-        if isinstance(raw_action, str):
-            return raw_action.strip()
-        if isinstance(raw_action, bytes):
-            return raw_action.decode().strip()
-        value = getattr(raw_action, "value", None)
-        if value is not None:
-            if isinstance(value, str):
-                return value.strip()
-            return str(value)
-        return str(raw_action)
-
-    def _is_word_substitution_action(action_value: str) -> bool:
-        normalized_action = action_value.strip().replace("-", "_").lower()
-        return normalized_action in {"text_replace", "text_repeal"}
-
-    if any(_is_word_substitution_action(_as_canonical_action_value(op.action)) for op in canonical_ops_list):
+    if any(
+        op.action in {StructuralAction.TEXT_REPLACE, StructuralAction.TEXT_REPEAL}
+        for op in canonical_ops_list
+    ):
         triggered.add("APPLY.WORD_SUBSTITUTION")
 
     compiled_provenance_tags = _compiled_op_provenance_tag_sets(compiled_ops)

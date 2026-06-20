@@ -838,19 +838,6 @@ class TestStrictFailReasonsFromFindingLedger:
 
         assert reasons == ["APPLY.WORD_SUBSTITUTION"]
 
-    def test_strict_fail_reasons_detects_text_substitution_from_canonical_string(self) -> None:
-        profile = StrictProfile(name="test")
-        canonical_action_op = SimpleNamespace(action="text_repeal")
-        reasons = strict_fail_reasons_from_finding_ledger(
-            profile,
-            compiled_ops=(),
-            canonical_ops=cast(tuple[LegalOperation, ...], (canonical_action_op,)),
-            failures=(),
-            findings=(),
-        )
-
-        assert reasons == ["APPLY.WORD_SUBSTITUTION"]
-
     def test_strict_fail_reasons_is_not_derived_from_source_effective_dates(self) -> None:
         profile = StrictProfile(name="test")
         reasons = strict_fail_reasons_from_finding_ledger(
