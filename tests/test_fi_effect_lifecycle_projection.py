@@ -245,6 +245,20 @@ def test_lifecycle_scope_rejects_untyped_exact_addresses() -> None:
         EffectLifecycleOverrideScope.exact_addresses(cast(Any, ("section:4a",)))
 
 
+def test_lifecycle_scope_rejects_address_values_in_section_label_lane() -> None:
+    address = LegalAddress(path=(("section", "4 a"),))
+
+    with pytest.raises(TypeError, match="section labels"):
+        EffectLifecycleOverrideScope.sections(cast(Any, (address,)))
+    with pytest.raises(TypeError, match="section labels"):
+        EffectLifecycleOverrideScope.mixed(
+            labels=cast(Any, (address,)),
+            addresses=(address,),
+        )
+    with pytest.raises(TypeError, match="section labels"):
+        EffectLifecycleOverrideScope(kind="section", labels=cast(Any, (address,)))
+
+
 def test_finland_pending_amendment_relation_signal_is_authority_input() -> None:
     source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
         target_statute="1990/1",

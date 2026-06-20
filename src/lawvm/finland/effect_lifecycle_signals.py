@@ -13,6 +13,17 @@ EffectRelationSignalKind = Literal["pending_amendment", "meta_repeal"]
 EffectRelationSignalRelationKind = Literal["modifies_effect", "repeals_effect"]
 
 
+def _normalized_section_labels(labels: Iterable[object]) -> tuple[str, ...]:
+    cleaned: list[str] = []
+    for label in labels:
+        if not isinstance(label, str):
+            raise TypeError("lifecycle override scope section labels must be strings")
+        if not label.strip():
+            continue
+        cleaned.append(_norm_num_token(label))
+    return tuple(cleaned)
+
+
 @dataclass(frozen=True, slots=True)
 class EffectLifecycleOverrideScope:
     """Typed target scope for source-backed lifecycle overrides.
@@ -27,11 +38,7 @@ class EffectLifecycleOverrideScope:
     addresses: tuple[LegalAddress, ...] = ()
 
     def __post_init__(self) -> None:
-        labels = tuple(
-            _norm_num_token(str(label))
-            for label in self.labels
-            if str(label).strip()
-        )
+        labels = _normalized_section_labels(self.labels)
         addresses = tuple(self.addresses)
         if not all(isinstance(address, LegalAddress) for address in addresses):
             raise TypeError("lifecycle override scope addresses must contain LegalAddress rows")
@@ -59,8 +66,8 @@ class EffectLifecycleOverrideScope:
         return cls(kind="instrument")
 
     @classmethod
-    def sections(cls, labels: Iterable[object]) -> "EffectLifecycleOverrideScope":
-        cleaned = tuple(_norm_num_token(str(label)) for label in labels if str(label).strip())
+    def sections(cls, labels: Iterable[str]) -> "EffectLifecycleOverrideScope":
+        cleaned = _normalized_section_labels(labels)
         if not cleaned or cleaned == ("*",):
             return cls.instrument()
         return cls(kind="section", labels=tuple(sorted(cleaned)))
@@ -78,10 +85,10 @@ class EffectLifecycleOverrideScope:
     def mixed(
         cls,
         *,
-        labels: Iterable[object],
+        labels: Iterable[str],
         addresses: Iterable[LegalAddress],
     ) -> "EffectLifecycleOverrideScope":
-        cleaned_labels = tuple(_norm_num_token(str(label)) for label in labels if str(label).strip())
+        cleaned_labels = _normalized_section_labels(labels)
         cleaned_addresses = tuple(sorted(tuple(addresses), key=str))
         if cleaned_labels and cleaned_addresses:
             return cls(kind="mixed", labels=tuple(sorted(cleaned_labels)), addresses=cleaned_addresses)
