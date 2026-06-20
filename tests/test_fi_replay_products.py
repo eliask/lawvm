@@ -71,12 +71,28 @@ def replay_1999_488_legal_pit() -> ReplayResult:
 
 @pytest.fixture(scope="module")
 def replay_2012_916_finlex_oracle() -> ReplayResult:
-    return cast(ReplayResult, pinned_replay("2012/916", mode="official_consolidation", quiet=True))
+    return cast(
+        ReplayResult,
+        pinned_replay(
+            "2012/916",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
 def replay_2014_1429_finlex_oracle() -> ReplayResult:
-    return cast(ReplayResult, pinned_replay("2014/1429", mode="official_consolidation", quiet=True))
+    return cast(
+        ReplayResult,
+        pinned_replay(
+            "2014/1429",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -91,7 +107,15 @@ def replay_2009_953_legal_pit() -> ReplayResult:
 
 @pytest.fixture(scope="module")
 def replay_1992_552_finlex_oracle() -> ReplayResult:
-    return cast(ReplayResult, pinned_replay("1992/552", mode="official_consolidation", quiet=True))
+    return cast(
+        ReplayResult,
+        pinned_replay(
+            "1992/552",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -101,12 +125,28 @@ def replay_2014_938_finlex_oracle() -> ReplayResult:
 
 @pytest.fixture(scope="module")
 def replay_1965_40_finlex_oracle() -> ReplayResult:
-    return cast(ReplayResult, pinned_replay("1965/40", mode="official_consolidation", quiet=True))
+    return cast(
+        ReplayResult,
+        pinned_replay(
+            "1965/40",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
 def replay_1929_234_finlex_oracle() -> ReplayResult:
-    return cast(ReplayResult, pinned_replay("1929/234", mode="official_consolidation", quiet=True))
+    return cast(
+        ReplayResult,
+        pinned_replay(
+            "1929/234",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
