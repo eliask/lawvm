@@ -105,6 +105,11 @@ def replay_1965_40_finlex_oracle() -> ReplayResult:
 
 
 @pytest.fixture(scope="module")
+def replay_1929_234_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("1929/234", mode="official_consolidation", quiet=True))
+
+
+@pytest.fixture(scope="module")
 def replay_1967_550_legal_pit_with_lo_ops() -> tuple[ReplayResult, list[LegalOperation]]:
     lo_ops: list[LegalOperation] = []
     replay = cast(
@@ -909,9 +914,10 @@ def test_replay_xml_1940_378_keeps_voimaantulo_section_under_chapter_7_after_199
     assert replay.materialized_state.find_section("73") is None
 
 
-def test_replay_xml_1929_234_materializes_part_v_after_2001_1226() -> None:
-    replay = pinned_replay("1929/234", mode="official_consolidation", quiet=True)
-
+def test_replay_xml_1929_234_materializes_part_v_after_2001_1226(
+    replay_1929_234_finlex_oracle: ReplayResult,
+) -> None:
+    replay = replay_1929_234_finlex_oracle
     sec109 = replay.materialized_state.find_section("109", chapter_num="1", part_num="5")
     sec110 = replay.materialized_state.find_section("110", chapter_num="1", part_num="5")
     sec111 = replay.materialized_state.find_section("111", chapter_num="1", part_num="5")
@@ -932,10 +938,11 @@ def test_replay_xml_1929_234_materializes_part_v_after_2001_1226() -> None:
     assert "Tarkemmat säännökset tämän osan täytäntöönpanosta" in " ".join(irnode_to_text(sec142).split())
 
 
-def test_replay_xml_1929_234_part_v_rebirth_does_not_repeal_unrelated_part_chapters() -> None:
+def test_replay_xml_1929_234_part_v_rebirth_does_not_repeal_unrelated_part_chapters(
+    replay_1929_234_finlex_oracle: ReplayResult,
+) -> None:
     """2001/1226 inserts part V; same-numbered chapters in parts II/IV must survive."""
-    replay = pinned_replay("1929/234", mode="official_consolidation", quiet=True)
-
+    replay = replay_1929_234_finlex_oracle
     sec46 = replay.materialized_state.find_section("46", chapter_num="4", part_num="2")
     assert sec46 is not None
     sec46_text = " ".join(irnode_to_text(sec46).split())
