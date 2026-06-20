@@ -109,6 +109,12 @@ _TIMELINE_CONSISTENCY_COMPAT_EXPORTS = (ConsistencyDivergence, ingest_consolidat
 _BODY_TOP_LEVEL_KINDS: frozenset[str] = frozenset(
     {"part", "chapter", "section", "division", "recital", "preamble", "p1group", "final"}
 )
+_IR_NODE_KIND_BY_VALUE: dict[str, IRNodeKind] = {kind.value: kind for kind in IRNodeKind}
+_PARENT_STRUCTURAL_CHILD_KINDS: dict[str, frozenset[IRNodeKind]] = {
+    "part": frozenset((IRNodeKind.CHAPTER,)),
+    "chapter": frozenset((IRNodeKind.SECTION,)),
+    "section": frozenset((IRNodeKind.SUBSECTION, IRNodeKind.ITEM)),
+}
 _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
     "lawvm_materialize_as_absent_under_detached_horizon"
 )
@@ -1258,15 +1264,10 @@ def materialize_pit_ex(
         if not relative_path:
             return True
 
-        if parent_leaf == "part":
-            child_kinds = {"chapter"}
-        elif parent_leaf == "chapter":
-            child_kinds = {"section"}
-        else:
-            child_kinds = {"subsection", "item"}
+        child_kinds = _PARENT_STRUCTURAL_CHILD_KINDS[parent_leaf]
         has_structural_children = False
         for child in content.children:
-            if child.label and child.kind.value in child_kinds:
+            if child.label and child.kind in child_kinds:
                 has_structural_children = True
                 break
         if parent_leaf == "section":
@@ -1285,10 +1286,17 @@ def materialize_pit_ex(
         node = content
         for kind_name, label in relative_path:
             found_child = None
-            for candidate in node.children:
-                if candidate.kind.value == kind_name and candidate.label == label:
-                    found_child = candidate
-                    break
+            expected_kind = _IR_NODE_KIND_BY_VALUE.get(kind_name)
+            if expected_kind is None:
+                for candidate in node.children:
+                    if candidate.kind.value == kind_name and candidate.label == label:
+                        found_child = candidate
+                        break
+            else:
+                for candidate in node.children:
+                    if candidate.kind is expected_kind and candidate.label == label:
+                        found_child = candidate
+                        break
             if found_child is None:
                 return False
             node = found_child
