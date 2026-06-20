@@ -42,7 +42,7 @@ from lawvm.core.observation_registry import (
     strict_fail_codes_by_family,
 )
 from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
-from lawvm.finland.ops import FailedOp
+from lawvm.finland.ops import AmendmentOp, FailedOp, classify_legal_operation_conversion_skip
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
@@ -96,6 +96,21 @@ def compile_amendment_ops(*args: Any, **kwargs: Any) -> Any:
         args = tuple(patched_args)
 
     return _real_compile_amendment_ops(*args, **kwargs)
+
+
+def test_legal_operation_descendant_only_target_is_not_coerced_to_section() -> None:
+    lo = LegalOperation(
+        op_id="descendant-only",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("subsection", "1"),)),
+    )
+
+    skip = classify_legal_operation_conversion_skip(lo)
+
+    assert skip is not None
+    assert skip.reason_code == "ELAB.UNSUPPORTED_DESCENDANT_ONLY_TARGET"
+    assert AmendmentOp.from_lo(lo, 0) == []
 
 
 def get_johtolause(*args: Any, **kwargs: Any) -> Any:

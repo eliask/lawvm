@@ -397,7 +397,9 @@ def clause_ast_from_amendment_ops(ops: list[AmendmentOp]) -> ClauseAST:
                     pass  # fall through to direct construction
 
             # Direct construction from AmendmentOp fields
-            addr_kind = _TARGET_UNIT_KIND_TO_ADDR.get(op.target_unit_kind, "section")
+            addr_kind = _TARGET_UNIT_KIND_TO_ADDR.get(op.target_unit_kind)
+            if addr_kind is None:
+                continue
             path: list[tuple[str, str]] = []
             if op.target_part:
                 path.append(("part", op.target_part))
@@ -615,7 +617,10 @@ def build_clause_claims_from_ops(
             witness = op.witness
         elif isinstance(op, AmendmentOp):
             op_type = op.op_type
-            kind = TargetKind.for_leaf_kind(op.target_unit_kind)
+            maybe_kind = TargetKind.for_leaf_kind(op.target_unit_kind)
+            if maybe_kind is None:
+                continue
+            kind = maybe_kind
             number = op.target_section
             chapter = op.target_chapter or ""
             part = op.target_part or ""

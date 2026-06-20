@@ -257,7 +257,7 @@ def _build_destination_address(
             TargetKind.PART: "part",
             TargetKind.NIMIKE: "nimike",
             TargetKind.APPENDIX: "appendix",
-        }.get(kind, "section")
+        }.get(kind)
     elif item:
         dest_kind = "item"
     elif momentti:
@@ -269,7 +269,9 @@ def _build_destination_address(
             TargetKind.PART: "part",
             TargetKind.NIMIKE: "nimike",
             TargetKind.APPENDIX: "appendix",
-        }.get(kind, "section")
+        }.get(kind)
+    if dest_kind is None:
+        return None
 
     effective_label = renumber_dest or source_label
 

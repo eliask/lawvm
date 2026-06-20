@@ -149,7 +149,7 @@ class TargetKind(Enum):
         raise ValueError(f"Unknown kind code: {code!r}")
 
     @classmethod
-    def for_leaf_kind(cls, leaf_kind: str) -> TargetKind:
+    def for_leaf_kind(cls, leaf_kind: str) -> TargetKind | None:
         """Return the structural target kind for one canonical leaf kind."""
         return {
             "section": cls.SECTION,
@@ -159,7 +159,7 @@ class TargetKind(Enum):
             "part": cls.PART,
             "nimike": cls.NIMIKE,
             "appendix": cls.APPENDIX,
-        }.get(leaf_kind, cls.SECTION)
+        }.get(leaf_kind)
 
     def leaf_kind(self) -> str:
         """Return the canonical leaf kind for this structural target kind."""

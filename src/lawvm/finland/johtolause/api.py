@@ -1246,7 +1246,10 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
             path_dict[kind] = label
 
         leaf_kind = target.leaf_kind() if target.path else ""
-        kind = TargetKind.for_leaf_kind(leaf_kind)
+        maybe_kind = TargetKind.for_leaf_kind(leaf_kind)
+        if maybe_kind is None:
+            return
+        kind = maybe_kind
 
         part = path_dict.get("part", "") or scope_part
         chapter = path_dict.get("chapter", "") or scope_chapter

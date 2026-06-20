@@ -24,6 +24,7 @@ from lawvm.finland.johtolause.clause_surface import (
     resolve,
 )
 from lawvm.finland.johtolause.parsed_op_clause_ast import build_clause_ast
+from lawvm.finland.johtolause.surface_model import TargetKind
 from lawvm.finland.johtolause.types import ParsedOp
 from typing import Optional
 
@@ -57,6 +58,10 @@ def _op(
 def _target(*ops: ParsedOp) -> SurfaceTarget:
     """Create a SurfaceTarget batch from one or more ParsedOps."""
     return SurfaceTarget(ops=ops)
+
+
+def test_target_kind_for_leaf_kind_rejects_unknown_leaf_kind() -> None:
+    assert TargetKind.for_leaf_kind("unknown") is None
 
 
 class TestResolveSurfaceBackref:

@@ -448,7 +448,10 @@ def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
         target_unit_kind = "part"
         chapter = None
     else:
-        section, target_unit_kind, chapter = "", "section", None
+        raise ValueError(
+            "LegalOperation target path has no Finland-supported primary unit "
+            f"(part/chapter/section): {tuple(lo.target.path)!r}"
+        )
     sub_val = pd.get("subsection", "")
     special = lo.target.special
     if special == FacetKind.HEADING or str(special) == "heading":
@@ -573,6 +576,19 @@ def classify_legal_operation_conversion_skip(
             target_path=target_path,
             reason_code="ELAB.EMPTY_LEGAL_OPERATION_TARGET",
             message="LegalOperation had an empty target path; no AmendmentOp was emitted.",
+            blocking=True,
+        )
+    if target_kinds.isdisjoint({"part", "chapter", "section"}):
+        return LegalOperationConversionSkip(
+            finding_kind="ELAB.REJECTED_OPERATION",
+            op_id=lo.op_id,
+            action=action,
+            target_path=target_path,
+            reason_code="ELAB.UNSUPPORTED_DESCENDANT_ONLY_TARGET",
+            message=(
+                "LegalOperation target has subsection/item scope without a "
+                "part, chapter, or section anchor; no AmendmentOp was emitted."
+            ),
             blocking=True,
         )
 
@@ -853,7 +869,11 @@ class AmendmentOp:
                 target_unit_kind = unit_kind
                 break
         else:
-            raw_section, path_key, target_unit_kind = "", "section", "section"
+            logging.getLogger("lawvm.finland.ops").debug(
+                "Skipping LegalOperation conversion for %s: no primary target unit",
+                lo.op_id,
+            )
+            return []
 
         sections = _expand_section_range(raw_section) if target_unit_kind == "section" else [raw_section]
         for s_idx, sec in enumerate(sections):
