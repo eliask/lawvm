@@ -194,8 +194,15 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "quantifiers remain). Pre-existing baseline."
     ),
     "src/lawvm/finland/frontend_observations.py": (
-        "Pre-existing baseline: _SAME_LABEL_MOVE_CLAUSE_RE — complex nested "
-        "quantifiers. Pre-existing baseline."
+        "_SAME_LABEL_MOVE_CLAUSE_RE is the grammar-subordinate same-label move "
+        "ANCHOR (Q6 demotion): every quantifier is explicitly bounded "
+        "(\\s{0,8}, \\d{1,4}, [^§]{0,120}), so the pattern is provably linear and "
+        "the adjacent-variable-repeat risks are gone. The residual 'nested "
+        "backtracking quantifiers' flag is the benign-linear false positive "
+        "(bounded x bounded). Move semantics are modelled by "
+        "johtolause/grammar/moves.py; this is observation-only residue for the "
+        "plural 'joista … siirretään N lukuun' coordination the clause grammar "
+        "still declines."
     ),
     "src/lawvm/finland/he_branch_parser.py": (
         "Pre-existing baseline from Finland proposal-branch parsing: anchored "
@@ -254,9 +261,16 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "replace with a structured recognizer when this family is next touched."
     ),
     "src/lawvm/finland/scope.py": (
-        "Pre-existing baseline: _SAME_LABEL_MOVE_CLAUSE_RE and "
-        "_SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE nested+adjacent quantifiers. "
-        "Pre-existing baseline."
+        "_SAME_LABEL_MOVE_CLAUSE_RE and _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE are "
+        "the grammar-subordinate same-label move ANCHORs (Q6 demotion): every "
+        "quantifier is explicitly bounded (\\s{0,8}, \\d{1,4}, [^§]{0,120}), so "
+        "both are provably linear and the adjacent-variable-repeat risks are "
+        "gone. The residual 'nested backtracking quantifiers' flag is the "
+        "benign-linear false positive (bounded x bounded). The move carrier "
+        "(lo.move_clause_target_unit_kind, set by johtolause/grammar/moves.py) "
+        "is the PRIMARY signal in strip_unjustified_chapter_scope_*; these "
+        "anchors are the residue fallback for the plural 'joista … siirretään N "
+        "lukuun' coordination the clause grammar still declines."
     ),
     "src/lawvm/finland/section_resolver.py": (
         "Pre-existing baseline: short EID version-tail helper flagged by nested "
