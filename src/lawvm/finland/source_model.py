@@ -688,6 +688,43 @@ class AmendmentSourceModel:
             != "missing"
         )
 
+    def body_carries_whole_section(
+        self,
+        target_norm: str,
+        *,
+        target_part: str | None = None,
+    ) -> bool:
+        """Return True when the observed body carries a section in any chapter."""
+        return (
+            self.lookup_body_unit(
+                "section",
+                target_norm,
+                target_part=target_part,
+            ).status
+            != "missing"
+        )
+
+    def unique_body_section_chapter(
+        self,
+        target_norm: str,
+        *,
+        target_part: str | None = None,
+    ) -> str | None:
+        """Return the unique chapter wrapper for an observed body section."""
+        lookup = self.lookup_body_unit(
+            "section",
+            target_norm,
+            target_part=target_part,
+        )
+        chapters = {
+            _norm_num_token(unit.chapter_label).removesuffix("luku")
+            for unit in lookup.candidates
+            if unit.chapter_label
+        }
+        if len(chapters) != 1:
+            return None
+        return next(iter(chapters)) or None
+
     def body_section_lookup(
         self,
         target_norm: str,
