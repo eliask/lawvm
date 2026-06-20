@@ -130,3 +130,22 @@ def test_1993_1054_corpus_no_longer_reports_overlapping_permanent() -> None:
     overlap = [v for v in violations if v.kind == "overlapping_permanent"]
     assert overlap == []
     assert products.timeline_version_dedupes
+
+
+def test_2000_256_2024_273_item_repeals_survive_timeline_dedupe() -> None:
+    master = replay_xml_for_test("2000/256", mode="legal_pit", quiet=True)
+    section = next(
+        child
+        for chapter in master.materialized_state.ir.children
+        if chapter.kind is IRNodeKind.CHAPTER and chapter.label == "2"
+        for child in chapter.children
+        if child.kind is IRNodeKind.SECTION and child.label == "5"
+    )
+    text = " ".join(timeline_version_dedupe.irnode_to_text(section).split())
+
+    assert "4) hallintojohtajalla ja viestintäjohtajalla ylempi korkeakoulututkinto" in text
+    assert "7 a) asiantuntijalla korkeakoulututkinto" in text
+    assert "10) tiedottajalla" not in text
+    assert "16) kirjastoamanuenssilla" not in text
+    assert "17) kielenkääntäjällä korkeakoulututkinto tai muu soveltuva tutkinto" in text
+    assert "perehtyneisyys viran tehtäväalaan" in text

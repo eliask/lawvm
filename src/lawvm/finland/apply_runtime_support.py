@@ -24,8 +24,10 @@ from lawvm.core.tree_ops import LabelIndex, Path, default_label_sort_key, normal
 
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.apply_ir_ops import _build_repeal_placeholder_from_label_ir
+from lawvm.finland.apply_ir_ops import _shift_lettered_item_labels_after_repeal
 from lawvm.finland.apply_payload_ops import _find_amend_paragraph
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.johtolause.clause_surface import parse_item_shift_clauses
 from lawvm.finland.labels import leaf_label_identity_key
 from lawvm.finland.scope import _unique_section_chapter, infer_letter_suffix_section_chapter_from_stem_host
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
@@ -1108,9 +1110,19 @@ def _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
 
     live_len = _normalized_snapshot_text_len(live_payload)
     payload_len = _normalized_snapshot_text_len(payload)
+    has_post_repeal_item_shift = any(
+        rop.resolved_post_repeal_item_shift_label
+        for rop in group_rops
+    ) or any(
+        "muuttuvat kohdiksi" in str(
+            rop.resolved_op_source.raw_text if rop.resolved_op_source is not None else ""
+        ).lower()
+        for rop in group_rops
+    )
     complete_owner_should_win = (
         _snapshot_payload_is_complete_owner(payload)
         and not _payload_has_in_place_merge_child(payload)
+        and not has_post_repeal_item_shift
     )
     if live_len <= payload_len or complete_owner_should_win:
         return payload, payload_from_muutos_ir
@@ -2017,9 +2029,12 @@ def _emit_section_snapshot(
     def _drop_expired_temporary_paragraph_children(
         child_path: Path,
         subsection_payload: IRNode,
+        *,
+        preserve_paragraph_labels: set[str] | None = None,
     ) -> IRNode | None:
         if subsection_payload.kind is not IRNodeKind.SUBSECTION:
             return None
+        preserve_labels = preserve_paragraph_labels or set()
         subsection_label = _norm_num_token(child_path[-1][1]) if child_path else ""
         targets_this_subsection = False
         for rop in group_rops:
@@ -2111,6 +2126,9 @@ def _emit_section_snapshot(
             removed = 0
             for child in subsection_payload.children:
                 if child.kind is IRNodeKind.PARAGRAPH and child.label:
+                    if leaf_label_identity_key(child.label) in preserve_labels:
+                        new_children.append(child)
+                        continue
                     child_text = _norm_paragraph_body_text(child)
                     expired_overlay_child = child_text in expired_paragraph_texts
                     if (
@@ -2364,6 +2382,11 @@ def _emit_section_snapshot(
         renumber_destinations: dict[str, str] = {}
         whole_subsection_targets: set[str] = set()
         has_insert = False
+        has_item_scoped_ops = any(
+            rop.resolved_target_subsection_label is not None
+            and rop.resolved_target_item_label is not None
+            for rop in section_group_rops
+        )
         for rop in section_group_rops:
             if rop.effective_target_special in {"otsikko", "otsikko_edella"}:
                 continue
@@ -2388,19 +2411,26 @@ def _emit_section_snapshot(
                     whole_subsection_targets.add(destination_label)
                 continue
             if rop.is_repeal_action:
-                if not (
+                if (
                     rop.resolved_target_subsection_label is not None
                     and rop.resolved_target_item_label is not None
                 ):
+                    target_label = _norm_num_token(
+                        str(rop.resolved_target_subsection_label or "").strip()
+                    )
+                    item_label = _normalize_snapshot_item_label(str(rop.resolved_target_item_label or "").strip())
+                    if not target_label or not item_label:
+                        return None
+                    repealed_item_labels_by_subsection.setdefault(target_label, set()).add(item_label)
+                    continue
+                if has_item_scoped_ops and rop.targets_subsection_only():
+                    # Whole-subsection repeals are emitted as explicit child
+                    # tombstones after the section snapshot. They must not make
+                    # item-scoped sibling payloads fall back to the stale live
+                    # fold for the whole section.
+                    continue
+                else:
                     return None
-                target_label = _norm_num_token(
-                    str(rop.resolved_target_subsection_label or "").strip()
-                )
-                item_label = _normalize_snapshot_item_label(str(rop.resolved_target_item_label or "").strip())
-                if not target_label or not item_label:
-                    return None
-                repealed_item_labels_by_subsection.setdefault(target_label, set()).add(item_label)
-                continue
             if not (rop.is_insert_action or rop.is_replace_action):
                 return None
             targets_subsection_payload = rop.targets_subsection_only() or (
@@ -3501,6 +3531,42 @@ def _emit_section_snapshot(
         pruned_payload = _drop_shifted_expired_temporary_subsection_payload(tuple(resolved_path), payload)
         if pruned_payload is not None:
             payload = pruned_payload
+    if (
+        payload is not None
+        and target_unit_kind == "section"
+        and payload.kind is IRNodeKind.SECTION
+    ):
+        source_text = op_source.raw_text or ""
+        if "muuttuvat kohdiksi" in source_text.lower():
+            shifted_children: list[IRNode] = []
+            shifted = False
+            for child in payload.children:
+                if child.kind is not IRNodeKind.SUBSECTION or not child.label:
+                    shifted_children.append(child)
+                    continue
+                next_child = child
+                child_label = _norm_num_token(child.label)
+                for clause in parse_item_shift_clauses(source_text):
+                    if _norm_num_token(clause.target_section) != normalized_target_norm:
+                        continue
+                    if str(clause.target_paragraph) != child_label:
+                        continue
+                    if not clause.target_items:
+                        continue
+                    next_child = _shift_lettered_item_labels_after_repeal(
+                        next_child,
+                        clause.target_items[0],
+                    )
+                shifted = shifted or next_child is not child
+                shifted_children.append(next_child)
+            if shifted:
+                payload = IRNode(
+                    kind=payload.kind,
+                    label=payload.label,
+                    text=payload.text,
+                    attrs=dict(payload.attrs),
+                    children=tuple(shifted_children),
+                )
     lo_ops_out.append(
         _LegalOperation(
             op_id=_snapshot_op_id(target_unit_kind, target_norm),
@@ -3565,6 +3631,32 @@ def _emit_section_snapshot(
             and _snapshot_targets_subsection_only(rop)
             and _snapshot_subsection_target_label(rop)
         }
+        explicitly_repealed_paragraph_labels_by_subsection: dict[str, set[str]] = {}
+        explicitly_targeted_paragraph_labels_by_subsection: dict[str, set[str]] = {}
+        source_text_lower = str(op_source.raw_text or "").lower()
+        has_post_repeal_item_shift = "muuttuvat kohdiksi" in source_text_lower
+        for rop in group_rops:
+            subsection_label = str(rop.resolved_target_subsection_label or "").strip()
+            item_label = str(rop.resolved_target_item_label or "").strip()
+            if (
+                subsection_label
+                and item_label
+                and (rop.is_insert_action or rop.is_replace_action)
+            ):
+                explicitly_targeted_paragraph_labels_by_subsection.setdefault(
+                    _norm_num_token(subsection_label),
+                    set(),
+                ).add(leaf_label_identity_key(item_label))
+            if not rop.is_repeal_action:
+                continue
+            if has_post_repeal_item_shift:
+                continue
+            if not subsection_label or not item_label:
+                continue
+            explicitly_repealed_paragraph_labels_by_subsection.setdefault(
+                _norm_num_token(subsection_label),
+                set(),
+            ).add(_normalize_snapshot_item_label(item_label))
         payload_subsection_labels = {
             _norm_num_token(child.label)
             for child in payload.children
@@ -3617,7 +3709,15 @@ def _emit_section_snapshot(
             if child_norm_label in explicitly_repealed_subsection_labels:
                 continue
             child_path = section_path + (("subsection", child.label),)
-            child_payload = _drop_expired_temporary_paragraph_children(child_path, child) or child
+            assert child.label is not None
+            child_payload = _drop_expired_temporary_paragraph_children(
+                child_path,
+                child,
+                preserve_paragraph_labels=explicitly_targeted_paragraph_labels_by_subsection.get(
+                    child_norm_label,
+                    set(),
+                ),
+            ) or child
             child_payload = _inherit_parent_snapshot_ownership_attrs(child_payload, payload)
             child_source = op_source
             for rop in group_rops:
@@ -3675,11 +3775,20 @@ def _emit_section_snapshot(
                     _normalize_snapshot_item_label(grandchild.label)
                     for grandchild in payload_paragraphs
                 }
-                if payload_paragraph_labels:
+                explicitly_repealed_paragraph_labels = (
+                    explicitly_repealed_paragraph_labels_by_subsection.get(
+                        child_norm_label,
+                        set(),
+                    )
+                )
+                payload_paragraph_labels -= explicitly_repealed_paragraph_labels
+                if payload_paragraphs:
                     prior_paragraph_labels = _prior_paragraph_labels_for_subsection(child_path)
                     for paragraph in payload_paragraphs:
                         assert paragraph.label is not None
                         paragraph_label = _normalize_snapshot_item_label(paragraph.label)
+                        if paragraph_label in explicitly_repealed_paragraph_labels:
+                            continue
                         lo_ops_out.append(
                             _LegalOperation(
                                 op_id=(
