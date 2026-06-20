@@ -27,6 +27,7 @@ Group B — adversarial timing for classifiers fixed in A8, A10, A14
 from __future__ import annotations
 
 import ast
+import re
 import time
 from dataclasses import dataclass
 from functools import lru_cache
@@ -42,6 +43,9 @@ from lawvm.core.regex_safety import lawvm_regex_risks
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC_ROOT = _REPO_ROOT / "src" / "lawvm"
+_MODULE_PATTERN_ASSIGNMENT_RE = re.compile(
+    r"(?m)^\s*_[A-Za-z0-9_]*(?:_RE|_PATTERN)\s*="
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +70,7 @@ def _scan_patterns(src_root: Path) -> RegexPatternScan:
             continue  # don't lint the linter itself
         try:
             source = pyfile.read_text()
-            if "_RE" not in source and "_PATTERN" not in source:
+            if _MODULE_PATTERN_ASSIGNMENT_RE.search(source) is None:
                 continue
             tree = ast.parse(source, filename=str(pyfile))
         except Exception:

@@ -54,6 +54,11 @@ _BANNED_IRNODE_ONLY_VALUES = frozenset(
         "appendix",
     }
 )
+_BANNED_IRNODE_ONLY_LITERAL_SNIPPETS = frozenset(
+    f"{quote}{value}{quote}"
+    for value in _BANNED_IRNODE_ONLY_VALUES
+    for quote in ("'", '"')
+)
 
 # Precise file:line allowlist for confirmed sites that legitimately use a banned
 # token as a NON-IRNode string kind, OR that live in a file owned by another
@@ -97,7 +102,7 @@ def _scan() -> list[str]:
         try:
             source = pyfile.read_text()
             if ".kind" not in source or not any(
-                token in source for token in _BANNED_IRNODE_ONLY_VALUES
+                snippet in source for snippet in _BANNED_IRNODE_ONLY_LITERAL_SNIPPETS
             ):
                 continue
             tree = ast.parse(source, filename=str(pyfile))
