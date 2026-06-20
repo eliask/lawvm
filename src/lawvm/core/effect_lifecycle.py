@@ -41,6 +41,12 @@ EffectLifecycleEventKind = Literal[
 EffectExpiryConvention = Literal["exclusive_cutoff", "inclusive_valid_until"]
 
 
+def _normalized_source_ref_string(subject: str, value: object) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{subject} must be a string")
+    return value.strip()
+
+
 @dataclass(frozen=True, slots=True)
 class SourceInstrumentRef:
     """Stable identity for a source instrument that declares or modifies effects."""
@@ -52,8 +58,33 @@ class SourceInstrumentRef:
     expires: str = ""
 
     def __post_init__(self) -> None:
-        if not self.instrument_id:
+        instrument_id = _normalized_source_ref_string(
+            "SourceInstrumentRef.instrument_id",
+            self.instrument_id,
+        )
+        if not instrument_id:
             raise ValueError("SourceInstrumentRef.instrument_id must be non-empty")
+        object.__setattr__(self, "instrument_id", instrument_id)
+        object.__setattr__(
+            self,
+            "title",
+            _normalized_source_ref_string("SourceInstrumentRef.title", self.title),
+        )
+        object.__setattr__(
+            self,
+            "enacted",
+            _normalized_source_ref_string("SourceInstrumentRef.enacted", self.enacted),
+        )
+        object.__setattr__(
+            self,
+            "effective",
+            _normalized_source_ref_string("SourceInstrumentRef.effective", self.effective),
+        )
+        object.__setattr__(
+            self,
+            "expires",
+            _normalized_source_ref_string("SourceInstrumentRef.expires", self.expires),
+        )
 
     @classmethod
     def from_operation_source(cls, source: OperationSource) -> "SourceInstrumentRef":
@@ -89,7 +120,30 @@ class SourceProvisionRef:
     def __post_init__(self) -> None:
         if not isinstance(self.instrument, SourceInstrumentRef):
             raise ValueError("SourceProvisionRef.instrument must be a SourceInstrumentRef")
-        object.__setattr__(self, "path", tuple(str(part) for part in self.path if str(part)))
+        path_parts: list[str] = []
+        for part in self.path:
+            if not isinstance(part, str):
+                raise TypeError("SourceProvisionRef.path must contain string parts")
+            if part.strip():
+                path_parts.append(part.strip())
+        object.__setattr__(self, "path", tuple(path_parts))
+        object.__setattr__(
+            self,
+            "span_id",
+            _normalized_source_ref_string("SourceProvisionRef.span_id", self.span_id),
+        )
+        if not isinstance(self.text_excerpt, str):
+            raise TypeError("SourceProvisionRef.text_excerpt must be a string")
+        object.__setattr__(
+            self,
+            "text_excerpt",
+            self.text_excerpt,
+        )
+        object.__setattr__(
+            self,
+            "rule_id",
+            _normalized_source_ref_string("SourceProvisionRef.rule_id", self.rule_id),
+        )
 
     @property
     def witness_id(self) -> str:

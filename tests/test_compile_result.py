@@ -182,6 +182,31 @@ def test_effect_relation_requires_source_witness_and_target_identifier() -> None
     assert relation.target_instrument.instrument_id == "2019/1"
 
 
+def test_effect_source_refs_reject_untyped_identity_fields() -> None:
+    with pytest.raises(TypeError, match="instrument_id"):
+        SourceInstrumentRef(instrument_id=cast(Any, 2020))
+    with pytest.raises(TypeError, match="title"):
+        SourceInstrumentRef(instrument_id="2020/1", title=cast(Any, object()))
+
+    instrument = SourceInstrumentRef(instrument_id=" 2020/1 ")
+    assert instrument.instrument_id == "2020/1"
+
+    with pytest.raises(TypeError, match="path"):
+        SourceProvisionRef(instrument=instrument, path=cast(Any, (1,)))
+    with pytest.raises(TypeError, match="span_id"):
+        SourceProvisionRef(instrument=instrument, span_id=cast(Any, object()))
+    with pytest.raises(TypeError, match="text_excerpt"):
+        SourceProvisionRef(instrument=instrument, text_excerpt=cast(Any, object()))
+
+    witness = SourceProvisionRef(
+        instrument=instrument,
+        path=(" 1 § ",),
+        text_excerpt="  exact witness text  ",
+    )
+    assert witness.path == ("1 §",)
+    assert witness.text_excerpt == "  exact witness text  "
+
+
 def test_canonical_bundle_requires_source_effect_records() -> None:
     with pytest.raises(TypeError, match="source_effects"):
         CanonicalBundle(source_effects=cast(Any, ("not-an-effect",)))
