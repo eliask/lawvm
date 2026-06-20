@@ -79,8 +79,8 @@ from lawvm.finland.legal_surface.clause_segment import (
 )
 from lawvm.finland.legal_surface.tokenize import build_token_tape
 from lawvm.finland.legal_surface.union_ownership_census import (
-    classify_body,
-    union_over_sentence,
+    SentenceUnionAnalysis,
+    analyze_body_union,
 )
 
 # ---------------------------------------------------------------------------
@@ -759,6 +759,15 @@ def _assemble_source_syntax_graph(
     seg_node_id: list[str | None] = _emit_structural_nodes(
         seg_graph, text_hash=text_hash, nodes=nodes, edges=edges
     )
+    tape = token_tape or build_token_tape(statute_id, body)
+    index = clause_index or build_clause_index(statute_id, body, token_tape=tape)
+    body_union = analyze_body_union(
+        statute_id,
+        body,
+        max_examples_per_shape=10_000,
+        token_tape=tape,
+        clause_index=index,
+    )
 
     # ── 2. construction leaves (the family union) ────────────────────────────
     _emit_construction_leaves(
@@ -767,8 +776,7 @@ def _assemble_source_syntax_graph(
         seg_graph=seg_graph,
         seg_node_id=seg_node_id,
         text_hash=text_hash,
-        token_tape=token_tape,
-        clause_index=clause_index,
+        sentence_unions=body_union.sentence_unions,
         nodes=nodes,
         edges=edges,
     )
@@ -787,9 +795,10 @@ def _assemble_source_syntax_graph(
     )
 
     # ── 3 + 4. coverage + residuals (REUSE the L0 ruler) ─────────────────────
-    bucket_counts, family_counts, unowned_shape_counts, unowned_examples, _sents = (
-        classify_body(statute_id, body, max_examples_per_shape=10_000)
-    )
+    bucket_counts = body_union.bucket_counts
+    family_counts = body_union.family_counts
+    unowned_shape_counts = body_union.unowned_shape_counts
+    unowned_examples = body_union.unowned_examples
     coverage = SyntaxCoverage(
         total_tokens=sum(bucket_counts.values()),
         owned_tokens=bucket_counts.get("owned", 0),
@@ -906,8 +915,7 @@ def _emit_construction_leaves(
     seg_graph: SegmentationGraph,
     seg_node_id: list[str | None],
     text_hash: str,
-    token_tape: TokenTape | None = None,
-    clause_index: ClauseIndex | None = None,
+    sentence_unions: tuple[SentenceUnionAnalysis, ...],
     nodes: dict[str, SyntaxNode],
     edges: list[SyntaxEdge],
 ) -> None:
@@ -919,8 +927,7 @@ def _emit_construction_leaves(
     edge). The leaf is contained under its enclosing structural segment when it sits
     inside one.
     """
-    tape = token_tape or build_token_tape(statute_id, body)
-    index = clause_index or build_clause_index(statute_id, body, token_tape=tape)
+    del statute_id
     segment_search_start = 0
     segments = seg_graph.segments
 
@@ -937,10 +944,10 @@ def _emit_construction_leaves(
                 return i
         return None
 
-    for sent in index.sentences:
-        off = sent.char_start
-        seg_text = body[sent.char_start : sent.char_end]
-        su = union_over_sentence(seg_text)
+    for sentence in sentence_unions:
+        off = sentence.char_start
+        seg_text = sentence.text
+        su = sentence.union
         if not su.owners:
             continue
         # Per-family parse kind tags, so a condexc run can be refined to exception.

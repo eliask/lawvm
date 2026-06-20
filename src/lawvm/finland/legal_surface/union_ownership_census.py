@@ -52,7 +52,7 @@ from collections import Counter
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
-from lawvm.core.legal_surface_tokens import Token
+from lawvm.core.legal_surface_tokens import ClauseIndex, Token, TokenTape
 
 # The six family parse entry points. Each takes a span's EXACT text and returns a
 # parse object carrying ``seg_start`` / ``seg_end`` / ``residuals`` (each residual
@@ -398,6 +398,28 @@ class _SentenceUnion:
     typed_residual: list[tuple[int, int]]
 
 
+@dataclass(frozen=True, slots=True)
+class SentenceUnionAnalysis:
+    """One sentence and its already-computed ownership union."""
+
+    char_start: int
+    char_end: int
+    text: str
+    union: _SentenceUnion
+
+
+@dataclass(frozen=True, slots=True)
+class BodyUnionAnalysis:
+    """Body-level union ownership analysis with reusable sentence unions."""
+
+    bucket_counts: Counter[str]
+    family_counts: Counter[str]
+    unowned_shape_counts: Counter[str]
+    unowned_examples: tuple[UnownedSignalSpan, ...]
+    sentence_count: int
+    sentence_unions: tuple[SentenceUnionAnalysis, ...]
+
+
 def union_over_sentence(sentence_text: str) -> _SentenceUnion:
     """Union the six family parsers AND the body-text reference recognizers.
 
@@ -494,21 +516,53 @@ def classify_body(
     over each sentence (offsetting owned spans + cheap-signal spans to body
     coordinates), then walks the tape and buckets each non-whitespace token.
     """
+    analysis = analyze_body_union(
+        statute_id,
+        body,
+        max_examples_per_shape=max_examples_per_shape,
+    )
+    return (
+        analysis.bucket_counts,
+        analysis.family_counts,
+        analysis.unowned_shape_counts,
+        list(analysis.unowned_examples),
+        analysis.sentence_count,
+    )
+
+
+def analyze_body_union(
+    statute_id: str,
+    body: str,
+    *,
+    max_examples_per_shape: int = 3,
+    token_tape: TokenTape | None = None,
+    clause_index: ClauseIndex | None = None,
+) -> BodyUnionAnalysis:
+    """Classify ``body`` and retain the per-sentence union results for reuse."""
     from lawvm.finland.legal_surface.clause_segment import build_clause_index
 
-    tape = build_token_tape(statute_id, body)
-    index = build_clause_index(statute_id, body, token_tape=tape)
+    tape = token_tape or build_token_tape(statute_id, body)
+    index = clause_index or build_clause_index(statute_id, body, token_tape=tape)
 
     # Body-coordinate owner map + typed-residual ranges + cheap-signal spans.
     owners: dict[int, frozenset[str]] = {}
     typed_residual_chars: set[int] = set()
     cheap_spans: list[tuple[int, int, str]] = []
     sentence_count = 0
+    sentence_unions: list[SentenceUnionAnalysis] = []
     for sent in index.sentences:
         sentence_count += 1
         seg_text = body[sent.char_start : sent.char_end]
         off = sent.char_start
         su = union_over_sentence(seg_text)
+        sentence_unions.append(
+            SentenceUnionAnalysis(
+                char_start=sent.char_start,
+                char_end=sent.char_end,
+                text=seg_text,
+                union=su,
+            )
+        )
         for i, fams in su.owners.items():
             owners[off + i] = fams
         for s, e in su.typed_residual:
@@ -558,12 +612,13 @@ def classify_body(
         else:
             bucket_counts["benign"] += 1
 
-    return (
-        bucket_counts,
-        family_counts,
-        unowned_shape_counts,
-        unowned_examples,
-        sentence_count,
+    return BodyUnionAnalysis(
+        bucket_counts=bucket_counts,
+        family_counts=family_counts,
+        unowned_shape_counts=unowned_shape_counts,
+        unowned_examples=tuple(unowned_examples),
+        sentence_count=sentence_count,
+        sentence_unions=tuple(sentence_unions),
     )
 
 
