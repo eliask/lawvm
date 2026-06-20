@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from typing import Callable
 
 from lawvm.corpus_store import CorpusStore
-from lawvm.core.compile_result import SourcePathology, TemporalEvent
+from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.compile_result import SourcePathology
 from lawvm.core.phase_result import Finding
+from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.corpus import _get_corpus_store
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.process_call import ResolvedProcessAmendmentCall
@@ -28,13 +31,17 @@ class ProcessRuntimeContext:
 
     signals: ProcessSignalBuffers
     amendment_temporal_events: list[TemporalEvent]
+    source_effects: list[EffectRef]
+    effect_relations: list[EffectRelation]
+    effect_lifecycle_events: list[EffectLifecycleEvent]
     process_findings: list[Finding]
     compat_failed_ops: list[FailedOp]
     compat_source_pathologies: list[SourcePathology]
     compat_elaboration_observations: list[dict[str, object]]
     compat_sparse_slot_bindings: list[dict[str, object]]
     compat_sparse_leftovers: list[dict[str, object]]
-    commencement_expiry_override_notes: list[dict[str, object]]
+    commencement_expiry_override_notes: list[EffectLifecycleOverride]
+    effect_relation_signals: list[EffectRelationSignal]
     vts_skipped_targets: list[VtsSkippedTarget]
     finding_recorder: ProcessFindingRecorder
     record_process_finding: Callable[..., Finding]
@@ -74,10 +81,14 @@ def build_process_runtime(process_call: ResolvedProcessAmendmentCall) -> Process
             mutation_invariant_reports_out=process_call.mutation_invariant_reports_out,
         ),
         mutation_cursor=len(process_call.mutation_events_out or ()),
+        target_statute=process_call.parent_id,
     )
     return ProcessRuntimeContext(
         signals=signals,
         amendment_temporal_events=signals.amendment_temporal_events,
+        source_effects=signals.source_effects,
+        effect_relations=signals.effect_relations,
+        effect_lifecycle_events=signals.effect_lifecycle_events,
         process_findings=signals.process_findings,
         compat_failed_ops=signals.failed_ops,
         compat_source_pathologies=signals.source_pathologies,
@@ -85,6 +96,7 @@ def build_process_runtime(process_call: ResolvedProcessAmendmentCall) -> Process
         compat_sparse_slot_bindings=signals.sparse_slot_bindings,
         compat_sparse_leftovers=signals.sparse_leftovers,
         commencement_expiry_override_notes=signals.commencement_expiry_override_notes,
+        effect_relation_signals=signals.effect_relation_signals,
         vts_skipped_targets=signals.vts_skipped_targets,
         finding_recorder=finding_recorder,
         record_process_finding=finding_recorder.record,

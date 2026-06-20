@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import datetime as dt
 from contextlib import redirect_stdout
 from io import StringIO
 from typing import cast
@@ -16,17 +17,26 @@ from lawvm.core.ir import LegalAddress
 from lawvm.core.ir import OperationSource
 from lawvm.core.ir import ProvisionTimeline
 from lawvm.core.ir import ProvisionVersion
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    SourceInstrumentRef,
+    SourceProvisionRef,
+)
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.ir import LegalOperation
 from lawvm.core.provenance import MigrationEvent
-from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.finland.apply import apply_op
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_corpus
 from lawvm.finland.metadata import get_johtolause
-from lawvm.finland.kumotaan_replay import _live_suffix_section_labels_for_numeric_kumotaan_ranges
+from lawvm.finland.kumotaan_replay import (
+    _inject_pure_kumotaan_subsection_repeal_ops,
+    _live_suffix_section_labels_for_numeric_kumotaan_ranges,
+)
 from tests.corpus_pin_helpers import replay_xml_for_test
 from lawvm.core.timeline import compile_timelines
 from lawvm.core.timeline import materialize_pit_ex
@@ -40,7 +50,9 @@ from lawvm.finland.replay_products import _FI_SOURCELESS_BASE_MERGE_CLEANUP_RULE
 from lawvm.finland.replay_products import _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR
 from lawvm.finland.replay_products import _cleanup_sourceless_base_merge_conflicts
 from lawvm.finland.replay_products import _reconcile_materialized_fold_hcontainer_sections
+from lawvm.finland.replay_products import _restore_replay_fold_repeal_placeholders
 from lawvm.finland.replay_products import _rekey_timelines_with_migration_events
+from lawvm.finland.replay_products import _renumber_source_prefix_may_match_cached
 from lawvm.finland.replay_products import _classify_finland_lineage_bridge
 from lawvm.finland.replay_products import _select_pit_lineage_inputs
 from lawvm.finland.replay_products import _temporal_events_from_lo_ops
@@ -49,6 +61,7 @@ from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
 from lawvm.finland.replay_products import project_materialized_provisions_wrapper
 from lawvm.finland.replay_products import validate_replay_products
 from lawvm.finland.replay_fold_projection import ReplayFoldProjectionRequest, project_replay_fold
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.core.timeline_addresses import _retarget_root_node
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from tests.corpus_pin_helpers import pinned_replay
@@ -68,12 +81,28 @@ def replay_1999_488_legal_pit() -> ReplayResult:
 
 @pytest.fixture(scope="module")
 def replay_2012_916_finlex_oracle() -> ReplayResult:
-    return cast(ReplayResult, pinned_replay("2012/916", mode="official_consolidation", quiet=True))
+    return cast(
+        ReplayResult,
+        pinned_replay(
+            "2012/916",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
 def replay_2014_1429_finlex_oracle() -> ReplayResult:
-    return cast(ReplayResult, pinned_replay("2014/1429", mode="official_consolidation", quiet=True))
+    return cast(
+        ReplayResult,
+        pinned_replay(
+            "2014/1429",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -88,7 +117,15 @@ def replay_2009_953_legal_pit() -> ReplayResult:
 
 @pytest.fixture(scope="module")
 def replay_1992_552_finlex_oracle() -> ReplayResult:
-    return cast(ReplayResult, pinned_replay("1992/552", mode="official_consolidation", quiet=True))
+    return cast(
+        ReplayResult,
+        pinned_replay(
+            "1992/552",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -98,7 +135,28 @@ def replay_2014_938_finlex_oracle() -> ReplayResult:
 
 @pytest.fixture(scope="module")
 def replay_1965_40_finlex_oracle() -> ReplayResult:
-    return cast(ReplayResult, pinned_replay("1965/40", mode="official_consolidation", quiet=True))
+    return cast(
+        ReplayResult,
+        pinned_replay(
+            "1965/40",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
+
+
+@pytest.fixture(scope="module")
+def replay_1929_234_finlex_oracle() -> ReplayResult:
+    return cast(
+        ReplayResult,
+        pinned_replay(
+            "1929/234",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -313,6 +371,51 @@ def test_project_materialized_provisions_wrapper_unwraps_direct_sections_without
         IRNodeKind.SECTION,
     ]
     assert [child.label for child in projected.children] == ["1", "2"]
+
+
+def test_restore_replay_fold_repeal_placeholders_preserves_editorial_notice_slots() -> None:
+    replay_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1", "lawvm_restore_materialized_stale_item_slot": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3)"),),
+    )
+    unmarked_replay_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3)"),),
+    )
+    materialized_notice = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3 kohta on kumottu L:lla 16.1.2026/45."),),
+    )
+    materialized_stale = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3) stale substantive text"),),
+    )
+    materialized_parent_missing = IRNode(kind=IRNodeKind.SUBSECTION, label="1")
+    replay_parent_with_missing_placeholder = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(replay_placeholder,),
+    )
+
+    assert _restore_replay_fold_repeal_placeholders(materialized_notice, replay_placeholder) is materialized_notice
+    assert (
+        _restore_replay_fold_repeal_placeholders(materialized_stale, unmarked_replay_placeholder)
+        is materialized_stale
+    )
+    restored = _restore_replay_fold_repeal_placeholders(materialized_stale, replay_placeholder)
+    projected_parent = _restore_replay_fold_repeal_placeholders(
+        materialized_parent_missing,
+        replay_parent_with_missing_placeholder,
+    )
+
+    assert restored is replay_placeholder
+    assert projected_parent is materialized_parent_missing
 
 
 def test_project_materialized_provisions_wrapper_reparents_eid_sections_to_chapters() -> None:
@@ -610,6 +713,95 @@ def test_replay_xml_1987_1250_chapter_scoped_kumotaan_repeals_right_section() ->
     assert " ".join(irnode_to_text(untouched).split()).startswith("5 d § Pääomalainalle")
 
 
+def test_replay_xml_2011_806_pure_kumotaan_subsection_keeps_chapter_scope() -> None:
+    """2025/1104 repeals 8 luvun 21 §:n 3 momentti, not chapter 3's §21."""
+    lo_ops: list[LegalOperation] = []
+    replay = replay_xml_for_test(
+        "2011/806",
+        mode="legal_pit",
+        quiet=True,
+        lo_ops_out=lo_ops,
+        as_of="2026-01-01",
+    )
+
+    pure_ops = [
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2025/1104"
+        and op.op_id.startswith("pure_subsec_repeal_21_3_")
+    ]
+    assert len(pure_ops) == 1
+    assert pure_ops[0].target == LegalAddress(
+        path=(("chapter", "8"), ("section", "21"), ("subsection", "3"))
+    )
+    assert pure_ops[0].payload is not None
+    assert pure_ops[0].payload.attrs.get("lawvm_repeal_placeholder") == "1"
+
+    chapter_3_section_21 = replay.materialized_state.find_section("21", "3")
+    assert chapter_3_section_21 is not None
+    chapter_3_subsection_3 = next(
+        child
+        for child in chapter_3_section_21.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "3"
+    )
+    assert chapter_3_subsection_3.attrs.get("lawvm_repeal_placeholder") is None
+    assert replay.materialized_state.find_section("21", "8") is not None
+
+
+def test_pure_kumotaan_subsection_injection_skips_unscoped_duplicate_sections() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="21",
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="3"),),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="8",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="21",
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="3"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    lo_ops: list[LegalOperation] = []
+    result = _inject_pure_kumotaan_subsection_repeal_ops(
+        lo_ops,
+        amendment_id="2025/1104",
+        source_title="",
+        kumotaan_subsection_map={"21": ["3"]},
+        amendment_effective_date=dt.date(2025, 12, 15),
+        state=ReplayState(ir=body),
+        source_raw_text="kumotaan 21 §:n 3 momentti",
+    )
+
+    assert result.injected_count == 0
+    assert lo_ops == []
+    assert len(result.skipped_targets) == 1
+    skipped = result.skipped_targets[0]
+    assert skipped.reason == "ambiguous_duplicate_section_label_without_source_scope"
+    assert skipped.section_label == "21"
+    assert skipped.subsection_labels == ("3",)
+    assert {address.path for address in skipped.candidate_paths} == {
+        (("chapter", "3"), ("section", "21")),
+        (("chapter", "8"), ("section", "21")),
+    }
+
+
 def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None:
     replay_meta: dict[str, object] = {}
     replay = replay_xml_for_test("1998/132", mode="legal_pit", quiet=True, replay_meta_out=replay_meta)
@@ -691,6 +883,16 @@ def test_build_amendment_bundle_2002_1000_does_not_collapse_dotted_kohta_repeal_
     bundle = build_amendment_bundle("2002/1000", "2007/180", "official_consolidation")
     all_ops = [op for group in bundle["groups"] for op in group["ops_final"]]
     assert "REPEAL 1 §" not in all_ops
+
+
+def test_build_amendment_bundle_1954_243_routes_selaisena_typo_provenance() -> None:
+    bundle = build_amendment_bundle("1954/243", "1978/676", "official_consolidation")
+
+    assert bundle["route"]["should_apply"] is True
+    assert bundle["route"]["reason"] == "references_parent"
+
+    all_ops = [op for group in bundle["groups"] for op in group["ops_final"]]
+    assert all_ops == ["REPLACE 1 luku 11 § 2 mom 1 kohta"]
 
 
 def test_replay_xml_2002_1000_keeps_section_1_after_dotted_kohta_repeal_clause() -> None:
@@ -795,6 +997,29 @@ def test_replay_xml_2000_755_applies_2018_945_to_cited_pending_version_paths() -
     assert root_30b is None or select_active_version(root_30b, "2020-01-02") is None
 
 
+def test_replay_xml_2005_623_applies_2018_947_after_separate_commencement_law() -> None:
+    replay = replay_xml_for_test("2005/623", mode="legal_pit", quiet=True, as_of="2026-01-01")
+    section = replay.materialized_state.find_section("2")
+
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "Liikenne- ja viestintävirastoa" in text
+    assert "Väylävirastoa" in text
+    assert "Liikenteen turvallisuusvirastoa" not in text
+
+    resolved = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "TIME.RESOLVED_CONTINGENT_EFFECTIVE_DATE"
+        and finding.source_statute == "2018/947"
+    ]
+    assert resolved
+    assert resolved[0].detail.get("target_amendment") == "2018/947"
+    assert resolved[0].detail.get("effective_date") == "2019-01-01"
+    assert resolved[0].detail.get("witness_statute") == "2018/937"
+    assert resolved[0].detail.get("witness_ref") == "2018/937/1"
+
+
 def test_replay_xml_2011_1552_composes_pending_amendment_children() -> None:
     replay = pinned_replay("2011/1552", mode="official_consolidation", quiet=True)
 
@@ -861,9 +1086,10 @@ def test_replay_xml_1940_378_keeps_voimaantulo_section_under_chapter_7_after_199
     assert replay.materialized_state.find_section("73") is None
 
 
-def test_replay_xml_1929_234_materializes_part_v_after_2001_1226() -> None:
-    replay = pinned_replay("1929/234", mode="official_consolidation", quiet=True)
-
+def test_replay_xml_1929_234_materializes_part_v_after_2001_1226(
+    replay_1929_234_finlex_oracle: ReplayResult,
+) -> None:
+    replay = replay_1929_234_finlex_oracle
     sec109 = replay.materialized_state.find_section("109", chapter_num="1", part_num="5")
     sec110 = replay.materialized_state.find_section("110", chapter_num="1", part_num="5")
     sec111 = replay.materialized_state.find_section("111", chapter_num="1", part_num="5")
@@ -884,10 +1110,11 @@ def test_replay_xml_1929_234_materializes_part_v_after_2001_1226() -> None:
     assert "Tarkemmat säännökset tämän osan täytäntöönpanosta" in " ".join(irnode_to_text(sec142).split())
 
 
-def test_replay_xml_1929_234_part_v_rebirth_does_not_repeal_unrelated_part_chapters() -> None:
+def test_replay_xml_1929_234_part_v_rebirth_does_not_repeal_unrelated_part_chapters(
+    replay_1929_234_finlex_oracle: ReplayResult,
+) -> None:
     """2001/1226 inserts part V; same-numbered chapters in parts II/IV must survive."""
-    replay = pinned_replay("1929/234", mode="official_consolidation", quiet=True)
-
+    replay = replay_1929_234_finlex_oracle
     sec46 = replay.materialized_state.find_section("46", chapter_num="4", part_num="2")
     assert sec46 is not None
     sec46_text = " ".join(irnode_to_text(sec46).split())
@@ -1399,6 +1626,7 @@ def test_replay_xml_1978_38_section_12_1_full_replace_does_not_preserve_stale_li
     assert "Kiinteistönvälittäjän vastuusta on voimassa" in text
 
 
+@pytest.mark.slow
 def test_replay_xml_1978_38_preserves_chapter_12_sections_1a_and_1b_alongside_new_chapter_7_1a() -> None:
     replay = pinned_replay("1978/38", mode="official_consolidation", quiet=True)
 
@@ -1564,7 +1792,7 @@ def test_normalize_and_compile_ops_2007_626_rejects_single_payload_fallback_reus
     assert any(
         finding.kind == "ELAB.REJECTED_OPERATION"
         and finding.detail.get("reason_code") == "ELAB.FALLBACK_INSERT_SINGLE_PAYLOAD_ALREADY_OWNED"
-        and finding.detail.get("description") == "INSERT 4 § 6 mom"
+        and finding.detail.get("description") == "INSERT 2 luku 4 § 6 mom"
         for finding in phase2.finding_ledger
     )
 
@@ -2017,6 +2245,155 @@ def test_fold_timeline_backfill_reuses_preview_timelines_when_no_backfills(monke
     assert products.materialized_state.find_section("1") is not None
 
 
+def test_build_replay_products_reuses_static_lo_preparation_cache(monkeypatch) -> None:
+    import lawvm.finland.replay_products as replay_products_mod
+
+    base_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="base"),),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="synthetic/static-lo-prep-cache",
+        title="Synthetic static LO prep cache",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+    source = OperationSource(
+        statute_id="2020/1",
+        title="Synthetic insert",
+        enacted="2020-01-01",
+        effective="2020-01-01",
+        raw_text="lisätään 1 §:n 1 kohta, sellaisena kuin se on laissa 1/2020",
+    )
+    lo_ops = [
+        LegalOperation(
+            op_id="insert_section_2",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(
+                kind=IRNodeKind.SECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="inserted"),),
+            ),
+            source=source,
+        )
+    ]
+    real_drop = replay_products_mod._drop_cited_version_item_ancestor_snapshots
+    drop_calls = 0
+
+    def counting_drop(ops):
+        nonlocal drop_calls
+        drop_calls += 1
+        return real_drop(ops)
+
+    monkeypatch.setattr(
+        replay_products_mod,
+        "_drop_cited_version_item_ancestor_snapshots",
+        counting_drop,
+    )
+    cache: dict[object, object] = {}
+
+    for as_of in ("2020-01-01", "2021-01-01"):
+        products = build_replay_products(
+            ctx=ctx,
+            statute_id=ctx.id,
+            replay_fold_state=ReplayState(ir=base_body),
+            lo_ops_out=lo_ops,
+            as_of=as_of,
+            fold_backfill_preview_cache=cache,
+        )
+        assert products.materialized_state.find_section("1") is not None
+
+    assert drop_calls == 1
+
+
+def test_build_replay_products_reuses_static_temporal_and_base_date_cache(monkeypatch) -> None:
+    import lawvm.finland.metadata as metadata_mod
+    import lawvm.finland.replay_products as replay_products_mod
+
+    base_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="base"),),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="synthetic/static-temporal-cache",
+        title="Synthetic static temporal cache",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+    source = OperationSource(
+        statute_id="2020/1",
+        title="Synthetic temporary insert",
+        enacted="2020-01-01",
+        effective="2020-01-01",
+        expires="2021-01-01",
+    )
+    lo_ops = [
+        LegalOperation(
+            op_id="insert_section_2",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(
+                kind=IRNodeKind.SECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="inserted"),),
+            ),
+            source=source,
+            group_id="synthetic-temporary-insert",
+        )
+    ]
+    temporal_calls = 0
+    issue_date_calls = 0
+    real_temporal_events_from_lo_ops = replay_products_mod._temporal_events_from_lo_ops
+
+    def counting_temporal_events_from_lo_ops(*args, **kwargs):
+        nonlocal temporal_calls
+        temporal_calls += 1
+        return real_temporal_events_from_lo_ops(*args, **kwargs)
+
+    def counting_statute_issue_date(tree):
+        nonlocal issue_date_calls
+        issue_date_calls += 1
+        return None
+
+    monkeypatch.setattr(
+        replay_products_mod,
+        "_temporal_events_from_lo_ops",
+        counting_temporal_events_from_lo_ops,
+    )
+    monkeypatch.setattr(metadata_mod, "_statute_issue_date", counting_statute_issue_date)
+    cache: dict[object, object] = {}
+
+    for as_of in ("2020-06-01", "2020-12-31"):
+        products = build_replay_products(
+            ctx=ctx,
+            statute_id=ctx.id,
+            replay_fold_state=ReplayState(ir=base_body),
+            lo_ops_out=lo_ops,
+            as_of=as_of,
+            expires_as_of=as_of,
+            fold_backfill_preview_cache=cache,
+        )
+        assert products.materialized_state.find_section("1") is not None
+
+    assert temporal_calls == 1
+    assert issue_date_calls == 1
+
+
 @pytest.mark.slow
 def test_replay_xml_2017_320_emits_relabel_section_snapshots_at_live_paths() -> None:
     """2019/371 section relabels must snapshot at live IR paths, not amendment frames."""
@@ -2206,7 +2583,10 @@ def test_replay_xml_expires_2018_11_temporary_content_before_later_permanent_mer
     """Later permanent sparse merges must not bake expired 2021/513 content in."""
     replay = pinned_replay("2018/11", mode="legal_pit", quiet=True)
 
-    for state in (replay.replay_fold_state, replay.materialized_state):
+    # Expired temporary overlays are a PIT/product obligation.  The replay fold
+    # is the raw mutation fold and may still carry expired overlay residue until
+    # timeline materialization selects the in-force version.
+    for state in (replay.materialized_state,):
         sec25 = state.find_section("25", "4")
         assert sec25 is not None
         sec25_mom1 = next(
@@ -2375,7 +2755,7 @@ def test_replay_xml_applies_2025_1162_21c_then_22a_sequentially_without_staling_
     resolved = compile_amendment_ops(
         base_replay.replay_fold_state,
         phase2.output,
-        muutos_tree,
+        AmendmentSourceModel.from_tree(muutos_tree, source_ref="2025/1162"),
         johto,
         "legal_pit",
         source_ref="2025/1162",
@@ -3628,6 +4008,62 @@ def test_materialize_pit_keeps_non_zero_day_repeal_placeholder_visible_under_det
     assert section.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
+def test_materialize_pit_drops_marked_future_repeal_under_detached_horizon() -> None:
+    def _find_section(node: IRNode, label: str) -> IRNode | None:
+        for child in node.children:
+            if child.kind is IRNodeKind.SECTION and child.label == label:
+                return child
+            found = _find_section(child, label)
+            if found is not None:
+                return found
+        return None
+
+    base = IRStatute(
+        statute_id="test/future-repeal-detached",
+        title="Future repeal under detached horizon",
+        body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="19", text="Base 19 §"),)),
+    )
+    addr = LegalAddress(path=(("section", "19"),))
+    timelines = {
+        addr: ProvisionTimeline(
+            address=addr,
+            versions=[
+                ProvisionVersion(
+                    effective="0000-00-00",
+                    enacted="0000-00-00",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="19", text="Base 19 §"),
+                ),
+                ProvisionVersion(
+                    effective="2006-01-01",
+                    enacted="2005-11-11",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="19",
+                        attrs={
+                            "lawvm_repeal_placeholder": "1",
+                            _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR: "1",
+                        },
+                    ),
+                    source=OperationSource(
+                        statute_id="2005/886",
+                        enacted="2005-11-11",
+                        effective="2006-01-01",
+                    ),
+                ),
+            ],
+        )
+    }
+
+    pit = materialize_pit(
+        timelines,
+        "2006-01-01",
+        base=base,
+        expires_as_of="2005-11-11",
+    )
+
+    assert _find_section(pit.body, "19") is None
+
+
 def test_build_replay_products_accepts_temporal_events_for_materialization() -> None:
     ctx = StatuteContext(
         id="test/temporal-products",
@@ -3679,6 +4115,70 @@ def test_build_replay_products_accepts_temporal_events_for_materialization() -> 
     assert products.temporal_events[0].source is not None
     assert products.temporal_events[0].source.statute_id == "test/temporal-products:source"
     assert products.temporal_events[0].source.effective == "2010-01-01"
+    active = products.timelines[LegalAddress(path=(("section", "1"),))].versions[-1]
+    assert active.effective == "2010-01-01"
+    assert products.materialized_state.ir.children[0].text == "Updated"
+
+
+def test_build_replay_products_accepts_lifecycle_events_for_materialization() -> None:
+    ctx = StatuteContext(
+        id="test/lifecycle-products",
+        title="Lifecycle replay products",
+        base_ir=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Base"),)),
+        base_xml_bytes=b"<body/>",
+    )
+    replay_fold_state = ReplayState(ir=copy.deepcopy(ctx.base_ir))
+    lo_ops = [
+        LegalOperation(
+            op_id="replace_1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Updated"),
+            group_id="g:fi-lifecycle-replay",
+            source=OperationSource(
+                statute_id="2010/100",
+                enacted="2005-01-01",
+            ),
+        )
+    ]
+    instrument = SourceInstrumentRef(
+        instrument_id="2011/200",
+        effective="2010-01-01",
+    )
+    witness = SourceProvisionRef(
+        instrument=instrument,
+        path=("voimaantulo",),
+        text_excerpt="Tulee voimaan 1.1.2010.",
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="life:2011/200:replace_1:commence",
+        kind="change_effect_commencement",
+        source_provision=witness,
+        effect=EffectRef(
+            effect_id="effect:2010/100:replace_1",
+            source_instrument=SourceInstrumentRef(instrument_id="2010/100"),
+            target_statute="test/lifecycle-products",
+            target_address=LegalAddress(path=(("section", "1"),)),
+            projection_group_id="g:fi-lifecycle-replay",
+        ),
+        effective="2010-01-01",
+        executable=True,
+    )
+
+    products = build_replay_products(
+        ctx=ctx,
+        statute_id="test/lifecycle-products",
+        replay_fold_state=replay_fold_state,
+        lo_ops_out=lo_ops,
+        as_of="2011-01-01",
+        effect_lifecycle_events=(lifecycle,),
+    )
+
+    assert products.timelines is not None
+    assert len(products.temporal_events) == 1
+    assert products.temporal_events[0].event_id == "life:2011/200:replace_1:commence:temporal"
+    assert products.temporal_events[0].group_id == "g:fi-lifecycle-replay"
     active = products.timelines[LegalAddress(path=(("section", "1"),))].versions[-1]
     assert active.effective == "2010-01-01"
     assert products.materialized_state.ir.children[0].text == "Updated"
@@ -3863,6 +4363,35 @@ def test_rekey_timelines_prefers_destination_native_lineage_over_migrated_source
     assert len(destination_versions) == 1
     assert destination_versions[0].content is not None
     assert destination_versions[0].content.text == "159 § native lineage"
+
+
+def test_renumber_source_prefix_predicate_reuses_cached_normalized_path(monkeypatch) -> None:
+    import lawvm.finland.migration_ledger as migration_ledger
+
+    calls = 0
+    real_normalize_address_path = migration_ledger.normalize_address_path
+
+    def counted_normalize_address_path(path):
+        nonlocal calls
+        calls += 1
+        return real_normalize_address_path(path)
+
+    path = (("part", "III"), ("chapter", "2"), ("section", "5"))
+    renumber_sources = frozenset({(("part", "3"),)})
+    _renumber_source_prefix_may_match_cached.cache_clear()
+    real_normalize_address_path.cache_clear()
+    monkeypatch.setattr(
+        migration_ledger,
+        "normalize_address_path",
+        counted_normalize_address_path,
+    )
+    try:
+        assert _renumber_source_prefix_may_match_cached(path, renumber_sources)
+        assert _renumber_source_prefix_may_match_cached(tuple(path), renumber_sources)
+        assert calls == 1
+    finally:
+        _renumber_source_prefix_may_match_cached.cache_clear()
+        real_normalize_address_path.cache_clear()
 
 
 def test_rekey_timelines_walks_migration_chains_across_distinct_waves_regardless_of_input_order() -> None:
@@ -5375,6 +5904,7 @@ def test_replay_xml_2004_301_has_no_orphan_bare_86b_timeline_after_repeal() -> N
     assert bare_addr not in replay.products.timelines
 
 
+@pytest.mark.slow
 def test_replay_xml_2004_301_section_142_item_three_has_no_duplicate_kohta_marker() -> None:
     """§142 2 mom 3 kohta must not carry a redundant ``3)`` body prefix.
 

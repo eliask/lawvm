@@ -18,6 +18,7 @@ from __future__ import annotations
 from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction, TextPatchSpec, TextSelector
 
 import datetime as dt
+import sys
 from types import SimpleNamespace
 from typing import Any, Iterable, List, Optional, cast
 from unittest.mock import patch
@@ -34,7 +35,7 @@ from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import ReplayLookups, TargetContext, snapshot_target_context
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
-from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.compile_amendment import compile_amendment_ops as _real_compile_amendment_ops
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 from lawvm.finland.process_pipeline import process_muutoslaki
@@ -45,6 +46,7 @@ from lawvm.finland.process_call import ResolvedProcessAmendmentCall
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.group_ops import (
     remap_body_root_replace_group_before_terminal_voimaantulo,
     sort_group_ops_for_apply,
@@ -55,6 +57,23 @@ from lawvm.finland.payload_normalize import (
 )
 from lawvm.finland.statute import ReplayState, StatuteContext, _serialize_text_node
 from lawvm.finland.helpers import _fi_label_postprocessor
+
+
+def compile_amendment_ops(*args: Any, **kwargs: Any) -> Any:
+    if "muutos_tree" in kwargs:
+        tree = kwargs.pop("muutos_tree")
+        kwargs["source_model"] = AmendmentSourceModel.from_tree(
+            tree,
+            source_ref=str(kwargs.get("source_ref", "") or ""),
+        )
+    elif len(args) >= 3 and not isinstance(args[2], AmendmentSourceModel):
+        patched_args = list(args)
+        patched_args[2] = AmendmentSourceModel.from_tree(
+            args[2],
+            source_ref=str(kwargs.get("source_ref", "") or ""),
+        )
+        args = tuple(patched_args)
+    return _real_compile_amendment_ops(*args, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +274,23 @@ def test_call_replay_xml_legacy_fallback_propagates_sinks() -> None:
         "compiled_ops_out": compiled_ops,
         "failed_ops_out": failed_ops,
     }
+
+
+def test_call_replay_xml_quiet_suppresses_stdout_and_stderr(capsys) -> None:
+    def fake_replay_xml(sid: str, *, mode: str, quiet: bool = False) -> str:
+        print("REPLACE 10 luku otsikko -> FAILED")
+        print("COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED", file=sys.stderr)
+        return f"{sid}:{mode}:{quiet}"
+
+    result = call_replay_xml(
+        fake_replay_xml,
+        request=ReplayXmlRequest(parent_id="2000/1", mode="legal_pit", quiet=True),
+    )
+
+    captured = capsys.readouterr()
+    assert result == "2000/1:legal_pit:True"
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 def test_call_replay_xml_legacy_fallback_filters_fake_signature() -> None:
@@ -2136,7 +2172,7 @@ class TestCompileAmendmentOps:
         sinks = seen["sinks"]
         assert isinstance(request, CompileGroupRequest)
         assert request.master is master
-        assert request.muutos_tree is muutos_tree
+        assert request.source_model.muutos_tree is muutos_tree
         assert request.johto == "muutetaan 3 §"
         assert request.lookups is not None
         assert request.target_norm == "3"
@@ -2425,7 +2461,7 @@ def apply_ops_to_tree(
             ctx=ctx,
             resolved=resolved,
             ops=ops,
-            muutos_tree=muutos_tree,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
             johto=johto,
             amendment_id=amendment_id,
             source_title=source_title,
@@ -2554,7 +2590,7 @@ class TestApplyOpsToTree:
                 ctx=ctx,
                 resolved=[],
                 ops=[],
-                muutos_tree=muutos_tree,
+                source_model=AmendmentSourceModel.from_tree(muutos_tree),
                 johto="",
                 amendment_id="2010/100",
                 source_title="Laki",

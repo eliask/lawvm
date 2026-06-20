@@ -52,6 +52,10 @@ _PURE_DIGIT_LABEL_RE = re.compile(r"^\d+$")
 _PURE_ALPHA_LABEL_RE = re.compile(r"^[A-Za-z]+$")
 _PURE_ROMAN_LABEL_RE = re.compile(r"^[IVXLCDMivxlcdm]+$")
 _SPACE_BEFORE_PUNCTUATION_RE = re.compile(r"\s+([.,;:])")
+_FS_DIGIT_LABEL_RE = re.compile(r"^\d+[a-zA-Z]?$")
+_FS_ROMAN_LABEL_RE = re.compile(r"^[ivxlcdm]+$", re.IGNORECASE)
+_FS_ALPHA_LABEL_RE = re.compile(r"^[a-zA-Z]+\d*$")
+_FS_ORDINAL_DIGITS_RE = re.compile(r"(\d+)")
 
 
 def _match_label(node_label: Optional[str], target: str) -> bool:
@@ -263,6 +267,8 @@ def normalize_text(tree: IRNode) -> IRNode:
 
 PathStep: TypeAlias = TreePathStep
 Path: TypeAlias = TreePath  # ((kind, label), ...)
+_NormalizedPathStep: TypeAlias = Tuple[str, str]
+_NormalizedPath: TypeAlias = Tuple[_NormalizedPathStep, ...]
 LabelIndex = Dict[PathStep, List[Path]]
 
 InvariantPathStep = Tuple[str, Optional[str]]
@@ -324,6 +330,36 @@ def build_label_index(
             if child.label and (indexed_kinds is None or child_kind in indexed_kinds):
                 key = (child_kind, _norm(child.label))
                 index.setdefault(key, []).append(path)
+            _walk(child, path)
+
+    _walk(tree, ())
+    return index
+
+
+def build_provision_label_index(
+    tree: IRNode,
+    *,
+    indexed_kinds: FrozenSet[str] = frozenset({"part", "chapter", "section"}),
+    terminal_kinds: FrozenSet[str] = frozenset({"section"}),
+) -> LabelIndex:
+    """Build a sparse provision-container label index.
+
+    This is for hot paths that only resolve provision containers.  Sections are
+    terminal for this index, so subsection/paragraph/item descendants are not
+    walked merely to discover that their kinds are not indexed.
+    """
+    index: LabelIndex = {}
+
+    def _walk(node: IRNode, prefix: Path) -> None:
+        for child in node.children:
+            child_kind = _kind_str(child.kind)
+            step = (child_kind, child.label or "")
+            path = prefix + (step,)
+            if child.label and child_kind in indexed_kinds:
+                key = (child_kind, _norm(child.label))
+                index.setdefault(key, []).append(path)
+            if child_kind in terminal_kinds:
+                continue
             _walk(child, path)
 
     _walk(tree, ())
@@ -426,6 +462,25 @@ def find_unique(
     return matches[0]
 
 
+def _resolve_from_path(
+    tree: IRNode,
+    path: _NormalizedPath,
+    depth: int,
+    path_len: int,
+) -> Optional[IRNode]:
+    kind, label_key = path[depth]
+    leaf_depth = path_len - 1
+    for child in tree.children:
+        if _kind_str(child.kind) != kind or _norm(child.label or "") != label_key:
+            continue
+        if depth == leaf_depth:
+            return child
+        resolved = _resolve_from_path(child, path, depth + 1, path_len)
+        if resolved is not None:
+            return resolved
+    return None
+
+
 def resolve(tree: IRNode, path: Sequence[PathStep]) -> Optional[IRNode]:
     """Find the node at path, or None if not found.
 
@@ -436,16 +491,8 @@ def resolve(tree: IRNode, path: Sequence[PathStep]) -> Optional[IRNode]:
     if not path:
         return tree
 
-    kind, label = path[0]
-    for child in tree.children:
-        if not _kind_matches(child.kind, kind) or not _match_label(child.label, label):
-            continue
-        if len(path) == 1:
-            return child
-        resolved = resolve(child, path[1:])
-        if resolved is not None:
-            return resolved
-    return None
+    normalized_path = tuple((_kind_str(kind), _norm(label)) for kind, label in path)
+    return _resolve_from_path(tree, normalized_path, 0, len(normalized_path))
 
 
 def resolve_required(tree: IRNode, path: Sequence[PathStep]) -> IRNode:
@@ -1570,15 +1617,15 @@ def _fs_label_family(label: str) -> str:
     s = label.strip().rstrip(".")
     if not s:
         return "mixed"
-    if re.fullmatch(r"\d+[a-zA-Z]?", s):
+    if _FS_DIGIT_LABEL_RE.fullmatch(s):
         return "digit"
-    if re.fullmatch(r"[ivxlcdm]+", s, re.IGNORECASE):
+    if _FS_ROMAN_LABEL_RE.fullmatch(s):
         # Multi-letter roman tokens only.  Single glyphs such as i/v/x/c are
         # almost always alphabetic subitems in legal corpora, not roman numerals.
         if len(s) > 1:
             return "roman"
         return "alpha"
-    if re.fullmatch(r"[a-zA-Z]+\d*", s):
+    if _FS_ALPHA_LABEL_RE.fullmatch(s):
         return "alpha"
     return "mixed"
 
@@ -1600,7 +1647,7 @@ def _fs_ordinal(label: str, family: str) -> int:
     """Return a rough ordinal for a label within its family (0 if unknown)."""
     s = label.strip().rstrip(".")
     if family == "digit":
-        m = re.match(r"(\d+)", s)
+        m = _FS_ORDINAL_DIGITS_RE.match(s)
         return int(m.group(1)) if m else 0
     if family == "alpha":
         alpha = re.sub(r"\d+$", "", s).lower()

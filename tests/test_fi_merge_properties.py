@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import string
 
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from lawvm.core.ir import IRNode
@@ -209,6 +209,21 @@ def test_sparse_section_merge_preserves_untouched_tail_subsections(
         assert _node_signature(got) == _node_signature(want)
 
 
+@example(
+    (
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="Joka 0"),
+                _numbered_paragraph("1", "SEURAAMUSMAKSU"),
+                IRNode(kind=IRNodeKind.PARAGRAPH, children=(_content("on tuomittava sakkoon."),)),
+            ),
+        ),
+        1,
+        "on tuomittava sakkoon.",
+    )
+)
 @given(subsection_with_trailing_wrapup_case())
 @settings(max_examples=100, deadline=None)
 def test_trailing_prose_after_numbered_items_becomes_wrapup(case: tuple[IRNode, int, str]) -> None:

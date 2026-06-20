@@ -132,7 +132,7 @@ def _worker_fn(sid: str) -> Optional[dict[str, Any]]:
     Returns a dict with statute_id, title, statute_type, citations (list[dict]),
     delegations (list[dict]), amendment_chain.  Returns None on any error.
     """
-    from lawvm.finland.cross_refs import extract_cross_refs, extract_eu_refs
+    from lawvm.finland.references.cross_refs import extract_cross_refs, extract_eu_refs
     from lawvm.finland.delegation import extract_delegations
 
     assert _w_corpus is not None

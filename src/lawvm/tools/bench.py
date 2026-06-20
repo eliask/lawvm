@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import csv
 import io
@@ -31,7 +32,10 @@ import sys
 import time
 import warnings as py_warnings
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, cast
+
+if TYPE_CHECKING:
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
 
 from rapidfuzz.distance import Indel as _RapidFuzzIndel
 
@@ -74,6 +78,7 @@ _REPEALED_THRESHOLD = 0.5  # fraction of <section> elements that are kumottu →
 _EMPTY_MAX_SECTIONS = 3  # ≤N sections AND 0 kumottu AND small body → EMPTY
 _EMPTY_MAX_BYTES = 2000  # body text (tag-stripped) shorter than this → EMPTY
 _ORACLE_STALE_DIAGNOSIS = "ORACLE_STALE"
+_FI_BENCH_DEFAULT_MAX_WORKERS = 16
 # Non-scored statuses that are NOT crashes: the statute simply has no oracle to
 # compare against (fully-superseded decree, missing source, oracle redirected to a
 # different successor statute). These are excluded from scoring but must NOT be
@@ -394,6 +399,11 @@ def _clean_pre_normalized_oracle(t: str) -> str:
     return _CLEAN_RE.sub("", strip_editorial_annotations(t).lower())
 
 
+def _clean_oracle_section_text(t: str) -> str:
+    norm = get_oracle_text_normalizer("fi")
+    return _CLEAN_RE.sub("", strip_editorial_annotations(norm(t)).lower())
+
+
 def _levenshtein_ratio(left: str, right: str) -> float:
     """Return the same normalized indel similarity as ``python-Levenshtein.ratio``."""
 
@@ -576,6 +586,250 @@ def _is_oracle_presentation_list_or_table(sd: dict[str, Any], events: list[dict[
     return _is_presentation_structural_diff(sd, events, "fi")
 
 
+def _section_diff_is_bench_neutralized(
+    sd: dict[str, Any], events: list[dict[str, Any]]
+) -> bool:
+    """Return True when the bench does NOT penalise this section's diff.
+
+    This is the single source of truth for "the bench neutralizes this
+    divergence" — the same predicate ``_structural_sim`` uses to skip a
+    diverging section.  A section is neutralized when its only diffs are:
+    - oracle-side crossHeading deficiencies,
+    - flat→merged digit renesting encoding differences,
+    - whitespace-only (OCR word-fusion) wording changes, or
+    - oracle presentation list/table layout differences.
+
+    Editorial-only (kumottu tombstone) sections never reach this predicate —
+    they are excluded upstream (``_sections_with_diffs`` drops ``editorial_only``
+    and the ``non_editorial`` filter drops them again).  Callers that classify
+    a raw section must therefore treat ``editorial_only`` as neutralized too.
+    """
+    return (
+        _is_oracle_crossheading_only(sd, events)
+        or _is_digit_renesting_mismatch(sd, events)
+        or _is_wording_whitespace_only_diff(sd, events)
+        or _is_oracle_presentation_list_or_table(sd, events)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _BenchSemanticScore:
+    structural_similarity: float
+    adjusted_levenshtein_similarity: float
+    event_counts: Counter[str]
+    # Events drawn only from PENALIZED sections (diverging and not neutralized).
+    # ``event_counts`` counts every diverging section's events including
+    # neutralized ones; the penalizing subset is what explains the structural
+    # error and is the residue the unified-contract reconciliation checks
+    # against (see lawvm.core.bench_contract.check_residue_reconciliation).
+    penalized_event_counts: Counter[str] = field(default_factory=Counter)
+
+
+def _empty_bench_semantic_score(
+    structural_similarity: float,
+    adjusted_levenshtein_similarity: float,
+) -> _BenchSemanticScore:
+    return _BenchSemanticScore(
+        structural_similarity=structural_similarity,
+        adjusted_levenshtein_similarity=adjusted_levenshtein_similarity,
+        event_counts=Counter(),
+        penalized_event_counts=Counter(),
+    )
+
+
+def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _BenchSemanticScore:
+    """Compute structural score and neutralized-section text score.
+
+    The structural score already neutralizes known oracle/projection artifacts
+    such as Finlex dropping a source ``crossHeading`` facet.  The ordinary full
+    flattened Levenshtein path can count those same neutralized section diffs as
+    text errors.  Preserve the raw full-text metric whenever structural has a
+    real penalized diff; when structural is already perfect, allow the secondary
+    text score to use the same neutralized section projection and never lower
+    the raw full-text score.  Replay output is untouched; this is benchmark
+    projection only.
+    """
+    from lawvm.core.ir_helpers import irnode_to_text
+    from lawvm.semantic.contracts import build_semantic_diff_support
+    from lawvm.semantic.structure import (
+        semantic_structure_from_ir,
+        semantic_structure_from_oracle,
+    )
+    from lawvm.tools.section_keys import (
+        extract_ir_sections,
+        extract_oracle_sections,
+        reconcile_unique_unscoped_aliases,
+    )
+    from lawvm.tools.structural_review import is_oracle_content_absent
+    from lawvm.xml_ingest import xml_element_to_text
+
+    oracle_root = get_ground_truth_tree(
+        sid,
+        selector=_BENCH_CONSOLIDATED_SELECTOR,
+    )
+    if is_oracle_content_absent(oracle_root):
+        return _empty_bench_semantic_score(-1.0, -1.0)
+
+    replay_ir = (
+        master.materialized_state.ir
+        if getattr(master, "materialized_state", None) is not None
+        else master.ir
+    )
+    replay_sections = extract_ir_sections(replay_ir)
+    oracle_sections = extract_oracle_sections(oracle_root) if oracle_root is not None else {}
+    replay_sections, oracle_sections = reconcile_unique_unscoped_aliases(
+        replay_sections,
+        oracle_sections,
+    )
+
+    if not oracle_sections and not replay_sections:
+        return _empty_bench_semantic_score(1.0, 1.0 if text_scores else -1.0)
+
+    raw_lev = -1.0
+    if text_scores:
+        raw_replay_text = _clean(master.serialize_text())
+        raw_oracle_text = _clean_pre_normalized_oracle(
+            get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
+        )
+        raw_lev = (
+            -1.0
+            if not raw_oracle_text
+            else _levenshtein_ratio(raw_replay_text, raw_oracle_text)
+        )
+        if raw_lev < 0:
+            text_scores = False
+    section_keys = list(oracle_sections)
+    section_keys.extend(key for key in replay_sections if key not in oracle_sections)
+
+    non_editorial_count = 0
+    penalized_count = 0
+    event_counts: Counter[str] = Counter()
+    penalized_event_counts: Counter[str] = Counter()
+    replay_chunks: list[str] = []
+    oracle_chunks: list[str] = []
+
+    for key in section_keys:
+        replay_node = replay_sections.get(key)
+        oracle_node = oracle_sections.get(key)
+        replay_sem = semantic_structure_from_ir(replay_node) if replay_node is not None else None
+        oracle_sem = semantic_structure_from_oracle(oracle_node) if oracle_node is not None else None
+        support = build_semantic_diff_support(replay_sem, oracle_sem)
+        sd = support.get("semantic_diff")
+        if not isinstance(sd, dict):
+            continue
+        if sd.get("kind") == "editorial_only":
+            continue
+
+        non_editorial_count += 1
+        events = sd.get("events", [])
+        if not isinstance(events, list):
+            events = []
+        has_diff = (
+            bool(events)
+            or bool(sd.get("structural", 0))
+            or bool(sd.get("label", 0))
+            or bool(sd.get("text", 0))
+        )
+        neutralized = has_diff and _section_diff_is_bench_neutralized(sd, events)
+        for event in events:
+            if isinstance(event, dict):
+                event_counts[event.get("kind", "unknown")] += 1
+        if has_diff and not neutralized:
+            penalized_count += 1
+            penalized_events_here = 0
+            for event in events:
+                if isinstance(event, dict):
+                    penalized_event_counts[event.get("kind", "unknown")] += 1
+                    penalized_events_here += 1
+            if penalized_events_here == 0:
+                # Section penalized via structural/label/text diff flags but with
+                # no typed event entries. Record a typed residue family so the
+                # structural error is never silently unexplained (the
+                # unified-contract reconciliation invariant).
+                for flag in ("structural", "label", "text"):
+                    if sd.get(flag, 0):
+                        penalized_event_counts[f"section_diff_{flag}"] += 1
+
+        if not text_scores:
+            continue
+        replay_text = irnode_to_text(replay_node) if replay_node is not None else ""
+        oracle_text = xml_element_to_text(oracle_node) if oracle_node is not None else ""
+        if neutralized:
+            cleaned = _clean_oracle_section_text(oracle_text)
+            replay_chunks.append(cleaned)
+            oracle_chunks.append(cleaned)
+        else:
+            replay_chunks.append(_clean(replay_text))
+            oracle_chunks.append(_clean_oracle_section_text(oracle_text))
+
+    structural_similarity = (
+        1.0
+        if non_editorial_count == 0
+        else 1.0 - penalized_count / non_editorial_count
+    )
+    if not text_scores:
+        adjusted_lev = -1.0
+    else:
+        adjusted_lev = raw_lev
+        if structural_similarity == 1.0:
+            section_oracle_text = "".join(oracle_chunks)
+            if section_oracle_text:
+                section_lev = _levenshtein_ratio(
+                    "".join(replay_chunks),
+                    section_oracle_text,
+                )
+                adjusted_lev = max(adjusted_lev, section_lev)
+    return _BenchSemanticScore(
+        structural_similarity=structural_similarity,
+        adjusted_levenshtein_similarity=adjusted_lev,
+        event_counts=event_counts,
+        penalized_event_counts=penalized_event_counts,
+    )
+
+
+def bench_penalized_section_keys(sid: str, master: Any) -> tuple[set[str], bool]:
+    """Return ``(penalized_keys, oracle_absent)`` for a statute.
+
+    ``penalized_keys`` is the exact set of section keys the bench's
+    ``_structural_sim`` scores against (i.e. the sections that count against
+    the similarity metric).  A key is penalized iff it has a non-editorial
+    semantic diff with real events/structure AND none of the bench
+    neutralization filters apply.  This is the view the bench actually
+    penalizes — distinct from the consolidated-oracle text comparison
+    ``oracle_check`` uses — and lets consumers (e.g. bench-triage) reconcile
+    their classification with what the bench scores.
+
+    The section keys are produced by ``compute_statute_section_diffs`` (via
+    ``section_keys.extract_ir_sections`` / ``extract_oracle_sections``), the
+    same key space ``oracle_check._classify_statute`` uses, so the two are
+    directly comparable.
+    """
+    from lawvm.tools.structural_review import (
+        compute_statute_section_diffs,
+        _sections_with_diffs,
+    )
+
+    sections, oracle_absent = compute_statute_section_diffs(
+        sid,
+        oracle_selector_mode="bench_comparable",
+        replay_master=master,
+        support_mode="diff_only",
+    )
+    if oracle_absent:
+        return set(), True
+    non_editorial = {
+        k: v
+        for k, v in sections.items()
+        if v.get("semantic_diff", {}).get("kind") != "editorial_only"
+    }
+    penalized: set[str] = set()
+    for sec_key, sd, events in _sections_with_diffs({"sections": non_editorial}):
+        if _section_diff_is_bench_neutralized(sd, events):
+            continue
+        penalized.add(sec_key)
+    return penalized, False
+
+
 def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
     """Structural section score — consistent with ``structural-review --dump``.
 
@@ -618,13 +872,7 @@ def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
     for _sec_key, sd, events in diffs:
         for event in events:
             event_counts[event.get("kind", "unknown")] += 1
-        if _is_oracle_crossheading_only(sd, events):
-            continue
-        if _is_digit_renesting_mismatch(sd, events):
-            continue
-        if _is_wording_whitespace_only_diff(sd, events):
-            continue
-        if _is_oracle_presentation_list_or_table(sd, events):
+        if _section_diff_is_bench_neutralized(sd, events):
             continue
         penalised += 1
     return 1.0 - penalised / len(non_editorial), event_counts
@@ -665,6 +913,7 @@ def _score_one_with_warning_summary(
     *,
     diagnostic_replay: bool = False,
     fast: bool = False,
+    text_scores: bool = True,
 ) -> Tuple[str, float, str, float, Counter[str]]:
     """Return (sid, struct_sim, status, lev_sim, warning_counts).
 
@@ -685,14 +934,19 @@ def _score_one_with_warning_summary(
                 "oracle_selector": _BENCH_CONSOLIDATED_SELECTOR,
             },
         )
-        lev_sim = _lev_sim_fast(sid, master)
         if fast:
+            lev_sim = _lev_sim_fast(sid, master) if text_scores else -1.0
             # Use lev as primary metric too; skip structural diff
             if lev_sim < 0:
                 return sid, -1.0, "NO_TRUTH", lev_sim, warning_counts
             return sid, lev_sim, "OK", lev_sim, warning_counts
-        sim, events = _structural_sim(sid, master)
-        warning_counts = _merge_bench_structural_diagnostics(warning_counts, events)
+        semantic_score = _semantic_section_score(sid, master, text_scores=text_scores)
+        sim = semantic_score.structural_similarity
+        lev_sim = semantic_score.adjusted_levenshtein_similarity
+        warning_counts = _merge_bench_structural_diagnostics(
+            warning_counts,
+            semantic_score.event_counts,
+        )
         if sim < 0:
             return sid, -1.0, "NO_TRUTH", lev_sim, warning_counts
         return sid, sim, "OK", lev_sim, warning_counts
@@ -700,6 +954,113 @@ def _score_one_with_warning_summary(
         raise  # programming bugs — fail loud
     except Exception as e:
         return sid, -1.0, str(e), -1.0, Counter()
+
+
+# ---------------------------------------------------------------------------
+# Unified cross-jurisdiction bench contract — Finland adapter
+#
+# The Finland comparator re-houses the existing structural/Levenshtein numbers
+# into a contract BenchUnitResult without changing them. Registered at import
+# time under the "fi" key; see lawvm.core.bench_comparator_registry and
+# notes/UNIFIED_BENCH_CONTRACT.md.
+# ---------------------------------------------------------------------------
+
+
+def _fi_status_to_bench_status(status: str) -> "BenchStatus":
+    from lawvm.core.bench_contract import BenchStatus
+
+    if status == "OK":
+        return BenchStatus.SCORED
+    if status == "SOURCE_UNAVAILABLE":
+        return BenchStatus.SOURCE_UNAVAILABLE
+    if status == _ORACLE_STALE_DIAGNOSIS:
+        return BenchStatus.ORACLE_STALE
+    if status in {"NO_TRUTH", "NO_ORACLE_TREE", "NO_ORACLE_SECS"}:
+        return BenchStatus.NO_TRUTH
+    # Any other string is an exception message — a genuine crash.
+    return BenchStatus.CRASH
+
+
+def fi_bench_unit_result(
+    sid: str,
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
+    *,
+    diagnostic_replay: bool = False,
+    fast: bool = False,
+    text_scores: bool = True,
+) -> "BenchUnitResult":
+    """Finland bench comparator — emit a contract ``BenchUnitResult`` for *sid*.
+
+    Maps the existing Finland fidelity numbers onto the two contract error axes
+    without changing them:
+
+    - ``structural_err = 1 - structural section similarity`` (``None`` in the
+      ``fast`` path, which has no structural axis).
+    - ``text_err = 1 - adjusted Levenshtein similarity`` (``None`` when no text
+      score was computed).
+    - ``residue_buckets`` = the typed structural-diff event families drawn from
+      the **penalized** sections, so the structural error reconciles with its
+      residue (see ``check_residue_reconciliation``).
+    """
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
+
+    if is_known_missing_source(sid):
+        return BenchUnitResult(unit_id=sid, status=BenchStatus.SOURCE_UNAVAILABLE)
+
+    try:
+        master, _warning_counts = _run_replay_with_bench_warning_capture(
+            sid,
+            mode=mode,
+            diagnostic_replay=diagnostic_replay,
+            replay_kwargs={
+                "quiet": not diagnostic_replay,
+                "build_full_products": True,
+                "oracle_selector": _BENCH_CONSOLIDATED_SELECTOR,
+            },
+        )
+        if fast:
+            lev_sim = _lev_sim_fast(sid, master) if text_scores else -1.0
+            if lev_sim < 0:
+                return BenchUnitResult(unit_id=sid, status=BenchStatus.NO_TRUTH)
+            # Fast path has no structural axis — only the text axis is attempted.
+            return BenchUnitResult(
+                unit_id=sid,
+                status=BenchStatus.SCORED,
+                structural_err=None,
+                text_err=1.0 - lev_sim,
+            )
+
+        score = _semantic_section_score(sid, master, text_scores=text_scores)
+        sim = score.structural_similarity
+        if sim < 0:
+            return BenchUnitResult(unit_id=sid, status=BenchStatus.NO_TRUTH)
+        lev_sim = score.adjusted_levenshtein_similarity
+        text_err = None if lev_sim < 0 else 1.0 - lev_sim
+        residue = {k: int(v) for k, v in score.penalized_event_counts.items() if v}
+        return BenchUnitResult(
+            unit_id=sid,
+            status=BenchStatus.SCORED,
+            structural_err=1.0 - sim,
+            text_err=text_err,
+            residue_buckets=residue,
+        )
+    except (NameError, TypeError, AttributeError):
+        raise  # programming bugs — fail loud
+    except Exception as e:
+        return BenchUnitResult(
+            unit_id=sid,
+            status=BenchStatus.CRASH,
+            witnesses=(str(e),),
+        )
+
+
+def _register_fi_bench_comparator() -> None:
+    from lawvm.core.bench_comparator_registry import register_bench_comparator
+
+    register_bench_comparator("fi", fi_bench_unit_result)
+
+
+_register_fi_bench_comparator()
 
 
 def _section_score(
@@ -973,6 +1334,7 @@ def _oracle_stale_adjusted_stats(
     *,
     workers: int,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
+    diagnostic_counts: Optional[Dict[str, Dict[str, int]]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Compute an oracle-stale-aware headline mean over the current bench rows.
 
@@ -991,6 +1353,13 @@ def _oracle_stale_adjusted_stats(
         mode=mode,
         progress=False,
     )
+    if diagnostic_counts is not None:
+        for sid, oracle_info in oracle_checks.items():
+            top_diagnosis = str(oracle_info.get("top_diagnosis") or "").strip()
+            if top_diagnosis and top_diagnosis != "UNKNOWN":
+                counts = diagnostic_counts.setdefault(sid, {})
+                key = f"oracle_check:top_diagnosis:{top_diagnosis}"
+                counts[key] = counts.get(key, 0) + 1
 
     kept: List[float] = []
     excluded: List[str] = []
@@ -1023,19 +1392,20 @@ def _oracle_stale_adjusted_stats(
 
 
 def _score_one_with_meta(
-    args: Tuple[int, str, Any, Literal["official_consolidation", "legal_pit"], bool],
+    args: Tuple[int, str, Any, Literal["official_consolidation", "legal_pit"], bool, bool],
 ) -> Tuple[int, str, float, str, float, str, float, Dict[str, int]]:
     """Wrapper for parallel execution — takes (count, sid, diagnostic_replay, mode, fast).
 
     Returns (count, sid, struct_sim, status, elapsed, warning_summary, lev_sim, warning_counts).
     """
-    count, sid, diagnostic_replay, mode, fast = args
+    count, sid, diagnostic_replay, mode, fast, text_scores = args
     t0 = time.time()
     sid, sim, status, lev_sim, warning_counts = _score_one_with_warning_summary(
         sid,
         mode=mode,
         diagnostic_replay=diagnostic_replay,
         fast=fast,
+        text_scores=text_scores,
     )
     elapsed = time.time() - t0
     return (
@@ -1156,9 +1526,10 @@ def _run_benchmark(
     diagnostic_replay: bool = False,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     fast: bool = False,
+    text_scores: bool = True,
     diagnostic_summaries_out: Optional[Dict[str, str]] = None,
     diagnostic_counts_out: Optional[Dict[str, Dict[str, int]]] = None,
-) -> Tuple[List[Tuple[int, str, float, str, float]], Dict[str, float]]:
+) -> Tuple[List[Tuple[int, str, float, str, float]], Optional[Dict[str, float]]]:
     """Run benchmark, optionally parallel with ProcessPoolExecutor.
 
     Returns (results, lev_sims) where:
@@ -1170,7 +1541,8 @@ def _run_benchmark(
     corpus_indexed = sorted(enumerate(corpus), key=lambda x: -x[1][0])
     total = len(corpus)
 
-    lev_sims: Dict[str, float] = {}
+    collect_lev_sims = text_scores or fast
+    lev_sims: Optional[Dict[str, float]] = {} if collect_lev_sims else None
 
     if workers > 1:
         # Pre-warm: populate caches in the main process so forked workers
@@ -1195,7 +1567,7 @@ def _run_benchmark(
         results: List[Tuple[int, str, float, str, float]] = cast(List[Tuple[int, str, float, str, float]], [None] * total)
         with ProcessPoolExecutor(max_workers=workers) as pool:
             future_to_idx = {
-                pool.submit(_score_one_with_meta, (count, sid, diagnostic_replay, mode, fast)): orig_idx
+                pool.submit(_score_one_with_meta, (count, sid, diagnostic_replay, mode, fast, text_scores)): orig_idx
                 for orig_idx, (count, sid) in corpus_indexed
             }
             done = 0
@@ -1204,7 +1576,8 @@ def _run_benchmark(
                 result = future.result()
                 count, sid, sim, status, elapsed, warning_summary, lev_sim, warning_counts = result
                 results[idx] = (count, sid, sim, status, elapsed)
-                lev_sims[sid] = lev_sim
+                if lev_sims is not None:
+                    lev_sims[sid] = lev_sim
                 if diagnostic_summaries_out is not None:
                     diagnostic_summaries_out[sid] = warning_summary
                 if diagnostic_counts_out is not None:
@@ -1226,10 +1599,12 @@ def _run_benchmark(
             mode=mode,
             diagnostic_replay=diagnostic_replay,
             fast=fast,
+            text_scores=text_scores,
         )
         elapsed = time.time() - t0
         results.append((count, sid, sim, status, elapsed))
-        lev_sims[sid] = lev_sim
+        if lev_sims is not None:
+            lev_sims[sid] = lev_sim
         warning_summary = _format_bench_warning_summary(warning_counts)
         if diagnostic_summaries_out is not None:
             diagnostic_summaries_out[sid] = warning_summary
@@ -1483,6 +1858,92 @@ def _load_history() -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Display functions
 # ---------------------------------------------------------------------------
+
+
+# Opt-in environment flag: when set to a truthy value, the Finland bench ALSO
+# renders the shared cross-jurisdiction unified summary (via the bench contract)
+# in addition to its legacy summary. Default (unset) leaves FI output exactly as
+# it has always been, so the many FI bench tests stay green untouched.
+_FI_BENCH_UNIFIED_ENV = "LAWVM_BENCH_UNIFIED"
+
+
+def _fi_bench_unified_enabled() -> bool:
+    return os.environ.get(_FI_BENCH_UNIFIED_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _fi_unit_results_from_rows(
+    flat: List[Tuple[str, float, str]],
+    *,
+    section_sims: Optional[Dict[str, float]] = None,
+) -> list["BenchUnitResult"]:
+    """Build contract ``BenchUnitResult``s from already-computed FI bench rows.
+
+    Maps the existing per-statute numbers onto the two contract axes WITHOUT
+    re-running replay (the expensive work is already done):
+
+    - ``text_err = 1 - text_sim`` when a text score was computed (``sim >= 0``).
+    - ``structural_err = 1 - section_sim`` when section scoring ran for the row
+      (``section_sims`` provides it), else ``None`` (axis not attempted on the
+      text-only run). When a structural axis is present the typed residue is not
+      available from the flat rows, so reconciliation is skipped for those rows
+      by leaving ``structural_err`` unset whenever no section score exists.
+    - non-scored / crashed rows map onto the matching ``BenchStatus`` so the
+      scored/non-scored/crashed partition matches the legacy summary exactly.
+    """
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
+
+    _status_map = {
+        "NO_TRUTH": BenchStatus.NO_TRUTH,
+        "SOURCE_UNAVAILABLE": BenchStatus.SOURCE_UNAVAILABLE,
+        _ORACLE_STALE_DIAGNOSIS: BenchStatus.ORACLE_STALE,
+    }
+    out: list[BenchUnitResult] = []
+    for sid, sim, status in flat:
+        if sim < 0:
+            mapped = _status_map.get(status)
+            if mapped is not None:
+                out.append(BenchUnitResult(unit_id=sid, status=mapped))
+            else:
+                # Genuine exception (status == str(exception)) — a crash.
+                out.append(
+                    BenchUnitResult(
+                        unit_id=sid, status=BenchStatus.CRASH, witnesses=(status,)
+                    )
+                )
+            continue
+        structural_err: Optional[float] = None
+        if section_sims is not None:
+            sec = section_sims.get(sid)
+            if sec is not None and sec >= 0:
+                structural_err = 1.0 - sec
+        out.append(
+            BenchUnitResult(
+                unit_id=sid,
+                status=BenchStatus.SCORED,
+                structural_err=structural_err,
+                text_err=1.0 - sim,
+            )
+        )
+    return out
+
+
+def _show_unified_summary_fi(
+    flat: List[Tuple[str, float, str]],
+    label: str,
+    *,
+    section_sims: Optional[Dict[str, float]] = None,
+) -> None:
+    """Render the shared cross-jurisdiction summary for FI (env-var gated)."""
+    from lawvm.core.bench_aggregate import render_summary
+
+    unit_results = _fi_unit_results_from_rows(flat, section_sims=section_sims)
+    for line in render_summary(unit_results, label, jurisdiction="fi"):
+        print(line)
 
 
 def _show_summary(
@@ -2351,11 +2812,32 @@ def _fi_bench_worker_count(args: Any) -> int:
     """Return the Finland bench worker count requested by CLI args."""
     explicit = getattr(args, "parallel", None)
     if explicit is None:
-        return 1
+        return max(1, min(_FI_BENCH_DEFAULT_MAX_WORKERS, os.cpu_count() or 1))
     if explicit < 1:
         print("ERROR: --parallel must be a positive integer", file=sys.stderr)
         raise SystemExit(2)
     return explicit
+
+
+def _format_bench_run_banner(
+    *,
+    statute_count: int,
+    label: str,
+    mode: str,
+    workers: int,
+    section_score_mode: bool,
+    fast_mode: bool,
+    text_scores: bool,
+    diagnostic_replay: bool,
+) -> str:
+    return (
+        f"Running benchmark: {statute_count} statutes  label={label}  "
+        f"mode={mode}  workers={workers}"
+        + ("  [+section-score]" if section_score_mode else "")
+        + ("  [fast]" if fast_mode else "")
+        + ("  [no-text-scores]" if not text_scores else "")
+        + ("  [diagnostic-replay]" if diagnostic_replay else "  [quiet-replay]")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2483,18 +2965,25 @@ def main(args) -> None:
 
     section_score_mode = getattr(args, "section_score", False)
     fast_mode = getattr(args, "fast", False)
+    text_scores = not bool(getattr(args, "no_text_scores", False))
+    no_save = bool(getattr(args, "no_save", False))
     bench_mode = getattr(args, "mode", "official_consolidation") or "official_consolidation"
     oracle_stale_headline = getattr(args, "oracle_aware_headline", False)
+    workers = _fi_bench_worker_count(args)
 
     print(
-        f"Running benchmark: {len(corpus)} statutes  label={label}  mode={bench_mode}"
-        + ("  [+section-score]" if section_score_mode else "")
-        + ("  [fast]" if fast_mode else "")
-        + ("  [diagnostic-replay]" if diagnostic_replay else "  [quiet-replay]")
+        _format_bench_run_banner(
+            statute_count=len(corpus),
+            label=label,
+            mode=bench_mode,
+            workers=workers,
+            section_score_mode=section_score_mode,
+            fast_mode=fast_mode,
+            text_scores=text_scores,
+            diagnostic_replay=diagnostic_replay,
+        )
     )
     print()
-
-    workers = _fi_bench_worker_count(args)
 
     section_results: Optional[List[Tuple[int, str, float, float, str, float]]] = None
     lev_sims: Optional[Dict[str, float]] = None
@@ -2523,6 +3012,7 @@ def main(args) -> None:
             diagnostic_replay=diagnostic_replay,
             mode=bench_mode,
             fast=fast_mode,
+            text_scores=text_scores,
             diagnostic_summaries_out=diagnostic_summaries,
             diagnostic_counts_out=diagnostic_counts,
         )
@@ -2539,10 +3029,23 @@ def main(args) -> None:
             results,
             workers=workers,
             mode=bench_mode,
+            diagnostic_counts=diagnostic_counts,
         )
 
     verified = _load_verified_statutes()
     _show_summary(results, label, oracle_stale_adjusted=oracle_adjusted_summary, verified=verified or None, lev_sims=lev_sims)
+    if _fi_bench_unified_enabled():
+        # Opt-in shared cross-jurisdiction summary (LAWVM_BENCH_UNIFIED). Reuses
+        # the per-statute numbers already computed above; default output above is
+        # unchanged. When section scoring ran, fold in the structural axis so the
+        # FI worst-of headline binds on the worse of section/text divergence.
+        section_sims: Optional[Dict[str, float]] = None
+        if section_score_mode and section_results is not None:
+            section_sims = {
+                sid: section_sim
+                for _count, sid, _text_sim, section_sim, _status, _elapsed in section_results
+            }
+        _show_unified_summary_fi(flat, label, section_sims=section_sims)
     if by_decade:
         _show_by_decade([(sid, sim) for _, sid, sim, _, _ in results], corpus=corpus)
     _show_worst(results, top, lev_sims=lev_sims, verified=verified or None)
@@ -2572,45 +3075,47 @@ def main(args) -> None:
             print(f"Structural accuracy: {mean_struct * 100:.2f}%  (section-level structural diff, primary)")
             print(f"Levenshtein:         {mean_lev * 100:.2f}%  (full-text, secondary — tree-structure sanity)")
 
-    # Persist
-    run_path = _save_run(
-        results,
-        label,
-        timestamp,
-        section_results=section_results,
-        lev_sims=lev_sims,
-        diagnostic_summaries=diagnostic_summaries,
-    )
-    _append_history(timestamp, label, stats)
-    evidence_report_path = _write_bench_evidence_surface(
-        run_path=run_path,
-        label=label,
-        timestamp=timestamp,
-        mode=bench_mode,
-        corpus_path=corpus_path,
-        stats=stats,
-        results=results,
-        workers=workers,
-        section_score=section_score_mode,
-        fast_mode=fast_mode,
-        diagnostic_replay=diagnostic_replay,
-        lev_sims=lev_sims,
-        diagnostic_summaries=diagnostic_summaries,
-        oracle_stale_adjusted=oracle_adjusted_summary,
-    )
+    if no_save:
+        print("\nRun not saved (--no-save)")
+    else:
+        run_path = _save_run(
+            results,
+            label,
+            timestamp,
+            section_results=section_results,
+            lev_sims=lev_sims,
+            diagnostic_summaries=diagnostic_summaries,
+        )
+        _append_history(timestamp, label, stats)
+        evidence_report_path = _write_bench_evidence_surface(
+            run_path=run_path,
+            label=label,
+            timestamp=timestamp,
+            mode=bench_mode,
+            corpus_path=corpus_path,
+            stats=stats,
+            results=results,
+            workers=workers,
+            section_score=section_score_mode,
+            fast_mode=fast_mode,
+            diagnostic_replay=diagnostic_replay,
+            lev_sims=lev_sims,
+            diagnostic_summaries=diagnostic_summaries,
+            oracle_stale_adjusted=oracle_adjusted_summary,
+        )
 
-    diagnostics_sidecar_path = _save_bench_diagnostic_sidecar(
-        run_path=run_path,
-        label=label,
-        results=results,
-        diagnostic_counts=diagnostic_counts,
-    )
+        diagnostics_sidecar_path = _save_bench_diagnostic_sidecar(
+            run_path=run_path,
+            label=label,
+            results=results,
+            diagnostic_counts=diagnostic_counts,
+        )
 
-    print(f"\nRun saved: {run_path}")
-    print(f"History  : {_history_path()}")
-    print(f"Evidence : {evidence_report_path}")
-    if diagnostics_sidecar_path is not None:
-        print(f"Diagnostics: {diagnostics_sidecar_path}")
+        print(f"\nRun saved: {run_path}")
+        print(f"History  : {_history_path()}")
+        print(f"Evidence : {evidence_report_path}")
+        if diagnostics_sidecar_path is not None:
+            print(f"Diagnostics: {diagnostics_sidecar_path}")
 
     # Show errors last — the most visible position for tail output
     _show_errors(results)
@@ -2705,7 +3210,7 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         default=None,
         metavar="N",
         help=(
-            "parallel workers (FI default: 1=sequential; UK/EE use "
+            "parallel workers (FI default: min(16, cpu_count); UK/EE use "
             "jurisdiction-specific defaults); per-worker peak RSS ~860 MB after source-root "
             "eviction — heavy lanes still serialize via memory guard)"
         ),
@@ -2857,7 +3362,7 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         "--no-save",
         action="store_true",
         dest="no_save",
-        help="[-j uk] print a bench report without writing run CSV/history artifacts",
+        help="print a bench report without writing run CSV/history artifacts",
     )
     bench_p.add_argument(
         "--summary-only",
@@ -2941,7 +3446,7 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         "--no-text-scores",
         action="store_true",
         dest="no_text_scores",
-        help="[-j uk] skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
+        help="skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
     )
     bench_p.add_argument(
         "--worker-max-tasks",

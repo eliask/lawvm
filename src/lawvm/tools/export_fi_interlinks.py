@@ -56,8 +56,12 @@ def _project_interlinks_for_statute(
     store: Any,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Project neutral interlink rows for one Finnish statute."""
-    from lawvm.finland.inline_citation_extractor import extract_inline_citations
-    from lawvm.finland.preparatory_reference_extractor import extract_preparatory_refs
+    from lawvm.finland.references.inline_citation_extractor import (
+        extract_inline_citations,
+    )
+    from lawvm.finland.references.preparatory_reference_extractor import (
+        extract_preparatory_refs,
+    )
     from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
 
     xml_bytes = _get_statute_xml(statute_id, store)

@@ -1178,6 +1178,65 @@ function semanticCandidateWorks(row) {
   return raw.split('|').map(s => s.trim()).filter(Boolean);
 }
 
+// Read the placement-v0 resolution_set carried in detail_json. Returns
+// {kind, members:[{target_locator,target_work_id,member_status,...}]} or null
+// when the row carries no set (legacy single-target row).
+function semanticResolutionSet(row) {
+  const detail = jsonObj(row && row.detail_json);
+  const raw = detail.resolution_set_json;
+  if (!raw) return null;
+  let parsed;
+  try { parsed = typeof raw === 'object' ? raw : JSON.parse(raw); }
+  catch (e) { return null; }
+  if (!parsed || !Array.isArray(parsed.members)) return null;
+  return parsed;
+}
+
+// In-act address for a resolution-set member that targets the loaded act, else
+// null. Reuses the same locator→address normalization as single-target refs.
+function memberInternalAddr(member) {
+  const workId = String(member.target_work_id || '');
+  const localId = workId.split(':').pop();
+  const isThisAct = (!workId && member.target_locator)
+    || (localId && localId === currentStatuteId);
+  if (!isThisAct) return null;
+  const loc = String(member.target_locator || '').trim();
+  if (!loc) return null;
+  if (/[a-z_]+:/i.test(loc)) return normalizeLocatorAddr(loc);
+  const raw = loc.toLowerCase().replace(/[§.\s]/g, '');
+  return raw ? `section:${raw}` : null;
+}
+
+// Transclusion list for a set-valued reference: one entry per member. Each entry
+// shows the member locator + (when known) its status at the selected date; same-
+// act members are live jumps. Singletons render nothing (the rest of the card
+// already describes the one target). Never paints a fake target.
+function semanticResolutionSetHtml(row) {
+  const rs = semanticResolutionSet(row);
+  if (!rs) return '';
+  const members = rs.members || [];
+  if (rs.kind === 'singleton' || members.length <= 1) return '';
+  let h = `<div class="hc-resolution-set hc-resolution-${escAttr(rs.kind || 'set')}">`;
+  h += `<div class="hc-resolution-lbl">${escHtml(tr('semanticResolutionSet') || 'Viittaa säännöksiin')}</div>`;
+  h += `<ul class="hc-resolution-members">`;
+  for (const member of members) {
+    const label = String(member.target_locator || member.target_work_id || '').trim()
+      || tr('semanticResolutionMemberUnknown') || '?';
+    const addr = memberInternalAddr(member);
+    const memberStatus = String(member.member_status || '').trim();
+    const statusChip = memberStatus
+      ? ` <span class="hc-resolution-member-status">${escHtml(memberStatus)}</span>` : '';
+    if (addr) {
+      h += `<li><a href="#" class="hc-resolution-member hc-internal-jump" `
+        + `data-internal-addr="${escAttr(addr)}">${escHtml(label)}</a>${statusChip}</li>`;
+    } else {
+      h += `<li><span class="hc-resolution-member">${escHtml(label)}</span>${statusChip}</li>`;
+    }
+  }
+  h += `</ul></div>`;
+  return h;
+}
+
 function semanticInterlinkHovercardHtml(row) {
   if (!row) return null;
   const status = semanticRefStatus(row);
@@ -1193,6 +1252,11 @@ function semanticInterlinkHovercardHtml(row) {
     + `<span class="hc-status hc-status-${status}">${escHtml(tr('semanticStatus_' + status) || status)}</span>`
     + `<span class="hc-citekind">${escHtml(semanticCiteKindLabel(row))}</span>`
     + `</div>`;
+  // RESOLUTION SET (placement v0): a set-valued reference — a range
+  // ("69 d–69 g §:ssä") or a coordination ("28 tai 69 c §:ssä") — is ONE anchor
+  // whose denotation is several members (ALL meant; not ambiguous candidates).
+  // List every member; same-act members get a live in-page jump.
+  h += semanticResolutionSetHtml(row);
   // AMBIGUOUS: list the candidate works the resolver could not disambiguate.
   if (status === 'ambiguous') {
     const cands = semanticCandidateWorks(row);
@@ -1275,15 +1339,50 @@ function interlinkActiveAt(row, date) {
   return true;
 }
 
+// Placement-v0 surface normalization (mirror of the Python placer): NBSP→space,
+// whitespace runs→single space, the dash class→'-'. Used to validate a placed
+// span against the live rendered text without rejecting normalized placements
+// (e.g. an NBSP source surface painted over a plain-space rendered image).
+function normalizePlacementSurface(s) {
+  return String(s == null ? '' : s)
+    .replace(/[ \s]+/g, ' ')
+    .replace(/[-‐‑‒–—―−]/g, '-');
+}
+
+// One written reference occurrence → one painted anchor. v0 carries the grouping
+// id + resolution_set inside detail_json; older rows without it degrade to a
+// per-row anchor (occurrence id falls back to interlink_id).
+function interlinkOccurrenceId(row) {
+  const detail = jsonObj(row && row.detail_json);
+  return detail.surface_occurrence_id || (row && row.interlink_id) || '';
+}
+
 function renderedInterlinksForSegment(addr, segmentIndex, text) {
   const rows = interlinksByRenderedAddress.get(addr) || [];
-  return rows
+  const placed = rows
     .filter(row => Number(row.rendered_segment_index) === segmentIndex && interlinkActiveAt(row, changeDates[curDateIdx]))
     .map(row => ({ row, start: Number(row.rendered_char_start), end: Number(row.rendered_char_end) }))
     .filter(item => Number.isInteger(item.start) && Number.isInteger(item.end)
       && item.start >= 0 && item.end > item.start && item.end <= text.length)
-    .filter(item => !item.row.surface_text || text.slice(item.start, item.end) === item.row.surface_text)
+    // Validate the placed span against the rendered text up to normalization, so
+    // normalized placements (NBSP/whitespace/dash differences) are not rejected
+    // while a stale span over unrelated text still is.
+    .filter(item => !item.row.surface_text
+      || normalizePlacementSurface(text.slice(item.start, item.end))
+         === normalizePlacementSurface(item.row.surface_text))
     .sort((a, b) => a.start - b.start || a.end - b.end);
+  // One anchor per source occurrence: the placer already emits one row per
+  // (occurrence, date), but guard against duplicates from legacy/per-target rows.
+  const seen = new Set();
+  const out = [];
+  for (const item of placed) {
+    const occ = interlinkOccurrenceId(item.row);
+    const key = occ + '@' + item.start + ':' + item.end;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 }
 
 function renderTextWithInterlinks(addr, segmentIndex, text) {

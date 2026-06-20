@@ -21,6 +21,95 @@ from lawvm.finland.legal_surface.family_census import classify
 
 
 # --------------------------------------------------------------------------
+# Bare enumerated-block header (chapeau owned; items in following segments)
+# --------------------------------------------------------------------------
+
+
+def test_bare_enumerated_header_owns_chapeau() -> None:
+    # The SegmentationGraph splits the definitions-block chapeau sentence from its
+    # enumerated items, so the L0 union census feeds the header ALONE. The header
+    # is a genuine definition-construction opener — own the chapeau (the
+    # ``tarkoitetaan`` cue is no longer silent-unowned) with ZERO entries, instead
+    # of declining the whole span.
+    for text in ("Tässä asetuksessa tarkoitetaan:", "Tässä laissa tarkoitetaan:"):
+        dp = parse_definition_block(text)
+        assert dp.kind == "definition_header", text
+        assert dp.parser_lane == DEFINITION_LANE_CONSTRUCTION_OWNED, text
+        assert dp.entries == ()
+        assert dp.chapeau_span == (0, len(text))  # the whole header is owned
+        # zero entry keys → the family census is unchanged (empty projection)
+        assert projection_definition_keys(dp) == set()
+        assert_total_ownership(dp)
+
+
+# --------------------------------------------------------------------------
+# Post-verb inline definition (``Tässä <unit> tarkoitetaan <X-adessive> Y``)
+# --------------------------------------------------------------------------
+
+
+def test_postverb_inline_definition_owned() -> None:
+    # The colon-less header idiom: the definiendum FOLLOWS the verb. Production's
+    # inline arm requires a PRE-verb definiendum and its enumerated arm requires a
+    # colon, so this was silent-unowned. The post-verb arm now owns it.
+    text = "Tässä laissa tarkoitetaan kemikaalilla alkuaineita ja niiden yhdisteitä."
+    dp = parse_definition_block(text)
+    assert dp.kind == "single_sentence"
+    assert dp.parser_lane == DEFINITION_LANE_CONSTRUCTION_OWNED
+    assert len(dp.entries) == 1
+    assert dp.entries[0].term == "kemikaalilla"
+    assert dp.entries[0].scope == "statute"
+    assert_total_ownership(dp)
+
+
+def test_postverb_inline_multiword_definiendum_owned() -> None:
+    text = (
+        "Tässä laissa tarkoitetaan terveydelle vaarallisella kemikaalilla "
+        "kemikaalia, joka voi aiheuttaa haittaa."
+    )
+    dp = parse_definition_block(text)
+    assert len(dp.entries) == 1
+    assert dp.entries[0].term == "terveydelle vaarallisella kemikaalilla"
+    assert_total_ownership(dp)
+
+
+def test_postverb_inline_definiens_act_cite_binds_target() -> None:
+    text = (
+        "Tässä laissa tarkoitetaan sivutuoteasetuksella asetusta "
+        "(EY) N:o 1069/2009."
+    )
+    dp = parse_definition_block(text)
+    assert len(dp.entries) == 1
+    assert dp.entries[0].term == "sivutuoteasetuksella"
+    assert dp.entries[0].target_ref == "1069/2009"
+    assert_total_ownership(dp)
+
+
+def test_postverb_referential_idiom_declines() -> None:
+    # A relative pronoun in the pre-verb clause (``…, joilla … tarkoitetaan …``)
+    # is the REFERENTIAL idiom ("which is referred to …"); the post-verb material
+    # is the referent list, NOT a definiendum. Decline — no swept-clause binding.
+    text = (
+        "Sulkukanavan kautta saavat kulkea alukset, joilla tässä "
+        "järjestyssäännössä tarkoitetaan matkustajalaivoja, jotka kulkevat "
+        "omalla koneistolla."
+    )
+    dp = parse_definition_block(text)
+    assert dp.parser_lane == DEFINITION_LANE_DECLINED
+    assert dp.entries == ()
+    assert_total_ownership(dp)
+
+
+def test_postverb_definiens_first_partitive_declines() -> None:
+    # ``tarkoitetaan <partitive-object>`` with NO adessive definiendum head (the
+    # definiendum lives in a prior segment) → no entry (fail-loud, no fabrication).
+    text = "tarkoitetaan tunnistamistietojen hankkimista viestistä."
+    dp = parse_definition_block(text)
+    assert dp.parser_lane == DEFINITION_LANE_DECLINED
+    assert dp.entries == ()
+    assert_total_ownership(dp)
+
+
+# --------------------------------------------------------------------------
 # Enumerated definition block (chapeau + entries)
 # --------------------------------------------------------------------------
 
@@ -165,3 +254,62 @@ def test_census_classification_against_oracle_on_witness_block() -> None:
     assert oracle - proj == set()
     bucket = classify(proj, oracle, dp.parser_lane == DEFINITION_LANE_DECLINED)
     assert bucket in ("match", "superset")
+
+
+# --------------------------------------------------------------------------
+# Unification: the forest calls the SHARED parser (D2 precision)
+# --------------------------------------------------------------------------
+#
+# The forest's enumerated + inline arms now delegate the definiendum decision to
+# the shared canonical pipeline (the SAME the production binder calls), so the
+# forest inherits the left-edge trim + clean-NP decline it previously dropped. The
+# regression these guard against: the forest USED to over-capture a leading
+# prior-entry coordinator (``sekä vakuutusvuodella``) / a clause fragment.
+
+
+def test_forest_inline_trims_leading_prior_entry_coordinator() -> None:
+    # Previously the forest over-captured ``sekä vakuutusvuodella``; now it trims
+    # the leading coordinator to the clean definiendum ``vakuutusvuodella``,
+    # matching the production binder.
+    text = "sekä vakuutusvuodella tarkoitetaan kalenterivuotta."
+    dp = parse_definition_block(text)
+    assert [e.term for e in dp.entries] == ["vakuutusvuodella"], [
+        e.term for e in dp.entries
+    ]
+
+
+def test_forest_enumerated_trims_leading_coordinator() -> None:
+    text = (
+        "Tässä laissa tarkoitetaan: öljypitoisella seoksella seosta; "
+        "ja jäteöljyllä käytettyä öljyä."
+    )
+    dp = parse_definition_block(text)
+    terms = [e.term for e in dp.entries]
+    assert "jäteöljyllä" in terms, terms
+    assert "ja jäteöljyllä" not in terms, terms
+
+
+def test_forest_declines_swept_clause_fragment() -> None:
+    # A cross-reference clause swept into a run (a clause-boundary token present) is
+    # declined by the shared clean-NP gate — no garbled multi-word term minted.
+    text = "Tässä laissa tarkoitetaan: n säännösten nojalla annettua määräystä;"
+    dp = parse_definition_block(text)
+    # The swept fragment ``n säännösten nojalla …`` is declined (clause-boundary
+    # token ``nojalla``); no entry whose term carries the connective is minted.
+    assert not any("nojalla" in e.term for e in dp.entries), [e.term for e in dp.entries]
+
+
+def test_forest_inline_byte_parity_with_binder_on_clean_block() -> None:
+    # The forest's inline/enumerated definiendum SURFACES now equal the production
+    # binder's ``tarkoitetaan`` keys on a clean block (the unification invariant).
+    from lawvm.finland.legal_surface.definition_census import (
+        _definition_oracle_keys_for_span,
+    )
+
+    text = (
+        "Tässä laissa tarkoitetaan: sivutuotteella eläimen ruhoa; "
+        "ja rehulla taikka ainetta."
+    )
+    proj = projection_definition_keys(parse_definition_block(text))
+    oracle = _definition_oracle_keys_for_span(text)
+    assert proj == oracle, f"proj={sorted(proj)} oracle={sorted(oracle)}"

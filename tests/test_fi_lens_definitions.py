@@ -12,6 +12,7 @@ node / edge / lint.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import cast
 
 from lawvm.core.legal_surface_assembler import assemble_surface_graph
 from lawvm.core.legal_surface_graph import (
@@ -284,7 +285,11 @@ def test_oblique_definiendum_spanning_whitespace_anchors_without_crash() -> None
     ]
     assert bindings, "expected the oblique-case definition to bind"
     target = next(
-        (n for n in bindings if "moottorikäyttöisellä" in (n.payload.get("term") or "")),
+        (
+            n
+            for n in bindings
+            if "moottorikäyttöisellä" in str(cast(dict[str, object], n.payload).get("term") or "")
+        ),
         None,
     )
     assert target is not None, "the oblique definiendum binding should be present"

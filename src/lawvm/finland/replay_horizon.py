@@ -46,8 +46,23 @@ def _is_repeal_like_legal_operation(lo: LegalOperation) -> bool:
     return lo.action is StructuralAction.REPEAL or (
         lo.action is StructuralAction.REPLACE
         and lo.payload is not None
-        and getattr(lo.payload, "attrs", {}).get("lawvm_repeal_placeholder") == "1"
+        and lo.payload.attrs.get("lawvm_repeal_placeholder") == "1"
     )
+
+
+def _can_detach_expiry_for_future_repeal(lo: LegalOperation) -> bool:
+    """Return True for future repeal shapes that may project absence only.
+
+    Section 1 repeal clauses are often generic preamble carriers, and subsection
+    repeal placeholders are visible audit state inside their parent section.
+    The detached expiry horizon is only for ordinary section-level repeals such
+    as a selected oracle-version repeal of a provision that is absent from the
+    consolidation surface.
+    """
+    if not _is_repeal_like_legal_operation(lo) or not lo.target.path:
+        return False
+    target_kind, target_label = lo.target.path[-1]
+    return target_kind == "section" and target_label != "1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +92,7 @@ class ReplayHorizonDecision:
 def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecision:
     """Choose PIT materialization and expiry horizons using the existing FI policy."""
     oracle_materialize_as_of: Optional[str] = None
+    oracle_expiry_as_of: Optional[str] = None
     if request.mode == "official_consolidation":
         reflected_section_original_versions = frozenset(
             str(source_id)
@@ -147,6 +163,13 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
                     continue
                 if oracle_materialize_as_of is None or lo_eff > oracle_materialize_as_of:
                     oracle_materialize_as_of = lo_eff
+                    if (
+                        _can_detach_expiry_for_future_repeal(lo)
+                        and oracle_vid_repeal_only_future
+                        and oracle_cutoff_iso is not None
+                        and lo_eff > oracle_cutoff_iso
+                    ):
+                        oracle_expiry_as_of = oracle_cutoff_iso
                     op_family = "REPEAL" if is_repeal_like else "non-REPEAL"
                     request.replay_print(
                         f"  oracle_materialize_as_of extended to {lo_eff}"
@@ -166,7 +189,9 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
 
     expires_as_of = ""
     if request.mode == "official_consolidation":
-        if oracle_materialize_as_of is not None:
+        if oracle_expiry_as_of is not None:
+            expires_as_of = oracle_expiry_as_of
+        elif oracle_materialize_as_of is not None:
             expires_as_of = oracle_materialize_as_of
         elif request.cutoff_date is not None:
             expires_as_of = request.cutoff_date.isoformat()

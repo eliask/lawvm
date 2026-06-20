@@ -76,12 +76,25 @@ def build_surface_bundle(
     text_hash = _sha256_text(raw_text)
     source_unit_id = f"{statute_id}#body"
     token_tape = build_token_tape(source_unit_id, raw_text)
+    # Thread the explicit consolidated-as-of date (``surface_time``) onto the
+    # unit's effective_interval START so a by-name citation resolves to the act
+    # version in force WHILE this consolidated body held (static-as-of-citing);
+    # see ``lenses/references.py::_unit_validity_interval`` +
+    # ``resolve_mentions(use_mention_validity=True)``. This is the consolidated
+    # VERSION date the text holds at — NOT the citing statute's enactment year —
+    # so a body legitimately citing a post-enactment version resolves correctly.
+    # When ``surface_time`` is absent the interval stays open ``(None, None)`` and
+    # a multi-version name stays AMBIGUOUS downstream (fail-loud, never a guessed
+    # "now"). Only the START is set: an open right edge means "still in force as
+    # far as this text knows", which is the correct upper bound for a snapshot.
+    effective_interval: tuple[str | None, str | None] = (surface_time, None)
     unit = SourceSurfaceUnit(
         source_unit_id=source_unit_id,
         work_id=statute_id,
         address=None,
         raw_text=raw_text,
         source_hash=source_hash,
+        effective_interval=effective_interval,
         source_ref=SourceSpanRef(
             source_unit_id=source_unit_id,
             source_hash=source_hash,

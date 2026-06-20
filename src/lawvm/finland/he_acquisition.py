@@ -1158,6 +1158,10 @@ def acquire_fi_proposals(
         file=sys.stderr,
     )
 
+    if not dry_run:
+        from lawvm.corpus_store import validate_farchive_create_path
+
+        validate_farchive_create_path(Path(dest))
     farchive: Any = None if dry_run else Farchive(dest)
 
     run = HEIngestRun(

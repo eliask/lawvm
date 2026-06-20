@@ -230,13 +230,19 @@ def _normalize_tree_paths(field_name: str, paths: Iterable[Iterable[object]]) ->
             raise ValueError(f"{field_name}[{index}] must be a tree path, not a string")
         if not isinstance(path, IterableABC):
             raise ValueError(f"{field_name}[{index}] must be a tree path")
-        tree_steps: list[tuple[object, ...]] = []
+        tree_steps: list[tuple[str, str]] = []
         for step_index, step in enumerate(path):
             if isinstance(step, str):
                 raise ValueError(f"{field_name}[{index}] step {step_index} must be a path step, not a string")
             if not isinstance(step, IterableABC):
                 raise ValueError(f"{field_name}[{index}] step {step_index} must be a path step")
-            tree_steps.append(tuple(step))
+            step_tuple = tuple(step)
+            if len(step_tuple) != 2 or not all(isinstance(value, str) for value in step_tuple):
+                raise ValueError(f"{field_name}[{index}] step {step_index} must be a pair of strings")
+            kind, label = step_tuple
+            if not isinstance(kind, str) or not isinstance(label, str):
+                raise ValueError(f"{field_name}[{index}] step {step_index} must be a pair of strings")
+            tree_steps.append((kind, label))
         tree_path = tuple(tree_steps)
         issues = validate_tree_path(tree_path, field_name=f"{field_name}[{index}]")
         if issues:
@@ -249,7 +255,7 @@ def _normalize_rule_ids(field_name: str, rule_ids: Iterable[object]) -> tuple[st
     normalized = tuple(rule_ids)
     if not all(isinstance(rule_id, str) for rule_id in normalized):
         raise ValueError(f"{field_name} must contain strings")
-    return normalized
+    return tuple(rule_id for rule_id in normalized if isinstance(rule_id, str))
 
 
 def build_mutation_invariant_reports(

@@ -38,7 +38,7 @@ def _install_score_one_archive(
     current_xml: bytes,
 ) -> None:
     class FakeFarchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs):
             pass
 
         def get(self, locator: str) -> bytes | None:
@@ -98,7 +98,7 @@ def test_compile_diagnostic_frontier_work_item_uses_family_defaults() -> None:
 
 def test_score_one_reports_multiple_choices_current_as_source_frontier(monkeypatch) -> None:
     class FakeFarchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs):
             pass
 
         def get(self, locator: str) -> bytes | None:
@@ -250,49 +250,37 @@ def test_score_one_reports_compile_phase_timings(monkeypatch) -> None:
             return base_ir
 
     fake_ir = SimpleNamespace(body=FakeNode("section-1"), supplements=[])
-    monkeypatch.setitem(
-        sys.modules,
-        "lawvm.uk_legislation.effects",
-        SimpleNamespace(
-            load_effects_for_statute_from_archive=lambda *_args: [],
-            uk_nonstructural_replay_candidate_family_for_effect_type=(
-                lambda _effect_type: None
-            ),
-        ),
+
+    import lawvm.uk_legislation.effects as effects
+    import lawvm.uk_legislation.source_adjudication as source_adjudication
+    import lawvm.uk_legislation.uk_amendment_replay as uk_amendment_replay
+    import lawvm.uk_legislation.uk_grafter as uk_grafter
+
+    monkeypatch.setattr(effects, "load_effects_for_statute_from_archive", lambda *_args: [])
+    monkeypatch.setattr(
+        uk_amendment_replay,
+        "UKDiagnosticReplayFilterMode",
+        SimpleNamespace(OBSERVE_ONLY="observe_only"),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "lawvm.uk_legislation.uk_amendment_replay",
-        SimpleNamespace(
-            UKDiagnosticReplayFilterMode=SimpleNamespace(OBSERVE_ONLY="observe_only"),
-            UKReplayPipeline=FakePipeline,
-        ),
+    monkeypatch.setattr(uk_amendment_replay, "UKReplayPipeline", FakePipeline)
+    monkeypatch.setattr(
+        uk_grafter,
+        "extract_eid_map_bytes",
+        lambda *_args: {
+            "eid_map": {"section-1": "section-1"},
+            "text_map": {},
+            "physical_eid_aliases": {},
+            "visible_number_eid_aliases": {},
+        },
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "lawvm.uk_legislation.uk_grafter",
-        SimpleNamespace(
-            extract_eid_map_bytes=lambda *_args: {
-                "eid_map": {"section-1": "section-1"},
-                "text_map": {},
-                "physical_eid_aliases": {},
-                "visible_number_eid_aliases": {},
-            },
-            parse_uk_statute_ir_bytes=lambda *_args, **_kwargs: fake_ir,
-            _clean_num=lambda value: str(value).strip("()"),
-        ),
+    monkeypatch.setattr(uk_grafter, "parse_uk_statute_ir_bytes", lambda *_args, **_kwargs: fake_ir)
+    monkeypatch.setattr(uk_grafter, "_clean_num", lambda value: str(value).strip("()"))
+    monkeypatch.setattr(
+        source_adjudication,
+        "normalize_uk_replay_compare_eids",
+        lambda replay, oracle, **_kwargs: (set(replay), set(oracle)),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "lawvm.uk_legislation.source_adjudication",
-        SimpleNamespace(
-            normalize_uk_replay_compare_eids=lambda replay, oracle, **_kwargs: (
-                set(replay),
-                set(oracle),
-            ),
-            _normalize_uk_source_container_eid=lambda eid: eid,
-        ),
-    )
+    monkeypatch.setattr(source_adjudication, "_normalize_uk_source_container_eid", lambda eid: eid)
 
     row = uk_broad_baseline.score_one("ukpga/2000/1")
 
@@ -410,7 +398,7 @@ def test_sample_statutes_excludes_multiple_choices_and_includes_regnal_leaves(
     }
 
     class FakeFarchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs):
             pass
 
         def locators(self, pattern: str) -> list[str]:

@@ -228,7 +228,7 @@ def compute_cheap_signal_coverage(
     from lawvm.finland.transparent_store import TransparentCorpusStore
     from lawvm.tools.parse_bench import _archive_path
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     if min_year:
         ids = [s for s in ids if s[:4].isdigit() and int(s[:4]) >= min_year]

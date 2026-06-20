@@ -213,6 +213,7 @@ def test_refusal_residual_status_tracks_family() -> None:
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_from_actual_replay_feeds_materialized_after_tree_against_oracle() -> None:
     report = compare_actual_replay_to_oracle(db_path=_REAL_DB, work_id=_WORK_ID)
     summary = report.summary()
@@ -236,6 +237,7 @@ def test_from_actual_replay_feeds_materialized_after_tree_against_oracle() -> No
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_from_actual_replay_refusal_lane_splits_source_honest_from_replay_bug() -> None:
     report = compare_actual_replay_to_oracle(db_path=_REAL_DB, work_id=_WORK_ID)
     refusal_families = report.summary()["refusal_residual_family_counts"]
@@ -251,6 +253,7 @@ def test_from_actual_replay_refusal_lane_splits_source_honest_from_replay_bug() 
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_from_actual_replay_report_is_jsonable_and_claims_replay() -> None:
     report = compare_actual_replay_to_oracle(db_path=_REAL_DB, work_id=_WORK_ID)
     jsonable = report.to_jsonable()

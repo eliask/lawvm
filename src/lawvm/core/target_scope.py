@@ -17,7 +17,7 @@ def _scope_text(value: object) -> str:
     return str(value or "").strip()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ResolvedTargetScope:
     """Normalized target scope extracted from compiled/adjudication rows."""
 

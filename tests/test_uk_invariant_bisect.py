@@ -89,6 +89,7 @@ def test_build_uk_invariant_bisect_bundle_missing_archive_raises() -> None:
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live UK invariant-bisect test",
 )
+@pytest.mark.slow
 def test_uk_invariant_bisect_duplicate_label_no_violations_ukpga_1978_30() -> None:
     """ukpga/1978/30 has no duplicate_label violations across its amendment chain."""
     from lawvm.tools.invariant_bisect import build_uk_invariant_bisect_bundle
@@ -120,6 +121,7 @@ def test_uk_invariant_bisect_duplicate_label_no_violations_ukpga_1978_30() -> No
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live UK invariant-bisect test",
 )
+@pytest.mark.slow
 def test_uk_invariant_bisect_all_tree_base_violations_ukpga_1978_30() -> None:
     """ukpga/1978/30 all_tree: enacted base has illegal_edge violations (monotone)."""
     from lawvm.tools.invariant_bisect import build_uk_invariant_bisect_bundle
@@ -142,6 +144,7 @@ def test_uk_invariant_bisect_all_tree_base_violations_ukpga_1978_30() -> None:
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live UK invariant-bisect test",
 )
+@pytest.mark.slow
 def test_uk_invariant_bisect_window_bounds_respected_ukpga_1978_30() -> None:
     """--after / --before window narrows the scan to a subset of amendments."""
     from lawvm.tools.invariant_bisect import build_uk_invariant_bisect_bundle
@@ -178,6 +181,7 @@ def test_uk_invariant_bisect_window_bounds_respected_ukpga_1978_30() -> None:
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live UK invariant-bisect test",
 )
+@pytest.mark.slow
 def test_uk_invariant_bisect_steps_list_structure_ukpga_1978_30() -> None:
     """Every step in the steps list has required keys."""
     from lawvm.tools.invariant_bisect import build_uk_invariant_bisect_bundle

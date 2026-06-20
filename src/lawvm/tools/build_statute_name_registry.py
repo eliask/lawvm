@@ -18,10 +18,14 @@ Temporal windows (fail-loud, never fabricated):
   * ``valid_from`` = the source XML's ``FRBRWork/FRBRdate[@name='dateIssued']``
     (the real enactment date). If the corpus lacks it, the window is left OPEN
     (``None``) and counted in the report.
-  * ``valid_to`` = always OPEN. A title's end date (an act renamed/repealed) is
-    NOT derivable from the source title alone; we do not invent it. The
-    consolidation timeline is the place that would close windows, out of scope
-    for a title index.
+  * ``valid_to`` = the REPEAL date read from the statute's consolidated oracle
+    (``finlex:repealedBy / ... / dateEntryIntoForce[@date]``) when the act has
+    been repealed and the corpus exposes that date; else OPEN (``None``). This is
+    a deterministic IN-CORPUS supersession date (Finlex consolidation metadata,
+    no external fetch) that closes a repealed-and-re-enacted name's window so
+    as-of-citing disambiguation can drop the superseded version. A still-current
+    act, or a repealed act whose supersession date the corpus does not expose,
+    keeps an OPEN window --- the date is never invented.
 
 Inflection (fail-loud): a title ending in a known statute head (``laki`` /
 ``asetus`` ...) is expanded into its inflected surface variants by the M1
@@ -36,9 +40,10 @@ corpus, regenerable, and large — so it is GITIGNORED, not committed (like the
     lawvm build-statute-name-registry [--out PATH] [--limit N]
 
 Reports: total statutes enumerated, titles indexed, generated surface variants,
-no-known-head titles (nominative-only), no-date titles (open window), and
-collisions (one normalized surface -> several distinct statute ids = the
-ambiguous/temporal cases the registry refuses to silently pick among).
+no-known-head titles (nominative-only), no-date titles (open valid_from),
+repealed titles with a closed valid_to (oracle supersession date), and collisions
+(one normalized surface -> several distinct statute ids = the ambiguous/temporal
+cases the registry refuses to silently pick among).
 """
 
 from __future__ import annotations
@@ -72,6 +77,7 @@ class BuildReport:
     no_title: int = 0
     no_known_head: int = 0  # title indexed nominative-only (no inflection)
     no_date: int = 0  # title with an OPEN valid_from (corpus lacked dateIssued)
+    repealed_dated: int = 0  # repealed act with a closed valid_to (oracle date)
     surface_variants: int = 0  # total generated surface keys across all titles
     collisions: int = 0  # surfaces mapping to >1 distinct statute id
 
@@ -84,6 +90,7 @@ class BuildReport:
         print(f"  no title (skipped)        : {self.no_title}", file=file)
         print(f"  no known head (nom-only)  : {self.no_known_head}", file=file)
         print(f"  no date (open valid_from) : {self.no_date}", file=file)
+        print(f"  repealed (closed valid_to): {self.repealed_dated}", file=file)
         print(f"  generated surface variants: {self.surface_variants}", file=file)
         print(f"  surface collisions        : {self.collisions}", file=file)
 
@@ -99,7 +106,7 @@ def _total_statutes(limit: int) -> int:
 
     from lawvm.finland.transparent_store import TransparentCorpusStore
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     return len(ids[:limit]) if limit else len(ids)
 
@@ -130,6 +137,8 @@ def _iter_entries(limit: int) -> "tuple[list[StatuteNameEntry], BuildReport]":
         report.titles_indexed += 1
         if entry.valid_from is None:
             report.no_date += 1
+        if entry.valid_to is not None:
+            report.repealed_dated += 1
         if _split_head(entry.canonical_title) is None:
             report.no_known_head += 1
         for key in _inflected_surfaces(entry.canonical_title):
@@ -157,6 +166,7 @@ def main(args) -> None:
             "no_title": report.no_title,
             "no_known_head": report.no_known_head,
             "no_date": report.no_date,
+            "repealed_dated": report.repealed_dated,
             "surface_variants": report.surface_variants,
             "collisions": report.collisions,
         },

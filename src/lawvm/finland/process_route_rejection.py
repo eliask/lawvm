@@ -13,8 +13,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, List, Mapping, Optional
 
-from lxml import etree
-
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.phase_result import Finding
@@ -23,11 +21,15 @@ from lawvm.finland.citation_routing import (
     _title_explicitly_targets_other_statute,
     johtolause_cited_target_ids,
 )
-from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree
-from lawvm.finland.metadata import _commencement_expiry_override
+from lawvm.finland.effect_lifecycle_signals import (
+    EffectLifecycleOverride,
+    EffectLifecycleOverrideScope,
+    EffectRelationSignal,
+)
 from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import _rewrite_lo_op_source_expiry
-from lawvm.finland.vts import VtsSkippedTarget, extract_vts_cross_statute_repeals
+from lawvm.finland.vts import VtsSkippedTarget
 
 
 RecordProcessFinding = Callable[..., Finding]
@@ -142,15 +144,15 @@ class ProcessRouteRejectionContext:
     parent_title: str
     source_title: str
     johto: str
-    xml_bytes: bytes
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     route_reason: str
     route_target_amendment_id: str
     strict_profile: Optional[StrictProfile]
     replay_mode: str
     lo_ops_out: Optional[List[_LegalOperation]]
     vts_skipped_targets: list[VtsSkippedTarget]
-    commencement_expiry_override_notes: list[dict[str, object]]
+    commencement_expiry_override_notes: list[EffectLifecycleOverride]
+    effect_relation_signals: list[EffectRelationSignal]
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
 
@@ -170,14 +172,20 @@ class ProcessRouteRejectionContext:
             return f"johtolause cites {', '.join(cited)}"
         return "johtolause cites no parseable statute"
 
+    def _cited_statute_ids(self) -> tuple[str, ...]:
+        try:
+            source_year = int(self.amendment_id.split("/", 1)[0])
+        except (ValueError, IndexError):
+            return ()
+        return tuple(johtolause_cited_target_ids(self.johto, source_year)) if source_year else ()
+
     def handle(self) -> RouteRejectionResult:
         self._record_source_incomplete()
         self._apply_skipped_amendment_expiry_override()
-        vts_ops = extract_vts_cross_statute_repeals(
-            self.xml_bytes,
-            self.parent_id,
-            self.parent_title,
-            self.strict_profile,
+        vts_ops = self.source_model.extract_vts_cross_statute_repeals(
+            parent_id=self.parent_id,
+            parent_title=self.parent_title,
+            strict_profile=self.strict_profile,
             skipped_targets_out=self.vts_skipped_targets,
         )
         if not vts_ops:
@@ -188,10 +196,9 @@ class ProcessRouteRejectionContext:
                 should_return_state=True,
             )
 
-        ops = _enrich_ops_from_amendment_tree(
-            vts_ops,
-            self.amendment_id,
-            self.muutos_tree,
+        ops = self.source_model.enrich_amendment_ops(
+            ops=vts_ops,
+            amendment_id=self.amendment_id,
             johto=self.johto,
         )
         self.replay_print(
@@ -233,12 +240,36 @@ class ProcessRouteRejectionContext:
                 f"  [{self.amendment_id}] SKIPPED — pending amendment of parent recognized "
                 f"but not yet composed into {self.parent_id}{target_suffix}"
             )
+            self.effect_relation_signals.append(
+                EffectRelationSignal.pending_amendment(
+                    source_statute=self.amendment_id,
+                    target_statute=self.route_target_amendment_id,
+                    base_parent_id=self.parent_id,
+                    message=(
+                        "Pending amendment-of-amendment target could not be resolved "
+                        "to a prior source-backed effect."
+                    ),
+                    source_finding="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
+                    resolved=False,
+                )
+            )
             self.record_finding(
                 kind="APPLY.SOURCE_INCOMPLETE",
                 message="Amendment skipped: pending amendment-of-amendment target not yet composed.",
                 source_statute=self.amendment_id,
                 detail=disposition.as_detail({"target_amendment_id": self.route_target_amendment_id}),
                 role="obligation",
+            )
+            self.record_finding(
+                kind="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
+                message=(
+                    "Pending amendment-of-amendment target could not be resolved "
+                    "to a prior source-backed effect."
+                ),
+                source_statute=self.amendment_id,
+                detail=disposition.as_detail({"target_amendment_id": self.route_target_amendment_id}),
+                role="obligation",
+                blocking=True,
             )
             return
 
@@ -258,6 +289,46 @@ class ProcessRouteRejectionContext:
 
         if disposition.branch is RouteRejectionBranch.META_REPEAL:
             logger.debug("  [%s] SKIPPED — meta-repeal targets prior amendment act, not %s", self.amendment_id, self.parent_id)
+            cited_ids = self._cited_statute_ids()
+            if cited_ids:
+                for cited_id in cited_ids:
+                    self.effect_relation_signals.append(
+                        EffectRelationSignal.meta_repeal(
+                            source_statute=self.amendment_id,
+                            target_statute=cited_id,
+                            route_reason=disposition.route_reason,
+                            message="Meta-repeal of prior amending instrument recorded as lifecycle evidence.",
+                            source_finding="APPLY.META_REPEAL_EFFECT_RECORDED",
+                            resolved=True,
+                        )
+                    )
+                    self.record_finding(
+                        kind="APPLY.META_REPEAL_EFFECT_RECORDED",
+                        message="Meta-repeal of prior amending instrument recorded as lifecycle evidence.",
+                        source_statute=self.amendment_id,
+                        detail=disposition.as_detail({"target_amendment_id": cited_id}),
+                        role="observation",
+                        blocking=False,
+                    )
+            else:
+                self.effect_relation_signals.append(
+                    EffectRelationSignal.meta_repeal(
+                        source_statute=self.amendment_id,
+                        target_statute="",
+                        route_reason=disposition.route_reason,
+                        message="Meta-repeal target could not be resolved to a prior source-backed effect.",
+                        source_finding="APPLY.META_REPEAL_EFFECT_UNRESOLVED",
+                        resolved=False,
+                    )
+                )
+                self.record_finding(
+                    kind="APPLY.META_REPEAL_EFFECT_UNRESOLVED",
+                    message="Meta-repeal target could not be resolved to a prior source-backed effect.",
+                    source_statute=self.amendment_id,
+                    detail=disposition.as_detail(),
+                    role="obligation",
+                    blocking=True,
+                )
         elif disposition.branch is RouteRejectionBranch.TITLE_TARGETS_OTHER_STATUTE:
             self.replay_print(f"  [{self.amendment_id}] SKIPPED — title targets different statute (not {self.parent_id})")
         else:
@@ -274,12 +345,22 @@ class ProcessRouteRejectionContext:
         )
 
     def _apply_skipped_amendment_expiry_override(self) -> None:
-        expiry_override = _commencement_expiry_override(self.muutos_tree, self.amendment_id)
+        expiry_override = self.source_model.commencement_expiry_override(self.amendment_id)
         if expiry_override is None:
             return
         target_mid, labels, expiry = expiry_override
         if target_mid == self.amendment_id:
             return
+        scope = sorted(labels) if labels else ["*"]
+        self.commencement_expiry_override_notes.append(
+            EffectLifecycleOverride(
+                source_statute=self.amendment_id,
+                target_statute=target_mid,
+                scope=EffectLifecycleOverrideScope.sections(scope),
+                expiry=expiry.isoformat(),
+                context="skipped_amendment",
+            )
+        )
         if not _rewrite_lo_op_source_expiry(
             self.lo_ops_out,
             target_mid,
@@ -290,17 +371,7 @@ class ProcessRouteRejectionContext:
             expiry_convention="inclusive_prose",
         ):
             return
-        scope = sorted(labels) if labels else ["*"]
         self.replay_print(
             f"  [{self.amendment_id}] voimaantulo_expiry_override: "
             f"{target_mid} {scope} -> {expiry.isoformat()}"
-        )
-        self.commencement_expiry_override_notes.append(
-            {
-                "source_statute": self.amendment_id,
-                "target_statute": target_mid,
-                "labels": scope,
-                "expiry": expiry.isoformat(),
-                "context": "skipped_amendment",
-            }
         )

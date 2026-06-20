@@ -650,7 +650,7 @@ def test_uk_corpus_all_runs_multiple_choices_repair(monkeypatch) -> None:
     archive = _FakeArchive()
     calls: list[str] = []
 
-    monkeypatch.setattr(acquire_uk_corpus, "_open_archive", lambda _path: archive)
+    monkeypatch.setattr(acquire_uk_corpus, "_open_archive", lambda _path, **_kwargs: archive)
     monkeypatch.setattr(
         acquire_uk_corpus,
         "run_acquire",
@@ -688,6 +688,37 @@ def test_uk_corpus_all_runs_multiple_choices_repair(monkeypatch) -> None:
     )
 
     assert calls == ["acquire", "affecting", "refresh", "repair-multiple-choices"]
+
+
+def test_uk_corpus_stats_does_not_create_missing_archive(tmp_path) -> None:
+    missing_archive = tmp_path / "unused"
+
+    try:
+        acquire_uk_corpus.main(
+            SimpleNamespace(
+                uk_corpus_command="stats",
+                db=str(missing_archive),
+            )
+        )
+    except SystemExit as exc:
+        assert exc.code == f"ERROR: archive not found: {missing_archive}"
+    else:
+        raise AssertionError("missing stats archive should fail")
+
+    assert not missing_archive.exists()
+
+
+def test_uk_corpus_writable_archive_rejects_extensionless_creation(tmp_path) -> None:
+    missing_archive = tmp_path / "unused"
+
+    try:
+        acquire_uk_corpus._open_archive(missing_archive, readonly=False)
+    except ValueError as exc:
+        assert "refusing to create extensionless farchive destination" in str(exc)
+    else:
+        raise AssertionError("extensionless writable farchive path should fail")
+
+    assert not missing_archive.exists()
 
 
 def test_do_refresh_can_force_one_statute_current_and_effects() -> None:

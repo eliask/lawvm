@@ -49,6 +49,131 @@ def test_cli_main_suppresses_broken_pipe(monkeypatch) -> None:
     cli.main()
 
 
+def test_sync_finlex_dry_run_does_not_create_missing_archive(
+    tmp_path, monkeypatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from lawvm.finland import finlex_api
+
+    missing_archive = tmp_path / "unused"
+
+    def fake_list_changed_since(
+        since: str,
+        *,
+        doc_type: str = "statute-consolidated",
+        lang: str = "fin",
+    ) -> list[dict[str, str]]:
+        assert since == "2026-03-01T00:00:00Z"
+        assert doc_type == "statute-consolidated"
+        assert lang == "fin"
+        return [
+            {
+                "status": "MODIFIED",
+                "year": "2026",
+                "num": "1",
+                "pit_version": "2026-03-01",
+                "akn_uri": "/akn/fi/act/2026/1",
+            }
+        ]
+
+    monkeypatch.setattr(finlex_api, "list_changed_since", fake_list_changed_since)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "lawvm",
+            "sync-finlex",
+            "--since",
+            "2026-03-01T00:00:00Z",
+            "--db",
+            str(missing_archive),
+            "--dry-run",
+        ],
+    )
+
+    cli._main_impl()
+
+    out = capsys.readouterr().out
+    assert "fetched=0" in out
+    assert "modified=1" in out
+    assert not missing_archive.exists()
+
+
+def test_sync_finlex_refuses_extensionless_create_path(
+    tmp_path, monkeypatch
+) -> None:
+    missing_archive = tmp_path / "unused"
+
+    def fake_sync_changes(*args: object, **kwargs: object) -> dict[str, int]:
+        raise AssertionError("sync should not run after archive path rejection")
+
+    monkeypatch.setattr("lawvm.finland.finlex_api.sync_changes", fake_sync_changes)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "lawvm",
+            "sync-finlex",
+            "--since",
+            "2026-03-01T00:00:00Z",
+            "--db",
+            str(missing_archive),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        cli._main_impl()
+    assert not missing_archive.exists()
+
+
+def test_sync_finlex_latest_archive_discovery_does_not_create_missing_archive(
+    tmp_path,
+) -> None:
+    missing_archive = tmp_path / "unused"
+
+    with pytest.raises(SystemExit) as excinfo:
+        sync_finlex_latest.main(
+            Namespace(
+                db=str(missing_archive),
+                corpus=None,
+                sid=[],
+                delay=0.0,
+                verbose=False,
+                diagnostics_jsonl=None,
+            )
+        )
+
+    assert excinfo.value.code == (
+        f"ERROR: archive not found: {missing_archive}; pass --sid or --corpus "
+        "to seed a new archive"
+    )
+    assert not missing_archive.exists()
+
+
+def test_sync_finlex_latest_refuses_extensionless_create_path_with_sid(
+    tmp_path, monkeypatch
+) -> None:
+    missing_archive = tmp_path / "unused"
+
+    monkeypatch.setattr(
+        sync_finlex_latest,
+        "Farchive",
+        lambda path: pytest.fail("archive should not open after path rejection"),
+    )
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        sync_finlex_latest.main(
+            Namespace(
+                db=str(missing_archive),
+                corpus=None,
+                sid=["2010/182"],
+                delay=0.0,
+                verbose=False,
+                diagnostics_jsonl=None,
+            )
+        )
+    assert not missing_archive.exists()
+
+
 def test_bench_cli_help_matches_fi_tooling_defaults(
     cli_parser, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -58,8 +183,8 @@ def test_bench_cli_help_matches_fi_tooling_defaults(
     assert raised.value.code == 0
     out = capsys.readouterr().out
     assert "data/finland/bench_corpus.csv" in out
-    assert "FI default: 1=sequential" in out
-    assert "UK/EE use jurisdiction-specific defaults" in out
+    assert "FI default: min(16, cpu_count)" in out
+    assert "UK/EE default: min(cpu_count, 8)" in out
 
 
 @lru_cache(maxsize=1)
@@ -729,7 +854,7 @@ def test_cli_parser_rejects_eu_reul_without_subcommand(cli_parser) -> None:
         cli_parser.parse_args(["eu-reul"])
 
 
-def test_sync_finlex_latest_main_uses_archive_ids(monkeypatch, capsys) -> None:
+def test_sync_finlex_latest_main_uses_archive_ids(monkeypatch, tmp_path, capsys) -> None:
     calls: dict[str, tuple[object, list[str], float, bool]] = {}
 
     def fake_sync_latest_pits(archive, sids, delay=1.0, verbose=False, diagnostics_out=None):
@@ -754,7 +879,11 @@ def test_sync_finlex_latest_main_uses_archive_ids(monkeypatch, capsys) -> None:
     monkeypatch.setattr(sync_finlex_latest, "Farchive", lambda path: DummyArchive(path))
     monkeypatch.setattr(sync_finlex_latest, "sync_latest_pits", fake_sync_latest_pits)
 
-    sync_finlex_latest.main(Namespace(db="data/finlex.farchive", corpus=None, delay=0.75, verbose=True))
+    db_path = tmp_path / "finlex.farchive"
+    db_path.touch()
+    sync_finlex_latest.main(
+        Namespace(db=str(db_path), corpus=None, delay=0.75, verbose=True)
+    )
 
     out = capsys.readouterr().out
     assert "Syncing latest Finnish PIT XMLs" in out

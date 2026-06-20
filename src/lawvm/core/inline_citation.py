@@ -26,7 +26,7 @@ Composition with siblings:
     #11 marks UNRESOLVED — closing the typing loop.
 
 This module has no Finland-specific imports. Finland extraction lives in
-``lawvm.finland.inline_citation_extractor``.
+``lawvm.finland.references.inline_citation_extractor``.
 This module only holds the shared typed primitive and observation types.
 """
 from __future__ import annotations

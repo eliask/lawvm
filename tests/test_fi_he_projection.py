@@ -649,6 +649,7 @@ _SKIP_REASON = "~/Downloads/government-proposal.zip not available"
 
 
 @pytest.mark.skipif(_SKIP_REAL_CORPUS, reason=_SKIP_REASON)
+@pytest.mark.slow
 class TestRealCorpusProjection:
     """Real-corpus regression: project known HEs from government-proposal.zip."""
 
@@ -730,6 +731,7 @@ _SKIP_FARCHIVE_REASON = "data/fi_government_proposal.farchive not available"
 
 
 @pytest.mark.skipif(_SKIP_FARCHIVE, reason=_SKIP_FARCHIVE_REASON)
+@pytest.mark.slow
 class TestFarchiveSignatureRegression:
     """Real-corpus regression via farchive path for fi_he_signatures.
 

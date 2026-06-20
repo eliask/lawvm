@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Optional, Protocol, Tuple, cast
+from typing import Iterable, Optional, Protocol, Tuple
 
-import lxml.etree as etree
-
+from lawvm.core.coverage import CoverageGap
+from lawvm.finland.body_coverage import BodyCoveragePayloadRef
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import AmendmentOp
 
@@ -21,12 +21,7 @@ class UncoveredCandidateProcessor(Protocol):
         amend_part_label: Optional[str] = None,
     ) -> None: ...
 
-    def process_section_candidate(
-        self,
-        sec: etree._Element,
-        label: str,
-        amend_chapter_label: Optional[str],
-    ) -> None: ...
+    def process_section_candidate(self, candidate: "UncoveredSectionCandidate") -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +30,16 @@ class PegOwnedSectionTargets:
 
     by_chapter: frozenset[Tuple[Optional[str], str]]
     labels: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class UncoveredSectionCandidate:
+    """Typed candidate identity for uncovered-body section recovery."""
+
+    label: str
+    amend_chapter_label: Optional[str]
+    amend_part_label: Optional[str]
+    source_ref: BodyCoveragePayloadRef
 
 
 def peg_owned_section_targets(ops: Iterable[AmendmentOp]) -> PegOwnedSectionTargets:
@@ -54,7 +59,7 @@ def peg_owned_section_targets(ops: Iterable[AmendmentOp]) -> PegOwnedSectionTarg
 
 def run_uncovered_candidate_iteration(
     *,
-    supplemental_candidates: Iterable[object],
+    supplemental_candidates: Iterable[CoverageGap],
     peg_owned_targets: PegOwnedSectionTargets,
     processor: UncoveredCandidateProcessor,
 ) -> None:
@@ -65,20 +70,28 @@ def run_uncovered_candidate_iteration(
     outranks uncovered-body recovery.
     """
     for gap in supplemental_candidates:
-        unit = getattr(gap, "unit", None)
-        if unit is None or getattr(unit, "kind", None) != "section":
+        unit = gap.unit
+        if unit.kind != "section":
             continue
-        section_el = getattr(unit, "payload_ref", None)
-        if section_el is None:
-            continue
-        label = getattr(unit, "observed_label", "") or ""
+        label = unit.observed_label or ""
         if not label:
             continue
-        chapter = getattr(unit, "parent_label", None)
+        chapter = unit.parent_label
         if (chapter, label) in peg_owned_targets.by_chapter:
             processor.record_skip("peg_owned_same_chapter", label, chapter)
             continue
         if label in peg_owned_targets.labels:
             processor.record_skip("peg_owned_label_collision", label, chapter)
             continue
-        processor.process_section_candidate(cast(etree._Element, section_el), label, chapter)
+        source_ref = unit.payload_ref
+        if not isinstance(source_ref, BodyCoveragePayloadRef) or source_ref.unit_kind != "section":
+            processor.record_skip("missing_source_payload_ref", label, chapter)
+            continue
+        processor.process_section_candidate(
+            UncoveredSectionCandidate(
+                label=label,
+                amend_chapter_label=chapter,
+                amend_part_label=source_ref.part,
+                source_ref=source_ref,
+            )
+        )

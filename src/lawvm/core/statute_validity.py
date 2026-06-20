@@ -72,7 +72,7 @@ def expires_on_from_valid_until(valid_until: dt.date) -> dt.date:
     return valid_until + dt.timedelta(days=1)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FixedTermValidityProof:
     """Proof object for one governing fixed-term validity decision.
 
@@ -97,7 +97,7 @@ class FixedTermValidityProof:
     duration_spec: Optional[str] = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class StatuteValidityBound:
     """One stored statute-level validity bound fact.
 

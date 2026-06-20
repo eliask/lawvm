@@ -247,10 +247,53 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "normal operative johtolause."
     ),
     # --- compile-time flat-body section-scope recovery (frontend_compile.py) ---
-    "fi_flat_reinstated_section_scope_from_base_prior_address": (
-        "A flat-body 'kumotun N §:n tilalle uusi N §' rebirth inherits the repealed "
-        "section's prior chapter/part address from the base tree when it is unique and "
-        "its container still exists."
+    "fi_reinstated_section_scope_from_prior_repeal_address": (
+        "A reinstated flat-body section inherits the chapter/part address recorded by "
+        "the prior repeal when that address is unique and still legally available."
+    ),
+    "fi.act_wide_body_section_replace": (
+        "An act-wide body section replacement is recognized as a source-body section "
+        "operation rather than a free-floating payload fragment."
+    ),
+    "fi.item_and_moment_target_supplement.v1": (
+        "A mixed clause supplement recovers item and subsection targets skipped by the "
+        "primary johtolause parse while preserving their source scope."
+    ),
+    "fi.mixed_explicit_target_supplement.v1": (
+        "A mixed explicit-target clause supplement recovers omitted sibling targets "
+        "from the same operative clause with a visible recovery rule."
+    ),
+    "fi.numbered_table_target.v1": (
+        "A numbered table row target is parsed as a legal operation target, not as "
+        "unowned table text."
+    ),
+    "fi.sparse_osalta_row_omission_repeal.v1": (
+        "A sparse 'osalta' table-row omission is lowered as an owned repeal of the "
+        "specified row target."
+    ),
+    "fi.timeline.absent_content_shadow_collapse": (
+        "Timeline materialization collapses absent-content shadows from the same source "
+        "only when the content absence is explicit and witnessed."
+    ),
+    "fi.timeline.same_source_semantic_version_dedupe": (
+        "Timeline materialization deduplicates semantically equivalent same-source "
+        "versions without hiding competing legal content."
+    ),
+    "fi_flat_body_replace_scope_from_bracketing_live_siblings": (
+        "A flat-body whole-section replacement infers its chapter from live sibling "
+        "sections bracketing the replaced label."
+    ),
+    "fi_letter_suffix_insert_scope_from_stem_host": (
+        "A letter-suffix section insert can inherit the stem section's live chapter "
+        "when the source gives no stronger container scope."
+    ),
+    "fi_materialized_attachments_wrapper_split_v1": (
+        "Materialization splits attachment wrappers into typed projected provisions "
+        "with a visible projection rule."
+    ),
+    "fi_materialized_provisions_wrapper_projection_v1": (
+        "Materialization projects provision wrappers into replay-visible provision "
+        "nodes with a visible projection rule."
     ),
     "fi_flat_body_insert_scope_from_bracketing_live_siblings": (
         "A flat-body whole-section insert infers its chapter from the live sibling "

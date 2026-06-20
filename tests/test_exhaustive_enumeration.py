@@ -20,8 +20,18 @@ from typing import Any, List, Literal, Sequence, cast
 
 import pytest
 
-from lawvm.core.ir import IRNode, LegalAddress, OperationSource, ProvisionTimeline, ProvisionVersion
-from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.core.ir import (
+    IRNode,
+    LegalAddress,
+    LegalOperation,
+    OperationSource,
+    ProvisionTimeline,
+    ProvisionVersion,
+    ScopePredicate,
+    TextPatchSpec,
+    TextSelector,
+)
+from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.core.tree_ops import (
     check_invariants,
     default_label_sort_key,
@@ -365,6 +375,35 @@ class TestIRNodeValidationExhaustive:
             assert len(parent.children) == n_children
             for i, child in enumerate(parent.children):
                 assert child.label == str(i + 1)
+
+    def test_immutable_ir_carriers_are_slotted(self) -> None:
+        """Replay-facing immutable carriers do not carry per-instance dicts."""
+
+        assert not hasattr(IRNode(kind=IRNodeKind.SECTION, label="1"), "__dict__")
+        assert not hasattr(LegalAddress(path=(("section", "1"),)), "__dict__")
+        assert not hasattr(ScopePredicate(dimension="territory", includes=frozenset({"fi"})), "__dict__")
+        selector = TextSelector(match_text="old")
+        assert not hasattr(selector, "__dict__")
+        assert not hasattr(
+            TextPatchSpec(kind=TextPatchKindEnum.REPLACE, selector=selector, replacement="new"),
+            "__dict__",
+        )
+
+    def test_legal_operation_frontend_riders_are_named_and_slotted(self) -> None:
+        """Frontend riders are named fields, not dynamic LegalOperation attrs."""
+
+        op = LegalOperation(
+            op_id="op-1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            scope_confidence="explicit_source",
+            move_clause_target_unit_kind="chapter",
+        )
+
+        assert not hasattr(op, "__dict__")
+        assert op.scope_confidence == "explicit_source"
+        assert op.move_clause_target_unit_kind == "chapter"
 
 
 class TestLegalAddressExhaustive:

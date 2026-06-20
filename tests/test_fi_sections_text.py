@@ -167,6 +167,7 @@ class TestCorpusFixtureExtraction:
     not __import__("pathlib").Path("data/finlex.farchive").exists(),
     reason="finlex.farchive not present; skipping real-corpus test",
 )
+@pytest.mark.slow
 class TestRealCorpusRegression:
     """Category 2: pull a sample of consolidated statutes, verify reasonableness."""
 

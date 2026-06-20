@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import lawvm.finland.timeline_version_dedupe as timeline_version_dedupe
 from lawvm.core.invariant_profiles import core_replay_strict_profile
+from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalAddress, OperationSource, ProvisionTimeline, ProvisionVersion
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.core.ir import IRNode
 from lawvm.core.timeline_invariants import check_all_timeline_invariants_typed
 from lawvm.finland.timeline_version_dedupe import (
     FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID,
+    FI_TIMELINE_SAME_SOURCE_SEMANTIC_DEDUPE_RULE_ID,
     dedupe_finland_timelines,
 )
 from tests.corpus_pin_helpers import replay_xml_for_test
@@ -20,6 +22,7 @@ def _pv(
     enacted: str,
     source_id: str,
     text: str | None,
+    content_hash: str = "",
 ) -> ProvisionVersion:
     content = None
     if text is not None:
@@ -30,6 +33,7 @@ def _pv(
         variant_kind="permanent",
         content=content,
         source=OperationSource(statute_id=source_id, enacted=enacted),
+        content_hash=content_hash,
     )
 
 
@@ -61,6 +65,56 @@ def test_absent_content_shadow_collapse_removes_competing_none_row() -> None:
     assert records[0].witness_rule_id == FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID
 
 
+def test_semantic_text_cache_reuses_content_hash(monkeypatch) -> None:
+    calls = 0
+    original_irnode_to_text = timeline_version_dedupe.irnode_to_text
+
+    def counting_irnode_to_text(node: IRNode) -> str:
+        nonlocal calls
+        calls += 1
+        return original_irnode_to_text(node)
+
+    monkeypatch.setattr(
+        timeline_version_dedupe,
+        "irnode_to_text",
+        counting_irnode_to_text,
+    )
+    address = LegalAddress(path=(("section", "12"),))
+    timelines = {
+        address: ProvisionTimeline(
+            address=address,
+            versions=[
+                _pv(
+                    effective="2005-01-01",
+                    enacted="2004-08-20",
+                    source_id="2004/821",
+                    text="12§ text",
+                    content_hash="same-content",
+                ),
+                _pv(
+                    effective="2005-01-01",
+                    enacted="2004-08-20",
+                    source_id="2004/821",
+                    text="12§ text",
+                    content_hash="same-content",
+                ),
+            ],
+        )
+    }
+    cache: timeline_version_dedupe.SemanticTextKeyCache = {}
+
+    deduped, records = dedupe_finland_timelines(
+        timelines,
+        semantic_text_cache=cache,
+    )
+
+    assert calls == 1
+    assert len(deduped[address].versions) == 1
+    assert len(records) == 1
+    assert records[0].witness_rule_id == FI_TIMELINE_SAME_SOURCE_SEMANTIC_DEDUPE_RULE_ID
+    assert cache == {("content_hash", "same-content"): "12 § text"}
+
+
 def test_1993_1054_corpus_no_longer_reports_overlapping_permanent() -> None:
     master = replay_xml_for_test("1993/1054", mode="legal_pit", quiet=True)
     products = master.products
@@ -76,3 +130,22 @@ def test_1993_1054_corpus_no_longer_reports_overlapping_permanent() -> None:
     overlap = [v for v in violations if v.kind == "overlapping_permanent"]
     assert overlap == []
     assert products.timeline_version_dedupes
+
+
+def test_2000_256_2024_273_item_repeals_survive_timeline_dedupe() -> None:
+    master = replay_xml_for_test("2000/256", mode="legal_pit", quiet=True)
+    section = next(
+        child
+        for chapter in master.materialized_state.ir.children
+        if chapter.kind is IRNodeKind.CHAPTER and chapter.label == "2"
+        for child in chapter.children
+        if child.kind is IRNodeKind.SECTION and child.label == "5"
+    )
+    text = " ".join(timeline_version_dedupe.irnode_to_text(section).split())
+
+    assert "4) hallintojohtajalla ja viestintäjohtajalla ylempi korkeakoulututkinto" in text
+    assert "7 a) asiantuntijalla korkeakoulututkinto" in text
+    assert "10) tiedottajalla" not in text
+    assert "16) kirjastoamanuenssilla" not in text
+    assert "17) kielenkääntäjällä korkeakoulututkinto tai muu soveltuva tutkinto" in text
+    assert "perehtyneisyys viran tehtäväalaan" in text

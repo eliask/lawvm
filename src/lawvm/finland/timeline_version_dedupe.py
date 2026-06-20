@@ -19,6 +19,7 @@ FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID = (
     "fi.timeline.absent_content_shadow_collapse"
 )
 _TIMELINE_SECTION_MARK_SPACING_RE = re.compile(r"^(\d+[a-z]?)\s*§")
+SemanticTextKeyCache = dict[tuple[str, str], str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,14 +35,32 @@ class TimelineVersionDedupeRecord:
     removed_count: int = 1
 
 
-def _timeline_version_semantic_text_key(node: object | None) -> str:
+def _timeline_version_semantic_text_key(
+    node: object | None,
+    *,
+    cache_key: tuple[str, str] | None = None,
+    semantic_text_cache: SemanticTextKeyCache | None = None,
+) -> str:
     if node is None:
         return ""
+    if cache_key is not None and semantic_text_cache is not None:
+        cached = semantic_text_cache.get(cache_key)
+        if cached is not None:
+            return cached
     if isinstance(node, IRNode):
         text = " ".join(irnode_to_text(node).split())
     else:
         text = str(node)
-    return _TIMELINE_SECTION_MARK_SPACING_RE.sub(r"\1 §", text)
+    normalized = _TIMELINE_SECTION_MARK_SPACING_RE.sub(r"\1 §", text)
+    if cache_key is not None and semantic_text_cache is not None:
+        semantic_text_cache[cache_key] = normalized
+    return normalized
+
+
+def _semantic_text_cache_key(version: ProvisionVersion) -> tuple[str, str]:
+    if version.content_hash:
+        return ("content_hash", version.content_hash)
+    return ("node_id", str(id(version.content)))
 
 
 def _collapse_absent_content_shadow_rows(
@@ -88,6 +107,8 @@ def _collapse_absent_content_shadow_rows(
 def _dedupe_same_source_semantic_versions(
     address: LegalAddress,
     versions: list[ProvisionVersion],
+    *,
+    semantic_text_cache: SemanticTextKeyCache | None = None,
 ) -> tuple[list[ProvisionVersion], list[TimelineVersionDedupeRecord]]:
     """Collapse same-source rows that differ only by non-semantic content shape."""
     deduped: list[ProvisionVersion] = []
@@ -105,7 +126,11 @@ def _dedupe_same_source_semantic_versions(
             version.expires,
             version.variant_kind,
             tuple(version.applicability),
-            _timeline_version_semantic_text_key(version.content),
+            _timeline_version_semantic_text_key(
+                version.content,
+                cache_key=_semantic_text_cache_key(version),
+                semantic_text_cache=semantic_text_cache,
+            ),
         )
         existing_index = index_by_key.get(key)
         if existing_index is None:
@@ -128,6 +153,8 @@ def _dedupe_same_source_semantic_versions(
 
 def dedupe_finland_timelines(
     timelines: Timelines,
+    *,
+    semantic_text_cache: SemanticTextKeyCache | None = None,
 ) -> tuple[Timelines, tuple[TimelineVersionDedupeRecord, ...]]:
     """Apply owned Finland timeline dedupe rules to every address bucket."""
     out: Timelines = {}
@@ -135,7 +162,11 @@ def dedupe_finland_timelines(
     for address, timeline in timelines.items():
         versions = list(timeline.versions)
         versions, absent_records = _collapse_absent_content_shadow_rows(address, versions)
-        versions, semantic_records = _dedupe_same_source_semantic_versions(address, versions)
+        versions, semantic_records = _dedupe_same_source_semantic_versions(
+            address,
+            versions,
+            semantic_text_cache=semantic_text_cache,
+        )
         records.extend(absent_records)
         records.extend(semantic_records)
         out[address] = ProvisionTimeline(address=address, versions=versions)
@@ -145,6 +176,7 @@ def dedupe_finland_timelines(
 __all__ = [
     "FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID",
     "FI_TIMELINE_SAME_SOURCE_SEMANTIC_DEDUPE_RULE_ID",
+    "SemanticTextKeyCache",
     "TimelineVersionDedupeRecord",
     "dedupe_finland_timelines",
 ]

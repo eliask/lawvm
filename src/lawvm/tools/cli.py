@@ -69,6 +69,8 @@ Subcommands:
     bench-report                    Summarise a bench run CSV without re-running the bench.
     parse-johto <text>              Parse a Finnish amendment johtolause text and show parsed ops.
     fi-parse-explain <sid>          Dump everything needed to diagnose one statute's johtolause parse.
+    fi-parse                        Visualize Finnish parse structures (forest/johtolause/morph/clauses).
+    fi-refs <sid>                   Annotated-source-canvas viewer for the references overlay.
     topic --topic STRING            Keyword/FTS search across statute sections and HE body atoms.
     follow-refs --start REF         Multi-hop reference traversal from a provision.
     pit-timeline --provision REF    Provision amendment history (index-backed).
@@ -1576,8 +1578,8 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         default=None,
         metavar="N",
         help=(
-            "parallel workers (FI default: 1=sequential; UK/EE use "
-            "jurisdiction-specific defaults); per-worker peak RSS ~860 MB after source-root "
+            "parallel workers (FI default: min(16, cpu_count); UK/EE default: "
+            "min(cpu_count, 8)); per-worker peak RSS ~860 MB after source-root "
             "eviction — heavy lanes still serialize via memory guard)"
         ),
     )
@@ -1728,7 +1730,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "--no-save",
         action="store_true",
         dest="no_save",
-        help="[-j uk] print a bench report without writing run CSV/history artifacts",
+        help="print a bench report without writing run CSV/history artifacts",
     )
     bench_p.add_argument(
         "--summary-only",
@@ -1812,7 +1814,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "--no-text-scores",
         action="store_true",
         dest="no_text_scores",
-        help="[-j uk] skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
+        help="skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
     )
     bench_p.add_argument(
         "--worker-max-tasks",
@@ -6179,6 +6181,50 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="do not write CSV to data/frontier_reports/",
     )
 
+    # --- bench-triage ---
+    # Inlined from lawvm.tools.bench_triage.register_cli to avoid importing it
+    # (→ oracle_check → lxml/replay) at parser-build time. Dispatch in main()
+    # imports it lazily; this is pure argparse only.
+    bench_triage_p = sub.add_parser(
+        "bench-triage",
+        help="classify residual bench divergences into A/B/C/needs_human",
+        description=(
+            "Triage the worst divergent statutes from a bench run into "
+            "real_parser_gap (A, worth burndown), oracle_error_or_desync (B), "
+            "irreducibly_ambiguous (C), or needs_human. Decision-support: "
+            "tells you how much of the residual error is even closeable."
+        ),
+    )
+    bench_triage_p.add_argument(
+        "--label",
+        metavar="LABEL",
+        help="bench run label substring (default: latest *_run_*.csv)",
+    )
+    bench_triage_p.add_argument(
+        "--top",
+        type=int,
+        default=50,
+        help="number of worst divergent statutes to triage (default: 50)",
+    )
+    bench_triage_p.add_argument(
+        "--mode",
+        default="official_consolidation",
+        type=replay_mode_argument,
+        choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation)",
+    )
+    bench_triage_p.add_argument(
+        "--json",
+        metavar="PATH",
+        help="write the full triage report as JSON to PATH",
+    )
+    bench_triage_p.add_argument(
+        "--runs-dir",
+        dest="runs_dir",
+        metavar="DIR",
+        help="bench_runs directory (default: <repo>/data/bench_runs)",
+    )
+
     # --- strict-report ---
     strict_p = sub.add_parser(
         "strict-report",
@@ -10528,6 +10574,165 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit JSON",
     )
 
+    # --- fi-parse ---
+    fi_parse_p = sub.add_parser(
+        "fi-parse",
+        help="visualize Finnish parse structures (forest / johtolause / morph / clauses)",
+        description=(
+            "Render Finnish parse structures from the existing machinery (read-only "
+            "visualization; no new parsing). Pick exactly one view: "
+            "--statute (forest; narrow with --grep/--provision, or add --clauses for "
+            "segmentation), --johtolause TEXT, --morph WORD, or --text TEXT (clauses). "
+            "Every view supports --json."
+        ),
+    )
+    fi_parse_p.add_argument(
+        "--statute",
+        metavar="STATUTE_ID",
+        default="",
+        help="statute id for the FOREST / CLAUSES view, e.g. 2004/301",
+    )
+    fi_parse_p.add_argument(
+        "--grep",
+        metavar="TEXT",
+        default=None,
+        help="forest view: narrow to the provision window around this literal text",
+    )
+    fi_parse_p.add_argument(
+        "--provision",
+        metavar="ADDR",
+        default=None,
+        help="forest view: narrow to the provision matching this eId/address",
+    )
+    fi_parse_p.add_argument(
+        "--clauses",
+        action="store_true",
+        help="with --statute: show sentence/clause segmentation instead of the forest",
+    )
+    fi_parse_p.add_argument(
+        "--johtolause",
+        metavar="TEXT",
+        default=None,
+        help="JOHTOLAUSE view: parse this amendment enacting clause text",
+    )
+    fi_parse_p.add_argument(
+        "--morph",
+        metavar="WORD",
+        default=None,
+        help="MORPH view: generate the case paradigm + reverse-analyze this word",
+    )
+    fi_parse_p.add_argument(
+        "--text",
+        metavar="TEXT",
+        default=None,
+        help="CLAUSES view over raw text (no corpus needed)",
+    )
+    fi_parse_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON",
+    )
+
+    # --- analyze-bill ---
+    analyze_bill_p = sub.add_parser(
+        "analyze-bill",
+        help="structured BILL IMPACT REPORT for one amending statute",
+        description=(
+            "Produce a structured bill-impact report for one amending statute "
+            "(read-only; composes the existing johtolause + Legal Surface Graph "
+            "machinery, no new parsing). Reports WHAT the bill does (lowered "
+            "ops), the surface delta (new delegations / references / definitions "
+            "/ broken-reference risk), and a clearly-labelled judgment-frontier "
+            "layer of unowned-channel CANDIDATES (not findings). Supports --json."
+        ),
+    )
+    analyze_bill_p.add_argument(
+        "statute_id",
+        metavar="STATUTE_ID",
+        help="amending statute id, e.g. 2018/1138",
+    )
+    analyze_bill_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON",
+    )
+
+    # --- fi-refs ---
+    fi_refs_p = sub.add_parser(
+        "fi-refs",
+        help="annotated-source-canvas viewer for the references overlay",
+        description=(
+            "Render a Finnish statute's references as annotations over its source "
+            "text (read-only; no new parsing). Levels (cheapest→richest): "
+            "counts / digest / context (default) / full. --only filters to residue "
+            "statuses (the audit instrument). --json emits the machine dict."
+        ),
+    )
+    fi_refs_p.add_argument(
+        "statute",
+        metavar="STATUTE_ID",
+        help="statute id, e.g. 2009/953",
+    )
+    fi_refs_p.add_argument(
+        "--level",
+        choices=("counts", "digest", "context", "full"),
+        default="context",
+        help="graduated disclosure level (default: context)",
+    )
+    fi_refs_p.add_argument(
+        "-C",
+        "--context",
+        type=int,
+        default=1,
+        metavar="N",
+        help="context radius in CLAUSES for the context level (default: 1)",
+    )
+    fi_refs_p.add_argument(
+        "--merge-gap",
+        type=int,
+        default=0,
+        metavar="N",
+        help="char gap under which adjacent context windows merge (default: 0)",
+    )
+    fi_refs_p.add_argument(
+        "--split",
+        action="store_true",
+        help="context level: one window per ref (disable window merge)",
+    )
+    fi_refs_p.add_argument(
+        "--only",
+        metavar="STATUSES",
+        default=None,
+        help=(
+            "filter marks to these comma-separated resolution statuses "
+            "(e.g. ambiguous,open,broken,unresolved) — the audit spotlight"
+        ),
+    )
+    fi_refs_p.add_argument(
+        "--as-of",
+        dest="as_of",
+        metavar="DATE",
+        default=None,
+        help="bitemporal filter: drop refs whose valid interval excludes this date",
+    )
+    fi_refs_p.add_argument(
+        "--provision",
+        metavar="ADDR",
+        default=None,
+        help="narrow to the provision matching this eId/address",
+    )
+    fi_refs_p.add_argument(
+        "--grep",
+        metavar="TEXT",
+        default=None,
+        help="narrow to the window around this literal text",
+    )
+    fi_refs_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON",
+    )
+
     # --- parse-bench ---
     parse_bench_p = sub.add_parser(
         "parse-bench",
@@ -10687,13 +10892,18 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "broken-refs",
         help="corpus broken-reference report (fi); current-state default, replay opt-in",
         description=(
-            "Corpus broken-reference report: per citing statute, extract resolved "
-            "cross-statute citations and check whether each cited target provision "
-            "exists in the target statute's text-state. DEFAULT (current-state, no "
-            "replay): checks presence in the target's CURRENT consolidated body "
-            "(the Finlex oracle gives that for free), so it is a cheap structural "
-            "check that runs corpus-wide without timing out; a finding is 'the "
-            "cited target provision is absent in the current text-state'. "
+            "Corpus dangling-reference (full-accounting) report: per citing "
+            "statute, extract resolved cross-statute citations and flag two BROKEN "
+            "kinds. (1) PROVISION absent: the cited section/momentti does not exist "
+            "in the target statute's text-state. (2) TARGET STATUTE not in force: "
+            "the cited ACT itself was repealed (its registry/oracle `valid_to` is "
+            "past) — a live consolidated text still pointing at a dead act. "
+            "DEFAULT (current-state, no replay): provision presence is checked "
+            "against the target's CURRENT consolidated body and the statute "
+            "lifecycle against the current date (the Finlex oracle gives both for "
+            "free), so it is a cheap structural check that runs corpus-wide "
+            "without timing out. An unknown target lifecycle is reported as "
+            "UNVERIFIABLE (fail-loud), never broken. "
             "--provenance: adds the temporal premium via point-in-time `legal_pit` "
             "replay of the TARGET trees as of the citation AND now, classifying the "
             "disappearance (repealed_since / renumbered_since / never_existed) — "
@@ -10718,6 +10928,16 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         type=int,
         default=0,
         help="cap the corpus to the first N citing statutes (default: no cap)",
+    )
+    broken_refs_p.add_argument(
+        "--stride",
+        type=int,
+        default=0,
+        help=(
+            "scan every Nth citing statute (representative corpus-wide sample "
+            "instead of a contiguous prefix); applied before --limit (default: "
+            "off = every statute)"
+        ),
     )
     broken_refs_p.add_argument(
         "--workers",
@@ -12920,6 +13140,11 @@ def _main_impl() -> None:
 
         frontier_main(args)
 
+    elif args.command == "bench-triage":
+        from lawvm.tools.bench_triage import main as bench_triage_main
+
+        bench_triage_main(args)
+
     elif args.command == "strict-report":
         from lawvm.tools.strict_report import main as strict_report_main
 
@@ -13025,13 +13250,35 @@ def _main_impl() -> None:
     elif args.command == "sync-finlex":
         from pathlib import Path as _Path
         from farchive import Farchive as _FA
+        from lawvm.corpus_store import validate_farchive_create_path as _validate_farchive_create_path
         from lawvm.finland.finlex_api import sync_changes as _sync_changes
 
         _default_db_sf = _Path("data/finlex.farchive")
         _db_path = _Path(args.db) if getattr(args, "db", None) else _default_db_sf
-        _db_path.parent.mkdir(parents=True, exist_ok=True)
 
         _dry = getattr(args, "dry_run", False) or getattr(args, "list_only", False)
+        if _dry:
+            _stats = _sync_changes(
+                archive=None,
+                since=args.since,
+                delay=args.delay,
+                lang=args.lang,
+                doc_type=args.doc_type,
+                dry_run=True,
+                verbose=getattr(args, "verbose", False),
+            )
+            print(
+                f"fetched={_stats['fetched']}  modified={_stats['modified']}  "
+                f"added={_stats['added']}  deleted={_stats['deleted']}  "
+                f"skipped={_stats['skipped']}  errors={_stats['errors']}"
+            )
+            if _stats["errors"]:
+                sys.exit(1)
+            return
+
+        if not _db_path.exists():
+            _validate_farchive_create_path(_db_path)
+        _db_path.parent.mkdir(parents=True, exist_ok=True)
         _archive = _FA(_db_path)
         try:
             _stats = _sync_changes(
@@ -13279,6 +13526,21 @@ def _main_impl() -> None:
         from lawvm.tools.fi_parse_explain import main as fi_parse_explain_main
 
         fi_parse_explain_main(args)
+
+    elif args.command == "fi-refs":
+        from lawvm.tools.fi_refs_view import main as fi_refs_view_main
+
+        fi_refs_view_main(args)
+
+    elif args.command == "fi-parse":
+        from lawvm.tools.fi_parse_view import main as fi_parse_view_main
+
+        fi_parse_view_main(args)
+
+    elif args.command == "analyze-bill":
+        from lawvm.tools.bill_analysis import main as analyze_bill_main
+
+        analyze_bill_main(args)
 
     elif args.command == "parse-bench":
         from lawvm.tools.parse_bench import main as parse_bench_main

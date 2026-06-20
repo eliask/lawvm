@@ -9,6 +9,8 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from lawvm.us_federal.import_plaw import import_plaw_sources, import_plaw_zip
 from lawvm.us_federal.inventory import build_inventory, inventory_us_federal
 from lawvm.us_federal.sources import (
@@ -63,6 +65,28 @@ def test_import_dry_run_counts(tmp_path: Path) -> None:
         assert list(archive2.locators("us://plaw/%")) == []
     finally:
         archive2.close()
+
+
+def test_import_sources_dry_run_does_not_create_missing_dest(tmp_path: Path) -> None:
+    zip_path = tmp_path / "PLAW-mixed-public.zip"
+    _build_fixture_zip(zip_path, include_private=False, include_junk=False)
+    db_path = tmp_path / "unused"
+
+    report = import_plaw_sources([zip_path], db_path=db_path, dry_run=True)
+
+    assert report.total_imported == 3
+    assert not db_path.exists()
+
+
+def test_import_sources_rejects_extensionless_dest(tmp_path: Path) -> None:
+    zip_path = tmp_path / "PLAW-mixed-public.zip"
+    _build_fixture_zip(zip_path, include_private=False, include_junk=False)
+    db_path = tmp_path / "unused"
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        import_plaw_sources([zip_path], db_path=db_path)
+
+    assert not db_path.exists()
 
 
 def test_import_writes_and_round_trips(tmp_path: Path) -> None:

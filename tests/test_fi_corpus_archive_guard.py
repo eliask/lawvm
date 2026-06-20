@@ -9,6 +9,7 @@ CorpusArchiveMissingError and must never create a file on disk.
 
 from __future__ import annotations
 
+import ast
 import os
 from pathlib import Path
 
@@ -179,6 +180,16 @@ def test_allow_create_creates_missing_archive(tmp_path, monkeypatch):
         archive.close()
 
 
+def test_allow_create_rejects_extensionless_archive_path(tmp_path, monkeypatch):
+    target = tmp_path / "unused"
+    monkeypatch.setenv("LAWVM_FARCHIVE_DB", str(target))
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        open_corpus_archive("finlex.farchive", allow_create=True)
+
+    assert not target.exists()
+
+
 def test_writable_open_on_populated_does_not_recreate(tmp_path, monkeypatch):
     archive_path = tmp_path / "rw.farchive"
     _make_populated_archive(archive_path)
@@ -199,3 +210,40 @@ def test_writable_open_on_missing_still_fails_loud(tmp_path, monkeypatch):
     with pytest.raises(CorpusArchiveMissingError):
         open_corpus_archive("finlex.farchive", writable=True)
     assert not missing.exists()
+
+
+def test_source_tree_does_not_open_default_archive_writable():
+    root = Path(__file__).resolve().parents[1] / "src" / "lawvm"
+    offenders: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        source = path.read_text()
+        if "Farchive" not in source or "_archive_path" not in source:
+            continue
+        tree = ast.parse(source, filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Name) or node.func.id != "Farchive":
+                continue
+            if not node.args:
+                continue
+            first_arg = node.args[0]
+            if (
+                not isinstance(first_arg, ast.Call)
+                or not isinstance(first_arg.func, ast.Name)
+                or first_arg.func.id != "_archive_path"
+            ):
+                continue
+            readonly_kw = next(
+                (keyword for keyword in node.keywords if keyword.arg == "readonly"),
+                None,
+            )
+            if (
+                readonly_kw is None
+                or not isinstance(readonly_kw.value, ast.Constant)
+                or readonly_kw.value.value is not True
+            ):
+                rel = path.relative_to(root.parents[1])
+                offenders.append(f"{rel}:{node.lineno}")
+
+    assert offenders == []

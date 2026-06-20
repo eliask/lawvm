@@ -397,7 +397,7 @@ def build_uk_source_dump(
 
     from farchive import Farchive
 
-    archive = Farchive(archive_path)
+    archive = Farchive(archive_path, readonly=True)
     try:
         resolved_source = _resolve_uk_enacted_source_from_archive(archive, statute_id)
     finally:

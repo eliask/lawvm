@@ -36,6 +36,15 @@ class ArchiveLike(Protocol):
     def close(self) -> None: ...
 
 
+def validate_farchive_create_path(path: Path) -> None:
+    """Reject ambiguous farchive creation targets such as ``unused``."""
+    if path.suffix != ".farchive":
+        raise ValueError(
+            f"refusing to create extensionless farchive destination: {path}; "
+            "use a .farchive path"
+        )
+
+
 def statute_url(sid: str, lang: str = "fin") -> str:
     """Canonical URL for source statute XML."""
     return f"finlex://sd/{sid}/{lang}/main.xml"
@@ -436,6 +445,7 @@ def open_corpus_archive(
     path, rule = resolve_farchive_path(name, explicit_env=explicit_env)
 
     if allow_create:
+        validate_farchive_create_path(path)
         return Farchive(path, readonly=False), path, rule
 
     if not _archive_is_populated(path):

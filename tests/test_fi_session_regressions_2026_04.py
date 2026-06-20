@@ -1581,7 +1581,13 @@ def test_2019_371_renumber_ops_bind_typed_intent_with_compound_source_parent_pat
     xml_bytes = corpus.read_source(source_id)
     assert xml_bytes is not None
 
-    before_master = pinned_replay(statute_id, mode="legal_pit", stop_before=source_id, quiet=True)
+    before_master = pinned_replay(
+        statute_id,
+        mode="legal_pit",
+        stop_before=source_id,
+        quiet=True,
+        build_full_products=False,
+    )
     _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
         statute_id,
         before_master.title,
@@ -1685,7 +1691,12 @@ def test_1992_110_2017_48_reinstatement_chain_compiles_insert_13_and_materialize
         for op in phase.output
     ), "Expected compile output to include INSERT 13 § for 1992/110 <- 2017/48."
 
-    replay = pinned_replay(statute_id, mode="official_consolidation", quiet=True)
+    replay = pinned_replay(
+        statute_id,
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
     assert replay.materialized_state.find_section("13") is not None, (
         "Expected final replay for 1992/110 to materialize 13 § after the 2017/48 reinstatement chain."
     )
@@ -1749,6 +1760,44 @@ def test_1978_611_1998_532_cross_statute_vts_repeals_are_routed() -> None:
         ("section", "30", "2"),
         ("section", "30", "3"),
     }
+
+
+def test_1987_275_1993_1005_cross_statute_vts_repeals_are_routed() -> None:
+    """1993/1005 §24(2) repeals työllisyyslaki provisions by inflected title."""
+
+    compiled_ops: list[dict[str, object]] = []
+    replay = pinned_replay(
+        "1987/275",
+        mode="official_consolidation",
+        quiet=True,
+        compiled_ops_out=compiled_ops,
+    )
+
+    rows = [
+        row
+        for row in compiled_ops
+        if row.get("source_statute") == "1993/1005"
+        and row.get("witness_rule_id") == "fi.repeal_vts_voimaantulo"
+    ]
+    targets = {
+        (
+            row.get("target_unit_kind"),
+            row.get("target_norm"),
+            row.get("target_paragraph"),
+        )
+        for row in rows
+    }
+    assert {("section", "7", ""), ("section", "8", ""), ("section", "26", "2")} <= targets
+
+    sec7 = replay.materialized_state.find_section("7", "3")
+    sec8 = replay.materialized_state.find_section("8", "3")
+    assert sec7 is not None
+    assert sec8 is not None
+    assert irnode_to_text(sec7) == "7 §"
+    assert irnode_to_text(sec8) == "8 §"
+    sec26 = replay.materialized_state.find_section("26", "5")
+    assert sec26 is not None
+    assert "Euroopan talousalueen" not in irnode_to_text(sec26)
 
 
 def test_1991_1208_1993_994_regional_table_section_14_op_is_preserved() -> None:
@@ -1817,8 +1866,13 @@ def test_2015_1141_2023_1250_keeps_explicit_chunk_insert_sections_in_their_own_c
     """Real corpus anchor for the explicit-chunk insert retarget hijack family."""
     from lawvm.tools.section_keys import extract_ir_sections
 
-    replay = pinned_replay("2015/1141", mode="official_consolidation", quiet=True)
-    sections = extract_ir_sections(replay.products.materialized_state.ir)
+    replay = pinned_replay(
+        "2015/1141",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
 
     for wrong_path in (
         "chapter:1/section:2a",
@@ -1844,8 +1898,13 @@ def test_2002_197_2011_535_inserted_chapter3a_does_not_keep_shadowed_sections_20
     """Real corpus anchor for inserted-chapter shadowed-section retention."""
     from lawvm.tools.section_keys import extract_ir_sections
 
-    replay = pinned_replay("2002/197", mode="official_consolidation", quiet=True)
-    sections = extract_ir_sections(replay.products.materialized_state.ir)
+    replay = pinned_replay(
+        "2002/197",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
 
     assert "chapter:3a/section:20" not in sections
     assert "chapter:3a/section:21" not in sections
@@ -1860,6 +1919,7 @@ def test_precreate_chapter_membership_migrates_flat_sections_by_source_starts() 
     from lawvm.finland.amendment_chapter_precreate import (
         PrecreateApplyChaptersRequest,
         precreate_apply_chapters,
+        source_chapters_from_tree,
     )
 
     state = ReplayState(ir=_body(_sec("1"), _sec("2"), _sec("3"), _sec("4")))
@@ -1890,9 +1950,9 @@ def test_precreate_chapter_membership_migrates_flat_sections_by_source_starts() 
         PrecreateApplyChaptersRequest(
             state=state,
             resolved=[],
-            muutos_tree=muutos_tree,
             amendment_id="2025/1",
             vts_ops_enrich_done=False,
+            source_chapters=source_chapters_from_tree(muutos_tree),
             johto=(
                 "lisätään 1 §:n edelle uusi 1 luvun otsikko ja "
                 "3 §:n edelle uusi 2 luvun otsikko seuraavasti"
@@ -1926,6 +1986,7 @@ def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections()
     from lawvm.finland.amendment_chapter_precreate import (
         PrecreateApplyChaptersRequest,
         precreate_apply_chapters,
+        source_chapters_from_tree,
     )
 
     state = ReplayState(
@@ -1956,9 +2017,9 @@ def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections()
         PrecreateApplyChaptersRequest(
             state=state,
             resolved=[],
-            muutos_tree=muutos_tree,
             amendment_id="2016/118",
             vts_ops_enrich_done=False,
+            source_chapters=source_chapters_from_tree(muutos_tree),
             johto=(
                 "muutetaan 67 §:n edellä oleva väliotsikko, 68 a ja 68 b § "
                 "sekä 71 §:n 2 momentti, lisätään 68 a §:n edelle uusi "
@@ -1985,6 +2046,209 @@ def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections()
     assert [migration.section_label for migration in result.membership_migrations] == ["68a", "68b"]
 
 
+def test_precreate_new_chapter_heading_at_existing_chapter_start_migrates_anchor_only() -> None:
+    """A new chapter title before an existing chapter start does not absorb the old chapter."""
+    from lxml import etree
+
+    from lawvm.finland.amendment_chapter_precreate import (
+        PrecreateApplyChaptersRequest,
+        precreate_apply_chapters,
+        source_chapters_from_tree,
+    )
+
+    state = ReplayState(
+        ir=_body(
+            _chapter("5", _sec("43")),
+            _chapter("6", _sec("44"), _sec("45"), _sec("46"), _sec("47")),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>5 a luku</num>
+                <heading>Jäsenvaltioiden rajat ylittävä tiedoksianto</heading>
+                <section><num>44 §</num></section>
+                <section><num>45 §</num></section>
+                <section><num>46 §</num></section>
+                <section><num>47 §</num></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+
+    result = precreate_apply_chapters(
+        PrecreateApplyChaptersRequest(
+            state=state,
+            resolved=[],
+            amendment_id="2021/546",
+            vts_ops_enrich_done=False,
+            source_chapters=source_chapters_from_tree(muutos_tree),
+            johto=(
+                "lisätään lakiin uusi 5 a luku ja luvun otsikko "
+                "44 §:n edelle seuraavasti:"
+            ),
+        )
+    )
+
+    chapter_5a = result.state.find_chapter("5a")
+    chapter_6 = result.state.find_chapter("6")
+    assert chapter_5a is not None
+    assert chapter_6 is not None
+    assert [child.label for child in chapter_5a.children if child.kind is IRNodeKind.SECTION] == ["44"]
+    assert [child.label for child in chapter_6.children if child.kind is IRNodeKind.SECTION] == [
+        "45",
+        "46",
+        "47",
+    ]
+    assert [migration.section_label for migration in result.membership_migrations] == ["44"]
+
+
+def test_precreate_unnumbered_chapter_heading_list_migrates_all_declared_spans() -> None:
+    """A coordinated ``1, 3 ja 6 §`` heading list creates every source chapter."""
+    from lxml import etree
+
+    from lawvm.finland.amendment_chapter_precreate import (
+        PrecreateApplyChaptersRequest,
+        precreate_apply_chapters,
+        source_chapters_from_tree,
+    )
+
+    state = ReplayState(ir=_body(*(_sec(str(idx)) for idx in range(1, 8))))
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <hcontainer name="statuteProvisionsWrapper">
+                <chapter>
+                  <num>1 luku</num>
+                  <heading>Väyläviraston asema ja tehtävät</heading>
+                  <section><num>1 §</num></section>
+                  <section><num>2 §</num></section>
+                </chapter>
+                <chapter>
+                  <num>2 luku</num>
+                  <heading>Väyläviraston organisaatio ja johtaminen</heading>
+                  <section><num>3 §</num></section>
+                  <section><num>4 §</num></section>
+                  <section><num>5 §</num></section>
+                </chapter>
+                <chapter>
+                  <num>3 luku</num>
+                  <heading>Erinäiset säännökset</heading>
+                  <section><num>6 §</num></section>
+                  <section><num>7 §</num></section>
+                </chapter>
+              </hcontainer>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+
+    result = precreate_apply_chapters(
+        PrecreateApplyChaptersRequest(
+            state=state,
+            resolved=[],
+            amendment_id="2018/936",
+            vts_ops_enrich_done=False,
+            source_chapters=source_chapters_from_tree(muutos_tree),
+            johto=(
+                "muutetaan Liikennevirastosta annetun lain nimike ja 1-7 § sekä "
+                "lisätään 1, 3 ja 6 §:n edelle uusi luvun otsikko seuraavasti:"
+            ),
+        )
+    )
+
+    chapters = {
+        child.label: [grand.label for grand in child.children if grand.kind is IRNodeKind.SECTION]
+        for child in result.state.ir.children
+        if child.kind is IRNodeKind.CHAPTER
+    }
+
+    assert chapters == {
+        "1": ["1", "2"],
+        "2": ["3", "4", "5"],
+        "3": ["6", "7"],
+    }
+    assert [migration.section_label for migration in result.membership_migrations] == [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+    ]
+
+
+def test_precreate_same_label_move_migrates_section_into_existing_chapter_from_typed_source() -> None:
+    """An explicit same-label move may start an already-live destination chapter."""
+    from lxml import etree
+
+    from lawvm.finland.amendment_chapter_precreate import (
+        PrecreateApplyChaptersRequest,
+        precreate_apply_chapters,
+        source_chapters_from_tree,
+    )
+
+    state = ReplayState(
+        ir=_body(
+            _chapter("5a", _sec("29d"), _sec("29e")),
+            _chapter("5b", _sec("29f"), _sec("29g")),
+        )
+    )
+    muutos_body = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>5 a luku</num>
+            <section><num>29 a §</num></section>
+            <section><num>29 b §</num></section>
+            <section><num>29 c §</num></section>
+            <section><num>29 d §</num></section>
+          </chapter>
+          <chapter>
+            <num>5 b luku</num>
+            <section><num>29 e §</num></section>
+            <section><num>29 g §</num></section>
+          </chapter>
+        </body>
+        """
+    )
+
+    result = precreate_apply_chapters(
+        PrecreateApplyChaptersRequest(
+            state=state,
+            resolved=[],
+            amendment_id="2025/1382",
+            vts_ops_enrich_done=False,
+            johto="muutetaan 29 e §, joka samalla siirretään 5 b lukuun seuraavasti:",
+            source_chapters=source_chapters_from_tree(muutos_body),
+        )
+    )
+
+    chapter_5a = result.state.find_chapter("5a")
+    chapter_5b = result.state.find_chapter("5b")
+    assert chapter_5a is not None
+    assert chapter_5b is not None
+    assert [child.label for child in chapter_5a.children if child.kind is IRNodeKind.SECTION] == ["29d"]
+    assert [child.label for child in chapter_5b.children if child.kind is IRNodeKind.SECTION] == [
+        "29e",
+        "29f",
+        "29g",
+    ]
+    assert [migration.section_label for migration in result.membership_migrations] == ["29e"]
+    migration = result.membership_migrations[0]
+    assert migration.from_legal_path == (("chapter", "5a"), ("section", "29e"))
+    assert migration.to_legal_path == (("chapter", "5b"), ("section", "29e"))
+
+
 def test_2019_571_2025_863_chapter_heading_migration_orders_existing_sections() -> None:
     """Real corpus anchor for chapter-heading starts around already-live sections."""
     replay = call_replay_xml(
@@ -1993,6 +2257,7 @@ def test_2019_571_2025_863_chapter_heading_migration_orders_existing_sections() 
             parent_id="2019/571",
             mode="official_consolidation",
             quiet=True,
+            build_full_products=False,
         ),
     )
     root = replay.materialized_state.ir
@@ -2034,6 +2299,75 @@ def test_2019_571_2025_863_chapter_heading_migration_orders_existing_sections() 
     assert findings
 
 
+def test_2011_948_2021_546_chapter_5a_boundary_and_later_inserts() -> None:
+    """Real corpus anchor for chapter insert + heading anchor + later section inserts."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2011/948",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+    root = replay.materialized_state.ir
+    chapters = {
+        child.label: [grand.label for grand in child.children if grand.kind is IRNodeKind.SECTION]
+        for child in root.children
+        if child.kind is IRNodeKind.CHAPTER
+    }
+    migrations = [
+        event
+        for event in getattr(replay, "migration_events", ())
+        if getattr(event, "source_statute", "") == "2021/546"
+        and getattr(event, "kind", "") == "move"
+        and isinstance(getattr(event, "witness", None), dict)
+        and event.witness.get("rule_id") == "fi.chapter_membership_migration_from_source_starts"
+    ]
+    tree_invariant_findings = [
+        finding
+        for finding in getattr(replay, "findings", ())
+        if getattr(finding, "kind", "") == "APPLY.TREE_INVARIANT_VIOLATION"
+    ]
+
+    assert chapters["5a"] == ["44", "44a", "44b", "44c", "44d"]
+    assert chapters["6"][:8] == ["45", "46", "47", "47a", "48", "49", "49a", "49b"]
+    assert [event.witness.get("section_label") for event in migrations] == ["44"]
+    assert tree_invariant_findings == []
+
+
+def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() -> None:
+    """Real corpus anchor for uncovered chapter payload moving 32 § from chapter 5 to 4."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="1992/733",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    assert replay.materialized_state.find_section("32", "4") is not None
+    assert replay.materialized_state.find_section("32", "5") is None
+
+
+def test_1996_579_1998_518_new_chapter_does_not_reanimate_repealed_section_32() -> None:
+    """A new chapter reusing section labels must not migrate already-repealed old sections."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="1996/579",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    assert replay.materialized_state.find_section("32", "5") is None
+    chapter_6_section_32 = replay.materialized_state.find_section("32", "6")
+    assert chapter_6_section_32 is not None
+    assert "Korvausrahaston jäsenyys" in irnode_to_text(chapter_6_section_32)
+
+
+@pytest.mark.slow
 def test_1992_1243_2016_118_chapter_8a_repealed_by_2024_853() -> None:
     """Real corpus anchor for single unnumbered chapter-heading migration."""
     from lawvm.provision_state import resolve_provision_state
@@ -2312,8 +2646,13 @@ def test_1994_719_2001_124_does_not_keep_or_misroute_16a_17a_cluster() -> None:
     """Real corpus anchor for inserted 3a chapter shadow-retention plus misrouting."""
     from lawvm.tools.section_keys import extract_ir_sections
 
-    replay = pinned_replay("1994/719", mode="official_consolidation", quiet=True)
-    sections = extract_ir_sections(replay.products.materialized_state.ir)
+    replay = pinned_replay(
+        "1994/719",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
 
     assert "chapter:5/section:16a" in sections
     assert "chapter:5/section:16b" in sections
@@ -2330,7 +2669,12 @@ def test_2006_1280_2022_1031_keeps_section42_items_4_and_5() -> None:
     """Real corpus anchor for the sparse-slot item-drop family in 42 §."""
     from lawvm.core.ir import IRNodeKind
 
-    replay = pinned_replay("2006/1280", mode="official_consolidation", quiet=True)
+    replay = pinned_replay(
+        "2006/1280",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
     sec42 = replay.find_section("42", "5", "3")
     assert sec42 is not None, "section part:3/chapter:5/section:42 must exist"
 
@@ -2675,7 +3019,12 @@ def test_1993_615_heading_amendments_applied() -> None:
     from lawvm.core.ir import IRNodeKind
     from tests.corpus_pin_helpers import pinned_replay
 
-    replay = pinned_replay("1993/615", mode="legal_pit", quiet=True)
+    replay = pinned_replay(
+        "1993/615",
+        mode="legal_pit",
+        quiet=True,
+        build_full_products=False,
+    )
 
     # 2004/1068 added "ja talousvyöhykkeellä" to section 7 heading
     sec7 = replay.find_section("7", "2")
@@ -2719,3 +3068,44 @@ def test_2017_93_bench_comparable_first_subsection_replace_drops_stale_flattened
 
     assert [paragraph.label for paragraph in paragraphs] == [str(idx) for idx in range(1, 10)]
     assert "Pelastusopistosta annettu laki (607/2006)." in irnode_to_text(paragraphs[-1])
+
+
+def test_2009_862_flat_statute_2025_item_replace_strips_spurious_chapter_scope() -> None:
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2009/862",
+            mode="legal_pit",
+            as_of="2026-01-01",
+            quiet=True,
+            build_full_products=True,
+        ),
+    )
+
+    section_2 = replay.materialized_state.find_section("2")
+    assert section_2 is not None
+    text = irnode_to_text(section_2)
+
+    assert "elinvoimakeskusten toiminnallisesta ohjauksesta" in text
+    assert "elinkeino-, liikenne- ja ympäristökeskusten toiminnallisesta ohjauksesta" not in text
+
+
+def test_1974_75_1984_929_corrupt_citation_routes_valtioneuvoston_paatos() -> None:
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="1974/75",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=True,
+            oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+        ),
+    )
+
+    section_5 = replay.materialized_state.find_section("5")
+    assert section_5 is not None
+    text = irnode_to_text(section_5)
+
+    assert "edellisen vuoden syyskuun loppuun mennessä" in text
+    assert "taiteen keskustoimikunnan lausunto" in text
+    assert "maaliskuun loppuun mennessä" not in text

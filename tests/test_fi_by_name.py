@@ -93,6 +93,17 @@ def test_coordinated_compound_modifier_head_detected() -> None:
     assert "maankäyttö- ja rakennuslain" in m.surface_text
 
 
+def test_coordinated_modifier_extension_ignores_long_prefix() -> None:
+    prefix = "Johdantotekstiä ilman säädösviittausta. " * 40
+    mentions = recognize_by_name_refs(prefix + "maankäyttö- ja rakennuslain 132 §:ssä")
+
+    assert len(mentions) == 1
+    tr = mentions[0].target_provision_ref
+    assert tr is not None
+    assert tr.statute_id == "fi-name:maankäyttö- ja rakennuslaki"
+    assert tr.section_label == "132"
+
+
 def test_id_anchored_reference_emits_nothing() -> None:
     """``jätelain (646/2011) 3 §`` -> NOTHING (id-anchored; plain-text lane)."""
     assert recognize_by_name_refs("jätelain (646/2011) 3 § säädetään.") == []
@@ -128,6 +139,38 @@ def test_bare_governed_head_not_emitted() -> None:
         )
         == []
     )
+
+
+def test_eu_head_governing_artikla_not_emitted() -> None:
+    """An EU-head compound directly governing ``N artikla`` is NOT a Finnish
+    statute name — it is an EU-instrument reference owned by the eu_directive
+    lane. Finnish acts are cited by ``§``, never by ``artikla``, so the by-name
+    lane must decline it (no ``fi-name:`` mis-typing, no double-count)."""
+    assert recognize_by_name_refs("ESAP-asetuksen 2 artiklan mukaisesti") == []
+    assert (
+        recognize_by_name_refs("kryptovaramarkkina-asetuksen 4 artiklassa") == []
+    )
+    # A § tail (real Finnish statute citation) on the SAME head still fires.
+    assert recognize_by_name_refs("ympäristönsuojeluasetuksen 4 §:ssä")
+
+
+def test_direktiivi_head_never_emits_fi_name() -> None:
+    """A ``...direktiivi`` head is an EU directive nickname with NO domestic
+    statute family, so the by-name lane declines it UNCONDITIONALLY — with or
+    without an artikla tail. (Witnessed in 2018/1054: ``tietosuojadirektiivin
+    mukainen`` has no artikla, yet the by-name lane wrongly minted a duplicate
+    ``fi-name:tietosuojadirektiivi`` mis-typed as a Finnish CROSS_STATUTE while
+    the eu_directive lane already owned the surface.) The eu_directive lane owns
+    every directive surface; the by-name lane must never claim it."""
+    # No artikla tail — the regression case: must NOT mint a fi-name mention.
+    assert recognize_by_name_refs("rikosasioiden tietosuojadirektiivin mukainen") == []
+    # With an artikla tail — also declined here (the eu_directive lane owns it).
+    assert recognize_by_name_refs("tietosuojadirektiivin 36 artiklassa tarkoitettu") == []
+    # A bare ``direktiivin`` head (no compound modifier) was never emitted anyway.
+    assert recognize_by_name_refs("direktiivin mukaisesti") == []
+    # An ``-asetus`` head WITHOUT an artikla tail is a genuine domestic decree
+    # family and still fires — the direktiivi exclusion must not over-reach.
+    assert recognize_by_name_refs("ympäristönsuojeluasetuksen 4 §:ssä")
 
 
 def test_compound_asetus_head() -> None:
@@ -541,6 +584,19 @@ def test_kauppalaki_unambiguous_inessive_not_over_suppressed() -> None:
 
 def test_empty_text() -> None:
     assert recognize_by_name_refs("") == []
+
+
+def test_cached_results_return_fresh_lists() -> None:
+    text = "ympäristönsuojelulain 5 §:ssä säädetään"
+
+    first = recognize_by_name_refs(text)
+    assert first
+    first.clear()
+
+    second = recognize_by_name_refs(text)
+    assert len(second) == 1
+    assert second[0].target_provision_ref is not None
+    assert second[0].target_provision_ref.statute_id == "fi-name:ympäristönsuojelulaki"
 
 
 # ---------------------------------------------------------------------------

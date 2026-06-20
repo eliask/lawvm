@@ -15,6 +15,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from lawvm.corpus_store import validate_farchive_create_path
 from lawvm.estonia.fetch import open_rt_archive
 
 if TYPE_CHECKING:
@@ -682,6 +683,8 @@ does not expose every historical adjacent version pair.
 def run_acquire(args: "argparse.Namespace") -> None:
     parts = [part.strip() for part in args.parts.split(",") if part.strip()]
     db_path = Path(args.db)
+    if not db_path.exists():
+        validate_farchive_create_path(db_path)
     if args.phase is None or args.phase == 1:
         acts_by_part = phase1_discover(db_path, parts, args.delay)
         all_acts = sorted(set(aid for aids in acts_by_part.values() for aid in aids))

@@ -99,6 +99,32 @@ def test_local_alias_resolves_later_article_reference() -> None:
     assert refs[0].mention.cite_kind is CiteKind.EU
 
 
+def test_long_coined_alias_binds_bounded_no_blowup() -> None:
+    # Regression: a long (6-word) coined alias whose words are already-inflected
+    # fragments must bind WITHOUT materializing the per-word Cartesian product
+    # (which here is ~2e8 strings → OOM). The fix inflects only the head
+    # (``asetus``) and holds the modifier fragment invariant, so the table stays
+    # small and a later head-inflected use of the SAME alias still resolves.
+    text = (
+        "komission delegoitua asetusta (EU) 2017/1569 (jäljempänä "
+        "tutkimuslääkkeiden hyviä tuotantotapoja koskeva delegoitu asetus) "
+        "sovelletaan. Lisäksi tutkimuslääkkeiden hyviä tuotantotapoja koskeva "
+        "delegoitu asetuksen 3 artiklan mukaan toimitaan."
+    )
+    table = build_statute_local_nicknames(text)
+    key = "tutkimuslääkkeiden hyviä tuotantotapoja koskeva delegoitu asetus"
+    assert table.celex_by_lemma == {key: "32017R1569"}
+    # The bound alias resolves on its head-inflected (genitive) surface.
+    assert (
+        table.lookup(
+            "tutkimuslääkkeiden hyviä tuotantotapoja koskeva delegoitu asetuksen"
+        )
+        == "32017R1569"
+    )
+    # The surface index is bounded (O(cases)), not the explosive product.
+    assert len(table._surface_to_lemma) <= 16
+
+
 def test_local_alias_article_coordination_enumerates_each_member() -> None:
     text = (
         "asetuksen (EY) N:o 999/2001 (jäljempänä TSE-asetus) nojalla. "
@@ -112,17 +138,25 @@ def test_local_alias_article_coordination_enumerates_each_member() -> None:
     assert all(r.status is CiteConfidence.EXACT for r in refs)
 
 
-def test_use_before_binding_stays_declined() -> None:
+def test_use_before_binding_stays_unresolved() -> None:
     # A nickname USE before its binding site must NOT resolve to the (later)
-    # CELEX — the article reference is declined (fail-loud), because the
-    # statute-local table is consulted only with the bindings discovered in the
-    # whole text BUT the recognizer here is handed only the pre-binding fragment.
+    # CELEX — there is no binding in this fragment, so the statute-local table is
+    # empty. But ``TSE-asetuksen 12 artiklan`` is a NAMED EU instrument (compound
+    # EU-head governing an article), so it is correctly TYPED as an EU reference,
+    # STATUTE_ONLY/unresolved (``eu-nickname:`` — no CELEX invented), NOT dropped
+    # and NOT mis-typed as a Finnish statute.
     fragment = "Sovelletaan TSE-asetuksen 12 artiklan säännöksiä."
-    # No binding in this fragment → empty table → declined.
+    # No binding in this fragment → empty table → no premature CELEX.
     table = build_statute_local_nicknames(fragment)
     assert table.celex_by_lemma == {}
     refs = recognize_eu_directive_refs(fragment, local_aliases=table)
-    assert refs == []
+    assert len(refs) == 1
+    r = refs[0]
+    assert r.status is CiteConfidence.STATUTE_ONLY
+    assert r.mention.cite_kind is CiteKind.EU
+    assert r.mention.target_provision_ref is not None
+    assert r.mention.target_provision_ref.statute_id == "eu-nickname:TSE-asetuksen"
+    assert not r.mention.target_provision_ref.statute_id.startswith("celex:")
 
 
 def test_without_table_local_nickname_is_dropped() -> None:

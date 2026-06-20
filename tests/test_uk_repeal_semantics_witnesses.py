@@ -380,6 +380,7 @@ def test_no_double_entry_filter_ignores_non_body_schedule_duplicates() -> None:
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present - skipping live repeal no-double-entry regression",
 )
+@pytest.mark.slow
 def test_pipeline_filters_real_body_schedule_double_entry_repeals() -> None:
     from farchive import Farchive
 

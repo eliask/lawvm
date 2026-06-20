@@ -19,6 +19,8 @@ pathologies.
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from typing import List, Optional
 
 import lxml.etree as etree
@@ -32,7 +34,19 @@ from lawvm.core.coverage import (
     CoverageReport,
 )
 from lawvm.finland.ops import AmendmentOp
-from lawvm.finland.helpers import _normalize_source_section_num, _norm_num_token
+from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
+
+
+@dataclass(frozen=True, slots=True)
+class BodyCoveragePayloadRef:
+    """Typed source-model lookup for a Finland coverage unit payload."""
+
+    unit_id: str
+    unit_kind: str
+    label: str
+    chapter: Optional[str] = None
+    part: Optional[str] = None
+    source_tag: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +84,33 @@ def _normalize_section_label(raw: str) -> str:
 def _normalize_chapter_label(raw: str) -> str:
     """Normalize a chapter <num> text, stripping 'luku' suffix."""
     return _norm_num_token(raw).removesuffix("luku")
+
+
+def _normalize_part_label(raw: str) -> str:
+    """Normalize a part label to the live-tree form used by Finland replay."""
+    return _normalize_source_part_num(raw)
+
+
+_PART_CROSS_HEADING_RE = re.compile(
+    r"^(?P<label>(?:[IVXLCDM]{1,12}|\d{1,4}[a-z]?))\s{1,8}(?:osa|osasto)\b"
+    r"(?:$|\s{1,8}[^\n]{0,200}$)",
+    flags=re.I,
+)
+
+
+def _direct_text(el: etree._Element) -> str:
+    """Return whitespace-normalized direct text content for ``el``."""
+    return " ".join("".join(str(part) for part in el.itertext()).split())
+
+
+def _part_label_from_cross_heading(el: etree._Element) -> str:
+    """Return a normalized part label when ``el`` is a direct part marker."""
+    if _localname(el) != "crossHeading":
+        return ""
+    match = _PART_CROSS_HEADING_RE.match(_direct_text(el))
+    if match is None:
+        return ""
+    return _normalize_part_label(match.group("label"))
 
 
 def _is_pseudo_chapter_marker_section(raw_num: str) -> bool:
@@ -215,7 +256,7 @@ def extract_body_coverage(
     - ``kind`` — ``"section"``, ``"chapter"``, or ``"article"``.
     - ``observed_label`` — normalised label extracted from ``<num>``.
     - ``parent_label`` — enclosing chapter/part label, or ``None`` at top level.
-    - ``payload_ref`` — the lxml element (opaque reference for downstream use).
+    - ``payload_ref`` — a typed source-model lookup reference.
     - ``tags`` — classification tags (``'nonoperative'``, ``'provenance'``, …).
 
     The function returns an empty list when ``muutos_tree`` has no ``<body>``.
@@ -228,7 +269,6 @@ def extract_body_coverage(
                 CoverageIgnoredUnit(
                     unit_kind="body",
                     reason="missing_body",
-                    payload_ref=muutos_tree,
                     evidence=("missing_body",),
                 )
             )
@@ -237,7 +277,13 @@ def extract_body_coverage(
     units: List[CoverageUnit] = []
     seen_ids: set[str] = set()
 
-    def _append_unit(kind: str, observed_label: str, parent_label: Optional[str], el: etree._Element) -> None:
+    def _append_unit(
+        kind: str,
+        observed_label: str,
+        parent_label: Optional[str],
+        part_label: Optional[str],
+        el: etree._Element,
+    ) -> None:
         base_id = f"{kind}_{observed_label}"
         if parent_label:
             base_id = f"{kind}_{parent_label}_{observed_label}"
@@ -255,23 +301,52 @@ def extract_body_coverage(
                 kind=kind,
                 observed_label=observed_label,
                 parent_label=parent_label,
-                payload_ref=el,
+                payload_ref=BodyCoveragePayloadRef(
+                    unit_id=unit_id,
+                    unit_kind=kind,
+                    label=observed_label,
+                    chapter=parent_label,
+                    part=part_label,
+                    source_tag=_localname(el),
+                ),
                 tags=tags,
             )
         )
 
-    def _walk_children(parent: etree._Element, active_chapter: Optional[str] = None) -> None:
+    def _walk_children(
+        parent: etree._Element,
+        active_chapter: Optional[str] = None,
+        active_part: Optional[str] = None,
+    ) -> None:
         current_chapter = active_chapter
+        current_part = active_part
         for child in parent:
             kind = _localname(child)
+
+            if kind == "crossHeading":
+                part_label = _part_label_from_cross_heading(child)
+                if part_label:
+                    current_chapter = None
+                    current_part = part_label
+                    continue
+
+            if kind == "part":
+                raw_num = _num_text(child)
+                if raw_num:
+                    part_label = _normalize_part_label(raw_num)
+                    if part_label:
+                        _walk_children(child, active_chapter=None, active_part=part_label)
+                        current_chapter = active_chapter
+                        current_part = active_part
+                        continue
 
             if kind == "chapter":
                 raw_num = _num_text(child)
                 if raw_num:
                     chapter_label = _normalize_chapter_label(raw_num)
                     if chapter_label:
-                        _append_unit("chapter", chapter_label, None, child)
-                        _walk_children(child, chapter_label)
+                        _append_unit("chapter", chapter_label, None, current_part, child)
+                        _walk_children(child, chapter_label, current_part)
                         current_chapter = active_chapter
                         continue
                     if ignored_units_out is not None:
@@ -280,7 +355,6 @@ def extract_body_coverage(
                                 unit_kind="chapter",
                                 reason="unusable_num",
                                 observed_label=raw_num,
-                                payload_ref=child,
                                 evidence=(f"raw_num={raw_num}", "normalize_failed"),
                             )
                         )
@@ -289,7 +363,6 @@ def extract_body_coverage(
                         CoverageIgnoredUnit(
                             unit_kind="chapter",
                             reason="missing_num",
-                            payload_ref=child,
                             evidence=("missing_num",),
                         )
                     )
@@ -300,8 +373,8 @@ def extract_body_coverage(
                     if _is_pseudo_chapter_marker_section(raw_num):
                         pseudo_chapter = _normalize_chapter_label(raw_num)
                         if pseudo_chapter:
-                            _append_unit("chapter", pseudo_chapter, None, child)
-                            _walk_children(child, pseudo_chapter)
+                            _append_unit("chapter", pseudo_chapter, None, current_part, child)
+                            _walk_children(child, pseudo_chapter, current_part)
                             current_chapter = pseudo_chapter
                             continue
                         if ignored_units_out is not None:
@@ -311,15 +384,14 @@ def extract_body_coverage(
                                     reason="pseudo_chapter_marker_unusable",
                                     observed_label=raw_num,
                                     parent_label=current_chapter,
-                                    payload_ref=child,
                                     evidence=(f"raw_num={raw_num}", "pseudo_chapter_marker"),
                                 )
                             )
 
                     observed_label = _normalize_section_label(raw_num)
                     if observed_label:
-                        _append_unit("section", observed_label, current_chapter, child)
-                        _walk_children(child, current_chapter)
+                        _append_unit("section", observed_label, current_chapter, current_part, child)
+                        _walk_children(child, current_chapter, current_part)
                         continue
                     if ignored_units_out is not None:
                         ignored_units_out.append(
@@ -328,7 +400,6 @@ def extract_body_coverage(
                                 reason="unusable_num",
                                 observed_label=raw_num,
                                 parent_label=current_chapter,
-                                payload_ref=child,
                                 evidence=(f"raw_num={raw_num}", "normalize_failed"),
                             )
                         )
@@ -338,7 +409,6 @@ def extract_body_coverage(
                             unit_kind="section",
                             reason="missing_num",
                             parent_label=current_chapter,
-                            payload_ref=child,
                             evidence=("missing_num",),
                         )
                     )
@@ -348,7 +418,7 @@ def extract_body_coverage(
                 if raw_num:
                     observed_label = _norm_num_token(raw_num)
                     if observed_label:
-                        _append_unit("article", observed_label, current_chapter, child)
+                        _append_unit("article", observed_label, current_chapter, current_part, child)
                     elif ignored_units_out is not None:
                         ignored_units_out.append(
                             CoverageIgnoredUnit(
@@ -356,7 +426,6 @@ def extract_body_coverage(
                                 reason="unusable_num",
                                 observed_label=raw_num,
                                 parent_label=current_chapter,
-                                payload_ref=child,
                                 evidence=(f"raw_num={raw_num}", "normalize_failed"),
                             )
                         )
@@ -366,12 +435,11 @@ def extract_body_coverage(
                             unit_kind="article",
                             reason="missing_num",
                             parent_label=current_chapter,
-                            payload_ref=child,
                             evidence=("missing_num",),
                         )
                     )
 
-            _walk_children(child, current_chapter)
+            _walk_children(child, current_chapter, current_part)
 
     _walk_children(body)
 

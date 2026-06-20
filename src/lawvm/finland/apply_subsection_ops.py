@@ -300,7 +300,12 @@ def _extract_predecessor_tail_paragraph_as_insert(
     predecessor_tail_text = " ".join(irnode_to_text(predecessor_tail).split()).strip()
     current_target_text = " ".join(irnode_to_text(subsecs[target_idx]).split()).strip()
     has_numbered_predecessor_body = any(child.kind == IRNodeKind.PARAGRAPH for child in predecessor.children[:predecessor_tail_idx])
-    if not replacement_text or not predecessor_tail_text or current_target_text == replacement_text:
+    if (
+        not replacement_text
+        or not predecessor_tail_text
+        or current_target_text == replacement_text
+        or predecessor_tail_text == current_target_text
+    ):
         return None
     if predecessor_tail.kind == IRNodeKind.PARAGRAPH:
         if predecessor_tail_text != replacement_text:
@@ -576,6 +581,156 @@ def _strip_context_carried_omission_for_complete_numbered_replace(
         text=replacement_subsection.text,
         attrs=dict(replacement_subsection.attrs),
         children=tuple((*pre_omission, *trailing)),
+    )
+
+
+def _split_sparse_omission_item_row_text(text: str) -> tuple[str, str] | None:
+    stripped = text.strip()
+    for idx, char in enumerate(stripped[:8]):
+        if char not in ").":
+            continue
+        raw_label = stripped[:idx].strip().replace(" ", "")
+        body = stripped[idx + 1 :].strip()
+        if raw_label and body:
+            return raw_label, body
+        return None
+    return None
+
+
+def _item_row_from_sparse_omission_subsection(subsection: IRNode) -> IRNode | None:
+    """Extract one source-owned numbered item row from a content-only sparse slot."""
+    paragraphs = [child for child in subsection.children if child.kind is IRNodeKind.PARAGRAPH and child.label]
+    if len(paragraphs) == 1:
+        return paragraphs[0]
+    if paragraphs:
+        return None
+    content_children = [
+        child
+        for child in subsection.children
+        if child.kind in {IRNodeKind.CONTENT, IRNodeKind.INTRO} and irnode_to_text(child).strip()
+    ]
+    if len(content_children) != 1 or len(content_children) != len(subsection.children):
+        return None
+    text = irnode_to_text(content_children[0]).strip()
+    split = _split_sparse_omission_item_row_text(text)
+    if split is None:
+        return None
+    raw_label, body = split
+    label = normalized_label_key(raw_label)
+    if not label or not body:
+        return None
+    return IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label=label,
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text=f"{label})"),
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=body,
+                attrs=dict(content_children[0].attrs),
+            ),
+        ),
+    )
+
+
+def _merge_sparse_omission_item_rows_into_subsection(
+    master_subsection: IRNode,
+    muutos_ir: IRNode | None,
+) -> IRNode | None:
+    """Merge omission-bracketed sparse item rows into one live subsection.
+
+    Finland amendment bodies sometimes say "replace section N subsection M" but
+    then present only numbered item rows inside section-level omission brackets:
+
+        [omission] 6) ... [omission] 8) ... 9) ... 10) ... [omission]
+
+    The explicit legal target is the subsection, while the body shape owns only
+    item rows inside that subsection.  Preserve untouched live item siblings and
+    apply/append only the numbered rows witnessed by the payload.
+    """
+    if master_subsection.kind is not IRNodeKind.SUBSECTION:
+        return None
+    if muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return None
+    slots = [
+        child
+        for child in muutos_ir.children
+        if child.kind is IRNodeKind.SUBSECTION or _is_omission_ir(child)
+    ]
+    if len(slots) < 3 or not slots or not _is_omission_ir(slots[0]):
+        return None
+    if not any(_is_omission_ir(child) for child in slots):
+        return None
+
+    payload_rows: list[IRNode] = []
+    for slot in slots:
+        if _is_omission_ir(slot):
+            continue
+        if slot.kind is not IRNodeKind.SUBSECTION:
+            return None
+        row = _item_row_from_sparse_omission_subsection(slot)
+        if row is None:
+            return None
+        payload_rows.append(row)
+    if not payload_rows:
+        return None
+
+    payload_labels = [normalized_label_key(row.label) for row in payload_rows]
+    if any(not label.isdigit() for label in payload_labels):
+        return None
+    payload_nums = [int(label) for label in payload_labels]
+    if payload_nums != sorted(payload_nums) or len(set(payload_nums)) != len(payload_nums):
+        return None
+    if payload_nums == list(range(1, len(payload_nums) + 1)):
+        return None
+
+    live_children = list(master_subsection.children)
+    paragraph_positions = [
+        idx
+        for idx, child in enumerate(live_children)
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    ]
+    if len(paragraph_positions) < 3:
+        return None
+    first_para = paragraph_positions[0]
+    last_para = paragraph_positions[-1]
+    if any(
+        child.kind is not IRNodeKind.PARAGRAPH
+        for child in live_children[first_para : last_para + 1]
+    ):
+        return None
+
+    live_rows = [
+        child
+        for child in live_children[first_para : last_para + 1]
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    ]
+    live_labels = [normalized_label_key(row.label) for row in live_rows]
+    if any(not label.isdigit() for label in live_labels):
+        return None
+    live_nums = [int(label) for label in live_labels]
+    if live_nums != sorted(live_nums) or len(set(live_nums)) != len(live_nums):
+        return None
+
+    live_by_num = dict(zip(live_nums, live_rows, strict=True))
+    max_live = live_nums[-1]
+    extension_nums = [num for num in payload_nums if num not in live_by_num]
+    if extension_nums:
+        if extension_nums != list(range(max_live + 1, max_live + 1 + len(extension_nums))):
+            return None
+
+    payload_by_num = dict(zip(payload_nums, payload_rows, strict=True))
+    merged_nums = sorted(set(live_nums).union(payload_nums))
+    merged_rows = [
+        payload_by_num[num] if num in payload_by_num else live_by_num[num]
+        for num in merged_nums
+    ]
+    return IRNode(
+        kind=master_subsection.kind,
+        label=master_subsection.label,
+        text=master_subsection.text,
+        attrs=dict(master_subsection.attrs),
+        children=tuple([*live_children[:first_para], *merged_rows, *live_children[last_para + 1 :]]),
     )
 
 
@@ -1151,6 +1306,45 @@ def _apply_subsection_replace(
                             )
                         )
                     return None
+            sparse_omission_item_merge = _merge_sparse_omission_item_rows_into_subsection(
+                subsecs[n],
+                muutos_ir,
+            )
+            if sparse_omission_item_merge is not None:
+                if source_pathologies_out is not None:
+                    source_pathologies_out.append(
+                        build_destructive_shape_loss_risk_pathology(
+                            source_statute=view.legacy_source_statute_id,
+                            target_unit_kind="section",
+                            target_label=f"{view.target_section} § {view.target_paragraph} mom",
+                            recovery_kind="subsection_replace_sparse_omission_item_merge",
+                            live_sibling_count=len(
+                                [
+                                    child
+                                    for child in subsecs[n].children
+                                    if child.kind is IRNodeKind.PARAGRAPH
+                                ]
+                            ),
+                            payload_sibling_count=len(
+                                [
+                                    child
+                                    for child in (muutos_ir.children if muutos_ir is not None else ())
+                                    if child.kind is IRNodeKind.SUBSECTION
+                                ]
+                            ),
+                        )
+                    )
+                if strict_profile is not None:
+                    return None
+                new_sec = _tops.replace_nth(sec, "subsection", n, sparse_omission_item_merge)
+                if stale_fragment_idx is not None:
+                    new_sec = _tops.remove_nth(new_sec, "subsection", stale_fragment_idx)
+                logger.debug("  %s → momentti replace (sparse omission item merge)", ctx_label)
+                _report_fragment_rebound()
+                return _with_preserved_provision_index(
+                    state,
+                    _tops.replace_at(state.ir, sec_path, new_sec),
+                )
             bracketed_rewrite = _rewrite_bracketed_single_subsection_replace_ir(
                 sec,
                 _replace_sub,

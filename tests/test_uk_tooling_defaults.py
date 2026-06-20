@@ -8,8 +8,9 @@ import types
 from typing import Any, cast
 import pytest
 from lawvm.uk_legislation import uk_prefetch
+from lawvm.uk_legislation import transition_graph_replay
 
-from lawvm.tools import cli, uk_bench, uk_candidates, uk_corpus, uk_effect, uk_effects, uk_eids, uk_replay
+from lawvm.tools import cli, source_dump, uk_bench, uk_candidates, uk_corpus, uk_effect, uk_effects, uk_eids, uk_live_targets, uk_misses, uk_replay
 from lawvm.tools.replay_payloads import build_uk_replay_payload
 from scripts import fetch_uk_affecting_acts
 
@@ -29,6 +30,129 @@ def test_uk_archives_default_to_data_dir_in_tool_modules() -> None:
     assert uk_eids._DEFAULT_DB == expected
     assert fetch_uk_affecting_acts._DEFAULT_DB == expected
     assert uk_corpus._DEFAULT_ARCHIVE == expected
+    assert transition_graph_replay._DEFAULT_DB == expected
+
+
+class _StopArchiveOpen(RuntimeError):
+    pass
+
+
+def _install_recording_farchive(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+
+    class RecordingFarchive:
+        def __init__(self, path: Path, **kwargs: Any) -> None:
+            calls.append({"path": Path(path), "kwargs": dict(kwargs)})
+
+        def __enter__(self) -> object:
+            raise _StopArchiveOpen
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+        def get(self, _locator: str) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    fake_farchive_module = types.ModuleType("farchive")
+    cast(Any, fake_farchive_module).Farchive = RecordingFarchive
+    monkeypatch.setitem(sys.modules, "farchive", fake_farchive_module)
+    return calls
+
+
+def test_uk_source_dump_opens_existing_archive_read_only(monkeypatch, tmp_path) -> None:
+    calls = _install_recording_farchive(monkeypatch)
+    db = tmp_path / "uk.farchive"
+    db.touch()
+
+    with pytest.raises(SystemExit, match="UK enacted XML not found"):
+        source_dump.build_uk_source_dump("ukpga/2000/1", db_path=db)
+
+    assert calls == [{"path": db, "kwargs": {"readonly": True}}]
+
+
+def test_uk_replay_read_modes_open_archive_read_only(monkeypatch, tmp_path) -> None:
+    db = tmp_path / "uk.farchive"
+    db.touch()
+
+    for witness_attribution_json in (False, True):
+        calls = _install_recording_farchive(monkeypatch)
+        args = Namespace(
+            statute_id="ukpga/2000/1",
+            db=str(db),
+            json=True,
+            fetch_missing=False,
+            witness_attribution_json=witness_attribution_json,
+        )
+
+        with pytest.raises(_StopArchiveOpen):
+            uk_replay.main(args)
+
+        assert calls == [{"path": db, "kwargs": {"readonly": True}}]
+
+
+def test_uk_replay_fetch_missing_keeps_writable_archive(monkeypatch, tmp_path) -> None:
+    calls = _install_recording_farchive(monkeypatch)
+    db = tmp_path / "uk.farchive"
+    db.touch()
+    args = Namespace(
+        statute_id="ukpga/2000/1",
+        db=str(db),
+        json=True,
+        fetch_missing=True,
+        witness_attribution_json=False,
+    )
+
+    with pytest.raises(_StopArchiveOpen):
+        uk_replay.main(args)
+
+    assert calls == [{"path": db, "kwargs": {"readonly": False}}]
+
+
+def test_uk_live_targets_opens_archive_read_only(monkeypatch, tmp_path) -> None:
+    calls = _install_recording_farchive(monkeypatch)
+    db = tmp_path / "uk.farchive"
+    db.touch()
+
+    rows = uk_live_targets.build_live_target_index_rows(
+        ("ukpga/2000/1",),
+        db_path=db,
+        source="current",
+    )
+
+    assert calls == [{"path": db, "kwargs": {"readonly": True}}]
+    assert rows[0]["source_status"] == "absent"
+
+
+def test_uk_misses_opens_existing_archive_read_only(monkeypatch, tmp_path) -> None:
+    calls = _install_recording_farchive(monkeypatch)
+    db = tmp_path / "uk.farchive"
+    db.touch()
+    args = Namespace(statute_id="ukpga/2000/1", db=str(db), json=True)
+
+    with pytest.raises(_StopArchiveOpen):
+        uk_misses.main(args)
+
+    assert calls == [{"path": db, "kwargs": {"readonly": True}}]
+
+
+def test_uk_transition_graph_replay_opens_archive_read_only(monkeypatch) -> None:
+    calls = _install_recording_farchive(monkeypatch)
+
+    with pytest.raises(_StopArchiveOpen):
+        transition_graph_replay.run_uk_transition_graph_replay(
+            "ukpga/2000/1",
+            profile=cast(Any, object()),
+        )
+
+    assert calls == [
+        {
+            "path": transition_graph_replay._DEFAULT_DB,
+            "kwargs": {"readonly": True},
+        }
+    ]
 
 
 def test_uk_cli_help_strings_reference_data_archive_default(capsys) -> None:

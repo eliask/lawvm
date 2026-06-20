@@ -24,8 +24,10 @@ from lawvm.core.tree_ops import LabelIndex, Path, default_label_sort_key, normal
 
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.apply_ir_ops import _build_repeal_placeholder_from_label_ir
+from lawvm.finland.apply_ir_ops import _shift_lettered_item_labels_after_repeal
 from lawvm.finland.apply_payload_ops import _find_amend_paragraph
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.johtolause.clause_surface import parse_item_shift_clauses
 from lawvm.finland.labels import leaf_label_identity_key
 from lawvm.finland.scope import _unique_section_chapter, infer_letter_suffix_section_chapter_from_stem_host
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
@@ -91,6 +93,13 @@ _SECTION_SOURCE_DESCENDANT_SCOPE_RE = compile_classifier_regex(
 )
 
 _PROVISION_INDEXED_KINDS = frozenset({"part", "chapter", "section"})
+
+
+@lru_cache(maxsize=512)
+def _paragraph_label_prefix_re(label: str) -> re.Pattern[str]:
+    """Compile a paragraph label prefix stripper for one source label."""
+
+    return re.compile(rf"^\s*{re.escape(label)}\s*[\).]\s*")
 
 
 def _normalize_snapshot_item_label(label: str | None) -> str:
@@ -305,8 +314,11 @@ def _base_provision_index_for_replay_history(
     if base_ir is None:
         return None
     if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
-        return _tops.build_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
-    cache: dict[int, tuple[IRNode, LabelIndex]] | None = replay_history_ops.base_provision_index_cache  # type: ignore[assignment]
+        return _tops.build_provision_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
+    cache = cast(
+        dict[int, tuple[IRNode, LabelIndex]] | None,
+        replay_history_ops.base_provision_index_cache,
+    )
     if cache is None:
         cache = {}
         replay_history_ops.base_provision_index_cache = cache
@@ -314,7 +326,7 @@ def _base_provision_index_for_replay_history(
     cached = cache.get(key)
     if cached is not None and cached[0] is base_ir:
         return cached[1]
-    index = _tops.build_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
+    index = _tops.build_provision_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
     cache[key] = (base_ir, index)
     return index
 
@@ -328,7 +340,10 @@ def _base_target_exists_for_replay_history(
         return False
     if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
         return _tops.resolve(base_ir, target_path) is not None
-    cache: dict[int, tuple[IRNode, dict[Path, bool]]] | None = replay_history_ops.base_target_exists_cache  # type: ignore[assignment]
+    cache = cast(
+        dict[int, tuple[IRNode, dict[Path, bool]]] | None,
+        replay_history_ops.base_target_exists_cache,
+    )
     if cache is None:
         cache = {}
         replay_history_ops.base_target_exists_cache = cache
@@ -425,7 +440,7 @@ def _snapshot_section_los_for_identity(
         return [replay_history_ops[i] for i in indices]
 
     cur_len = len(replay_history_ops)
-    index: _SectionSnapshotIndex | None = replay_history_ops.snapshot_index  # type: ignore[assignment]
+    index = cast(_SectionSnapshotIndex | None, replay_history_ops.snapshot_index)
     if index is None or index.indexed_len > cur_len:
         idx = {}
         start = 0
@@ -862,7 +877,7 @@ def _timeline_exact_target_exists_in_history(
         return False
 
     cur_len = len(replay_history_ops)
-    index: _TimelineExactTargetIndex | None = replay_history_ops.timeline_exact_target_index  # type: ignore[assignment]
+    index = cast(_TimelineExactTargetIndex | None, replay_history_ops.timeline_exact_target_index)
     if index is None or index.indexed_len > cur_len:
         earliest_effective_by_path: dict[Path, str] = {}
         start = 0
@@ -901,7 +916,7 @@ def _latest_target_op_for_path(
         return None
 
     cur_len = len(replay_history_ops)
-    index: _TimelineLatestTargetOpIndex | None = replay_history_ops.timeline_latest_target_op_index  # type: ignore[assignment]
+    index = cast(_TimelineLatestTargetOpIndex | None, replay_history_ops.timeline_latest_target_op_index)
     if index is None or index.indexed_len > cur_len:
         latest_by_path: dict[Path, _LegalOperation] = {}
         start = 0
@@ -935,7 +950,7 @@ def _record_payload_descendant_paths(
     ]
     while stack:
         path, node = stack.pop()
-        node_path = path + ((_kind_str(node.kind), node.label),)
+        node_path = path + ((_kind_str(node.kind), cast(str, node.label)),)
         existing = earliest_effective_by_path.get(node_path)
         if existing is None or not effective or (existing and effective < existing):
             earliest_effective_by_path[node_path] = effective
@@ -966,7 +981,7 @@ def _timeline_payload_target_exists_in_history(
         )
 
     cur_len = len(replay_history_ops)
-    index: _TimelinePayloadTargetIndex | None = replay_history_ops.timeline_payload_target_index  # type: ignore[assignment]
+    index = cast(_TimelinePayloadTargetIndex | None, replay_history_ops.timeline_payload_target_index)
     if index is None or index.indexed_len > cur_len:
         earliest_effective_by_path: dict[Path, str] = {}
         start = 0
@@ -1055,6 +1070,14 @@ def _normalized_snapshot_text_len(node: IRNode) -> int:
     return len(" ".join(irnode_to_text(node).split()))
 
 
+def _payload_has_in_place_merge_child(node: IRNode) -> bool:
+    return any(
+        child.attrs.get("lawvm_in_place_merge") == "1"
+        for child in node.children
+        if child.kind is IRNodeKind.SUBSECTION
+    )
+
+
 def _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
     *,
     state: "ReplayState",
@@ -1087,7 +1110,21 @@ def _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
 
     live_len = _normalized_snapshot_text_len(live_payload)
     payload_len = _normalized_snapshot_text_len(payload)
-    if live_len <= payload_len:
+    has_post_repeal_item_shift = any(
+        rop.resolved_post_repeal_item_shift_label
+        for rop in group_rops
+    ) or any(
+        "muuttuvat kohdiksi" in str(
+            rop.resolved_op_source.raw_text if rop.resolved_op_source is not None else ""
+        ).lower()
+        for rop in group_rops
+    )
+    complete_owner_should_win = (
+        _snapshot_payload_is_complete_owner(payload)
+        and not _payload_has_in_place_merge_child(payload)
+        and not has_post_repeal_item_shift
+    )
+    if live_len <= payload_len or complete_owner_should_win:
         return payload, payload_from_muutos_ir
 
     if source_pathologies_out is not None:
@@ -1146,7 +1183,7 @@ def _emit_section_snapshot(
         if isinstance(lo_ops_out, ReplayLegalOperationCaptureList):
             if lo_ops_out.timeline_target_exists_cache is None:
                 lo_ops_out.timeline_target_exists_cache = {}
-            cache = lo_ops_out.timeline_target_exists_cache  # type: ignore[assignment]
+            cache = cast(dict[tuple[object, ...], bool], lo_ops_out.timeline_target_exists_cache)
         history_key = id(replay_history_ops) if replay_history_ops else 0
         true_key = (normalized_target_path, history_key, id(base_ir), before_effective)
         len_key = (normalized_target_path, history_key, len(replay_history_ops), id(base_ir), before_effective)
@@ -1258,18 +1295,6 @@ def _emit_section_snapshot(
             return any(rop.is_repeal_action and rop.targets_whole_unit(target_unit_kind) for rop in group_rops)
         return False
 
-    def _latest_exact_section_snapshot_is_expired_temporary() -> bool:
-        if target_unit_kind != "section" or resolved_path is None or not op_source.effective:
-            return False
-        latest = _latest_section_snapshot_payload(
-            section_path=tuple(resolved_path),
-            replay_history_ops=lo_ops_out,
-        )
-        if latest is None or latest.source is None:
-            return False
-        latest_expires = latest.source.expires or ""
-        return bool(latest_expires and op_source.effective >= latest_expires)
-
     def _complete_whole_section_source_payload() -> Optional[IRNode]:
         """Return the source-owned section payload for exact whole-section snapshots.
 
@@ -1283,13 +1308,45 @@ def _emit_section_snapshot(
             return None
         candidates: list[IRNode] = []
         descendant_scoped_candidates = 0
-        latest_snapshot_is_expired_temporary = _latest_exact_section_snapshot_is_expired_temporary()
+
+        def _latest_exact_target_op_before_effective(target_path: Path) -> _LegalOperation | None:
+            for prior in reversed(lo_ops_out):
+                if prior.target.special is not None or prior.target.path != target_path:
+                    continue
+                prior_effective = prior.source.effective if prior.source is not None else ""
+                if op_source.effective and prior_effective and prior_effective >= op_source.effective:
+                    continue
+                return prior
+            return None
+
+        def _insert_target_is_not_live_before_effective() -> bool:
+            if resolved_path is None:
+                return False
+            latest = _latest_exact_target_op_before_effective(tuple(resolved_path))
+            if latest is None:
+                return False
+            if latest.action is StructuralAction.REPEAL or latest.payload is None:
+                return True
+            if latest.source is not None:
+                latest_expires = latest.source.expires or ""
+                if latest_expires and op_source.effective and op_source.effective >= latest_expires:
+                    return True
+            return False
+
+        def _whole_section_insert_can_own_snapshot(rop: ResolvedOp) -> bool:
+            if not rop.is_insert_action:
+                return False
+            # A whole-section insert after a prior exact target ended owns the
+            # reborn section child surface.  Initial inserts and existing-section
+            # insert/merge families still need the post-apply fold snapshot
+            # because source payload may need ontology normalization or rebasing.
+            return (not temporary_signal_for_op(rop)) and _insert_target_is_not_live_before_effective()
+
         for rop in group_rops:
             if not rop.targets_whole_unit("section"):
                 continue
             if not rop.is_replace_action and not (
-                rop.is_insert_action and latest_snapshot_is_expired_temporary
-                and not temporary_signal_for_op(rop)
+                _whole_section_insert_can_own_snapshot(rop)
             ):
                 continue
             source_payload = rop.muutos_ir
@@ -1972,9 +2029,12 @@ def _emit_section_snapshot(
     def _drop_expired_temporary_paragraph_children(
         child_path: Path,
         subsection_payload: IRNode,
+        *,
+        preserve_paragraph_labels: set[str] | None = None,
     ) -> IRNode | None:
         if subsection_payload.kind is not IRNodeKind.SUBSECTION:
             return None
+        preserve_labels = preserve_paragraph_labels or set()
         subsection_label = _norm_num_token(child_path[-1][1]) if child_path else ""
         targets_this_subsection = False
         for rop in group_rops:
@@ -2010,12 +2070,7 @@ def _emit_section_snapshot(
             text = _norm_text(node)
             if node.kind is not IRNodeKind.PARAGRAPH or not node.label:
                 return text
-            return re.sub(
-                rf"^\s*{re.escape(str(node.label))}\s*[\).]\s*",
-                "",
-                text,
-                count=1,
-            )
+            return _paragraph_label_prefix_re(str(node.label)).sub("", text, count=1)
 
         if not op_source.effective:
             return None
@@ -2071,6 +2126,9 @@ def _emit_section_snapshot(
             removed = 0
             for child in subsection_payload.children:
                 if child.kind is IRNodeKind.PARAGRAPH and child.label:
+                    if leaf_label_identity_key(child.label) in preserve_labels:
+                        new_children.append(child)
+                        continue
                     child_text = _norm_paragraph_body_text(child)
                     expired_overlay_child = child_text in expired_paragraph_texts
                     if (
@@ -2324,6 +2382,11 @@ def _emit_section_snapshot(
         renumber_destinations: dict[str, str] = {}
         whole_subsection_targets: set[str] = set()
         has_insert = False
+        has_item_scoped_ops = any(
+            rop.resolved_target_subsection_label is not None
+            and rop.resolved_target_item_label is not None
+            for rop in section_group_rops
+        )
         for rop in section_group_rops:
             if rop.effective_target_special in {"otsikko", "otsikko_edella"}:
                 continue
@@ -2348,19 +2411,26 @@ def _emit_section_snapshot(
                     whole_subsection_targets.add(destination_label)
                 continue
             if rop.is_repeal_action:
-                if not (
+                if (
                     rop.resolved_target_subsection_label is not None
                     and rop.resolved_target_item_label is not None
                 ):
+                    target_label = _norm_num_token(
+                        str(rop.resolved_target_subsection_label or "").strip()
+                    )
+                    item_label = _normalize_snapshot_item_label(str(rop.resolved_target_item_label or "").strip())
+                    if not target_label or not item_label:
+                        return None
+                    repealed_item_labels_by_subsection.setdefault(target_label, set()).add(item_label)
+                    continue
+                if has_item_scoped_ops and rop.targets_subsection_only():
+                    # Whole-subsection repeals are emitted as explicit child
+                    # tombstones after the section snapshot. They must not make
+                    # item-scoped sibling payloads fall back to the stale live
+                    # fold for the whole section.
+                    continue
+                else:
                     return None
-                target_label = _norm_num_token(
-                    str(rop.resolved_target_subsection_label or "").strip()
-                )
-                item_label = _normalize_snapshot_item_label(str(rop.resolved_target_item_label or "").strip())
-                if not target_label or not item_label:
-                    return None
-                repealed_item_labels_by_subsection.setdefault(target_label, set()).add(item_label)
-                continue
             if not (rop.is_insert_action or rop.is_replace_action):
                 return None
             targets_subsection_payload = rop.targets_subsection_only() or (
@@ -2423,7 +2493,23 @@ def _emit_section_snapshot(
                     pending_payload.item_norm
                 )
 
-        if len(subsection_payloads) < 2 and not renumber_destinations:
+        single_sparse_whole_subsection_replace = (
+            len(subsection_payloads) == 1
+            and not renumber_destinations
+            and not repealed_item_labels_by_subsection
+            and not item_target_labels_by_subsection
+            and len(section_group_rops) == 1
+            and section_group_rops[0].is_replace_action
+            and section_group_rops[0].targets_subsection_only()
+            and section_group_rops[0].payload_completeness is not None
+            and str(section_group_rops[0].payload_completeness.tail_policy or "").strip()
+            == "preserve_unstated_tail"
+        )
+        if (
+            len(subsection_payloads) < 2
+            and not renumber_destinations
+            and not single_sparse_whole_subsection_replace
+        ):
             has_item_payload = any(rop.resolved_target_item_label is not None for rop in section_group_rops)
             if not has_item_payload or not subsection_payloads:
                 return None
@@ -2433,12 +2519,19 @@ def _emit_section_snapshot(
             for child in section_payload.children
             if child.kind is IRNodeKind.SUBSECTION and child.label
         }
-        if not repealed_item_labels_by_subsection and all(
-            label in current_by_label and irnode_to_text(current_by_label[label]) == irnode_to_text(subsection_payload)
-            for label, subsection_payload in subsection_payloads.items()
+        if (
+            not single_sparse_whole_subsection_replace
+            and not repealed_item_labels_by_subsection
+            and all(
+                label in current_by_label
+                and irnode_to_text(current_by_label[label])
+                == irnode_to_text(subsection_payload)
+                for label, subsection_payload in subsection_payloads.items()
+            )
         ):
             return None
 
+        rebased_from_expired_temporary_snapshot = False
         latest = _latest_section_snapshot_payload(
             section_path=section_path,
             replay_history_ops=lo_ops_out,
@@ -2453,6 +2546,7 @@ def _emit_section_snapshot(
                     base_ir=base_ir,
                 )
                 base_section = prior_payload if prior_payload is not None else latest.payload
+                rebased_from_expired_temporary_snapshot = prior_payload is not None
             else:
                 base_section = latest.payload
         else:
@@ -2629,6 +2723,21 @@ def _emit_section_snapshot(
                     + flattened_item_payload_count,
                 )
             )
+        if single_sparse_whole_subsection_replace and source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_destructive_shape_loss_risk_pathology(
+                    source_statute=op_source.statute_id,
+                    target_unit_kind="section",
+                    target_label=normalized_target_norm,
+                    recovery_kind="section_snapshot_single_subsection_sparse_merge",
+                    live_sibling_count=sum(
+                        1
+                        for child in base_section.children
+                        if child.kind is IRNodeKind.SUBSECTION
+                    ),
+                    payload_sibling_count=len(subsection_payloads),
+                )
+            )
         merged_section = IRNode(
             kind=section_payload.kind,
             label=section_payload.label,
@@ -2636,6 +2745,8 @@ def _emit_section_snapshot(
             attrs=dict(section_payload.attrs),
             children=tuple(current_children[:first_current_subsection] + merged_subsections),
         )
+        if single_sparse_whole_subsection_replace and rebased_from_expired_temporary_snapshot:
+            merged_section = _stamp_exact_section_snapshot_payload(merged_section)
         return _drop_shifted_expired_temporary_subsection_payload(section_path, merged_section) or merged_section
 
     def _whole_target_renumber_without_payload() -> bool:
@@ -2690,14 +2801,21 @@ def _emit_section_snapshot(
         return _search(tree, ())
 
     def _lookup_container_path_in_tree(tree: IRNode, kind_name: str) -> Optional[Path]:
+        label_index = base_provision_index if tree is base_ir else None
         for label in _candidate_lookup_labels():
-            raw_path = _tops.find(tree, kind_name, label)
+            raw_path = _tops.find(tree, kind_name, label, label_index=label_index)
             if raw_path:
                 return _tops._as_path(raw_path)
         return _find_normalized_container_path_in_tree(tree, kind_name)
 
+    base_resolved_path_cache: tuple[bool, Optional[Path]] = (False, None)
+
     def _base_resolved_path() -> Optional[Path]:
+        nonlocal base_resolved_path_cache
+        if base_resolved_path_cache[0]:
+            return base_resolved_path_cache[1]
         if base_ir is None:
+            base_resolved_path_cache = (True, None)
             return None
         if hinted_path is not None:
             hinted_node = _tops.resolve(base_ir, hinted_path)
@@ -2711,7 +2829,8 @@ def _emit_section_snapshot(
                 else None
             )
             if hinted_node is not None and (expected_kind is None or hinted_node.kind is expected_kind):
-                return _timeline_path(hinted_path)
+                base_resolved_path_cache = (True, _timeline_path(hinted_path))
+                return base_resolved_path_cache[1]
         if target_unit_kind == "section":
             if target_part:
                 part_path = _tops.find(base_ir, "part", target_part)
@@ -2751,10 +2870,16 @@ def _emit_section_snapshot(
             raw_path = _lookup_container_path_in_tree(base_ir, "part")
         else:
             raw_path = None
-        return _timeline_path(_tops._as_path(raw_path)) if raw_path else None
+        base_resolved_path_cache = (
+            True,
+            _timeline_path(_tops._as_path(raw_path)) if raw_path else None,
+        )
+        return base_resolved_path_cache[1]
 
     def _base_section_payload_for_complete_replacement() -> Optional[IRNode]:
         if base_ir is None or target_unit_kind != "section":
+            return None
+        if base_provision_index is None:
             return None
         base_path = _base_resolved_path()
         base_node = _tops.resolve(base_ir, base_path) if base_path is not None else None
@@ -3406,6 +3531,42 @@ def _emit_section_snapshot(
         pruned_payload = _drop_shifted_expired_temporary_subsection_payload(tuple(resolved_path), payload)
         if pruned_payload is not None:
             payload = pruned_payload
+    if (
+        payload is not None
+        and target_unit_kind == "section"
+        and payload.kind is IRNodeKind.SECTION
+    ):
+        source_text = op_source.raw_text or ""
+        if "muuttuvat kohdiksi" in source_text.lower():
+            shifted_children: list[IRNode] = []
+            shifted = False
+            for child in payload.children:
+                if child.kind is not IRNodeKind.SUBSECTION or not child.label:
+                    shifted_children.append(child)
+                    continue
+                next_child = child
+                child_label = _norm_num_token(child.label)
+                for clause in parse_item_shift_clauses(source_text):
+                    if _norm_num_token(clause.target_section) != normalized_target_norm:
+                        continue
+                    if str(clause.target_paragraph) != child_label:
+                        continue
+                    if not clause.target_items:
+                        continue
+                    next_child = _shift_lettered_item_labels_after_repeal(
+                        next_child,
+                        clause.target_items[0],
+                    )
+                shifted = shifted or next_child is not child
+                shifted_children.append(next_child)
+            if shifted:
+                payload = IRNode(
+                    kind=payload.kind,
+                    label=payload.label,
+                    text=payload.text,
+                    attrs=dict(payload.attrs),
+                    children=tuple(shifted_children),
+                )
     lo_ops_out.append(
         _LegalOperation(
             op_id=_snapshot_op_id(target_unit_kind, target_norm),
@@ -3470,12 +3631,77 @@ def _emit_section_snapshot(
             and _snapshot_targets_subsection_only(rop)
             and _snapshot_subsection_target_label(rop)
         }
+        explicitly_repealed_paragraph_labels_by_subsection: dict[str, set[str]] = {}
+        explicitly_targeted_paragraph_labels_by_subsection: dict[str, set[str]] = {}
+        source_text_lower = str(op_source.raw_text or "").lower()
+        has_post_repeal_item_shift = "muuttuvat kohdiksi" in source_text_lower
+        for rop in group_rops:
+            subsection_label = str(rop.resolved_target_subsection_label or "").strip()
+            item_label = str(rop.resolved_target_item_label or "").strip()
+            if (
+                subsection_label
+                and item_label
+                and (rop.is_insert_action or rop.is_replace_action)
+            ):
+                explicitly_targeted_paragraph_labels_by_subsection.setdefault(
+                    _norm_num_token(subsection_label),
+                    set(),
+                ).add(leaf_label_identity_key(item_label))
+            if not rop.is_repeal_action:
+                continue
+            if has_post_repeal_item_shift:
+                continue
+            if not subsection_label or not item_label:
+                continue
+            explicitly_repealed_paragraph_labels_by_subsection.setdefault(
+                _norm_num_token(subsection_label),
+                set(),
+            ).add(_normalize_snapshot_item_label(item_label))
         payload_subsection_labels = {
             _norm_num_token(child.label)
             for child in payload.children
             if child.kind is IRNodeKind.SUBSECTION and child.label
             and _norm_num_token(child.label) not in explicitly_repealed_subsection_labels
         }
+
+        def _prior_paragraph_labels_for_subsection(child_path: Path) -> set[str]:
+            labels: set[str] = set()
+            base_child = _subsection_node_from_base_ir(base_ir, child_path)
+            if base_child is not None:
+                labels.update(
+                    _normalize_snapshot_item_label(grandchild.label)
+                    for grandchild in base_child.children
+                    if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
+                )
+            for prior in lo_ops_out:
+                if prior.target.special is not None or not prior.target.path:
+                    continue
+                if prior.source is not None:
+                    prior_effective = prior.source.effective or prior.source.enacted or ""
+                    if op_source.effective and prior_effective and prior_effective > op_source.effective:
+                        continue
+                if prior.target.path == child_path and prior.payload is not None:
+                    if prior.payload.kind is IRNodeKind.SUBSECTION:
+                        labels.update(
+                            _normalize_snapshot_item_label(grandchild.label)
+                            for grandchild in prior.payload.children
+                            if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
+                        )
+                    continue
+                if (
+                    len(prior.target.path) == len(child_path) + 1
+                    and prior.target.path[:-1] == child_path
+                    and prior.target.path[-1][0] == "paragraph"
+                ):
+                    paragraph_label = _normalize_snapshot_item_label(prior.target.path[-1][1])
+                    if not paragraph_label:
+                        continue
+                    if prior.action is StructuralAction.REPEAL:
+                        labels.discard(paragraph_label)
+                    else:
+                        labels.add(paragraph_label)
+            return labels
+
         for child in payload.children:
             if child.kind is not IRNodeKind.SUBSECTION or not child.label:
                 continue
@@ -3483,7 +3709,15 @@ def _emit_section_snapshot(
             if child_norm_label in explicitly_repealed_subsection_labels:
                 continue
             child_path = section_path + (("subsection", child.label),)
-            child_payload = _drop_expired_temporary_paragraph_children(child_path, child) or child
+            assert child.label is not None
+            child_payload = _drop_expired_temporary_paragraph_children(
+                child_path,
+                child,
+                preserve_paragraph_labels=explicitly_targeted_paragraph_labels_by_subsection.get(
+                    child_norm_label,
+                    set(),
+                ),
+            ) or child
             child_payload = _inherit_parent_snapshot_ownership_attrs(child_payload, payload)
             child_source = op_source
             for rop in group_rops:
@@ -3531,6 +3765,70 @@ def _emit_section_snapshot(
                     group_id=f"finland-johto:{amendment_id or 'unknown'}",
                 )
             )
+            if _snapshot_payload_is_complete_owner(child_payload):
+                payload_paragraphs = [
+                    grandchild
+                    for grandchild in child_payload.children
+                    if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
+                ]
+                payload_paragraph_labels = {
+                    _normalize_snapshot_item_label(grandchild.label)
+                    for grandchild in payload_paragraphs
+                }
+                explicitly_repealed_paragraph_labels = (
+                    explicitly_repealed_paragraph_labels_by_subsection.get(
+                        child_norm_label,
+                        set(),
+                    )
+                )
+                payload_paragraph_labels -= explicitly_repealed_paragraph_labels
+                if payload_paragraphs:
+                    prior_paragraph_labels = _prior_paragraph_labels_for_subsection(child_path)
+                    for paragraph in payload_paragraphs:
+                        assert paragraph.label is not None
+                        paragraph_label = _normalize_snapshot_item_label(paragraph.label)
+                        if paragraph_label in explicitly_repealed_paragraph_labels:
+                            continue
+                        lo_ops_out.append(
+                            _LegalOperation(
+                                op_id=(
+                                    "snapshot_paragraph_"
+                                    f"{paragraph_label}_from_subsection_{child.label}_section_{target_norm}"
+                                ),
+                                sequence=0,
+                                action=(
+                                    StructuralAction.REPLACE
+                                    if paragraph_label in prior_paragraph_labels
+                                    else StructuralAction.INSERT
+                                ),
+                                target=LegalAddress(
+                                    path=child_path + (("paragraph", paragraph.label),)
+                                ),
+                                payload=paragraph,
+                                source=op_source,
+                                group_id=f"finland-johto:{amendment_id or 'unknown'}",
+                            )
+                        )
+                    for paragraph_label in sorted(
+                        prior_paragraph_labels - payload_paragraph_labels,
+                        key=default_label_sort_key,
+                    ):
+                        lo_ops_out.append(
+                            _LegalOperation(
+                                op_id=(
+                                    "snapshot_repeal_paragraph_"
+                                    f"{paragraph_label}_from_subsection_{child.label}_section_{target_norm}"
+                                ),
+                                sequence=0,
+                                action=StructuralAction.REPEAL,
+                                target=LegalAddress(
+                                    path=child_path + (("paragraph", paragraph_label),)
+                                ),
+                                payload=None,
+                                source=op_source,
+                                group_id=f"finland-johto:{amendment_id or 'unknown'}",
+                            )
+                        )
         missing_repealed_subsections: list[str] = []
         for rop in group_rops:
             if not rop.is_repeal_action or not rop.targets_subsection_only():
@@ -3775,6 +4073,23 @@ def _valid_target_path_hint(
 def _with_preserved_provision_index(state: "ReplayState", new_ir: IRNode) -> "ReplayState":
     """Reuse the provision-path index when section/chapter/part paths stay stable."""
     return state.with_ir(new_ir, preserve_provision_index=True)
+
+
+def _with_replaced_provision_subtree_index(
+    state: "ReplayState",
+    new_ir: IRNode,
+    *,
+    path: Path,
+    old_subtree: IRNode,
+    new_subtree: IRNode,
+) -> "ReplayState":
+    """Reuse the provision-path index after same-path subtree replacement."""
+    return state.with_replaced_provision_subtree_index(
+        new_ir,
+        path=path,
+        old_subtree=old_subtree,
+        new_subtree=new_subtree,
+    )
 
 
 def _same_norm_label(lhs: Optional[str], rhs: Optional[str]) -> bool:

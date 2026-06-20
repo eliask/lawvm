@@ -65,6 +65,12 @@ logger = logging.getLogger(__name__)
 _COMPOUND_SUBPARAGRAPH_LABEL_RE = re.compile(r"^\d+[a-z]+$")
 
 
+def _is_lettered_subparagraph_payload(child: IRNode) -> bool:
+    if child.kind != IRNodeKind.SUBPARAGRAPH or not child.label:
+        return False
+    return not normalized_label_key(child.label)[:1].isdigit()
+
+
 @dataclass(frozen=True)
 class _ItemApplyView:
     op_type: str
@@ -75,6 +81,7 @@ class _ItemApplyView:
     target_item: str | None
     target_special: str | None
     post_repeal_item_shift_label: str | None
+    target_guessing_provenance_tags: tuple[str, ...] = ()
 
 
 def _coerce_item_apply_view(op: "_ItemApplyView | AmendmentOp | ResolvedOp") -> _ItemApplyView:
@@ -110,6 +117,7 @@ def _item_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _ItemApplyView:
         post_repeal_item_shift_label=(
             op.resolved_post_repeal_item_shift_label if isinstance(op, ResolvedOp) else op.post_repeal_item_shift_label
         ),
+        target_guessing_provenance_tags=op.target_guessing_provenance_tags,
     )
 
 
@@ -428,6 +436,188 @@ def _prune_duplicate_tail_subsection_after_sparse_item_merge(
     return _tops._with_children(sec, new_children)
 
 
+def _source_wrapup_tail_text(amend_sub: Optional[IRNode]) -> str:
+    if amend_sub is None:
+        return ""
+    pending = list(reversed(amend_sub.children))
+    while pending:
+        child = pending.pop()
+        if child.kind is IRNodeKind.WRAP_UP and child.attrs.get("__tail_subsection__"):
+            text = irnode_to_text(child).strip()
+            if text:
+                return " ".join(text.split())
+        pending.extend(reversed(child.children))
+    return ""
+
+
+def _content_only_tail_subsection_text(node: IRNode) -> str:
+    if node.kind is not IRNodeKind.SUBSECTION:
+        return ""
+    if any(child.kind is IRNodeKind.PARAGRAPH for child in node.children):
+        return ""
+    text_children = [
+        child
+        for child in node.children
+        if child.kind in (IRNodeKind.CONTENT, IRNodeKind.INTRO, IRNodeKind.WRAP_UP)
+        and irnode_to_text(child).strip()
+    ]
+    if len(text_children) != 1:
+        return ""
+    text = " ".join(irnode_to_text(text_children[0]).split())
+    if not text or not text[:1].isalpha() or not text[:1].islower():
+        return ""
+    return text
+
+
+def _last_paragraph_text_for_item(subsection: IRNode, item_norm: str) -> str:
+    for child in reversed(subsection.children):
+        if (
+            child.kind is IRNodeKind.PARAGRAPH
+            and child.label
+            and normalized_label_key(child.label) == item_norm
+        ):
+            return irnode_to_text(child).strip()
+    return ""
+
+
+def _item_text_authorizes_tail_subsection(item_text: str) -> bool:
+    text = item_text.lower().rstrip()
+    if not text:
+        return False
+    if text.endswith(("; ja", "; sekä", ", ja", ", sekä")):
+        return True
+    return text[-1:] not in ".;:!?"
+
+
+def _source_tail_subsection_text_after_amend_sub(
+    muutos_ir: Optional[IRNode],
+    amend_sub: Optional[IRNode],
+    item_norm: str,
+) -> str:
+    if muutos_ir is None or amend_sub is None:
+        return ""
+    source_item_text = _last_paragraph_text_for_item(amend_sub, item_norm)
+    if not _item_text_authorizes_tail_subsection(source_item_text):
+        return ""
+    children = list(muutos_ir.children)
+    for idx, child in enumerate(children):
+        if child is not amend_sub:
+            continue
+        if idx + 2 >= len(children) or children[idx + 2].kind is not IRNodeKind.OMISSION:
+            return ""
+        return _content_only_tail_subsection_text(children[idx + 1])
+    return ""
+
+
+def _append_tail_wrapup_to_item_if_missing(new_sub: IRNode, item_norm: str, tail_text: str) -> IRNode:
+    tail_norm = _tail_norm(tail_text)
+    if not tail_norm:
+        return new_sub
+    rewritten = list(new_sub.children)
+    for idx, child in enumerate(rewritten):
+        if (
+            child.kind is IRNodeKind.PARAGRAPH
+            and child.label
+            and normalized_label_key(child.label) == item_norm
+        ):
+            if any(
+                grandchild.kind is IRNodeKind.WRAP_UP and _tail_norm(irnode_to_text(grandchild)) == tail_norm
+                for grandchild in child.children
+            ):
+                return new_sub
+            rewritten[idx] = IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=dict(child.attrs),
+                children=(
+                    *child.children,
+                    IRNode(
+                        kind=IRNodeKind.WRAP_UP,
+                        text=tail_text,
+                        attrs={"__tail_subsection__": "1"},
+                    ),
+                ),
+            )
+            return IRNode(
+                kind=new_sub.kind,
+                label=new_sub.label,
+                text=new_sub.text,
+                attrs=dict(new_sub.attrs),
+                children=tuple(rewritten),
+            )
+    return new_sub
+
+
+def _absorb_matching_tail_subsection_after_item_replace(
+    sec: IRNode,
+    subsection_index: int,
+    new_sub: IRNode,
+    amend_sub: Optional[IRNode],
+    muutos_ir: Optional[IRNode],
+    item_norm: str,
+    source_statute: str = "",
+    source_pathologies_out: Optional[List[SourcePathology]] = None,
+) -> tuple[IRNode, bool]:
+    """Attach a source-owned list tail and remove the stale following subsection."""
+    source_tail_text = _source_wrapup_tail_text(amend_sub) or _source_tail_subsection_text_after_amend_sub(
+        muutos_ir,
+        amend_sub,
+        item_norm,
+    )
+    if not source_tail_text:
+        return _tops.replace_nth(sec, "subsection", subsection_index, new_sub), False
+
+    subsecs = [child for child in sec.children if child.kind == IRNodeKind.SUBSECTION]
+    if not (0 <= subsection_index < len(subsecs) - 1):
+        return _tops.replace_nth(sec, "subsection", subsection_index, new_sub), False
+
+    stale_subsection = subsecs[subsection_index + 1]
+    stale_text = " ".join(irnode_to_text(stale_subsection).split())
+    source_norm = _tail_norm(source_tail_text)
+    stale_norm = _tail_norm(stale_text)
+    if not source_norm or not stale_norm or not (
+        source_norm.startswith(stale_norm) or stale_norm.startswith(source_norm)
+    ):
+        return _tops.replace_nth(sec, "subsection", subsection_index, new_sub), False
+
+    new_sub = _append_tail_wrapup_to_item_if_missing(new_sub, item_norm, source_tail_text)
+
+    removed_label_norm = normalized_label_key(stale_subsection.label)
+    removed_numeric = int(removed_label_norm) if removed_label_norm.isdigit() else None
+    rebuilt_subsections: List[IRNode] = []
+    for idx, subsection in enumerate(subsecs):
+        if idx == subsection_index:
+            rebuilt_subsections.append(new_sub)
+            continue
+        if idx == subsection_index + 1:
+            continue
+        relabelled = subsection
+        subsection_norm = normalized_label_key(subsection.label)
+        if (
+            removed_numeric is not None
+            and idx > subsection_index + 1
+            and subsection_norm.isdigit()
+            and int(subsection_norm) > removed_numeric
+        ):
+            relabelled = _relabel_subsection_ir(subsection, str(int(subsection_norm) - 1))
+        rebuilt_subsections.append(relabelled)
+
+    if source_pathologies_out is not None:
+        source_pathologies_out.append(
+            build_destructive_shape_loss_risk_pathology(
+                source_statute=source_statute,
+                target_unit_kind="section",
+                target_label=stale_subsection.label or str(subsection_index + 2),
+                recovery_kind="item_replace_tail_subsection_absorb",
+                live_sibling_count=len(subsecs),
+                payload_sibling_count=1,
+            )
+        )
+
+    return _rebuild_section_with_subsections_ir(sec, rebuilt_subsections), True
+
+
 def _build_compound_item_omission_children(master_para: IRNode, amend_para_src: IRNode) -> List[IRNode]:
     """Build replacement children for the compound item omission path."""
     amend_sp_children = amend_para_src.children
@@ -468,6 +658,40 @@ def _is_carried_tail_subparagraph(sp: IRNode) -> bool:
         return False
     label_norm = normalized_label_key(sp.label)
     return not label_norm or label_norm.isdigit()
+
+
+def _is_standalone_tail_payload_node(node: IRNode) -> bool:
+    if node.kind == IRNodeKind.WRAP_UP:
+        return bool(irnode_to_text(node).strip())
+    if node.kind != IRNodeKind.SUBSECTION:
+        return False
+    if any(child.kind == IRNodeKind.PARAGRAPH for child in node.children):
+        return False
+    content_children = [
+        child
+        for child in node.children
+        if child.kind in (IRNodeKind.CONTENT, IRNodeKind.INTRO, IRNodeKind.WRAP_UP)
+        and irnode_to_text(child).strip()
+    ]
+    if len(content_children) != 1:
+        return False
+    text = " ".join(irnode_to_text(content_children[0]).split())
+    return bool(text) and text[:1].isalpha() and text[:1].islower()
+
+
+def _has_standalone_tail_payload_after_amend_sub(muutos_ir: Optional[IRNode], amend_sub: Optional[IRNode]) -> bool:
+    if muutos_ir is None:
+        return False
+    seen_target = amend_sub is None
+    for child in muutos_ir.children:
+        if child is amend_sub:
+            seen_target = True
+            continue
+        if not seen_target or _is_omission_ir(child):
+            continue
+        if _is_standalone_tail_payload_node(child):
+            return True
+    return False
 
 
 def _apply_item_repeal(
@@ -528,11 +752,14 @@ def _apply_item_repeal(
             if synthesize_item_placeholder:
                 para = paras[para_idx]
                 label = para.label or (view.target_item or "")
+                placeholder_attrs = {"lawvm_repeal_placeholder": "1"}
+                if "unique_item_label_subsection_fallback" in view.target_guessing_provenance_tags:
+                    placeholder_attrs["lawvm_restore_materialized_stale_item_slot"] = "1"
                 placeholder = _relabel_paragraph_ir(
                     IRNode(
                         kind=IRNodeKind.PARAGRAPH,
                         label=label,
-                        attrs={"lawvm_repeal_placeholder": "1"},
+                        attrs=placeholder_attrs,
                     ),
                     label,
                 )
@@ -579,19 +806,74 @@ def _apply_item_replace(
         para_idx = next((i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == item_norm), None)
         if para_idx is not None:
             master_para = paras[para_idx]
-            from lawvm.finland.apply_payload_ops import _find_amend_intro
-            amend_intro = _find_amend_intro(amend_sub, muutos_ir)
+            amend_para = _find_amend_paragraph(item_norm, amend_sub, muutos_ir)
+            amend_intro = None
+            amend_subparagraphs: list[IRNode] = []
+            if amend_para is not None:
+                amend_subparagraphs = [
+                    c for c in amend_para.children if _is_lettered_subparagraph_payload(c)
+                ]
+                amend_intro = next((c for c in amend_para.children if c.kind == IRNodeKind.INTRO), None)
+                if amend_intro is None:
+                    amend_content = next((c for c in amend_para.children if c.kind == IRNodeKind.CONTENT), None)
+                    master_has_subparagraphs = any(c.kind == IRNodeKind.SUBPARAGRAPH for c in master_para.children)
+                    if amend_content is not None and (master_has_subparagraphs or amend_subparagraphs):
+                        amend_intro = IRNode(
+                            kind=IRNodeKind.INTRO,
+                            label=amend_content.label,
+                            text=amend_content.text,
+                            attrs=dict(amend_content.attrs),
+                            children=tuple(amend_content.children),
+                        )
+            if amend_intro is None:
+                amend_intro = _find_amend_intro(amend_sub, muutos_ir)
             if amend_intro is None and muutos_ir is not None:
                 amend_intro = _find_amend_intro(None, muutos_ir)
             if amend_intro is not None:
                 replaced = False
+                subparagraphs_by_label = {
+                    normalized_label_key(child.label): child
+                    for child in amend_subparagraphs
+                    if child.label
+                }
+                used_subparagraph_labels: set[str] = set()
                 new_children = []
                 for c in master_para.children:
                     if c.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT) and not replaced:
                         new_children.append(amend_intro)
                         replaced = True
+                    elif c.kind == IRNodeKind.SUBPARAGRAPH and c.label:
+                        subparagraph_label = normalized_label_key(c.label)
+                        replacement = subparagraphs_by_label.get(subparagraph_label)
+                        if replacement is not None:
+                            new_children.append(replacement)
+                            used_subparagraph_labels.add(subparagraph_label)
+                        else:
+                            new_children.append(c)
                     else:
                         new_children.append(c)
+                for subparagraph_label, child in subparagraphs_by_label.items():
+                    if subparagraph_label not in used_subparagraph_labels:
+                        new_children.append(child)
+                if amend_subparagraphs:
+                    if source_pathologies_out is not None:
+                        source_pathologies_out.append(
+                            build_destructive_shape_loss_risk_pathology(
+                                source_statute=view.source_statute,
+                                target_unit_kind=view.target_unit_kind,
+                                target_label=(
+                                    f"{view.target_section} § {view.target_paragraph} mom "
+                                    f"{view.target_item} kohta johd"
+                                ),
+                                recovery_kind="item_johd_claimed_subparagraph_merge",
+                                live_sibling_count=len(
+                                    [c for c in master_para.children if c.kind == IRNodeKind.SUBPARAGRAPH]
+                                ),
+                                payload_sibling_count=len(amend_subparagraphs),
+                            )
+                        )
+                    if strict_profile is not None:
+                        return None
                 new_para = IRNode(
                     kind=master_para.kind,
                     label=master_para.label,
@@ -821,7 +1103,28 @@ def _apply_item_replace(
                 if not amend_has_content and amend_has_intro:
                     preserve_master_sps = True
                 elif amend_has_omission and len(master_sps) == 1 and _is_carried_tail_subparagraph(master_sps[0]):
-                    preserve_master_sps = True
+                    preserve_master_sps = not _has_standalone_tail_payload_after_amend_sub(muutos_ir, amend_sub)
+                    if not preserve_master_sps:
+                        if source_pathologies_out is not None:
+                            source_pathologies_out.append(
+                                build_destructive_shape_loss_risk_pathology(
+                                    source_statute=view.source_statute,
+                                    target_unit_kind=view.target_unit_kind,
+                                    target_label=(
+                                        f"{view.target_section} § {view.target_paragraph} mom "
+                                        f"{view.target_item} kohta"
+                                    ),
+                                    recovery_kind="item_replace_standalone_tail_prune",
+                                    live_sibling_count=len(master_sps),
+                                    payload_sibling_count=1,
+                                )
+                            )
+                        if strict_profile is not None:
+                            return None
+                        logger.debug(
+                            "  %s → pruned stale carried-tail subparagraph; source has standalone tail payload",
+                            ctx_label,
+                        )
             if preserve_master_sps:
                 amend_para = IRNode(
                     kind=amend_para.kind,
@@ -851,7 +1154,18 @@ def _apply_item_replace(
                     )
                 )
             new_sub = _tops.replace_nth(sub, "paragraph", para_idx, amend_para)
-            new_sec = _tops.replace_nth(sec, "subsection", n, new_sub)
+            new_sec, absorbed_tail_subsection = _absorb_matching_tail_subsection_after_item_replace(
+                sec,
+                n,
+                new_sub,
+                amend_sub,
+                muutos_ir,
+                item_norm,
+                source_statute=view.source_statute,
+                source_pathologies_out=source_pathologies_out,
+            )
+            if absorbed_tail_subsection and strict_profile is not None:
+                return None
             logger.debug("  %s → kohta replace", ctx_label)
             return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
         if para_idx is None and amend_para is not None and not paras and amend_sub is not None:
@@ -1179,7 +1493,8 @@ def _apply_item_insert(
                     new_pathologies = source_pathologies_out[pathology_count_before:]
                     if any(
                         pathology.code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
-                        and pathology.detail.get("recovery_kind") == "item_insert_suffix_renumber"
+                        and pathology.detail.get("recovery_kind")
+                        in {"item_insert_suffix_renumber", "item_insert_tail_wrapup_absorb"}
                         for pathology in new_pathologies
                     ):
                         return None
@@ -1376,6 +1691,39 @@ def _apply_special_targets(
         logger.debug("  %s → otsikko repeal noop (no heading)", ctx_label)
         return state
 
+    if view.op_type == "REPEAL" and view.target_special == "johd":
+        intro_kinds = {IRNodeKind.INTRO, IRNodeKind.CONTENT}
+        if view.target_paragraph is None:
+            new_children = [c for c in sec.children if c.kind not in intro_kinds]
+            if len(new_children) != len(sec.children):
+                logger.debug("  %s → section johd repeal", ctx_label)
+                return _with_preserved_provision_index(
+                    state, _tops.replace_at(state.ir, sec_path, _tops._with_children(sec, new_children))
+                )
+            logger.debug("  %s → section johd repeal noop (no intro)", ctx_label)
+            return state
+
+        target_label = str(view.target_paragraph)
+        exact_live_idx = next(
+            (
+                idx
+                for idx, sub in enumerate(subsecs)
+                if sub.label and _norm_num_token(sub.label) == target_label
+            ),
+            None,
+        )
+        n = exact_live_idx if exact_live_idx is not None else _resolve_item_subsection_index(subsecs, view.target_paragraph)
+        if 0 <= n < len(subsecs):
+            sub = subsecs[n]
+            new_sub_children = [c for c in sub.children if c.kind not in intro_kinds]
+            if len(new_sub_children) != len(sub.children):
+                new_sub = _tops._with_children(sub, new_sub_children)
+                new_sec = _tops.replace_nth(sec, "subsection", n, new_sub)
+                logger.debug("  %s → subsection johd repeal", ctx_label)
+                return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
+            logger.debug("  %s → subsection johd repeal noop (no intro)", ctx_label)
+            return state
+
     if view.op_type == "REPLACE" and view.target_special == "johd" and muutos_ir is not None:
         target_label = str(view.target_paragraph or "")
         exact_live_idx = next(
@@ -1453,11 +1801,20 @@ def _apply_special_targets(
                         )
                     return None
                 replaced = False
+                skipping_leading_intro_block = False
                 new_children = []
                 for c in sub.children:
                     if c.kind in {IRNodeKind.INTRO, IRNodeKind.CONTENT} and not replaced:
                         new_children.append(amend_intro)
                         replaced = True
+                        skipping_leading_intro_block = True
+                        continue
+                    if c.kind in {IRNodeKind.INTRO, IRNodeKind.CONTENT} and skipping_leading_intro_block:
+                        continue
+                    if c.kind not in {IRNodeKind.INTRO, IRNodeKind.CONTENT}:
+                        skipping_leading_intro_block = False
+                    if c.kind in {IRNodeKind.INTRO, IRNodeKind.CONTENT} and not skipping_leading_intro_block:
+                        new_children.append(c)
                     else:
                         new_children.append(c)
                 new_sub = _tops._with_children(sub, new_children)

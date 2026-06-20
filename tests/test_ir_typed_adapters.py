@@ -68,7 +68,7 @@ class TestLegalOperationTypedAction:
 
     def test_legal_operation_is_frozen(self) -> None:
         op = _make_op(StructuralAction.REPLACE)
-        with pytest.raises(FrozenInstanceError):
+        with pytest.raises((FrozenInstanceError, TypeError)):
             cast(Any, op).notes = ["mutated"]
 
 

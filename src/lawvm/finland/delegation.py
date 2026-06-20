@@ -15,6 +15,28 @@ Two extraction paths:
 
 Data source: Finlex Akoma Ntoso consolidated XML in the corpus store.
 Patterns ported from earlier local graph prototypes on 2026-03-22.
+
+Post-flip role of ``extract_asetus_authority``
+----------------------------------------------
+The well-formed ``[act](NUM/YEAR) N §:n nojalla`` authority basis is now
+**construction-owned** by
+:func:`lawvm.finland.legal_surface.delegation_parse.extract_authority_bases`
+(lifted to ISSUED_UNDER ``ReferenceMention`` records by
+``references.ref_mention_extractor.extract_delegation_construction_authority_mentions``).
+This regex extractor is therefore **DEMOTED** to two surviving roles, NOT
+removed:
+
+  * **Typed-residue fallback** in ``extract_all_reference_mentions``: for a basis
+    parent the construction COVERS, the construction's richer/sectioned mention
+    supersedes the regex-derived ISSUED_UNDER mention; the regex output is kept
+    only for the construction-DECLINED residue (voimaantulo-/siirtymäsäännös
+    bases, momentti-only/budget-momentti bases, prose provision paths, OCR/abbrev
+    noise) so nothing the regex shipped at the parent level is lost.
+  * **StatuteGraph metadata enricher**: ``extract_asetus_authority`` is still
+    called by ``references.cross_refs._merge_authority_basis`` to populate
+    ``target_section`` / ``target_kind`` on ISSUED_UNDER edges and to append
+    edges for nojalla bases absent from the finlex:issuedUnderActs metadata —
+    that enrichment is untouched by the construction flip.
 """
 from __future__ import annotations
 
@@ -22,6 +44,13 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import List, Optional
+
+# Shared authority-basis surface helpers relocated to the neutral
+# ``authority_basis`` leaf module so the ``references`` lift can import them
+# without a backreach into this legacy module. Re-exported here for the
+# existing in-module call sites and for back-compat importers (e.g.
+# ``tests/test_fi_delegation.py``).
+from lawvm.finland.authority_basis import _classify_authority_kind, _normalize_year
 
 NS = '{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}'
 
@@ -324,68 +353,6 @@ _PAT_NOJALLA_CONJUNCT = re.compile(
 )
 
 
-def _classify_authority_kind(name_word: str) -> str:
-    """Classify a ``nojalla`` authority-basis from the act-name word before its id.
-
-    The Finnish inflected name word that immediately precedes the
-    ``(NUM/YEAR)`` id carries the drafting kind of the basis:
-
-      - ``lain`` / ``laissa`` / ``laki`` / ``…kaaren`` (codes: maakaari,
-        perintökaari, ulosottokaari …)  → ``"act"`` (a laki / statute).
-      - ``asetuksen`` / ``asetus``                       → ``"decree"``.
-      - ``päätöksen`` / ``päätös``                       → ``"decision"``.
-
-    Returns ``""`` when the word carries no recognizable kind (e.g. the basis
-    name is multi-word and the token before the id is a non-name fragment).
-    A blank kind is conservative: the lift then keeps the legacy
-    non-statutory-instrument typing rather than guessing a statute.
-    """
-    if not name_word:
-        return ""
-    w = name_word.lower()
-    if 'asetuks' in w or w.endswith('asetus'):
-        return 'decree'
-    if 'p\xe4\xe4t\xf6ks' in w or w.endswith('p\xe4\xe4t\xf6s'):
-        return 'decision'
-    # Laki inflections (lain, laissa, laista, lakia, laeista …) and the
-    # legislative "code" family (…kaaren / …kaari: maakaari, perintökaari,
-    # ulosottokaari) — all statutes.
-    if (
-        w.endswith('lain')
-        or w.endswith('laki')
-        or w.endswith('laissa')
-        or w.endswith('laista')
-        or w.endswith('lakia')
-        or w.endswith('laeista')
-        or w.endswith('laeissa')
-        or w.endswith('kaaren')
-        or w.endswith('kaari')
-    ):
-        return 'act'
-    return ''
-
-
-def _normalize_year(year_str: str, citing_year: Optional[int] = None) -> str:
-    """Normalize a 2-digit year string to 4-digit (e.g. '86' → '1986', '04' → '2004').
-
-    A 2-digit ``yy`` is ambiguous between ``19yy`` and ``20yy``. When the CITING
-    statute's enactment year is known it is a causal UPPER BOUND on the cited act
-    (a decree's authorizing-law cite cannot post-date the decree): pick the ``20yy``
-    reading only when it does not post-date the citing year, else ``19yy``.
-
-    Falls back to the legacy fixed cutoff (17-99 → 1917-1999, 00-16 → 2000-2016)
-    ONLY when ``citing_year`` is unknown, so callers that cannot supply it keep
-    their exact prior behavior.
-    """
-    if len(year_str) == 4:
-        return year_str
-    y = int(year_str)
-    if citing_year is not None:
-        return str(2000 + y) if (2000 + y) <= citing_year else str(1900 + y)
-    # Finnish laws: 17-99 → 1917-1999, 00-16 → 2000-2016
-    return str(1900 + y) if y >= 17 else str(2000 + y)
-
-
 # ---------------------------------------------------------------------------
 # Classification helpers
 # ---------------------------------------------------------------------------
@@ -490,6 +457,21 @@ def extract_delegations(
 
     Scans at subsection (momentti) level for precise addressing. Falls back to
     section level for statutes without subsection markup.
+
+    Demoted to typed residue / cross-check (NOT the production source)
+    -----------------------------------------------------------------
+    The production StatuteGraph forward-grant source is now the canonical
+    token-native parser via
+    :func:`lawvm.finland.legal_surface.delegation_edge_adapter.extract_delegations_canonical`.
+    On a 2500-statute differential the canonical parser had materially higher
+    recall (+774 edges) at higher precision (the A-only residue was dominated by
+    A false positives), and the last genuine-drop class (published_norm over-fire)
+    was closed before the flip. This nine-regex extractor (``_DELEGATION_PATTERNS``)
+    is RETAINED — importable and available as a residue/cross-check oracle — but is
+    no longer wired into ``build_statute_graph_fi`` / ``..._lightweight``. It also
+    still backs the ``delegation_census`` differential harness and the
+    ``lawvm delegate`` CLI cross-check. Do not delete: it is the fallible regex
+    oracle the canonical parser is differentiated against.
 
     Args:
         xml_bytes:  Raw XML bytes of the statute (Akoma Ntoso / Finlex format).

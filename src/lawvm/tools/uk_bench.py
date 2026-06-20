@@ -51,6 +51,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
+    from lawvm.core.bench_contract import BenchUnitResult
     from lawvm.core.ir import IRStatute
 
 import Levenshtein
@@ -1097,6 +1098,92 @@ class _BenchResult:
     duration_s: float = 0.0
     process_maxrss_kb: int = 0
     phase_timings: dict[str, float] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Unified cross-jurisdiction bench contract — UK adapter
+#
+# Re-house the existing UK EID-Jaccard and text-Levenshtein numbers into a
+# contract BenchUnitResult without changing them. See
+# lawvm.core.bench_comparator_registry and notes/UNIFIED_BENCH_CONTRACT.md.
+# ---------------------------------------------------------------------------
+
+
+def uk_bench_unit_result(result: "_BenchResult", *, has_commencement: bool = False) -> "BenchUnitResult":
+    """Map a UK ``_BenchResult`` onto a contract ``BenchUnitResult``.
+
+    - ``structural_err = 1 - EID Jaccard`` (the commencement-lensed score when a
+      commencement run is active and available, else the plain EID score —
+      exactly the existing primary-score selection).
+    - ``text_err = 1 - text_score`` when a text score was computed, else
+      ``None`` (axis not attempted).
+    - ``residue_buckets`` count the EIDs not in the intersection
+      (``eid_only_in_enacted`` / ``eid_only_in_oracle``), which is non-zero iff
+      the Jaccard score is below 1 — so the structural error reconciles.
+    """
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
+
+    status = result.status
+    if status == "OK":
+        score = _bench_primary_score(result, has_commencement=has_commencement)
+        if score < 0:
+            # Commencement lane not attempted and no base score — non-scored.
+            return BenchUnitResult(unit_id=result.statute_id, status=BenchStatus.NO_TRUTH)
+        structural_err = 1.0 - score
+        # The residue MUST reconcile with the SAME lens that produced the score.
+        # The plain symmetric-difference EID counts (n_enacted_eids / n_oracle_eids
+        # / n_common) describe the UNFILTERED lens; they are only a faithful
+        # residue when the unfiltered score governs. When the commencement lens
+        # governs (commencement_score used), those unfiltered counts are the
+        # WRONG lens — a perfect commenced score can coexist with unfiltered
+        # not-yet-commenced provisions, which would emit phantom residue at zero
+        # error. The _BenchResult does not carry per-lens symmetric-difference
+        # counts, so under the commencement lens we record only the residual
+        # presence (gated on structural_err > 0), keeping the reconciliation
+        # invariant exact.
+        commencement_lens_used = (
+            has_commencement and result.commencement_score >= 0.0
+        )
+        residue: dict[str, int] = {}
+        if commencement_lens_used:
+            if structural_err > 0:
+                residue["eid_score_residual"] = 1
+        else:
+            only_in_enacted = max(0, result.n_enacted_eids - result.n_common)
+            only_in_oracle = max(0, result.n_oracle_eids - result.n_common)
+            if only_in_enacted:
+                residue["eid_only_in_enacted"] = only_in_enacted
+            if only_in_oracle:
+                residue["eid_only_in_oracle"] = only_in_oracle
+            if structural_err > 0 and not residue:
+                # Score < 1 with an empty symmetric difference would be a contract
+                # violation; record the residual fraction explicitly rather than
+                # leaving the error silently unexplained.
+                residue["eid_score_residual"] = 1
+        text_err = None if result.text_score < 0 else 1.0 - result.text_score
+        return BenchUnitResult(
+            unit_id=result.statute_id,
+            status=BenchStatus.SCORED,
+            structural_err=structural_err,
+            text_err=text_err,
+            residue_buckets=residue,
+        )
+    if status in {"NO_ENACTED", "NO_ORACLE"}:
+        return BenchUnitResult(unit_id=result.statute_id, status=BenchStatus.NO_TRUTH)
+    # "ERR" or any other status — a genuine crash.
+    witnesses = (result.error,) if result.error else ()
+    return BenchUnitResult(
+        unit_id=result.statute_id, status=BenchStatus.CRASH, witnesses=witnesses
+    )
+
+
+def _register_uk_bench_comparator() -> None:
+    from lawvm.core.bench_comparator_registry import register_bench_comparator
+
+    register_bench_comparator("uk", uk_bench_unit_result)
+
+
+_register_uk_bench_comparator()
 
 
 _REPORT_EVIDENCE_TUPLE_FIELDS = (
@@ -7903,9 +7990,16 @@ def main(args) -> None:
 
     run_kwargs["progress_start"] = _print_row_start
 
+    unit_results: list[BenchUnitResult] = []
     try:
         for r in _run_bench(corpus, archive, **run_kwargs):
             acc.feed(r)
+            # Collect the contract result per row (a small frozen dataclass) so
+            # the unified summary can be rendered without retaining the heavy
+            # _BenchResult rows (which are del'd below for memory discipline).
+            unit_results.append(
+                uk_bench_unit_result(r, has_commencement=do_commencement)
+            )
 
             done = acc.total_count
 
@@ -7990,6 +8084,17 @@ def main(args) -> None:
         print(f"Results saved: {_BENCH_DIR / f'{label}.csv'}")
 
         _append_history(acc, label, score_witness_count)
+
+    # Unified cross-jurisdiction headline (worst-of structural EID + text axes),
+    # rendered by default. The detailed bespoke UK report below is preserved in
+    # full — its load-bearing diagnostics (commencement lens, replay regime,
+    # adjudication buckets, source/effect-feed lanes) carry information the
+    # unified summary intentionally does not.
+    from lawvm.core.bench_aggregate import render_summary
+
+    print()
+    for line in render_summary(unit_results, label, jurisdiction="uk"):
+        print(line)
 
     if replay_adjudication_sample_kinds:
         _print_report(

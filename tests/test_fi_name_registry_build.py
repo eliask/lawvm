@@ -12,6 +12,7 @@ import datetime as dt
 
 from lawvm.finland.references.registries.statute_name import (
     StatuteNameEntry,
+    _extract_repeal_date,
     _extract_title_and_date,
     load_statute_name_entries,
     load_statute_name_registry,
@@ -32,6 +33,56 @@ def _akn_xml(title: str, *, date: str | None) -> bytes:
         f"<preface><longTitle><docTitle>{title}</docTitle></longTitle></preface>"
         "</act></akomaNtoso>"
     ).encode("utf-8")
+
+
+_FINLEX_NS = "http://data.finlex.fi/schema/finlex"
+
+
+# A minimal consolidated-oracle XML carrying the finlex repeal metadata block
+# (mirrors the real corpus shape: repealedBy/statuteReference/inForce/
+# dateEntryIntoForce[@date]). ``repeal_date=None`` omits the block entirely
+# (a still-in-force act).
+def _oracle_xml(*, repeal_date: str | None, omit_date: bool = False) -> bytes:
+    block = ""
+    if repeal_date is not None or omit_date:
+        date_el = (
+            ""
+            if omit_date
+            else f'<finlex:dateEntryIntoForce date="{repeal_date}"/>'
+        )
+        block = (
+            "<finlex:repealedBy><finlex:statuteReference>"
+            '<finlex:ref href="/akn/fi/act/statute-consolidated/2011/805">'
+            "805/2011</finlex:ref>"
+            f"<finlex:inForce>{date_el}</finlex:inForce>"
+            "</finlex:statuteReference></finlex:repealedBy>"
+        )
+    return (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0"'
+        f' xmlns:finlex="{_FINLEX_NS}">'
+        f"<act><meta>{block}</meta></act></akomaNtoso>"
+    ).encode("utf-8")
+
+
+def test_extract_repeal_date_reads_finlex_repealed_by() -> None:
+    """A repealed act's oracle repeal date is the deterministic in-corpus valid_to."""
+    assert _extract_repeal_date(_oracle_xml(repeal_date="2014-01-01")) == dt.date(
+        2014, 1, 1
+    )
+
+
+def test_extract_repeal_date_in_force_act_is_none() -> None:
+    """A still-in-force act has no repealedBy block -> open window (never guessed)."""
+    assert _extract_repeal_date(_oracle_xml(repeal_date=None)) is None
+
+
+def test_extract_repeal_date_missing_date_is_none() -> None:
+    """Fail-loud: a repealedBy block with no parseable date stays OPEN, not guessed."""
+    assert _extract_repeal_date(_oracle_xml(repeal_date=None, omit_date=True)) is None
+
+
+def test_extract_repeal_date_unparseable_oracle_is_none() -> None:
+    assert _extract_repeal_date(b"not xml at all") is None
 
 
 def test_extract_title_and_date_reads_frbr_dateissued() -> None:

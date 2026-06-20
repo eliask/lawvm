@@ -79,15 +79,20 @@ def test_instrument_noun_without_delegation_verb_is_not_a_frame() -> None:
     assert not scan.frames
 
 
-def test_delegation_without_actor_is_a_typed_residual() -> None:
-    # A delegation-shaped clause (instrument noun "asetuksella" + delegation verb
-    # "säädetään") with NO known delegate actor in the clause window is emitted as
-    # a typed residual, never silently dropped. "asetuksella" is the lowercase
-    # instrument noun (the closed set is lowercase, mirroring the prior recognizer).
+def test_bare_asetuksella_is_a_grant_with_underspecified_holder() -> None:
+    # DELEGATION-UNIFY-VERDICT step 4 / FRONTIER adjudication (old_C_correct):
+    # a bare / impersonal ``asetuksella säädetään`` (no overt issuer) DOES grant
+    # the power to issue a decree — the issuer is UNDERSPECIFIED, not absent. The
+    # old B residualized this as ``delegation_without_actor`` and LOST the genuine
+    # grant; the canonical parser (B now calls it) emits the grant with an empty
+    # ``delegate_actor`` (underspecified issuer). This was an adjudicated old-B
+    # MISS, so the test now pins the corrected behavior.
     text = "Tarkemmista seikoista asetuksella säädetään myöhemmin."
     scan = recognize_delegation_frames(_tape(text))
-    assert not scan.frames
-    assert any(r.kind == "delegation_without_actor" for r in scan.residuals)
+    assert len(scan.frames) == 1
+    assert scan.frames[0].instrument_kind == "asetus"
+    assert scan.frames[0].delegate_actor == ""  # issuer underspecified, not absent
+    assert scan.residuals == ()
 
 
 def test_recognizer_is_deterministic() -> None:

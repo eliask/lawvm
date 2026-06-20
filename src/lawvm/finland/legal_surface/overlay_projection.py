@@ -47,6 +47,7 @@ from lawvm.core.interlinks import RenderedTextSpan, legal_interlink_to_row
 from lawvm.core.legal_surface_graph import (
     LegalSurfaceGraph,
     SourceSpanRef,
+    SurfaceEdge,
     SurfaceNode,
 )
 
@@ -63,7 +64,12 @@ OVERLAY_KIND_BY_NODE_KIND: Mapping[str, str] = {
     "temporal_expr": "temporal",
     "delegation_frame": "delegation",
     "procedure_frame": "procedure",
+    # Bare process/sanction nouns demoted to cues keep the SAME viewer highlight
+    # (procedure / sanction) as their frame siblings — the cue carries the same
+    # span + typed sub-kind, so the overlay label is identical.
+    "procedure_cue": "procedure",
     "sanction_frame": "sanction",
+    "sanction_cue": "sanction",
     "exception_condition_cue": "exception_condition",
     "actor_modal_frame": "actor_modal",
 }
@@ -354,7 +360,7 @@ def _overlay_id(statute_id: str, node_id: str) -> str:
 
 def _links_json(
     node_id: str,
-    graph: LegalSurfaceGraph,
+    outgoing_edges_by_node: Mapping[str, list[SurfaceEdge]],
     overlay_id_by_node: Mapping[str, str],
 ) -> str:
     """Serialize this node's OUTGOING edges as a deterministic link list.
@@ -366,9 +372,7 @@ def _links_json(
     entity/resolution endpoint with no own overlay. Sorted for determinism.
     """
     links: list[dict[str, object]] = []
-    for edge in graph.edges:
-        if edge.src != node_id:
-            continue
+    for edge in outgoing_edges_by_node.get(node_id, ()):
         target_overlay_id = overlay_id_by_node.get(edge.dst)
         link: dict[str, object] = {"rel": edge.edge_kind}
         if target_overlay_id is not None:
@@ -398,8 +402,7 @@ def graph_to_overlay_rows(
 
     One row per RENDERABLE surface node (kinds in :data:`OVERLAY_KINDS`). Entity
     handles, the ``reference_resolution`` (its outcome rides the reference row's
-    status + payload), ``surface_residual``, and ``procedure_frame`` (outside the
-    pinned vocab) produce no row.
+    status + payload), and ``surface_residual`` produce no row.
 
     The viewer places overlays via the SAME ``rendered_*`` / ``source_span_byte_*``
     columns interlinks use — built from the SAME :class:`RenderedTextSpan`
@@ -425,6 +428,9 @@ def graph_to_overlay_rows(
         node.node_id: _overlay_id(statute_id, node.node_id)
         for node in renderable_nodes
     }
+    outgoing_edges_by_node: dict[str, list[SurfaceEdge]] = {}
+    for edge in graph.edges:
+        outgoing_edges_by_node.setdefault(edge.src, []).append(edge)
 
     rows: list[dict[str, object]] = []
     for node in renderable_nodes:
@@ -454,7 +460,11 @@ def graph_to_overlay_rows(
             "payload_json": json.dumps(
                 dict(node.payload), ensure_ascii=False, sort_keys=True, default=str
             ),
-            "links_json": _links_json(node.node_id, graph, overlay_id_by_node),
+            "links_json": _links_json(
+                node.node_id,
+                outgoing_edges_by_node,
+                overlay_id_by_node,
+            ),
             "status": _overlay_status(node, kind, resolution),
             **span_cols,
         }

@@ -45,7 +45,7 @@ def _project_preparatory_refs_for_statute(
 
     Returns (ref_rows, diagnostic_rows).
     """
-    from lawvm.finland.preparatory_reference_extractor import extract_preparatory_refs
+    from lawvm.finland.references.preparatory_reference_extractor import extract_preparatory_refs
 
     xml_bytes = _get_statute_xml(statute_id, store)
     if xml_bytes is None:

@@ -318,7 +318,7 @@ def test_extract_no_statsrad_articles_records_missing_record_artifact() -> None:
 def test_extract_statsrad_events_records_missing_record_artifact(monkeypatch) -> None:
     archive = _FakeArchive({})
     archive.store(no_statsrad_article_raw_locator("id3103197"), _ARTICLE_HTML, storage_class="html")
-    monkeypatch.setattr("lawvm.norway.statsrad.open_no_archive", lambda path: archive)
+    monkeypatch.setattr("lawvm.norway.statsrad.open_no_archive", lambda path, *, readonly=True: archive)
     monkeypatch.setattr("lawvm.norway.statsrad.resolve_no_source_path", lambda path=None: path)
 
     report = extract_statsrad_events(db_path=None, bulletin_ids=["id3103197"])

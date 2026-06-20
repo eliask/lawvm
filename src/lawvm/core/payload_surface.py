@@ -67,7 +67,7 @@ from lawvm.core.target_scope import TargetUnitKind
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class GroupSurface:
     """Raw amendment-group payload extracted from the amendment XML.
 
@@ -118,7 +118,7 @@ class GroupSurface:
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PayloadSurface:
     """The amendment body after source-local normalization, before live elaboration.
 

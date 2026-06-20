@@ -83,6 +83,7 @@ from lawvm.finland.legal_surface.norm_composition import (
     delegation_instrument_passes,
     deontic_frame_attachment_passes,
     enclosing_anaphora_passes,
+    forest_structural_attachment_passes,
     norm_subject_attachment_passes,
     procedure_governance_passes,
     sanction_reference_passes,
@@ -280,6 +281,17 @@ def build_legal_surface_graph(
     # Spliced in ADDITIVELY, surface_only; a STRICT SUPERSET of the intra/cross-
     # sentence attachments (it fires only on the closed enclosing-anaphor cue
     # shapes those passes do not key on, never altering an existing edge).
+    #
+    # The forest-structural attachment pass (forest_structural_attachment_passes)
+    # recovers the intra-sentence pass's ``candidate`` residue (a condition/
+    # exception cue whose governing deontic core was split into a NEIGHBOURING
+    # clause-segmented sentence of the SAME provision). It attaches via the
+    # SourceSyntaxGraph forest's structural segment + ``inherits_chapeau`` edges
+    # (the structure the clause split drops) — chapeau-inheritance for list-item
+    # conditions, the enclosing prose/chapeau segment for in-sentence ones — with a
+    # proximity fallback so no qualifier is dropped. A STRICT SUPERSET of the intra/
+    # cross-sentence passes (fires only on previously-edgeless candidates), spliced
+    # in ADDITIVELY, surface_only, candidate-not-asserted.
     all_edge_passes = (
         edge_passes
         + condition_attachment_passes(bundle)
@@ -289,6 +301,7 @@ def build_legal_surface_graph(
         + delegation_instrument_passes(bundle)
         + sanction_reference_passes(bundle)
         + enclosing_anaphora_passes(bundle)
+        + forest_structural_attachment_passes(bundle)
     )
 
     return assemble_surface_graph(

@@ -23,7 +23,7 @@ from lawvm.core.temporal import (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TemporalOpOverrides:
     matched: bool = False
     effective: str = ""

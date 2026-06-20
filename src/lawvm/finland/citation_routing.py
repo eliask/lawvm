@@ -261,6 +261,10 @@ def _parent_title_reference_variants(parent_title: str) -> set[str]:
         body = norm[7:].strip()
         if body:
             variants.add(f"{body} annetun asetuksen")
+    if norm.startswith("valtioneuvoston päätös "):
+        body = norm.removeprefix("valtioneuvoston päätös ").strip(" .")
+        if body:
+            variants.add(f"{body} annetun valtioneuvoston päätöksen")
 
     return {v.strip() for v in variants if v.strip()}
 

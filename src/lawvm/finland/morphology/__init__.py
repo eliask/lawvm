@@ -10,6 +10,14 @@ See ``notes_internal/FI_MORPHOLOGY_DESIGN_DECISION.md`` for the full spec.
 
 from __future__ import annotations
 
+from .analyze import (
+    LemmaAdmissibility,
+    MorphAnalysis,
+    MorphCandidate,
+    analyze_admissible_lemmas,
+    analyze_candidates,
+    analyze_open,
+)
 from .api import (
     REFERENCE_V1_PL,
     REFERENCE_V1_SG,
@@ -27,11 +35,17 @@ __all__ = [
     "REFERENCE_V1_PL",
     "REFERENCE_V1_SG",
     "Classification",
+    "LemmaAdmissibility",
     "LemmaIndex",
+    "MorphAnalysis",
+    "MorphCandidate",
     "MorphCase",
     "MorphEntry",
     "MorphForm",
     "MorphNumber",
+    "analyze_admissible_lemmas",
+    "analyze_candidates",
+    "analyze_open",
     "build_lemma_index",
     "classify",
     "generate_forms",

@@ -6,8 +6,6 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List, Literal, Optional, Set
 
-import lxml.etree as etree
-
 from lawvm.core import tree_ops as _tops
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
@@ -18,7 +16,6 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.finland.amendment_chapter_precreate import (
     ChapterRef,
-    _pre_create_amendment_chapters,
 )
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.apply_resolved_op import (
@@ -59,6 +56,7 @@ from lawvm.finland.restructure_plan_replay import (
     execute_restructure_plan_with_evidence as _execute_restructure_plan_with_evidence,
 )
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState, StatuteContext
 
 logger = logging.getLogger(__name__)
@@ -71,7 +69,7 @@ class ApplySupplementalRecoveryRequest:
     state: ReplayState
     ctx: StatuteContext
     ops: List[AmendmentOp]
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     johto: str
     amendment_id: str
     source_title: str
@@ -220,13 +218,11 @@ def run_apply_supplemental_recovery(
 
     if ops and uncov_allowed:
         new_chapter_refs = list(request.pre_real_chapter_refs)
-        muutos_body_el = request.muutos_tree.find(".//{*}body")
-        if muutos_body_el is not None:
-            late_new_chapters = _pre_create_amendment_chapters(
-                state,
-                muutos_body_el,
-                request.amendment_id,
-            )
+        late_new_chapters = request.source_model.pre_create_amendment_chapters(
+            state,
+            request.amendment_id,
+        )
+        if late_new_chapters is not None:
             state = late_new_chapters.state
             new_chapter_refs = list(
                 dict.fromkeys(
@@ -267,7 +263,7 @@ def run_apply_supplemental_recovery(
                 state=state,
                 ctx=request.ctx,
                 ops=ops,
-                muutos_tree=request.muutos_tree,
+                source_model=request.source_model,
                 amendment_id=request.amendment_id,
                 future_repeals=request.future_repeals,
                 op_source=uncov_src,

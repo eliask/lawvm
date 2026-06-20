@@ -7,16 +7,10 @@ import logging
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from lxml import etree
-
-from lawvm.core.compile_result import ActivationRule
+from lawvm.core.temporal import ActivationRule
 from lawvm.core.phase_result import Finding
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
-from lawvm.finland.metadata import (
-    _amendment_effective_date_with_step,
-    _amendment_expiry_date,
-    _statute_issue_date,
-)
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_lowering import (
     activation_rules_from_meta_clauses,
     classify_contingent,
@@ -43,13 +37,13 @@ class AmendmentTemporalAuthority:
 class ProcessTemporalAuthorityContext:
     amendment_id: str
     johto: str
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     record_finding: RecordProcessFinding
 
     def derive(self) -> AmendmentTemporalAuthority:
-        effective_date, effective_step = _amendment_effective_date_with_step(self.muutos_tree)
-        expiry_date = _amendment_expiry_date(self.muutos_tree)
-        issue_date = _statute_issue_date(self.muutos_tree)
+        effective_date, effective_step = self.source_model.effective_date_with_step()
+        expiry_date = self.source_model.expiry_date()
+        issue_date = self.source_model.issue_date()
 
         meta_clauses = extract_meta_surface_clauses(self.johto)
         activation_rules = activation_rules_from_meta_clauses(meta_clauses)
@@ -76,6 +70,26 @@ class ProcessTemporalAuthorityContext:
                     "step": effective_step,
                     "activation_rule_kind": primary_rule.kind,
                 },
+            )
+        elif effective_step == "separate_commencement_law":
+            witness = self.source_model.separate_commencement_law_witness()
+            self.record_finding(
+                kind="TIME.RESOLVED_CONTINGENT_EFFECTIVE_DATE",
+                message=(
+                    "Contingent commencement was resolved from a separate "
+                    "commencement-law list witness."
+                ),
+                source_statute=self.amendment_id,
+                detail={
+                    "step": effective_step,
+                    "target_amendment": self.amendment_id,
+                    "effective_date": effective_date.isoformat() if effective_date else "",
+                    "witness_statute": witness.commencement_statute_id if witness else "",
+                    "witness_ref": witness.source_provision_ref if witness else "",
+                    "rule_id": witness.rule_id if witness else "fi_separate_commencement_law_list",
+                },
+                role="observation",
+                blocking=False,
             )
         elif effective_step in ("text_regex", "publication_date"):
             self.record_finding(

@@ -56,6 +56,7 @@ trimmed off every emitted span; an all-whitespace span is dropped.
 from __future__ import annotations
 
 import hashlib
+from bisect import bisect_left
 
 from lawvm.core.legal_surface_tokens import (
     ClauseIndex,
@@ -242,6 +243,52 @@ def _dot_is_sentence_end(tokens: tuple[Token, ...], idx: int) -> bool:
     return True
 
 
+def sentence_terminator_between(
+    tokens: tuple[Token, ...], lo: int, hi: int
+) -> bool:
+    """Does a SENTENCE boundary fall strictly between char offsets ``lo`` and ``hi``?
+
+    Uses the SAME sentence-split authority as :func:`build_clause_index`: a
+    ``!``/``?`` punct token, a ``.`` punct token that :func:`_dot_is_sentence_end`
+    (so dotted dates/decimals, ordinal/section-number dots, and closed-list
+    abbreviation dots do NOT count), or a whitespace token containing a newline.
+    The boundary must lie within the half-open interval ``[lo, hi)`` — ``lo`` is
+    the actor's exclusive end offset, so a terminator AT ``lo`` is the char
+    immediately after the actor (its sentence ending right there) and DOES
+    separate it from a later modal. A terminator at/after ``hi`` does not.
+
+    This is the shared guard the surface frame recognizers use to refuse fusing an
+    actor in one sentence with a modal/sanction predicate in the next: it scans
+    the lossless tape's tokens, so no raw-text reconstruction is needed.
+    """
+    if hi <= lo:
+        return False
+    for idx, tok in enumerate(tokens):
+        # A punct/word terminator counts at its own char_start; a newline counts
+        # at the position of the newline char inside the whitespace run. The
+        # half-open window [lo, hi) admits a terminator abutting the actor end.
+        if tok.char_end <= lo:
+            continue
+        if tok.char_start >= hi:
+            break
+        if tok.category == "whitespace":
+            if "\n" in tok.text:
+                nl = tok.char_start + tok.text.index("\n")
+                if lo <= nl < hi:
+                    return True
+            continue
+        if tok.category != "punct":
+            continue
+        ch = tok.text
+        if ch in _HARD_SENTENCE_END:
+            if lo <= tok.char_start < hi:
+                return True
+        elif ch == "." and _dot_is_sentence_end(tokens, idx):
+            if lo <= tok.char_start < hi:
+                return True
+    return False
+
+
 def _match_phrase(
     tokens: tuple[Token, ...], start_idx: int, phrase: tuple[str, ...]
 ) -> int | None:
@@ -295,6 +342,7 @@ def build_clause_index(
         source_unit_id, raw_text
     )
     tokens = tape.tokens
+    token_starts = tuple(token.char_start for token in tokens)
 
     # ── pass 1: sentence boundaries ──────────────────────────────────────────
     # A sentence boundary index is the char offset just AFTER the boundary char.
@@ -324,7 +372,14 @@ def build_clause_index(
     clauses: list[ClauseSpan] = []
     for sent_index, (s_start, s_end) in enumerate(sentence_spans):
         clauses.extend(
-            _segment_sentence_clauses(text, tokens, s_start, s_end, sent_index)
+            _segment_sentence_clauses(
+                text,
+                tokens,
+                token_starts,
+                s_start,
+                s_end,
+                sent_index,
+            )
         )
 
     return ClauseIndex(
@@ -352,24 +407,17 @@ def _spans_from_cuts(text: str, cuts: list[int]) -> list[tuple[int, int]]:
     return spans
 
 
-def _token_index_at_or_after(tokens: tuple[Token, ...], char_start: int) -> int:
-    """First token index whose char_start >= ``char_start`` (linear; small)."""
-    for i, t in enumerate(tokens):
-        if t.char_start >= char_start:
-            return i
-    return len(tokens)
-
-
 def _segment_sentence_clauses(
     text: str,
     tokens: tuple[Token, ...],
+    token_starts: tuple[int, ...],
     s_start: int,
     s_end: int,
     sent_index: int,
 ) -> list[ClauseSpan]:
     """Split one sentence span into sub-clauses. Returns trimmed ClauseSpans."""
     # Walk the tokens that fall inside [s_start, s_end).
-    i = _token_index_at_or_after(tokens, s_start)
+    i = bisect_left(token_starts, s_start)
     clause_open = s_start  # char offset where the current clause opens
     open_kind = "sentence"
     out: list[ClauseSpan] = []

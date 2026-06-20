@@ -65,6 +65,40 @@ def test_scoped_section_path_normalizes_roman_part_scope_without_dropping_it() -
     ) is None
 
 
+def test_scoped_section_path_uses_index_for_part_scoped_lookup() -> None:
+    ir = _body(
+        _part("1", _chapter("1", _sec("8"))),
+        _part("2", _chapter("1", _sec("8")), _chapter("2", _sec("8"))),
+    )
+    index = _tops.build_label_index(ir)
+
+    def fail_find_path(
+        _kind: str,
+        _label: str,
+        _scope_kind: str | None,
+        _scope_label: str | None,
+    ) -> Path | None:
+        raise AssertionError("indexed part-scoped lookup should not scan through find_path")
+
+    assert find_scoped_section_path(
+        ir,
+        target_section="8",
+        target_chapter="2",
+        target_part="II",
+        find_path=fail_find_path,
+        provision_index=index,
+    ) == (("part", "2"), ("chapter", "2"), ("section", "8"))
+
+    assert find_scoped_section_path(
+        ir,
+        target_section="9",
+        target_chapter="2",
+        target_part="II",
+        find_path=fail_find_path,
+        provision_index=index,
+    ) is None
+
+
 def test_chapter_scoped_section_path_uses_index_without_hijacking_ambiguity() -> None:
     ir = _body(
         _part("1", _chapter("6", _sec("7"))),
@@ -177,6 +211,28 @@ def test_scoped_section_insert_parent_path_keeps_missing_scope_policies_explicit
         missing_part_policy="not_found",
         missing_chapter_in_part_policy="not_found",
     ) is None
+
+
+def test_scoped_section_insert_parent_path_uses_provision_index_for_part_chapter() -> None:
+    ir = _body(
+        _part("1", _chapter("1", _sec("8"))),
+        _part("2", _chapter("1", _sec("9"))),
+    )
+    provision_index = _tops.build_provision_label_index(ir)
+
+    def fail_find_insert_parent(_chapter_label: str | None) -> Path:
+        raise AssertionError("fallback parent lookup should not be used")
+
+    assert find_scoped_section_insert_parent_path(
+        ir,
+        chapter_label="1",
+        part_label="2",
+        find_part_path=lambda label: _tops.find(ir, "part", label, label_index=provision_index),
+        find_insert_parent_path=fail_find_insert_parent,
+        missing_part_policy="not_found",
+        missing_chapter_in_part_policy="not_found",
+        provision_index=provision_index,
+    ) == (("part", "2"), ("chapter", "1"))
 
 
 def test_section_candidate_selectors_keep_part_and_chapter_boundaries() -> None:

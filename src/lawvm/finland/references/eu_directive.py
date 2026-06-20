@@ -16,9 +16,13 @@ expanded article, with ``cite_kind = EU`` and a resolution status:
 
   * ``EXACT``       — nickname resolved to a single CELEX.
   * ``AMBIGUOUS``   — nickname maps to >1 CELEX (registry refuses to pick).
-  * ``STATUTE_ONLY``— a directive/regulation nickname-shaped head was named but
-    is not in the registry (the instrument identity is textual; the CELEX is
-    pending — tag, don't guess).
+  * ``STATUTE_ONLY``— a NAMED EU instrument (a compound/multi-word EU-head
+    nickname directly governing an ``N artikla``) is not in the registry and has
+    no minable adjacent cite (the instrument identity is textual, the CELEX is
+    pending — tag, don't guess). Routed to ``eu-nickname:<surface>`` so it is NOT
+    mis-typed as a Finnish ``fi-name:`` statute. A BARE standalone head
+    (anaphoric/domestic ``asetuksessa`` / ``mainitun direktiivin``) carries no
+    instrument identity and is dropped instead.
 
 Article coordination reuse
 --------------------------
@@ -35,6 +39,26 @@ johtolause lexer and running the shared recognizers from
 This module owns NO number-list logic of its own; it only locates the
 ``<numbers> artikla<case>`` window and a preceding nickname head, then delegates
 the numeric expansion to the shared helpers.
+
+Grammar boundary (window location = bounded typed residue)
+----------------------------------------------------------
+The numeric ENUMERATION core — the part structurally analogous to the Finnish
+``momentti``/``kohta`` coordination — is already grammar-routed: every article,
+kohta and alakohta number list (and a ``33—35`` range) is expanded by the shared
+``_number_list``/``_expand_range`` grammar, yielding exactly one mention per
+expanded element. What is NOT grammar-modelled is the *window location* itself:
+``_ARTIKLA_RE`` / ``_KOHTA_TAIL_RE`` / ``_NICKNAME_RE`` / ``_BARE_HEAD_RE`` find
+the ``<numbers> artikla<case>`` span and its governing nickname head in free
+prose. The johtolause construction grammar models Finnish statute-INTERNAL
+structure (``§`` / ``momentti`` / ``kohta``); it carries no ``artikla``
+construction, so locating an EU-instrument-internal article window via the
+grammar would require a new construction family — disproportionate for this
+recognizer's (low) yield. These window-locating patterns are therefore retained
+as DELIBERATE bounded typed residue: every quantifier is explicitly bounded
+(``\\d{1,4}``, ``{0,30}``/``{0,10}`` list caps, literal-anchored ``artikla`` /
+``kohta`` heads), so each is provably linear and passes the §1.11 regex perf
+gate cleanly (no allowlist entry needed). The grammar does not yet model
+EU-internal article structure; that is the documented residue, not a leak.
 """
 from __future__ import annotations
 
@@ -115,6 +139,19 @@ _EU_HEAD_ALT = "|".join(
 # Optional compound-modifier prefix (any word-stem chars) + a generated head
 # form, with a trailing word boundary so the head form is the token tail.
 _HEAD_WORD = rf"[A-Za-zÅÄÖåäö0-9-]*(?:{_EU_HEAD_ALT})\b"
+
+# A *named-instrument* head carries a NON-EMPTY compound modifier glued to the EU
+# head form (``ESAP-asetuksen``, ``vakavaraisuusasetuksen``,
+# ``teollisuuspäästödirektiivin``) — that compound is the instrument's name, so
+# even a registry-miss nickname is unambiguously a NAMED EU instrument, not a bare
+# anaphoric/domestic head (``asetuksessa``, ``mainitun direktiivin``). The bare
+# standalone head form, whose whole token IS an inflected ``asetus``/``direktiivi``
+# with no glued modifier, carries no instrument identity. ``re.fullmatch`` against
+# the longest-first head alternation anchors the head form to the WHOLE token, so a
+# leftover prefix (or none) tells the two apart. (A space-separated multi-word
+# nickname surface — ``rahoitusvälineiden markkinat -asetuksen`` — is named by its
+# own ``in`` check below.)
+_BARE_HEAD_RE = re.compile(rf"(?:{_EU_HEAD_ALT})", re.IGNORECASE)
 
 # nickname window: optional one or two leading modifier words + the head word.
 # Case-sensitive (as the original ``_HEAD_WORD`` was): the generated head forms
@@ -539,6 +576,33 @@ def _find_nickname(
     return surface, res
 
 
+def _is_named_eu_instrument(surface: str) -> bool:
+    """True iff ``surface`` is a NAMED EU instrument (strong by-nickname signal).
+
+    A named instrument carries the instrument's own name as a compound modifier
+    glued to the EU head (``ESAP-asetuksen``, ``vakavaraisuusasetuksen``,
+    ``teollisuuspäästödirektiivin``), or is a multi-word nickname phrase
+    (``rahoitusvälineiden markkinat -asetuksen``). A BARE standalone head whose
+    whole single token IS an inflected ``asetus``/``direktiivi`` with no glued
+    modifier (``asetuksessa``, ``mainitun direktiivin`` → head ``direktiivin``)
+    carries no instrument identity and is left to the anaphoric/domestic drop.
+
+    This is the discriminator that, together with the directly-governed
+    ``N artikla`` shape (Finnish acts use § not artikla), types a registry-miss
+    nickname as an unresolved EU-instrument reference rather than a Finnish
+    statute name (``fi-name:``). Sound: the head form is anchored to the WHOLE
+    last token by ``re.fullmatch``; only a real compound (non-empty prefix) or a
+    multi-word surface passes.
+    """
+    stripped = surface.strip()
+    if not stripped:
+        return False
+    if " " in stripped:
+        # Multi-word nickname surface (modifier words + head) — named.
+        return True
+    return _BARE_HEAD_RE.fullmatch(stripped) is None
+
+
 def _status_for(res: eu_nickname.RegistryResult) -> tuple[CiteConfidence, tuple[str, ...]]:
     """Map a registry result to a (confidence, celex_candidates) pair."""
     if res.status is eu_nickname.RegistryStatus.SINGLE:
@@ -575,17 +639,24 @@ def recognize_eu_directive_refs(
 
     Resolution status per emitted mention:
         EXACT (single CELEX — a registry SINGLE hit, or a bare head resolved via
-        an adjacent formal EU cite) / AMBIGUOUS (>1 CELEX, registry MULTIPLE).
-        An unresolvable bare head is NOT emitted (see below), so no STATUTE_ONLY
-        nickname-only mention is produced.
+        an adjacent formal EU cite) / AMBIGUOUS (>1 CELEX, registry MULTIPLE) /
+        STATUTE_ONLY (a NAMED EU instrument — a compound/multi-word EU-head
+        nickname directly governing an ``N artikla`` — that the registry does not
+        know and that carries no minable cite here; the EU TYPE is asserted, the
+        CELEX is left open, routed to ``eu-nickname:<surface>``).
 
-    Bare-head discipline (FAIL-LOUD): a nickname-shaped head with NO registry hit
-    is emitted ONLY when an adjacent formal EU cite is present in the same window
-    — then it resolves to that cite's CELEX (EXACT). A head with neither a
-    registry hit nor an adjacent formal cite (a domestic ``asetus`` / anaphoric
-    ``direktiivin`` whose article number is governed elsewhere) is NOT emitted: a
-    bare ``eu-nickname:<head>`` STATUTE_ONLY would be a pure false positive and
-    would double-count against the formal-cite lane.
+    Named-instrument vs bare-head discipline (FAIL-LOUD):
+      * a registry-miss nickname-shaped head with an adjacent formal EU cite
+        resolves to that cite's CELEX (EXACT);
+      * a registry-miss NAMED EU instrument (compound/multi-word EU-head, e.g.
+        ``ESAP-asetuksen``, ``rahoitusvälineiden markkinat -asetuksen``)
+        directly governing an article is emitted STATUTE_ONLY — Finnish acts use
+        § not artikla, so the article-governed EU-head is unambiguously an EU
+        instrument; typing it EU (not ``fi-name:``) is correct even unresolved;
+      * a BARE standalone head (a domestic ``asetus`` / anaphoric ``direktiivin``
+        whose article number is governed elsewhere — no glued instrument name) is
+        NOT emitted: a bare ``eu-nickname:<head>`` would be a false positive and
+        would double-count against the formal-cite lane.
     """
     source_ref = ProvisionRef(
         statute_id=source_statute_id,
@@ -599,16 +670,32 @@ def recognize_eu_directive_refs(
         surface, res = nickname
         confidence, celex = _status_for(res)
         if confidence is CiteConfidence.STATUTE_ONLY:
-            # No registry hit. Only emit if an adjacent formal EU cite resolves
-            # the bare head; otherwise drop it (fail-loud, no polluting
-            # STATUTE_ONLY). The window is the nickname lookbehind plus the cite
-            # that may sit between the head and the article number.
+            # No registry hit. Prefer to RESOLVE: an adjacent formal EU cite in
+            # the window pins the bare head to a CELEX (EXACT). The window is the
+            # nickname lookbehind plus the cite that may sit between the head and
+            # the article number.
             window = text[max(0, am.start() - _NICKNAME_LOOKBEHIND) : am.start()]
             resolved_celex = _celex_from_formal_cite(window, surface)
-            if resolved_celex is None:
+            if resolved_celex is not None:
+                confidence = CiteConfidence.EXACT
+                celex = (resolved_celex,)
+            elif _is_named_eu_instrument(surface):
+                # No formal cite, but the nickname is a NAMED EU instrument
+                # (a compound/multi-word EU-head) directly governing an
+                # ``N artikla`` — Finnish statutes use § not artikla, so this is
+                # unambiguously an EU-instrument reference, just unresolved
+                # (registry miss + no minable cite here). TYPE it as an EU
+                # statute_only mention routed to ``eu-nickname:<surface>`` so it
+                # is NOT mis-typed as a ``fi-name:`` Finnish statute by the
+                # by-name lane. Tag-don't-guess: never invent a CELEX.
+                pass  # keep confidence == STATUTE_ONLY; emitted below.
+            else:
+                # A BARE anaphoric/domestic head (``tässä asetuksessa``,
+                # ``mainitun direktiivin``) whose article number is governed
+                # elsewhere — no instrument identity. Drop (fail-loud), as
+                # before; a bare ``eu-nickname:<head>`` would be a false positive
+                # and would double-count against the formal-cite lane.
                 continue
-            confidence = CiteConfidence.EXACT
-            celex = (resolved_celex,)
         articles = _expand_articles(am.group("nums"))
         if not articles:
             continue
@@ -642,11 +729,15 @@ def recognize_eu_directive_refs(
             else (None,)
         )
 
-        # By this point ``confidence`` is EXACT (registry SINGLE or a bare head
-        # resolved via an adjacent formal cite) or AMBIGUOUS (registry MULTIPLE).
-        # STATUTE_ONLY no longer reaches here: an unresolvable bare head was
-        # dropped above (fail-loud), so the article path is never attached to a
-        # polluting ``eu-nickname:<head>`` placeholder.
+        # By this point ``confidence`` is one of:
+        #   * EXACT       — registry SINGLE, or a bare head resolved via an
+        #     adjacent formal cite → a concrete ``celex:`` target.
+        #   * AMBIGUOUS   — registry MULTIPLE → unresolved ``eu-nickname:``.
+        #   * STATUTE_ONLY— a NAMED EU instrument (compound/multi-word EU-head)
+        #     directly governing an article but with no registry hit and no
+        #     minable cite here → unresolved ``eu-nickname:`` (the EU TYPE is
+        #     asserted; the CELEX is left open — tag, don't guess). A bare
+        #     anaphoric/domestic head never reaches here (dropped above).
         for article in articles:
             for kohta in kohta_values:
                 for alakohta in alakohta_values:
@@ -657,7 +748,7 @@ def recognize_eu_directive_refs(
                             subsection_num=kohta,
                             item_label=alakohta,
                         )
-                    else:  # AMBIGUOUS — multiple candidates; do not pick one
+                    else:  # AMBIGUOUS / STATUTE_ONLY — do not pick/invent a CELEX
                         target = ProvisionRef(
                             statute_id="eu-nickname:" + surface,
                             section_label=article,

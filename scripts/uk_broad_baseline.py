@@ -523,7 +523,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
     from lawvm.uk_legislation.uk_grafter import extract_eid_map_bytes, parse_uk_statute_ir_bytes
 
     result: dict[str, Any] = {"statute_id": statute_id}
-    archive = Farchive(DB_PATH)
+    archive = Farchive(DB_PATH, readonly=True)
     try:
         enacted_locator = f"{_LEG_BASE}/{statute_id}/enacted/data.xml"
         current_locator = f"{_LEG_BASE}/{statute_id}/data.xml"
@@ -3543,7 +3543,7 @@ def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str
         classify_uk_source_blob,
     )
 
-    archive = Farchive(DB_PATH)
+    archive = Farchive(DB_PATH, readonly=True)
     try:
         enacted = set()
         current = set()

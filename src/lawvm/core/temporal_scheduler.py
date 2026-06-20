@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, replace
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Protocol, TypeGuard
 
 from lawvm.core.ir import (
     IRNode,
@@ -26,7 +26,7 @@ from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.semantic_types import StructuralAction
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TemporalWriteInterval:
     """One proved write payload occupying a legal-time interval."""
 
@@ -67,7 +67,7 @@ class TemporalWriteInterval:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TemporalScheduleDelta:
     """Read-model delta produced by scheduling a temporal write interval."""
 
@@ -89,7 +89,7 @@ class TemporalScheduleDelta:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TemporalScheduleResult:
     """Output of applying proved temporal windows to timelines."""
 
@@ -105,6 +105,37 @@ class TemporalWindowPayload:
     interval: TemporalWriteInterval
     payload: IRNode
     applicability: tuple[ScopePredicate, ...]
+
+
+class _TimelineBreakLike(Protocol):
+    amendment_id: str
+    diagnostic_code: str
+    scope: str
+    target_section: str
+    reason: str
+    window_start: str
+    window_end: str
+    occupant_source_statute: str
+    occupant_effective: str
+    rule_id: str
+
+
+_TIMELINE_BREAK_FIELDS = (
+    "amendment_id",
+    "diagnostic_code",
+    "scope",
+    "target_section",
+    "reason",
+    "window_start",
+    "window_end",
+    "occupant_source_statute",
+    "occupant_effective",
+    "rule_id",
+)
+
+
+def _is_timeline_break_like(item: object) -> TypeGuard[_TimelineBreakLike]:
+    return all(hasattr(item, field_name) for field_name in _TIMELINE_BREAK_FIELDS)
 
 
 def materialize_temporal_write_windows(
@@ -125,7 +156,7 @@ def materialize_temporal_write_windows(
     deltas: list[TemporalScheduleDelta] = []
     unresolved: list[Any] = []
     for item in timeline_breaks:
-        if str(getattr(item, "scope", "") or "") != "window":
+        if not _is_timeline_break_like(item) or str(item.scope or "") != "window":
             unresolved.append(item)
             continue
         interval_and_payload = _interval_for_window(item, op_list)
@@ -140,7 +171,7 @@ def materialize_temporal_write_windows(
         if not (interval.effective and interval.expires and interval.effective < interval.expires):
             unresolved.append(item)
             continue
-        occupant_effective = str(getattr(item, "occupant_effective", "") or "")
+        occupant_effective = str(item.occupant_effective or "")
         if occupant_effective and interval.expires > occupant_effective:
             unresolved.append(item)
             continue
@@ -172,8 +203,8 @@ def materialize_temporal_write_windows(
                 status="materialized",
                 scheduled_version_id=_scheduled_version_id(interval),
                 interval=interval,
-                diagnostic_code=str(getattr(item, "diagnostic_code", "") or ""),
-                occupant_source_work_id=str(getattr(item, "occupant_source_statute", "") or ""),
+                diagnostic_code=str(item.diagnostic_code or ""),
+                occupant_source_work_id=str(item.occupant_source_statute or ""),
                 occupant_effective=occupant_effective,
             )
         )
@@ -185,14 +216,14 @@ def materialize_temporal_write_windows(
 
 
 def _interval_for_window(
-    item: Any,
+    item: _TimelineBreakLike,
     ops: tuple[LegalOperation, ...],
 ) -> TemporalWindowPayload | None:
-    source_work_id = str(getattr(item, "amendment_id", "") or "")
-    target_section = str(getattr(item, "target_section", "") or "")
-    effective = str(getattr(item, "window_start", "") or "")
-    expires = str(getattr(item, "window_end", "") or "")
-    rule_id = str(getattr(item, "rule_id", "") or "") or str(getattr(item, "reason", "") or "")
+    source_work_id = str(item.amendment_id or "")
+    target_section = str(item.target_section or "")
+    effective = str(item.window_start or "")
+    expires = str(item.window_end or "")
+    rule_id = str(item.rule_id or "") or str(item.reason or "")
     if not (source_work_id and target_section and effective and expires):
         return None
     candidates = [
@@ -242,9 +273,9 @@ def _interval_for_window(
     )
 
 
-def _window_has_deferred_occupant(item: Any, timeline: ProvisionTimeline) -> bool:
-    occupant_effective = str(getattr(item, "occupant_effective", "") or "")
-    occupant_source = str(getattr(item, "occupant_source_statute", "") or "")
+def _window_has_deferred_occupant(item: _TimelineBreakLike, timeline: ProvisionTimeline) -> bool:
+    occupant_effective = str(item.occupant_effective or "")
+    occupant_source = str(item.occupant_source_statute or "")
     if not occupant_effective:
         return False
     for version in timeline.versions:

@@ -115,12 +115,59 @@ _ROLE_TO_META_KIND: dict[str, MetaClauseKind] = {
 # assignment matches the oracle's classification by construction. We keep the
 # cue patterns separate (not imported) because we need the MATCH SPAN of the cue
 # surface for total token ownership, which the production classifier discards.
+#
+# APPLICATION cue (broadened beyond the production set — see commencement-vs-
+# application below): the production ``meta_parse`` TRANSITION cue recognizes
+# ONLY ``tätä lakia sovelletaan`` (+ the säännös/voimaantuloa forms). The
+# union-ownership ruler's INDEPENDENT ``sovelletaan`` signal showed that the bulk
+# of unowned applicability spans are forms production never recognized:
+#   * the COORDINATED tail ``… tulee voimaan X ja sitä sovelletaan Y`` — one
+#     sentence carrying BOTH a commencement and an application clause, of which
+#     production keeps only the first (break-after-first); the ``sitä sovelletaan
+#     Y`` half is unowned;
+#   * standalone ``Lakia sovelletaan …`` / ``Tätä asetusta|päätöstä|säädöstä
+#     sovelletaan …`` (the non-laki statute kinds, partitive + nominative);
+#   * standalone ``… sovelletaan ensimmäisen kerran …`` (first-time application).
+# We OWN these spans here (surface ownership), while keeping the projection KEY
+# in parity with the production oracle (see :func:`temporal_key`: application
+# always projects the undated ``transition:`` key production emits, so adding
+# these never turns an oracle-found key into a projection miss).
 # ---------------------------------------------------------------------------
 _CUE_APPLICATION = re.compile(
     r"soveltamiss[aä][äa]nn[öo]s"
     r"|siirtymäs[aä][äa]nn[öo]s"
-    r"|tätä\s+lakia\s+sovelletaan"
+    # statute-kind addressee + sovelletaan: tätä/tämän lakia|asetusta|päätöstä|
+    # säädöstä|määräystä sovelletaan, OR the coordinated ``sitä sovelletaan``,
+    # OR a bare statute-kind partitive/nominative ``Lakia|Asetusta sovelletaan``.
+    r"|(?:tätä\s+|tämän\s+)?"
+    r"(?:lakia|laki|asetusta|asetus|päätöstä|päätös|säädöstä|määräystä|sitä)\s+"
+    r"sovelletaan"
+    # bare first-time-application cue (``sovelletaan ensimmäisen kerran``)
+    r"|sovelletaan\s+ensimmäisen\s+kerran"
     r"|ennen\s+(?:tämän\s+lain|lain)\s+voimaantuloa\s+(?:vireille|käsitelty|myönnetty)",
+    re.IGNORECASE,
+)
+
+#: A SECOND, coordinated application cue used to also own the ``… ja sitä
+#: sovelletaan Y`` half of a commencement+application coordination, when the
+#: sub-sentence's PRIMARY role was already classified as something else
+#: (commencement / validity). Narrower than the primary cue (it must not double-
+#: own an application sub-sentence already claimed by the primary pass).
+_CUE_APPLICATION_COORDINATED = re.compile(
+    r"\b(?:sitä\s+sovelletaan|sovelletaan\s+ensimmäisen\s+kerran)\b",
+    re.IGNORECASE,
+)
+
+#: Application-date span recognizer. Applicability clauses date with the ELATIVE
+#: ``NN päivästä Kkkuuta YYYY`` (``sovelletaan 16 päivästä toukokuuta 1988``) —
+#: a morphological case the production commencement (essive ``päivänä``) and
+#: expiry (allative ``päivään``) extractors do NOT cover. We own this span for
+#: total-ownership, but DO NOT put the date in the census key (production never
+#: dates a transition), so parity is preserved. ``ensimmäisen kerran`` is the
+#: first-time-event marker (no calendar date) — owned as a scope span.
+_APPLICATION_DATE_PATTERN = re.compile(
+    r"\d{1,2}\s+päivästä\s+[a-zäöå]+\s+\d{4}"
+    r"|ensimmäisen\s+kerran",
     re.IGNORECASE,
 )
 _CUE_VALIDITY = re.compile(
@@ -281,6 +328,22 @@ def _date_span_and_value(text: str, role: str) -> tuple[str, int | None, int | N
     return "", None, None
 
 
+def _application_span(text: str, cue_end: int) -> tuple[int | None, int | None]:
+    """Span of the application clause's date / first-time-event expression.
+
+    Searches AFTER the cue (``cue_end``) for the ELATIVE applicability date
+    (``NN päivästä Kkkuuta YYYY``) or the first-time-event marker
+    (``ensimmäisen kerran``). Returns ``(start, end)`` (sentence-local) when one
+    is found, else ``(None, None)``. Fail-loud by omission: an application cue
+    with no parseable date/scope owns ONLY its cue span (the rest is benign
+    residual), never a guessed date.
+    """
+    m = _APPLICATION_DATE_PATTERN.search(text, cue_end)
+    if m is None:
+        return None, None
+    return m.start(), m.end()
+
+
 def _prod_subsentence_spans(text: str) -> list[tuple[int, int]]:
     """Sub-sentence (start, end) spans of ``text`` per the production splitter.
 
@@ -296,6 +359,97 @@ def _prod_subsentence_spans(text: str) -> list[tuple[int, int]]:
         cursor = m.end()
     spans.append((cursor, len(text)))
     return spans
+
+
+def _make_clause(
+    role: str, cue_match: re.Match[str], sub: str, sub_start: int
+) -> TemporalClause:
+    """Build one :class:`TemporalClause` from a role + its cue match in ``sub``.
+
+    Offsets are rebased into the full-span coordinate (``sub_start``). The owned
+    date/scope span depends on the role: commencement/validity reuse the
+    production date extractors; application owns its ELATIVE applicability date /
+    first-time-event scope span (see :func:`_application_span`). Fail-loud: a cue
+    with no recognizable date/scope owns only its cue span (``date == ""``).
+    """
+    cue_start = sub_start + cue_match.start()
+    cue_end = sub_start + cue_match.end()
+    if role == ROLE_APPLICATION:
+        # Application carries no PRODUCTION-extracted census date (production never
+        # dates a transition). We still own its applicability date / first-time
+        # scope span for total-ownership, with an empty census ``date``.
+        s, e = _application_span(sub, cue_match.end())
+        d_start = sub_start + s if s is not None else None
+        d_end = sub_start + e if e is not None else None
+        return TemporalClause(
+            role=role,
+            cue=cue_match.group(0),
+            cue_start=cue_start,
+            cue_end=cue_end,
+            date="",
+            date_start=d_start,
+            date_end=d_end,
+        )
+    date, ds, de = _date_span_and_value(sub, role)
+    return TemporalClause(
+        role=role,
+        cue=cue_match.group(0),
+        cue_start=cue_start,
+        cue_end=cue_end,
+        date=date,
+        date_start=sub_start + ds if ds is not None else None,
+        date_end=sub_start + de if de is not None else None,
+    )
+
+
+def _clauses_for_subsentence(sub: str, sub_start: int) -> list[TemporalClause]:
+    """All temporal clauses one production sub-sentence carries (>= 0).
+
+    The PRIMARY clause is classified by production cue precedence (the first role
+    whose cue matches — mirrors ``meta_parse``'s break-after-first), so
+    ``clauses[0]`` is exactly the role production would assign.
+
+    Then the COMMENCEMENT-vs-APPLICATION coordination is resolved so BOTH halves
+    of ``Tämä laki tulee voimaan X ja sitä sovelletaan Y`` are owned (the L0 ruler
+    showed the ``sovelletaan`` half was the dominant unowned applicability span):
+
+      * if the primary is COMMENCEMENT or VALIDITY and a coordinated application
+        cue (``… ja sitä sovelletaan …`` / ``… sovelletaan ensimmäisen kerran …``)
+        also appears, an APPLICATION clause is emitted as well;
+      * if the primary is APPLICATION (its broadened cue won precedence) but a
+        COMMENCEMENT cue is ALSO present, a COMMENCEMENT clause is emitted as well
+        — this is the same coordinated sentence, and production (which does not
+        recognize ``sitä sovelletaan``) keys it as commencement, so emitting the
+        commencement clause keeps the projection a SUPERSET of the oracle, never a
+        miss.
+
+    A sub-sentence with no temporal cue yields the empty list.
+    """
+    classified = _classify_role(sub)
+    if classified is None:
+        return []
+    primary_role, primary_match = classified
+    clauses = [_make_clause(primary_role, primary_match, sub, sub_start)]
+    owned_spans = [(primary_match.start(), primary_match.end())]
+
+    def _disjoint(m: re.Match[str]) -> bool:
+        return all(m.end() <= s or m.start() >= e for s, e in owned_spans)
+
+    if primary_role in (ROLE_COMMENCEMENT, ROLE_VALIDITY):
+        # Coordinated trailing application clause (``… ja sitä sovelletaan …``).
+        app = _CUE_APPLICATION_COORDINATED.search(sub)
+        if app is not None and _disjoint(app):
+            clauses.append(_make_clause(ROLE_APPLICATION, app, sub, sub_start))
+            owned_spans.append((app.start(), app.end()))
+    elif primary_role == ROLE_APPLICATION:
+        # The application cue won precedence on a commencement+application
+        # coordination; also own (and key) the commencement half.
+        com = _CUE_COMMENCEMENT.search(sub)
+        if com is not None and _disjoint(com):
+            clauses.append(_make_clause(ROLE_COMMENCEMENT, com, sub, sub_start))
+            owned_spans.append((com.start(), com.end()))
+
+    return clauses
 
 
 def parse_temporal_sentence(text: str) -> TemporalParse:
@@ -322,29 +476,11 @@ def parse_temporal_sentence(text: str) -> TemporalParse:
     owned: list[tuple[int, int]] = []
     for sub_start, sub_end in _prod_subsentence_spans(text):
         sub = text[sub_start:sub_end]
-        classified = _classify_role(sub)
-        if classified is None:
-            continue
-        role, cue_match = classified
-        date, d_start, d_end = _date_span_and_value(sub, role)
-        cue_start = sub_start + cue_match.start()
-        cue_end = sub_start + cue_match.end()
-        date_start = sub_start + d_start if d_start is not None else None
-        date_end = sub_start + d_end if d_end is not None else None
-        clauses.append(
-            TemporalClause(
-                role=role,
-                cue=cue_match.group(0),
-                cue_start=cue_start,
-                cue_end=cue_end,
-                date=date,
-                date_start=date_start,
-                date_end=date_end,
-            )
-        )
-        owned.append((cue_start, cue_end))
-        if date_start is not None and date_end is not None:
-            owned.append((date_start, date_end))
+        for clause in _clauses_for_subsentence(sub, sub_start):
+            clauses.append(clause)
+            owned.append((clause.cue_start, clause.cue_end))
+            if clause.date_start is not None and clause.date_end is not None:
+                owned.append((clause.date_start, clause.date_end))
 
     if not clauses:
         return TemporalParse(

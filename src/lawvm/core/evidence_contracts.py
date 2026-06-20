@@ -21,7 +21,7 @@ from lawvm.core.diagnostic_records import validate_blocking_disposition
 from lawvm.core.frozen_values import freeze_mapping
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class EvidenceSummary:
     """Reserved evidence/proof bundle summary shape."""
 
@@ -43,11 +43,21 @@ class EvidenceSummary:
     def __post_init__(self) -> None:
         _require_dataclass_string(self.jurisdiction, "EvidenceSummary.jurisdiction")
         _require_dataclass_string(self.base_id, "EvidenceSummary.base_id")
-        for field_name in ("claim_count", "divergence_count", "actionable_count", "unresolved_count"):
-            if getattr(self, field_name) < 0:
+        for field_name, value in (
+            ("claim_count", self.claim_count),
+            ("divergence_count", self.divergence_count),
+            ("actionable_count", self.actionable_count),
+            ("unresolved_count", self.unresolved_count),
+        ):
+            if value < 0:
                 raise ValueError(f"EvidenceSummary.{field_name} must be non-negative")
-        for field_name in ("tiers", "claim_kinds", "trigger_sources", "artifact_families"):
-            object.__setattr__(self, field_name, tuple(str(value) for value in getattr(self, field_name)))
+        for field_name, values in (
+            ("tiers", self.tiers),
+            ("claim_kinds", self.claim_kinds),
+            ("trigger_sources", self.trigger_sources),
+            ("artifact_families", self.artifact_families),
+        ):
+            object.__setattr__(self, field_name, tuple(str(value) for value in values))
         if not isinstance(self.detail, Mapping):
             raise ValueError("EvidenceSummary.detail must be a mapping")
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
@@ -74,7 +84,7 @@ class CorpusRowStatus(Enum):
         return self.value
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CorpusOperationEvidenceRow:
     """Minimal shared operation/effect row for corpus evidence exports."""
 
@@ -113,7 +123,7 @@ class CorpusOperationEvidenceRow:
         return data
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CorpusFindingEvidenceRow:
     """Minimal shared finding row for corpus evidence exports."""
 

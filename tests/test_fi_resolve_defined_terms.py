@@ -145,9 +145,15 @@ def test_use_after_binding_resolves_exact() -> None:
 
 
 def test_use_before_binding_stays_unresolved() -> None:
-    """A use whose byte offset precedes the binding site is NOT resolved by it."""
-    table = build_defined_term_table([_binding("sivutuoteasetus", "1069/2009", offset=500)])
-    mention = _mention("sivutuoteasetus", use_offset=100, surface_text="sivutuoteasetuksen")
+    """A use whose byte offset precedes the binding site is NOT resolved by it.
+
+    The fixture name is deliberately NOT a known EU nickname, so a decline of the
+    local binding falls through to a genuine coverage gap (the empty statute
+    registry AND the EU-nickname fallback both miss), isolating the binding's
+    ordering rule.
+    """
+    table = build_defined_term_table([_binding("paikallisasetus", "1069/2009", offset=500)])
+    mention = _mention("paikallisasetus", use_offset=100, surface_text="paikallisasetuksen")
     [rr] = resolve_mentions(
         [mention],
         statute_registry=_empty_registry(),
@@ -158,13 +164,13 @@ def test_use_before_binding_stays_unresolved() -> None:
     assert rr.status is ResolutionStatus.STATUTE_ONLY
     assert rr.work_id is None
     assert rr.mention.target_provision_ref is not None
-    assert rr.mention.target_provision_ref.statute_id == "fi-name:sivutuoteasetus"
+    assert rr.mention.target_provision_ref.statute_id == "fi-name:paikallisasetus"
 
 
 def test_unanchored_use_offset_does_not_resolve() -> None:
     """Without a verifiable use offset, ordering is unverifiable -> no local resolve."""
-    table = build_defined_term_table([_binding("sivutuoteasetus", "1069/2009", offset=100)])
-    mention = _mention("sivutuoteasetus", use_offset=None, surface_text="sivutuoteasetuksen")
+    table = build_defined_term_table([_binding("paikallisasetus", "1069/2009", offset=100)])
+    mention = _mention("paikallisasetus", use_offset=None, surface_text="paikallisasetuksen")
     [rr] = resolve_mentions(
         [mention],
         statute_registry=_empty_registry(),
@@ -182,11 +188,12 @@ def test_unanchored_use_offset_does_not_resolve() -> None:
 def test_unsupported_morphology_resolves_only_on_exact_surface() -> None:
     """An ``unsupported_morphology`` binding does not match an inflected use ..."""
     table = build_defined_term_table(
-        [_binding("sivutuoteasetus", "1069/2009", offset=100, status=STATUS_UNSUPPORTED_MORPHOLOGY)]
+        [_binding("paikallisasetus", "1069/2009", offset=100, status=STATUS_UNSUPPORTED_MORPHOLOGY)]
     )
-    # Inflected use (surface != term) -> NOT resolved.
+    # Inflected use (surface != term) -> NOT resolved. The fixture name is not an
+    # EU nickname, so the decline is a genuine coverage gap (no EU fallback).
     inflected = _mention(
-        "sivutuoteasetus", use_offset=400, surface_text="sivutuoteasetuksen"
+        "paikallisasetus", use_offset=400, surface_text="paikallisasetuksen"
     )
     [rr_inflected] = resolve_mentions(
         [inflected],
@@ -198,7 +205,7 @@ def test_unsupported_morphology_resolves_only_on_exact_surface() -> None:
 
     # ... but an EXACT surface match DOES resolve.
     exact = _mention(
-        "sivutuoteasetus", use_offset=400, surface_text="sivutuoteasetus"
+        "paikallisasetus", use_offset=400, surface_text="paikallisasetus"
     )
     [rr_exact] = resolve_mentions(
         [exact],

@@ -14,7 +14,9 @@ from lawvm.finland.acquisition import (
     build_amendment_acquisition_result,
 )
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
+from lawvm.finland.effect_lifecycle_signals import EffectRelationSignal
 from lawvm.finland.process_findings import ProcessFindingRecorder
+from lawvm.finland.source_model import AmendmentSourceModel
 
 RecordProcessFinding = Callable[..., Finding]
 ReplayPrint = Callable[[str], None]
@@ -24,8 +26,7 @@ OperativeStructureCheck = Callable[[etree._Element], tuple[bool, list[str]]]
 
 @dataclass(frozen=True, slots=True)
 class ProcessAcquisitionResult:
-    xml_bytes: bytes
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     lacks_operative_structure: bool
     operative_tags: tuple[str, ...]
     johto: str
@@ -44,6 +45,7 @@ class ProcessAcquisitionContext:
     xml_bytes: bytes
     strict_profile: StrictProfile | None
     processed_amendment_titles: dict[str, str]
+    effect_relation_signals: list[EffectRelationSignal]
     finding_recorder: ProcessFindingRecorder
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
@@ -53,10 +55,16 @@ class ProcessAcquisitionContext:
     def acquire(self) -> ProcessAcquisitionResult:
         xml_bytes = self._apply_source_corrections(self.xml_bytes)
         muutos_tree = etree.fromstring(xml_bytes)
+        source_model = AmendmentSourceModel.from_tree(
+            muutos_tree,
+            source_ref=self.amendment_id,
+            source_bytes=xml_bytes,
+        )
         lacks_operative_structure, operative_tags = self.amendment_lacks_operative_structure(muutos_tree)
         source_title = self.tree_title(muutos_tree)
         acquisition = self._build_acquisition(
             xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
             parent_id=self.parent_id,
             source_title=source_title,
             lacks_operative_structure=lacks_operative_structure,
@@ -65,6 +73,7 @@ class ProcessAcquisitionContext:
         acquisition = self._compose_pending_target_if_available(
             acquisition=acquisition,
             xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
             source_title=source_title,
             lacks_operative_structure=lacks_operative_structure,
             operative_tags=operative_tags,
@@ -80,8 +89,7 @@ class ProcessAcquisitionContext:
             )
 
         return ProcessAcquisitionResult(
-            xml_bytes=xml_bytes,
-            muutos_tree=muutos_tree,
+            source_model=source_model,
             lacks_operative_structure=lacks_operative_structure,
             operative_tags=tuple(operative_tags),
             johto=acquisition.decision.chosen_normalized_text,
@@ -106,8 +114,25 @@ class ProcessAcquisitionContext:
         if correction_allowed:
             _, corrected = extract_inline_corrections(xml_bytes, self.amendment_id)
             patch_table = get_patch_table()
-            corrected, _ = patch_table.patch_source_xml(corrected, self.amendment_id)
-            corrected, _ = patch_table.patch_source_body_xml(corrected, self.amendment_id)
+            corrected, johtolause_patch_ids = patch_table.patch_source_xml(
+                corrected, self.amendment_id
+            )
+            corrected, body_patch_ids = patch_table.patch_source_body_xml(
+                corrected, self.amendment_id
+            )
+            for op_id in (*johtolause_patch_ids, *body_patch_ids):
+                self.finding_recorder.record(
+                    kind="APPLY.SOURCE_CORRECTED_BY_PATCH",
+                    message="A corrigendum patch corrected amendment source XML before parsing.",
+                    source_statute=self.amendment_id,
+                    detail={
+                        "op_id": op_id,
+                        "source_role": "amendment_source_xml",
+                        "corrected_by": "corrigendum_patch_table",
+                    },
+                    role="obligation",
+                    blocking=False,
+                )
             return corrected
 
         self.record_finding(
@@ -121,6 +146,7 @@ class ProcessAcquisitionContext:
         self,
         *,
         xml_bytes: bytes,
+        muutos_tree: etree._Element,
         parent_id: str,
         source_title: str,
         parent_issue_date: str | None = None,
@@ -129,6 +155,7 @@ class ProcessAcquisitionContext:
     ) -> AmendmentAcquisitionResult:
         return build_amendment_acquisition_result(
             xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
             parent_id=parent_id,
             amendment_id=self.amendment_id,
             source_title=source_title,
@@ -144,6 +171,7 @@ class ProcessAcquisitionContext:
         *,
         acquisition: AmendmentAcquisitionResult,
         xml_bytes: bytes,
+        muutos_tree: etree._Element,
         source_title: str,
         lacks_operative_structure: bool,
         operative_tags: Sequence[str],
@@ -157,11 +185,23 @@ class ProcessAcquisitionContext:
 
         composed = self._build_acquisition(
             xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
             parent_id=pending_target_mid,
             source_title=source_title,
             parent_issue_date="",
             lacks_operative_structure=lacks_operative_structure,
             operative_tags=operative_tags,
+        )
+        self.effect_relation_signals.append(
+            EffectRelationSignal.pending_amendment(
+                source_statute=self.amendment_id,
+                target_statute=pending_target_mid,
+                target_title=pending_target_title,
+                base_parent_id=self.parent_id,
+                message="Pending amendment-of-amendment composed onto already-processed target amendment.",
+                source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
+                resolved=True,
+            )
         )
         self.record_finding(
             kind="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
@@ -171,6 +211,10 @@ class ProcessAcquisitionContext:
                 "target_amendment_id": pending_target_mid,
                 "target_amendment_title": pending_target_title,
                 "base_parent_id": self.parent_id,
+                "effect_relation_id": (
+                    f"fi-effect-relation:{self.amendment_id}:pending_amendment:{pending_target_mid}"
+                ),
+                "effect_relation_kind": "modifies_effect",
             },
             role="observation",
             blocking=False,

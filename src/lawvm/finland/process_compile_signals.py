@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from lawvm.core.compile_result import SourcePathology, TemporalEvent
+from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.compile_result import SourcePathology
 from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.temporal import TemporalEvent
+from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.ops import ResolvedOp
 from lawvm.finland.temporal_rewrites import _normalize_frontend_temporal_events
 
@@ -21,6 +24,9 @@ class ProcessCompileSignalsContext:
     resolved: list[ResolvedOp]
     compile_result: PhaseResult[list[ResolvedOp]]
     amendment_temporal_events: list[TemporalEvent]
+    source_effects: list[EffectRef]
+    effect_relations: list[EffectRelation]
+    effect_lifecycle_events: list[EffectLifecycleEvent]
     source_pathologies: list[SourcePathology]
     elaboration_observations: list[dict[str, object]]
     sparse_slot_bindings: list[dict[str, object]]
@@ -29,13 +35,22 @@ class ProcessCompileSignalsContext:
     record_finding: RecordProcessFinding
 
     def project(self) -> None:
-        self.amendment_temporal_events.extend(
-            _normalize_frontend_temporal_events(
-                self.compile_result.temporal_events,
-                amendment_id=self.amendment_id,
-                target_statute=self.parent_id,
-            )
+        temporal_events = _normalize_frontend_temporal_events(
+            self.compile_result.temporal_events,
+            amendment_id=self.amendment_id,
+            target_statute=self.parent_id,
         )
+        self.amendment_temporal_events.extend(temporal_events)
+        self.source_effects.extend(self.compile_result.source_effects)
+        self.effect_relations.extend(self.compile_result.effect_relations)
+        self.effect_lifecycle_events.extend(self.compile_result.effect_lifecycle_events)
+        source_effects, _relations, lifecycle_events = build_finland_effect_lifecycle(
+            target_statute=self.parent_id,
+            canonical_ops=(),
+            temporal_events=temporal_events,
+        )
+        self.source_effects.extend(source_effects)
+        self.effect_lifecycle_events.extend(lifecycle_events)
         self._cover_temporal_coverage()
         self._project_observations()
         self._project_obligations_and_violations()
@@ -46,21 +61,17 @@ class ProcessCompileSignalsContext:
 
         structural_groups: set[str] = set()
         for op in self.resolved:
-            source_statute_for_group = str(getattr(op, "resolved_source_statute", ""))
-            if not source_statute_for_group:
-                source_statute_for_group = str(getattr(op, "source_statute", ""))
-            if not source_statute_for_group:
-                source_statute_for_group = str(
-                    getattr(getattr(op, "op", None), "source_statute", "")
-                )
-            if not source_statute_for_group:
-                source_statute_for_group = self.amendment_id
+            source_statute_for_group = (
+                op.resolved_source_statute
+                or op.op.source_statute
+                or self.amendment_id
+            )
             structural_groups.add(f"{fi_johto_prefix}{source_statute_for_group}")
 
         temporal_groups: set[str] = set()
         for event in self.compile_result.temporal_events:
-            group_id = getattr(event, "group_id", "")
-            if isinstance(group_id, str) and group_id.startswith(fi_johto_prefix):
+            group_id = event.group_id or ""
+            if group_id.startswith(fi_johto_prefix):
                 temporal_groups.add(group_id)
 
         missing_groups = tuple(sorted(structural_groups - temporal_groups))

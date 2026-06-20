@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
-import lxml.etree as etree
-
 from lawvm.core.ir import OperationSource
 from lawvm.core.phase_result import Finding
 from lawvm.finland.body_coverage import analyze_coverage
@@ -19,6 +17,7 @@ from lawvm.finland.johto_scope_mentions import (
 )
 from lawvm.finland.ops import AmendmentOp, FailedOp, ResolvedOp
 from lawvm.finland.restructure_plan import StructuralTransformPlan
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.uncovered_recovery_iteration import (
     peg_owned_section_targets,
     run_uncovered_candidate_iteration,
@@ -47,7 +46,7 @@ class UncoveredBodyRecoveryRequest:
     state: "ReplayState"
     ctx: "StatuteContext"
     ops: List[AmendmentOp]
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     amendment_id: str
     future_repeals: Optional[Set[RepealTargetRef]] = None
     op_source: Optional[OperationSource] = None
@@ -105,7 +104,7 @@ def recover_uncovered_body_ops(
                 statute_id=request.ctx.id,
                 amendment_id=request.amendment_id,
                 ops=request.ops,
-                muutos_tree=request.muutos_tree,
+                source_model=request.source_model,
                 failed_ops_out=sinks.failed_ops_out,
                 new_chapter_labels=request.new_chapter_labels,
                 restructure_plans_out=sinks.restructure_plans_out,
@@ -132,6 +131,7 @@ def recover_uncovered_body_ops(
         "fi.uncovered.recovery_runner",
         lambda: UncoveredRecoveryRun(
             state=request.state,
+            source_model=request.source_model,
             ops=request.ops,
             amendment_id=request.amendment_id,
             future_repeals=request.future_repeals,

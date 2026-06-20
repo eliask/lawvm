@@ -2,9 +2,12 @@ from __future__ import annotations
 from typing_extensions import override
 
 import json
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from lawvm.new_zealand.acquisition import (
     NZAcquisitionDiagnostic,
@@ -12,8 +15,10 @@ from lawvm.new_zealand.acquisition import (
     NZSyncOptions,
     UrllibNZTransport,
     _canonicalize_version_format_url,
+    open_farchive,
     sync_nz_corpus,
 )
+from lawvm.new_zealand import acquisition as nz_acquisition
 from lawvm.tools.cli import _build_parser
 
 
@@ -106,6 +111,40 @@ def _json_response(payload: dict[str, Any], remaining: int = 9999) -> NZHttpResp
         },
         content_type="application/json",
     )
+
+
+def test_open_farchive_defaults_to_readonly_without_creating_unused_archive(
+    tmp_path: Path,
+) -> None:
+    archive_path = tmp_path / "missing" / "unused.farchive"
+
+    with pytest.raises(sqlite3.OperationalError):
+        open_farchive(archive_path)
+
+    assert not archive_path.exists()
+    assert not archive_path.parent.exists()
+
+
+def test_open_farchive_writable_mode_creates_archive(tmp_path: Path) -> None:
+    archive_path = tmp_path / "created" / "nz.farchive"
+
+    archive = open_farchive(archive_path, readonly=False)
+    try:
+        assert archive_path.exists()
+    finally:
+        archive.close()
+
+
+def test_open_farchive_writable_mode_rejects_extensionless_archive(
+    tmp_path: Path,
+) -> None:
+    archive_path = tmp_path / "created" / "unused"
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        open_farchive(archive_path, readonly=False)
+
+    assert not archive_path.exists()
+    assert not archive_path.parent.exists()
 
 
 def test_nz_acquisition_diagnostic_jsonable_uses_standard_envelope() -> None:
@@ -342,7 +381,10 @@ def test_nz_corpus_sync_stops_at_rate_limit_reserve(tmp_path: Path) -> None:
     assert xml_url not in archive.rows
 
 
-def test_nz_corpus_sync_retries_429_before_recording_failure(tmp_path: Path) -> None:
+def test_nz_corpus_sync_retries_429_before_recording_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     version_id = "act_public_1990_109_en_2022-08-30"
     version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
     archive = _FakeArchive()
@@ -363,10 +405,13 @@ def test_nz_corpus_sync_retries_429_before_recording_failure(tmp_path: Path) -> 
         delay=0.0,
         rate_limit_retry_attempts=1,
     )
+    sleeps: list[int] = []
+    monkeypatch.setattr(nz_acquisition.time, "sleep", sleeps.append)
 
     stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
 
     assert transport.calls == 2
+    assert sleeps == [0]
     assert stats.stored_json == 1
     assert stats.diagnostics[0].rule_id == "nz_acquire_xml_format_missing"
 

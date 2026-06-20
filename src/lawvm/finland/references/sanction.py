@@ -64,6 +64,7 @@ stays primary.
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Literal, Optional, Tuple
@@ -71,6 +72,7 @@ from typing import List, Literal, Optional, Tuple
 from lawvm.core.legal_surface_tokens import Token, TokenTape
 from lawvm.core.reference_mention import SourceSpan
 from lawvm.finland.canonical_actor_registry import REGISTRY
+from lawvm.finland.legal_surface.clause_segment import sentence_terminator_between
 from lawvm.finland.legal_surface.tokenize import build_token_tape
 
 
@@ -399,17 +401,30 @@ def marker_surface(token: Token) -> str:
 
 
 def _nearest_preceding_actor(
-    text: str, marker_start: int
+    actor_matches: Tuple[re.Match[str], ...],
+    actor_ends: Tuple[int, ...],
+    marker_start: int,
+    tokens: Tuple[Token, ...],
 ) -> Optional[re.Match[str]]:
-    """The closest known actor surface ending within the gap window before a marker."""
-    best: Optional[re.Match[str]] = None
-    for actor_m in _ACTOR_RE.finditer(text):
-        if actor_m.end() > marker_start:
-            break
-        gap = marker_start - actor_m.end()
-        if 0 <= gap <= _MAX_TARGET_GAP:
-            best = actor_m  # keep advancing to the nearest
-    return best
+    """The closest known actor surface ending within the gap window before a marker.
+
+    SAME-SENTENCE GUARD: the target actor must live in the SAME sentence as the
+    sanction marker. A bare char-gap fuses a target at the tail of sentence N with
+    a sanction marker in sentence N+1 ("... koko. Erityisestä syystä voidaan
+    hyvityssakko ...") into one fabricated frame. When a sentence terminator falls
+    between the actor end and the marker start, the actor is not this marker's
+    target (the marker simply has no in-sentence target).
+    """
+    index = bisect_right(actor_ends, marker_start) - 1
+    if index < 0:
+        return None
+    actor_m = actor_matches[index]
+    gap = marker_start - actor_m.end()
+    if not (0 <= gap <= _MAX_TARGET_GAP):
+        return None
+    if sentence_terminator_between(tokens, actor_m.end(), marker_start):
+        return None
+    return actor_m
 
 
 #: Sentence terminators that bound the trigger search to the marker's own
@@ -479,6 +494,9 @@ def _capture_trigger_span(
 def _build_frame(
     text: str,
     source_file: str,
+    actor_matches: Tuple[re.Match[str], ...],
+    actor_ends: Tuple[int, ...],
+    tokens: Tuple[Token, ...],
     kind: SanctionKind,
     surface: str,
     marker_lo: int,
@@ -486,12 +504,14 @@ def _build_frame(
 ) -> SanctionFrame:
     """Assemble a SanctionFrame around a typed marker token span.
 
-    Locates the nearest preceding target actor and a nearby trigger condition
-    (both raw-text-offset surface helpers, unchanged from the regex era), and
-    spans the whole frame from the earliest of {actor, marker} to the latest of
-    {marker, trigger}.
+    Locates the nearest preceding target actor (constrained to the marker's own
+    sentence) and a nearby trigger condition (both raw-text-offset surface
+    helpers), and spans the whole frame from the earliest of {actor, marker} to
+    the latest of {marker, trigger}.
     """
-    actor_m = _nearest_preceding_actor(text, marker_lo)
+    actor_m = _nearest_preceding_actor(
+        actor_matches, actor_ends, marker_lo, tokens
+    )
     target_span = (
         _span(source_file, actor_m.start(), actor_m.end())
         if actor_m is not None
@@ -515,7 +535,11 @@ def _build_frame(
 
 
 def _scan_permit_revocation(
-    text: str, source_file: str, tape: TokenTape
+    text: str,
+    source_file: str,
+    tape: TokenTape,
+    actor_matches: Tuple[re.Match[str], ...],
+    actor_ends: Tuple[int, ...],
 ) -> Tuple[List[SanctionFrame], List[SanctionResidual], set[int]]:
     """Recognise permit-revocation frames from the 'peruutta' compound rule.
 
@@ -558,6 +582,9 @@ def _scan_permit_revocation(
             _build_frame(
                 text,
                 source_file,
+                actor_matches,
+                actor_ends,
+                tape.tokens,
                 SanctionKind.LUVAN_PERUUTTAMINEN,
                 tok.text,
                 tok.char_start,
@@ -592,6 +619,8 @@ def recognize_sanction_frames(
         return SanctionScan(frames=(), residuals=())
 
     tape = _coerce_tape(text, tape)
+    actor_matches = tuple(_ACTOR_RE.finditer(text))
+    actor_ends = tuple(match.end() for match in actor_matches)
 
     frames: List[SanctionFrame] = []
     residuals: List[SanctionResidual] = []
@@ -599,7 +628,11 @@ def recognize_sanction_frames(
     # Permit-revocation compound rule first (it consumes 'peruutta'/'peruute'
     # word tokens by index).
     perm_frames, perm_residuals, consumed = _scan_permit_revocation(
-        text, source_file, tape
+        text,
+        source_file,
+        tape,
+        actor_matches,
+        actor_ends,
     )
     frames.extend(perm_frames)
     residuals.extend(perm_residuals)
@@ -637,6 +670,9 @@ def recognize_sanction_frames(
             _build_frame(
                 text,
                 source_file,
+                actor_matches,
+                actor_ends,
+                tape.tokens,
                 kind,
                 tok.text,
                 tok.char_start,

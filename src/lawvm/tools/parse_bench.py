@@ -79,7 +79,7 @@ def _scan_one(sid: str) -> _StatuteResult | None:
     from lawvm.finland.metadata import get_johtolause
     from lawvm.finland.johtolause.api import parse_clause
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     xb = store.read_source(sid) or store.read_amendment(sid)
     if not xb:
         return None
@@ -119,7 +119,7 @@ def _statute_ids(limit: int) -> list[str]:
     from farchive import Farchive
     from lawvm.finland.transparent_store import TransparentCorpusStore
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     return ids[:limit] if limit else ids
 

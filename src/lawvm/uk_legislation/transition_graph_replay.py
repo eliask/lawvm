@@ -86,7 +86,7 @@ def run_uk_transition_graph_replay(
     from lawvm.uk_legislation.uk_grafter import parse_uk_statute_ir_bytes
 
     enacted_url = f"{_LEG_BASE}/{statute_id}/enacted/data.xml"
-    with Farchive(_DEFAULT_DB) as archive:
+    with Farchive(_DEFAULT_DB, readonly=True) as archive:
         enacted_bytes = archive.get(enacted_url)
         if enacted_bytes is None:
             raise FileNotFoundError(

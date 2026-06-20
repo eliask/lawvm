@@ -442,7 +442,7 @@ def audit_corpus(limit: int = 0) -> ResidueAuditResult:
     from lawvm.finland.transparent_store import TransparentCorpusStore
     from lawvm.tools.parse_bench import _archive_path
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     if limit:
         ids = ids[:limit]

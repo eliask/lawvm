@@ -29,8 +29,15 @@ from typing import TYPE_CHECKING, FrozenSet, List, Optional
 
 import lxml.etree as etree
 
+_SECTION_LABEL_ORDER_RE = re.compile(r"(\d+)([a-z]?)", flags=re.I)
+_DIGITS_RE = re.compile(r"\d+")
+_LETTER_SUFFIX_SECTION_RE = re.compile(r"\d+[a-z]", flags=re.I)
+_LETTER_SUFFIX_CONTINUATION_PREVIOUS_RE = re.compile(r"(\d+)([a-z]?)", flags=re.I)
+_LETTER_SUFFIX_CONTINUATION_CURRENT_RE = re.compile(r"(\d+)([a-z])", flags=re.I)
+
 if TYPE_CHECKING:
     from lawvm.finland.johtolause import ClauseParseResult
+    from lawvm.finland.source_model import AmendmentSourceModel
 
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 from lawvm.core.ir_helpers import irnode_to_text
@@ -101,10 +108,6 @@ from lawvm.finland.frontend_observations import (
 from lawvm.finland.replay_notices import replay_print as _replay_print
 
 _WHITESPACE_RE = re.compile(r"\s+")
-_DEEP_REPEAL_TARGET_RE = re.compile(
-    r"§\s*:n\s+.+\b(?:kohta|kohdan|alakohta|alakohdan)\b",
-    flags=re.I,
-)
 _TEMPORARY_SECTION_PREFIX_RE = re.compile(r"^\s*(?:uusi|uudet)\s*", flags=re.IGNORECASE)
 
 logger = logging.getLogger(__name__)
@@ -297,9 +300,14 @@ def _reject_overbroad_section_repeals_for_deep_targets(
     into a parent deletion. Keep the unsupported overbroad repeal visible
     instead of mutating the parent.
     """
-    cleaned = _WHITESPACE_RE.sub(" ", johto or "").strip().lower()
-    mentions_deep_repeal = bool(_DEEP_REPEAL_TARGET_RE.search(cleaned))
-    if not mentions_deep_repeal:
+    deep_repeal_sections = {
+        _norm_num_token(op.target_section or "")
+        for op in ops
+        if op.op_type == "REPEAL"
+        and op.target_section
+        and op.target_item is not None
+    }
+    if not deep_repeal_sections:
         return ops, []
 
     kept: List[AmendmentOp] = []
@@ -311,6 +319,7 @@ def _reject_overbroad_section_repeals_for_deep_targets(
             and op.target_paragraph is None
             and op.target_item is None
             and op.target_special is None
+            and _norm_num_token(op.target_section or "") in deep_repeal_sections
         ):
             findings.append(
                 Finding(
@@ -865,6 +874,13 @@ def _lift_explicit_scopes_from_cited_version_ops(
             patched.append(op)
             continue
         target_part, target_chapter = scoped_target
+        if target_chapter is not None and master.find_section_path(
+            target_norm,
+            target_chapter,
+            target_part,
+        ) is None and master.find_section_path(target_norm, None, op.target_part) is not None:
+            patched.append(op)
+            continue
         patched.append(
             dc_replace(
                 op,
@@ -959,6 +975,7 @@ def _body_chapter_scope_for_section_op(
     muutos_tree: "etree._Element",
     master: "ReplayState",
     johto: str = "",
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> str | None:
     """Infer a body chapter for a chapterless section op when the chapter already exists.
 
@@ -985,52 +1002,60 @@ def _body_chapter_scope_for_section_op(
         ):
             return None
 
-    body = (
-        muutos_tree
-        if etree.QName(muutos_tree.tag).localname == "body"
-        else muutos_tree.find(".//{*}body")
-    )
-    if body is None:
-        return None
-
-    def _part_label_for_element(el: etree._Element) -> str | None:
-        parent = el.getparent()
-        while parent is not None:
-            if str(parent.tag).rsplit("}", 1)[-1] == "part":
-                part_num = parent.find("{*}num")
-                if part_num is None or not part_num.text:
-                    return None
-                return _normalize_source_part_num(part_num.text) or None
-            parent = parent.getparent()
-        return None
-
     section_label = _norm_num_token(op.target_section)
-    candidate_chapters: dict[str, etree._Element] = {}
-    for sec in body.findall(".//{*}section"):
-        num_el = sec.find("{*}num")
-        if num_el is None or not num_el.text:
-            continue
-        sec_label = _normalize_source_section_num(num_el.text)
-        if sec_label != section_label:
-            continue
-        if op.target_part:
-            body_part = _part_label_for_element(sec)
-            if body_part != op.target_part:
+    if source_model is not None:
+        chapter_label = source_model.unique_body_section_chapter(
+            section_label,
+            target_part=op.target_part,
+        )
+        if chapter_label is None:
+            return None
+    else:
+        body = (
+            muutos_tree
+            if etree.QName(muutos_tree.tag).localname == "body"
+            else muutos_tree.find(".//{*}body")
+        )
+        if body is None:
+            return None
+
+        def _part_label_for_element(el: etree._Element) -> str | None:
+            parent = el.getparent()
+            while parent is not None:
+                if str(parent.tag).rsplit("}", 1)[-1] == "part":
+                    part_num = parent.find("{*}num")
+                    if part_num is None or not part_num.text:
+                        return None
+                    return _normalize_source_part_num(part_num.text) or None
+                parent = parent.getparent()
+            return None
+
+        candidate_chapters: dict[str, etree._Element] = {}
+        for sec in body.findall(".//{*}section"):
+            num_el = sec.find("{*}num")
+            if num_el is None or not num_el.text:
                 continue
-        parent = sec.getparent()
-        if parent is None or str(parent.tag).rsplit("}", 1)[-1] != "chapter":
-            continue
-        chapter_num = parent.find("{*}num")
-        if chapter_num is None or not chapter_num.text:
-            continue
-        chapter_label = _norm_num_token(chapter_num.text).removesuffix("luku")
-        if chapter_label:
-            candidate_chapters.setdefault(chapter_label, parent)
+            sec_label = _normalize_source_section_num(num_el.text)
+            if sec_label != section_label:
+                continue
+            if op.target_part:
+                body_part = _part_label_for_element(sec)
+                if body_part != op.target_part:
+                    continue
+            parent = sec.getparent()
+            if parent is None or str(parent.tag).rsplit("}", 1)[-1] != "chapter":
+                continue
+            chapter_num = parent.find("{*}num")
+            if chapter_num is None or not chapter_num.text:
+                continue
+            chapter_label = _norm_num_token(chapter_num.text).removesuffix("luku")
+            if chapter_label:
+                candidate_chapters.setdefault(chapter_label, parent)
 
-    if len(candidate_chapters) != 1:
-        return None
+        if len(candidate_chapters) != 1:
+            return None
 
-    chapter_label, chapter_node = next(iter(candidate_chapters.items()))
+        chapter_label = next(iter(candidate_chapters))
 
     if op.target_chapter and chapter_label == op.target_chapter:
         return None
@@ -1074,6 +1099,7 @@ def _source_body_carries_whole_section(
     muutos_tree: etree._Element,
     section_norm: str,
     target_part: str | None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> bool:
     """True when the amendment body carries the whole section as new text.
 
@@ -1081,6 +1107,12 @@ def _source_body_carries_whole_section(
     under a chapter container (not only directly under body/hcontainer); the
     amendment supplies the full section payload either way.
     """
+    if source_model is not None:
+        return source_model.body_carries_whole_section(
+            section_norm,
+            target_part=target_part,
+        )
+
     body = (
         muutos_tree
         if etree.QName(muutos_tree.tag).localname == "body"
@@ -1193,7 +1225,7 @@ def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
     if not _is_whole_section_insert(op) or op.target_chapter is not None:
         return None
     section_norm = _norm_num_token(op.target_section)
-    if re.fullmatch(r"\d+", section_norm) is None:
+    if _DIGITS_RE.fullmatch(section_norm) is None:
         return None
     if not _source_body_has_flat_whole_section(
         muutos_tree=muutos_tree,
@@ -1217,7 +1249,7 @@ def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
             next_chapter = _norm_num_token(str(label or ""))
         elif kind is IRNodeKind.SECTION and label and next_chapter:
             sibling_norm = _norm_num_token(str(label))
-            if re.fullmatch(r"\d+", sibling_norm) is not None and (
+            if _DIGITS_RE.fullmatch(sibling_norm) is not None and (
                 op.target_part is None or next_part == op.target_part
             ):
                 sibling_num = int(sibling_norm)
@@ -1237,6 +1269,89 @@ def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
         return None
     _part, chapter = next(iter(lower_scopes))
     return chapter
+
+
+def _infer_flat_body_replace_scope_from_bracketing_live_siblings(
+    *,
+    op: AmendmentOp,
+    muutos_tree: etree._Element,
+    master: "ReplayState",
+) -> tuple[str | None, str] | None:
+    """Infer scope for a flat source-body REPLACE from neighboring live sections.
+
+    This covers source bodies that serialize a chapter-scoped run as flat
+    sibling sections while the johtolause names one descendant target without
+    repeating the chapter, e.g. ``78 §, 79 §:n 1 momentti, 80 §``.  The exact
+    target label may be duplicated by temporary provisions, so the witness is
+    the closest lower and upper source-neighbor labels that already agree on a
+    live chapter.
+    """
+    if (
+        op.op_type != "REPLACE"
+        or op.target_unit_kind != "section"
+        or not op.target_section
+        or op.target_chapter is not None
+        or op.target_special is not None
+        or op.target_item
+    ):
+        return None
+    section_norm = _norm_num_token(op.target_section)
+    target_order = _section_label_order_key(section_norm)
+    if target_order is None:
+        return None
+    if not _source_body_has_flat_whole_section(
+        muutos_tree=muutos_tree,
+        section_norm=section_norm,
+        target_part=op.target_part,
+    ):
+        return None
+
+    target_num, target_suffix_rank = target_order
+    lower_by_distance: dict[tuple[int, int], set[tuple[str | None, str]]] = {}
+    upper_by_distance: dict[tuple[int, int], set[tuple[str | None, str]]] = {}
+
+    def _walk(node: IRNode, current_part: str | None, current_chapter: str | None) -> None:
+        next_part = current_part
+        next_chapter = current_chapter
+        if node.kind is IRNodeKind.PART:
+            next_part = _norm_num_token(str(node.label or "")) or None
+        elif node.kind is IRNodeKind.CHAPTER:
+            next_chapter = _norm_num_token(str(node.label or "")) or None
+        elif node.kind is IRNodeKind.SECTION and node.label and next_chapter:
+            sibling_norm = _norm_num_token(str(node.label))
+            if sibling_norm == section_norm:
+                return
+            sibling_order = _section_label_order_key(sibling_norm)
+            if sibling_order is not None and (op.target_part is None or next_part == op.target_part):
+                sibling_num, sibling_suffix_rank = sibling_order
+                numeric_distance = abs(sibling_num - target_num)
+                if numeric_distance <= 2:
+                    bucket = lower_by_distance if sibling_order < target_order else upper_by_distance
+                    rank_distance = abs(sibling_suffix_rank - target_suffix_rank)
+                    bucket.setdefault((numeric_distance, rank_distance), set()).add((next_part, next_chapter))
+            return
+        for child in node.children:
+            _walk(child, next_part, next_chapter)
+
+    _walk(master.ir, None, None)
+    if not lower_by_distance or not upper_by_distance:
+        return None
+    lower_scopes = lower_by_distance[min(lower_by_distance)]
+    upper_scopes = upper_by_distance[min(upper_by_distance)]
+    if len(lower_scopes) != 1 or lower_scopes != upper_scopes:
+        return None
+    part, chapter = next(iter(lower_scopes))
+    if master.find_section_path(section_norm, chapter, part) is None:
+        return None
+    return part, chapter
+
+
+def _section_label_order_key(section_norm: str) -> tuple[int, int] | None:
+    match = _SECTION_LABEL_ORDER_RE.fullmatch(section_norm)
+    if match is None:
+        return None
+    suffix = match.group(2).lower()
+    return int(match.group(1)), (ord(suffix) - ord("a") + 1) if suffix else 0
 
 
 def _flat_source_body_section_nums(
@@ -1263,7 +1378,7 @@ def _flat_source_body_section_nums(
         if num_el is None or not num_el.text:
             continue
         sec_label = _normalize_source_section_num(num_el.text)
-        if re.fullmatch(r"\d+", sec_label) is None:
+        if _DIGITS_RE.fullmatch(sec_label) is None:
             continue
         labels.add(int(sec_label))
     return labels
@@ -1299,7 +1414,7 @@ def _infer_flat_body_replace_chapter_from_live_section_gap(
     ):
         return None
     section_norm = _norm_num_token(op.target_section)
-    if re.fullmatch(r"\d+", section_norm) is None:
+    if _DIGITS_RE.fullmatch(section_norm) is None:
         return None
     if not _source_body_has_flat_whole_section(
         muutos_tree=muutos_tree,
@@ -1328,7 +1443,7 @@ def _infer_flat_body_replace_chapter_from_live_section_gap(
                 if child.kind is not IRNodeKind.SECTION or not child.label:
                     continue
                 child_norm = _norm_num_token(str(child.label))
-                if re.fullmatch(r"\d+", child_norm) is not None:
+                if _DIGITS_RE.fullmatch(child_norm) is not None:
                     nums.append(int(child_norm))
             if nums and (op.target_part is None or next_part == op.target_part):
                 chapters.append((next_part, chapter, tuple(sorted(set(nums)))))
@@ -1460,6 +1575,7 @@ def _infer_flat_reinstated_section_scope_from_base(
     johto: str,
     amendment_id: str,
     parent_id: str,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> tuple[str | None, str] | None:
     """Infer scope for source-body insertion of a new section replacing a repealed one.
 
@@ -1512,6 +1628,7 @@ def _infer_flat_reinstated_section_scope_from_base(
         muutos_tree=muutos_tree,
         section_norm=section_norm,
         target_part=op.target_part,
+        source_model=source_model,
     ):
         return None
     if not _johto_says_repealed_section_replaced_by_new_section(johto, section_norm):
@@ -1566,8 +1683,8 @@ def _infer_flat_reinstated_section_scope_from_base(
 def _is_letter_suffix_section_family_continuation(previous_label: str | None, current_label: str) -> bool:
     if not previous_label:
         return False
-    previous_match = re.fullmatch(r"(\d+)([a-z]?)", _norm_num_token(previous_label), flags=re.I)
-    current_match = re.fullmatch(r"(\d+)([a-z])", _norm_num_token(current_label), flags=re.I)
+    previous_match = _LETTER_SUFFIX_CONTINUATION_PREVIOUS_RE.fullmatch(_norm_num_token(previous_label))
+    current_match = _LETTER_SUFFIX_CONTINUATION_CURRENT_RE.fullmatch(_norm_num_token(current_label))
     if previous_match is None or current_match is None:
         return False
     previous_stem, previous_suffix = previous_match.groups()
@@ -1585,17 +1702,26 @@ def _infer_unique_live_section_chapter_scope(
     master: "ReplayState",
 ) -> str | None:
     """Bind chapter scope when johto cites only §N and live tree has one host."""
-    if (
-        op.target_unit_kind != "section"
-        or not op.target_section
-        or op.target_chapter is not None
-        or op.op_type not in {"REPLACE", "REPEAL"}
-        or op.target_paragraph is not None
-        or op.target_item
-        or op.target_special
-    ):
+    if op.target_unit_kind != "section" or not op.target_section:
         return None
+    has_child_target = (
+        op.target_paragraph is not None
+        or bool(op.target_item)
+        or bool(op.target_special)
+    )
     section_label = _norm_num_token(op.target_section)
+    if op.op_type in {"REPLACE", "REPEAL"}:
+        if op.target_chapter is not None or has_child_target:
+            return None
+    elif op.op_type == "INSERT" and has_child_target:
+        if op.target_chapter is not None and master.find_section_path(
+            section_label,
+            op.target_chapter,
+            op.target_part,
+        ) is not None:
+            return None
+    else:
+        return None
     unique_chapter = _unique_section_chapter(
         master,
         section_label,
@@ -1607,6 +1733,8 @@ def _infer_unique_live_section_chapter_scope(
         op.target_part,
     ) is not None:
         return unique_chapter
+    if op.op_type == "INSERT" and has_child_target:
+        return None
     return infer_letter_suffix_section_chapter_from_stem_host(
         master,
         section_label,
@@ -1619,6 +1747,7 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
     op: AmendmentOp,
     muutos_tree: etree._Element,
     master: "ReplayState",
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> str | None:
     """Bind a new letter-suffix section insert to its live stem section host.
 
@@ -1633,7 +1762,7 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
     if not _is_whole_section_insert(op):
         return None
     section_label = _norm_num_token(op.target_section)
-    if re.fullmatch(r"\d+[a-z]", section_label, flags=re.I) is None:
+    if _LETTER_SUFFIX_SECTION_RE.fullmatch(section_label) is None:
         return None
     scope_witness = projection_scope_confidence(
         scope_confidence=op.scope_confidence,
@@ -1643,6 +1772,7 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
     body_scope = _body_scope_for_section_label(
         muutos_tree=muutos_tree,
         section_label=section_label,
+        source_model=source_model,
     )
     if op.target_chapter is not None:
         if scope_witness is None:
@@ -1653,16 +1783,7 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
             if body_scope is None:
                 return None
             body_part, body_chapter = body_scope
-            if body_part == op.target_part and body_chapter == op.target_chapter:
-                return None
-            if len(_unborn_source_chapter_labels(muutos_tree=muutos_tree, master=master)) != 1:
-                return None
-            if body_chapter is None or master.find_chapter(body_chapter) is not None:
-                return None
-            if _source_chapter_direct_section_count(
-                muutos_tree=muutos_tree,
-                chapter_label=body_chapter,
-            ) > 20:
+            if body_part != op.target_part:
                 return None
         else:
             return None
@@ -1670,8 +1791,17 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
         muutos_tree=muutos_tree,
         section_norm=section_label,
         target_part=op.target_part,
+        source_model=source_model,
     ):
         return None
+    if body_scope is not None:
+        body_part, body_chapter = body_scope
+        if body_part == op.target_part and _container_path_exists_in_master(
+            master=master,
+            part=body_part,
+            chapter=body_chapter,
+        ):
+            return None
     if op.target_chapter is not None and master.find_section_path(
         section_label,
         op.target_chapter,
@@ -1723,8 +1853,12 @@ def _body_scope_for_section_label(
     *,
     muutos_tree: "etree._Element",
     section_label: str,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> tuple[str | None, str | None] | None:
     """Return the unique body-backed (part, chapter) scope for one section label."""
+    if source_model is not None:
+        return source_model.body_section_wrapper_scope(section_label)
+
     body = (
         muutos_tree
         if etree.QName(muutos_tree.tag).localname == "body"
@@ -1851,6 +1985,7 @@ def _strip_impossible_chapter_scope_for_bare_body_section_op(
     op: AmendmentOp,
     muutos_tree: "etree._Element",
     master: "ReplayState",
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> AmendmentOp | None:
     """Clear chapter scope when a no-chapter statute body proves a bare section target.
 
@@ -1867,6 +2002,7 @@ def _strip_impossible_chapter_scope_for_bare_body_section_op(
     body_scope = _body_scope_for_section_label(
         muutos_tree=muutos_tree,
         section_label=op.target_section,
+        source_model=source_model,
     )
     if body_scope != (None, None):
         return None
@@ -1896,6 +2032,7 @@ def _retarget_stale_body_scope_for_section_op(
     muutos_tree: "etree._Element",
     master: "ReplayState",
     johto: str = "",
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> tuple[str | None, str | None] | None:
     """Retarget stale body-derived scope to the unique live section path.
 
@@ -1942,11 +2079,24 @@ def _retarget_stale_body_scope_for_section_op(
     body_scope = _body_scope_for_section_label(
         muutos_tree=muutos_tree,
         section_label=section_label,
+        source_model=source_model,
     )
     if body_scope is None:
         return None
 
     body_part, body_chapter = body_scope
+    if (
+        scope_witness is not None
+        and scope_witness.source == "explicit_chunk"
+        and op.op_type == "INSERT"
+        and op.target_paragraph is None
+        and not op.target_item
+        and not op.target_special
+    ):
+        # Explicit chunk scope is source-owned. Do not rehome a whole-section
+        # insert merely because the body wrapper resembles an existing live
+        # section's chapter.
+        return None
     if (
         op.op_type == "INSERT"
         and op.target_paragraph is None
@@ -2022,6 +2172,7 @@ def _enrich_ops_from_amendment_tree(
     base_ir: IRNode | None = None,
     parent_id: str = "",
     metadata: _AmendmentTreeMetadata | None = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> List[AmendmentOp]:
     """Stamp source-statute metadata (date, title, expiry) onto every op.
 
@@ -2072,6 +2223,7 @@ def _enrich_ops_from_amendment_tree(
                 op=scoped_op,
                 muutos_tree=muutos_tree,
                 master=master,
+                source_model=source_model,
             )
             if stripped_op is not None:
                 scoped_op = stripped_op
@@ -2141,25 +2293,44 @@ def _enrich_ops_from_amendment_tree(
                     johto=johto,
                     amendment_id=amendment_id,
                     parent_id=parent_id,
+                    source_model=source_model,
                 )
                 if reinstated_scope is not None:
                     inferred_part, inferred_chapter = reinstated_scope
                     inferred_rule_id = "fi_reinstated_section_scope_from_prior_repeal_address"
+                if inferred_chapter is None:
+                    inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
+                        op=scoped_op,
+                        muutos_tree=muutos_tree,
+                        master=master,
+                        source_model=source_model,
+                    )
+                    inferred_rule_id = "fi_letter_suffix_insert_scope_from_stem_host"
+                if inferred_chapter is None and not _is_whole_section_insert(scoped_op):
+                    inferred_chapter = _infer_unique_live_section_chapter_scope(
+                        op=scoped_op,
+                        master=master,
+                    )
+                    if inferred_chapter is not None:
+                        inferred_rule_id = (
+                            "fi_unique_live_section_chapter_scope"
+                            if master.find_section_path(
+                                _norm_num_token(scoped_op.target_section or ""),
+                                inferred_chapter,
+                                scoped_op.target_part,
+                            )
+                            is not None
+                            else "fi_letter_suffix_stem_host_chapter_scope"
+                        )
                 if inferred_chapter is None:
                     inferred_chapter = _body_chapter_scope_for_section_op(
                         op=scoped_op,
                         muutos_tree=muutos_tree,
                         master=master,
                         johto=johto,
+                        source_model=source_model,
                     )
                     inferred_rule_id = "fi_body_chapter_scope_from_source_body"
-                if inferred_chapter is None:
-                    inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
-                        op=scoped_op,
-                        muutos_tree=muutos_tree,
-                        master=master,
-                    )
-                    inferred_rule_id = "fi_letter_suffix_insert_scope_from_stem_host"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
                         op=scoped_op,
@@ -2174,6 +2345,15 @@ def _enrich_ops_from_amendment_tree(
                         master=master,
                     )
                     inferred_rule_id = "fi_flat_body_replace_scope_from_live_section_gap"
+                if inferred_chapter is None:
+                    sibling_scope = _infer_flat_body_replace_scope_from_bracketing_live_siblings(
+                        op=scoped_op,
+                        muutos_tree=muutos_tree,
+                        master=master,
+                    )
+                    if sibling_scope is not None:
+                        inferred_part, inferred_chapter = sibling_scope
+                        inferred_rule_id = "fi_flat_body_replace_scope_from_bracketing_live_siblings"
                 if (
                     inferred_chapter is None
                     and _is_whole_section_insert(scoped_op)
@@ -2192,22 +2372,6 @@ def _enrich_ops_from_amendment_tree(
                 ):
                     inferred_chapter = last_inferred_section_chapter
                     inferred_rule_id = "fi_flat_body_insert_scope_from_base_family_continuation"
-                if inferred_chapter is None:
-                    inferred_chapter = _infer_unique_live_section_chapter_scope(
-                        op=scoped_op,
-                        master=master,
-                    )
-                    if inferred_chapter is not None:
-                        inferred_rule_id = (
-                            "fi_unique_live_section_chapter_scope"
-                            if master.find_section_path(
-                                _norm_num_token(scoped_op.target_section or ""),
-                                inferred_chapter,
-                                scoped_op.target_part,
-                            )
-                            is not None
-                            else "fi_letter_suffix_stem_host_chapter_scope"
-                        )
             if inferred_chapter is not None:
                 body_scoped = True
                 scoped_op = _add_inferred_section_chapter_scope(
@@ -2224,6 +2388,7 @@ def _enrich_ops_from_amendment_tree(
                     muutos_tree=muutos_tree,
                     master=master,
                     johto=johto,
+                    source_model=source_model,
                 )
                 if retargeted_scope is not None:
                     retargeted_part, retargeted_chapter = retargeted_scope
@@ -2296,6 +2461,7 @@ def _enrich_ops_from_amendment_tree(
                 muutos_tree=muutos_tree,
                 section_norm=_norm_num_token(scoped_op.target_section),
                 target_part=scoped_op.target_part,
+                source_model=source_model,
             )
         ):
             scoped_op = dc_replace(
@@ -2440,7 +2606,8 @@ def _temporary_events_for_op(op: AmendmentOp, amendment_id: str) -> tuple[Tempor
 def _body_text_for_temporary_op(
     op: AmendmentOp,
     *,
-    muutos_tree: "etree._Element",
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> str:
     """Return amendment-body text for a section-targeted temporary op."""
     if op.target_unit_kind != "section" or not op.target_section:
@@ -2448,6 +2615,13 @@ def _body_text_for_temporary_op(
 
     target_label = _norm_num_token(op.target_section)
     if not target_label:
+        return ""
+
+    if source_model is not None:
+        result = source_model.lookup_section_payload_text(target_label)
+        return result.text if result.status == "unique" else ""
+
+    if muutos_tree is None:
         return ""
 
     for section in muutos_tree.findall(".//{*}section"):
@@ -2471,7 +2645,8 @@ def _tag_temporary_ops(
     ops: List[AmendmentOp],
     *,
     amendment_id: str,
-    muutos_tree: "etree._Element",
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> tuple[List[AmendmentOp], List[TemporalEvent]]:
     """Return a new list with ``is_temporary=True`` on every op.
 
@@ -2502,7 +2677,11 @@ def _tag_temporary_ops(
             tagged.append(op)
             continue
         tagged_op = dc_replace(op, is_temporary=True)
-        tagged_op = _apply_inferred_payload_expiry_to_temporary_ops([tagged_op], muutos_tree=muutos_tree)[0]
+        tagged_op = _apply_inferred_payload_expiry_to_temporary_ops(
+            [tagged_op],
+            muutos_tree=muutos_tree,
+            source_model=source_model,
+        )[0]
         temporal_events.extend(_temporary_events_for_op(tagged_op, amendment_id))
         tagged.append(tagged_op)
     return tagged, temporal_events
@@ -2511,7 +2690,8 @@ def _tag_temporary_ops(
 def _apply_inferred_payload_expiry_to_temporary_ops(
     ops: List[AmendmentOp],
     *,
-    muutos_tree: "etree._Element",
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> List[AmendmentOp]:
     """Stamp inferred expiry on temporary ops when payload text names tax years.
 
@@ -2534,7 +2714,11 @@ def _apply_inferred_payload_expiry_to_temporary_ops(
             and not source.expires
         ):
             inferred = _infer_expiry_date_from_temporary_payload_text(
-                _body_text_for_temporary_op(op, muutos_tree=muutos_tree)
+                _body_text_for_temporary_op(
+                    op,
+                    muutos_tree=muutos_tree,
+                    source_model=source_model,
+                )
             )
             if (
                 inferred is not None
@@ -3266,6 +3450,7 @@ def normalize_and_compile_ops(
     regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None,
     base_ir: IRNode | None = None,
     amendment_metadata: _AmendmentTreeMetadata | None = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> "PhaseResult[List[AmendmentOp]]":
     """Normalize PEG output and compile to AmendmentOps.
 
@@ -3527,6 +3712,7 @@ def normalize_and_compile_ops(
         base_ir=base_ir,
         parent_id=parent_id or "",
         metadata=tree_metadata,
+        source_model=source_model,
     )
     ops, historical_kohta_findings = _normalize_historical_top_level_kohta_subsection_ops(
         ops,
@@ -3552,7 +3738,12 @@ def normalize_and_compile_ops(
     temporary_temporal_events: List[TemporalEvent] = []
     if ops:
         if _is_temporary_whole:
-            ops, temp_events = _tag_temporary_ops(ops, amendment_id=amendment_id, muutos_tree=muutos_tree)
+            ops, temp_events = _tag_temporary_ops(
+                ops,
+                amendment_id=amendment_id,
+                muutos_tree=muutos_tree,
+                source_model=source_model,
+            )
             temporary_temporal_events.extend(temp_events)
         elif _temporary_targets is not None:
             # Section-scoped: only tag ops whose target_section is in the set
@@ -3563,6 +3754,7 @@ def normalize_and_compile_ops(
                         [op],
                         amendment_id=amendment_id,
                         muutos_tree=muutos_tree,
+                        source_model=source_model,
                     )
                     tagged_ops.extend(temp_tagged)
                     temporary_temporal_events.extend(temp_events)
@@ -3570,7 +3762,11 @@ def normalize_and_compile_ops(
                     tagged_ops.append(op)
             ops = tagged_ops
     if ops:
-        ops = _apply_inferred_payload_expiry_to_temporary_ops(ops, muutos_tree=muutos_tree)
+        ops = _apply_inferred_payload_expiry_to_temporary_ops(
+            ops,
+            muutos_tree=muutos_tree,
+            source_model=source_model,
+        )
     # After tagging, detect ops that are temporary but have no parseable
     # expiry date.  These should produce an explicit degradation observation;
     # the temporal sidecar already carries the real temporary signal.
@@ -3623,6 +3819,7 @@ def normalize_and_compile_ops(
             base_ir=base_ir,
             parent_id=parent_id or "",
             metadata=tree_metadata,
+            source_model=source_model,
         )
         fallback_plain_insert_count = sum(
             1
@@ -3717,6 +3914,7 @@ def normalize_and_compile_ops(
                     base_ir=base_ir,
                     parent_id=parent_id or "",
                     metadata=tree_metadata,
+                    source_model=source_model,
                 )
                 for op in ops:
                     op.body_root_replace_fallback = True
@@ -3749,6 +3947,7 @@ def normalize_and_compile_ops(
                     base_ir=base_ir,
                     parent_id=parent_id or "",
                     metadata=tree_metadata,
+                    source_model=source_model,
                 )
                 for op in ops:
                     op.fallback_provenance = True
@@ -3781,6 +3980,7 @@ def normalize_and_compile_ops(
                     base_ir=base_ir,
                     parent_id=parent_id or "",
                     metadata=tree_metadata,
+                    source_model=source_model,
                 )
                 for op in ops:
                     op.fallback_provenance = True
@@ -3819,6 +4019,7 @@ def normalize_and_compile_ops(
                     base_ir=base_ir,
                     parent_id=parent_id or "",
                     metadata=tree_metadata,
+                    source_model=source_model,
                 )
                 for op in ops:
                     op.fallback_provenance = True
@@ -3859,6 +4060,7 @@ def normalize_and_compile_ops(
                     base_ir=base_ir,
                     parent_id=parent_id or "",
                     metadata=tree_metadata,
+                    source_model=source_model,
                 )
                 for op in ops:
                     op.fallback_provenance = True
@@ -3900,6 +4102,7 @@ def normalize_and_compile_ops(
                     base_ir=base_ir,
                     parent_id=parent_id or "",
                     metadata=tree_metadata,
+                    source_model=source_model,
                 )
                 for op in ops:
                     op.fallback_provenance = True

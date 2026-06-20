@@ -33,12 +33,19 @@ from lawvm.finland.johtolause.census_accounting import (
     CENSUS_ACCOUNTING_BUCKETS,
     FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0,
     FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0,
+    FI_JOHTOLAUSE_GENUINE_DELTA_HUMAN_CORRECTIONS_V0,
     FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0,
     FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE,
     FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0,
     FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR,
     census_accounting,
     format_accounting_report,
+)
+from lawvm.finland.johtolause.census_adjudication import (
+    ADJUDICATION_SUB_REASONS,
+    HUMAN_CORRECTED_OLD_WRONG,
+    NEW_BETTER_RECOVERY,
+    PROVENANCE_ONLY_DELTA,
 )
 
 
@@ -73,10 +80,13 @@ def test_adjudication_ledger_holds_the_33_corrections() -> None:
     # The both-parser drop-recovery round added 12 NEW-better recoveries (6 nimike
     # + 4 labelled-subheading + 2 nojalla-authority), a class of its own.
     assert len(FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0) == 12
-    # The insertion-recovery round added 5 NEW-better recoveries where the legacy
+    # The insertion-recovery round added NEW-better recoveries where the legacy
     # parser flattened/dropped a ``lisätään ... uusi X`` insertion to a bare ref
-    # (or dropped the LISATA group); NEW emits the correct SurfaceInsertion.
-    assert len(FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0) == 5
+    # (or dropped the LISATA group); NEW emits the correct SurfaceInsertion. The
+    # 2 later additions (2018/387, 2025/1253) are the same adjudicated class
+    # (OLD bare ref / dropped alakohta; NEW SurfaceInsertion, 2025/1253
+    # replay-pinned), taking the set from 5 to 7.
+    assert len(FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0) == 7
     # The four adjudication sets are mutually disjoint (no sid double-counted).
     assert FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0.isdisjoint(
         FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0
@@ -93,6 +103,38 @@ def test_adjudication_ledger_holds_the_33_corrections() -> None:
     assert FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0.isdisjoint(
         FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0
     )
+
+
+def test_human_corrections_set_holds_the_four_category_c_cases() -> None:
+    # Category-C corrections (NEW REPLACES a wrong OLD node, not pure addition)
+    # cannot be soundly auto-detected by the content predicates and stay a
+    # human-judged sid-list. P2's preservation check rejects each, routing them
+    # here. The set is the 2 chapter-target corrections (1958/181, 1958/182) plus
+    # the 2 move-group recoveries (2006/889, 2011/322).
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_HUMAN_CORRECTIONS_V0 == {
+        "1958/181",
+        "1958/182",
+        "2006/889",
+        "2011/322",
+    }
+    # Disjoint from the legacy adjudication sets (no sid double-counted).
+    for other in (
+        FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0,
+        FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0,
+        FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0,
+        FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0,
+    ):
+        assert FI_JOHTOLAUSE_GENUINE_DELTA_HUMAN_CORRECTIONS_V0.isdisjoint(other)
+
+
+def test_adjudication_sub_reasons_are_the_closed_set() -> None:
+    assert set(ADJUDICATION_SUB_REASONS) == {
+        "provenance_only_delta",
+        "new_better_recovery",
+        "human_corrected_old_wrong",
+        "span_normalized",
+        "legacy_adjudicated",
+    }
 
 
 def test_baselines_are_sane() -> None:
@@ -119,6 +161,7 @@ def _result():
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_result_has_exactly_the_five_buckets(_result) -> None:
     assert set(_result.buckets) == set(CENSUS_ACCOUNTING_BUCKETS)
 
@@ -127,6 +170,7 @@ def test_result_has_exactly_the_five_buckets(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_buckets_partition_the_corpus(_result) -> None:
     """The five buckets sum to the amendment-johtolause total — no leak."""
     assert _result.is_partition(), (
@@ -140,6 +184,7 @@ def test_buckets_partition_the_corpus(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_legacy_fallback_unregistered_is_zero(_result) -> None:
     """Closed-set guarantee end-to-end: no un-accounted decline."""
     assert _result.buckets["legacy_fallback_unregistered"] == 0, (
@@ -154,6 +199,7 @@ def test_legacy_fallback_unregistered_is_zero(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_genuine_delta_unclassified_within_baseline(_result) -> None:
     """A NEW un-adjudicated parity miss fails CI (parity regression guard)."""
     live = _result.buckets["genuine_delta_unclassified"]
@@ -171,24 +217,40 @@ def test_genuine_delta_unclassified_within_baseline(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
-def test_genuine_delta_adjudicated_fix_count(_result) -> None:
-    """The adjudicated bucket holds the corrections + witness-span + drop-recovery
-    + insertion-recovery sets that still diverge. Live = 50: 32 of the 33 parser
-    corrections (2002/375 converged to byte-identical via the appendix recovery's
-    OLD-side fix, so it no longer diverges) + 1 witness-span (2002/723) + 12
-    both-parser drop recoveries + 5 insertion recoveries.
+@pytest.mark.slow
+def test_genuine_delta_adjudicated_fix_by_sub_reason(_result) -> None:
+    """The adjudicated bucket is now content-driven (P1/P2) layered above the
+    legacy/human sid-lists, and every adjudicated clause carries a sub-reason.
+
+    Live sub-reason histogram on the full corpus:
+      provenance_only_delta  = 22  (P1: only witness.rule_id / source_span differ;
+                                     21 anaphoric-credit deltas + 2002/723's
+                                     witness-span, which P1 subsumes ahead of the
+                                     span-normalized sid-list)
+      new_better_recovery    = 22  (P2: source-witnessed additive recovery — the 14
+                                     additive cases + 8 legacy DROP/INSERTION-recovery
+                                     sids the content predicate now subsumes)
+      human_corrected_old_wrong = 4  (the category-C corrections sid-list)
+      span_normalized        = 0   (2002/723 absorbed by P1; the sid-list is a
+                                     redundant transition guard)
+      legacy_adjudicated     = 43  (legacy ADJUDICATED_FIXES / DROP / INSERTION sids
+                                     not subsumed by P1/P2)
     """
-    set_total = (
-        len(FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0)
-        + len(FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0)
-        + len(FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0)
-        + len(FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0)
+    sub = _result.adjudication_sub_reason_counts
+    assert set(sub) == set(ADJUDICATION_SUB_REASONS)
+    assert sub[PROVENANCE_ONLY_DELTA] == 22, sub
+    assert sub[NEW_BETTER_RECOVERY] == 22, sub
+    assert sub[HUMAN_CORRECTED_OLD_WRONG] == 4, sub
+    # The sub-reasons sum to the adjudicated bucket (closed accounting).
+    assert sum(sub.values()) == _result.buckets["genuine_delta_adjudicated_fix"]
+    assert _result.buckets["genuine_delta_adjudicated_fix"] == 91, (
+        "genuine_delta_adjudicated_fix should be 91 (22 P1 + 22 P2 + 4 corrections "
+        f"+ 43 legacy). Got {_result.buckets['genuine_delta_adjudicated_fix']}."
     )
-    assert set_total == 51  # 33 + 1 + 12 + 5
-    assert _result.buckets["genuine_delta_adjudicated_fix"] == 50, (
-        "genuine_delta_adjudicated_fix should be 50 (set total 51 minus 2002/375, "
-        "which converged to byte-identical). Got "
-        f"{_result.buckets['genuine_delta_adjudicated_fix']}."
+    # The four category-C corrections all reached the human sid-list, which proves
+    # P1/P2 correctly REJECTED them (fail-loud: corrections are not auto-detected).
+    assert sub[HUMAN_CORRECTED_OLD_WRONG] == len(
+        FI_JOHTOLAUSE_GENUINE_DELTA_HUMAN_CORRECTIONS_V0
     )
 
 
@@ -196,6 +258,7 @@ def test_genuine_delta_adjudicated_fix_count(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_grammar_owned_0delta_above_floor(_result) -> None:
     """Ownership regression guard: owned-and-byte-identical must not drop."""
     live = _result.buckets["grammar_owned_0delta"]
@@ -211,6 +274,7 @@ def test_grammar_owned_0delta_above_floor(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_report_renders(_result) -> None:
     report = format_accounting_report(_result)
     assert "FULL-ACCOUNTING CENSUS" in report
@@ -221,6 +285,7 @@ def test_report_renders(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_witness_span_sid_is_structurally_equal_not_byte_equal() -> None:
     """Evidence + regression guard for the witness_span_normalized class.
 
@@ -243,7 +308,7 @@ def test_witness_span_sid_is_structurally_equal_not_byte_equal() -> None:
     from lawvm.finland.transparent_store import TransparentCorpusStore
     from lawvm.tools.parse_bench import _archive_path
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     xb = store.read_source("2002/723") or store.read_amendment("2002/723")
     assert xb is not None
     johto = get_johtolause(xb)

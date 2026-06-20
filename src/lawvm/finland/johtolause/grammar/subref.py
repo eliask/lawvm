@@ -75,6 +75,7 @@ class SubRef:
 
     momentti: int = 0  # 0 = whole section
     item: str = ""
+    subitem: str = ""  # alakohta label (letter-or-number, mirrors ``item``)
     facet: Optional[FacetKind] = None
     special: str = ""  # free-text named-sub-provision descriptor
 
@@ -82,12 +83,13 @@ class SubRef:
         """Lift this sub-reference to a core ``ProvisionRef``.
 
         ``momentti`` (the subsection) maps to ``ProvisionRef.subsection_num``;
-        ``item`` (the kohta) maps to ``item_label``. A zero ``momentti`` means
-        the sub-reference names no subsection (whole-section / section-level),
-        so ``subsection_num`` is ``None`` rather than 0. A facet-only or
-        ``special`` named sub-provision carries no numeric subsection/item, so
-        those slots stay ``None`` — the section-level reference is the precision
-        we can assert without guessing.
+        ``item`` (the kohta) maps to ``item_label``; ``subitem`` (the alakohta)
+        maps to ``subitem_label``, exactly mirroring the kohta→item encoding. A
+        zero ``momentti`` means the sub-reference names no subsection
+        (whole-section / section-level), so ``subsection_num`` is ``None`` rather
+        than 0. A facet-only or ``special`` named sub-provision carries no numeric
+        subsection/item, so those slots stay ``None`` — the section-level
+        reference is the precision we can assert without guessing.
         """
         return ProvisionRef(
             statute_id=statute_id,
@@ -95,6 +97,7 @@ class SubRef:
             section_label=section_label,
             subsection_num=self.momentti if self.momentti else None,
             item_label=self.item or None,
+            subitem_label=self.subitem or None,
         )
 
 
@@ -147,6 +150,42 @@ def _letter_list(scan: _Scan) -> Optional[list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Alakohta (sub-item) tail — the deepest level of the descendant chain
+# (luku → § → momentti → kohta → ALAKOHTA).
+# ---------------------------------------------------------------------------
+
+
+def _consume_trailing_alakohta(scan: _Scan) -> Optional[list[str]]:
+    """Consume a trailing ``<labels> alakohta`` sub-item run after a kohta.
+
+    The alakohta is the level below the kohta (item). Its label set mirrors the
+    kohta's exactly: a letter list (``a``, ``a ja b``, letter ranges via
+    ``_letter_list``) OR a number list (``1``, ``1—3`` via ``_number_list``),
+    terminated by an ``ALAKOHTA`` token. Returns the list of sub-item labels, or
+    ``None`` (rewinding) when no alakohta run is present so the caller's parse is
+    unchanged for inputs without a trailing alakohta.
+
+    Letters are tried first because alakohta labels are overwhelmingly lettered
+    (``a alakohta``); the numeric arm covers the rarer ``N alakohta`` form.
+    """
+    saved = scan.pos
+
+    letters = _letter_list(scan)
+    if letters and (t := scan.peek()) and t.cat == "ALAKOHTA":
+        scan.advance()
+        return letters
+    scan.goto(saved)
+
+    nums = _number_list(scan)
+    if nums and (t := scan.peek()) and t.cat == "ALAKOHTA":
+        scan.advance()
+        return [n + sf for n, sf in nums]
+    scan.goto(saved)
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Sub-reference recognition (faithful to _sub_ref /
 # _parse_descendant_coordination, restricted to the section-ref subset).
 # ---------------------------------------------------------------------------
@@ -156,6 +195,23 @@ def _parse_after_gen_kohta(scan: _Scan) -> Optional[FacetKind]:
     if _consume_intro_token(scan):
         return FacetKind.INTRO
     return None
+
+
+def _expand_with_alakohta(scan: _Scan, items: list[SubRef]) -> list[SubRef]:
+    """Attach a trailing ``<labels> alakohta`` sub-item run to kohta-level refs.
+
+    Mirrors the kohta→item coordination one level deeper: if an ALAKOHTA run
+    follows the just-consumed kohta (``1 kohdan a alakohta``,
+    ``1 kohdan a ja b alakohta``), expand each kohta-level ``SubRef`` over the
+    sub-item labels, setting ``SubRef.subitem``. When no alakohta follows,
+    ``items`` is returned UNCHANGED (no consumption, no field set) so every input
+    without a trailing alakohta parses exactly as before. Only called from the
+    genitive-kohta descent positions where an alakohta can legally follow.
+    """
+    subitems = _consume_trailing_alakohta(scan)
+    if not subitems:
+        return items
+    return [replace(it, subitem=sub) for it in items for sub in subitems]
 
 
 def _parse_descendant_coordination(scan: _Scan, mom_ctx: int = 0) -> Optional[list[SubRef]]:
@@ -173,10 +229,12 @@ def _parse_descendant_coordination(scan: _Scan, mom_ctx: int = 0) -> Optional[li
             if is_kohta_gen:
                 if _consume_intro_token(scan):
                     return [SubRef(mom_ctx, let, facet=FacetKind.INTRO) for let in letters]
+                items = [SubRef(mom_ctx, let) for let in letters]
+                items = _expand_with_alakohta(scan, items)
                 t3 = scan.peek()
                 if t3 and t3.cat == "OTSIKKO":
                     scan.advance()
-                return [SubRef(mom_ctx, let) for let in letters]
+                return items
             return [SubRef(momentti=mom_ctx, item=let) for let in letters]
         return None
 
@@ -199,12 +257,19 @@ def _parse_descendant_coordination(scan: _Scan, mom_ctx: int = 0) -> Optional[li
                 is_kohta_gen2 = t.case == "GEN"
                 scan.advance()
                 if is_kohta_gen2:
-                    facet = _parse_after_gen_kohta(scan)
-                    return [
-                        SubRef(mom, kn + ksf, facet=facet)
+                    items = [
+                        SubRef(mom, kn + ksf)
                         for mom in mom_vals
                         for kn, ksf in knums
                     ]
+                    expanded = _expand_with_alakohta(scan, items)
+                    if expanded is not items:
+                        # An alakohta was consumed; the intro/heading facet arm
+                        # never co-occurs with a deeper alakohta, so emit the
+                        # sub-item-bearing refs directly.
+                        return expanded
+                    facet = _parse_after_gen_kohta(scan)
+                    return [replace(it, facet=facet) for it in items]
                 return [SubRef(mom, kn + ksf) for mom in mom_vals for kn, ksf in knums]
             scan.goto(saved_kohta)
 
@@ -212,7 +277,8 @@ def _parse_descendant_coordination(scan: _Scan, mom_ctx: int = 0) -> Optional[li
             letters = _letter_list(scan)
             if letters and (t := scan.peek()) and t.cat == "KOHTA":
                 scan.advance()
-                return [SubRef(mom, let) for mom in mom_vals for let in letters]
+                items = [SubRef(mom, let) for mom in mom_vals for let in letters]
+                return _expand_with_alakohta(scan, items)
             if letters:
                 scan.goto(saved_lk)
 
@@ -238,12 +304,16 @@ def _parse_descendant_coordination(scan: _Scan, mom_ctx: int = 0) -> Optional[li
         scan.advance()
 
         if is_kohta_gen:
+            items = [SubRef(mom_ctx, n + sf) for n, sf in nums]
+            expanded = _expand_with_alakohta(scan, items)
+            if expanded is not items:
+                return expanded
             t3 = scan.peek()
             if _consume_intro_token(scan):
-                return [SubRef(mom_ctx, n + sf, facet=FacetKind.INTRO) for n, sf in nums]
+                return [replace(it, facet=FacetKind.INTRO) for it in items]
             if t3 and t3.cat == "OTSIKKO":
                 scan.advance()  # consume but do not set facet
-            return [SubRef(mom_ctx, n + sf) for n, sf in nums]
+            return items
 
         return [SubRef(momentti=mom_ctx, item=n + sf) for n, sf in nums]
 

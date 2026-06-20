@@ -51,7 +51,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from lawvm.corpus_store import resolve_farchive_path
+from lawvm.corpus_store import resolve_farchive_path, validate_farchive_create_path
 
 if TYPE_CHECKING:
     from farchive import Farchive
@@ -212,7 +212,7 @@ def resolve_us_federal_farchive_path() -> tuple[Path, str]:
 def open_us_federal_farchive(
     db_path: Path | None = None,
     *,
-    readonly: bool = False,
+    readonly: bool = True,
     allow_create: bool = False,
 ) -> Farchive:
     """Open the U.S. federal farchive.
@@ -234,9 +234,37 @@ def open_us_federal_farchive(
         path = Path(db_path)
 
     if allow_create:
+        validate_farchive_create_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         return Farchive(path, readonly=False)
     return Farchive(path, readonly=readonly)
+
+
+class _MissingDryRunFarchive:
+    """Resolve-only archive facade for dry-run imports against missing DBs."""
+
+    def resolve(self, _locator: str) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+def open_us_federal_import_farchive(
+    db_path: Path | None = None,
+    *,
+    dry_run: bool = False,
+) -> Farchive | _MissingDryRunFarchive:
+    """Open the U.S. import archive without creating DBs during dry-runs."""
+    if db_path is None:
+        path, _rule = resolve_us_federal_farchive_path()
+    else:
+        path = Path(db_path)
+    if dry_run:
+        if path.exists():
+            return open_us_federal_farchive(path, readonly=True)
+        return _MissingDryRunFarchive()
+    return open_us_federal_farchive(path, allow_create=True)
 
 
 # ---------------------------------------------------------------------------

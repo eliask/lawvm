@@ -179,6 +179,7 @@ def test_tree_path_to_diagnostic_string_renders_mutation_path() -> None:
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live pipeline test",
 )
+@pytest.mark.slow
 def test_oracle_check_uk_statute_returns_string() -> None:
     from lawvm.tools.uk_oracle_check import oracle_check_uk_statute
 
@@ -191,6 +192,7 @@ def test_oracle_check_uk_statute_returns_string() -> None:
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live pipeline test",
 )
+@pytest.mark.slow
 def test_oracle_check_uk_statute_has_required_headers() -> None:
     from lawvm.tools.uk_oracle_check import oracle_check_uk_statute
 

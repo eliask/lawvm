@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing_extensions import override
 
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -283,6 +284,29 @@ def test_ensure_amendment_index_rebuilds_old_two_column_schema(tmp_path: Path) -
     assert header == "amendment_id,parent_id,edge_kind"
 
 
+def test_default_amendment_index_cache_uses_canonical_data_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LAWVM_FINLAND_AMENDMENT_INDEX_CACHE", raising=False)
+    monkeypatch.setenv("LAWVM_CANONICAL_DATA_ROOT", str(tmp_path))
+
+    assert amendment_index._default_cache_csv() == (
+        tmp_path / ".cache" / "finland" / "amendment_parents.csv"
+    )
+
+
+def test_default_amendment_index_cache_env_override_wins(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    override = tmp_path / "custom" / "parents.csv"
+    monkeypatch.setenv("LAWVM_CANONICAL_DATA_ROOT", str(tmp_path / "canonical"))
+    monkeypatch.setenv("LAWVM_FINLAND_AMENDMENT_INDEX_CACHE", str(override))
+
+    assert amendment_index._default_cache_csv() == override
+
+
 def test_amendment_index_cache_writes_use_per_writer_temp_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -339,6 +363,41 @@ def test_ensure_amendment_index_adopts_current_schema_csv_when_meta_missing(
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     assert meta["schema"] == ["amendment_id", "parent_id", "edge_kind"]
     assert meta["source"] == amendment_index._corpus_source_fingerprint(corpus)
+
+
+def test_ensure_amendment_index_rechecks_cache_after_acquiring_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    csv_path = tmp_path / "amendment_parents.csv"
+    db_path = tmp_path / "finlex.farchive"
+    db_path.write_bytes(b"current")
+    corpus = _FakeCorpus(
+        oracle_map={},
+        source_map={},
+        archive=_FakeArchive(db_path),
+    )
+    source_fingerprint = amendment_index._corpus_source_fingerprint(corpus)
+
+    @contextmanager
+    def populate_cache_before_yield(_csv_path: Path):
+        amendment_index._write_amendment_index_cache(
+            csv_path,
+            [("1991/806", "1986/506", "oracle_amendedBy")],
+            source_fingerprint,
+        )
+        yield
+
+    def fail_build(*args: object, **kwargs: object) -> list[tuple[str, str, str]]:
+        raise AssertionError("cache populated by another worker should be reused")
+
+    monkeypatch.setattr(amendment_index, "_amendment_index_cache_lock", populate_cache_before_yield)
+    monkeypatch.setattr(amendment_index, "build_amendment_index", fail_build)
+
+    ensure_amendment_index(cs=corpus, csv_path=csv_path)
+
+    assert csv_path.exists()
+    assert csv_path.with_suffix(".meta.json").exists()
 
 
 def test_ensure_amendment_index_rebuilds_when_farchive_fingerprint_changes(

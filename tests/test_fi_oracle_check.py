@@ -3099,6 +3099,124 @@ def test_is_presentation_structural_diff_chem_list_wrapup_and_names() -> None:
     assert is_presentation_structural_diff(sd, events) is True
 
 
+def test_is_presentation_structural_diff_item_suffix_vs_wrapup_owner_projection() -> None:
+    # 1998/417 § 3 style: same legal text, but Finlex owns the final unnumbered
+    # paragraph as loppukappale while replay has already absorbed it into item 2.
+    sd = {"label": ""}
+    tail = (
+        "tämän päätöksen liitteessä mainittujen toimitusajan ja palvelun laadun "
+        "mittarien suoritustason osalta soveltaen liitteessä mainittuja "
+        "määritelmiä ja mittausmenetelmiä."
+    )
+    events = [
+        {
+            "kind": "facet_added",
+            "semantic_path": ["section:3", "subsection:1", "wrapUp"],
+            "right_badge": "loppukappale",
+            "left_text": None,
+            "right_text": tail,
+        },
+        {
+            "kind": "wording_text_changed",
+            "semantic_path": ["section:3", "subsection:1", "item:2"],
+            "left_text": f"ylläpidettävä ajantasaista luetteloa {tail}",
+            "right_text": "ylläpidettävä ajantasaista luetteloa",
+        },
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_events = [
+        events[0],
+        {
+            **events[1],
+            "left_text": "ylläpidettävä ajantasaista luetteloa muuta oikeudellista tekstiä.",
+        },
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
+def test_is_presentation_structural_diff_value_table_subsections_vs_items() -> None:
+    # 2020/82 § 4 style: source/replay owns two unlabeled table blocks as
+    # subsection siblings, while Finlex projects the same blocks as list items.
+    sd = {"label": ""}
+    intro = (
+        "Sovellettaessa verontilityslain 5 a §:ssä tarkoitettua takuutilitystä "
+        "verovuodelta 2020 suoritettavissa mainitun lain 5 §:n mukaisissa "
+        "tilityksissä käytetään seuraavia työnantajasuoritusten vähimmäismääriä:"
+    )
+    table_a = (
+        "Ennakonpidätysten vähimmäismäärä Vuosi Tilityskuukausi Euroa "
+        "2020 Toukokuu 2 347 000 000 Kesäkuu 2 212 000 000 "
+        "2021 Tammikuu 2 702 000 000"
+    )
+    table_b = (
+        "Työnantajan sairausvakuutusmaksun vähimmäismäärä Vuosi "
+        "Tilityskuukausi Euroa 2020 Toukokuu 101 210 000 Kesäkuu "
+        "99 200 000 2021 Tammikuu 96 880 000"
+    )
+    events = [
+        {
+            "kind": "facet_added",
+            "semantic_path": ["section:4", "subsection:1", "intro"],
+            "right_badge": "johdanto",
+            "left_text": None,
+            "right_text": intro,
+        },
+        {
+            "kind": "wording_text_changed",
+            "semantic_path": ["section:4", "subsection:1"],
+            "left_text": intro,
+            "right_text": None,
+        },
+        {"kind": "unit_missing_left", "left_text": None, "right_text": table_a},
+        {"kind": "unit_missing_left", "left_text": None, "right_text": table_b},
+        {"kind": "unit_missing_right", "left_text": table_a, "right_text": None},
+        {"kind": "unit_missing_right", "left_text": table_b, "right_text": None},
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_events = [
+        *events[:-1],
+        {"kind": "unit_missing_right", "left_text": table_b.replace("96 880 000", "96 999 000"), "right_text": None},
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
+def test_is_presentation_structural_diff_intro_vs_wording_owner_projection() -> None:
+    # 1980/552 § 1 style: identical text is an intro facet on one side and
+    # plain subsection wording on the other.
+    sd = {"label": ""}
+    text = (
+        "Kauppahintarekisterin ja siitä annettavan tietopalvelun tarkoituksena "
+        "on palvella kiinteistön arvon määrittämistä lunastustoimituksissa."
+    )
+    events = [
+        {
+            "kind": "facet_removed",
+            "semantic_path": ["section:1", "subsection:2", "intro"],
+            "left_badge": "johdanto",
+            "left_text": text,
+            "right_text": None,
+        },
+        {
+            "kind": "wording_text_changed",
+            "semantic_path": ["section:1", "subsection:2"],
+            "left_text": None,
+            "right_text": text,
+        },
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_events = [
+        events[0],
+        {**events[1], "right_text": text.replace("lunastustoimituksissa", "verotuksessa")},
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
 def test_is_presentation_structural_diff_negative_real_content_change() -> None:
     # A real wording change (not prefix, not artifact) must not be treated as presentation.
     sd = {"label": ""}

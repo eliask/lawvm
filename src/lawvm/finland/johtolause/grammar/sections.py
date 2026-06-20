@@ -608,6 +608,7 @@ def _parse_renumber_backref_continuation(scan: _Scan) -> Optional[list[SubRef]]:
                 subs[i] = SubRef(
                     momentti=subs[i].momentti,
                     item=subs[i].item,
+                    subitem=subs[i].subitem,
                     facet=trailing_facet,
                 )
     return subs
@@ -779,14 +780,28 @@ def _emit_suffix(parsed: ParsedSection, chapter: str, part: str) -> list[Surface
     ch = explicit_ch if explicit_ch is not None else chapter
     pt = explicit_pt if explicit_pt is not None else part
     nums = list(parsed.nums)
-    subs = [SubRef(sr.momentti, sr.item, sr.facet, sr.special) for sr in parsed.subs]
+    subs = [
+        SubRef(
+            momentti=sr.momentti,
+            item=sr.item,
+            subitem=sr.subitem,
+            facet=sr.facet,
+            special=sr.special,
+        )
+        for sr in parsed.subs
+    ]
 
     # Trailing facet distribution (kohta level).
     if len(subs) > 1 and subs[-1].facet is not None and subs[-1].item:
         trailing_facet = subs[-1].facet
         for i in range(len(subs) - 1):
             if subs[i].facet is None and subs[i].item:
-                subs[i] = SubRef(momentti=subs[i].momentti, item=subs[i].item, facet=trailing_facet)
+                subs[i] = SubRef(
+                    momentti=subs[i].momentti,
+                    item=subs[i].item,
+                    subitem=subs[i].subitem,
+                    facet=trailing_facet,
+                )
 
     # Trailing sub-ref scoping: leading whole-section split.
     leading_whole: list[NumSuffix] = []
@@ -803,12 +818,19 @@ def _emit_suffix(parsed: ParsedSection, chapter: str, part: str) -> list[Surface
         if sr.momentti != 0:
             last_mom = sr.momentti
         elif sr.item and last_mom != 0:
-            subs[i] = SubRef(momentti=last_mom, item=sr.item, facet=sr.facet, special=sr.special)
+            subs[i] = SubRef(
+                momentti=last_mom,
+                item=sr.item,
+                subitem=sr.subitem,
+                facet=sr.facet,
+                special=sr.special,
+            )
     # Default bare items to momentti=1.
     subs = [
         SubRef(
             momentti=m if m != 0 or not sr.item else 1,
             item=sr.item,
+            subitem=sr.subitem,
             facet=sr.facet,
             special=sr.special,
         )

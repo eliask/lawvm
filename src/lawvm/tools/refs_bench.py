@@ -363,7 +363,7 @@ def _scan_one_recall(sid: str) -> _RecallResult | None:
     from lawvm.finland.transparent_store import TransparentCorpusStore
     from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     xb = _read_body(store, sid)
     if not xb:
         return None
@@ -463,7 +463,7 @@ def _scan_one(sid: str) -> _RefsResult | None:
     from lawvm.finland.transparent_store import TransparentCorpusStore
     from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     xb = _read_body(store, sid)
     if not xb:
         return None
@@ -518,7 +518,7 @@ def _statute_ids(limit: int) -> list[str]:
     from farchive import Farchive
     from lawvm.finland.transparent_store import TransparentCorpusStore
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     return ids[:limit] if limit else ids
 

@@ -102,6 +102,26 @@ FIXTURE = """(() => {
       confidence: 'exact', target_work_id: 'eu:eu_act:eu/2016/679', target_local_id: 'eu/2016/679',
       target_url: 'https://eur-lex.europa.eu/eli/reg/2016/679/oj', role: 'cites',
     },
+    // Placement-v0 set-valued reference: a range painted as ONE anchor whose
+    // detail_json carries the resolution_set of all four members.
+    set_valued: {
+      surface_text: '69 d–69 g §:ssä', resolution_status: 'resolved', confidence: 'exact',
+      target_work_id: 'fi:normative_act:301/2004', target_local_id: '301/2004',
+      target_locator: 'section:69d', role: 'cites',
+      detail_json: JSON.stringify({
+        surface_occurrence_id: 'occ_test',
+        resolution_kind: 'finite_all_members',
+        resolution_set_json: JSON.stringify({
+          kind: 'finite_all_members',
+          members: [
+            { target_locator: 'section:69d', target_work_id: 'fi:normative_act:301/2004', member_status: 'resolved' },
+            { target_locator: 'section:69e', target_work_id: 'fi:normative_act:301/2004', member_status: 'resolved' },
+            { target_locator: 'section:69f', target_work_id: 'fi:normative_act:301/2004', member_status: 'resolved' },
+            { target_locator: 'section:69g', target_work_id: 'fi:normative_act:301/2004', member_status: 'resolved' },
+          ],
+        }),
+      }),
+    },
   };
   const out = {};
   for (const [k, row] of Object.entries(rows)) {
@@ -161,6 +181,17 @@ with sync_playwright() as p:
     check("broken hovercard has repealed/renumbered note",
           "hc-broken-note" in out["broken"]["hover"]
           and "hc-status-broken" in out["broken"]["hover"], out["broken"]["hover"][:160])
+    # Placement-v0: set-valued reference renders ONE anchor whose hovercard lists
+    # ALL four members of the resolution_set (range → 69 d/e/f/g).
+    sv_hover = out["set_valued"]["hover"]
+    check("set-valued hovercard has resolution-set block",
+          "hc-resolution-set" in sv_hover, sv_hover[:120])
+    check("set-valued hovercard lists all four members",
+          all(m in sv_hover for m in ("section:69d", "section:69e", "section:69f", "section:69g")),
+          sv_hover[:200])
+    check("set-valued anchor is a single span",
+          out["set_valued"]["html"].count("<a ") == 1, out["set_valued"]["html"][:120])
+
     check("EU hovercard shows EU citation kind",
           "EU-viittaus" in out["external_eu"]["hover"], out["external_eu"]["hover"][:160])
 

@@ -60,6 +60,7 @@ from typing import List, Literal, Optional, Tuple
 from lawvm.core.legal_surface_tokens import Token, TokenTape
 from lawvm.core.reference_mention import SourceSpan
 from lawvm.finland.canonical_actor_registry import REGISTRY
+from lawvm.finland.legal_surface.clause_segment import sentence_terminator_between
 from lawvm.finland.references.role_actors import (
     ROLE_ACTORS as _ROLE_ACTORS,
 )
@@ -195,9 +196,9 @@ _MAX_OBJECT_SPAN = 200
 class SurfaceModality:
     """A surface deontic/modal marker. SURFACE FACT ONLY.
 
-    This records the *form* of the marker, never its legal force. ``token="voi"``
-    is the surface fact, not "discretionary power"; ``token="on velvollinen"`` is
-    the surface fact, not "an obligation".
+    This records the *form* of the marker, never its legal force. a ``token`` of
+    ``"voi"`` is the surface fact, not "discretionary power"; ``"on velvollinen"``
+    is the surface fact, not "an obligation".
 
     Attributes:
         token:       The exact surface marker from the closed list (e.g. "ei saa").
@@ -390,8 +391,19 @@ def _scan_tape(tape: TokenTape, source_file: str) -> ActorModalScan:
             if actor_m.char_end > modal_m.char_start:
                 break  # actor not before this modal
             gap = modal_m.char_start - actor_m.char_end
-            if gap <= _MAX_ACTOR_MODAL_GAP:
-                best_actor_idx = a_idx  # keep advancing to the nearest
+            if gap > _MAX_ACTOR_MODAL_GAP:
+                continue
+            # SAME-SENTENCE GUARD: an actor may bind a modal only when NO sentence
+            # boundary separates them. The char-gap window alone fuses an actor at
+            # the tail of sentence N with the modal of sentence N+1 ("... määräajan.
+            # Päätös voidaan ...") into one fabricated frame. Refuse the pairing
+            # when a sentence terminator falls between the actor end and the modal
+            # start; the actor stays unbound (a typed residual below).
+            if sentence_terminator_between(
+                tokens, actor_m.char_end, modal_m.char_start
+            ):
+                continue
+            best_actor_idx = a_idx  # keep advancing to the nearest
 
         if best_actor_idx is None:
             residuals.append(
@@ -469,6 +481,9 @@ def _scan_tape(tape: TokenTape, source_file: str) -> ActorModalScan:
             continue
         has_following_modal = any(
             0 <= (modal_m.char_start - actor_m.char_end) <= _MAX_ACTOR_MODAL_GAP
+            and not sentence_terminator_between(
+                tokens, actor_m.char_end, modal_m.char_start
+            )
             for modal_m in modal_matches
         )
         if has_following_modal:

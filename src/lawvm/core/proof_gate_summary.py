@@ -103,53 +103,113 @@ class ProofGateSummary:
         object.__setattr__(self, "scope", _required_string("scope", self.scope))
         if not isinstance(self.closed, bool):
             raise ValueError("ProofGateSummary.closed must be boolean")
-        for field_name in (
-            "open_gate_signal_count",
-            "ownership_failed_gate_count",
-            "frontier_work_item_count",
-            "manual_claim_frontier_count",
-            "coverage_frontier_count",
-            "other_frontier_count",
-            "frontier_claim_closure_phase_gate_required_count",
-            "frontier_claim_closure_phase_gate_authorized_count",
-            "frontier_claim_closure_replay_authorized_count",
-            "incomplete_candidate_set_count",
-            "source_completeness_missing_count",
-            "source_unit_unresolved_count",
-            "potential_operation_unresolved_count",
-            "regex_recognition_unclassified_gap_count",
-            "temporal_resolution_unresolved_count",
-            "source_pathology_authorization_blocked_count",
-            "failed_operation_authorization_blocked_count",
-            "candidate_set_authorization_blocked_count",
-            "recovery_authorization_blocked_count",
+        for field_name, value in (
+            ("open_gate_signal_count", self.open_gate_signal_count),
+            ("ownership_failed_gate_count", self.ownership_failed_gate_count),
+            ("frontier_work_item_count", self.frontier_work_item_count),
+            ("manual_claim_frontier_count", self.manual_claim_frontier_count),
+            ("coverage_frontier_count", self.coverage_frontier_count),
+            ("other_frontier_count", self.other_frontier_count),
+            (
+                "frontier_claim_closure_phase_gate_required_count",
+                self.frontier_claim_closure_phase_gate_required_count,
+            ),
+            (
+                "frontier_claim_closure_phase_gate_authorized_count",
+                self.frontier_claim_closure_phase_gate_authorized_count,
+            ),
+            (
+                "frontier_claim_closure_replay_authorized_count",
+                self.frontier_claim_closure_replay_authorized_count,
+            ),
+            ("incomplete_candidate_set_count", self.incomplete_candidate_set_count),
+            ("source_completeness_missing_count", self.source_completeness_missing_count),
+            ("source_unit_unresolved_count", self.source_unit_unresolved_count),
+            (
+                "potential_operation_unresolved_count",
+                self.potential_operation_unresolved_count,
+            ),
+            (
+                "regex_recognition_unclassified_gap_count",
+                self.regex_recognition_unclassified_gap_count,
+            ),
+            (
+                "temporal_resolution_unresolved_count",
+                self.temporal_resolution_unresolved_count,
+            ),
+            (
+                "source_pathology_authorization_blocked_count",
+                self.source_pathology_authorization_blocked_count,
+            ),
+            (
+                "failed_operation_authorization_blocked_count",
+                self.failed_operation_authorization_blocked_count,
+            ),
+            (
+                "candidate_set_authorization_blocked_count",
+                self.candidate_set_authorization_blocked_count,
+            ),
+            (
+                "recovery_authorization_blocked_count",
+                self.recovery_authorization_blocked_count,
+            ),
         ):
-            _require_nonnegative_int(field_name, getattr(self, field_name))
-        for field_name in (
-            "ownership_failed_gate_counts",
-            "unowned_counts",
-            "frontier_owner_phase_counts",
-            "frontier_status_counts",
-            "required_claim_kind_counts",
-            "manual_frontier_required_claim_kind_counts",
-            "manual_frontier_status_counts",
-            "coverage_frontier_required_claim_kind_counts",
-            "coverage_frontier_status_counts",
-            "other_frontier_required_claim_kind_counts",
-            "other_frontier_status_counts",
-            "frontier_claim_closure_status_counts",
-            "candidate_set_completeness_counts",
-            "source_completeness_counts",
-            "source_unit_coverage_status_counts",
-            "potential_operation_classification_counts",
-            "regex_recognition_coverage_status_counts",
-            "temporal_resolution_status_counts",
-            "source_pathology_authorization_status_counts",
-            "failed_operation_authorization_status_counts",
-            "candidate_set_authorization_status_counts",
-            "recovery_authorization_status_counts",
+            _require_nonnegative_int(field_name, value)
+        for field_name, value in (
+            ("ownership_failed_gate_counts", self.ownership_failed_gate_counts),
+            ("unowned_counts", self.unowned_counts),
+            ("frontier_owner_phase_counts", self.frontier_owner_phase_counts),
+            ("frontier_status_counts", self.frontier_status_counts),
+            ("required_claim_kind_counts", self.required_claim_kind_counts),
+            (
+                "manual_frontier_required_claim_kind_counts",
+                self.manual_frontier_required_claim_kind_counts,
+            ),
+            ("manual_frontier_status_counts", self.manual_frontier_status_counts),
+            (
+                "coverage_frontier_required_claim_kind_counts",
+                self.coverage_frontier_required_claim_kind_counts,
+            ),
+            ("coverage_frontier_status_counts", self.coverage_frontier_status_counts),
+            (
+                "other_frontier_required_claim_kind_counts",
+                self.other_frontier_required_claim_kind_counts,
+            ),
+            ("other_frontier_status_counts", self.other_frontier_status_counts),
+            (
+                "frontier_claim_closure_status_counts",
+                self.frontier_claim_closure_status_counts,
+            ),
+            ("candidate_set_completeness_counts", self.candidate_set_completeness_counts),
+            ("source_completeness_counts", self.source_completeness_counts),
+            ("source_unit_coverage_status_counts", self.source_unit_coverage_status_counts),
+            (
+                "potential_operation_classification_counts",
+                self.potential_operation_classification_counts,
+            ),
+            (
+                "regex_recognition_coverage_status_counts",
+                self.regex_recognition_coverage_status_counts,
+            ),
+            ("temporal_resolution_status_counts", self.temporal_resolution_status_counts),
+            (
+                "source_pathology_authorization_status_counts",
+                self.source_pathology_authorization_status_counts,
+            ),
+            (
+                "failed_operation_authorization_status_counts",
+                self.failed_operation_authorization_status_counts,
+            ),
+            (
+                "candidate_set_authorization_status_counts",
+                self.candidate_set_authorization_status_counts,
+            ),
+            (
+                "recovery_authorization_status_counts",
+                self.recovery_authorization_status_counts,
+            ),
         ):
-            object.__setattr__(self, field_name, freeze_mapping(_count_mapping(getattr(self, field_name))))
+            object.__setattr__(self, field_name, freeze_mapping(_count_mapping(value)))
         object.__setattr__(self, "safe_default", _required_string("safe_default", self.safe_default))
         object.__setattr__(
             self,

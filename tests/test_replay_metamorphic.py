@@ -18,7 +18,7 @@ import string
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.timeline import compile_timelines_ex, materialize_pit_ex

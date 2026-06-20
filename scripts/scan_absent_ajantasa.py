@@ -319,7 +319,9 @@ def scan_farchive(
     )
 
     corrections = corrections or {}
-    archive = fa.Farchive(str(farchive_path))
+    if not farchive_path.exists():
+        raise FileNotFoundError(f"farchive not found: {farchive_path}")
+    archive = fa.Farchive(str(farchive_path), readonly=True)
     try:
         locators = archive.locators(build_versioned_consolidated_main_glob())
         print(f"Indexed {len(locators)} oracle locators from farchive", file=sys.stderr)

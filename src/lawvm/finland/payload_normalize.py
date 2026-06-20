@@ -50,6 +50,7 @@ from lawvm.finland.merge import (
     _pre_resolve_omissions,
 )
 from lawvm.finland.ops import AmendmentOp, FailedOp, _lo_with_path_update
+from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
 from lawvm.finland.table_target_merge import mentioned_numbered_table_labels
 
@@ -633,6 +634,7 @@ def _classify_payload_completeness(
             "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
             "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
             "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
+            _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
             "ELAB.CONTAINER_PRUNED_SHADOWED",
         }
     ):
@@ -646,6 +648,7 @@ def _classify_payload_completeness(
                 "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
                 "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
                 "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
+                _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
                 "ELAB.CONTAINER_PRUNED_SHADOWED",
             }
         )
@@ -837,6 +840,86 @@ def _assign_duplicate_target_slot_ops(
         state.used_subs.add(exact_idx)
         state.subsec_map.assign(replace_ops[0], slot_inputs.amend_subs[shifted_idx])
         state.used_subs.add(shifted_idx)
+
+
+def _assign_insert_before_moved_same_target_slot_ops(
+    slot_inputs: SubsectionSlotInputs,
+    state: SubsectionSlotAssignmentState,
+) -> None:
+    """Bind ``INSERT N`` before the source slot for an explicitly moved ``REPLACE N``.
+
+    Finnish formulas can say ``lisätään N momentti, jolloin muutettu N momentti
+    ja nykyinen ... siirtyvät ...``. The body then serializes the new N slot
+    immediately before the amended old N slot. This is not the ordinary
+    duplicate-target shape where the insert owns exact slot N and the replace
+    owns the following slot.
+    """
+    occupied_targets = {
+        int(op.target_paragraph)
+        for op in slot_inputs.payload_subsec_ops
+        if op.target_paragraph is not None and not op.target_item and not op.target_special
+    }
+    renumber_destinations = {
+        int(op.target_paragraph): int(destination)
+        for op in slot_inputs.renumber_subsec_ops
+        if (
+            op.target_paragraph is not None
+            and (destination := _destination_subsection_label_for_renumber(op)).isdigit()
+        )
+    }
+    for target in slot_inputs.duplicate_targets:
+        if renumber_destinations.get(target) != target + 1:
+            continue
+        insert_ops = [
+            op
+            for op in slot_inputs.payload_subsec_ops
+            if op.target_paragraph == target and op.op_type == "INSERT" and not op.target_item
+        ]
+        replace_ops = [
+            op
+            for op in slot_inputs.payload_subsec_ops
+            if op.target_paragraph == target and op.op_type == "REPLACE" and not op.target_item
+        ]
+        if len(insert_ops) != 1 or len(replace_ops) != 1:
+            continue
+        exact_idx = next(
+            (
+                idx
+                for idx, sub in enumerate(slot_inputs.amend_subs)
+                if idx not in state.used_subs and _norm_num_token(sub.label or "") == str(target)
+            ),
+            None,
+        )
+        if exact_idx is None:
+            continue
+        prior_idx = exact_idx - 1
+        if prior_idx < 0 or prior_idx in state.used_subs:
+            continue
+        prior_label = _norm_num_token(slot_inputs.amend_subs[prior_idx].label or "")
+        if (
+            not prior_label.isdigit()
+            or int(prior_label) in occupied_targets
+            or int(prior_label) != target - 1
+        ):
+            continue
+        state.subsec_map.assign(insert_ops[0], slot_inputs.amend_subs[prior_idx])
+        state.used_subs.add(prior_idx)
+        state.subsec_map.assign(replace_ops[0], slot_inputs.amend_subs[exact_idx])
+        state.used_subs.add(exact_idx)
+        state.binding_rule_by_op_id[id(insert_ops[0])] = "insert_before_moved_same_target_slot"
+        state.binding_rule_by_op_id[id(replace_ops[0])] = "insert_before_moved_same_target_slot"
+        state.binding_observations.append(
+            _obs(
+                "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT",
+                "sparse_subsection_elaboration",
+                target_paragraph=target,
+                insert_payload_slot_label=str(slot_inputs.amend_subs[prior_idx].label or ""),
+                replace_payload_slot_label=str(slot_inputs.amend_subs[exact_idx].label or ""),
+                renumber_destination=renumber_destinations[target],
+                insert_op_description=insert_ops[0].description(),
+                replace_op_description=replace_ops[0].description(),
+            )
+        )
 
 
 def _assign_multi_paragraph_item_slot_ops(
@@ -1215,7 +1298,7 @@ def _assign_numbered_table_companion_slot_ops(
         _obs(
             "ELAB.NUMBERED_TABLE_COMPANION_SUBSECTION_BINDING",
             "sparse_subsection_elaboration",
-            source_target_paragraph=int(op.target_paragraph),
+            source_target_paragraph=int(op.target_paragraph or 0),
             structural_payload_label=str(sub.label or ""),
             numbered_table_targets=list(op.numbered_table_targets),
             op_description=op.description(),
@@ -1418,11 +1501,10 @@ def _assign_intro_slot_ops(
     if not intro_ops:
         return
 
-    # When intro ops are mixed with other sparse subsection ops, bind them in
-    # source order to the earliest remaining slots. This keeps repeated
-    # johdanto fragments stable and prevents later plain fallback from stealing
-    # the leading slot. A lone intro op keeps the historical exact-label
-    # behavior for compatibility.
+    # Prefer exact labels before positional fallback. Dense-local numbering
+    # cases have already been assigned by _assign_dense_local_target_groups; if
+    # target labels and payload labels really match, source order is not
+    # authority to move a johdantokappale to another moment.
     mixed_intro_group = len(intro_ops) > 1 or bool(slot_inputs.payload_subsec_ops)
 
     for op in intro_ops:
@@ -1439,6 +1521,18 @@ def _assign_intro_slot_ops(
         if shared is not None:
             state.subsec_map.assign(op, shared)
             continue
+        exact_idx = next(
+            (
+                idx
+                for idx, sub in enumerate(slot_inputs.amend_subs)
+                if idx not in state.used_subs and _norm_num_token(sub.label or "") == str(op.target_paragraph)
+            ),
+            None,
+        )
+        if exact_idx is not None:
+            state.subsec_map.assign(op, slot_inputs.amend_subs[exact_idx])
+            state.used_subs.add(exact_idx)
+            continue
         if mixed_intro_group:
             for idx, sub in enumerate(slot_inputs.amend_subs):
                 if idx in state.used_subs:
@@ -1447,13 +1541,6 @@ def _assign_intro_slot_ops(
                 state.used_subs.add(idx)
                 break
             continue
-        for idx, sub in enumerate(slot_inputs.amend_subs):
-            if idx in state.used_subs:
-                continue
-            if _norm_num_token(sub.label or "") == str(op.target_paragraph):
-                state.subsec_map.assign(op, sub)
-                state.used_subs.add(idx)
-                break
 
 
 def _assign_remaining_insert_slot_ops(
@@ -2029,14 +2116,13 @@ class HeadingTaggedSubsectionPayloadResult:
 
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
+_SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE = "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL"
 _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
 _TEXT_TABLE_ROW_CONTINUATION_RULE = "ELAB.TEXT_TABLE_ROW_CONTINUATION"
 
 
-def _flattened_list_row_from_subsection_ir(sub_ir: IRNode) -> Optional[FlattenedListRow]:
-    if any(c.kind in {IRNodeKind.PARAGRAPH, IRNodeKind.SUBSECTION} for c in sub_ir.children):
-        return None
-    flat_text = " ".join(irnode_to_text(sub_ir).split())
+def _flattened_list_row_from_text(text: str) -> Optional[FlattenedListRow]:
+    flat_text = " ".join(text.split())
     m = re.match(r"^(\d+|[a-z])\s*[\).]\s*(.+)$", flat_text, flags=re.I)
     if m is None:
         return None
@@ -2044,6 +2130,28 @@ def _flattened_list_row_from_subsection_ir(sub_ir: IRNode) -> Optional[Flattened
     label = _norm_num_token(raw_label)
     text = m.group(2).strip()
     return FlattenedListRow(label=label, text=text, is_lettered=not label.isdigit())
+
+
+def _flattened_list_rows_from_subsection_ir(sub_ir: IRNode) -> Optional[list[FlattenedListRow]]:
+    if any(c.kind is IRNodeKind.SUBSECTION for c in sub_ir.children):
+        return None
+    if any(c.kind is IRNodeKind.PARAGRAPH for c in sub_ir.children):
+        rows: list[FlattenedListRow] = []
+        for child in sub_ir.children:
+            if child.kind not in {IRNodeKind.CONTENT, IRNodeKind.INTRO, IRNodeKind.PARAGRAPH}:
+                return None
+            row = _flattened_list_row_from_text(irnode_to_text(child))
+            if row is None:
+                return None
+            rows.append(row)
+        return rows or None
+    row = _flattened_list_row_from_text(irnode_to_text(sub_ir))
+    return [row] if row is not None else None
+
+
+def _flattened_list_row_from_subsection_ir(sub_ir: IRNode) -> Optional[FlattenedListRow]:
+    rows = _flattened_list_rows_from_subsection_ir(sub_ir)
+    return rows[0] if rows is not None and len(rows) == 1 else None
 
 
 def _paragraph_from_flattened_list_row(row: FlattenedListRow) -> IRNode:
@@ -2303,12 +2411,12 @@ def _collapse_intro_list_subsections_inside_section_ir(
         rows: List[FlattenedListRow] = []
         j = i + 1
         while j < len(children):
-            row = None
+            row_group = None
             if children[j].kind is IRNodeKind.SUBSECTION:
-                row = _flattened_list_row_from_subsection_ir(children[j])
-            if row is None:
+                row_group = _flattened_list_rows_from_subsection_ir(children[j])
+            if row_group is None:
                 break
-            rows.append(row)
+            rows.extend(row_group)
             j += 1
         if not rows:
             new_children.append(child)
@@ -2368,6 +2476,19 @@ def _is_intro_single_item_subsection_ir(sub: IRNode) -> bool:
     return has_intro and para_labels == ["1"]
 
 
+def _subsection_numbered_paragraph_labels(sub: IRNode) -> tuple[str, ...]:
+    return tuple(
+        _norm_num_token(child.label or "")
+        for child in sub.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    )
+
+
+def _has_numbered_paragraph_sequence(sub: IRNode) -> bool:
+    labels = _subsection_numbered_paragraph_labels(sub)
+    return len(labels) >= 2 and labels[:2] == ("1", "2")
+
+
 def _content_only_non_item_subsection_text(sub: IRNode) -> Optional[str]:
     """Return unlabeled content-only subsection text, excluding list-item starts."""
     if len(sub.children) != 1:
@@ -2379,6 +2500,88 @@ def _content_only_non_item_subsection_text(sub: IRNode) -> Optional[str]:
     if not text or re.match(r"^\d+[.)]\s+", text):
         return None
     return text
+
+
+def _fold_split_target_subsection_intro_list_tail(
+    ctx: PayloadElaborationContext,
+    target_unit_kind: TargetUnitKind,
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> tuple[Optional[IRNode], bool, dict[str, object]]:
+    """Fold a source-split legal moment back into the explicitly targeted slot.
+
+    Historical Finlex XML can serialize one legal ``N momentti`` as two adjacent
+    AKN subsections: a content-only prefix, followed by an intro/list body.  The
+    source preamble still targets only ``N momentti``.  This rule is deliberately
+    narrow and requires the live target moment to already be a numbered-list
+    moment, so a real sibling moment is not absorbed merely because it is next.
+    """
+    empty_detail: dict[str, object] = {}
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return muutos_ir, False, empty_detail
+
+    plain_replace_ops = [
+        op
+        for op in group_ops
+        if (
+            op.op_type == "REPLACE"
+            and op.target_unit_kind == "section"
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+        )
+    ]
+    if len(plain_replace_ops) != 1 or len(group_ops) != 1:
+        return muutos_ir, False, empty_detail
+    target = int(plain_replace_ops[0].target_paragraph or 0)
+
+    live_target = ctx.subsection_by_label.get(str(target))
+    if live_target is None or not _has_numbered_paragraph_sequence(live_target):
+        return muutos_ir, False, empty_detail
+
+    subsection_pairs = [
+        (idx, child)
+        for idx, child in enumerate(muutos_ir.children)
+        if child.kind is IRNodeKind.SUBSECTION
+    ]
+    if len(subsection_pairs) != 2:
+        return muutos_ir, False, empty_detail
+
+    (prefix_idx, prefix_sub), (tail_idx, tail_sub) = subsection_pairs
+    if tail_idx != prefix_idx + 1:
+        return muutos_ir, False, empty_detail
+    prefix_label = _norm_num_token(prefix_sub.label or "")
+    tail_label = _norm_num_token(tail_sub.label or "")
+    if prefix_label != str(target) or tail_label != str(target + 1):
+        return muutos_ir, False, empty_detail
+    if _content_only_non_item_subsection_text(prefix_sub) is None:
+        return muutos_ir, False, empty_detail
+    if not _is_intro_list_subsection_ir(tail_sub):
+        return muutos_ir, False, empty_detail
+
+    folded = _with_payload_normalization_rule(
+        IRNode(
+            kind=prefix_sub.kind,
+            label=prefix_sub.label,
+            text=prefix_sub.text,
+            attrs=dict(prefix_sub.attrs),
+            children=tuple(prefix_sub.children) + tuple(tail_sub.children),
+        ),
+        _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+    )
+    new_children = [
+        folded if idx == prefix_idx else child
+        for idx, child in enumerate(muutos_ir.children)
+        if idx != tail_idx
+    ]
+    detail: dict[str, object] = {
+        "target_paragraph": target,
+        "prefix_payload_slot_label": str(prefix_sub.label or ""),
+        "tail_payload_slot_label": str(tail_sub.label or ""),
+        "live_target_item_labels": _subsection_numbered_paragraph_labels(live_target),
+        "rule": _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+    }
+    return _tops._with_children(muutos_ir, new_children), True, detail
 
 
 def _fold_split_omission_subsection_prefix_into_following_intro_list(
@@ -2857,7 +3060,12 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     standalone_section_targets: Set[str],
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
+    foreign_scoped_descendant_section_targets: Set[str] | None = None,
     foreign_scoped_replace_section_targets: Set[str] | None = None,
+    foreign_scoped_replace_section_target_scopes: (
+        frozenset[StandaloneSectionTarget] | None
+    ) = None,
+    recodification_transfer_context: bool = False,
     expected_heading_only: bool = False,
 ) -> ContainerPayloadPruningResult:
     """Drop malformed container payload sections that are targeted separately.
@@ -2871,9 +3079,30 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     foreign_scoped_standalone_section_targets = {
         _norm_num_token(label) for label in (foreign_scoped_standalone_section_targets or ()) if label
     }
+    foreign_scoped_descendant_section_targets = {
+        _norm_num_token(label) for label in (foreign_scoped_descendant_section_targets or ()) if label
+    }
     foreign_scoped_replace_section_targets = {
         _norm_num_token(label) for label in (foreign_scoped_replace_section_targets or ()) if label
     }
+    foreign_scoped_replace_section_target_scopes = frozenset(
+        target
+        for target in (foreign_scoped_replace_section_target_scopes or frozenset())
+        if target.label
+    )
+
+    def _foreign_scope_is_base_of_target(target: StandaloneSectionTarget) -> bool:
+        base = target.chapter if target_unit_kind == "chapter" else target.part
+        if not base or base == target_norm or not target_norm.startswith(base):
+            return False
+        if (
+            target_unit_kind == "chapter"
+            and ctx.target_part is not None
+            and target.part != ctx.target_part
+        ):
+            return False
+        suffix = target_norm[len(base):]
+        return bool(suffix) and suffix.isalpha()
 
     def _scope_label_from_unique_path(section_label: str, scope_kind: str) -> Optional[str]:
         """Look up a section's enclosing scope label from lookups.
@@ -2932,6 +3161,9 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         for child in muutos_ir.children
         if child.kind is IRNodeKind.SECTION and child.label
     }
+    payload_has_suffixed_section_labels = any(
+        not label.isdigit() for label in payload_section_labels
+    )
     payload_numeric_labels = {
         int(label) for label in payload_section_labels if label.isdigit()
     }
@@ -2939,6 +3171,15 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         int(label)
         for label in foreign_scoped_replace_section_targets
         if label in payload_section_labels and label.isdigit()
+    }
+    foreign_replace_payload_overlap = (
+        payload_section_labels & foreign_scoped_replace_section_targets
+    )
+    foreign_replace_base_scope_labels = {
+        target.label
+        for target in foreign_scoped_replace_section_target_scopes
+        if target.label in payload_section_labels
+        and _foreign_scope_is_base_of_target(target)
     }
     has_dense_foreign_replace_bridge = False
     if foreign_replace_numeric_labels:
@@ -2972,6 +3213,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
                 # Prune it even though it's not in the live container.
                 if (
                     child_label in foreign_scoped_standalone_section_targets
+                    or child_label in foreign_scoped_descendant_section_targets
                     or (
                         child_label in foreign_scoped_replace_section_targets
                         and not has_dense_foreign_replace_bridge
@@ -2997,7 +3239,39 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         # Foreign-scoped standalone section targets elsewhere in the amendment
         # (for example another chapter's "1 §") must not delete a new
         # container member that just happens to share the same section label.
+        # When the same payload has already exposed foreign-scoped REPLACE
+        # members, however, the container is carrying overwrapped context from
+        # outside the new chapter/part; a separately owned foreign-scoped
+        # INSERT belongs to that context too and must not be smuggled into the
+        # new container.
+        if child_label in foreign_scoped_descendant_section_targets:
+            changed = True
+            pruned_labels.append(child_label)
+            pruned_witnesses.append(child_witness)
+            continue
         if child_label in foreign_scoped_standalone_section_targets:
+            if foreign_replace_payload_overlap:
+                changed = True
+                pruned_labels.append(child_label)
+                pruned_witnesses.append(child_witness)
+                continue
+            new_children.append(child)
+            continue
+        if (
+            child_label in foreign_scoped_replace_section_targets
+            and not has_dense_foreign_replace_bridge
+            and not recodification_transfer_context
+            and child_label in foreign_replace_base_scope_labels
+            and not (
+                child_label.isdigit()
+                and payload_has_suffixed_section_labels
+            )
+        ):
+            # A separately targeted REPLACE scoped to another live container
+            # does not authorize pruning the same-numbered member of this new
+            # chapter/part when the overlap is isolated by label rather than a
+            # dense or suffix-delimited carried-context bridge from that
+            # foreign scope.
             new_children.append(child)
             continue
         changed = True
@@ -3959,6 +4233,7 @@ def _assign_subsection_slots(
         used_subs=set(),
     )
 
+    _assign_insert_before_moved_same_target_slot_ops(slot_inputs, state)
     _assign_duplicate_target_slot_ops(slot_inputs, state)
     _assign_multi_paragraph_item_slot_ops(slot_inputs, state)
     _assign_item_matched_slot_ops(slot_inputs, state)
@@ -4546,6 +4821,7 @@ def _elaborate_sparse_subsection_payload(
     group_ops: List[AmendmentOp],
     source_pathologies: List[SourcePathology],
     surface: Optional[PayloadSurface] = None,
+    prior_observations_for_completeness: tuple[ElaborationObservation, ...] = (),
 ) -> SparseSubsectionElaborationResult:
     """Run the sparse subsection elaboration tail as one typed phase.
 
@@ -4737,7 +5013,7 @@ def _elaborate_sparse_subsection_payload(
         group_ops=group_ops,
         assignment=assignment,
         source_pathologies=source_pathologies,
-        observations=observations,
+        observations=[*prior_observations_for_completeness, *observations],
     )
     rejected_ops.extend(
         _unsupported_payload_rejected_ops(
@@ -5484,7 +5760,12 @@ def elaborate_payload_against_live(
     standalone_section_targets: Set[str],
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
+    foreign_scoped_descendant_section_targets: Set[str] | None = None,
     foreign_scoped_replace_section_targets: Set[str] | None = None,
+    foreign_scoped_replace_section_target_scopes: (
+        frozenset[StandaloneSectionTarget] | None
+    ) = None,
+    recodification_transfer_context: bool = False,
     surface: Optional[PayloadSurface] = None,
 ) -> GroupPayloadNormalizationResult:
     """Normalize one group's payload and target ops against live state.
@@ -5618,7 +5899,10 @@ def elaborate_payload_against_live(
         muutos_ir,
         standalone_section_targets,
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+        foreign_scoped_descendant_section_targets=foreign_scoped_descendant_section_targets,
         foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
+        foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
+        recodification_transfer_context=recodification_transfer_context,
         expected_heading_only=_container_pruning_is_expected_heading_only(group_ops),
     )
     muutos_ir = pruning_result.muutos_ir
@@ -5715,6 +5999,24 @@ def elaborate_payload_against_live(
                 target_norm=target_norm,
             )
         )
+    muutos_ir, split_target_intro_list_tail, split_target_intro_list_detail = (
+        _fold_split_target_subsection_intro_list_tail(
+            ctx,
+            target_unit_kind,
+            muutos_ir,
+            group_ops,
+        )
+    )
+    if split_target_intro_list_tail:
+        observations.append(
+            _obs(
+                _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                **split_target_intro_list_detail,
+            )
+        )
     heading_tagged_payload = _normalize_heading_tagged_subsection_payload(
         target_unit_kind,
         group_ops,
@@ -5788,6 +6090,11 @@ def elaborate_payload_against_live(
         group_ops,
         source_pathologies,
         surface,
+        tuple(
+            obs
+            for obs in observations
+            if obs.kind == _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE
+        ),
     )
     muutos_ir = sparse_elab.muutos_ir
     group_ops = list(sparse_elab.group_ops)

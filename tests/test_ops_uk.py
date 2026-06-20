@@ -21,9 +21,10 @@ def _archive_available() -> bool:
     return _DB_PATH.exists()
 
 
-pytestmark = pytest.mark.skipif(
-    not _archive_available(), reason="uk_legislation.farchive not available"
-)
+pytestmark = [
+    pytest.mark.skipif(not _archive_available(), reason="uk_legislation.farchive not available"),
+    pytest.mark.slow,
+]
 
 
 @lru_cache(maxsize=None)

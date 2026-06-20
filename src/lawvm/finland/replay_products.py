@@ -4,12 +4,20 @@ from __future__ import annotations
 from collections import Counter
 import re
 from dataclasses import dataclass, replace as dc_replace
+from functools import lru_cache
 from typing import TYPE_CHECKING, Callable, Literal, Optional, cast
 
+from lawvm.core.regex_safety import compile_classifier_regex
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    lower_lifecycle_events_to_temporal_events,
+)
 from lawvm.core.identity_ledger import IdentityLedger
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress
-from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.ir_helpers import irnode_content_hash, irnode_to_text
 from lawvm.core.ir import LegalOperation
 from lawvm.core.ir import ProvisionTimeline
 from lawvm.core.ir import ProvisionVersion
@@ -17,6 +25,7 @@ from lawvm.core.invariant_profiles import TreeInvariantProfile
 from lawvm.core.invariant_profiles import collect_tree_invariant_violations
 from lawvm.core.invariant_profiles import project_tree_invariant_dicts
 from lawvm.core.invariant_detectors import run_label_normalization_collision_detector
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import FIXED_DATE_KIND, ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline_lineage import (
@@ -48,6 +57,9 @@ from lawvm.finland.apply_ir_ops import (
     _strip_standalone_subsection_item_prefixes_ir,
 )
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.tree_invariant_allowances import (
+    is_terminal_fi_commencement_section_violation,
+)
 
 if TYPE_CHECKING:
     from lawvm.finland.replay_fold_timeline_backfill import FoldTimelineBackfillRecord
@@ -70,6 +82,9 @@ _FI_LABEL_TRAILING_DECORATION_RE = re.compile(r"[^a-zA-Z0-9äöå]+$")
 _TIMELINE_SECTION_MARK_SPACING_RE = re.compile(r"^(\d+[a-z]?)\s*§")
 _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
     "lawvm_materialize_as_absent_under_detached_horizon"
+)
+_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG = (
+    "lawvm:materialize_as_absent_under_detached_horizon"
 )
 _FI_REPLAY_FOLD_MIXED_HIERARCHY_PROFILE = TreeInvariantProfile(
     surface="replay_fold_tree",
@@ -123,6 +138,9 @@ class ReplayProducts:
     timelines: Optional[Timelines]
     temporal_events: tuple[TemporalEvent, ...] = ()
     migration_events: tuple[MigrationEvent, ...] = ()
+    source_effects: tuple[EffectRef, ...] = ()
+    effect_relations: tuple[EffectRelation, ...] = ()
+    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...] = ()
     materialization_spec: Optional[MaterializationSpec] = None
     source_adjudication: Optional[SourceAdjudication] = None
     fold_timeline_backfills: tuple["FoldTimelineBackfillRecord", ...] = ()
@@ -191,79 +209,9 @@ def _content_is_repeal_placeholder(node: IRNode) -> bool:
     return node.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
-def _kind_value(node: IRNode) -> str:
-    return node.kind.value if isinstance(node.kind, IRNodeKind) else str(node.kind)
-
-
-def _resolve_invariant_path(tree: IRNode, path: tuple[tuple[str, str | None], ...]) -> IRNode | None:
-    """Resolve a core tree-invariant path against a Finland IR tree."""
-    if not path:
-        return None
-    first_kind, first_label = path[0]
-    if _kind_value(tree) != first_kind or tree.label != first_label:
-        return None
-    node = tree
-    for kind, label in path[1:]:
-        match = next(
-            (
-                child
-                for child in node.children
-                if _kind_value(child) == kind and child.label == label
-            ),
-            None,
-        )
-        if match is None:
-            return None
-        node = match
-    return node
-
-
-def _has_fi_commencement_heading(section: IRNode) -> bool:
-    for child in section.children:
-        if child.kind is IRNodeKind.HEADING and "voimaantulo" in irnode_to_text(child).casefold():
-            return True
-    prefix = irnode_to_text(section)[:240].casefold()
-    return "voimaantulo" in prefix or "tulee voimaan" in prefix
-
-
-def _is_terminal_fi_commencement_section_violation(
-    tree: IRNode,
-    violation: TreeInvariantViolation,
-) -> bool:
-    """Allow source-authored final FI commencement sections outside chapters.
-
-    Some Finnish base statutes are chaptered but keep the entry-into-force
-    section as a root-level final-provisions section. PIT materialization can
-    interleave that root section with containers, so the safe allowance is:
-    commencement text, at least one container sibling, and no following direct
-    section. Ordinary mixed direct sections remain flagged.
-    """
-    if (
-        violation.kind != "mixed_hierarchy_child"
-        or violation.child_kind != IRNodeKind.SECTION.value
-        or violation.label is None
-    ):
-        return False
-    parent = _resolve_invariant_path(tree, violation.path)
-    if parent is None:
-        return False
-    labeled_children = [
-        child
-        for child in parent.children
-        if child.label is not None and _kind_value(child) in {"part", "chapter", "section"}
-    ]
-    for index, child in enumerate(labeled_children):
-        if child.kind is not IRNodeKind.SECTION or child.label != violation.label:
-            continue
-        has_container_sibling = any(
-            _kind_value(sibling) in {"part", "chapter"}
-            for sibling in (*labeled_children[:index], *labeled_children[index + 1 :])
-        )
-        has_following_direct_section = any(
-            right.kind is IRNodeKind.SECTION for right in labeled_children[index + 1 :]
-        )
-        return has_container_sibling and not has_following_direct_section and _has_fi_commencement_heading(child)
-    return False
+def _content_is_editorial_repeal_notice(node: IRNode) -> bool:
+    text = irnode_to_text(node).casefold()
+    return "kumottu" in text
 
 
 def fi_product_tree_invariant_violations(
@@ -274,7 +222,7 @@ def fi_product_tree_invariant_violations(
     return tuple(
         violation
         for violation in collect_tree_invariant_violations(tree, profile)
-        if not _is_terminal_fi_commencement_section_violation(tree, violation)
+        if not is_terminal_fi_commencement_section_violation(tree, violation)
     )
 
 
@@ -686,11 +634,16 @@ def _reconcile_materialized_fold_hcontainer_sections(
 def _should_restore_repeal_placeholder(node: IRNode) -> bool:
     """Return whether a replay-only placeholder is visible in FI export.
 
-    Repealed whole provisions stay absent in the materialized state. The visible
-    dotted-text convention is currently owned only for child slots inside a live
-    provision, where Finlex preserves the numbering gap.
+    Repealed whole provisions stay absent in the materialized state. Subsection
+    slots keep the existing dotted-text convention. Paragraph slots are restored
+    only when apply marked a stale materialized item slot that was rebound by a
+    named target-resolution recovery.
     """
-    return node.kind is IRNodeKind.SUBSECTION and _content_is_repeal_placeholder(node)
+    if not _content_is_repeal_placeholder(node):
+        return False
+    if node.kind is IRNodeKind.SUBSECTION:
+        return True
+    return node.kind is IRNodeKind.PARAGRAPH and node.attrs.get("lawvm_restore_materialized_stale_item_slot") == "1"
 
 
 def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: IRNode) -> IRNode:
@@ -703,6 +656,10 @@ def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: 
     """
     if materialized.kind is not replay_fold.kind or materialized.label != replay_fold.label:
         return materialized
+    if _content_is_editorial_repeal_notice(materialized):
+        return materialized
+    if _should_restore_repeal_placeholder(replay_fold):
+        return replay_fold
     if not replay_fold.children:
         return materialized
 
@@ -755,6 +712,8 @@ def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: 
 
     for child in replay_children:
         if child.label is None or not _should_restore_repeal_placeholder(child):
+            continue
+        if child.kind is not IRNodeKind.SUBSECTION:
             continue
         key = (child.kind, child.label)
         if key in existing_keys:
@@ -884,6 +843,66 @@ def _merge_temporal_events(
     return tuple(merged)
 
 
+def _cached_temporal_events_from_lo_ops(
+    lo_ops: list[LegalOperation],
+    *,
+    target_statute: str,
+    covered_commence_group_ids: frozenset[str],
+    covered_expiry_signatures: frozenset[tuple[str, str, str]],
+    cache: dict[object, object] | None,
+    cache_key_seed: tuple[object, ...],
+) -> tuple[TemporalEvent, ...]:
+    """Return fallback temporal events, reusing per-export product cache."""
+    cache_key = (
+        "synthesized_temporal_events_from_lo_ops",
+        *cache_key_seed,
+        target_statute,
+        covered_commence_group_ids,
+        covered_expiry_signatures,
+    )
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if isinstance(cached, tuple):
+            return cast(tuple[TemporalEvent, ...], cached)
+    events = _temporal_events_from_lo_ops(
+        lo_ops,
+        target_statute=target_statute,
+        covered_commence_group_ids=covered_commence_group_ids,
+        covered_expiry_signatures=covered_expiry_signatures,
+    )
+    if cache is not None:
+        cache[cache_key] = events
+    return events
+
+
+def _base_enacted_date_for_products(
+    *,
+    ctx: "StatuteContext",
+    statute_id: str,
+    cache: dict[object, object] | None,
+) -> str:
+    """Return base enacted date for replay products without reparsing per PIT date."""
+    cache_key = (
+        "base_enacted_date_for_replay_products",
+        statute_id,
+        id(ctx.base_xml_bytes),
+        len(ctx.base_xml_bytes),
+    )
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if isinstance(cached, str):
+            return cached
+    import lxml.etree as _etree
+    from lawvm.finland.metadata import _statute_issue_date as _fi_statute_issue_date
+
+    base_tree = _etree.fromstring(ctx.base_xml_bytes)
+    base_issue_date = _fi_statute_issue_date(base_tree)
+    base_enacted_date = base_issue_date.isoformat() if base_issue_date is not None else ""
+    if cache is not None:
+        cache[cache_key] = base_enacted_date
+    return base_enacted_date
+
+
 def _normalize_repeal_op_sources(lo_ops: list[LegalOperation]) -> list[LegalOperation]:
     """Keep repeal placeholders/tombstones from inheriting a temporary expiry.
 
@@ -935,14 +954,110 @@ def _normalize_repeal_op_sources(lo_ops: list[LegalOperation]) -> list[LegalOper
     return normalized
 
 
+def _mark_detached_horizon_future_repeals(
+    lo_ops: list[LegalOperation],
+    *,
+    as_of: str,
+    expires_as_of: str,
+) -> list[LegalOperation]:
+    """Mark repeal ops that must project absence across a detached expiry horizon.
+
+    Official-consolidation replay sometimes materializes at a future effective
+    date to match an oracle-version repeal while keeping expiry checks at the
+    oracle cutoff. Only those future repeal ops may cross that split; unrelated
+    future repeals remain suppressed by core selection.
+    """
+    if not as_of or not expires_as_of or as_of <= expires_as_of:
+        return lo_ops
+    marked: list[LegalOperation] = []
+    for op in lo_ops:
+        source = op.source
+        payload = op.payload
+        is_repeal_placeholder = bool(
+            payload is not None and payload.attrs.get("lawvm_repeal_placeholder") == "1"
+        )
+        target_kind = op.target.path[-1][0] if op.target.path else ""
+        target_label = op.target.path[-1][1] if op.target.path else ""
+        if (
+            (op.action is StructuralAction.REPEAL or is_repeal_placeholder)
+            and target_kind == "section"
+            and target_label != "1"
+            and source is not None
+            and source.effective
+            and expires_as_of < source.effective <= as_of
+            and _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG not in op.provenance_tags
+        ):
+            marked_payload = op.payload
+            if is_repeal_placeholder and marked_payload is not None:
+                marked_payload = IRNode(
+                    kind=marked_payload.kind,
+                    label=marked_payload.label,
+                    text=marked_payload.text,
+                    attrs={
+                        **dict(marked_payload.attrs),
+                        _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR: "1",
+                    },
+                    children=marked_payload.children,
+                )
+            marked.append(
+                dc_replace(
+                    op,
+                    payload=marked_payload,
+                    provenance_tags=(
+                        *op.provenance_tags,
+                        _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG,
+                    ),
+                )
+            )
+            continue
+        marked.append(op)
+    return marked
+
+
 _FI_CITED_VERSION_ID_RE = re.compile(
     r"\bsellais[ei][a-zäöå]*\s+kuin\b.{0,120}?\b(?:laissa|asetuksessa)\s+(\d{1,5})/(\d{4})",
     flags=re.I | re.S,
 )
-_FI_LOCAL_ITEM_CITED_VERSION_RE_TEMPLATE = (
-    r"(?<!\d){label}\s*§\s*:\s*n\s+[^,;]{{0,120}}\bkoht[a-zäöå]*\b"
-    r"\s*,\s*sellais[ei][a-zäöå]*\s+kuin\b"
+_FI_LOCAL_ITEM_TARGET_RE_TEMPLATE = r"(?<!\d){label}\s*§\s*:\s*n"
+_FI_LOCAL_ITEM_WORD_RE = compile_classifier_regex(
+    r"\bkoht[a-zäöå]*\b",
+    flags=re.I | re.S,
+    classifier_id="fi.local_item_cited_version.item_word",
 )
+_FI_CITED_VERSION_SELLAISENA_RE = compile_classifier_regex(
+    r"\bsellais[ei][a-zäöå]*\s+kuin\b",
+    flags=re.I | re.S,
+    classifier_id="fi.local_item_cited_version.cited_version_cue",
+)
+
+
+@lru_cache(maxsize=512)
+def _local_item_target_re(target_label: str):
+    return compile_classifier_regex(
+        _FI_LOCAL_ITEM_TARGET_RE_TEMPLATE.format(label=re.escape(target_label)),
+        flags=re.I | re.S,
+        classifier_id="fi.local_item_cited_version.target",
+    )
+
+
+@lru_cache(maxsize=8192)
+def _raw_text_has_local_item_cited_version(raw_text: str, target_label: str) -> bool:
+    for match in _local_item_target_re(target_label).finditer(raw_text):
+        tail = raw_text[match.end() : match.end() + 220]
+        comma_index = tail.find(",")
+        semicolon_index = tail.find(";")
+        if comma_index < 0:
+            continue
+        if 0 <= semicolon_index < comma_index:
+            continue
+        item_window = tail[:comma_index]
+        if len(item_window) > 160:
+            continue
+        if _FI_LOCAL_ITEM_WORD_RE.search(item_window) is None:
+            continue
+        if _FI_CITED_VERSION_SELLAISENA_RE.search(tail[comma_index : comma_index + 100]) is not None:
+            return True
+    return False
 
 
 def _payload_shape_counts(payload: IRNode) -> Counter[tuple[IRNodeKind, str]]:
@@ -1011,11 +1126,7 @@ def _drop_cited_version_item_ancestor_snapshots(lo_ops: list[LegalOperation]) ->
         target_label = op.target.path[-1][1]
         if op.target.path[-1][0] == "subsection" and len(op.target.path) >= 2:
             target_label = op.target.path[-2][1]
-        local_item_cited_version_re = re.compile(
-            _FI_LOCAL_ITEM_CITED_VERSION_RE_TEMPLATE.format(label=re.escape(target_label)),
-            flags=re.I | re.S,
-        )
-        if local_item_cited_version_re.search(raw_text) is None:
+        if not _raw_text_has_local_item_cited_version(raw_text, target_label):
             filtered.append(op)
             continue
         cited_ids = {
@@ -1042,7 +1153,7 @@ def _drop_explicitly_repealed_source_move_events(
     timelines: dict["LegalAddress", ProvisionTimeline],
     migration_events: tuple[MigrationEvent, ...],
 ) -> tuple[MigrationEvent, ...]:
-    """Drop ``move`` events whose source slot is already repealed by the same act.
+    """Drop ``move`` events whose source slot is already repealed.
 
     A section relocated into a newly created sibling chapter (for example
     ``5 luku §41`` moved under a freshly inserted ``5 a luku`` by the same
@@ -1058,11 +1169,15 @@ def _drop_explicitly_repealed_source_move_events(
     leaves the old chapter slot with no tombstone. The base content then
     survives as an orphan copy in the old chapter.
 
-    When the old-address timeline already carries a tombstone authored by the
-    same source statute as the move, the relocation is fully expressed by the
-    explicit repeal/insert ops; keeping the move event for rekey is redundant
-    and destructive. Drop it (lineage consumers still see the event elsewhere).
-    Genuine cross-parent moves with no explicit source repeal keep their event.
+    When the old-address timeline already carries a tombstone at or before the
+    move's effective date, the source slot is not live legal state available to
+    move. If the tombstone is authored by the same source statute as the move,
+    the relocation is fully expressed by the explicit repeal/insert ops. If an
+    earlier act authored the tombstone, the later source is reusing labels for a
+    new chapter, not migrating the repealed old text. In both cases, keeping the
+    move event for rekey is redundant and destructive. Drop it (lineage
+    consumers still see the event elsewhere). Genuine cross-parent moves with a
+    live source keep their event.
     """
     if not migration_events:
         return migration_events
@@ -1078,17 +1193,33 @@ def _drop_explicitly_repealed_source_move_events(
         )
         if not move_source_statute:
             return False
-        return any(
-            version.content is None
-            and version.source is not None
-            and version.source.statute_id == move_source_statute
-            for version in source_timeline.versions
-        )
+        for version in source_timeline.versions:
+            if version.content is not None or version.source is None:
+                continue
+            if version.source.statute_id == move_source_statute:
+                return True
+            if event.effective and version.effective and version.effective <= event.effective:
+                return True
+        return False
 
     filtered = tuple(
         event for event in migration_events if not _source_repealed_by(event)
     )
     return filtered if len(filtered) != len(migration_events) else migration_events
+
+
+@lru_cache(maxsize=65536)
+def _renumber_source_prefix_may_match_cached(
+    path: TreePath,
+    renumber_source_paths: frozenset[TreePath],
+) -> bool:
+    from lawvm.finland.migration_ledger import normalize_address_path
+
+    normalized_path = normalize_address_path(path)
+    return any(
+        normalized_path[:depth] in renumber_source_paths
+        for depth in range(1, len(normalized_path) + 1)
+    )
 
 
 def _rekey_timelines_with_migration_events(
@@ -1106,18 +1237,44 @@ def _rekey_timelines_with_migration_events(
     rekeys its replay-owned timelines here before materialization.
     """
     from lawvm.core.timeline import _address_prefix_matches
-    from lawvm.finland.migration_ledger import current_address_with_prefix_migrations_from_events
+    from lawvm.finland.migration_ledger import (
+        current_address_with_prefix_migrations_from_event_signatures,
+        current_address_with_prefix_migrations_from_events,
+    )
 
     migration_events = _drop_explicitly_repealed_source_move_events(
         timelines, migration_events
     )
+    renumber_source_paths = frozenset(
+        event.from_address.path
+        for event in migration_events
+        if event.kind == "renumber"
+        and event.from_address.path
+        and event.from_address.special is None
+    )
+    has_special_renumber_source = any(
+        event.kind == "renumber" and event.from_address.special is not None
+        for event in migration_events
+    )
+
+    def _renumber_source_prefix_may_match(address: LegalAddress) -> bool:
+        if has_special_renumber_source:
+            return True
+        return _renumber_source_prefix_may_match_cached(
+            address.path,
+            renumber_source_paths,
+        )
 
     return _core_rekey_timelines_with_migration_events(
         timelines,
         migration_events,
         as_of_date=as_of,
         current_address_with_prefix_migrations_fn=current_address_with_prefix_migrations_from_events,
+        current_address_with_prefix_migration_signatures_fn=(
+            current_address_with_prefix_migrations_from_event_signatures
+        ),
         address_prefix_matches=_address_prefix_matches,
+        renumber_source_prefix_may_match_fn=_renumber_source_prefix_may_match,
         retarget_version_content_fn=lambda version, address: _retarget_version_content(
             version,
             address,
@@ -1276,6 +1433,105 @@ def _select_pit_lineage_inputs(
     )
 
 
+def _day_after_iso_for_backfill(effective: str) -> str:
+    from datetime import date, timedelta
+
+    try:
+        return (date.fromisoformat(effective) + timedelta(days=1)).isoformat()
+    except ValueError:
+        return effective
+
+
+def _active_temporary_expiry_for_backfill_insert(
+    timelines: dict["LegalAddress", ProvisionTimeline],
+    target: "LegalAddress",
+    effective: str,
+) -> str:
+    """Mirror compile_timelines' temporary-expiry inheritance for backfill inserts."""
+    from lawvm.core.timeline import select_active_version, select_background_version
+
+    timeline = timelines.get(target)
+    if timeline is not None:
+        previous = select_active_version(timeline, effective)
+        if previous is not None:
+            if previous.expires and previous.expires > _day_after_iso_for_backfill(effective):
+                background = select_background_version(
+                    timeline,
+                    effective,
+                    query_type="governing",
+                    territory=None,
+                )
+                if background is None:
+                    return previous.expires
+            return ""
+
+    current = LegalAddress(path=target.path[:-1])
+    while current.path:
+        timeline = timelines.get(current)
+        if timeline is not None:
+            previous = select_active_version(timeline, effective)
+            if previous is not None and previous.expires and previous.expires > effective:
+                return previous.expires
+        current = LegalAddress(path=current.path[:-1])
+    return ""
+
+
+def _with_fold_backfill_versions(
+    raw_timelines: dict["LegalAddress", ProvisionTimeline],
+    backfill_ops: tuple[LegalOperation, ...],
+) -> dict["LegalAddress", ProvisionTimeline]:
+    """Return timelines with replay-fold backfill insert ops projected directly.
+
+    The fold-backfill operation family is deliberately narrow: exact-section
+    INSERTs with an already-stamped payload and an OperationSource effective date.
+    Recompiling the entire statute operation stream for every transition date
+    just to append those versions is equivalent but very expensive.
+    """
+    if not backfill_ops:
+        return raw_timelines
+
+    timelines = dict(raw_timelines)
+    copied: set[LegalAddress] = set()
+    for op in backfill_ops:
+        if op.payload is None or op.source is None:
+            continue
+        effective = op.source.effective
+        if not effective:
+            continue
+        target = op.target
+        timeline = timelines.get(target)
+        if timeline is None:
+            timeline = ProvisionTimeline(address=target)
+            timelines[target] = timeline
+            copied.add(target)
+        elif target not in copied:
+            timeline = ProvisionTimeline(address=timeline.address, versions=list(timeline.versions))
+            timelines[target] = timeline
+            copied.add(target)
+
+        expires = op.source.expires or _active_temporary_expiry_for_backfill_insert(
+            raw_timelines,
+            target,
+            effective,
+        )
+        timeline.versions.append(
+            ProvisionVersion(
+                effective=effective,
+                enacted=op.source.enacted,
+                expires=expires,
+                variant_kind="temporary" if expires else "permanent",
+                content=op.payload,
+                source=op.source,
+                applicability=list(op.applicability),
+                content_hash=irnode_content_hash(op.payload),
+            )
+        )
+
+    for address in copied:
+        timelines[address].versions.sort(key=lambda version: (version.effective, version.enacted))
+    return timelines
+
+
 def build_replay_products(
     *,
     ctx: "StatuteContext",
@@ -1291,7 +1547,12 @@ def build_replay_products(
     temporal_events: tuple[TemporalEvent, ...] = (),
     strict_johto_temporal: bool = True,
     migration_events: tuple[MigrationEvent, ...] = (),
+    source_effects: tuple[EffectRef, ...] = (),
+    effect_relations: tuple[EffectRelation, ...] = (),
+    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...] = (),
     expires_as_of: str = "",
+    fold_backfill_preview_raw_timelines: dict["LegalAddress", ProvisionTimeline] | None = None,
+    fold_backfill_preview_cache: dict[object, object] | None = None,
 ) -> ReplayProducts:
     """Build typed PIT materialization artifacts from a replay fold state.
 
@@ -1304,7 +1565,10 @@ def build_replay_products(
     but replay products still preserve a bounded fallback synthesis from
     replay-owned structural ops until the producer path is fully migrated.
     """
-    resolved_temporal_events = tuple(temporal_events)
+    resolved_temporal_events = _merge_temporal_events(
+        tuple(temporal_events),
+        lower_lifecycle_events_to_temporal_events(effect_lifecycle_events),
+    )
     if not build_full_products:
         return ReplayProducts(
             replay_fold_state=replay_fold_state,
@@ -1312,22 +1576,53 @@ def build_replay_products(
             timelines=None,
             temporal_events=resolved_temporal_events,
             migration_events=migration_events,
+            source_effects=source_effects,
+            effect_relations=effect_relations,
+            effect_lifecycle_events=effect_lifecycle_events,
             materialization_spec=None,
             source_adjudication=source_adjudication,
         )
 
     from lawvm.core.timeline import compile_timelines, materialize_pit
-    import lxml.etree as _etree
-    from lawvm.finland.metadata import _statute_issue_date as _fi_statute_issue_date
 
     base_ir = IRStatute(
         statute_id=statute_id,
         title=ctx.title,
         body=ctx.base_ir,
     )
-    lo_ops = list(lo_ops_out or [])
-    lo_ops = _normalize_repeal_op_sources(lo_ops)
-    lo_ops = _drop_cited_version_item_ancestor_snapshots(lo_ops)
+    original_lo_ops = lo_ops_out or []
+    static_prepared_lo_ops: tuple[LegalOperation, ...] | None = None
+    if fold_backfill_preview_cache is not None:
+        prepared_cache_key = (
+            "static_prepared_replay_product_lo_ops",
+            statute_id,
+            id(original_lo_ops),
+            len(original_lo_ops),
+        )
+        cached_prepared = fold_backfill_preview_cache.get(prepared_cache_key)
+        if isinstance(cached_prepared, tuple):
+            static_prepared_lo_ops = cast(tuple[LegalOperation, ...], cached_prepared)
+        else:
+            prepared = _normalize_repeal_op_sources(list(original_lo_ops))
+            prepared = _drop_cited_version_item_ancestor_snapshots(prepared)
+            static_prepared_lo_ops = tuple(prepared)
+            fold_backfill_preview_cache[prepared_cache_key] = static_prepared_lo_ops
+    if static_prepared_lo_ops is not None:
+        lo_ops = list(static_prepared_lo_ops)
+        lo_ops = _mark_detached_horizon_future_repeals(
+            lo_ops,
+            as_of=as_of,
+            expires_as_of=expires_as_of,
+        )
+    else:
+        lo_ops = list(original_lo_ops)
+        lo_ops = _normalize_repeal_op_sources(lo_ops)
+        lo_ops = _drop_cited_version_item_ancestor_snapshots(lo_ops)
+        lo_ops = _mark_detached_horizon_future_repeals(
+            lo_ops,
+            as_of=as_of,
+            expires_as_of=expires_as_of,
+        )
     covered_commence_group_ids = frozenset(
         group_id
         for event in resolved_temporal_events
@@ -1347,11 +1642,18 @@ def build_replay_products(
         and getattr(event, "group_id", "")
         and getattr(event, "expires", "")
     )
-    synthesized_temporal_events = _temporal_events_from_lo_ops(
+    static_temporal_event_cache_key = (
+        statute_id,
+        id(original_lo_ops),
+        len(original_lo_ops),
+    )
+    synthesized_temporal_events = _cached_temporal_events_from_lo_ops(
         lo_ops,
         target_statute=base_ir.statute_id,
         covered_commence_group_ids=covered_commence_group_ids,
         covered_expiry_signatures=covered_expiry_signatures,
+        cache=fold_backfill_preview_cache,
+        cache_key_seed=static_temporal_event_cache_key,
     )
     if synthesized_temporal_events:
         resolved_temporal_events = _merge_temporal_events(
@@ -1365,10 +1667,34 @@ def build_replay_products(
     # when as_of < statute issue date.  The `effective` date of base provisions
     # remains "0000-00-00" so --query-type governing is completely unaffected
     # (governing only checks v.effective, not v.enacted).
-    _base_tree = _etree.fromstring(ctx.base_xml_bytes)
-    _base_issue_date = _fi_statute_issue_date(_base_tree)
-    _base_enacted_date: str = _base_issue_date.isoformat() if _base_issue_date is not None else ""
+    _base_enacted_date = _base_enacted_date_for_products(
+        ctx=ctx,
+        statute_id=statute_id,
+        cache=fold_backfill_preview_cache,
+    )
     from lawvm.finland.replay_fold_timeline_backfill import append_fold_timeline_backfill_ops
+
+    preview_raw_timelines = fold_backfill_preview_raw_timelines
+    if preview_raw_timelines is None and fold_backfill_preview_cache is not None:
+        cache_key = (
+            "fold_backfill_preview_raw_timelines",
+            statute_id,
+            _base_enacted_date,
+            len(lo_ops),
+            len(resolved_temporal_events),
+        )
+        cached = fold_backfill_preview_cache.get(cache_key)
+        if isinstance(cached, dict):
+            preview_raw_timelines = cast(dict[LegalAddress, ProvisionTimeline], cached)
+        else:
+            preview_raw_timelines = compile_timelines(
+                base_ir,
+                lo_ops,
+                base_enacted_date=_base_enacted_date,
+                label_norm=fi_label_norm,
+                temporal_events=resolved_temporal_events,
+            )
+            fold_backfill_preview_cache[cache_key] = preview_raw_timelines
 
     fold_timeline_backfills = append_fold_timeline_backfill_ops(
         lo_ops=lo_ops,
@@ -1380,13 +1706,17 @@ def build_replay_products(
         as_of=as_of,
         temporal_events=resolved_temporal_events,
         base_enacted_date=_base_enacted_date,
+        preview_raw_timelines=preview_raw_timelines,
+        preview_rekeyed_timelines_cache=fold_backfill_preview_cache,
     )
     if fold_timeline_backfills.records:
-        backfill_temporal_events = _temporal_events_from_lo_ops(
+        backfill_temporal_events = _cached_temporal_events_from_lo_ops(
             lo_ops,
             target_statute=base_ir.statute_id,
             covered_commence_group_ids=covered_commence_group_ids,
             covered_expiry_signatures=covered_expiry_signatures,
+            cache=fold_backfill_preview_cache,
+            cache_key_seed=static_temporal_event_cache_key,
         )
         if backfill_temporal_events:
             resolved_temporal_events = _merge_temporal_events(
@@ -1395,12 +1725,9 @@ def build_replay_products(
             )
     _assert_finland_timeline_safe_ops(lo_ops)
     if fold_timeline_backfills.records:
-        raw_timelines = compile_timelines(
-            base_ir,
-            lo_ops,
-            base_enacted_date=_base_enacted_date,
-            label_norm=fi_label_norm,
-            temporal_events=resolved_temporal_events,
+        raw_timelines = _with_fold_backfill_versions(
+            fold_timeline_backfills.raw_timelines,
+            fold_timeline_backfills.backfill_ops,
         )
         timelines = _rekey_timelines_with_migration_events(
             raw_timelines,
@@ -1410,9 +1737,24 @@ def build_replay_products(
     else:
         raw_timelines = fold_timeline_backfills.raw_timelines
         timelines = fold_timeline_backfills.rekeyed_timelines
-    from lawvm.finland.timeline_version_dedupe import dedupe_finland_timelines
+    from lawvm.finland.timeline_version_dedupe import (
+        SemanticTextKeyCache,
+        dedupe_finland_timelines,
+    )
 
-    timelines, timeline_version_dedupes = dedupe_finland_timelines(timelines)
+    semantic_text_cache: SemanticTextKeyCache | None = None
+    if fold_backfill_preview_cache is not None:
+        cache_key = ("timeline_version_dedupe_semantic_text", statute_id)
+        cached = fold_backfill_preview_cache.get(cache_key)
+        if isinstance(cached, dict):
+            semantic_text_cache = cast(SemanticTextKeyCache, cached)
+        else:
+            semantic_text_cache = {}
+            fold_backfill_preview_cache[cache_key] = semantic_text_cache
+    timelines, timeline_version_dedupes = dedupe_finland_timelines(
+        timelines,
+        semantic_text_cache=semantic_text_cache,
+    )
     bridge_classification = _classify_finland_lineage_bridge(
         raw_timelines,
         migration_events,
@@ -1468,6 +1810,9 @@ def build_replay_products(
         timelines=timelines,
         temporal_events=resolved_temporal_events,
         migration_events=migration_events,
+        source_effects=source_effects,
+        effect_relations=effect_relations,
+        effect_lifecycle_events=effect_lifecycle_events,
         fold_timeline_backfills=fold_timeline_backfills.records,
         timeline_version_dedupes=timeline_version_dedupes,
         materialization_spec=MaterializationSpec(

@@ -64,7 +64,7 @@ class EffectKind(StrEnum):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Commencement:
     """The amendment (or provision) enters into force on ``effective_date``.
 
@@ -100,7 +100,7 @@ class Commencement:
         _require_raw_text(self.raw_text, "Commencement.raw_text")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Expiry:
     """The amendment (or provision) is in force through ``expiry_date``.
 
@@ -131,7 +131,7 @@ class Expiry:
         _require_raw_text(self.raw_text, "Expiry.raw_text")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Suspension:
     """A provision is temporarily suspended (not in force) for a period.
 
@@ -159,7 +159,7 @@ class Suspension:
         _require_raw_text(self.raw_text, "Suspension.raw_text")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Applicability:
     """An applicability scope restriction or extension.
 
@@ -183,7 +183,7 @@ class Applicability:
         _require_raw_text(self.raw_text, "Applicability.raw_text")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Revival:
     """A previously expired provision re-enters into force.
 

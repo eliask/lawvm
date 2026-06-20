@@ -37,12 +37,15 @@ construction and asserted absent from the catalog below.
 from __future__ import annotations
 
 import ast
+from functools import lru_cache
 from pathlib import Path
 
 from lawvm.tools.spec_ledger import _FI_RULE_SPECS
+from lawvm.tools.spec_ledger_discovery import format_uncataloged, locate_rule_ids
 from lawvm.tools.spec_ledger_fi_catalog_supplement import _FI_RULE_SPECS_SUPPLEMENT
 
 _FINLAND_DIR = Path(__file__).resolve().parents[1] / "src" / "lawvm" / "finland"
+_SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
 
 # Documented non-rule ``fi_*`` literal exclusion: the government-proposal archive
 # filename.  It is a ``fi_…`` literal but never a witness rule id; excluded by
@@ -133,6 +136,7 @@ def _file_parse_witness_rule_ids(tree: ast.Module) -> set[str]:
     return found
 
 
+@lru_cache(maxsize=1)
 def _discover_fi_parse_witness_rule_ids() -> set[str]:
     """Every static FI parse-witness rule id (literal or module-constant), via AST."""
     found: set[str] = set()
@@ -159,10 +163,14 @@ def test_every_discovered_parse_witness_rule_id_is_cataloged() -> None:
     assert discovered, "AST discovery found no FI parse-witness rule-id literals"
     catalog = _union_catalog()
     uncataloged = sorted(discovered - set(catalog))
+    locations = locate_rule_ids(
+        _FINLAND_DIR, uncataloged, recursive=True, repo_root=_SRC_ROOT
+    )
     assert not uncataloged, (
         f"{len(uncataloged)} FI parse-witness rule id(s) have no believed_spec entry in "
-        f"_FI_RULE_SPECS ∪ _FI_RULE_SPECS_SUPPLEMENT (cataloged fraction < 100%): "
-        f"{uncataloged}"
+        "_FI_RULE_SPECS ∪ _FI_RULE_SPECS_SUPPLEMENT (cataloged fraction < 100%) "
+        "(id <- emit site):\n"
+        f"{format_uncataloged(uncataloged, locations)}"
     )
 
 

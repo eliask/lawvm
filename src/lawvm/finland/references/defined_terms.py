@@ -71,10 +71,18 @@ from dataclasses import dataclass
 from typing import Optional
 
 from lawvm.core.reference_mention import SourceSpan
+from lawvm.finland.legal_surface.definitions.shared_definition_parser import (
+    enumerated_entry_from_item,
+    inline_entry_from_match,
+)
 from lawvm.finland.references.cross_refs import _make_statute_id
 from lawvm.finland.references.eu_reference import (
     DIALECT_DEFINED_TERMS,
     recognize_eu_act_ids,
+)
+from lawvm.finland.references.lemma_gate import (
+    definitions_header_unit_alternation,
+    definitions_header_unit_scope_map,
 )
 
 # ---------------------------------------------------------------------------
@@ -260,6 +268,8 @@ _TARKOITETAAN = re.compile(
     r"(?P<expansion>[^.;]{0,200})",
     re.IGNORECASE,
 )
+_TARKOITETAAN_LOOKBACK = 512
+_TARKOITETAAN_LOOKAHEAD = len("tarkoitetaan") + 200
 
 # Leading scope locatives that may precede the definiendum in an inline shape-3
 # capture ("Tässä laissa X:llä tarkoitetaan …") — never part of the term surface.
@@ -318,19 +328,25 @@ _SCOPE_LEADERS: frozenset[str] = frozenset(
 _SCOPE_CUE_WINDOW = 400
 
 # Closed unit vocabulary mapped to the closed scope vocabulary.
-_SCOPE_CUE_UNITS: dict[str, str] = {
-    "laissa": _SCOPE_STATUTE,
-    "luvussa": _SCOPE_CHAPTER,
-    "pykälässä": _SCOPE_SECTION,
-    "momentissa": _SCOPE_SUBSECTION,
-    # A decree ("asetus") / government decision ("päätös") declares its
-    # definitions block exactly as a law does — "Tässä asetuksessa/päätöksessä
-    # tarkoitetaan …" — with the same instrument-wide reach. Both map to the
-    # statute-wide scope (the closed vocabulary has no decree/decision-specific
-    # bucket; the reach is identical: the whole instrument).
-    "asetuksessa": _SCOPE_STATUTE,
-    "päätöksessä": _SCOPE_STATUTE,
-}
+#
+# M1-DERIVED (paradigm inversion, not a hand-typed surface table): the
+# inessive-singular header units (``laissa`` / ``luvussa`` / ``pykälässä`` /
+# ``momentissa`` / ``asetuksessa`` / ``päätöksessä``) and their scope mapping are
+# generated from the closed head set + scope assignment in
+# ``lemma_gate.definitions_header_unit_scope_map`` — the same M1 template as
+# ``chapter_head_alternation``.  This kills the consonant-gradation substring bug
+# class (``päätös`` -> ``päätökse-`` is GENERATED, never inferred from a ``päätös``
+# substring) and removes the unit table duplicated across ``_SCOPE_CUE_TASSA`` and
+# ``_ENUM_HEADER``.  The scope tokens M1 returns are the very ``_SCOPE_*`` strings.
+# (A law / decree / government decision all reach the WHOLE instrument, hence the
+# same statute scope; chapter/section/subsection are the narrower structural
+# units.)
+_SCOPE_CUE_UNITS: dict[str, str] = dict(definitions_header_unit_scope_map())
+assert set(_SCOPE_CUE_UNITS.values()) <= SCOPE_VALUES, (
+    "definitions-header unit scopes escape the closed SCOPE_VALUES vocabulary"
+)
+# The M1-derived alternation body (longest-first) shared by both header regexes.
+_SCOPE_UNIT_ALTERNATION = definitions_header_unit_alternation()
 
 # "Tässä <unit> [up to a short definiendum run] tarkoitetaan" — the cue must lead
 # directly into the definition verb, with only a bounded run of
@@ -349,7 +365,7 @@ _SCOPE_CUE_UNITS: dict[str, str] = {
 # ("provided for / prescribed in this decree") can never fire (``säädetään`` /
 # ``määrätään`` is not ``tarkoitetaan`` and breaks the contiguity).
 _SCOPE_CUE_TASSA = re.compile(
-    r"\bTässä\s{1,3}(laissa|luvussa|pykälässä|momentissa|asetuksessa|päätöksessä)\b"
+    rf"\bTässä\s{{1,3}}(?P<unit>{_SCOPE_UNIT_ALTERNATION})\b"
     r"(?:[A-Za-zäöåÄÖÅ0-9:)\s,–-]{0,40})?"
     r"tarkoitetaan\b",
     re.IGNORECASE,
@@ -391,11 +407,42 @@ _GUARD_SOVELLETTAESSA = "sovellettaessa"
 # "Tässä asetuksessa tarkoitetaan:\n<definiendum-adessive> <expansion>;".  The
 # ``tarkoitetaan\s{0,3}:`` tail is the ambiguity guard — a referential
 # "Tässä asetuksessa säädetään …" lacks it and never opens a block.
+#
+# A SECOND header arm covers the APPLICATION-cue enumerated block:
+# "… sovellettaessa tarkoitetaan:" — e.g. "Tätä lakia sovellettaessa
+# tarkoitetaan:", "Valvontalakia ja tätä asetusta sovellettaessa tarkoitetaan:",
+# "… säännöksiä ja määräyksiä sovellettaessa tarkoitetaan:".  This is the SAME
+# statute-wide application cue already recognised inline by
+# ``_SCOPE_CUE_SOVELLETTAESSA`` (scope = statute), but it also OPENS an enumerated
+# definitions block whose items were previously dropped by BOTH lanes because the
+# ``Tässä <unit>`` arm did not match.  The arm anchors on the cue word
+# ``sovellettaessa`` immediately leading into ``tarkoitetaan:`` (the same ambiguity
+# guard as the ``Tässä <unit>`` arm), so a referential "… sovellettaessa
+# noudatetaan …" never fires.  ``unit`` is absent on this arm; the caller maps an
+# absent unit to the statute scope (an application cue reaches the whole
+# instrument, identical to ``Tätä lakia sovellettaessa``).
 _ENUM_HEADER = re.compile(
-    r"\bTässä\s{1,3}(?P<unit>laissa|luvussa|pykälässä|momentissa|asetuksessa|päätöksessä)\s{1,3}"
-    r"tarkoitetaan\s{0,3}:",
+    r"(?:"
+    rf"\bTässä\s{{1,3}}(?P<unit>{_SCOPE_UNIT_ALTERNATION})\s{{1,3}}"
+    r"tarkoitetaan\s{0,3}:"
+    r"|"
+    r"\bsovellettaessa\s{1,3}tarkoitetaan\s{0,3}:"
+    r")",
     re.IGNORECASE,
 )
+
+
+def _enum_header_scope(unit: str | None) -> str:
+    """Scope of an enumerated-block header.
+
+    ``unit`` is the captured ``Tässä <unit>`` locative (mapped through the closed
+    :data:`_SCOPE_CUE_UNITS` vocabulary) or ``None`` for the application-cue arm
+    (``… sovellettaessa tarkoitetaan:``), which is statute-wide (the whole
+    instrument, identical to ``Tätä lakia sovellettaessa``).
+    """
+    if unit is None:
+        return _SCOPE_STATUTE
+    return _SCOPE_CUE_UNITS[unit.lower()]
 # A single list item inside the block: a delimiter ('``:``' opening the list or a
 # preceding item's terminating '``;``'), optional whitespace / stripped
 # enumerator, then the leading definiendum word, then the expansion up to the next
@@ -467,7 +514,7 @@ def _scope_cue_before(text: str, pos: int) -> str:
             # Rank by where the cue's verb ENDS (closest-governing wins).
             if m.end() > best_offset:
                 best_offset = m.end()
-                best_scope = _SCOPE_CUE_UNITS[m.group(1).lower()]
+                best_scope = _SCOPE_CUE_UNITS[m.group("unit").lower()]
     if _GUARD_SOVELLETTAESSA in low:
         for m in _SCOPE_CUE_SOVELLETTAESSA.finditer(chunk):
             if m.end() > best_offset:
@@ -952,72 +999,65 @@ def _recognize_parenthetical_alias(
 
 def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBinding]:
     out: list[DefinedTermBinding] = []
-    for m in _TARKOITETAAN.finditer(text):
-        raw_term = m.group("term").strip()
-        if not raw_term:
-            continue
-        # The captured run is the (multi-word) definiendum directly before
-        # "tarkoitetaan".  Only the DEFINITIONAL idiom (``X:llä tarkoitetaan``)
-        # introduces a term; its HEAD (last word) must be an adessive definiendum.
-        # The REFERENTIAL idiom (``…, jota / N momentissa / N §:ssä tarkoitetaan``
-        # = "referred to in …") binds nothing — its last word is a pronoun /
-        # inessive cross-reference, rejected by ``_is_definitional_definiendum``.
-        words = raw_term.split()
-        last_word = words[-1]
-        if not _is_definitional_definiendum(last_word):
-            continue
-        # Drop any leading scope locative ("Tässä laissa X:llä tarkoitetaan") or
-        # leading demonstrative/relative pronoun-adessive ("Näillä X:llä …");
-        # those are never part of the term surface.  The definiendum phrase is the
-        # trailing run of remaining words ending at the adessive head — preserved
-        # as a FULL multi-word surface (no stem mangling).
-        start_idx = 0
-        for i, w in enumerate(words[:-1]):
-            low = w.lower()
-            if low in _SCOPE_LEADERS or low in _PRONOUN_ADESSIVE_FORMS:
-                start_idx = i + 1
-        phrase_words = words[start_idx:]
-        # Strip a leading prior-entry connector or adverbial clause swept into the
-        # run ("sekä tavaralla" → ``tavaralla``; "rajausmahdollisuus huomioon ottaen
-        # kasvulohkolla" → ``kasvulohkolla``), preserving medial coordination.
-        trimmed = _trim_to_definiendum_np(phrase_words)
-        if trimmed is None:
-            continue
-        phrase_words = trimmed
-        # DECLINE a swept clause fragment / cross-reference idiom: a definiendum
-        # that begins with a bare case-suffix fragment (split ``§:ssä`` / ``EU:n``)
-        # or spans a clause boundary (cross-reference postposition / relative
-        # pronoun / verb) is NOT a defined term. Tag-don't-guess: mint no garbled
-        # multi-word term rather than fabricate one.
-        if not _is_clean_definiendum_phrase(phrase_words):
-            continue
-        term_surface = " ".join(phrase_words)
-        expansion_text = m.group("expansion").strip()
-        act_id = _act_id_in_expansion(expansion_text)
-        # The definiendum surface is an INFLECTED (adessive) form; M1 is
-        # generation-only and cannot reverse it to a nominative, so the term is
-        # matched by its exact written surface, not generated inflections.
-        status = STATUS_UNSUPPORTED_MORPHOLOGY
-        # Scope inherits from the nearest preceding definitions-header cue
-        # ("Tässä laissa/luvussa/pykälässä/momentissa … tarkoitetaan" / "Tätä
-        # lakia sovellettaessa …"); conservative ``statute`` default when no such
-        # header cue is recognised.  Anchor the look-back on the END of THIS
-        # binding's ``tarkoitetaan`` verb (start of the expansion group) so an
-        # INLINE cue whose verb is this very binding's verb — "Tässä pykälässä
-        # viranomaisella tarkoitetaan …" — is matched contiguously, while a block
-        # header above an enumerated definiendum is still seen within the window.
-        scope = _scope_cue_before(text, m.start("expansion"))
-        out.append(
-            DefinedTermBinding(
-                term=term_surface,
-                target_ref=act_id,
-                expansion=None if act_id is not None else (expansion_text or None),
-                scope=scope,
-                source_span=SourceSpan(source_file, m.start(), m.end() - m.start()),
-                binding_kind=BINDING_TARKOITETAAN,
-                status=status,
+    low = text.lower()
+    cursor = 0
+    seen: set[tuple[int, int]] = set()
+    while True:
+        verb_pos = low.find(_GUARD_TARKOITETAAN, cursor)
+        if verb_pos < 0:
+            break
+        window_start = max(0, verb_pos - _TARKOITETAAN_LOOKBACK)
+        window_end = min(len(text), verb_pos + _TARKOITETAAN_LOOKAHEAD)
+        window = text[window_start:window_end]
+        for m in _TARKOITETAAN.finditer(window):
+            # Keep exactly the match anchored on this literal occurrence; a
+            # bounded window may include a neighbouring definition verb too.
+            match_verb_pos = window_start + m.start("expansion") - len(_GUARD_TARKOITETAAN)
+            if match_verb_pos != verb_pos:
+                continue
+            match_start = window_start + m.start()
+            match_end = window_start + m.end()
+            match_key = (match_start, match_end)
+            if match_key in seen:
+                continue
+            seen.add(match_key)
+            raw_term = m.group("term").strip()
+            if not raw_term:
+                continue
+            expansion_text = m.group("expansion").strip()
+            # Scope inherits from the nearest preceding definitions-header cue
+            # ("Tässä laissa/luvussa/pykälässä/momentissa … tarkoitetaan" / "Tätä
+            # lakia sovellettaessa …"); conservative ``statute`` default when no such
+            # header cue is recognised.  Anchor the look-back on the END of THIS
+            # binding's ``tarkoitetaan`` verb (start of the expansion group) so an
+            # INLINE cue whose verb is this very binding's verb — "Tässä pykälässä
+            # viranomaisella tarkoitetaan …" — is matched contiguously, while a block
+            # header above an enumerated definiendum is still seen within the window.
+            scope = _scope_cue_before(text, window_start + m.start("expansion"))
+            # The CANONICAL inline pipeline (shared with the forest): the HEAD must be
+            # a definitional adessive definiendum (the referential idiom is declined),
+            # leading scope-locatives are stripped, the left edge is trimmed, and a
+            # swept clause fragment is declined.  ``None`` = no binding (no fabrication).
+            entry = inline_entry_from_match(text, raw_term, expansion_text, scope)
+            if entry is None:
+                continue
+            act_id = entry.target_ref
+            # The definiendum surface is an INFLECTED (adessive) form; M1 is
+            # generation-only and cannot reverse it to a nominative, so the term is
+            # matched by its exact written surface, not generated inflections.
+            status = STATUS_UNSUPPORTED_MORPHOLOGY
+            out.append(
+                DefinedTermBinding(
+                    term=entry.term,
+                    target_ref=act_id,
+                    expansion=None if act_id is not None else (entry.definiens or None),
+                    scope=entry.scope,
+                    source_span=SourceSpan(source_file, match_start, match_end - match_start),
+                    binding_kind=BINDING_TARKOITETAAN,
+                    status=status,
+                )
             )
-        )
+        cursor = verb_pos + len(_GUARD_TARKOITETAAN)
     return out
 
 
@@ -1036,7 +1076,7 @@ def _recognize_enumerated_definitions(
     out: list[DefinedTermBinding] = []
     headers = list(_ENUM_HEADER.finditer(text))
     for i, h in enumerate(headers):
-        scope = _SCOPE_CUE_UNITS[h.group("unit").lower()]
+        scope = _enum_header_scope(h.group("unit"))
         # Start the block at the header's ':' so the FIRST item's ':' delimiter is
         # in scope (the item regex anchors each item on a ':' / ';' delimiter).
         block_start = h.end() - 1
@@ -1050,37 +1090,16 @@ def _recognize_enumerated_definitions(
             rest = it.group("rest").strip()
             if not run:
                 continue
-            run_words = run.split()
-            # The enumerated definiendum is the LEADING adessive-headed phrase
-            # ("X:llä" / "<modifier> <head>:llä"); reject the referential /
-            # non-definiendum shape exactly as shape 3 does (no fabrication).
-            head_phrase = _adessive_phrase_from_run(run_words)
-            if head_phrase is None:
+            # The CANONICAL enumerated pipeline (shared with the forest): the
+            # leading adessive-headed phrase is detected, the left edge is trimmed
+            # (prior-entry connector / adverbial clause), and a swept clause
+            # fragment is declined.  An item that is not a genuine adessive
+            # definiendum binds nothing (no fabrication).  Each item inherits the
+            # block header's scope.
+            entry = enumerated_entry_from_item(run, rest, scope=scope)
+            if entry is None:
                 continue
-            # The definiendum head is the LAST word of ``head_phrase``; words AFTER
-            # it belong to the expansion (computed from the head index, BEFORE any
-            # left-trim, so the expansion boundary is unaffected by the trim).
-            head_len = len(head_phrase)
-            # Strip a leading prior-entry connector ("…komissiota; sekä tavaralla …"
-            # → ``tavaralla``) or adverbial clause, preserving medial coordination.
-            phrase_words = _trim_to_definiendum_np(head_phrase)
-            if phrase_words is None:
-                continue
-            # DECLINE a swept clause fragment / cross-reference idiom. The item
-            # regex anchors on ANY ``:`` / ``;`` (incl. ``EU:`` and a split
-            # ``§:ssä``), so a stray sentence-internal colon can sweep a clause
-            # ("n mukaan katsota kilpailluilla markkinoilla", "ssä tarkoitetulla").
-            # Only a clean definiendum NP (content-word start, no clause-boundary
-            # token) binds; otherwise mint nothing (no fabrication).
-            if not _is_clean_definiendum_phrase(phrase_words):
-                continue
-            # Full multi-word definiendum SURFACE preserved (no stem mangling).
-            term_surface = " ".join(phrase_words)
-            # Any word-run tokens AFTER the definiendum head belong to the
-            # expansion (prepended to the regex's tail).
-            trailing = run_words[head_len:]
-            expansion_text = (" ".join(trailing) + (" " if trailing else "") + rest).strip()
-            act_id = _act_id_in_expansion(expansion_text)
+            act_id = entry.target_ref
             # The definiendum surface is an INFLECTED (adessive) form; M1 is
             # generation-only and cannot reverse it to a nominative, so the term
             # is matched by its exact written surface, not generated inflections.
@@ -1089,10 +1108,10 @@ def _recognize_enumerated_definitions(
             abs_end = block_start + it.end()
             out.append(
                 DefinedTermBinding(
-                    term=term_surface,
+                    term=entry.term,
                     target_ref=act_id,
-                    expansion=None if act_id is not None else (expansion_text or None),
-                    scope=scope,
+                    expansion=None if act_id is not None else (entry.definiens or None),
+                    scope=entry.scope,
                     source_span=SourceSpan(
                         source_file, abs_start, abs_end - abs_start
                     ),

@@ -114,10 +114,12 @@ def build_no_commencement_candidate_report(
         load_no_current_law_titles,
     )
 
-    data_dir = resolve_no_source_path(data_dir)
     if index_path is not None:
         index = load_no_amendment_index(index_path)
+        index_data_dir = str(getattr(index, "data_dir", "") or "")
+        data_dir = resolve_no_source_path(data_dir or (Path(index_data_dir) if index_data_dir else None))
     else:
+        data_dir = resolve_no_source_path(data_dir)
         index = build_no_amendment_index(data_dir)
 
     entry = next((item for item in index.entries if item.source_id == source_id), None)

@@ -245,6 +245,7 @@ _REAL_DB = (
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_corpus_runner_aggregates_real_multi_work_population() -> None:
     # Two real works run end to end through the parallel runner; the canary must
     # contribute a scored final similarity and the slice is disclosed.
@@ -266,6 +267,7 @@ def test_corpus_runner_aggregates_real_multi_work_population() -> None:
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_corpus_runner_is_deterministic_across_worker_counts() -> None:
     # The aggregate must be byte-identical regardless of worker count: serial
     # (workers=1) and parallel (workers=2) produce the same summary (modulo the

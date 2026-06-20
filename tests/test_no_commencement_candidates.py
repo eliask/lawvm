@@ -1,8 +1,60 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from lawvm.tools.no_commencement_candidates import build_no_commencement_candidate_report
+
+
+def test_no_commencement_candidates_uses_loaded_index_data_dir(monkeypatch, tmp_path) -> None:
+    index_data_dir = tmp_path / "indexed-source"
+    seen: dict[str, Path | None] = {}
+    fake_index = SimpleNamespace(
+        data_dir=str(index_data_dir),
+        entries=[
+            SimpleNamespace(
+                source_id="no/lovtid/2025-06-20-96",
+                title="Lov om dokumentasjon og arkiv (arkivlova)",
+                effective_status="contingent",
+                raw_date_in_force="Kongen fastset",
+                base_ids=["no/lov/2024-12-13-77"],
+            )
+        ],
+    )
+
+    def fake_resolve_no_source_path(path=None):
+        return Path(path) if path is not None else tmp_path / "default-source"
+
+    def fake_load_no_current_law_titles(data_dir=None):
+        seen["titles"] = data_dir
+        return {}
+
+    def fake_iter_no_amendment_artifacts(data_dir=None):
+        seen["amendments"] = data_dir
+        return iter(())
+
+    def fake_iter_no_statsrad_event_artifacts(data_dir=None, diagnostics_out=None):
+        seen["statsrad"] = data_dir
+        return []
+
+    monkeypatch.setattr("lawvm.norway.index.load_no_amendment_index", lambda path: fake_index)
+    monkeypatch.setattr("lawvm.norway.sources.resolve_no_source_path", fake_resolve_no_source_path)
+    monkeypatch.setattr("lawvm.norway.sources.load_no_current_law_titles", fake_load_no_current_law_titles)
+    monkeypatch.setattr("lawvm.norway.sources.iter_no_amendment_artifacts", fake_iter_no_amendment_artifacts)
+    monkeypatch.setattr("lawvm.norway.statsrad.iter_no_statsrad_event_artifacts", fake_iter_no_statsrad_event_artifacts)
+
+    report = build_no_commencement_candidate_report(
+        source_id="no/lovtid/2025-06-20-96",
+        data_dir=None,
+        index_path=tmp_path / "no_index.json",
+    )
+
+    assert report["candidate_count"] == 0
+    assert seen == {
+        "titles": index_data_dir,
+        "amendments": index_data_dir,
+        "statsrad": index_data_dir,
+    }
 
 
 def test_no_commencement_candidates_prefers_exact_source_id_with_commencement_marker(monkeypatch) -> None:

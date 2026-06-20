@@ -173,6 +173,7 @@ def _corpus_available() -> bool:
     not _corpus_available(),
     reason="LAWVM_CANONICAL_DATA_ROOT not set; real-corpus export parity skipped",
 )
+@pytest.mark.slow
 def test_export_parity_real_corpus() -> None:
     """Default graph writer reproduces the extractor oracle on real Finlex statutes.
 

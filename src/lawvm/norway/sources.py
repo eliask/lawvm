@@ -80,7 +80,7 @@ def is_no_farchive_path(path: Path | str) -> bool:
     return path.suffix == ".farchive" or (path.exists() and path.is_file() and path.name.endswith(".farchive"))
 
 
-def open_no_archive(db_path: Path | None = None, *, readonly: bool = False):  # returns Farchive
+def open_no_archive(db_path: Path | None = None, *, readonly: bool = True):  # returns Farchive
     from farchive import Farchive
 
     path = resolve_no_source_path(db_path)
@@ -634,7 +634,7 @@ def ingest_no_public_archives(
 ) -> dict[str, object]:
     """Hydrate a Norway Farchive from local public Lovdata tarballs."""
     db_path = db_path or DEFAULT_NORWAY_DB
-    archive = open_no_archive(db_path)
+    archive = open_no_archive(db_path, readonly=False)
     skipped_existing_entries: list[dict[str, str]] = []
     skipped_unmapped_entries: list[dict[str, Any]] = []
     duplicate_locator_entries: list[dict[str, Any]] = []

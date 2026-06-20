@@ -44,12 +44,16 @@ _XML = f"""<?xml version="1.0" encoding="UTF-8"?>
 </akomaNtoso>
 """.encode("utf-8")
 
+# Bare process/sanction nouns are demoted to ``*_cue`` kinds; they anchor the
+# same span a ``*_frame`` does, so the colocation passes attach edges to them too.
 _FRAME_KINDS = {
     "actor_modal_frame",
     "delegation_frame",
     "exception_condition_cue",
     "procedure_frame",
+    "procedure_cue",
     "sanction_frame",
+    "sanction_cue",
 }
 
 

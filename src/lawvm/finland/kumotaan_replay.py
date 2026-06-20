@@ -9,15 +9,53 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from dataclasses import replace as dc_replace
+from dataclasses import dataclass, replace as dc_replace
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.finland.scoped_section_resolver import section_paths_for_label
 
 if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState
+
+
+@dataclass(frozen=True, slots=True)
+class PureKumotaanSubsectionSkippedTarget:
+    """Visible witness for a pure-kumotaan subsection injection that did not run."""
+
+    rule_id: str
+    reason: str
+    section_label: str
+    subsection_labels: tuple[str, ...]
+    candidate_paths: tuple[LegalAddress, ...] = ()
+
+    def finding_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "reason": self.reason,
+            "target_section": self.section_label,
+            "target_subsections": self.subsection_labels,
+            "candidate_paths": tuple(str(path) for path in self.candidate_paths),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PureKumotaanSubsectionInjectionResult:
+    """Typed result for pure-kumotaan subsection replay-product injection."""
+
+    injected_count: int
+    skipped_targets: tuple[PureKumotaanSubsectionSkippedTarget, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedKumotaanSubsectionSection:
+    """Resolved full-address section target for pure-kumotaan subsection injection."""
+
+    section_path: tuple[tuple[str, str], ...]
+    section_node: IRNode
+    source_scoped: bool
 
 
 def _rewrite_kumotaan_snapshot_replaces_to_repeal(
@@ -415,6 +453,151 @@ def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
     return additions
 
 
+def _non_empty_path(path: Tuple[Tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    return tuple((str(kind), str(label)) for kind, label in path if str(label))
+
+
+def _section_path_from_target(
+    target: LegalAddress,
+    section_label: str,
+) -> tuple[tuple[str, str], ...] | None:
+    path: list[tuple[str, str]] = []
+    section_norm = section_label.lower()
+    for kind, label in target.path:
+        kind_text = str(kind)
+        label_text = str(label)
+        if not label_text:
+            continue
+        path.append((kind_text, label_text))
+        if kind_text == "section":
+            if label_text.lower() == section_norm:
+                return tuple(path)
+            return None
+    return None
+
+
+def _subsection_path_from_target(target: LegalAddress) -> tuple[tuple[str, str], ...] | None:
+    path: list[tuple[str, str]] = []
+    saw_section = False
+    for kind, label in target.path:
+        kind_text = str(kind)
+        label_text = str(label)
+        if not label_text:
+            continue
+        path.append((kind_text, label_text))
+        if kind_text == "section":
+            saw_section = True
+        if kind_text == "subsection":
+            return tuple(path) if saw_section else None
+    return None
+
+
+def _unique_source_scoped_section_path(
+    lo_ops_out: list[_LegalOperation],
+    *,
+    amendment_id: str,
+    section_label: str,
+    state: ReplayState,
+) -> tuple[tuple[str, str], ...] | None:
+    paths: list[tuple[tuple[str, str], ...]] = []
+    seen: set[tuple[tuple[str, str], ...]] = set()
+    for lo in lo_ops_out:
+        src = lo.source
+        if src is None or src.statute_id != amendment_id:
+            continue
+        section_path = _section_path_from_target(lo.target, section_label)
+        if section_path is None:
+            continue
+        chapter_label = next(
+            (label for kind, label in reversed(section_path) if kind == "chapter"),
+            None,
+        )
+        part_label = next(
+            (label for kind, label in reversed(section_path) if kind == "part"),
+            None,
+        )
+        if state.find_section(section_label, chapter_label, part_label) is None:
+            continue
+        if section_path in seen:
+            continue
+        seen.add(section_path)
+        paths.append(section_path)
+    if len(paths) == 1:
+        return paths[0]
+    return None
+
+
+def _resolve_pure_kumotaan_subsection_section(
+    *,
+    lo_ops_out: list[_LegalOperation],
+    amendment_id: str,
+    section_label: str,
+    sub_labels: list[str],
+    state: ReplayState,
+) -> tuple[_ResolvedKumotaanSubsectionSection | None, PureKumotaanSubsectionSkippedTarget | None]:
+    source_scoped_path = _unique_source_scoped_section_path(
+        lo_ops_out,
+        amendment_id=amendment_id,
+        section_label=section_label,
+        state=state,
+    )
+    if source_scoped_path is not None:
+        chapter_label = next(
+            (label for kind, label in reversed(source_scoped_path) if kind == "chapter"),
+            None,
+        )
+        part_label = next(
+            (label for kind, label in reversed(source_scoped_path) if kind == "part"),
+            None,
+        )
+        section_node = state.find_section(section_label, chapter_label, part_label)
+        if section_node is not None:
+            return (
+                _ResolvedKumotaanSubsectionSection(
+                    section_path=source_scoped_path,
+                    section_node=section_node,
+                    source_scoped=True,
+                ),
+                None,
+            )
+
+    live_paths = tuple(
+        (_non_empty_path(path), path)
+        for path in section_paths_for_label(state.provision_index, section_label)
+        if state.resolve(path) is not None
+    )
+    unique_live_paths = tuple(
+        dict.fromkeys(address_path for address_path, _node_path in live_paths)
+    )
+    if len(unique_live_paths) > 1:
+        return (
+            None,
+            PureKumotaanSubsectionSkippedTarget(
+                rule_id="fi_pure_kumotaan_subsection_requires_unambiguous_section_scope",
+                reason="ambiguous_duplicate_section_label_without_source_scope",
+                section_label=section_label,
+                subsection_labels=tuple(sub_labels),
+                candidate_paths=tuple(LegalAddress(path=path) for path in unique_live_paths),
+            ),
+        )
+    if len(unique_live_paths) == 1:
+        address_path = unique_live_paths[0]
+        node_path = next(
+            node_path for candidate, node_path in live_paths if candidate == address_path
+        )
+        section_node = state.resolve(node_path)
+        if section_node is not None:
+            return (
+                _ResolvedKumotaanSubsectionSection(
+                    section_path=address_path,
+                    section_node=section_node,
+                    source_scoped=False,
+                ),
+                None,
+            )
+    return None, None
+
+
 def _inject_pure_kumotaan_subsection_repeal_ops(
     lo_ops_out: List[_LegalOperation],
     *,
@@ -425,7 +608,7 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
     amendment_issue_date: Optional[dt.date] = None,
     state: ReplayState,
     source_raw_text: str = "",
-) -> int:
+) -> PureKumotaanSubsectionInjectionResult:
     """Inject REPLACE (repeal-placeholder) lo_ops for pure-kumotaan subsection ranges.
 
     Handles "N §:n M-P momentti" kumotaan clauses where the amendment contains no
@@ -439,20 +622,20 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
     - are NOT already covered by a REPLACE or REPEAL op from this amendment, AND
     - exist in the current parent state (section exists, subsection exists).
 
-    Returns the number of ops injected.
+    Returns typed injection/skipped-target evidence.
     """
     if not kumotaan_subsection_map:
-        return 0
+        return PureKumotaanSubsectionInjectionResult(injected_count=0)
 
-    # Build set of (section_lower, subsection_lower) pairs already covered by
-    # any non-snapshot REPLACE op from this amendment targeting a subsection.
+    # Build exact subsection addresses already covered by any non-snapshot
+    # REPLACE/REPEAL op from this amendment targeting a subsection.
     # Snapshot REPEAL ops are deliberately excluded: if a snapshot created a
     # REPEAL for the same subsection, we still want to inject a REPLACE+placeholder
     # so that the subsection appears as a repeal marker rather than being absent
     # entirely. The REPLACE+placeholder will have a higher list index than the
     # snapshot REPEAL and will win via pick_latest's same_source_late_placeholder
     # tie-break (placeholder with higher index wins over non-placeholder).
-    covered: set[tuple[str, str]] = set()
+    covered: set[tuple[tuple[str, str], ...]] = set()
     for lo in lo_ops_out:
         src = lo.source
         if src is None or src.statute_id != amendment_id:
@@ -462,10 +645,9 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
             continue
         if lo.action not in (StructuralAction.REPEAL, StructuralAction.REPLACE):
             continue
-        sec_label = next((v for k, v in reversed(lo.target.path) if k == "section"), "")
-        sub_label = next((v for k, v in reversed(lo.target.path) if k == "subsection"), "")
-        if sec_label and sub_label:
-            covered.add((sec_label.lower(), sub_label.lower()))
+        sub_path = _subsection_path_from_target(lo.target)
+        if sub_path is not None:
+            covered.add(sub_path)
 
     effective_iso = amendment_effective_date.isoformat()
     enacted_iso = amendment_issue_date.isoformat() if amendment_issue_date else effective_iso
@@ -477,34 +659,33 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
         raw_text=source_raw_text.strip(),
     )
     injected = 0
+    skipped: list[PureKumotaanSubsectionSkippedTarget] = []
     for sec_label, sub_labels in kumotaan_subsection_map.items():
-        # Find the section path (with chapter context if needed).
-        sec_path = state.find_section_path(sec_label, None)
-        if sec_path is None:
-            continue
-        # Build prefix path from resolved section path. Strip empty-label
-        # components (e.g. hcontainer wrappers with no label) so that the
-        # resulting LegalAddress matches the timeline address space, which
-        # only includes nodes whose label is non-empty.
-        resolved_sec_path: tuple[tuple[str, str], ...] = tuple(
-            (k, v) for k, v in sec_path if v
+        resolved, skip = _resolve_pure_kumotaan_subsection_section(
+            lo_ops_out=lo_ops_out,
+            amendment_id=amendment_id,
+            section_label=sec_label,
+            sub_labels=sub_labels,
+            state=state,
         )
+        if skip is not None:
+            skipped.append(skip)
+            continue
+        if resolved is None:
+            continue
 
         for sub_label in sub_labels:
-            if (sec_label.lower(), sub_label.lower()) in covered:
+            target_path = resolved.section_path + (("subsection", sub_label),)
+            if target_path in covered:
                 continue
             # Check that the subsection exists in the current IR.
-            sec_node = state.find_section(sec_label)
-            if sec_node is None:
-                break
             sub_exists = any(
                 c.kind is IRNodeKind.SUBSECTION and c.label == sub_label
-                for c in sec_node.children
+                for c in resolved.section_node.children
             )
-            if not sub_exists:
+            if not sub_exists and not resolved.source_scoped:
                 continue
 
-            target_path = resolved_sec_path + (("subsection", sub_label),)
             op_id = f"pure_subsec_repeal_{sec_label}_{sub_label}_{amendment_id}"
             # Use REPLACE with a repeal-placeholder payload so that
             # compile_timelines creates a version with non-None content and
@@ -529,4 +710,7 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
             )
             injected += 1
 
-    return injected
+    return PureKumotaanSubsectionInjectionResult(
+        injected_count=injected,
+        skipped_targets=tuple(skipped),
+    )

@@ -47,6 +47,7 @@ the contrast.
 from __future__ import annotations
 
 import datetime as dt
+from typing import cast
 
 import pytest
 
@@ -64,6 +65,7 @@ from lawvm.finland.references.defined_terms import (
 )
 from lawvm.finland.references.registries.statute_name import (
     StatuteNameEntry,
+    StatuteNameRegistry,
     build_registry,
 )
 from lawvm.finland.references.resolve import (
@@ -438,14 +440,16 @@ def test_defined_term_use_before_binding_does_not_resolve():
     The use is at offset 5, the binding site is at offset 100 — the binding does
     not precede the use, so the local table declines (tag-don't-guess). With an
     empty statute-name registry the placeholder then falls to ``STATUTE_ONLY``
-    (act named, id pending), NOT a resolution from a binding it precedes.
+    (act named, id pending), NOT a resolution from a binding it precedes. The
+    term is deliberately not a known EU nickname, so the EU-nickname fallback also
+    misses and the decline surfaces as a genuine coverage gap.
     """
     binding = _alias_binding(
-        term="sivutuoteasetus", target_ref="32009R1069", byte_offset=100
+        term="paikallisasetus", target_ref="32009R1069", byte_offset=100
     )
     table = build_defined_term_table([binding])
     use = _fi_name_placeholder(
-        "sivutuoteasetus", surface="sivutuoteasetuksen", byte_offset=5
+        "paikallisasetus", surface="paikallisasetuksen", byte_offset=5
     )
     res = resolve_mention(
         use,
@@ -548,7 +552,7 @@ def test_each_status_is_actually_produced_by_resolve():
     ]
     produced = set()
     for expected, mention, reg in cases:
-        (res,) = resolve_mentions([mention], statute_registry=reg)
+        (res,) = resolve_mentions([mention], statute_registry=cast(StatuteNameRegistry, reg))
         assert res.status is expected, (
             f"expected {expected.name}, got {res.status.name}"
         )

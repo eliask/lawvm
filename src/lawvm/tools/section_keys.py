@@ -7,7 +7,6 @@ key provisions by their container path when available.
 from __future__ import annotations
 
 import copy
-from difflib import SequenceMatcher
 import re
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple, cast
 
@@ -15,6 +14,11 @@ from lxml import etree
 
 from lawvm.core.timeline import _iter_nodes_with_address
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.oracle_versioned_children import (
+    _oracle_eid_base,
+    _sequence_ratio_at_least,
+    dedup_versioned_children as _dedup_versioned_children,
+)
 
 
 _CONTAINER_KINDS = ("book", "part", "subpart", "title", "subtitle", "chapter")
@@ -179,133 +183,7 @@ _ORACLE_SECTION_STRIP_NAMES = {"noteAuthorial", "signatures", "conclusions", "at
 # editorial notes to strip in oracle section clones for comparison. Finlex
 # oracle XML uses block (with outline="huomautus") in addition to hcontainer.
 _ORACLE_NOTE_BLOCK_TAGS = {"hcontainer", "block"}
-_ORACLE_VERSION_SUFFIX_RE = re.compile(r"v\d{8}$")
 _INLINE_PRIOR_WORDING_RE = re.compile(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE)
-
-
-def _oracle_eid_base(el: etree._Element) -> Optional[str]:
-    eid = el.get("eId", "")
-    if not eid:
-        return None
-    return _ORACLE_VERSION_SUFFIX_RE.sub("", eid.split("__")[-1])
-
-
-def _element_clean_text(el: etree._Element) -> str:
-    """Return cleaned alphanumeric-only text content of an element (for comparison)."""
-    raw = etree.tostring(el, method="text", encoding="unicode")
-    return re.sub(r"[^a-z0-9äöå]", "", raw.lower())
-
-
-def _sequence_ratio_at_least(left: str, right: str, threshold: float) -> bool:
-    matcher = SequenceMatcher(None, left, right)
-    if matcher.quick_ratio() < threshold:
-        return False
-    return matcher.ratio() >= threshold
-
-
-def _dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:
-    """Remove duplicate versioned children with the same eId base.
-
-    Finlex consolidated XML sometimes embeds multiple versioned snapshots of the
-    same provision (e.g. para_3v20140649 and para_3v20230499 both representing
-    item 3). Keep only the first occurrence of each eId base.
-
-    However, Finlex occasionally assigns the same positional slot (eId base) to
-    two genuinely distinct provisions:
-
-    Case 1 — different num text: e.g. para_6v20251385 (num="5 a)") and
-    para_6v20141432 (num="6)") share the base "para_6". The dedup key
-    incorporates the normalised num text to handle this.
-
-    Case 2 — same (empty) num text but genuinely different content: e.g.
-    subsec_1v20150795 (original subsection 1) and subsec_1v20240859 (a new
-    subsection 2 added by a later amendment). Both are unnumbered and share the
-    positional slot, but carry different text bodies.
-
-    Pro Q1: omission is a payload-surface marker. Finlex encodes a new subsection
-    with the positional slot of the first subsection when the amendment uses an
-    omission marker (eliding prior content). These are genuinely different
-    provisions and must both be retained for correct oracle comparison.
-
-    Guard: if two same-key children have substantially different text content
-    (< 90% similarity by clean char length heuristic), treat them as distinct
-    provisions and preserve both. Only drop a candidate if its content is
-    sufficiently similar to the already-seen element (true version duplicate).
-    """
-    seen: dict[str, etree._Element] = {}
-    _FINLEX_ORIG_ATTR = "{http://data.finlex.fi/schema/finlex}originalVersion"
-    for child in list(parent):
-        if _tag(child) != child_tag:
-            continue
-        eid_base = _oracle_eid_base(child)
-        if not eid_base:
-            continue
-        num_text = _num_text(child)
-        # Qualify the dedup key with the normalised num so that two children
-        # that share an eId slot but carry different item numbers (a Finlex
-        # insertion artifact) are treated as distinct provisions.
-        key = f"{eid_base}\x00{norm_section_label(num_text)}"
-        if key in seen:
-            existing = seen[key]
-            existing_has_orig = bool(existing.get(_FINLEX_ORIG_ATTR))
-            candidate_has_orig = bool(child.get(_FINLEX_ORIG_ATTR))
-            # Guard: if the candidate has substantially different content from
-            # the already-seen element, it is a genuinely new provision (e.g. a
-            # new subsection introduced at the same positional slot by a later
-            # amendment via omission-elision encoding). Preserve it.
-            existing_text = _element_clean_text(existing)
-            candidate_text = _element_clean_text(child)
-            if existing_text and candidate_text:
-                if existing_has_orig != candidate_has_orig:
-                    overlaps_as_prior_wording = (
-                        existing_text in candidate_text
-                        or candidate_text in existing_text
-                        or _sequence_ratio_at_least(existing_text, candidate_text, 0.55)
-                    )
-                    if overlaps_as_prior_wording:
-                        # Finlex can pair one live versioned child with one plain
-                        # prior-wording shadow at the same positional slot. Keep the
-                        # versioned child only when the texts materially overlap;
-                        # otherwise preserve both as distinct live provisions.
-                        if existing_has_orig:
-                            parent.remove(child)
-                            continue
-                        existing_parent = existing.getparent()
-                        if existing_parent is not None:
-                            existing_parent.remove(existing)
-                        seen[key] = child
-                        continue
-                # Finlex can reuse the same positional eId slot for a genuinely
-                # different live child (for example an unnumbered subsection
-                # that later replaces a different ordinal position in the
-                # section). Length ratio alone is too coarse for that family:
-                # two different provisions can have similar lengths.
-                #
-                # Preserve both when the texts are meaningfully dissimilar.
-                # Keep the stricter originalVersion-originalVersion drop below
-                # for prior-wording editorial shadows.
-                shorter = min(len(existing_text), len(candidate_text))
-                longer = max(len(existing_text), len(candidate_text))
-                if shorter / longer < 0.5 or not _sequence_ratio_at_least(existing_text, candidate_text, 0.75):
-                    # The texts are substantially different.  Usually this means
-                    # a genuinely new provision at the same positional slot, and
-                    # we would preserve both.  However, Finlex VÄLIAIKAINEN
-                    # display embeds two subsections with the same eId base: the
-                    # current VÄLIAIKAINEN wording (originalVersion=@YYYYNNN) and
-                    # the prior wording for editorial context (also with
-                    # originalVersion but an older amendment number).  Both carry
-                    # originalVersion, the texts differ substantially (the
-                    # prior wording is a strict prefix of the VÄLIAIKAINEN wording),
-                    # and the candidate is editorial display, not a new provision.
-                    # Drop it when both elements bear an originalVersion attribute.
-                    if not (existing.get(_FINLEX_ORIG_ATTR) and child.get(_FINLEX_ORIG_ATTR)):
-                        # Genuinely distinct provision — preserve both.
-                        continue
-                    # Both have originalVersion: candidate is prior-wording display.
-                    # Fall through to parent.remove(child).
-            parent.remove(child)
-            continue
-        seen[key] = child
 
 
 def _strip_inline_prior_wording_sibling(note: etree._Element) -> None:

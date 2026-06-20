@@ -19,7 +19,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
-from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
+from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import (
     ScopeConfidence,
     _lo_path_dict,
@@ -32,18 +32,40 @@ if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState
 
 
+# --- same-label MOVE clause ANCHORs (grammar-subordinate typed residue) -------
+#
+# The SIIRTAA (siirretään ... N lukuun) move family is modelled by the grammar
+# move recognizers (johtolause/grammar/moves.py: recognize_inline_move_tail /
+# recognize_relabel_from_context). When the clause-level grammar parser owns the
+# johtolause it sets ``move_clause_target_unit_kind`` on the moved op, and the
+# carrier check in ``strip_unjustified_chapter_scope_from_unique_sections``
+# (``lo.move_clause_target_unit_kind in {"chapter", "part"}``) is the PRIMARY,
+# grammar-authoritative signal — these anchors are only consulted AFTER it.
+#
+# They cannot be routed onto the grammar today: the clause-level parser DECLINES
+# the plural ``joista … § … siirretään N lukuun`` move-coordination shape
+# (``parse_clause`` falls to ``legacy_reference_fallback`` with
+# ``"section näistä/niistä provenance leak"``), so the moved-section→destination
+# map this guard needs is not produced grammar-owned for that shape. Until the
+# grammar owns the coordination, these stay as a bounded label-collection
+# residue floor: every quantifier is explicitly bounded (``\s{0,8}``,
+# ``\d{1,4}``, ``[^§]{0,120}``), so the patterns are provably linear; the
+# residual "nested backtracking quantifiers" flag is the benign-linear false
+# positive (bounded × bounded), exactly as for ``kumotaan._WHOLE_SECTION_SITE_RE``.
 _SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
-    r"joista\s+([^§]{0,120})\s*§\s+(?:samalla\s+)?siirretään\s+(\d+\s*[a-z]?)\s+lukuun",
+    r"joista\s{1,8}([^§]{0,120})\s{0,8}§\s{1,8}(?:samalla\s{1,8})?siirretään\s{1,8}(\d{1,4}\s{0,8}[a-z]?)\s{1,8}lukuun",
     flags=re.I,
 )
 _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
-    r"(\d+\s*[a-z]?)\s*§\s*,?\s*joka\s+(?:samalla\s+)?siirretään\s+(\d+\s*[a-z]?)\s+lukuun",
+    r"(\d{1,4}\s{0,8}[a-z]?)\s{0,8}§\s{0,8},?\s{0,8}joka\s{1,8}(?:samalla\s{1,8})?siirretään\s{1,8}(\d{1,4}\s{0,8}[a-z]?)\s{1,8}lukuun",
     flags=re.I,
 )
 
 # Module-scope constants for restrict_sec1_fallback_to_parent hot path
 _FI_NUMBERED_ITEM_RE = re.compile(r"^\d+\)\s*", re.M)
 _FI_CUT_RE = re.compile(r"\bsellais(?:ena|ina)\s+kuin\b|\bsiitä\s+on\b", re.I)
+_FI_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+(?=[A-ZÅÄÖ])")
+_FI_SCOPE_VERB_RE = re.compile(r"\b(?:kumotaan|muutetaan|lisätään|siirretään)\b[: ]*", re.I)
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,9 +333,43 @@ def find_body_section_chapter(
     return None
 
 
+def _observed_units_from_source(
+    *,
+    muutos_tree: etree._Element | None,
+    inventory: Sequence[ObservedBodyUnit] | None,
+) -> Sequence[ObservedBodyUnit]:
+    if inventory is not None:
+        return inventory
+    if muutos_tree is None:
+        return ()
+    return build_observed_body_inventory(muutos_tree)
+
+
+def _unit_part_label(unit: ObservedBodyUnit) -> str | None:
+    return _norm_num_token(unit.part_label) if unit.part_label else None
+
+
+def _body_scope_section_units(
+    observed_units: Sequence[ObservedBodyUnit],
+    *,
+    body_chapter: str,
+    body_part: str | None,
+) -> list[ObservedBodyUnit]:
+    body_chapter_norm = _norm_num_token(body_chapter)
+    body_part_norm = _norm_num_token(body_part) if body_part else None
+    return [
+        unit
+        for unit in observed_units
+        if unit.kind == "section"
+        and _norm_num_token(unit.chapter_label) == body_chapter_norm
+        and _unit_part_label(unit) == body_part_norm
+    ]
+
+
 def retarget_heading_insert_body_chapter_from_close_live_sibling(
     *,
-    muutos_tree: etree._Element,
+    muutos_tree: etree._Element | None = None,
+    inventory: Sequence[ObservedBodyUnit] | None = None,
     section_norm: str,
     body_chapter: str,
     master: "ReplayState",
@@ -322,38 +378,26 @@ def retarget_heading_insert_body_chapter_from_close_live_sibling(
     if not re.fullmatch(r"\d+", section_norm):
         return body_chapter
 
-    body = (
-        muutos_tree
-        if etree.QName(muutos_tree.tag).localname == "body"
-        else muutos_tree.find(".//{*}body")
+    observed_units = _observed_units_from_source(
+        muutos_tree=muutos_tree,
+        inventory=inventory,
     )
-    if body is None:
+    scoped_units = _body_scope_section_units(
+        observed_units,
+        body_chapter=body_chapter,
+        body_part=None,
+    )
+    if not scoped_units:
         return body_chapter
 
     target_num = int(section_norm)
-    for sec in body.findall(".//{*}section"):
-        num_el = sec.find("{*}num")
-        if num_el is None or not num_el.text:
+    for target_unit in scoped_units:
+        if _norm_num_token(target_unit.label) != section_norm:
             continue
-        sec_label = _normalize_source_section_num(num_el.text)
-        if sec_label != section_norm:
-            continue
-        parent = sec.getparent()
-        if parent is None or etree.QName(parent.tag).localname != "chapter":
-            return body_chapter
-        chapter_num = parent.find("{*}num")
-        if chapter_num is None or not chapter_num.text:
-            return body_chapter
-        parent_label = _norm_num_token(chapter_num.text).removesuffix("luku")
-        if parent_label != body_chapter:
-            return body_chapter
 
         close_live_chapters: dict[int, set[str]] = defaultdict(set)
-        for sibling in parent.findall("./{*}section"):
-            sibling_num = sibling.find("{*}num")
-            if sibling_num is None or not sibling_num.text:
-                continue
-            sibling_label = _normalize_source_section_num(sibling_num.text)
+        for sibling in scoped_units:
+            sibling_label = _norm_num_token(sibling.label)
             if not re.fullmatch(r"\d+", sibling_label):
                 continue
             distance = abs(int(sibling_label) - target_num)
@@ -377,7 +421,8 @@ def retarget_heading_insert_body_chapter_from_close_live_sibling(
 
 def retarget_duplicate_body_section_scope_from_close_live_siblings(
     *,
-    muutos_tree: etree._Element,
+    muutos_tree: etree._Element | None = None,
+    inventory: Sequence[ObservedBodyUnit] | None = None,
     section_norm: str,
     body_chapter: str,
     body_part: str | None,
@@ -388,47 +433,24 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
     if target_match is None:
         return None
 
-    body = (
-        muutos_tree
-        if etree.QName(muutos_tree.tag).localname == "body"
-        else muutos_tree.find(".//{*}body")
+    observed_units = _observed_units_from_source(
+        muutos_tree=muutos_tree,
+        inventory=inventory,
     )
-    if body is None:
+    scoped_units = _body_scope_section_units(
+        observed_units,
+        body_chapter=body_chapter,
+        body_part=body_part,
+    )
+    if not scoped_units:
         return None
 
     target_num = int(target_match.group(1))
     is_letter_suffix_section = section_norm != str(target_num)
 
-    def _part_label_for_element(el: etree._Element) -> str | None:
-        parent = el.getparent()
-        while parent is not None:
-            if str(parent.tag).rsplit("}", 1)[-1] == "part":
-                part_num = parent.find("{*}num")
-                if part_num is None or not part_num.text:
-                    return None
-                return _normalize_source_part_num(part_num.text) or None
-            parent = parent.getparent()
-        return None
-
-    for sec in body.findall(".//{*}section"):
-        num_el = sec.find("{*}num")
-        if num_el is None or not num_el.text:
-            continue
-        sec_label = _normalize_source_section_num(num_el.text)
+    for target_unit in scoped_units:
+        sec_label = _norm_num_token(target_unit.label)
         if sec_label != section_norm:
-            continue
-
-        parent = sec.getparent()
-        if parent is None or etree.QName(parent.tag).localname != "chapter":
-            continue
-        chapter_num = parent.find("{*}num")
-        if chapter_num is None or not chapter_num.text:
-            continue
-        parent_label = _norm_num_token(chapter_num.text).removesuffix("luku")
-        if parent_label != body_chapter:
-            continue
-
-        if _part_label_for_element(sec) != body_part:
             continue
 
         # The section being retargeted already has a live home in body_chapter:
@@ -440,13 +462,25 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
         if target_live_path is not None:
             return None
 
+        if (
+            is_letter_suffix_section
+            and str(target_num) not in master.duplicate_section_labels
+        ):
+            stem_live_path = master.find_section_path(str(target_num), None, body_part)
+            if stem_live_path is not None:
+                stem_live_part = next((label for kind, label in stem_live_path if kind == "part"), None)
+                stem_live_chapter = next((label for kind, label in stem_live_path if kind == "chapter"), None)
+                if (
+                    stem_live_chapter
+                    and stem_live_chapter != body_chapter
+                    and stem_live_part == body_part
+                ):
+                    return stem_live_part, stem_live_chapter
+
         close_live_scopes: dict[int, set[tuple[str | None, str]]] = defaultdict(set)
         body_chapter_corroborated = False
-        for sibling in parent.findall("./{*}section"):
-            sibling_num = sibling.find("{*}num")
-            if sibling_num is None or not sibling_num.text:
-                continue
-            sibling_label = _normalize_source_section_num(sibling_num.text)
+        for sibling in scoped_units:
+            sibling_label = _norm_num_token(sibling.label)
             sibling_match = re.fullmatch(r"(\d+)[a-z]?", sibling_label, re.I)
             if sibling_match is None:
                 continue
@@ -498,10 +532,8 @@ def body_has_pseudo_chapter_marker(
     """Return True if the amendment body contains a pseudo-chapter marker."""
     observed_units = inventory if inventory is not None else build_observed_body_inventory(muutos_tree)
     for bpu in observed_units:
-        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.xml_element is not None:
-            tag = getattr(bpu.xml_element, "tag", None)
-            if tag is not None and etree.QName(tag).localname == "section":
-                return True
+        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.source_tag == "section":
+            return True
     return False
 
 
@@ -514,10 +546,8 @@ def body_has_real_chapter_container(
     """Return True when the amendment body contains a real <chapter> container."""
     observed_units = inventory if inventory is not None else build_observed_body_inventory(muutos_tree)
     for bpu in observed_units:
-        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.xml_element is not None:
-            tag = getattr(bpu.xml_element, "tag", None)
-            if tag is not None and etree.QName(tag).localname == "chapter":
-                return True
+        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.source_tag == "chapter":
+            return True
     return False
 
 
@@ -993,9 +1023,7 @@ def strip_unjustified_chapter_scope_from_unique_sections(
         if (pd := _lo_path_dict(lo)).get("chapter") and "section" not in pd
     }
 
-    if not _master_has_any_chapters():
-        return los
-
+    master_has_any_chapters = _master_has_any_chapters()
     duplicate_labels = _duplicate_section_labels(master)
     result = []
     for lo in los:
@@ -1004,9 +1032,41 @@ def strip_unjustified_chapter_scope_from_unique_sections(
         chapter = pd.get("chapter")
         part = pd.get("part")
         scope_tags = lo.provenance_tags
-        scope_confidence = getattr(lo, "scope_confidence", None)
+        scope_confidence = lo.scope_confidence
         special = lo.target.special
         facet = special.value if special is not None else None
+        if not master_has_any_chapters:
+            if not section or not chapter:
+                result.append(lo)
+                continue
+            has_descendant_target = bool(
+                pd.get("subsection")
+                or pd.get("item")
+                or pd.get("paragraph")
+                or facet in {"intro", "heading"}
+            )
+            if (
+                not has_descendant_target
+                or explicit_scope_notes.intersection(scope_tags)
+                or lo.move_clause_target_unit_kind in {"chapter", "part"}
+                or _johtolause_explicitly_binds_chapter_section(johto, str(chapter), str(section))
+                or _johtolause_explicitly_mentions_chaptered_section_target(johto, str(chapter), str(section))
+            ):
+                result.append(lo)
+                continue
+            section_norm = _norm_num_token(str(section))
+            live_path = master.find_section_path(section_norm, None, str(part) if part else None)
+            live_chapter = (
+                next((label for kind, label in live_path if kind == "chapter"), None)
+                if live_path is not None
+                else None
+            )
+            if live_path is None or live_chapter is not None or section_norm in duplicate_labels:
+                result.append(lo)
+                continue
+            lo_new = _lo_with_path_update(lo, chapter=None)
+            result.append(lo_with_added_scope_tag(lo_new, "chapter_scope_stripped_flat_unique_descendant"))
+            continue
         if not section or not chapter:
             result.append(lo)
             continue
@@ -1044,7 +1104,11 @@ def strip_unjustified_chapter_scope_from_unique_sections(
         if explicit_scope_notes.intersection(scope_tags):
             result.append(lo)
             continue
-        if getattr(lo, "move_clause_target_unit_kind", None) in {"chapter", "part"}:
+        # PRIMARY: grammar-authoritative move carrier. When the clause-level
+        # grammar owned the johtolause it stamped the moved op with this carrier;
+        # the same-label-move text anchor below is only the residue fallback for
+        # ops the grammar move family did not own (see _SAME_LABEL_MOVE_CLAUSE_RE).
+        if lo.move_clause_target_unit_kind in {"chapter", "part"}:
             result.append(lo)
             continue
         section_norm = _norm_num_token(str(section))
@@ -1448,7 +1512,10 @@ def restrict_sec1_fallback_to_parent(sec1_text: str, parent_id: str) -> str:
     ]
     if len(parts) <= 1:
         generic_refs = re.findall(r"\(\s*\d+\s*/\s*\d{2,4}\s*\)", sec1_text)
-        if len(generic_refs) > 1 and re.search(r"\bsekä\b", sec1_text, re.I):
+        sentence_parts = [p.strip() for p in _FI_SENTENCE_BOUNDARY_RE.split(sec1_text) if p.strip()]
+        if len(sentence_parts) > 1:
+            parts = sentence_parts
+        elif len(generic_refs) > 1 and re.search(r"\bsekä\b", sec1_text, re.I):
             parts = [p.strip() for p in re.split(r"\bsekä\b", sec1_text) if p.strip()]
         else:
             parts = [p.strip() for p in re.split(r"(?<=;)", sec1_text) if p.strip()]
@@ -1484,10 +1551,8 @@ def restrict_sec1_fallback_to_parent(sec1_text: str, parent_id: str) -> str:
         piece = part[:cut.start()].strip() if cut else part.strip()
         trimmed.append(piece)
 
-    lead_in_match = re.match(
-        r"(?is)^(.*?\b(?:kumotaan|muutetaan|lisätään|siirretään)\b[: ]*)",
-        sec1_text,
-    )
+    lead_in_source = " ".join(trimmed) if any(_FI_SCOPE_VERB_RE.search(part) for part in trimmed) else sec1_text
+    lead_in_match = re.match(r"(?is)^(.*?\b(?:kumotaan|muutetaan|lisätään|siirretään)\b[: ]*)", lead_in_source)
     lead_in = lead_in_match.group(1).strip() if lead_in_match else ""
     if lead_in:
         leadless = [

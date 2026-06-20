@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
 from lawvm.core.reference_mention import (
     CiteConfidence,
@@ -164,6 +165,7 @@ _COORD_LEFT_RE = re.compile(
     rf"(?:{_NAME_CHAR}{{1,80}}-\s+(?:ja|sekä|tai)\s+)+$",
     re.IGNORECASE,
 )
+_COORD_LEFT_LOOKBACK = 320
 
 # ---------------------------------------------------------------------------
 # ``-kaari`` (code) heads: oikeudenkäymiskaari, maakaari, kauppakaari, …
@@ -335,6 +337,38 @@ _NAME_HOMONYM_OBLIQUES: frozenset[tuple[str, str]] = frozenset(
     {("kauppalaki", "lain")}
 )
 
+# The EU-instrument heads (``asetus`` / ``direktiivi``) that, when a name-head
+# compound is DIRECTLY GOVERNING an ``N artikla``, are NOT a Finnish statute name
+# but an EU-instrument reference owned by the ``eu_directive`` lane. Finnish acts
+# are cited by ``§``, NEVER by ``artikla``; so a ``<compound>asetuksen N artikla``
+# is unambiguously an EU regulation/directive reference (resolved to CELEX where
+# known, or typed STATUTE_ONLY ``eu-nickname:`` when not). The by-name lane must
+# therefore decline it — otherwise it mis-types the EU instrument as a
+# ``fi-name:`` Finnish statute and double-counts the eu_directive lane's mention.
+#
+# ``asetus`` is artikla-GATED because Finland ALSO has domestic ``-asetus``
+# decrees (a real ``fi-name:`` family) — only an artikla tail proves the EU
+# reading. ``direktiivi`` is in a SEPARATE set below: there is NO domestic
+# ``-direktiivi`` statute family (a directive is an EU instrument by definition),
+# so a ``<compound>direktiivi`` head is ALWAYS an EU-nickname surface owned by
+# the ``eu_directive`` lane and the by-name lane must decline it UNCONDITIONALLY
+# — with OR without an artikla tail. (Witnessed: ``tietosuojadirektiivin
+# mukainen`` in 2018/1054 has no artikla, yet the by-name lane wrongly minted a
+# duplicate ``fi-name:tietosuojadirektiivi`` mis-typed as CROSS_STATUTE.)
+_EU_NAME_HEADS: frozenset[str] = frozenset({"asetus", "direktiivi"})
+
+# EU-instrument heads with NO domestic statute family: a ``<compound>direktiivi``
+# is always an EU directive nickname, never a Finnish ``fi-name:`` statute, so the
+# by-name lane declines it unconditionally (the ``eu_directive`` lane owns it).
+_EU_ONLY_NAME_HEADS: frozenset[str] = frozenset({"direktiivi"})
+
+# A directly-following article phrase: optional whitespace, a number (with an
+# optional letter suffix), then an inflected ``artikla``. Anchored at the slice
+# start (the caller passes ``text[head_end:]``). Bounded (§1.11).
+_ARTIKLA_AFTER_HEAD_RE = re.compile(
+    r"^\s+\d{1,4}(?:\s?[a-z])?\s*artikla", re.IGNORECASE
+)
+
 # False-positive families (``-lainen``/``-nainen`` adjectives, the ``jokin``
 # pronoun ``joll-`` obliques, the ``-las``/``-läs`` agent-noun plurals, and the
 # determiner+``laki`` orthographic collapse) are no longer matched by hand-written
@@ -405,10 +439,18 @@ def _extend_coordinated_modifier(text: str, match_start: int, modifier: str) -> 
     last conjunct alone. We still synthesize a single key (one mention), not
     per-conjunct ids.
     """
-    left = text[:match_start]
+    left_start = max(0, match_start - _COORD_LEFT_LOOKBACK)
+    left = text[left_start:match_start]
     m = _COORD_LEFT_RE.search(left)
     if m is None:
         return modifier
+    # Preserve the historical full-prefix behavior if the fast window could have
+    # cut through a very long coordinated title chain.
+    if left_start > 0 and m.start() == 0:
+        full = _COORD_LEFT_RE.search(text[:match_start])
+        if full is None:
+            return modifier
+        return full.group(0) + modifier
     return m.group(0) + modifier
 
 
@@ -545,31 +587,55 @@ _MONTH_STEMS = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _TailToken:
+    text: str
+    start: int
+    end: int
+
+
+def _tail_nonspace_tokens(text: str, limit: int) -> list[_TailToken]:
+    """Return up to ``limit`` final non-space tokens, right-to-left."""
+    tokens: list[_TailToken] = []
+    end = len(text.rstrip())
+    while end > 0 and len(tokens) < limit:
+        start = end
+        while start > 0 and not text[start - 1].isspace():
+            start -= 1
+        tokens.append(_TailToken(text=text[start:end], start=start, end=end))
+        end = start
+        while end > 0 and text[end - 1].isspace():
+            end -= 1
+    return tokens
+
+
 def _date_phrase_start(left: str) -> int | None:
     """Return the start offset of a date phrase at the end of ``left``."""
-    toks = list(re.finditer(r"\S+", left.rstrip()))
+    toks = _tail_nonspace_tokens(left, 4)
     if len(toks) < 2:
         return None
-    year = toks[-1].group(0)
+    year = toks[0].text
     if len(year) != 4 or not year.isdigit():
         return None
-    month = toks[-2].group(0).lower()
+    month = toks[1].text.lower()
     if not any(month.startswith(stem + "kuu") for stem in _MONTH_STEMS):
         return None
     month_suffix = month.split("kuu", 1)[1]
     if month_suffix not in {"", "ta", "n", "ssa"}:
         return None
-    start_idx = len(toks) - 2
-    if start_idx > 0:
-        marker = toks[start_idx - 1].group(0).lower()
+    start_idx = 1
+    previous_idx = 2
+    if len(toks) > previous_idx:
+        marker = toks[previous_idx].text.lower()
         if marker in {"p", "p.", "päivänä", "p:nä", "p:na"}:
-            start_idx -= 1
-    if start_idx > 0:
-        day = toks[start_idx - 1].group(0)
+            start_idx = previous_idx
+            previous_idx += 1
+    if len(toks) > previous_idx:
+        day = toks[previous_idx].text
         day_norm = day[:-1] if day.endswith(".") else day
         if day_norm.isdigit() and 1 <= len(day_norm) <= 2:
-            start_idx -= 1
-    return toks[start_idx].start()
+            start_idx = previous_idx
+    return toks[start_idx].start
 
 
 def _complement_word_ok(word: str) -> bool:
@@ -1198,6 +1264,12 @@ def name_head_np_start_before_paren(text: str, paren_start: int) -> int | None:
 
 
 def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
+    """Recognise inflected-statute-name cross-references in ``text``."""
+    return list(_recognize_by_name_refs_cached(text))
+
+
+@lru_cache(maxsize=8192)
+def _recognize_by_name_refs_cached(text: str) -> tuple[ReferenceMention, ...]:
     """Recognise inflected-statute-name cross-references in ``text``.
 
     For each inflected statute-name head NOT immediately followed by a
@@ -1247,6 +1319,25 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         # Exclusion: an id-anchored ``(NNN/YYYY)`` right after the head is the
         # plain-text lane's case. Skip — no double-emission.
         if _ID_PAREN_RE.match(text, m.end()):
+            continue
+
+        # Exclusion: a ``…direktiivi`` head is an EU directive nickname with no
+        # domestic statute family — the ``eu_directive`` lane owns it
+        # UNCONDITIONALLY (with or without an artikla tail). Minting a
+        # ``fi-name:`` Finnish statute for it would mis-type the EU instrument as
+        # CROSS_STATUTE and double-emit a surface the EU lane already covers.
+        if head_form.head_lemma in _EU_ONLY_NAME_HEADS:
+            continue
+
+        # Exclusion: a ``…asetus`` head DIRECTLY GOVERNING an ``N artikla`` is an
+        # EU regulation reference owned by the ``eu_directive`` lane (Finnish acts
+        # use § not artikla). ``asetus`` is artikla-gated (not unconditional) so
+        # genuine domestic ``-asetus`` decrees still emit. Declining the EU shape
+        # here avoids mis-typing the EU instrument as a ``fi-name:`` Finnish
+        # statute AND avoids double-counting the eu_directive lane's EU mention.
+        if head_form.head_lemma in _EU_NAME_HEADS and _ARTIKLA_AFTER_HEAD_RE.match(
+            text[m.end() :]
+        ):
             continue
 
         # Morphology gate (SHARED, M1-derived): reject the non-statute collision
@@ -1376,7 +1467,7 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
     # them separately (codes ARE statutes) and merge their cross-statute mentions
     # in — never an internal leak.
     out.extend(_recognize_kaari_refs(text))
-    return out
+    return tuple(out)
 
 
 __all__ = ["recognize_by_name_refs", "name_head_np_start_before_paren"]

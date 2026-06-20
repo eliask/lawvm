@@ -11,7 +11,10 @@ from lawvm.finland.metadata import (
     _statute_id_sort_key,
     get_operative_body_repeal_candidate,
     get_johtolause,
+    get_johtolause_from_tree,
+    separate_commencement_law_witness,
 )
+from lawvm.finland.corpus import get_corpus
 
 # ---------------------------------------------------------------------------
 # Minimal XML helpers
@@ -71,6 +74,27 @@ def test_get_johtolause_returns_empty_when_no_match() -> None:
     xml = _xml("<body><section><num>1 §</num></section></body>")
     result = get_johtolause(xml)
     assert result == ""
+
+
+def test_get_johtolause_from_tree_restores_authorial_notes() -> None:
+    xml = _xml(
+        "<preamble>"
+        "  <formula name='enactingClause'>"
+        "    <span class='corrigendum'>muutetaan 3 §"
+        "      <authorialNote>alkuperäinen sanamuoto kuului: muutetaan 9 §</authorialNote>"
+        "    </span>"
+        "  </formula>"
+        "</preamble>"
+    )
+    tree = etree.fromstring(xml)
+
+    result = get_johtolause_from_tree(tree)
+
+    assert "muutetaan 3 §" in result
+    assert "9 §" not in result
+    authorial_notes = tree.xpath(".//*[local-name()='authorialNote']")
+    assert isinstance(authorial_notes, list)
+    assert len(authorial_notes) == 1
 
 
 def test_get_johtolause_includes_insertions_originals_block() -> None:
@@ -359,6 +383,23 @@ def test_amendment_effective_date_marks_erikseen_lailla_commencement_as_continge
 
     assert result is None
     assert step == "contingent_text"
+
+
+def test_amendment_effective_date_resolves_erikseen_lailla_from_separate_commencement_law() -> None:
+    corpus = get_corpus()
+    source = corpus.read_source("2018/947")
+    assert source is not None
+    tree = etree.fromstring(source)
+
+    result, step = _amendment_effective_date_with_step(tree)
+    witness = separate_commencement_law_witness("2018/947")
+
+    assert result == dt.date(2019, 1, 1)
+    assert step == "separate_commencement_law"
+    assert witness is not None
+    assert witness.commencement_statute_id == "2018/937"
+    assert witness.source_provision_ref == "2018/937/1"
+    assert witness.rule_id == "fi_separate_commencement_law_list"
 
 
 def test_statute_issue_date_prefers_signature_when_frbr_year_conflicts_with_doc_number_year() -> None:

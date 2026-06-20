@@ -249,6 +249,15 @@ def _skip_prov_span(tokens: list[Token], start: int, n: int) -> int:
             j += 1
         return False
 
+    def _numeric_run_reaches_structural_unit(start_idx: int) -> bool:
+        """Return True for bounded ``NUM[, NUM ja NUM] §`` target runs."""
+        for k in range(start_idx, min(start_idx + 8, n)):
+            if tokens[k].cat in ("PYKALA", "LUKU", "LIITE", "NIMIKE"):
+                return True
+            if tokens[k].cat not in ("NUM", "LETTER", "DASH", "COMMA", "CONJ"):
+                break
+        return False
+
     i = start + 1
     while i < n:
         t = tokens[i]
@@ -307,13 +316,9 @@ def _skip_prov_span(tokens: list[Token], start: int, n: int) -> int:
                 i += 1
                 continue
             if nxt.cat == "NUM" and not seen_internal_verb:
-                # Check if number leads to structural target
-                for k in range(i + 2, min(i + 5, n)):
-                    if tokens[k].cat in ("PYKALA", "LUKU", "LIITE", "NIMIKE"):
-                        i += 1  # consume comma
-                        return i
-                    if tokens[k].cat not in ("NUM", "LETTER", "DASH", "COMMA", "CONJ"):
-                        break
+                if _numeric_run_reaches_structural_unit(i + 2):
+                    i += 1  # consume comma
+                    return i
             # Anaphoric provenance ("..., sellaisena kuin se on [edellä
             # mainitussa] N päivänä <month> NNNN annetussa asetuksessa, 34 §:n
             # ...") carries a real internal verb (on/ovat) but its appositive
@@ -334,12 +339,9 @@ def _skip_prov_span(tokens: list[Token], start: int, n: int) -> int:
                 and seen_internal_verb
                 and seen_date_after_internal_verb
             ):
-                for k in range(i + 2, min(i + 5, n)):
-                    if tokens[k].cat in ("PYKALA", "LUKU", "LIITE", "NIMIKE"):
-                        i += 1  # consume comma
-                        return i
-                    if tokens[k].cat not in ("NUM", "LETTER", "DASH", "COMMA", "CONJ"):
-                        break
+                if _numeric_run_reaches_structural_unit(i + 2):
+                    i += 1  # consume comma
+                    return i
             if nxt.cat == "NUM" and seen_internal_verb and _is_relative_move_tail_after_structural_list(i + 1):
                 i += 1  # consume comma
                 return i
@@ -362,11 +364,8 @@ def _skip_prov_span(tokens: list[Token], start: int, n: int) -> int:
                 i += 1
                 continue
             if nxt.cat == "NUM" and not seen_internal_verb:
-                for k in range(i + 2, min(i + 5, n)):
-                    if tokens[k].cat in ("PYKALA", "LUKU"):
-                        return i  # preserve CONJ
-                    if tokens[k].cat not in ("NUM", "LETTER", "DASH"):
-                        break
+                if _numeric_run_reaches_structural_unit(i + 2):
+                    return i  # preserve CONJ
             # CONJ + continuation word = keep skipping
             if nxt.text.lower() in _PROV_CONTINUATION:
                 i += 1

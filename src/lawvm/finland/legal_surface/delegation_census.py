@@ -205,7 +205,7 @@ def _build_delegation_oracle(statute_id: str, body: str) -> _DelegationOracleCon
     from lawvm.tools.parse_bench import _archive_path
 
     try:
-        store = TransparentCorpusStore(Farchive(_archive_path()))
+        store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
         xb = store.read_source(statute_id) or store.read_amendment(statute_id)
     except Exception:
         xb = None
@@ -367,7 +367,7 @@ def compute_basis_coverage(
     from lawvm.finland.transparent_store import TransparentCorpusStore
     from lawvm.tools.parse_bench import _archive_path
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     if min_year:
         ids = [s for s in ids if s[:4].isdigit() and int(s[:4]) >= min_year]

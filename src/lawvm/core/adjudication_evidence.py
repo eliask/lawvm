@@ -1,6 +1,7 @@
 """Shared projection from replay adjudications to corpus evidence rows."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 from lawvm.core.diagnostic_records import (
@@ -17,11 +18,46 @@ def text_or_none(value: Any) -> str | None:
     return text if text else None
 
 
+@dataclass(frozen=True, slots=True)
+class AdjudicationEvidenceInput:
+    kind: str
+    detail: Mapping[str, Any]
+    op_id: str = ""
+    source_statute: str = ""
+    message: str = ""
+
+
+def _adjudication_input(
+    adjudication: Any,
+    *,
+    default_kind: str,
+) -> AdjudicationEvidenceInput:
+    if isinstance(adjudication, Mapping):
+        raw_kind = adjudication.get("kind")
+        raw_detail = adjudication.get("detail")
+        raw_op_id = adjudication.get("op_id")
+        raw_source_statute = adjudication.get("source_statute")
+        raw_message = adjudication.get("message")
+    else:
+        raw_kind = getattr(adjudication, "kind", None)
+        raw_detail = getattr(adjudication, "detail", None)
+        raw_op_id = getattr(adjudication, "op_id", None)
+        raw_source_statute = getattr(adjudication, "source_statute", None)
+        raw_message = getattr(adjudication, "message", None)
+    return AdjudicationEvidenceInput(
+        kind=text_or_none(raw_kind) or default_kind,
+        detail=_mapping_or_empty(raw_detail),
+        op_id=text_or_none(raw_op_id) or "",
+        source_statute=text_or_none(raw_source_statute) or "",
+        message=text_or_none(raw_message) or "",
+    )
+
+
 def adjudication_kind_counts(adjudications: Iterable[Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for adjudication in adjudications:
-        kind = text_or_none(getattr(adjudication, "kind", None)) or "unknown"
-        counts[kind] = counts.get(kind, 0) + 1
+        record = _adjudication_input(adjudication, default_kind="unknown")
+        counts[record.kind] = counts.get(record.kind, 0) + 1
     return dict(sorted(counts.items()))
 
 
@@ -92,10 +128,11 @@ def adjudication_diagnostic_detail(
 ) -> dict[str, Any]:
     """Build the shared diagnostic envelope for a CompileAdjudication-like object."""
 
+    record = _adjudication_input(adjudication, default_kind="compile_adjudication")
     return adjudication_record_diagnostic_detail(
         {
-            "kind": getattr(adjudication, "kind", None),
-            "detail": getattr(adjudication, "detail", None),
+            "kind": record.kind,
+            "detail": record.detail,
         },
         default_blocking=default_blocking,
     )
@@ -125,11 +162,14 @@ def adjudication_finding_evidence_rows(
 
     rows: list[CorpusFindingEvidenceRow] = []
     for index, adjudication in enumerate(adjudications):
-        kind = text_or_none(getattr(adjudication, "kind", None)) or "compile_adjudication"
-        detail = adjudication_diagnostic_detail(adjudication)
-        raw_detail = _mapping_or_empty(getattr(adjudication, "detail", None))
-        op_id = text_or_none(getattr(adjudication, "op_id", None)) or ""
-        source_statute = text_or_none(getattr(adjudication, "source_statute", None)) or base_id
+        record = _adjudication_input(adjudication, default_kind="compile_adjudication")
+        detail = adjudication_record_diagnostic_detail(
+            {
+                "kind": record.kind,
+                "detail": record.detail,
+            }
+        )
+        source_statute = record.source_statute or base_id
         rows.append(
             CorpusFindingEvidenceRow(
                 finding_id=_adjudication_finding_id(
@@ -137,26 +177,26 @@ def adjudication_finding_evidence_rows(
                     base_id=base_id,
                     as_of=as_of,
                     index=index,
-                    kind=kind,
-                    op_id=op_id,
+                    kind=record.kind,
+                    op_id=record.op_id,
                 ),
                 frontend_id=frontend_id,
-                family=kind,
+                family=record.kind,
                 rule_id=str(detail["rule_id"]),
                 phase=str(detail["phase"]),
-                message=text_or_none(getattr(adjudication, "message", None)) or kind,
+                message=record.message or record.kind,
                 source_artifact_id=source_statute,
-                source_unit_id=op_id,
-                related_row_ids=(op_id,) if op_id else (),
+                source_unit_id=record.op_id,
+                related_row_ids=(record.op_id,) if record.op_id else (),
                 blocking=bool(detail["blocking"]),
                 strict_disposition=str(detail["strict_disposition"]),
                 quirks_disposition=str(detail["quirks_disposition"]),
                 evidence={
                     "base_id": base_id,
                     "as_of": as_of,
-                    "kind": kind,
-                    "op_id": op_id,
-                    "detail": dict(raw_detail),
+                    "kind": record.kind,
+                    "op_id": record.op_id,
+                    "detail": dict(record.detail),
                     "diagnostic_detail": detail,
                 },
             )

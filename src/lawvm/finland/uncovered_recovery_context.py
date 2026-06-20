@@ -4,8 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-import lxml.etree as etree
-
 from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.johto_scope_mentions import (
     collect_johto_chapter_scope_mentions,
@@ -48,7 +46,7 @@ def _part_insert_labels_from_ops(ops: Iterable[AmendmentOp]) -> frozenset[str]:
 
 def build_uncovered_recovery_context(
     *,
-    muutos_tree: etree._Element,
+    preamble_text: str,
     ops: Iterable[AmendmentOp],
     new_chapter_labels: set[str] | None,
 ) -> UncoveredRecoveryContext:
@@ -102,9 +100,8 @@ def build_uncovered_recovery_context(
             )
         )
 
-    johto_el = muutos_tree.find(".//{*}preamble")
-    if johto_el is not None:
-        johto_text = etree.tostring(johto_el, method="text", encoding="unicode")
+    johto_text = preamble_text
+    if johto_text:
         johto_mentioned_labels.update(collect_johto_mentioned_section_labels(johto_text))
         johto_moment_targets = collect_johto_moment_targets(johto_text)
         johto_numbered_table_targets = collect_johto_numbered_table_targets_by_section(johto_text)

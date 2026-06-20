@@ -2826,7 +2826,7 @@ def test_parse_ee_amendment_ops_prefers_numbered_body_item_over_appendix_preambl
     assert body_ops[0].payload is not None
     assert "soovib toota sööta" in body_ops[0].payload.text
     assert "määruse lisa kehtestatakse" not in body_ops[0].payload.text
-    assert "ee_old_format_numbered_items_preferred_over_preambul_recovery" in body_ops[0].provenance_tags
+    assert "ee_new_format_target_act_header_not_wrapper_instruction" in body_ops[0].provenance_tags
 
 
 def test_extract_ee_ops_fans_out_mixed_text_replace_targets() -> None:
@@ -4582,8 +4582,9 @@ def test_parse_ee_amendment_ops_prefers_old_format_plain_html_over_preambul_reco
     rule_id = "ee_old_format_html_section_preferred_over_preambul_plain_body"
     by_target = {op.target.path: op for op in ops}
 
-    assert len(ops) == 34
-    assert sum(1 for op in ops if op.action is StructuralAction.META) == 0
+    assert len(ops) == 36
+    assert sum(1 for op in ops if op.action is StructuralAction.META) == 2
+    assert sum(1 for op in ops if op.action is not StructuralAction.META) == 34
     assert by_target[(("section", "2"), ("subsection", "2"), ("item", "6"))].action is StructuralAction.REPEAL
     assert by_target[(("section", "9"), ("subsection", "1"))].action is StructuralAction.REPLACE
     assert by_target[(("section", "18"), ("subsection", "2"), ("item", "9"))].action is StructuralAction.INSERT

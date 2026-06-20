@@ -195,13 +195,13 @@ def test_build_statute_graph_fi_prefers_replay_owned_timelines(monkeypatch) -> N
         )
         monkeypatch.setitem(
             sys.modules,
-            "lawvm.finland.cross_refs",
+            "lawvm.finland.references.cross_refs",
             types.SimpleNamespace(extract_cross_refs=lambda xml, sid: []),
         )
         monkeypatch.setitem(
             sys.modules,
-            "lawvm.finland.delegation",
-            types.SimpleNamespace(extract_delegations=lambda xml, sid: []),
+            "lawvm.finland.legal_surface.delegation_edge_adapter",
+            types.SimpleNamespace(extract_delegations_canonical=lambda xml, sid: []),
         )
 
         import lawvm.core.timeline as timeline_mod

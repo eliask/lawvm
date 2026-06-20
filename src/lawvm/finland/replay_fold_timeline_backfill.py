@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass
 from typing import Iterator, cast
 
@@ -11,6 +10,7 @@ from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.timeline import compile_timelines, select_active_version
+from lawvm.core.timeline_lineage import prefix_migration_event_signatures
 from lawvm.finland.apply_runtime_support import _stamp_exact_section_snapshot_payload
 
 FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID = "fi.replay.fold_timeline_backfill"
@@ -39,6 +39,7 @@ class FoldTimelineBackfillResult:
     records: tuple[FoldTimelineBackfillRecord, ...]
     raw_timelines: dict[LegalAddress, ProvisionTimeline]
     rekeyed_timelines: dict[LegalAddress, ProvisionTimeline]
+    backfill_ops: tuple[LegalOperation, ...] = ()
 
 
 def _content_is_repeal_placeholder(node: IRNode) -> bool:
@@ -107,13 +108,22 @@ def _active_timeline_content(
     address: LegalAddress,
     *,
     as_of: str,
+    cache: dict[LegalAddress, IRNode | None] | None = None,
 ) -> IRNode | None:
+    if cache is not None and address in cache:
+        return cache[address]
     timeline = timelines.get(address)
     if timeline is None:
+        if cache is not None:
+            cache[address] = None
         return None
     version = select_active_version(timeline, as_of)
     if version is None or version.content is None:
+        if cache is not None:
+            cache[address] = None
         return None
+    if cache is not None:
+        cache[address] = version.content
     return version.content
 
 
@@ -129,12 +139,13 @@ def _timeline_intentionally_absent(
     address: LegalAddress,
     *,
     as_of: str,
+    active_content_cache: dict[LegalAddress, IRNode | None] | None = None,
 ) -> bool:
     """Return whether PIT absence is already explained by repeal/expiry authority."""
     timeline = timelines.get(address)
     if timeline is None:
         return False
-    if _active_timeline_content(timelines, address, as_of=as_of) is not None:
+    if _active_timeline_content(timelines, address, as_of=as_of, cache=active_content_cache) is not None:
         return False
     for version in timeline.versions:
         if version.content is None:
@@ -150,19 +161,35 @@ def _has_timeline_authority(
     address: LegalAddress,
     *,
     as_of: str,
+    active_content_cache: dict[LegalAddress, IRNode | None] | None = None,
 ) -> bool:
-    if _timeline_intentionally_absent(timelines, address, as_of=as_of):
+    if _timeline_intentionally_absent(
+        timelines,
+        address,
+        as_of=as_of,
+        active_content_cache=active_content_cache,
+    ):
         return True
-    if _active_timeline_content(timelines, address, as_of=as_of) is not None:
+    if _active_timeline_content(timelines, address, as_of=as_of, cache=active_content_cache) is not None:
         return True
     if not address.path or address.path[-1][0] != "section":
         return False
     section_label = address.path[-1][1]
     for prefix_len in range(len(address.path) - 1, 0, -1):
         ancestor = LegalAddress(path=address.path[:prefix_len])
-        if _timeline_intentionally_absent(timelines, ancestor, as_of=as_of):
+        if _timeline_intentionally_absent(
+            timelines,
+            ancestor,
+            as_of=as_of,
+            active_content_cache=active_content_cache,
+        ):
             continue
-        ancestor_content = _active_timeline_content(timelines, ancestor, as_of=as_of)
+        ancestor_content = _active_timeline_content(
+            timelines,
+            ancestor,
+            as_of=as_of,
+            cache=active_content_cache,
+        )
         if ancestor_content is None:
             continue
         if _container_includes_section_label(ancestor_content, section_label):
@@ -178,19 +205,21 @@ def _preview_rekeyed_timelines(
     as_of: str,
     temporal_events: tuple[object, ...],
     base_enacted_date: str,
+    raw_timelines: dict[LegalAddress, ProvisionTimeline] | None = None,
 ) -> FoldTimelineBackfillResult:
     from lawvm.finland.replay_products import (
         _rekey_timelines_with_migration_events,
         fi_label_norm,
     )
 
-    raw_timelines = compile_timelines(
-        base_ir,
-        lo_ops,
-        base_enacted_date=base_enacted_date,
-        label_norm=fi_label_norm,
-        temporal_events=cast(tuple[TemporalEvent, ...], temporal_events),
-    )
+    if raw_timelines is None:
+        raw_timelines = compile_timelines(
+            base_ir,
+            lo_ops,
+            base_enacted_date=base_enacted_date,
+            label_norm=fi_label_norm,
+            temporal_events=cast(tuple[TemporalEvent, ...], temporal_events),
+        )
     rekeyed_timelines = _rekey_timelines_with_migration_events(
         raw_timelines,
         migration_events,
@@ -200,6 +229,25 @@ def _preview_rekeyed_timelines(
         records=(),
         raw_timelines=raw_timelines,
         rekeyed_timelines=rekeyed_timelines,
+    )
+
+
+def _active_migration_signature_key(
+    migration_events: tuple[MigrationEvent, ...],
+    *,
+    as_of: str,
+) -> tuple[object, ...]:
+    """Return the migration-projection state visible at ``as_of``.
+
+    Prefix migration projection only changes when a migration event becomes
+    active. Transition-graph exports materialize many non-migration change
+    dates, so caching by this signature avoids rekeying the same timeline map
+    for every ordinary amendment date.
+    """
+    return tuple(
+        signature
+        for signature in prefix_migration_event_signatures(migration_events)
+        if not signature.effective or not as_of or signature.effective <= as_of
     )
 
 
@@ -214,6 +262,8 @@ def append_fold_timeline_backfill_ops(
     as_of: str,
     temporal_events: tuple[object, ...] = (),
     base_enacted_date: str = "",
+    preview_raw_timelines: dict[LegalAddress, ProvisionTimeline] | None = None,
+    preview_rekeyed_timelines_cache: dict[object, object] | None = None,
 ) -> FoldTimelineBackfillResult:
     """Append snapshot LOs for fold sections that lack timeline authority.
 
@@ -227,21 +277,46 @@ def append_fold_timeline_backfill_ops(
         title=base_title,
         body=base_ir,
     )
-    preview = _preview_rekeyed_timelines(
-        base_ir=preview_base,
-        lo_ops=lo_ops,
-        migration_events=migration_events,
-        as_of=as_of,
-        temporal_events=temporal_events,
-        base_enacted_date=base_enacted_date,
-    )
+    preview_cache: dict[object, object] | None = None
+    preview_cache_key: tuple[object, ...] | None = None
+    preview: FoldTimelineBackfillResult | None = None
+    if preview_raw_timelines is not None and preview_rekeyed_timelines_cache is not None:
+        preview_cache = preview_rekeyed_timelines_cache
+        preview_cache_key = (
+            "fold_backfill_preview_rekeyed_timelines",
+            id(preview_raw_timelines),
+            len(preview_raw_timelines),
+            _active_migration_signature_key(migration_events, as_of=as_of),
+        )
+        cached_preview = preview_cache.get(preview_cache_key)
+        if isinstance(cached_preview, FoldTimelineBackfillResult):
+            preview = cached_preview
+    if preview is None:
+        preview = _preview_rekeyed_timelines(
+            base_ir=preview_base,
+            lo_ops=lo_ops,
+            migration_events=migration_events,
+            as_of=as_of,
+            temporal_events=temporal_events,
+            base_enacted_date=base_enacted_date,
+            raw_timelines=preview_raw_timelines,
+        )
+        if preview_cache is not None and preview_cache_key is not None:
+            preview_cache[preview_cache_key] = preview
     existing_op_ids = {op.op_id for op in lo_ops}
     records: list[FoldTimelineBackfillRecord] = []
+    backfill_ops: list[LegalOperation] = []
+    active_content_cache: dict[LegalAddress, IRNode | None] = {}
     for path, node in _iter_fold_section_nodes(replay_fold_ir):
         if _content_is_repeal_placeholder(node):
             continue
         address = LegalAddress(path=path)
-        if _has_timeline_authority(preview.rekeyed_timelines, address, as_of=as_of):
+        if _has_timeline_authority(
+            preview.rekeyed_timelines,
+            address,
+            as_of=as_of,
+            active_content_cache=active_content_cache,
+        ):
             continue
         source_statute, effective = _migration_source_for_address(
             address,
@@ -253,24 +328,24 @@ def append_fold_timeline_backfill_ops(
         op_id = f"snapshot_section_{node.label}_fold_timeline_backfill"
         if op_id in existing_op_ids:
             continue
-        lo_ops.append(
-            LegalOperation(
-                op_id=op_id,
-                sequence=0,
-                action=StructuralAction.INSERT,
-                target=address,
-                payload=_stamp_exact_section_snapshot_payload(copy.deepcopy(node)),
-                source=OperationSource(
-                    statute_id=source_statute,
-                    title="Fold timeline backfill",
-                    enacted=effective,
-                    effective=effective,
-                    raw_text="",
-                ),
-                group_id=f"finland-fold-backfill:{source_statute}:{address}",
-                witness_rule_id=FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID,
-            )
+        backfill_op = LegalOperation(
+            op_id=op_id,
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=address,
+            payload=_stamp_exact_section_snapshot_payload(node),
+            source=OperationSource(
+                statute_id=source_statute,
+                title="Fold timeline backfill",
+                enacted=effective,
+                effective=effective,
+                raw_text="",
+            ),
+            group_id=f"finland-fold-backfill:{source_statute}:{address}",
+            witness_rule_id=FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID,
         )
+        lo_ops.append(backfill_op)
+        backfill_ops.append(backfill_op)
         existing_op_ids.add(op_id)
         records.append(
             FoldTimelineBackfillRecord(
@@ -283,6 +358,7 @@ def append_fold_timeline_backfill_ops(
         records=tuple(records),
         raw_timelines=preview.raw_timelines,
         rekeyed_timelines=preview.rekeyed_timelines,
+        backfill_ops=tuple(backfill_ops),
     )
 
 

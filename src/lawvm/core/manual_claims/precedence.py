@@ -89,20 +89,46 @@ class AmbiguousClaimSet:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class ClaimPrecedenceInput:
+    """One competing claim value considered by precedence resolution."""
+
+    claim_id: str
+    value: str
+    validator_status: str
+    source_witness_type: str
+
+
+ClaimPrecedenceInputLike = ClaimPrecedenceInput | tuple[str, str, str, str]
+
+
+def _claim_precedence_input(item: ClaimPrecedenceInputLike) -> ClaimPrecedenceInput:
+    if isinstance(item, ClaimPrecedenceInput):
+        return item
+    claim_id, value, validator_status, source_witness_type = item
+    return ClaimPrecedenceInput(
+        claim_id=claim_id,
+        value=value,
+        validator_status=validator_status,
+        source_witness_type=source_witness_type,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Precedence resolution
 # ---------------------------------------------------------------------------
 
 
 def resolve_precedence(
-    claims_with_values: Sequence[Tuple[str, str, str, str]],
+    claims_with_values: Sequence[ClaimPrecedenceInputLike],
     layer: str,
     registry: PrecedenceRegistry,
 ) -> Tuple[Optional[str], Optional[AmbiguousClaimSet]]:
     """Resolve competing claims for a single projection slot by precedence rules.
 
     Args:
-        claims_with_values: Sequence of (claim_id, value, validator_status, source_witness_type).
+        claims_with_values: Competing claim values. Tuple inputs are accepted for
+            the transition API, but new callers should pass ClaimPrecedenceInput.
         layer: "extraction" | "substrate" | "correction" | "adjudication".
         registry: Loaded PrecedenceRegistry.
 
@@ -114,65 +140,67 @@ def resolve_precedence(
     if not claims_with_values:
         return None, None
 
-    if len(claims_with_values) == 1:
-        return claims_with_values[0][0], None
+    claims = tuple(_claim_precedence_input(item) for item in claims_with_values)
+
+    if len(claims) == 1:
+        return claims[0].claim_id, None
 
     # Collect unique values; if all claims agree, pick first (no real ambiguity)
-    values = {v for _, v, _, _ in claims_with_values}
+    values = {claim.value for claim in claims}
     if len(values) == 1:
-        return claims_with_values[0][0], None
+        return claims[0].claim_id, None
 
     # Apply layer-specific precedence ordering
     if layer == "extraction":
-        def _rank(item: Tuple[str, str, str, str]) -> int:
-            _, _, vs, _ = item
+        def _rank(item: ClaimPrecedenceInput) -> int:
+            validator_status = item.validator_status
             try:
-                return _EXTRACTION_VALIDATOR_ORDER.index(vs)
+                return _EXTRACTION_VALIDATOR_ORDER.index(validator_status)
             except ValueError:
                 return len(_EXTRACTION_VALIDATOR_ORDER)
 
-        ranked = sorted(claims_with_values, key=_rank)
+        ranked = sorted(claims, key=_rank)
         best_rank = _rank(ranked[0])
         top_tier = [c for c in ranked if _rank(c) == best_rank]
         if len(top_tier) == 1:
-            return top_tier[0][0], None
+            return top_tier[0].claim_id, None
         # Still ambiguous at same validator rank
-        claim_ids = tuple(c[0] for c in top_tier)
-        competing_vals = tuple(c[1] for c in top_tier)
+        claim_ids = tuple(claim.claim_id for claim in top_tier)
+        competing_vals = tuple(claim.value for claim in top_tier)
         return None, AmbiguousClaimSet(
             target_key="",
             competing_claim_ids=claim_ids,
             competing_values=competing_vals,
             layer=layer,
-            reason=f"Multiple claims with equal validator_status={ranked[0][2]!r}",
+            reason=f"Multiple claims with equal validator_status={ranked[0].validator_status!r}",
         )
 
     elif layer == "substrate":
-        def _swrank(item: Tuple[str, str, str, str]) -> int:
-            _, _, _, sw = item
+        def _swrank(item: ClaimPrecedenceInput) -> int:
+            source_witness_type = item.source_witness_type
             try:
-                return _SUBSTRATE_WITNESS_ORDER.index(sw)
+                return _SUBSTRATE_WITNESS_ORDER.index(source_witness_type)
             except ValueError:
                 return len(_SUBSTRATE_WITNESS_ORDER)
 
-        ranked = sorted(claims_with_values, key=_swrank)
+        ranked = sorted(claims, key=_swrank)
         best_rank = _swrank(ranked[0])
         top_tier = [c for c in ranked if _swrank(c) == best_rank]
         if len(top_tier) == 1:
-            return top_tier[0][0], None
-        claim_ids = tuple(c[0] for c in top_tier)
-        competing_vals = tuple(c[1] for c in top_tier)
+            return top_tier[0].claim_id, None
+        claim_ids = tuple(claim.claim_id for claim in top_tier)
+        competing_vals = tuple(claim.value for claim in top_tier)
         return None, AmbiguousClaimSet(
             target_key="",
             competing_claim_ids=claim_ids,
             competing_values=competing_vals,
             layer=layer,
-            reason=f"Multiple claims with equal source_witness_type={ranked[0][3]!r}",
+            reason=f"Multiple claims with equal source_witness_type={ranked[0].source_witness_type!r}",
         )
 
     # Correction and adjudication: no auto-resolution (bulk forbidden per §5)
-    claim_ids = tuple(c[0] for c in claims_with_values)
-    competing_vals = tuple(c[1] for c in claims_with_values)
+    claim_ids = tuple(claim.claim_id for claim in claims)
+    competing_vals = tuple(claim.value for claim in claims)
     return None, AmbiguousClaimSet(
         target_key="",
         competing_claim_ids=claim_ids,

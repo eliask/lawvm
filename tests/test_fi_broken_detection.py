@@ -21,8 +21,12 @@ from lawvm.finland.references.broken_detection import (
     BrokenCheckUnavailable,
     BrokenReason,
     BrokenReferenceFinding,
+    StatuteLifecycle,
+    StatuteLifecycleFinding,
+    StatuteLifecycleUnverifiable,
     default_provision_present,
     detect_broken,
+    detect_statute_lifecycle_broken,
 )
 
 CITED_ON = date(2015, 1, 1)
@@ -334,3 +338,128 @@ def test_default_provision_present_section_subsection_item() -> None:
         tree,
         ProvisionRef(statute_id="x", section_label="5", subsection_num=2, item_label="z"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Statute-lifecycle (registry/lifecycle-driven) detector
+# ---------------------------------------------------------------------------
+
+
+def _lifecycle_table(table: dict[str, StatuteLifecycle]):
+    """A LifecycleLookup over a dict; unknown ids -> known=False (fail-loud)."""
+
+    def _lookup(statute_id: str) -> StatuteLifecycle:
+        return table.get(
+            statute_id, StatuteLifecycle(valid_from=None, valid_to=None, known=False)
+        )
+
+    return _lookup
+
+
+def test_lifecycle_target_repealed_before_citing_is_broken() -> None:
+    """Cited act's valid_to is on/before the citing date -> TARGET_STATUTE_REPEALED."""
+    target = ProvisionRef(statute_id="200/2000", section_label="6")
+    # Citation written 2015-01-01 but the target act was repealed 2010-01-01.
+    table = {
+        "200/2000": StatuteLifecycle(
+            valid_from=date(2000, 1, 1), valid_to=date(2010, 1, 1)
+        )
+    }
+    results = detect_statute_lifecycle_broken(
+        [_mention(target, cited_start=date(2015, 1, 1))],
+        lifecycle_of=_lifecycle_table(table),
+    )
+    assert len(results) == 1
+    f = results[0]
+    assert isinstance(f, StatuteLifecycleFinding)
+    assert f.reason is BrokenReason.TARGET_STATUTE_REPEALED
+    assert f.cited_on == date(2015, 1, 1)
+    assert f.target_window == (date(2000, 1, 1), date(2010, 1, 1))
+    assert f.source_span is not None
+
+
+def test_lifecycle_target_in_force_at_citing_is_not_broken() -> None:
+    """Cited act repealed AFTER the citing date -> still in force when cited -> no finding."""
+    target = ProvisionRef(statute_id="200/2000", section_label="6")
+    table = {
+        "200/2000": StatuteLifecycle(
+            valid_from=date(2000, 1, 1), valid_to=date(2020, 1, 1)
+        )
+    }
+    results = detect_statute_lifecycle_broken(
+        [_mention(target, cited_start=date(2015, 1, 1))],
+        lifecycle_of=_lifecycle_table(table),
+    )
+    assert results == []
+
+
+def test_lifecycle_open_valid_to_is_in_force_not_broken() -> None:
+    """An open valid_to (no repeal date on record) means in force, not unknown."""
+    target = ProvisionRef(statute_id="200/2000", section_label="6")
+    table = {"200/2000": StatuteLifecycle(valid_from=date(2000, 1, 1), valid_to=None)}
+    results = detect_statute_lifecycle_broken(
+        [_mention(target, cited_start=date(2015, 1, 1))],
+        lifecycle_of=_lifecycle_table(table),
+    )
+    assert results == []
+
+
+def test_lifecycle_target_not_yet_in_force_is_broken() -> None:
+    """Cited act's valid_from is after the citing date -> NOT_YET_IN_FORCE."""
+    target = ProvisionRef(statute_id="900/2020", section_label="1")
+    table = {"900/2020": StatuteLifecycle(valid_from=date(2020, 1, 1), valid_to=None)}
+    results = detect_statute_lifecycle_broken(
+        [_mention(target, cited_start=date(2015, 1, 1))],
+        lifecycle_of=_lifecycle_table(table),
+    )
+    assert len(results) == 1
+    f = results[0]
+    assert isinstance(f, StatuteLifecycleFinding)
+    assert f.reason is BrokenReason.TARGET_STATUTE_NOT_YET_IN_FORCE
+
+
+def test_lifecycle_unknown_lifecycle_is_unverifiable_never_broken() -> None:
+    """No registry entry -> StatuteLifecycleUnverifiable, never a false BROKEN."""
+    target = ProvisionRef(statute_id="404/1999", section_label="1")
+    results = detect_statute_lifecycle_broken(
+        [_mention(target, cited_start=date(2015, 1, 1))],
+        lifecycle_of=_lifecycle_table({}),
+    )
+    assert len(results) == 1
+    u = results[0]
+    assert isinstance(u, StatuteLifecycleUnverifiable)
+    assert u.unavailable_for == "target_lifecycle"
+
+
+def test_lifecycle_no_citing_date_is_unverifiable() -> None:
+    """No citing-date anchor -> cannot compare -> unverifiable, not broken."""
+    target = ProvisionRef(statute_id="200/2000", section_label="6")
+    table = {
+        "200/2000": StatuteLifecycle(
+            valid_from=date(2000, 1, 1), valid_to=date(2010, 1, 1)
+        )
+    }
+    results = detect_statute_lifecycle_broken(
+        [_mention(target, cited_start=None)],
+        lifecycle_of=_lifecycle_table(table),
+    )
+    assert len(results) == 1
+    u = results[0]
+    assert isinstance(u, StatuteLifecycleUnverifiable)
+    assert u.unavailable_for == "citing_date"
+
+
+def test_lifecycle_self_reference_skipped() -> None:
+    """A target == source self-ref is not a cross-statute lifecycle question."""
+    # _mention's source is 100/2010; target the same statute.
+    target = ProvisionRef(statute_id="100/2010", section_label="2")
+    table = {
+        "100/2010": StatuteLifecycle(
+            valid_from=date(2010, 1, 1), valid_to=date(2012, 1, 1)
+        )
+    }
+    results = detect_statute_lifecycle_broken(
+        [_mention(target, cited_start=date(2015, 1, 1))],
+        lifecycle_of=_lifecycle_table(table),
+    )
+    assert results == []

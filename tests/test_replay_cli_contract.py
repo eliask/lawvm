@@ -667,7 +667,7 @@ def test_uk_replay_enacted_only_json_threads_effect_count_parse_rejections(
     )
 
     class _FakeArchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs: Any):
             pass
 
         def __enter__(self):
@@ -774,7 +774,7 @@ def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_
     )
 
     class _FakeArchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs: Any):
             pass
 
         def __enter__(self):
@@ -1034,7 +1034,7 @@ def test_uk_replay_main_text_reports_evidence_summary(monkeypatch, tmp_path, cap
     )
 
     class _FakeArchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs: Any):
             pass
 
         def __enter__(self):
@@ -1375,7 +1375,7 @@ def test_uk_replay_main_json_reports_too_small_oracle_source(monkeypatch, tmp_pa
     parsed_labels: list[str] = []
 
     class _FakeArchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs: Any):
             pass
 
         def __enter__(self):
@@ -1452,7 +1452,7 @@ def test_uk_replay_json_reports_missing_enacted_source_context(
     db_path.write_text("placeholder", encoding="utf-8")
 
     class _FakeArchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs: Any):
             pass
 
         def __enter__(self):
@@ -1526,7 +1526,7 @@ def test_uk_replay_json_records_malformed_available_enacted_source(
     db_path.write_text("placeholder", encoding="utf-8")
 
     class _FakeArchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs: Any):
             pass
 
         def __enter__(self):
@@ -1612,7 +1612,7 @@ def test_uk_replay_json_records_malformed_available_oracle_source(
     )
 
     class _FakeArchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs: Any):
             pass
 
         def __enter__(self):
@@ -1712,7 +1712,7 @@ def test_uk_replay_source_first_threads_replay_regime(monkeypatch, tmp_path, cap
     seen: dict[str, object] = {}
 
     class _FakeArchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs: Any):
             pass
 
         def __enter__(self):
@@ -1897,7 +1897,7 @@ def test_uk_replay_main_json_records_oracle_compare_residuals(monkeypatch, tmp_p
     )
 
     class _FakeArchive:
-        def __init__(self, _path):
+        def __init__(self, _path, **_kwargs: Any):
             pass
 
         def __enter__(self):

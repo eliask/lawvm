@@ -320,6 +320,7 @@ def _corpus_available() -> bool:
     not _corpus_available(),
     reason="LAWVM_CANONICAL_DATA_ROOT not set; real-corpus parity skipped",
 )
+@pytest.mark.slow
 def test_graph_round_trips_real_corpus_statutes() -> None:
     """FULL-row parity + cardinality identity on real Finlex statutes.
 

@@ -65,14 +65,25 @@ JURISDICTION = "fi"
 # emit ``*_frame``; lenses/exception_condition.py emits the CUE kind
 # ``exception_condition_cue`` — NOT a ``*_frame`` alias). FRAME_KINDS excludes the
 # exception cue: it is the SOURCE of the exception edge, not a target frame.
+# A bare process/sanction noun is demoted to a ``*_cue`` kind (no actor/deadline,
+# no target/trigger), but it carries the SAME span the ``*_frame`` did, and these
+# passes attach edges by SPAN PROXIMITY only — never reading the frame's own
+# actor/deadline payload. Including the cue kinds here keeps the proximity-edge /
+# lint behaviour identical to before the demote.
 FRAME_KINDS: tuple[str, ...] = (
     "actor_modal_frame",
     "delegation_frame",
     "procedure_frame",
+    "procedure_cue",
     "sanction_frame",
+    "sanction_cue",
 )
 EXCEPTION_CUE_KIND = "exception_condition_cue"
 ACTOR_FRAME_KIND = "actor_modal_frame"
+# The sanction-family kinds the without-condition lint observes. A bare sanction
+# noun is now ``sanction_cue`` but is the SAME surface fact the lint observed when
+# it was a ``sanction_frame`` — keep both so the lint's subject set is unchanged.
+SANCTION_KINDS: frozenset[str] = frozenset({"sanction_frame", "sanction_cue"})
 
 # EXPERIMENTAL tunable: max character gap between two co-located frame spans in
 # the SAME source unit. Mirrors the sibling cross_lens_passes window (the frame
@@ -331,7 +342,7 @@ class SanctionConditionLintPass:
             (
                 (nid, n)
                 for nid, n in graph.nodes.items()
-                if n.node_kind == "sanction_frame"
+                if n.node_kind in SANCTION_KINDS
             ),
             key=lambda kv: kv[0],
         )
@@ -387,5 +398,6 @@ __all__ = [
     "RULE_EXCEPTION",
     "RULE_FRAME_ACTOR",
     "RULE_SANCTION_WITHOUT_CONDITION",
+    "SANCTION_KINDS",
     "SanctionConditionLintPass",
 ]

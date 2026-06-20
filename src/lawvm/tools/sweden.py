@@ -1054,7 +1054,10 @@ def _print_hydrate_bulk_rows(rows: list[dict[str, Any]], *, as_json: bool) -> No
 
 def _cmd_hydrate_bulk(args: "argparse.Namespace") -> None:
     payload = _read_bytes(args.scrape_json) if getattr(args, "scrape_json", None) else None
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=False,
+    ) as archive:
         ingest_summary: dict[str, Any] | None = None
         if payload is not None:
             ingest_summary = ingest_se_scraped_doc_html_map(payload, archive)
@@ -1121,7 +1124,10 @@ def _cmd_hydrate_bulk(args: "argparse.Namespace") -> None:
 
 
 def _cmd_backfill_official(args: "argparse.Namespace") -> None:
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=False,
+    ) as archive:
         started_at_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         year_start = int(getattr(args, "year_start", 1999) or 1999)
         year_end = int(getattr(args, "year_end", 2026) or 2026)
@@ -1535,7 +1541,10 @@ def _print_probe_rows(rows: list[dict[str, Any]], *, as_json: bool) -> None:
 
 
 def _cmd_fetch_official(args: "argparse.Namespace") -> None:
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=False,
+    ) as archive:
         max_age_hours = float("inf") if getattr(args, "max_age_hours", None) is None else float(args.max_age_hours)
         bundle = fetch_se_official_artifacts(
             args.sfs_id,
@@ -1568,7 +1577,10 @@ def _cmd_fetch_official(args: "argparse.Namespace") -> None:
 
 
 def _cmd_compile_official(args: "argparse.Namespace") -> None:
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=False,
+    ) as archive:
         try:
             ops = compile_se_official_ops_to_archive(archive, args.sfs_id)
             adjudications = load_se_official_ops_adjudications_from_archive(archive, args.sfs_id) or []
@@ -1600,7 +1612,10 @@ def _cmd_compile_official(args: "argparse.Namespace") -> None:
 
 
 def _cmd_fetch_current(args: "argparse.Namespace") -> None:
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=False,
+    ) as archive:
         max_age_hours = 24.0 if getattr(args, "max_age_hours", None) is None else float(args.max_age_hours)
         diagnostics: list[dict[str, Any]] = []
         current_json = fetch_se_rk_current_json(
@@ -1625,7 +1640,10 @@ def _cmd_fetch_current(args: "argparse.Namespace") -> None:
 
 
 def _cmd_hydrate_live(args: "argparse.Namespace") -> None:
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=False,
+    ) as archive:
         current_max_age_hours = 24.0 if getattr(args, "current_max_age_hours", None) is None else float(args.current_max_age_hours)
         official_max_age_hours = float("inf") if getattr(args, "official_max_age_hours", None) is None else float(args.official_max_age_hours)
         diagnostics: list[dict[str, Any]] = []
@@ -1775,7 +1793,7 @@ def _cmd_ingest_sfst_oracles(args: "argparse.Namespace") -> None:
         if show_progress and (index == 1 or index == total or index % 100 == 0):
             print(f"  ingest {index}/{total} {base}", file=sys.stderr)
 
-    with open_se_archive(db_path) as archive:
+    with open_se_archive(db_path, readonly=False) as archive:
         plan = enumerate_se_sfst_oracle_gain_bases(archive)
         result = scaled_ingest_se_sfst_oracles(
             archive,
@@ -2091,7 +2109,13 @@ def _format_se_older_base_chain_row(item: dict[str, Any]) -> str:
 
 
 def _cmd_plan_older_base(args: "argparse.Namespace") -> None:
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=not (
+            bool(getattr(args, "fetch_missing", False))
+            or bool(getattr(args, "probe_sources", False))
+        ),
+    ) as archive:
         try:
             result = plan_se_older_base_rebuild(
                 archive,
@@ -2141,7 +2165,10 @@ def _cmd_plan_older_base(args: "argparse.Namespace") -> None:
 
 
 def _cmd_probe(args: "argparse.Namespace") -> None:
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=False,
+    ) as archive:
         rows = _probe_sfs_ids(
             archive,
             list(args.sfs_ids),
@@ -2151,7 +2178,10 @@ def _cmd_probe(args: "argparse.Namespace") -> None:
 
 
 def _cmd_probe_base(args: "argparse.Namespace") -> None:
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=False,
+    ) as archive:
         current_json = fetch_se_rk_current_json(args.base_sfs_id, archive)
         if current_json is None:
             print(f"error: failed to fetch RK current JSON for {args.base_sfs_id}", file=sys.stderr)
@@ -2251,7 +2281,10 @@ def _cmd_parse_current(args: "argparse.Namespace") -> None:
 def _cmd_ingest_json(args: "argparse.Namespace") -> None:
     payload = _read_bytes(args.json_path)
     doc_html = _read_bytes(args.doc_html) if getattr(args, "doc_html", None) else None
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=False,
+    ) as archive:
         bundle = archive_se_source_bundle(payload, archive, doc_html=doc_html)
     sfs_id = bundle.source_record.sfs_id
     print(f"SFS ID:             {sfs_id}")
@@ -2263,7 +2296,10 @@ def _cmd_ingest_json(args: "argparse.Namespace") -> None:
 
 def _cmd_ingest_scrape_json(args: "argparse.Namespace") -> None:
     payload = _read_bytes(args.json_path)
-    with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
+    with open_se_archive(
+        Path(args.db) if getattr(args, "db", None) else None,
+        readonly=False,
+    ) as archive:
         result = ingest_se_scraped_doc_html_map(payload, archive)
     print(f"Entries:            {result['entry_count']}")
     print(f"Imported:           {result['imported_count']}")
