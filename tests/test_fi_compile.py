@@ -4025,7 +4025,7 @@ def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
     muutos_tree = etree.fromstring("<root/>")
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
 
-    monkeypatch.setattr(frontend_compile, "_sec1_fallback_peg_skip_required", lambda _johto, _parent_id: True)
+    monkeypatch.setattr(frontend_compile, "_sec1_fallback_peg_skip_required", lambda _johto, _parent_id, **_kwargs: True)
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -4061,6 +4061,54 @@ def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
     ]
     assert peg_skip
     assert peg_skip[0].detail.get("used_sec1_fallback") is True
+
+
+def test_normalize_and_compile_ops_keeps_sec1_keeper_act_repeal_list_on_peg_path() -> None:
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    johto = (
+        "Tällä lailla kumotaan eläintautilailla (441/2013) voimaan jätetyt "
+        "kumotun eläintautilain (55/1980) 12 §:n 1 momentin johdantokappale "
+        "ja 9 kohta sekä 2-4 momentti, 12 f § ja 15 §:n 5 momentti, "
+        "sellaisina kuin ne ovat laissa 303/2006."
+    )
+    muutos_tree = etree.fromstring("<root/>")
+    master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
+
+    phase2 = frontend_compile.normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2015/521",
+        source_title="Laki kumotun eläintautilain voimaan jätettyjen säännösten kumoamisesta",
+        used_sec1_fallback=True,
+        parent_id="1980/55",
+        strict_profile=None,
+    )
+
+    assert [
+        (
+            op.op_type,
+            op.target_section,
+            op.target_paragraph,
+            op.target_item,
+            op.target_special,
+        )
+        for op in phase2.output
+    ] == [
+        ("REPEAL", "12", 1, None, "johd"),
+        ("REPEAL", "12", 1, "9", None),
+        ("REPEAL", "12", 2, None, None),
+        ("REPEAL", "12", 3, None, None),
+        ("REPEAL", "12", 4, None, None),
+        ("REPEAL", "12f", None, None, None),
+        ("REPEAL", "15", 5, None, None),
+    ]
+    assert [
+        finding
+        for finding in phase2.findings()
+        if finding.kind == "PARSE.PEG_SKIP_SEC1_REPEAL_LIST"
+    ] == []
 
 
 def test_strict_fail_reasons_detect_source_pathology_findings() -> None:

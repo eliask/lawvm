@@ -4554,6 +4554,22 @@ def test_sec1_repeal_guard_keeps_citation_free_explicit_section_repeal_lists() -
     assert not _sec1_fallback_peg_skip_required(johto, "1994/1466")
 
 
+def test_sec1_repeal_guard_keeps_parent_targets_with_keeper_act_citation() -> None:
+    """Typed parser target evidence lets 2015/521 stay on the PEG path."""
+    johto = (
+        "Tällä lailla kumotaan eläintautilailla (441/2013) voimaan jätetyt "
+        "kumotun eläintautilain (55/1980) 12 §:n 1 momentin johdantokappale "
+        "ja 9 kohta sekä 2-4 momentti, 12 f § ja 15 §:n 5 momentti, "
+        "sellaisina kuin ne ovat laissa 303/2006."
+    )
+    assert _sec1_fallback_peg_skip_required(johto, "1980/55")
+    assert not _sec1_fallback_peg_skip_required(
+        johto,
+        "1980/55",
+        parser_has_structural_targets=True,
+    )
+
+
 def test_item_insert_renumbers_numeric_suffix_in_same_subsection() -> None:
     """Inserting a new numeric kohta must renumber later numeric siblings."""
     parent_id = "2010/1207"

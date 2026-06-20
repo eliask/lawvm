@@ -341,6 +341,17 @@ def _reject_overbroad_section_repeals_for_deep_targets(
     return kept, findings
 
 
+def _parser_produced_structural_targets(ops: List[LegalOperation]) -> bool:
+    """True when grammar lowering yielded executable structural target ops."""
+    structural_actions = {
+        StructuralAction.REPEAL,
+        StructuralAction.REPLACE,
+        StructuralAction.INSERT,
+        StructuralAction.RENUMBER,
+    }
+    return any(op.action in structural_actions and bool(op.target.path) for op in ops)
+
+
 def _parenthesized_payload_labels_for_section(
     muutos_tree: "etree._Element",
     *,
@@ -3556,13 +3567,29 @@ def normalize_and_compile_ops(
     johto = _normalize_fi_parse_text(johto)
     _allows_additive_subsection_fallback = "sellaisena kuin se on" in johto.lower()
 
-    peg_skip_for_sec1_repeal_list = used_sec1_fallback and _sec1_fallback_peg_skip_required(johto, parent_id)
     parse_result_local = parse_result
-    legal_ops = []
+    prechecked_legal_ops: List[LegalOperation] | None = None
+    parser_has_structural_targets = False
+    if used_sec1_fallback:
+        if parse_result_local is None:
+            parse_result_local = parse_johtolause_clause(johto, statute_id=parent_id or amendment_id)
+        prechecked_legal_ops = extract_johtolause_legal_ops_from_parse_result(parse_result_local)
+        parser_has_structural_targets = _parser_produced_structural_targets(prechecked_legal_ops)
+
+    peg_skip_for_sec1_repeal_list = used_sec1_fallback and _sec1_fallback_peg_skip_required(
+        johto,
+        parent_id,
+        parser_has_structural_targets=parser_has_structural_targets,
+    )
+    legal_ops: List[LegalOperation] = []
     if not peg_skip_for_sec1_repeal_list:
         if parse_result_local is None:
             parse_result_local = parse_johtolause_clause(johto, statute_id=parent_id or amendment_id)
-        legal_ops = extract_johtolause_legal_ops_from_parse_result(parse_result_local)
+        legal_ops = (
+            prechecked_legal_ops
+            if prechecked_legal_ops is not None
+            else extract_johtolause_legal_ops_from_parse_result(parse_result_local)
+        )
     if parse_result_local is not None:
         # Conservation across the frontend boundary: parse-layer findings are
         # part of this phase's output. In particular a blocking parse-layer
