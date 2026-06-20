@@ -7,6 +7,10 @@ from types import SimpleNamespace
 import lawvm.tools.no_debug as no_debug
 
 
+def _fake_index(data_dir: str | None = None) -> SimpleNamespace:
+    return SimpleNamespace(data_dir=data_dir, entries=[])
+
+
 def _fake_verify_result() -> SimpleNamespace:
     divergence = SimpleNamespace(
         address=SimpleNamespace(path=(("section", "7-1"), ("subsection", "1"))),
@@ -33,7 +37,11 @@ def _fake_verify_result() -> SimpleNamespace:
     )
 
 
-def test_no_debug_json_combines_reports(monkeypatch, capsys) -> None:
+def test_no_debug_json_combines_reports(monkeypatch, capsys, tmp_path) -> None:
+    monkeypatch.setattr(
+        "lawvm.norway.index.load_no_amendment_index",
+        lambda path: _fake_index(str(tmp_path)),
+    )
     monkeypatch.setattr(
         "lawvm.norway.verify.verify_no_against_current",
         lambda *args, **kwargs: _fake_verify_result(),
@@ -87,7 +95,7 @@ def test_no_debug_json_combines_reports(monkeypatch, capsys) -> None:
             base_id="no/lov/2024-01-12-1",
             as_of="2026-03-29",
             data_dir="data/norway.farchive",
-            index=".tmp/no_index_farchive.json",
+            index=str(tmp_path / "no_index_farchive.json"),
             commencement=None,
             path=["section:7-1"],
             limit=1,
@@ -107,7 +115,11 @@ def test_no_debug_json_combines_reports(monkeypatch, capsys) -> None:
     assert payload["ops"][0]["target_text"] == "section:7-1/subsection:1/item:c/item:1"
 
 
-def test_no_debug_text_prints_combined_summary(monkeypatch, capsys) -> None:
+def test_no_debug_text_prints_combined_summary(monkeypatch, capsys, tmp_path) -> None:
+    monkeypatch.setattr(
+        "lawvm.norway.index.load_no_amendment_index",
+        lambda path: _fake_index(str(tmp_path)),
+    )
     monkeypatch.setattr(
         "lawvm.norway.verify.verify_no_against_current",
         lambda *args, **kwargs: _fake_verify_result(),
@@ -146,7 +158,7 @@ def test_no_debug_text_prints_combined_summary(monkeypatch, capsys) -> None:
             base_id="no/lov/2024-01-12-1",
             as_of="2026-03-29",
             data_dir="data/norway.farchive",
-            index=".tmp/no_index_farchive.json",
+            index=str(tmp_path / "no_index_farchive.json"),
             commencement=None,
             path=[],
             limit=1,
@@ -163,7 +175,11 @@ def test_no_debug_text_prints_combined_summary(monkeypatch, capsys) -> None:
     assert "divergences:" in output
 
 
-def test_no_debug_json_prefers_untouched_drift_hint_when_no_touched_divergences(monkeypatch, capsys) -> None:
+def test_no_debug_json_prefers_untouched_drift_hint_when_no_touched_divergences(monkeypatch, capsys, tmp_path) -> None:
+    monkeypatch.setattr(
+        "lawvm.norway.index.load_no_amendment_index",
+        lambda path: _fake_index(str(tmp_path)),
+    )
     monkeypatch.setattr(
         "lawvm.norway.verify.verify_no_against_current",
         lambda *args, **kwargs: _fake_verify_result(),
@@ -202,7 +218,7 @@ def test_no_debug_json_prefers_untouched_drift_hint_when_no_touched_divergences(
             base_id="no/lov/2024-01-12-1",
             as_of="2026-03-29",
             data_dir="data/norway.farchive",
-            index=".tmp/no_index_farchive.json",
+            index=str(tmp_path / "no_index_farchive.json"),
             commencement=None,
             path=[],
             limit=1,
