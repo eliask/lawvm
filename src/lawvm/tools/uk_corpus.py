@@ -922,8 +922,12 @@ def do_stats(archive: Farchive) -> None:
 # ── CLI orchestration ────────────────────────────────────────────────────────
 
 
-def _open_archive(db_path: Path) -> Farchive:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+def _open_archive(db_path: Path, *, readonly: bool = False) -> Farchive:
+    if readonly:
+        if not db_path.exists():
+            raise SystemExit(f"ERROR: archive not found: {db_path}")
+    else:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
     return Farchive(
         db_path,
         compression=CompressionPolicy(
@@ -931,6 +935,7 @@ def _open_archive(db_path: Path) -> Farchive:
             dict_target_sizes={"xml": 112 * 1024},
             compression_level=9,
         ),
+        readonly=readonly,
     )
 
 
@@ -1008,7 +1013,7 @@ def run_repair_multiple_choices(
 def main(args: Any) -> None:
     command = getattr(args, "uk_corpus_command", None) or "stats"
     db_path = Path(getattr(args, "db", _DEFAULT_ARCHIVE))
-    archive = _open_archive(db_path)
+    archive = _open_archive(db_path, readonly=command == "stats")
     try:
         if command == "stats":
             do_stats(archive)

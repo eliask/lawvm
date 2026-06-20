@@ -70,7 +70,6 @@ def _load_corpus_sids(path: Path) -> list[str]:
 
 def main(args) -> None:
     db_path = Path(getattr(args, "db", None) or _default_db_path())
-    db_path.parent.mkdir(parents=True, exist_ok=True)
     sid_args = list(getattr(args, "sid", None) or [])
     corpus_arg = getattr(args, "corpus", None)
     delay = float(getattr(args, "delay", 1.0) or 1.0)
@@ -78,6 +77,13 @@ def main(args) -> None:
     diagnostics_arg = getattr(args, "diagnostics_jsonl", None)
     diagnostics_path = Path(diagnostics_arg) if diagnostics_arg else None
 
+    if not sid_args and not corpus_arg and not db_path.exists():
+        raise SystemExit(
+            f"ERROR: archive not found: {db_path}; pass --sid or --corpus "
+            "to seed a new archive"
+        )
+
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     archive = Farchive(db_path)
     diagnostics: list[dict[str, object]] = []
     try:

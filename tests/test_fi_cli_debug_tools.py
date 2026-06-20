@@ -98,6 +98,30 @@ def test_sync_finlex_dry_run_does_not_create_missing_archive(
     assert not missing_archive.exists()
 
 
+def test_sync_finlex_latest_archive_discovery_does_not_create_missing_archive(
+    tmp_path,
+) -> None:
+    missing_archive = tmp_path / "unused"
+
+    with pytest.raises(SystemExit) as excinfo:
+        sync_finlex_latest.main(
+            Namespace(
+                db=str(missing_archive),
+                corpus=None,
+                sid=[],
+                delay=0.0,
+                verbose=False,
+                diagnostics_jsonl=None,
+            )
+        )
+
+    assert excinfo.value.code == (
+        f"ERROR: archive not found: {missing_archive}; pass --sid or --corpus "
+        "to seed a new archive"
+    )
+    assert not missing_archive.exists()
+
+
 def test_bench_cli_help_matches_fi_tooling_defaults(
     cli_parser, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -778,7 +802,7 @@ def test_cli_parser_rejects_eu_reul_without_subcommand(cli_parser) -> None:
         cli_parser.parse_args(["eu-reul"])
 
 
-def test_sync_finlex_latest_main_uses_archive_ids(monkeypatch, capsys) -> None:
+def test_sync_finlex_latest_main_uses_archive_ids(monkeypatch, tmp_path, capsys) -> None:
     calls: dict[str, tuple[object, list[str], float, bool]] = {}
 
     def fake_sync_latest_pits(archive, sids, delay=1.0, verbose=False, diagnostics_out=None):
@@ -803,7 +827,11 @@ def test_sync_finlex_latest_main_uses_archive_ids(monkeypatch, capsys) -> None:
     monkeypatch.setattr(sync_finlex_latest, "Farchive", lambda path: DummyArchive(path))
     monkeypatch.setattr(sync_finlex_latest, "sync_latest_pits", fake_sync_latest_pits)
 
-    sync_finlex_latest.main(Namespace(db="data/finlex.farchive", corpus=None, delay=0.75, verbose=True))
+    db_path = tmp_path / "finlex.farchive"
+    db_path.touch()
+    sync_finlex_latest.main(
+        Namespace(db=str(db_path), corpus=None, delay=0.75, verbose=True)
+    )
 
     out = capsys.readouterr().out
     assert "Syncing latest Finnish PIT XMLs" in out
