@@ -113,3 +113,86 @@ If a stage cannot produce a root, a coverage row, or a residual ledger, that is 
 ## 10. What this contract forbids building
 
 No "everything must be pure" absolutism; no universal `Thing` object; no mass regex rewrite; no forcing forest-as-producer where a lens is canonical (prefer ONE canonical producer per family, shared parser by construction); no external providers inside the deterministic core; no benchmark-overlap-as-objective; no source spans as semantic identity without versioning; no viewer/packet rows as legal-state facts; no confidence controlling flow.
+
+## 11. Vocabulary (authority)
+
+> **This document is the normative vocabulary source for LawVM pipeline terms.** Where any other doc (AGENTS.md, the theory/constitution docs, the certificate/seam/proof-surface specs, [LAWVM_ARCHITECTURE_INDEX.md](LAWVM_ARCHITECTURE_INDEX.md)) uses an older or looser name, this section supplies the canonical definition and the reconciliation. The architecture index is the crosswalk/navigation map; it defers to this section for definitions where they conflict.
+
+### 11.1 The four orthogonal views (not a hierarchy)
+
+A pipeline is described four independent ways. They are **orthogonal**, not nested levels: one is an authority/truth domain, one is a verb, one is a noun, one is a contract.
+
+- **plane** — an authority/truth domain (a *kind of truth* a value carries; its type discipline). See §11.2.
+- **phase** — a verb/process step. The compiler *does* something. The canonical 11-step verb sequence lives in [AGENTS.md](../AGENTS.md) §3.1 (Acquire → … → Emit). A phase consumes one waist and emits another.
+- **waist** — a noun: the canonical typed artifact boundary passed *between* phases (the narrow I/O type another phase may rely on). The canonical enumeration is §2.
+- **seam** — a **stable consumer/interoperability contract** over one or more waists or projections (e.g. the provision-state seam, the certificate/checker seam, the MeVM consumer seam, the LegalSurfaceGraph export seam). A seam declares "external or downstream code may rely on this shape and version." A seam is **not** a "migration crossing" and not simply a waist: not every waist is a seam, and a seam may span several waists/projections.
+
+Canonical sentence: *plane = authority domain; phase = process step; waist = typed artifact boundary; seam = stable consumer/interoperability contract; projection = read model; overlay = external/additive assertion layer.*
+
+### 11.2 plane — two constitutional, six operational
+
+There are **two constitutional planes** — the highest abstraction, the split between values and accounts:
+
+- **state/value plane** — what LawVM computes about legal text, structure, time, source-surface facts, and materialized state.
+- **proof/accounting plane** — how LawVM knows, qualifies, blocks, witnesses, explains, checks, and reports those computed values.
+
+> Historical alias: older docs call these the **semantic** and **epistemic** planes. Prefer the new names; "semantic" is now overloaded (legal text-state vs source-surface syntax vs interpretation vs replay semantics).
+
+For implementation safety these **refine into six operational planes** (the type-distinct set enumerated in §3), so that authority cannot bleed across them: **source, surface, legal-state, evidence, projection, overlay**. Framing: *two constitutional planes (values vs accounts) refine into six operational planes (to prevent authority bleed).* This is a refinement, not a replacement — the six do not contradict the two.
+
+**Authority is NOT a plane.** It is a firewall *surface* carried across the planes (§7). See §11.10 for the four meanings of "authority".
+
+### 11.3 surface (always qualified — never bare)
+
+The word `surface` is overloaded; never use it unqualified in normative prose. Use exactly one of:
+
+- **source-surface** — a deterministic fact explicitly visible in source text (reference expression, defined-term binding, temporal phrase, actor/modal frame, condition/exception skeleton). May be a core fact when parsed deterministically, but is not legal interpretation.
+- **proof-surface** — a report/read model over evidence/accounting (e.g. an evidence/agreement report, verification matrix, residual ledger view).
+- **consumer-surface (projection)** — a public or internal read model (seam row, dump row, viewer row, review packet, SQLite/parquet export). A projection never becomes source truth.
+
+### 11.4 projection / overlay
+
+- **projection** — a read model derived from a committed dossier; not the source of truth (§3 E). Must be re-derivable from a typed value/dossier root.
+- **overlay** — an external/additive assertion layer (provider/LLM/human/registry enrichment); additive unless explicitly promoted, never hidden load-bearing state (§3 F).
+
+### 11.5 finding / residual / residue / diagnostic / frontier / pathology
+
+- **diagnostic** — a phase-local signal, often close to code (parser internal error, lowering warning, unparsed token span). May or may not be promoted to a finding. Diagnostic-only signals (including `confidence`) NEVER control flow.
+- **finding** — a *governed*, report-facing row with kind, role, severity/disposition, scope, and source/evidence. Its **role** is one of `observation | obligation | violation`. A registered blocking finding MUST have production liveness (§6).
+- **residual** — ONE typed unresolved/incomplete item that prevents, qualifies, or documents a claim (e.g. `expiry_unverified`, `manual_frontier`, `source_pathology`, `grounding_unclassified`).
+- **residue** — the aggregate set or summary of residuals (residual ledger / residue summary). Do not mix `residue_ledger` and `residual_summary`.
+- **frontier (FrontierWorkItem)** — a residual that carries a bounded next action (manual claim needed, source acquisition needed, doctrinal-arithmetic authority needed, public-page review needed).
+- **pathology** — a source/oracle/editorial defect or non-commensurability, **not** a compiler failure. Public packets say "source/current-text contrast worth review," never "official error".
+
+### 11.6 assertion / claim / certificate
+
+- **assertion** — an internal/provenance object with provenance and lifecycle (ProvenanceAssertion, ExternalAssertion, OverlayAssertion, ManualCompilationAssertion). Internal/epistemic; does not self-authorize replay.
+- **claim** — a public/certificate-level statement (certificate claim, `claim_kind`, public claim discipline). Reserved for the public trust boundary.
+- **certificate** — a checkable dossier over a declared subject/scope/time/profile/source bundle (§9). Reserve the word **"certified"** for artifacts covered by a certificate root or checker contract; internal exporter success is `exporter_invariants_passed`, never "certified".
+
+### 11.7 authority (four meanings — avoid the bare word)
+
+`authority` has at least four distinct meanings. Avoid the bare word; use the qualified term:
+
+1. **phase_owner** — which artifact owns semantics inside one phase (phase authority).
+2. **replay_authorized** — whether an object may mutate legal state (replay/execution authority).
+3. **certificate_status** — whether a public claim is checkable under a dossier/checker (certificate/check authority).
+4. **legal authority** — what courts/official publishers decide; LawVM MUST NOT claim this.
+
+### 11.8 status (namespace it — never bare in a cross-phase schema)
+
+Never use generic `status` in a public or cross-phase schema. Use the namespaced field:
+
+- `certificate_status` — `clean | qualified | blocked`
+- `projection_status` — `confirmed | qualified | blocked | not_applicable`
+- `seam_status` — `selected | absent | expired | expiry_unverified | …`
+- `resolution_status` — `resolved | statute_only | ambiguous | open | broken | unsupported`
+- `authorization_status` — `authorized | blocked | not_executable | …`
+- `overlay_status` — `provider_suggested | recorded_only | accepted_by_profile | …`
+- `phase_status` — `produced | failed | identity | enriched | …`
+
+**`confidence` is diagnostic metadata only — never a control signal.**
+
+### 11.9 The one-page doctrine
+
+> LawVM has two constitutional planes: state/value and proof/accounting. For implementation safety these refine into six operational planes: source, surface, legal-state, evidence, projection, and overlay. The pipeline is described two complementary ways: phases are verbs, waists are typed nouns — a phase consumes one waist and emits another. A seam is a stable consumer contract over one or more waists or projections. No object crosses from surface/evidence/projection/overlay into legal-state authority without an explicit execution-authorization and proof path. Every output is either a typed value, a typed residual, a projection of a typed value, or an assertion about one. Nothing important is allowed to be merely implicit.

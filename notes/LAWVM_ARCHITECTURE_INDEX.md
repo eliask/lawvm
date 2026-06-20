@@ -9,29 +9,63 @@ For the full current spec map, start with [SPEC_INDEX.md](SPEC_INDEX.md).
 LawVM is a compiler from hostile legal delta sources to a proof-carrying
 temporal legal-state machine.
 
-## Vocabulary: planes, waists, phases, seams
+## Terminology reconciliation (crosswalk)
 
-These four words describe the same pipeline at different granularities. The
-normative enumeration of all of them is [LAWVM_PIPELINE_CONTRACT.md](LAWVM_PIPELINE_CONTRACT.md);
-this section is the bridge between the coarse framing used here and in
-[THEORY_OF_LAWVM.md](THEORY_OF_LAWVM.md) and the fine framing the contract pins.
+> **This index defers to [LAWVM_PIPELINE_CONTRACT.md](LAWVM_PIPELINE_CONTRACT.md) §11 for all term *definitions*.** This section is the navigation/crosswalk map: it tells readers how the coarse historical framing (used here, in [THEORY_OF_LAWVM.md](THEORY_OF_LAWVM.md), and in older docs) maps onto the canonical terms the contract pins. Where this index and the contract disagree, the contract wins.
 
-- **Planes** = the *kinds of truth* a value carries (its type discipline).
-- **Waists** = the *narrow typed boundaries* between stages (the canonical
-  input/output types).
-- **Phases** = the *verb sequence* the compiler runs (what it does).
-- **Seams** = specific plane/waist crossings targeted for conversion to the
-  `StageResult` shape (the active enforcement work; see
-  [ARCHITECTURE_LEAK_LEDGER.md](ARCHITECTURE_LEAK_LEDGER.md)).
+### Four orthogonal views (not a hierarchy)
+
+plane, phase, waist, and seam describe the same pipeline four independent ways — they are orthogonal, not nested levels (definitions: contract §11.1):
+
+- **plane** = an authority/truth domain (a *kind of truth* a value carries).
+- **phase** = a *verb*: a process step the compiler runs ([AGENTS.md](../AGENTS.md) §3.1).
+- **waist** = a *noun*: the canonical typed artifact boundary passed between phases.
+- **seam** = a **stable consumer/interoperability contract** over one or more waists/projections (e.g. provision-state seam, certificate/checker seam, MeVM seam) — *not* a "migration crossing".
+
+Phases are verbs; waists are the typed nouns produced between them. A phase consumes one waist and emits another.
+
+### Plane crosswalk: 2 constitutional ↔ 6 operational
+
+Two constitutional planes (the values-vs-accounts split) **refine into** six operational planes (to prevent authority bleed). This is a refinement, not a replacement. Authority is **not** a plane — it is a firewall surface across planes.
+
+| Constitutional plane (alias) | Refines into operational planes (contract §3) |
+|---|---|
+| **state/value** *(historical: semantic)* | source, surface, legal-state |
+| **proof/accounting** *(historical: epistemic)* | evidence, projection, overlay |
+
+The semantic→source/surface/legal-state split exists so that re-deriving meaning from a lossier representation after a typed owner exists is a type error (no representation regression). projection and overlay are first-class because each carries its own invariant (a projection must be re-derivable from a committed dossier; an external provider may help LawVM see more but never become the reason it claims to know — the determinism firewall). The central invariant governs exactly the crossings *into* the legal-state plane.
+
+### Waist crosswalk: 5 replay-core ↔ 10 full-pipeline
+
+The historical **five** hard waists are the **replay-core** subset; the **ten** (contract §2) are the **full-pipeline** waists. The ten do **not** "replace" the five — they refine and extend them.
+
+| Historical replay-core waist | Full-pipeline equivalent (contract §2) |
+|---|---|
+| Clause waist | surface_syntax / surface_families (ClauseAST / SurfaceClause) |
+| Payload waist | canonical_op input (payload/elaboration) |
+| Canonical-op waist | canonical_op (CanonicalEffect / LegalOperation) |
+| Temporal waist | timeline_materialization (TemporalEvent / ProvisionTimeline) |
+| Authority waist | apply_receipt + certificate (ExecutionAuthorization / ResolverBinding / WriteReceipt / certificate_status) |
+
+The fine waists the full list adds beyond the replay-core lens — **source_identity**, **token_structure**, **certificate**, **projection**, **overlay** — are exactly the boundaries where silent drops/guesses were found (see the leak ledger), which is why they were promoted to named waists.
+
+### Graph-name rule
+
+Graph names are **not** interchangeable. **A graph's name must say which plane it belongs to and whether it is producer, proof, or projection.**
+
+- **SourceSyntaxGraph** (nickname: *forest*) — token/source-total construction graph over source text; owns syntactic/surface parse accounting; **producer**, does not authorize replay. Prefer `SourceSyntaxGraph` in normative prose, not "forest".
+- **LegalSurfaceGraph** — graph of explicit source-surface facts (references, definitions, terms, temporal expressions, actor/modal frames, conditions, exceptions, residuals); static-analysis, surface-only; **not** replay authority. See [LEGAL_SURFACE_GRAPH.md](LEGAL_SURFACE_GRAPH.md).
+- **ProvenanceGraph** — graph of assertions, attestations, sources, reviews, retractions, dependencies (proof/accounting plane); does not self-authorize replay.
+- **TransitionGraph** — **projection** over temporal legal-state transitions; not the replay source of truth unless backed by a certificate/trace root.
 
 ## Current Public Planes
 
-The load-bearing axis is two interleaved planes (this framing and THEORY_OF_LAWVM.md §6):
+The load-bearing axis is two interleaved planes (this framing and THEORY_OF_LAWVM.md §6). These are the two **constitutional** planes; the canonical names are **state/value** and **proof/accounting** (contract §11.2), and "semantic"/"epistemic" below are the historical aliases:
 
-- **Semantic plane:** source bundle -> clause/effect surface -> payload surface
+- **Semantic plane** *(canonical: state/value):* source bundle -> clause/effect surface -> payload surface
   -> elaborated intent -> canonical operations/effects -> timelines ->
   point-in-time materialization.
-- **Epistemic plane:** parse witnesses -> observations -> obligations ->
+- **Epistemic plane** *(canonical: proof/accounting):* parse witnesses -> observations -> obligations ->
   source pathologies/adjudications -> evidence bundles -> strict verdicts.
 
 The semantic output without the epistemic output is not enough. A replay result
@@ -151,7 +185,8 @@ explicit in release docs.
 5. [THEORY_OF_LAWVM.md](THEORY_OF_LAWVM.md)
 6. [CROSS_JURISDICTION_ARCHITECTURE.md](CROSS_JURISDICTION_ARCHITECTURE.md)
 7. [FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md](FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md)
-8. [ROADMAP_V1_0.md](../ROADMAP_V1_0.md)
+8. [LEGAL_SURFACE_GRAPH.md](LEGAL_SURFACE_GRAPH.md)
+9. [ROADMAP_V1_0.md](../ROADMAP_V1_0.md)
 
 ## Historical Material
 
