@@ -34,11 +34,15 @@ _CHAPTER_MARKER_RE = re.compile(r'(\d{1,4}\s{1,4}[a-z]|\d{1,4})\s{1,8}luvun\b')
 # The anchor only delimits the run SURFACE; its section/range/coordination/
 # letter-suffix STRUCTURE is enumerated by the grammar (parse_body_provision_tail).
 _WHOLE_SECTION_SITE_RE = re.compile(
+    # All quantifiers bounded (regex-safety discipline, AGENTS.md §1.11): section
+    # numbers are <=4 digits, intra-run separators are a few spaces, and a single
+    # repeal run coordinates at most a few dozen sections. The bounds are generous
+    # enough to never drop a real corpus run while keeping the scan linear.
     r'(?P<run>'
-    r'\d+(?:\s*[a-z])?'
-    r'(?:\s*[–—―\-]\s*\d+(?:\s*[a-z])?)?'
-    r'(?:\s*(?:,|ja)\s*\d+(?:\s*[a-z])?(?:\s*[–—―\-]\s*\d+(?:\s*[a-z])?)?)*'
-    r')\s*§(?!:)',
+    r'\d{1,4}(?:\s{0,8}[a-z])?'
+    r'(?:\s{0,8}[–—―\-]\s{0,8}\d{1,4}(?:\s{0,8}[a-z])?)?'
+    r'(?:\s{0,8}(?:,|ja)\s{0,8}\d{1,4}(?:\s{0,8}[a-z])?(?:\s{0,8}[–—―\-]\s{0,8}\d{1,4}(?:\s{0,8}[a-z])?)?){0,64}'
+    r')\s{0,8}§(?!:)',
     re.IGNORECASE,
 )
 

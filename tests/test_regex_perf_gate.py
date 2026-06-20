@@ -219,6 +219,14 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: _CITE_RE nested quantifiers (CATEGORY false-"
         "positives resolved by A18). Pre-existing baseline."
     ),
+    "src/lawvm/finland/kumotaan.py": (
+        "_WHOLE_SECTION_SITE_RE is the section-run site anchor introduced by the "
+        "Q2 regex->grammar demotion. Every quantifier is explicitly bounded "
+        "(\\d{1,4}, \\s{0,8}, run coordination {0,64}), so the pattern is provably "
+        "linear; the residual 'nested backtracking quantifiers' flag is the "
+        "benign-linear false positive (bounded x bounded). Structure is parsed by "
+        "the grammar (parse_body_provision_tail), not this anchor."
+    ),
     "src/lawvm/finland/metadata.py": (
         "Pre-existing baseline: _LEADING_SECTION_MARKER_AFTER_CITATION_RE has "
         "nullable-separated same-class repeats (\\s* around an optional label) "
