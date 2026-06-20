@@ -1581,7 +1581,13 @@ def test_2019_371_renumber_ops_bind_typed_intent_with_compound_source_parent_pat
     xml_bytes = corpus.read_source(source_id)
     assert xml_bytes is not None
 
-    before_master = pinned_replay(statute_id, mode="legal_pit", stop_before=source_id, quiet=True)
+    before_master = pinned_replay(
+        statute_id,
+        mode="legal_pit",
+        stop_before=source_id,
+        quiet=True,
+        build_full_products=False,
+    )
     _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
         statute_id,
         before_master.title,
@@ -1685,7 +1691,12 @@ def test_1992_110_2017_48_reinstatement_chain_compiles_insert_13_and_materialize
         for op in phase.output
     ), "Expected compile output to include INSERT 13 § for 1992/110 <- 2017/48."
 
-    replay = pinned_replay(statute_id, mode="official_consolidation", quiet=True)
+    replay = pinned_replay(
+        statute_id,
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
     assert replay.materialized_state.find_section("13") is not None, (
         "Expected final replay for 1992/110 to materialize 13 § after the 2017/48 reinstatement chain."
     )
@@ -1855,8 +1866,13 @@ def test_2015_1141_2023_1250_keeps_explicit_chunk_insert_sections_in_their_own_c
     """Real corpus anchor for the explicit-chunk insert retarget hijack family."""
     from lawvm.tools.section_keys import extract_ir_sections
 
-    replay = pinned_replay("2015/1141", mode="official_consolidation", quiet=True)
-    sections = extract_ir_sections(replay.products.materialized_state.ir)
+    replay = pinned_replay(
+        "2015/1141",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
 
     for wrong_path in (
         "chapter:1/section:2a",
@@ -1882,8 +1898,13 @@ def test_2002_197_2011_535_inserted_chapter3a_does_not_keep_shadowed_sections_20
     """Real corpus anchor for inserted-chapter shadowed-section retention."""
     from lawvm.tools.section_keys import extract_ir_sections
 
-    replay = pinned_replay("2002/197", mode="official_consolidation", quiet=True)
-    sections = extract_ir_sections(replay.products.materialized_state.ir)
+    replay = pinned_replay(
+        "2002/197",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
 
     assert "chapter:3a/section:20" not in sections
     assert "chapter:3a/section:21" not in sections
@@ -2236,6 +2257,7 @@ def test_2019_571_2025_863_chapter_heading_migration_orders_existing_sections() 
             parent_id="2019/571",
             mode="official_consolidation",
             quiet=True,
+            build_full_products=False,
         ),
     )
     root = replay.materialized_state.ir
@@ -2624,8 +2646,13 @@ def test_1994_719_2001_124_does_not_keep_or_misroute_16a_17a_cluster() -> None:
     """Real corpus anchor for inserted 3a chapter shadow-retention plus misrouting."""
     from lawvm.tools.section_keys import extract_ir_sections
 
-    replay = pinned_replay("1994/719", mode="official_consolidation", quiet=True)
-    sections = extract_ir_sections(replay.products.materialized_state.ir)
+    replay = pinned_replay(
+        "1994/719",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
 
     assert "chapter:5/section:16a" in sections
     assert "chapter:5/section:16b" in sections
@@ -2642,7 +2669,12 @@ def test_2006_1280_2022_1031_keeps_section42_items_4_and_5() -> None:
     """Real corpus anchor for the sparse-slot item-drop family in 42 §."""
     from lawvm.core.ir import IRNodeKind
 
-    replay = pinned_replay("2006/1280", mode="official_consolidation", quiet=True)
+    replay = pinned_replay(
+        "2006/1280",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
     sec42 = replay.find_section("42", "5", "3")
     assert sec42 is not None, "section part:3/chapter:5/section:42 must exist"
 
@@ -2987,7 +3019,12 @@ def test_1993_615_heading_amendments_applied() -> None:
     from lawvm.core.ir import IRNodeKind
     from tests.corpus_pin_helpers import pinned_replay
 
-    replay = pinned_replay("1993/615", mode="legal_pit", quiet=True)
+    replay = pinned_replay(
+        "1993/615",
+        mode="legal_pit",
+        quiet=True,
+        build_full_products=False,
+    )
 
     # 2004/1068 added "ja talousvyöhykkeellä" to section 7 heading
     sec7 = replay.find_section("7", "2")
