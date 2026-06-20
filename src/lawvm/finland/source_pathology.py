@@ -298,8 +298,23 @@ def build_item_target_structure_absent_pathology(
     target_item: str,
     live_has_paragraphs: bool,
     amend_has_paragraphs: bool,
+    target_special: str = "",
+    diagnostic_reason: str = "",
 ) -> SourcePathology:
-    """Build a typed source-pathology record for opaque item-target material."""
+    """Build a typed source-pathology record for opaque item-target material.
+
+    Also covers special-target (otsikko/johd) repeals whose target structure is
+    already absent from the live unit: the authored op is a structurally no-op
+    decline, so it must be witnessed on the source-pathology ledger rather than
+    returned as silent state. ``target_special`` + ``diagnostic_reason`` carry the
+    op identity and the decline reason so each declined site stays distinguishable
+    on the public trust surface. (LAWVM_PIPELINE_CONTRACT §1.1 no-silent-drop.)
+    """
+    special_label = (
+        f"{target_section} § {target_paragraph} mom {target_special}".strip()
+        if target_special
+        else f"{target_section} § {target_paragraph} mom {target_item} kohta"
+    )
     return SourcePathology.from_scope(
         code="ITEM_TARGET_STRUCTURE_ABSENT",
         message=(
@@ -309,13 +324,15 @@ def build_item_target_structure_absent_pathology(
         ),
         source_statute=source_statute,
         target_unit_kind="section",
-        target_label=f"{target_section} § {target_paragraph} mom {target_item} kohta",
+        target_label=special_label,
         detail={
             "target_section": target_section,
             "target_paragraph": target_paragraph,
             "target_item": target_item,
             "live_has_paragraphs": live_has_paragraphs,
             "amend_has_paragraphs": amend_has_paragraphs,
+            "target_special": target_special,
+            "diagnostic_reason": diagnostic_reason,
         },
     )
 

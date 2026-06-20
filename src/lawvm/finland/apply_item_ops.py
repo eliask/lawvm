@@ -1728,7 +1728,27 @@ def _apply_special_targets(
             return _with_preserved_provision_index(
                 state, _tops.replace_at(state.ir, sec_path, _tops._with_children(sec, new_children))
             )
+        # The heading-repeal target is structurally absent (no live HEADING child).
+        # The repeal is a satisfied-intent no-op, but it must not vanish from the
+        # legal-state account: witness the absent target as a typed source
+        # pathology before returning state. (EXIT_REAUDIT_3 N1)
         logger.debug("  %s → otsikko repeal noop (no heading)", ctx_label)
+        if source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_item_target_structure_absent_pathology(
+                    source_statute=view.source_statute,
+                    target_section=view.target_section,
+                    target_paragraph=str(view.target_paragraph or ""),
+                    target_item="",
+                    live_has_paragraphs=any(
+                        any(child.kind == IRNodeKind.PARAGRAPH for child in current.children)
+                        for current in subsecs
+                    ),
+                    amend_has_paragraphs=False,
+                    target_special="otsikko",
+                    diagnostic_reason="otsikko_repeal_no_live_heading",
+                )
+            )
         return state
 
     if view.op_type == "REPEAL" and view.target_special == "johd":
@@ -1740,7 +1760,27 @@ def _apply_special_targets(
                 return _with_preserved_provision_index(
                     state, _tops.replace_at(state.ir, sec_path, _tops._with_children(sec, new_children))
                 )
+            # The section-level intro (johd) repeal target is structurally absent
+            # (no live INTRO/CONTENT child). Satisfied-intent no-op, but witness it
+            # on the source-pathology ledger rather than returning state silently.
+            # (EXIT_REAUDIT_3 N2)
             logger.debug("  %s → section johd repeal noop (no intro)", ctx_label)
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_item_target_structure_absent_pathology(
+                        source_statute=view.source_statute,
+                        target_section=view.target_section,
+                        target_paragraph=str(view.target_paragraph or ""),
+                        target_item="",
+                        live_has_paragraphs=any(
+                            any(child.kind == IRNodeKind.PARAGRAPH for child in current.children)
+                            for current in subsecs
+                        ),
+                        amend_has_paragraphs=False,
+                        target_special="johd",
+                        diagnostic_reason="section_johd_repeal_no_live_intro",
+                    )
+                )
             return state
 
         target_label = str(view.target_paragraph)
@@ -1761,7 +1801,26 @@ def _apply_special_targets(
                 new_sec = _tops.replace_nth(sec, "subsection", n, new_sub)
                 logger.debug("  %s → subsection johd repeal", ctx_label)
                 return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
+            # The resolved subsection has no live INTRO/CONTENT child, so the
+            # subsection-level intro (johd) repeal is a satisfied-intent no-op.
+            # Witness the absent target on the source-pathology ledger rather than
+            # returning state silently. (EXIT_REAUDIT_3 N3)
             logger.debug("  %s → subsection johd repeal noop (no intro)", ctx_label)
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_item_target_structure_absent_pathology(
+                        source_statute=view.source_statute,
+                        target_section=view.target_section,
+                        target_paragraph=str(view.target_paragraph or ""),
+                        target_item="",
+                        live_has_paragraphs=any(
+                            child.kind == IRNodeKind.PARAGRAPH for child in sub.children
+                        ),
+                        amend_has_paragraphs=False,
+                        target_special="johd",
+                        diagnostic_reason="subsection_johd_repeal_no_live_intro",
+                    )
+                )
             return state
 
     if view.op_type == "REPLACE" and view.target_special == "johd" and muutos_ir is not None:

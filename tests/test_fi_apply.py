@@ -13031,6 +13031,135 @@ class TestApplySpecialTargets:
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, None, None, "1 § otsikko")
         assert _unchanged(state, result)
 
+    def test_heading_repeal_without_heading_witnesses_structure_absent(self):
+        """An otsikko REPEAL on a section that has no live HEADING is a satisfied-
+        intent no-op, but must witness the absent target on the production source-
+        pathology ledger rather than returning state silently. (EXIT_REAUDIT_3 N1)
+        """
+        sec = _sec("1", _sub("1", _content("text")))
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_special="otsikko")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        result = _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § otsikko",
+            source_pathologies_out=pathologies,
+        )
+        assert _unchanged(state, result)
+        codes = [p.code for p in pathologies]
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" in codes, codes
+        witness = next(p for p in pathologies if p.code == "ITEM_TARGET_STRUCTURE_ABSENT")
+        assert witness.detail["target_special"] == "otsikko"
+        assert witness.detail["diagnostic_reason"] == "otsikko_repeal_no_live_heading"
+
+    def test_heading_repeal_with_heading_emits_no_structure_absent_witness(self):
+        """An otsikko REPEAL that actually removes a live HEADING must stay quiet —
+        no spurious structure-absent witness on the normal apply path.
+        (EXIT_REAUDIT_3 N1)
+        """
+        heading = IRNode(kind=IRNodeKind.HEADING, text="Old heading")
+        sec = _sec("1", heading, _sub("1", _content("text")))
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_special="otsikko")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § otsikko",
+            source_pathologies_out=pathologies,
+        )
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" not in [p.code for p in pathologies]
+
+    def test_section_johd_repeal_without_intro_witnesses_structure_absent(self):
+        """A section-level johd REPEAL on a section with no live INTRO/CONTENT is a
+        satisfied-intent no-op, but must witness the absent target on the
+        production source-pathology ledger. (EXIT_REAUDIT_3 N2)
+        """
+        sec = _sec("1", _sub("1", _content("first moment")))
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_special="johd")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        result = _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § johd",
+            source_pathologies_out=pathologies,
+        )
+        assert _unchanged(state, result)
+        codes = [p.code for p in pathologies]
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" in codes, codes
+        witness = next(p for p in pathologies if p.code == "ITEM_TARGET_STRUCTURE_ABSENT")
+        assert witness.detail["target_special"] == "johd"
+        assert witness.detail["diagnostic_reason"] == "section_johd_repeal_no_live_intro"
+
+    def test_section_johd_repeal_with_intro_emits_no_structure_absent_witness(self):
+        """A section johd REPEAL that actually removes a live INTRO must stay quiet.
+        (EXIT_REAUDIT_3 N2)
+        """
+        sec = _sec("1", _intro("Section intro."), _sub("1", _content("first moment")))
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_special="johd")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § johd",
+            source_pathologies_out=pathologies,
+        )
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" not in [p.code for p in pathologies]
+
+    def test_subsection_johd_repeal_without_intro_witnesses_structure_absent(self):
+        """A subsection-level johd REPEAL on a subsection with no live INTRO/CONTENT
+        is a satisfied-intent no-op, but must witness the absent target on the
+        production source-pathology ledger. (EXIT_REAUDIT_3 N3)
+        """
+        sub1 = _sub("1", _para("1", "keep first item"), _para("2", "keep second item"))
+        sec = _sec("1", sub1)
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_special="johd")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        result = _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § 1 mom johd",
+            source_pathologies_out=pathologies,
+        )
+        assert _unchanged(state, result)
+        codes = [p.code for p in pathologies]
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" in codes, codes
+        witness = next(p for p in pathologies if p.code == "ITEM_TARGET_STRUCTURE_ABSENT")
+        assert witness.detail["target_special"] == "johd"
+        assert witness.detail["diagnostic_reason"] == "subsection_johd_repeal_no_live_intro"
+
+    def test_subsection_johd_repeal_with_intro_emits_no_structure_absent_witness(self):
+        """A subsection johd REPEAL that actually removes a live INTRO must stay
+        quiet. (EXIT_REAUDIT_3 N3)
+        """
+        sub1 = _sub(
+            "1",
+            _intro("Ministeriö voi:"),
+            _para("1", "keep first item"),
+            _para("2", "keep second item"),
+        )
+        sec = _sec("1", sub1)
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_special="johd")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § 1 mom johd",
+            source_pathologies_out=pathologies,
+        )
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" not in [p.code for p in pathologies]
+
     def test_subsection_johd_repeal_preserves_items(self):
         sub1 = _sub(
             "1",
