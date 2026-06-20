@@ -13134,6 +13134,7 @@ def _main_impl() -> None:
     elif args.command == "sync-finlex":
         from pathlib import Path as _Path
         from farchive import Farchive as _FA
+        from lawvm.corpus_store import validate_farchive_create_path as _validate_farchive_create_path
         from lawvm.finland.finlex_api import sync_changes as _sync_changes
 
         _default_db_sf = _Path("data/finlex.farchive")
@@ -13159,6 +13160,8 @@ def _main_impl() -> None:
                 sys.exit(1)
             return
 
+        if not _db_path.exists():
+            _validate_farchive_create_path(_db_path)
         _db_path.parent.mkdir(parents=True, exist_ok=True)
         _archive = _FA(_db_path)
         try:

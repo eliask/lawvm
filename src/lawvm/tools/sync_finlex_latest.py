@@ -17,6 +17,7 @@ from pathlib import Path
 
 from farchive import Farchive
 
+from lawvm.corpus_store import validate_farchive_create_path
 from lawvm.finland.finlex_api import sync_latest_pits
 
 
@@ -83,6 +84,8 @@ def main(args) -> None:
             "to seed a new archive"
         )
 
+    if not db_path.exists():
+        validate_farchive_create_path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     archive = Farchive(db_path)
     diagnostics: list[dict[str, object]] = []

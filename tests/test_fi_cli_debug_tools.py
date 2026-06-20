@@ -98,6 +98,33 @@ def test_sync_finlex_dry_run_does_not_create_missing_archive(
     assert not missing_archive.exists()
 
 
+def test_sync_finlex_refuses_extensionless_create_path(
+    tmp_path, monkeypatch
+) -> None:
+    missing_archive = tmp_path / "unused"
+
+    def fake_sync_changes(*args: object, **kwargs: object) -> dict[str, int]:
+        raise AssertionError("sync should not run after archive path rejection")
+
+    monkeypatch.setattr("lawvm.finland.finlex_api.sync_changes", fake_sync_changes)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "lawvm",
+            "sync-finlex",
+            "--since",
+            "2026-03-01T00:00:00Z",
+            "--db",
+            str(missing_archive),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        cli._main_impl()
+    assert not missing_archive.exists()
+
+
 def test_sync_finlex_latest_archive_discovery_does_not_create_missing_archive(
     tmp_path,
 ) -> None:
@@ -119,6 +146,31 @@ def test_sync_finlex_latest_archive_discovery_does_not_create_missing_archive(
         f"ERROR: archive not found: {missing_archive}; pass --sid or --corpus "
         "to seed a new archive"
     )
+    assert not missing_archive.exists()
+
+
+def test_sync_finlex_latest_refuses_extensionless_create_path_with_sid(
+    tmp_path, monkeypatch
+) -> None:
+    missing_archive = tmp_path / "unused"
+
+    monkeypatch.setattr(
+        sync_finlex_latest,
+        "Farchive",
+        lambda path: pytest.fail("archive should not open after path rejection"),
+    )
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        sync_finlex_latest.main(
+            Namespace(
+                db=str(missing_archive),
+                corpus=None,
+                sid=["2010/182"],
+                delay=0.0,
+                verbose=False,
+                diagnostics_jsonl=None,
+            )
+        )
     assert not missing_archive.exists()
 
 

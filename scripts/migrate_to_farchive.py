@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from farchive import Farchive, CompressionPolicy
+from lawvm.corpus_store import validate_farchive_create_path
 from scripts.legacy_fetch_archive import FetchArchive
 
 
@@ -75,6 +76,8 @@ def migrate(source_path: str, dest_path: str, batch_size: int, skip_existing: bo
             print("         Or delete it to start fresh.")
             sys.exit(1)
         print(f"Resuming migration into existing {dest_path}")
+    else:
+        validate_farchive_create_path(Path(dest_path))
 
     src = FetchArchive(source_path)
     dst = Farchive(
@@ -162,6 +165,8 @@ def ingest_html_cache(html_cache_path: str, dest_path: str, skip_existing: bool)
     if not Path(html_cache_path).exists():
         print(f"ERROR: HTML cache {html_cache_path} not found")
         sys.exit(1)
+    if not Path(dest_path).exists():
+        validate_farchive_create_path(Path(dest_path))
 
     print(f"Phase 3: ingesting HTML cache {html_cache_path} → {dest_path}")
 
