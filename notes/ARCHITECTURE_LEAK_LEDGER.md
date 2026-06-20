@@ -65,3 +65,53 @@ SEAM 1 (highest risk deleted) — apply-helper → WriteReceipt (apply_subsectio
 
 SEAM 2 (deletes a live legal-state representation-regression cluster) — FI frontend-parse → normalize_and_compile_ops (finland/normalize.py + the kumotaan/temporal post-processing seam). Convert the output of this seam to a PartitionResult/StageResult carrying {accepted ops, rejected-with-reason, residuals, findings, coverage} and route the raw-text fallback lanes (parse_ops_fallback_heuristic rank 3, _inject_pure_kumotaan_repeal_ops rank 1, the replay_products op-drops rank 2, effect_lowering rank 9) through it so that every op minted-from-raw-text or dropped-by-heuristic MUST carry a witness_rule_id + Finding to exist in the result. This is exactly Pro's named Fable failure class (raw text as semantic escape hatch on the replay plane) and the witnessed sibling uncovered_kumotaan_recovery already proves the target shape — so the conversion is low-design-risk and high-leverage: it turns four of the top-ranked silent legal-state leaks into first-class evidence objects in one structural move, and gives Gate 2 a concrete typed home (RegexRecognitionCoverage rows) for the baselined semantic regexes rather than leaving them as un-owned waivers forever.
 
+> Terminology note on "seam": the conversions catalogued above are waist
+> *conversions* (upgrading a stage's typed input/output boundary to a
+> StageResult-shaped carrier), not "seams" in the canonical
+> consumer-contract sense (`LAWVM_PIPELINE_CONTRACT.md`: a seam is a stable
+> downstream/interoperability contract over one or more waists). They are
+> recorded here under the historical "seam" label; read them as waist-boundary
+> conversions.
+
+## Deferred: terminology symbol renames & CI lints (open questions)
+
+These are NOT to be done now — they are recorded as TODOs because each carries
+non-trivial churn or needs a migration plan, and the doc-only terminology
+reconciliation is deliberately landing first. Canonical vocabulary owner is
+`notes/LAWVM_PIPELINE_CONTRACT.md`; these renames would align code symbols to it.
+
+### Deferred symbol renames
+
+- `core/authority.py` → `core/branch_authority.py` — disambiguates branch/provenance
+  authority from execution authority and the cross-plane firewall property.
+  Deferred for the import-churn cost (every importer must update).
+- Leaf `*Certificate` → `*Coverage` (e.g. `TokenPartitionCertificate`,
+  `MaterializationCertificate`, `CandidateSetCertificate`) — reserve "certificate"
+  for the top `lawvm.certificate.v0` envelope + checker verdict; the per-waist
+  leaves are coverage accounts. Needs a serialization-migration plan first:
+  report-schema strings like `lawvm.candidate_set_report.v1` and emitted root
+  names are public/consumer-visible, so a rename must version-migrate them.
+- Reserve the word "certified" for cert-root-covered artifacts only; rename
+  internal exporter success → `exporter_invariants_passed` (do not call
+  exporter-invariant success "certified").
+- Namespace every bare `status` field (e.g. `certificate_status`,
+  `projection_status`, `resolution_status`, `authorization_status`) so no public
+  or cross-phase schema carries an unqualified `status`.
+- `StageResult[T]` adoption beyond the two seams above (rank-12, doc→code; the
+  name has zero current src/ hits). Incremental, NOT a mass migration: adopt at
+  the two seam conversions first, then extend stage-by-stage.
+- `FilterResult`/`PartitionResult` adoption at the remaining silent-drop sites,
+  notably FI delegation (rank-14), so accepted/rejected-with-reason lanes are
+  carried everywhere a filter today returns only the kept items.
+
+### Deferred CI-lint ideas (Pro §14)
+
+- Ban any NEW `certified`-family field unless it is certificate-root-related.
+- Ban a generic `status` field in a public schema without a namespace waiver.
+- Require every public schema to declare its plane and its seam/waist relation.
+- Require every projection to name its source dossier/root (or explicitly say
+  "unchecked").
+
+(The guard-liveness gate and the regex→recognizer ratchet already exist as
+Gate 1 / Gate 2 above; the lints here are the not-yet-built additions.)
+

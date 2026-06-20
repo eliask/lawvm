@@ -28,7 +28,7 @@ A heuristic is allowed. An *invisible* heuristic is forbidden. If the system can
 
 **LawVM is a total-accounting compiler; the product is the account, not just the value.** Every stage is a typed, forward-only transform from one canonical input waist to one canonical output waist, and what it emits is `value + evidence + residuals + findings + coverage + authority` — never the bare transformed value. *Total* in the accounting sense: every input unit (source span, token, candidate, op, row) ends up **owned** — accepted, marked benign, typed as a residual, or recorded as a violation — never silently dropped; completion is accounting + evidence, not silence (not "100% parsed"). *Forward-only*: a later stage may cite an earlier/lossier representation as evidence, but may not re-derive semantic authority from it once a typed owner exists (§1.12). The evidence ledger is monotone (uncertainty and residuals never vanish silently) even though legal state is not. The six planes (§2.10) stay type-distinct. This is the single idea every rule in §1–§2 specializes: **make silent divergence a type error, and every remaining unknown a first-class object.**
 
-The machine-enforced spec form of §0–§1 (conservation laws, no-silent-default ladder) is `notes/DISCIPLINE_GATES.md`; the full plane/waist architecture is `notes/LAWVM_ARCHITECTURE_INDEX.md`. This file states the rules; those docs specify the gates and shape that enforce them.
+The machine-enforced spec form of §0–§1 (conservation laws, no-silent-default ladder) is `notes/DISCIPLINE_GATES.md`; the full plane/waist architecture is `notes/LAWVM_ARCHITECTURE_INDEX.md`. This file states the rules; those docs specify the gates and shape that enforce them. Architecture vocabulary (planes / phases / waists / seams) follows `notes/LAWVM_PIPELINE_CONTRACT.md` — this file uses those terms, it does not redefine them.
 
 ---
 
@@ -85,8 +85,8 @@ Every filtered/rejected/skipped/downgraded op stays visible with a receipt. A fi
 # Forbidden:
 return [op for op in ops if keep(op)]
 # Required:
-return FilterResult(accepted_ops=..., rejected_ops=tuple(
-    RejectedOp(op=op, constraint_id=..., reason=..., blocking=...)), findings=...)
+return FilterResult(accepted_items=..., rejected_items=tuple(
+    RejectedItem(item=op, reason_code=..., reason=..., blocking=...)))
 ```
 This is the prose form of the machine-enforced conservation law. Applies to language-variant, citation-routing, source-pathology, internal-list, whole-section-replacement, corrigendum, and coverage filters. Receipt contract: `notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md`.
 
@@ -196,7 +196,7 @@ After the gate is green, report (never just "tests pass"): the **gate result** (
 
 **Conflict precedence.** Explicit user instructions control task scope and priorities — but they do NOT authorize silent legal-state mutation. Binding notes and specs control LawVM semantics unless the user explicitly asks to redesign or supersede them. A note marked binding, or an in-session user instruction, stays binding until the user supersedes it.
 
-**Repo map.** `src/lawvm/core/` is the shared kernel (IR/`LegalAddress`, tree ops, timeline/PIT, canonical op-effect carriers, migration/lineage, finding/evidence contracts). `src/lawvm/finland/`, `estonia/`, `uk_legislation/`, `norway/`, `sweden/`, `eu/`, `us_federal/` are the jurisdiction frontends (acquisition → adjudication, per §2.3). `src/lawvm/tools/` is the CLI and debug surface. `notes/` is live tracked architecture/specs (this file's pointers); `notes_internal/` is gitignored work-layer. `jurisdiction_starter/` is the contract-first path for a new frontend — do not copy Finland blindly.
+**Repo map.** `src/lawvm/core/` is the shared core module (IR/`LegalAddress`, tree ops, timeline/PIT, canonical op-effect carriers, migration/lineage, finding/evidence contracts); reserve "kernel" for a small trusted checker, not the whole directory. `src/lawvm/finland/`, `estonia/`, `uk_legislation/`, `norway/`, `sweden/`, `eu/`, `us_federal/` are the jurisdiction frontends (acquisition → adjudication, per §2.3). `src/lawvm/tools/` is the CLI and debug surface. `notes/` is live tracked architecture/specs (this file's pointers); `notes_internal/` is gitignored work-layer. `jurisdiction_starter/` is the contract-first path for a new frontend — do not copy Finland blindly.
 
 **Read before non-trivial work or after a compaction:** `README.md`, `notes/SPEC_INDEX.md`, `notes/LAWVM_STACK_MAP.md` (the actual current pipeline), `notes/IMPLEMENTATION_DIVERGENCE_LEDGER.md` (target-vs-impl gaps + active work queue + known red shards), and the spec(s) for the subsystem you are touching. Current specs are the authority; historical handoffs and dated case studies are not part of the source tree.
 
