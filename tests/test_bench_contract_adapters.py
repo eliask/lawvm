@@ -78,6 +78,60 @@ def test_uk_no_text_score_leaves_axis_unattempted() -> None:
     assert r.text_err is None
 
 
+def test_uk_commencement_lens_perfect_score_has_no_phantom_residue() -> None:
+    """A perfect COMMENCED score must not emit phantom unfiltered EID residue.
+
+    The commencement-lensed score governs ``structural_err``; the plain
+    (unfiltered) EID symmetric difference is the WRONG lens — a perfect commenced
+    score can coexist with not-yet-commenced unfiltered provisions. Deriving
+    residue from the unfiltered counts there violates the reconciliation
+    invariant (residue at zero structural error). The comparator must reconcile.
+    """
+    from lawvm.tools import uk_bench
+
+    r = uk_bench._BenchResult(
+        statute_id="ukpga/2000/9",
+        act_type="ukpga",
+        year=2000,
+        n_effects=5,
+        # Unfiltered sets DIFFER (not-yet-commenced provisions) ...
+        n_enacted_eids=20,
+        n_oracle_eids=12,
+        n_common=12,
+        score=12 / 20,  # unfiltered score is imperfect
+        status="OK",
+        # ... but the commencement-lensed score is perfect.
+        commencement_score=1.0,
+        n_commenced_eids=12,
+    )
+    unit = uk_bench.uk_bench_unit_result(r, has_commencement=True)
+    assert unit.structural_err == 0.0
+    assert dict(unit.residue_buckets) == {}  # no phantom residue
+    check_residue_reconciliation(unit)
+
+
+def test_uk_commencement_lens_imperfect_score_records_typed_residue() -> None:
+    from lawvm.tools import uk_bench
+
+    r = uk_bench._BenchResult(
+        statute_id="ukpga/2000/10",
+        act_type="ukpga",
+        year=2000,
+        n_effects=5,
+        n_enacted_eids=20,
+        n_oracle_eids=12,
+        n_common=12,
+        score=12 / 20,
+        status="OK",
+        commencement_score=0.8,  # imperfect commenced score -> 20% structural err
+        n_commenced_eids=10,
+    )
+    unit = uk_bench.uk_bench_unit_result(r, has_commencement=True)
+    assert unit.structural_err == pytest.approx(0.2)
+    assert dict(unit.residue_buckets) == {"eid_score_residual": 1}
+    check_residue_reconciliation(unit)
+
+
 def test_uk_no_oracle_is_non_scored() -> None:
     from lawvm.tools import uk_bench
 

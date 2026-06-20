@@ -1130,18 +1130,36 @@ def uk_bench_unit_result(result: "_BenchResult", *, has_commencement: bool = Fal
             # Commencement lane not attempted and no base score — non-scored.
             return BenchUnitResult(unit_id=result.statute_id, status=BenchStatus.NO_TRUTH)
         structural_err = 1.0 - score
-        only_in_enacted = max(0, result.n_enacted_eids - result.n_common)
-        only_in_oracle = max(0, result.n_oracle_eids - result.n_common)
+        # The residue MUST reconcile with the SAME lens that produced the score.
+        # The plain symmetric-difference EID counts (n_enacted_eids / n_oracle_eids
+        # / n_common) describe the UNFILTERED lens; they are only a faithful
+        # residue when the unfiltered score governs. When the commencement lens
+        # governs (commencement_score used), those unfiltered counts are the
+        # WRONG lens — a perfect commenced score can coexist with unfiltered
+        # not-yet-commenced provisions, which would emit phantom residue at zero
+        # error. The _BenchResult does not carry per-lens symmetric-difference
+        # counts, so under the commencement lens we record only the residual
+        # presence (gated on structural_err > 0), keeping the reconciliation
+        # invariant exact.
+        commencement_lens_used = (
+            has_commencement and result.commencement_score >= 0.0
+        )
         residue: dict[str, int] = {}
-        if only_in_enacted:
-            residue["eid_only_in_enacted"] = only_in_enacted
-        if only_in_oracle:
-            residue["eid_only_in_oracle"] = only_in_oracle
-        if structural_err > 0 and not residue:
-            # Score < 1 with an empty symmetric difference would be a contract
-            # violation; record the residual fraction explicitly rather than
-            # leaving the error silently unexplained.
-            residue["eid_score_residual"] = 1
+        if commencement_lens_used:
+            if structural_err > 0:
+                residue["eid_score_residual"] = 1
+        else:
+            only_in_enacted = max(0, result.n_enacted_eids - result.n_common)
+            only_in_oracle = max(0, result.n_oracle_eids - result.n_common)
+            if only_in_enacted:
+                residue["eid_only_in_enacted"] = only_in_enacted
+            if only_in_oracle:
+                residue["eid_only_in_oracle"] = only_in_oracle
+            if structural_err > 0 and not residue:
+                # Score < 1 with an empty symmetric difference would be a contract
+                # violation; record the residual fraction explicitly rather than
+                # leaving the error silently unexplained.
+                residue["eid_score_residual"] = 1
         text_err = None if result.text_score < 0 else 1.0 - result.text_score
         return BenchUnitResult(
             unit_id=result.statute_id,
@@ -7972,9 +7990,16 @@ def main(args) -> None:
 
     run_kwargs["progress_start"] = _print_row_start
 
+    unit_results: list[BenchUnitResult] = []
     try:
         for r in _run_bench(corpus, archive, **run_kwargs):
             acc.feed(r)
+            # Collect the contract result per row (a small frozen dataclass) so
+            # the unified summary can be rendered without retaining the heavy
+            # _BenchResult rows (which are del'd below for memory discipline).
+            unit_results.append(
+                uk_bench_unit_result(r, has_commencement=do_commencement)
+            )
 
             done = acc.total_count
 
@@ -8059,6 +8084,17 @@ def main(args) -> None:
         print(f"Results saved: {_BENCH_DIR / f'{label}.csv'}")
 
         _append_history(acc, label, score_witness_count)
+
+    # Unified cross-jurisdiction headline (worst-of structural EID + text axes),
+    # rendered by default. The detailed bespoke UK report below is preserved in
+    # full — its load-bearing diagnostics (commencement lens, replay regime,
+    # adjudication buckets, source/effect-feed lanes) carry information the
+    # unified summary intentionally does not.
+    from lawvm.core.bench_aggregate import render_summary
+
+    print()
+    for line in render_summary(unit_results, label, jurisdiction="uk"):
+        print(line)
 
     if replay_adjudication_sample_kinds:
         _print_report(

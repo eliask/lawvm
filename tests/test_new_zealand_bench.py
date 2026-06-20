@@ -250,6 +250,39 @@ def test_progress_line_typed_status_for_errors() -> None:
     assert "status=EXC:ValueError:boom" in line
 
 
+# --- unified bench contract headline ----------------------------------------
+
+
+def test_unified_summary_renders_worst_of_dual_axes(capsys) -> None:
+    """NZ renders the shared unified headline (worst-of structural/text axes).
+
+    Asserts meaningful properties: the status partition counts, the worst-of
+    mean-error headline, and the residue-reconciliation honesty line. A scored
+    work whose structural axis disagrees (slice 4/5 -> 20% structural error,
+    above its 9% text error) makes the worst-of headline the binding structural
+    axis — exactly the Liebig framing the contract enforces.
+    """
+    scored = _ok_work("scored")
+    scored.slice_nodes = 5
+    scored.slice_agreements = 4  # 20% structural error
+    scored.text_similarity = 0.91  # 9% text error -> worst-of is structural 20%
+    scored.residual_family_counts = {"temporal_mismatch": 1}
+
+    crashed = _ok_work("crashed")
+    crashed.status = "EXC:boom"
+
+    nz_bench._render_unified_summary([scored, crashed], "smoke")
+
+    out = capsys.readouterr().out
+    assert "=== UNIFIED BENCH SUMMARY" in out
+    assert "jurisdiction=nz" in out
+    assert "1 scored" in out
+    assert "crashed: 1" in out
+    # Worst-of headline = max(structural 20%, text 9%) = 20.00% error.
+    assert "Mean error : 20.00%" in out
+    assert "Residue reconciliation: OK" in out
+
+
 # --- real-archive canary ----------------------------------------------------
 
 
