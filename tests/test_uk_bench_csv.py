@@ -355,6 +355,72 @@ def test_uk_bench_prints_highest_rss_rows_separately(capsys) -> None:
     assert "ukpga/2000/1" not in output
 
 
+def test_uk_unified_summary_renders_worst_of_axes(capsys) -> None:
+    """UK renders the shared unified headline (worst-of EID + text axes).
+
+    This is the default headline main() now prints (alongside the full bespoke
+    UK report). Asserts meaningful properties: the status partition, the
+    worst-of mean-error headline, and the residue-reconciliation honesty line.
+    A scored row with structural EID error 10% (90/100 common) above its text
+    error 5% makes the worst-of headline bind on the structural axis.
+    """
+    from lawvm.core.bench_aggregate import render_summary
+
+    scored = _BenchResult(
+        statute_id="ukpga/2010/4",
+        act_type="ukpga",
+        year=2010,
+        n_effects=10,
+        n_enacted_eids=100,
+        n_oracle_eids=100,
+        n_common=90,  # Jaccard 90/110 ... but with equal sets -> score governs
+        score=0.9,  # structural 10% error
+        status="OK",
+        text_score=0.95,  # text 5% error -> worst-of is structural 10%
+        comparison_class="commensurable",
+    )
+    no_oracle = _BenchResult(
+        statute_id="ukpga/2011/1",
+        act_type="ukpga",
+        year=2011,
+        n_effects=0,
+        n_enacted_eids=0,
+        n_oracle_eids=0,
+        n_common=0,
+        score=-1.0,
+        status="NO_ORACLE",
+    )
+    crashed = _BenchResult(
+        statute_id="ukpga/2012/2",
+        act_type="ukpga",
+        year=2012,
+        n_effects=0,
+        n_enacted_eids=0,
+        n_oracle_eids=0,
+        n_common=0,
+        score=-1.0,
+        status="ERR",
+        error="boom",
+    )
+
+    unit_results = [
+        uk_bench.uk_bench_unit_result(r, has_commencement=False)
+        for r in (scored, no_oracle, crashed)
+    ]
+    for line in render_summary(unit_results, "demo", jurisdiction="uk"):
+        print(line)
+
+    out = capsys.readouterr().out
+    assert "=== UNIFIED BENCH SUMMARY" in out
+    assert "jurisdiction=uk" in out
+    assert "1 scored" in out
+    assert "crashed: 1" in out
+    assert "excluded(non-scored): 1" in out
+    # worst-of headline = max(structural 10%, text 5%) = 10.00% error.
+    assert "Mean error : 10.00%" in out
+    assert "Residue reconciliation: OK" in out
+
+
 def test_uk_bench_report_summary_only_bounds_terminal_output(capsys) -> None:
     result = _BenchResult(
         statute_id="ukpga/2010/4",
