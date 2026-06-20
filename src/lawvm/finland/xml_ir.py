@@ -14,8 +14,16 @@ from typing import Dict, List, Optional, cast
 import lxml.etree as etree
 
 from lawvm.core.ir import IRNode
-from lawvm.core.ir_helpers import irnode_to_text, kind_for_tag as _kind_for_tag
+from lawvm.core.ir_helpers import (
+    irnode_to_text,
+    kind_for_tag as _kind_for_tag,
+    kind_for_tag_or_diagnostic as _kind_for_tag_or_diagnostic,
+)
 from lawvm.xml_ingest import (
+    INGEST_DROPPED_CHILD,
+    INGEST_POSITIONAL_LABEL,
+    INGEST_UNKNOWN_TAG,
+    _IngestSink,
     _POSITIONAL_LABEL_KINDS,
     _STRUCTURAL_TAGS,
     _TEXT_LEAF_TAGS,
@@ -288,6 +296,7 @@ def _merge_unlabeled_heading_sections_into_empty_numbered_shells(children: List[
 def fi_xml_to_ir_node(
     el: etree._Element,
     label_postprocessor=None,
+    sink: Optional["_IngestSink"] = None,
 ) -> IRNode:
     special = _parse_table_subsection(el, label_postprocessor)
     if special is not None:
@@ -388,19 +397,46 @@ def fi_xml_to_ir_node(
     children: List[IRNode] = []
     for child in el:
         child_tag = _tag(child)
-        child_kind = _kind_for_tag(child_tag)
+        child_kind, unknown_tag = _kind_for_tag_or_diagnostic(child_tag)
         if child_kind == IRNodeKind.TABLE:
             children.append(_xml_table_to_ir(child))
+            if sink is not None:
+                sink.coverage.record_owned()
         elif child_kind in _STRUCTURAL_TAGS or child_kind in _TEXT_LEAF_TAGS:
-            children.append(fi_xml_to_ir_node(child, label_postprocessor))
+            children.append(fi_xml_to_ir_node(child, label_postprocessor, sink))
+            if sink is not None:
+                sink.coverage.record_owned()
         else:
             text = _collapse_text(child)
             if text:
                 children.append(IRNode(kind=cast(IRNodeKind, child_kind or child_tag), text=text))
+                if sink is not None:
+                    sink.coverage.record_owned()
+            elif sink is not None:
+                # Production-path twin of the rank-7 site in xml_to_ir_node: an
+                # unknown childless element whose text collapsed to '' was
+                # previously dropped here with no record. Witness it as a dropped
+                # source unit (and the unknown tag, if mapping is missing) so the
+                # coverage account stops silently understating the source.
+                sink.coverage.record_dropped()
+                if unknown_tag is not None:
+                    sink.emit(
+                        INGEST_UNKNOWN_TAG,
+                        "source_pathology",
+                        tag=child_tag,
+                        message=unknown_tag.message,
+                    )
+                sink.emit(
+                    INGEST_DROPPED_CHILD,
+                    "source_pathology",
+                    tag=child_tag,
+                    parent_tag=tag_str,
+                    snippet=_collapse_text(child)[:400],
+                )
 
     if tag in _STRUCTURAL_TAGS:
         if tag in (IRNodeKind.BODY, IRNodeKind.CHAPTER, IRNodeKind.PART, IRNodeKind.HCONTAINER):
-            children = _absorb_orphaned_subsections_into_preceding_section(children)
+            children = _absorb_orphaned_subsections_into_preceding_section(children, sink)
             children = _apply_fi_split_embedded_section_restarts(children)
             children = _merge_unlabeled_heading_sections_into_empty_numbered_shells(children)
         if tag == IRNodeKind.SECTION:
@@ -414,18 +450,28 @@ def fi_xml_to_ir_node(
         for i, child in enumerate(children):
             if child.label is None and child.kind in _POSITIONAL_LABEL_KINDS:
                 counters[child.kind] = counters.get(child.kind, 0) + 1
+                assigned = str(counters[child.kind])
+                if sink is not None:
+                    sink.emit(
+                        INGEST_POSITIONAL_LABEL,
+                        "recovery",
+                        node_kind=child.kind.value,
+                        assigned_label=assigned,
+                        parent_tag=tag_str,
+                        snippet=irnode_to_text(child)[:400],
+                    )
                 children[i] = IRNode(
                     kind=child.kind,
-                    label=str(counters[child.kind]),
+                    label=assigned,
                     text=child.text,
                     attrs=child.attrs,
                     children=child.children,
                 )
         if tag == IRNodeKind.SUBSECTION:
             children = apply_subsection_post_rules_a(children)
-            children = _merge_split_numbered_paragraph_continuations(children)
+            children = _merge_split_numbered_paragraph_continuations(children, sink)
             children = apply_subsection_post_rules_b(children)
-            children = _rehome_orphaned_letter_paragraphs(children)
+            children = _rehome_orphaned_letter_paragraphs(children, sink)
             children = apply_subsection_post_rules_c(children)
 
     return IRNode(

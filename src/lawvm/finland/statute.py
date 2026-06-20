@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import TYPE_CHECKING, FrozenSet, Optional, Set
+from typing import TYPE_CHECKING, Any, FrozenSet, Mapping, Optional, Set
 
 import lxml.etree as etree
 
@@ -19,6 +19,7 @@ from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import LabelIndex, Path, build_label_index, normalized_label_key
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.xml_ir import fi_xml_to_ir_node, detect_unnumbered_paragraph_peers, detect_label_eid_divergence
+from lawvm.xml_ingest import _IngestSink
 from lawvm.finland.source_normalize import normalize_source_ir
 from lawvm.finland.projection_rows import projection_rows as _projection_rows
 from lawvm.finland.scoped_section_resolver import find_scoped_section_path
@@ -152,6 +153,12 @@ class StatuteContext:
     base_observations: tuple["ElaborationObservation", ...] = field(default_factory=tuple)
     source_normalization_facts: tuple["SourceNormalizationFact", ...] = field(default_factory=tuple)
     issue_date: str = ""
+    # Witnessed XML→IR ingest observations + token-partition coverage gathered
+    # while parsing the base XML on the production path. Mirrors the metadata
+    # channel IRStatute carries for xml_body_to_ir: only populated when the
+    # ingest actually dropped a child / guessed a positional label / repaired
+    # structure, so a clean parse leaves this an empty mapping.
+    ingest_metadata: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_xml(cls, xml_bytes: bytes, label_postprocessor=None) -> "StatuteContext":
@@ -181,7 +188,12 @@ class StatuteContext:
         body_el = tree.find(".//{*}body")
         if body_el is None:
             body_el = tree
-        raw_ir = fi_xml_to_ir_node(body_el, label_postprocessor)
+        # Thread an ingest sink through the production parse so the XML→IR
+        # boundary's silent drops/guesses (dropped childless unknown elements,
+        # positional-label assignment, structural-repair re-parenting/merges)
+        # are witnessed on the real FI path, not only in xml_body_to_ir.
+        sink = _IngestSink()
+        raw_ir = fi_xml_to_ir_node(body_el, label_postprocessor, sink)
         # Emit base statute observations on the RAW (pre-normalization) IR so
         # that unnumbered paragraph peers are still present in the tree when
         # detect_unnumbered_paragraph_peers runs.  After normalize_source_ir,
@@ -190,6 +202,16 @@ class StatuteContext:
         # silently miss them (T1b wiring gap).
         base_observations = _collect_base_observations(raw_ir, sid)
         base_ir, norm_facts = normalize_source_ir(raw_ir, sid)
+        # Fold the witnessed ingest observations + coverage into a metadata
+        # channel mirroring IRStatute.metadata. Published only when non-empty so
+        # a clean parse does not dirty the context for the common case.
+        ingest_metadata: dict[str, Any] = {}
+        if sink.observations:
+            ingest_metadata["xml_ingest_observations"] = tuple(
+                obs.as_dict() for obs in sink.observations
+            )
+        if sink.coverage.dropped:
+            ingest_metadata["xml_ingest_coverage"] = sink.coverage.as_dict()
         return cls(
             id=sid,
             title=title,
@@ -198,6 +220,7 @@ class StatuteContext:
             base_observations=base_observations,
             source_normalization_facts=tuple(norm_facts),
             issue_date=_base_issue_date_iso(tree),
+            ingest_metadata=ingest_metadata,
         )
 
 
