@@ -149,8 +149,18 @@ def resolve_applicable_amendment_records(
     mode: ReplaySelectionMode,
     corpus: CorpusStore | None = None,
     selector: ConsolidatedArtifactSelector | None = None,
+    *,
+    residuals_out: list[AmendmentSourcePathology] | None = None,
 ) -> tuple[list[dict[str, object]], dt.date | None, str | None]:
-    """Backward-shaped tuple adapter for replay-plan callers."""
+    """Backward-shaped tuple adapter for replay-plan callers.
+
+    Conservation (AGENTS.md §1.8): the tuple shape is preserved for the many
+    inspection/debug callers, but the source-pathology residuals computed by
+    ``select_applicable_amendments`` would otherwise be discarded here — turning
+    a missing amendment source into a silently shorter replay plan on the live
+    path. When ``residuals_out`` is supplied the residuals are threaded onto it
+    so the replay pipeline can surface them on the production residual ledger.
+    """
 
     selection = select_applicable_amendments(
         parent_id,
@@ -158,6 +168,8 @@ def resolve_applicable_amendment_records(
         corpus=corpus,
         selector=selector,
     )
+    if residuals_out is not None:
+        residuals_out.extend(selection.residuals)
     return list(selection.records), selection.cutoff_date, selection.oracle_version_amendment_id
 
 

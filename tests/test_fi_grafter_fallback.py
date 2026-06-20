@@ -1636,6 +1636,7 @@ def test_replay_xml_projects_apply_mutation_boundary_violations(monkeypatch) -> 
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1729,6 +1730,7 @@ def test_replay_xml_projects_legacy_apply_mutation_boundary_findings_without_met
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1830,6 +1832,7 @@ def test_replay_xml_projects_base_tail_prose_absorb_fact() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1896,6 +1899,7 @@ def test_replay_xml_projects_base_num_in_intro_normalization_facts() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1984,6 +1988,7 @@ def test_replay_xml_projects_shape_rewrite_normalization_facts() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -2067,6 +2072,7 @@ def test_replay_xml_projects_editorial_and_numbering_family_facts() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
