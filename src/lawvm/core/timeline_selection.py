@@ -51,7 +51,7 @@ def _validate_selection_query(
 
 
 @dataclass(frozen=True, slots=True)
-class VersionSelectionCertificate:
+class VersionSelectionCoverage:
     """Positive certificate explaining one version-selection decision."""
 
     address: LegalAddress
@@ -66,34 +66,34 @@ class VersionSelectionCertificate:
 
     def __post_init__(self) -> None:
         if not isinstance(self.address, LegalAddress):
-            raise TypeError("VersionSelectionCertificate.address must be LegalAddress")
+            raise TypeError("VersionSelectionCoverage.address must be LegalAddress")
         if not isinstance(self.as_of, str) or not self.as_of:
-            raise ValueError("VersionSelectionCertificate.as_of must be a non-empty string")
+            raise ValueError("VersionSelectionCoverage.as_of must be a non-empty string")
         if not isinstance(self.query_type, str) or not self.query_type:
-            raise ValueError("VersionSelectionCertificate.query_type must be a non-empty string")
+            raise ValueError("VersionSelectionCoverage.query_type must be a non-empty string")
         if self.territory is not None and not isinstance(self.territory, str):
-            raise TypeError("VersionSelectionCertificate.territory must be a string or None")
+            raise TypeError("VersionSelectionCoverage.territory must be a string or None")
         if self.selected_rail not in _VERSION_SELECTION_RAILS:
             raise ValueError(
-                "VersionSelectionCertificate.selected_rail must be one of "
+                "VersionSelectionCoverage.selected_rail must be one of "
                 f"{sorted(_VERSION_SELECTION_RAILS)!r}"
             )
         if not isinstance(self.candidate_count, int) or isinstance(self.candidate_count, bool):
-            raise TypeError("VersionSelectionCertificate.candidate_count must be an integer")
+            raise TypeError("VersionSelectionCoverage.candidate_count must be an integer")
         if self.candidate_count < 0:
-            raise ValueError("VersionSelectionCertificate.candidate_count must be non-negative")
+            raise ValueError("VersionSelectionCoverage.candidate_count must be non-negative")
         if not isinstance(self.selected_effective, str):
-            raise TypeError("VersionSelectionCertificate.selected_effective must be a string")
+            raise TypeError("VersionSelectionCoverage.selected_effective must be a string")
         if not isinstance(self.selected_enacted, str):
-            raise TypeError("VersionSelectionCertificate.selected_enacted must be a string")
+            raise TypeError("VersionSelectionCoverage.selected_enacted must be a string")
         object.__setattr__(self, "required_dimensions", tuple(self.required_dimensions))
         if any(not isinstance(dimension, str) or not dimension for dimension in self.required_dimensions):
             raise ValueError(
-                "VersionSelectionCertificate.required_dimensions must contain non-empty strings"
+                "VersionSelectionCoverage.required_dimensions must contain non-empty strings"
             )
         if self.selected_rail in {"overlay", "background"} and not self.selected_effective:
             raise ValueError(
-                "VersionSelectionCertificate.selected_effective is required for selected rails"
+                "VersionSelectionCoverage.selected_effective is required for selected rails"
             )
 
 
@@ -104,7 +104,7 @@ class VersionSelectionResult:
     status: str
     version: Optional[ProvisionVersion] = None
     required_dimensions: tuple[str, ...] = ()
-    certificate: Optional[VersionSelectionCertificate] = None
+    certificate: Optional[VersionSelectionCoverage] = None
 
     def __post_init__(self) -> None:
         if self.status not in _VERSION_SELECTION_STATUSES:
@@ -120,10 +120,10 @@ class VersionSelectionResult:
                 "VersionSelectionResult.required_dimensions must contain non-empty strings"
             )
         if self.certificate is not None and not isinstance(
-            self.certificate, VersionSelectionCertificate
+            self.certificate, VersionSelectionCoverage
         ):
             raise TypeError(
-                "VersionSelectionResult.certificate must be VersionSelectionCertificate or None"
+                "VersionSelectionResult.certificate must be VersionSelectionCoverage or None"
             )
         if self.status == "selected":
             if self.version is None:
@@ -486,7 +486,7 @@ def _select_single_active_version(
     if not eligible(version, as_of, query_type, expires_as_of=expires_as_of):
         return VersionSelectionResult(
             status="absent",
-            certificate=VersionSelectionCertificate(
+            certificate=VersionSelectionCoverage(
                 address=timeline.address,
                 as_of=as_of,
                 query_type=query_type,
@@ -501,7 +501,7 @@ def _select_single_active_version(
         return VersionSelectionResult(
             status="ambiguous_missing_scope",
             required_dimensions=required_dimensions,
-            certificate=VersionSelectionCertificate(
+            certificate=VersionSelectionCoverage(
                 address=timeline.address,
                 as_of=as_of,
                 query_type=query_type,
@@ -514,7 +514,7 @@ def _select_single_active_version(
     if not applicability_matches(version, territory=territory):
         return VersionSelectionResult(
             status="absent",
-            certificate=VersionSelectionCertificate(
+            certificate=VersionSelectionCoverage(
                 address=timeline.address,
                 as_of=as_of,
                 query_type=query_type,
@@ -547,7 +547,7 @@ def _select_single_active_version(
         ):
             return VersionSelectionResult(
                 status="absent",
-                certificate=VersionSelectionCertificate(
+                certificate=VersionSelectionCoverage(
                     address=timeline.address,
                     as_of=as_of,
                     query_type=query_type,
@@ -563,7 +563,7 @@ def _select_single_active_version(
     return VersionSelectionResult(
         status="selected",
         version=version,
-        certificate=VersionSelectionCertificate(
+        certificate=VersionSelectionCoverage(
             address=timeline.address,
             as_of=as_of,
             query_type=query_type,
@@ -679,7 +679,7 @@ def select_active_version_ex_prevalidated(
         return VersionSelectionResult(
             status="ambiguous_missing_scope",
             required_dimensions=required_dimensions,
-            certificate=VersionSelectionCertificate(
+            certificate=VersionSelectionCoverage(
                 address=timeline.address,
                 as_of=as_of,
                 query_type=query_type,
@@ -724,7 +724,7 @@ def select_active_version_ex_prevalidated(
         return VersionSelectionResult(
             status="selected",
             version=overlay,
-            certificate=VersionSelectionCertificate(
+            certificate=VersionSelectionCoverage(
                 address=timeline.address,
                 as_of=as_of,
                 query_type=query_type,
@@ -740,7 +740,7 @@ def select_active_version_ex_prevalidated(
         return VersionSelectionResult(
             status="selected",
             version=background,
-            certificate=VersionSelectionCertificate(
+            certificate=VersionSelectionCoverage(
                 address=timeline.address,
                 as_of=as_of,
                 query_type=query_type,
@@ -754,7 +754,7 @@ def select_active_version_ex_prevalidated(
 
     return VersionSelectionResult(
         status="absent",
-        certificate=VersionSelectionCertificate(
+        certificate=VersionSelectionCoverage(
             address=timeline.address,
             as_of=as_of,
             query_type=query_type,

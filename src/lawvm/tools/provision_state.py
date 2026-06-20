@@ -28,7 +28,7 @@ from lawvm.core.temporal_scheduler import TemporalScheduleDelta
 from lawvm.core.timeline import materialize_pit
 from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import (
-    VersionSelectionCertificate,
+    VersionSelectionCoverage,
     VersionSelectionResult,
     select_active_version_ex,
 )
@@ -398,7 +398,7 @@ def _mask_descendant_selection_by_ancestor_tombstone(
         return VersionSelectionResult(
             status="selected",
             version=replace(ancestor_version, content=None, content_hash=""),
-            certificate=VersionSelectionCertificate(
+            certificate=VersionSelectionCoverage(
                 address=address,
                 as_of=as_of,
                 query_type=query_type,
