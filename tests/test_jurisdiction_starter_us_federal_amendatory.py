@@ -16,19 +16,30 @@ from pathlib import Path
 import pytest
 
 from lawvm.core.ir import LegalAddress
+from lawvm.core.authority import PENDING_CONDITION_STATUS
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.us_federal.amendatory import (
     COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
-    NEW_SECTION_INSERT_FINDING_RULE_ID,
+    DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
+    DESIGNATION_STRIKE_FINDING_RULE_ID,
+    HEADING_STRIKE_FINDING_RULE_ID,
     NON_TITLE_TARGET_RULE_ID,
     RULE_ADD_AT_END,
+    RULE_ADD_AT_END_NEW_SECTIONS,
     RULE_INSERT_AFTER,
+    RULE_INSERT_END_PUNCT,
     RULE_INSERT_NODE_AFTER,
+    RULE_REDESIGNATE_PAIRS,
     RULE_REDESIGNATE_RANGE,
     RULE_STRIKE_INSERT,
+    RULE_STRIKE_INSERT_END_PUNCT,
+    RULE_STRIKE_INSERT_PUNCT_WORD,
     RULE_STRIKE_UNIT,
     RULE_STRIKE_UNIT_LIST,
+    SENTENCE_STRIKE_FINDING_RULE_ID,
+    TAIL_STRIKE_FINDING_RULE_ID,
     TARGET_UNRESOLVED_FINDING_RULE_ID,
+    THROUGH_TAIL_STRIKE_FINDING_RULE_ID,
     UNLOWERED_FINDING_RULE_ID,
     _first_usc_ref,
     _join_insert_after,
@@ -51,6 +62,8 @@ def _synthetic_plaw(section_body: str) -> bytes:
         "<approvedDate>2020-01-01</approvedDate></meta>"
         f"<main>{section_body}</main></lawDoc>"
     ).encode("utf-8")
+
+
 from lawvm.us_federal.effect_candidates import scan_title_effect_candidates
 from lawvm.us_federal.sources import open_us_federal_farchive, plaw_locator
 
@@ -68,16 +81,12 @@ def _read(name: str) -> bytes:
 
 def test_prose_target_phrase_pinned_address():
     addr = parse_usc_target_phrase("Section 362(c)(1) of title 11, United States Code")
-    assert addr == LegalAddress(
-        path=(("title", "11"), ("section", "362"), ("subsection", "c"), ("paragraph", "1"))
-    )
+    assert addr == LegalAddress(path=(("title", "11"), ("section", "362"), ("subsection", "c"), ("paragraph", "1")))
 
 
 def test_prose_target_phrase_lowercase_and_no_us_code_suffix():
     addr = parse_usc_target_phrase("section 1325(b)(4) of title 11")
-    assert addr == LegalAddress(
-        path=(("title", "11"), ("section", "1325"), ("subsection", "b"), ("paragraph", "4"))
-    )
+    assert addr == LegalAddress(path=(("title", "11"), ("section", "1325"), ("subsection", "b"), ("paragraph", "4")))
 
 
 def test_prose_target_phrase_named_act_is_not_a_usc_target():
@@ -160,9 +169,7 @@ def test_nonpositive_target_resolves_via_act_section_resolver():
     # Act; the codified address comes from the (N U.S.C. M) paren + structural href.
     # Routing through the non-positive resolver yields the USC address with a
     # ``nonpositive_*`` resolution status (paren+href agree here).
-    address, status = _resolve_target(
-        "Section 5 of the Securities Act of 1933 (15 U.S.C. 77e)", "/us/usc/t15/s77e"
-    )
+    address, status = _resolve_target("Section 5 of the Securities Act of 1933 (15 U.S.C. 77e)", "/us/usc/t15/s77e")
     assert address == LegalAddress(path=(("title", "15"), ("section", "77e")))
     assert status == "nonpositive_paren_href_agree"
 
@@ -203,7 +210,7 @@ def test_nonpositive_routing_does_not_consult_raw_text_paren_cross_ref():
     # hijack the target: only the unit's OWN phrase / href are consulted. With no
     # own codified channel the non-positive target stays unresolved.
     address, status = _resolve_target(
-        "Chapter 1 of title 23, United States Code, is amended",
+        "Chapter 1 of title 15, United States Code, is amended",
         "",
         raw_text="see section 102 (42 U.S.C. 4332) of this Act",
     )
@@ -214,9 +221,7 @@ def test_nonpositive_routing_does_not_consult_raw_text_paren_cross_ref():
 def test_positive_law_title_routing_is_unchanged():
     # A positive-law title (11) is NOT routed through the non-positive resolver: the
     # prose/href direct path resolves it with the existing status vocabulary.
-    address, status = _resolve_target(
-        "Section 362 of title 11, United States Code", "/us/usc/t11/s362"
-    )
+    address, status = _resolve_target("Section 362 of title 11, United States Code", "/us/usc/t11/s362")
     assert address == LegalAddress(path=(("title", "11"), ("section", "362")))
     assert status == "prose_href_agree"
 
@@ -260,9 +265,7 @@ def test_plaw_116_51_each_place_text_replace():
     # "each place that term appears" -> occurrence -1 (all occurrences).
     assert op.text_patch.selector.occurrence == -1
     # §101(18) -> title:11/section:101/paragraph:18 (pinned convention).
-    assert op.target == LegalAddress(
-        path=(("title", "11"), ("section", "101"), ("paragraph", "18"))
-    )
+    assert op.target == LegalAddress(path=(("title", "11"), ("section", "101"), ("paragraph", "18")))
 
 
 def test_precise_text_strike_with_roman_ambiguous_subsection_head_is_section_scoped():
@@ -281,7 +284,7 @@ def test_precise_text_strike_with_roman_ambiguous_subsection_head_is_section_sco
         '<amendingAction type="amend">is amended</amendingAction> by '
         '<amendingAction type="delete">striking</amendingAction> '
         "“<quotedText>linguist and intelligence analysis</quotedText>” and "
-        "<amendingAction type=\"insert\">inserting</amendingAction> "
+        '<amendingAction type="insert">inserting</amendingAction> '
         "“<quotedText>linguist, intelligence analysis, and planning</quotedText>”."
         "</content>"
         "</section>"
@@ -324,7 +327,7 @@ def test_precise_text_strike_with_letter_subsection_head_keeps_full_path():
         '<amendingAction type="amend">is amended</amendingAction> by '
         '<amendingAction type="delete">striking</amendingAction> '
         "“<quotedText>$750,000</quotedText>” and "
-        "<amendingAction type=\"insert\">inserting</amendingAction> "
+        '<amendingAction type="insert">inserting</amendingAction> '
         "“<quotedText>$1,000,000</quotedText>”."
         "</content>"
         "</section>"
@@ -371,8 +374,8 @@ def test_insert_after_classifies_and_assigns_operands_at_the_anchor():
         '<content><ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, '
         'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
         ' by <amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText>, based on reasonable due diligence,</quotedText>” '
-        'after “<quotedText>may</quotedText>”.</content></section>'
+        "“<quotedText>, based on reasonable due diligence,</quotedText>” "
+        "after “<quotedText>may</quotedText>”.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -396,8 +399,8 @@ def test_insert_after_word_anchor_preserves_boundary_space():
         '<content><ref href="/us/usc/t11/s1161/b">Section 1161(b) of title 11, '
         'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
         ' by <amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText>or the Secretary of Defense,</quotedText>” after '
-        '“<quotedText>President</quotedText>”.</content></section>'
+        "“<quotedText>or the Secretary of Defense,</quotedText>” after "
+        "“<quotedText>President</quotedText>”.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     op = report.instructions[0].operation
@@ -414,8 +417,8 @@ def test_insert_after_word_anchor_space_for_air_force_space_force():
         '<content><ref href="/us/usc/t11/s9203">Section 9203 of title 11, '
         'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
         ' by <amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText>or the Space Force</quotedText>” after '
-        '“<quotedText>the Air Force</quotedText>”.</content></section>'
+        "“<quotedText>or the Space Force</quotedText>” after "
+        "“<quotedText>the Air Force</quotedText>”.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     op = report.instructions[0].operation
@@ -434,8 +437,8 @@ def test_insert_after_does_not_invent_a_space_at_a_punctuation_junction():
         '<content><ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, '
         'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
         ' by <amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText>, and</quotedText>” after '
-        '“<quotedText>business</quotedText>”.</content></section>'
+        "“<quotedText>, and</quotedText>” after "
+        "“<quotedText>business</quotedText>”.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     op = report.instructions[0].operation
@@ -467,13 +470,13 @@ def test_compound_strike_insert_with_block_node_is_held_out_not_corrupted():
         '<content><ref href="/us/usc/t11/s6050I">Section 6050I(d) of title 11, '
         'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
         ' by <amendingAction type="delete">striking</amendingAction> '
-        '“<quotedText>and</quotedText>” at the end of paragraph (1), by '
+        "“<quotedText>and</quotedText>” at the end of paragraph (1), by "
         '<amendingAction type="delete">striking</amendingAction> the period at the end '
         'of paragraph (2) and <amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText>, and</quotedText>”, and by '
+        "“<quotedText>, and</quotedText>”, and by "
         '<amendingAction type="insert">inserting</amendingAction> after paragraph (2) '
         'the following new paragraph:<quotedContent><paragraph><num value="3">“(3) </num>'
-        '<content>any digital asset.”</content></paragraph></quotedContent>.</content></section>'
+        "<content>any digital asset.”</content></paragraph></quotedContent>.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -500,17 +503,17 @@ def test_sibling_subsections_split_so_striking_does_not_bleed_into_insert_after(
         '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
         '<amendingAction type="amend">is amended</amendingAction> by '
         '<amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText>, due diligence,</quotedText>” after '
-        '“<quotedText>may</quotedText>”.</content></subsection>'
+        "“<quotedText>, due diligence,</quotedText>” after "
+        "“<quotedText>may</quotedText>”.</content></subsection>"
         '<subsection identifier="/us/pl/116/900/s3/b" role="instruction">'
         '<num value="b">(b) </num><content>'
         '<ref href="/us/usc/t11/s101/18">Section 101(18) of title 11, United States Code</ref>, '
         '<amendingAction type="amend">is amended</amendingAction> by '
         '<amendingAction type="delete">striking</amendingAction> '
-        '“<quotedText>$10,000</quotedText>” and '
+        "“<quotedText>$10,000</quotedText>” and "
         '<amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText>$25,000</quotedText>”.</content></subsection>'
-        '</section>'
+        "“<quotedText>$25,000</quotedText>”.</content></subsection>"
+        "</section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     by_target = {i.target_phrase.split(" of ")[0]: i for i in report.instructions}
@@ -530,9 +533,9 @@ def test_strike_insert_operand_order_struck_matches_inserted_replaces():
         '<content><ref href="/us/usc/t11/s101/18">Section 101(18) of title 11, '
         'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
         ' by <amendingAction type="delete">striking</amendingAction> '
-        '“<quotedText>$3,237,000</quotedText>” and '
+        "“<quotedText>$3,237,000</quotedText>” and "
         '<amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText>$10,000,000</quotedText>”.</content></section>'
+        "“<quotedText>$10,000,000</quotedText>”.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -557,10 +560,10 @@ def test_first_usc_ref_skips_a_ref_inside_a_quoted_operand():
     # cross-citation, not the amendment target). _first_usc_ref must return nothing.
     unit = _ref_unit(
         'by <amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText>subparagraphs (A), (B), and (C) of '
+        "“<quotedText>subparagraphs (A), (B), and (C) of "
         '<ref href="/us/usc/t10/s2313/a/2">section 2313(a)(2) of title 10, '
-        'United States Code</ref>, and</quotedText>” before '
-        '“<quotedText>subsection (b) of section 2313</quotedText>”'
+        "United States Code</ref>, and</quotedText>” before "
+        "“<quotedText>subsection (b) of section 2313</quotedText>”"
     )
     assert _first_usc_ref(unit) == ("", "")
 
@@ -573,7 +576,7 @@ def test_first_usc_ref_prefers_the_unquoted_target_over_a_quoted_cross_ref():
         'Code</ref>, <amendingAction type="amend">is amended</amendingAction> by '
         '<amendingAction type="delete">striking</amendingAction> '
         '“<quotedText><ref href="/us/usc/t10/s7222">section 7222 of title 10, '
-        'United States Code</ref></quotedText>”.'
+        "United States Code</ref></quotedText>”."
     )
     phrase, href = _first_usc_ref(unit)
     assert href == "/us/usc/t11/s507/d"
@@ -592,11 +595,11 @@ def test_quoted_cross_ref_does_not_hijack_target_onto_operands_cited_section():
         '<subparagraph identifier="/us/pl/114/328/s896/2/A" role="instruction">'
         '<num value="A">(A) </num><content>by '
         '<amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText>subparagraphs (A), (B), and (C) of '
+        "“<quotedText>subparagraphs (A), (B), and (C) of "
         '<ref href="/us/usc/t10/s2313/a/2">section 2313(a)(2) of title 10, '
-        'United States Code</ref>, and</quotedText>” before '
-        '“<quotedText>subsection (b) of section 2313</quotedText>”; and'
-        '</content></subparagraph></section>'
+        "United States Code</ref>, and</quotedText>” before "
+        "“<quotedText>subsection (b) of section 2313</quotedText>”; and"
+        "</content></subparagraph></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -617,22 +620,20 @@ def test_quoted_strike_operand_cross_ref_does_not_hijack_off_a_named_act_parent(
         '<section identifier="/us/pl/115/232/s809"><num value="809">SEC. 809. </num>'
         '<paragraph identifier="/us/pl/115/232/s809/h/2" role="instruction">'
         '<num value="2">(2) </num>'
-        '<chapeau>Section 2055(g) of the Internal Revenue Code of 1986 '
+        "<chapeau>Section 2055(g) of the Internal Revenue Code of 1986 "
         '<amendingAction type="amend">is amended</amendingAction>—</chapeau>'
         '<subparagraph identifier="/us/pl/115/232/s809/h/2/A" role="instruction">'
         '<num value="A">(A) </num><content>in paragraph (4), by '
         '<amendingAction type="delete">striking</amendingAction> '
         '“<quotedText><ref href="/us/usc/t10/s7222">section 7222 of title 10, '
-        'United States Code</ref></quotedText>” and '
+        "United States Code</ref></quotedText>” and "
         '<amendingAction type="insert">inserting</amendingAction> '
         '“<quotedText><ref href="/us/usc/t10/s8622">section 8622 of title 10, '
-        'United States Code</ref></quotedText>”;</content></subparagraph>'
-        '</paragraph></section>'
+        "United States Code</ref></quotedText>”;</content></subparagraph>"
+        "</paragraph></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
-    leaf = next(
-        i for i in report.instructions if i.instruction_id.endswith("/s809/h/2/A")
-    )
+    leaf = next(i for i in report.instructions if i.instruction_id.endswith("/s809/h/2/A"))
     assert leaf.target_address is None
     assert leaf.finding is not None
     assert leaf.finding.rule_id == TARGET_UNRESOLVED_FINDING_RULE_ID
@@ -646,14 +647,14 @@ def test_add_at_end_quoted_block_sidenote_ref_does_not_become_the_target():
     # not hijack the target onto §7413; the unit stays a typed residual.
     body = (
         '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
-        '<content>Subchapter I of chapter 74 '
+        "<content>Subchapter I of chapter 74 "
         '<amendingAction type="amend">is amended</amendingAction> by '
         '<amendingAction type="add">adding</amendingAction> at the end the '
         'following new section:<quotedContent><section><num value="7413">'
         '“§ 7413.</num><heading><sidenote><p class="fontsize8">'
         '<ref href="/us/usc/t38/s7413">38 USC 7413</ref>.</p></sidenote> '
-        'Treatment of podiatrists</heading></section></quotedContent>'
-        '</content></section>'
+        "Treatment of podiatrists</heading></section></quotedContent>"
+        "</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -672,7 +673,7 @@ def test_genuinely_absent_operand_stays_a_typed_residual_not_guessed():
         '<content><ref href="/us/usc/t11/s101/18">Section 101(18) of title 11, '
         'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
         ' by <amendingAction type="delete">striking</amendingAction> '
-        '“<quotedText>a phrase that does not occur</quotedText>”.</content></section>'
+        "“<quotedText>a phrase that does not occur</quotedText>”.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -691,8 +692,8 @@ def test_quoted_text_preserves_significant_leading_space():
         '<content><ref href="/us/usc/t11/s507/d">Section 507(d) of title 11, '
         'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
         ' by <amendingAction type="insert">inserting</amendingAction> '
-        '“<quotedText> excluding subparagraph (F)</quotedText>” after '
-        '“<quotedText>(a)(8)</quotedText>”.</content></section>'
+        "“<quotedText> excluding subparagraph (F)</quotedText>” after "
+        "“<quotedText>(a)(8)</quotedText>”.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     patch = _patch(report.instructions[0])
@@ -710,8 +711,8 @@ def test_add_at_end_payload_preserves_terminal_period_inside_quoted_block():
         'States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
         ' by <amendingAction type="add">adding</amendingAction> at the end the '
         'following:<quotedContent><subsection><num value="d">“(d) </num>'
-        '<content>a payment becomes due.”</content></subsection>'
-        '</quotedContent>.</content></section>'
+        "<content>a payment becomes due.”</content></subsection>"
+        "</quotedContent>.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -739,10 +740,10 @@ def test_add_at_end_payload_prunes_editorial_sidenotes_and_page_stamps():
         'following:<quotedContent><subsection><num value="d">“(d) </num>'
         '<paragraph><num value="2">(2) </num>'
         '<p class="leftAlign firstIndent0 fontsize8">Time period.</p>'
-        '<content>A plan modified under paragraph (1)'
+        "<content>A plan modified under paragraph (1)"
         '<page identifier="/us/stat/134/3219">134 STAT. 3219</page>'
-        ' may not provide for payments.</content></paragraph>'
-        '</subsection></quotedContent>.</content></section>'
+        " may not provide for payments.</content></paragraph>"
+        "</subsection></quotedContent>.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -764,12 +765,8 @@ def test_add_at_end_payload_prunes_editorial_sidenotes_and_page_stamps():
 def test_relative_prose_target_threads_inherited_title():
     # "Section 3675(b)(3) of such title" inherits the title from the enclosing
     # instruction; the section + segments come from the leaf's own prose.
-    addr = parse_relative_usc_target(
-        "(B) in section 3675(b)(3), by striking", inherited_title="38"
-    )
-    assert addr == LegalAddress(
-        path=(("title", "38"), ("section", "3675"), ("subsection", "b"), ("paragraph", "3"))
-    )
+    addr = parse_relative_usc_target("(B) in section 3675(b)(3), by striking", inherited_title="38")
+    assert addr == LegalAddress(path=(("title", "38"), ("section", "3675"), ("subsection", "b"), ("paragraph", "3")))
 
 
 def test_relative_prose_requires_an_inherited_title_never_invents_one():
@@ -780,10 +777,13 @@ def test_relative_prose_requires_an_inherited_title_never_invents_one():
 def test_relative_prose_ignores_cross_reference_with_explicit_title():
     # "section 116 of title 18" inside inserted text is a cross-reference, not the
     # amendment's own relative target — it carries "of title N", not "of such title".
-    assert parse_relative_usc_target(
-        "the meaning given such term in section 116 of title 18, United States Code",
-        inherited_title="38",
-    ) is None
+    assert (
+        parse_relative_usc_target(
+            "the meaning given such term in section 116 of title 18, United States Code",
+            inherited_title="38",
+        )
+        is None
+    )
 
 
 def test_nested_instruction_list_threads_section_and_subsection_targets():
@@ -799,15 +799,15 @@ def test_nested_instruction_list_threads_section_and_subsection_targets():
         '<ref href="/us/usc/t11/s104">Section 104 of title 11, United States Code</ref>, '
         '<amendingAction type="amend">is amended</amendingAction>—</content>'
         '<paragraph identifier="/us/pl/116/900/s2/a/1"><num value="1">(1) </num>'
-        '<content>in subsection (a), by '
+        "<content>in subsection (a), by "
         '<amendingAction type="insert">inserting</amendingAction> '
         '"<quotedText>1182(1),</quotedText>" after "<quotedText>707(b),</quotedText>"; and</content>'
-        '</paragraph>'
+        "</paragraph>"
         '<paragraph identifier="/us/pl/116/900/s2/a/2"><num value="2">(2) </num>'
-        '<content>in subsection (b), by '
+        "<content>in subsection (b), by "
         '<amendingAction type="insert">inserting</amendingAction> '
         '"<quotedText>1182(1),</quotedText>" after "<quotedText>707(b),</quotedText>".</content>'
-        '</paragraph></subsection></section>'
+        "</paragraph></subsection></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     addrs = sorted(str(i.target_address) for i in report.instructions if i.target_address)
@@ -828,16 +828,14 @@ def test_strike_structural_unit_lowers_to_a_subsection_repeal():
         '<content><ref href="/us/usc/t11/s364">Section 364 of title 11, United '
         'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
         'by <amendingAction type="delete">striking</amendingAction> subsection (g).'
-        '</content></section>'
+        "</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
     assert instr.witness_rule_id == RULE_STRIKE_UNIT
     assert instr.operation is not None
     assert instr.operation.action is StructuralAction.REPEAL
-    assert instr.operation.target == LegalAddress(
-        path=(("title", "11"), ("section", "364"), ("subsection", "g"))
-    )
+    assert instr.operation.target == LegalAddress(path=(("title", "11"), ("section", "364"), ("subsection", "g")))
 
 
 def test_strike_structural_unit_with_future_effective_language_is_not_an_immediate_repeal():
@@ -846,11 +844,11 @@ def test_strike_structural_unit_with_future_effective_language_is_not_an_immedia
     # lowering it to an immediate REPEAL would delete an in-force node. Refused.
     body = (
         '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
-        '<content>Effective on the date that is 1 year after the date of enactment '
+        "<content>Effective on the date that is 1 year after the date of enactment "
         'of this Act, <ref href="/us/usc/t11/s525">Section 525 of title 11, United '
         'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
         'by <amendingAction type="delete">striking</amendingAction> subsection (d).'
-        '</content></section>'
+        "</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -859,14 +857,54 @@ def test_strike_structural_unit_with_future_effective_language_is_not_an_immedia
     assert instr.finding.rule_id == UNLOWERED_FINDING_RULE_ID
 
 
+def test_amend_to_read_with_sunset_language_is_not_an_immediate_replace():
+    # A deferred/sunset amend-to-read ("On the date that is 1 year after ..., section
+    # 1182(1) is amended to read as follows:") reverts text at a future date. The
+    # temporal layer owns it; lowering it as an immediate REPLACE would corrupt the
+    # in-force version used by an edition before the sunset date.
+    body = (
+        '<section identifier="/us/pl/116/136/dA/tI/s1113/a/5"><num value="5">(5) '
+        '</num><heading>Sunset</heading>'
+        "<content>On the date that is 1 year after the date of enactment of this Act, "
+        '<ref href="/us/usc/t11/s1182/1">section 1182(1) of title 11, United States '
+        'Code</ref>, <amendingAction type="amend">is amended</amendingAction> to read '
+        "as follows:<quotedContent><paragraph><num value=\"1\">\"(1) </num><heading>"
+        "Debtor</heading><content>The term ‘debtor’ means a small business debtor.\""
+        "</content></paragraph></quotedContent>.</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.operation is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == DEFERRED_AMEND_TO_READ_FINDING_RULE_ID
+
+
+def test_amend_to_read_without_sunset_language_lowers_immediately():
+    # Exact same payload shape as above, but without the future-effective sunset
+    # prose, must still lower to an ordinary REPLACE.
+    body = (
+        '<section identifier="/us/pl/116/136/dA/tI/s1113/a/1"><num value="1">(1) '
+        '</num>'
+        '<content><ref href="/us/usc/t11/s1182/1">Section 1182(1) of title 11, United '
+        'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> to read '
+        "as follows:<quotedContent><paragraph><num value=\"1\">\"(1) </num><heading>"
+        "Debtor</heading><content>The term ‘debtor’ means a person.\""
+        "</content></paragraph></quotedContent>.</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.operation is not None
+    assert instr.operation.action is StructuralAction.REPLACE
+
+
 def test_range_redesignation_lowers_to_one_renumber_per_member_high_end_first():
     body = (
         '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
         '<content><ref href="/us/usc/t11/s101">Section 101 of title 11, United '
         'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
         'by <amendingAction type="redesignate">redesignating</amendingAction> '
-        'paragraphs (43) through (45) as paragraphs (50) through (52), respectively.'
-        '</content></section>'
+        "paragraphs (43) through (45) as paragraphs (50) through (52), respectively."
+        "</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -876,12 +914,72 @@ def test_range_redesignation_lowers_to_one_renumber_per_member_high_end_first():
     for o in ops:
         assert o.action is StructuralAction.RENUMBER
         assert o.destination is not None
-    renumbers = [
-        (o.target.leaf_label(), o.destination.leaf_label())
-        for o in ops
-        if o.destination is not None
-    ]
+    renumbers = [(o.target.leaf_label(), o.destination.leaf_label()) for o in ops if o.destination is not None]
     assert renumbers == [("45", "52"), ("44", "51"), ("43", "50")]
+
+
+def test_range_redesignation_with_list_conjunction():
+    # Range redesignation is often the last item in a nested list: "; and".
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s101">Section 101 of title 11, United '
+        'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        'by <amendingAction type="redesignate">redesignating</amendingAction> '
+        "paragraphs (8) through (10) as paragraphs (9) through (11), respectively; and"
+        "</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.witness_rule_id == RULE_REDESIGNATE_RANGE
+    ops = report.operations()
+    renumbers: list[tuple[str, str]] = []
+    for o in ops:
+        assert o.action is StructuralAction.RENUMBER
+        assert o.destination is not None
+        renumbers.append((o.target.leaf_label(), o.destination.leaf_label()))
+    assert sorted(renumbers) == [("10", "11"), ("8", "9"), ("9", "10")]
+
+
+def test_container_target_resolves_for_chapter_subchapter_part():
+    from lawvm.us_federal.amendatory import parse_usc_container_target
+
+    assert parse_usc_container_target("Chapter 6 of title 11, United States Code") == LegalAddress(
+        path=(("title", "11"), ("chapter", "6"))
+    )
+    assert parse_usc_container_target("Subchapter I of chapter 74 of title 38, United States Code") == LegalAddress(
+        path=(("title", "38"), ("subchapter", "I"))
+    )
+    assert parse_usc_container_target("Part I of title 18, United States Code") == LegalAddress(
+        path=(("title", "18"), ("part", "I"))
+    )
+    assert parse_usc_container_target("", "/us/usc/t11/c6") == LegalAddress(path=(("title", "11"), ("chapter", "6")))
+    assert parse_usc_container_target("", "/us/usc/t11/c6/schI") == LegalAddress(
+        path=(("title", "11"), ("chapter", "6"), ("subchapter", "I"))
+    )
+
+
+def test_insert_node_after_a_section_lowers_to_an_anchored_insert():
+    # Container target (chapter), anchor is a predecessor section; payload is a
+    # whole new section.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/c6">Chapter 6 of title 11, United '
+        'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        'by <amendingAction type="insert">inserting</amendingAction> after section '
+        '110 the following new section:<quotedContent><section><num value="111">'
+        "“§ 111.</num><heading>New section</heading><content>Text.”</content>"
+        "</section></quotedContent>.</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.witness_rule_id == RULE_INSERT_NODE_AFTER
+    op = instr.operation
+    assert op is not None
+    assert op.action is StructuralAction.INSERT
+    assert op.anchor == LegalAddress(path=(("title", "11"), ("chapter", "6"), ("section", "110")))
+    assert op.target == LegalAddress(path=(("title", "11"), ("section", "111")))
+    assert op.payload is not None
+    assert op.payload.text.startswith("§ 111.")
 
 
 def test_insert_node_after_a_paragraph_lowers_to_an_anchored_insert():
@@ -891,8 +989,8 @@ def test_insert_node_after_a_paragraph_lowers_to_an_anchored_insert():
         'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
         'by <amendingAction type="insert">inserting</amendingAction> after paragraph '
         '(10) the following:<quotedContent><paragraph><num value="11">“(11) </num>'
-        '<content>a new definition.”</content></paragraph></quotedContent>.'
-        '</content></section>'
+        "<content>a new definition.”</content></paragraph></quotedContent>."
+        "</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -901,9 +999,7 @@ def test_insert_node_after_a_paragraph_lowers_to_an_anchored_insert():
     assert op is not None
     assert op.action is StructuralAction.INSERT
     # The anchor names the paragraph to insert AFTER; the payload is the new node.
-    assert op.anchor == LegalAddress(
-        path=(("title", "11"), ("section", "101"), ("paragraph", "10"))
-    )
+    assert op.anchor == LegalAddress(path=(("title", "11"), ("section", "101"), ("paragraph", "10")))
     assert op.payload is not None
     assert op.payload.text.startswith("(11) ")
 
@@ -933,9 +1029,7 @@ def test_coverage_counts_are_witness_anchored_not_replay():
     assert cov["candidate_claims"] is True
     # Every instruction is accounted: lowered + unsupported == total.
     assert (
-        cov["instructions_accepted"]
-        + cov["instructions_needs_review"]
-        + cov["instructions_unsupported"]
+        cov["instructions_accepted"] + cov["instructions_needs_review"] + cov["instructions_unsupported"]
         == cov["instructions_total"]
     )
     # There are unlowered forms in this multi-target law -> findings exist.
@@ -967,9 +1061,7 @@ def test_scan_title_11_over_fixture_farchive(tmp_path):
     db = _build_tmp_farchive(tmp_path)
     archive = open_us_federal_farchive(db, readonly=True)
     try:
-        report = scan_title_effect_candidates(
-            archive, title="11", congress_window=(114, 116, 117)
-        )
+        report = scan_title_effect_candidates(archive, title="11", congress_window=(114, 116, 117))
     finally:
         archive.close()
     cov = report.coverage()
@@ -992,9 +1084,7 @@ def test_scan_records_findings_for_unlowered_instructions(tmp_path):
     db = _build_tmp_farchive(tmp_path)
     archive = open_us_federal_farchive(db, readonly=True)
     try:
-        report = scan_title_effect_candidates(
-            archive, title="11", congress_window=(114, 116, 117)
-        )
+        report = scan_title_effect_candidates(archive, title="11", congress_window=(114, 116, 117))
     finally:
         archive.close()
     # 114-89 targets title 11 only via short-marker false positives? No: it is t21/t35.
@@ -1019,7 +1109,7 @@ def test_multi_unit_structural_strike_lowers_to_one_repeal_per_member():
         '<content><ref href="/us/usc/t11/s364">Section 364 of title 11, United '
         'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
         'by <amendingAction type="delete">striking</amendingAction> subsections '
-        '(a), (c), and (g).</content></section>'
+        "(a), (c), and (g).</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -1041,17 +1131,133 @@ def test_future_effective_multi_strike_is_not_an_immediate_repeal():
     # to immediate REPEALs would delete nodes still in force in the window.
     body = (
         '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
-        '<content>Effective on the date that is 1 year after the date of enactment '
+        "<content>Effective on the date that is 1 year after the date of enactment "
         'of this Act, <ref href="/us/usc/t11/s364">Section 364 of title 11, United '
         'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
         'by <amendingAction type="delete">striking</amendingAction> subsections '
-        '(a) and (b).</content></section>'
+        "(a) and (b).</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
     assert instr.operation is None
     assert instr.finding is not None
     assert instr.finding.rule_id == UNLOWERED_FINDING_RULE_ID
+
+
+def test_structural_strike_with_list_conjunction_trailing_semicolon():
+    # Nested conforming-amendment leaves end with "; and" or just ";". The single-
+    # unit structural strike recognizer must consume the list terminator, not require
+    # the raw text to end immediately after the label.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        "<content>"
+        '<paragraph identifier="/us/pl/116/900/s1/1"><num value="1">(1) </num>'
+        '<content><ref href="/us/usc/t11/s364/b">Section 364(b) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        'by <amendingAction type="delete">striking</amendingAction> paragraph (2); and</content>'
+        "</paragraph>"
+        '<paragraph identifier="/us/pl/116/900/s1/2"><num value="2">(2) </num>'
+        '<content><ref href="/us/usc/t11/s364/c">Section 364(c) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        'by <amendingAction type="delete">striking</amendingAction> paragraph (3).</content>'
+        "</paragraph></content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    ops = [o for o in report.operations() if o.action is StructuralAction.REPEAL]
+    assert len(ops) == 2
+    targets = sorted(str(o.target) for o in ops)
+    assert targets == [
+        "title:11/section:364/subsection:b/paragraph:2",
+        "title:11/section:364/subsection:c/paragraph:3",
+    ]
+
+
+def test_multi_unit_structural_strike_with_list_conjunction():
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s364">Section 364 of title 11, United '
+        'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        'by <amendingAction type="delete">striking</amendingAction> subsections '
+        "(a), (c), and (g); and</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.witness_rule_id == RULE_STRIKE_UNIT_LIST
+    ops = report.operations()
+    assert len(ops) == 3
+    struck = sorted(o.target.leaf_label() for o in ops)
+    assert struck == ["a", "c", "g"]
+
+
+def test_paired_redesignation_lowers_to_one_renumber_per_pair():
+    # Non-contiguous paired relabel: (2)->(4), (4)->(5).
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s101">Section 101 of title 11, United '
+        'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        'by <amendingAction type="redesignate">redesignating</amendingAction> '
+        "paragraphs (2) and (4) as paragraphs (4) and (5), respectively."
+        "</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.witness_rule_id == RULE_REDESIGNATE_PAIRS
+    ops = report.operations()
+    assert len(ops) == 2
+    for o in ops:
+        assert o.action is StructuralAction.RENUMBER
+        assert o.destination is not None
+    renumbers = sorted((o.target.leaf_label(), (o.destination.leaf_label() if o.destination else "")) for o in ops)
+    assert renumbers == [("2", "4"), ("4", "5")]
+
+
+def test_paired_redesignation_three_labels():
+    # Non-contiguous 3-way relabel with Oxford comma, e.g.
+    # "redesignating paragraphs (1), (2), and (3) as subsections (a), (b), and (c)".
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s101">Section 101 of title 11, United '
+        'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        'by <amendingAction type="redesignate">redesignating</amendingAction> '
+        "paragraphs (1), (2), and (3) as subsections (a), (b), and (c)."
+        "</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.witness_rule_id == RULE_REDESIGNATE_PAIRS
+    ops = report.operations()
+    assert len(ops) == 3
+    for o in ops:
+        assert o.action is StructuralAction.RENUMBER
+        assert o.destination is not None
+    renumbers = sorted((o.target.leaf_label(), (o.destination.leaf_label() if o.destination else "")) for o in ops)
+    assert renumbers == [("1", "a"), ("2", "b"), ("3", "c")]
+
+
+def test_paired_redesignation_with_list_conjunction():
+    # A nested-list leaf whose raw text ends with "; and".
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        "<content>"
+        '<subsection identifier="/us/pl/116/900/s1/a" role="instruction">'
+        '<num value="a">(a) </num><content>'
+        '<ref href="/us/usc/t11/s101">Section 101 of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction>—</content>'
+        '<paragraph identifier="/us/pl/116/900/s1/a/1"><num value="1">(1) </num>'
+        "<content>in subsection (b), "
+        'by <amendingAction type="redesignate">redesignating</amendingAction> '
+        "paragraphs (1) and (2) as paragraphs (2) and (3), respectively; and</content>"
+        "</paragraph>"
+        '<paragraph identifier="/us/pl/116/900/s1/a/2"><num value="2">(2) </num>'
+        "<content>in subsection (c), by striking paragraph (1).</content>"
+        "</paragraph></subsection></content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    renumbers = [o for o in report.operations() if o.action is StructuralAction.RENUMBER]
+    assert len(renumbers) == 2
+    labels = sorted((o.target.leaf_label(), (o.destination.leaf_label() if o.destination else "")) for o in renumbers)
+    assert labels == [("1", "2"), ("2", "3")]
 
 
 def test_flat_relative_head_inherits_title_from_section_classification():
@@ -1063,8 +1269,8 @@ def test_flat_relative_head_inherits_title_from_section_classification():
     body = (
         '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
         '<sidenote><p><ref href="/us/usc/t26/s4980I">26 USC 4980I note</ref></p>'
-        '</sidenote>'
-        '<content>Paragraph (10) of section 4980I(f) '
+        "</sidenote>"
+        "<content>Paragraph (10) of section 4980I(f) "
         '<amendingAction type="amend">is amended</amendingAction> by '
         '<amendingAction type="delete">striking</amendingAction> '
         '"<quotedText>2018</quotedText>".</content></section>'
@@ -1084,11 +1290,11 @@ def test_relative_head_is_not_threaded_when_section_multi_classified():
     # NOTHING is threaded — the target stays unresolved (no silent wrong-title guess).
     body = (
         '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
-        '<sidenote><p>'
+        "<sidenote><p>"
         '<ref href="/us/usc/t26/s100">26 USC 100 note</ref>'
         '<ref href="/us/usc/t42/s100">42 USC 100 note</ref>'
-        '</p></sidenote>'
-        '<content>Section 100 '
+        "</p></sidenote>"
+        "<content>Section 100 "
         '<amendingAction type="amend">is amended</amendingAction> by '
         '<amendingAction type="delete">striking</amendingAction> '
         '"<quotedText>old</quotedText>".</content></section>'
@@ -1111,10 +1317,10 @@ def test_strike_unit_insert_new_units_is_held_out_not_a_whole_node_replace():
         'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
         'by <amendingAction type="delete">striking</amendingAction> subparagraph (I) '
         'and <amendingAction type="insert">inserting</amendingAction> the following '
-        'new subparagraphs (I) and (J):<quotedContent><subparagraph>'
+        "new subparagraphs (I) and (J):<quotedContent><subparagraph>"
         '<num value="I">“(I) </num><content>first.</content></subparagraph>'
         '<subparagraph><num value="J">“(J) </num><content>second.”</content>'
-        '</subparagraph></quotedContent>.</content></section>'
+        "</subparagraph></quotedContent>.</content></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
@@ -1133,7 +1339,7 @@ def test_title_only_chapeau_threads_title_to_relative_prose_leaf():
     body = (
         '<section identifier="/us/pl/115/392/s11"><num value="11">SEC. 11. </num>'
         '<chapeau>Part I of <ref href="/us/usc/t18">title 18, United States Code'
-        "</ref>, <amendingAction type=\"amend\">is amended</amendingAction>—</chapeau>"
+        '</ref>, <amendingAction type="amend">is amended</amendingAction>—</chapeau>'
         '<paragraph identifier="/us/pl/115/392/s11/1"><num value="1">(1) </num>'
         "<chapeau>in chapter 77—</chapeau>"
         '<subparagraph identifier="/us/pl/115/392/s11/1/A"><num value="A">(A) </num>'
@@ -1145,9 +1351,7 @@ def test_title_only_chapeau_threads_title_to_relative_prose_leaf():
         "</content></subparagraph></paragraph></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
-    leaf = next(
-        i for i in report.instructions if i.target_address is not None
-    )
+    leaf = next(i for i in report.instructions if i.target_address is not None)
     assert str(leaf.target_address) == "title:18/section:1583/subsection:a"
     assert leaf.action == "strike_insert"
     op = leaf.operation
@@ -1164,11 +1368,11 @@ def test_title_only_chapeau_threads_title_to_relative_prose_leaf():
     assert all(i.target_address is None for i in no_title_report.instructions)
 
 
-def test_add_at_end_new_section_block_is_held_out_not_appended_to_sibling():
+def test_add_at_end_new_section_block_lowers_to_insert_not_appended_to_sibling():
     # Real PL 115-70 §402 shape (protects 18:2326): "(4) by adding at the end the
     # following: '§ 2328. Mandatory forfeiture …'" CREATES a new section §2328. It must
     # NOT be appended to the inherited section's body (which would corrupt the sibling
-    # section's text). It is held out as a typed new-section-insert residual.
+    # section's text). It now lowers to a whole-new-section INSERT targeted at §2328.
     body = (
         '<section identifier="/us/pl/115/70/s402"><num value="402">SEC. 402. </num>'
         '<content><ref href="/us/usc/t18/s2326">Section 2326 of title 18, '
@@ -1180,9 +1384,12 @@ def test_add_at_end_new_section_block_is_held_out_not_appended_to_sibling():
     report = lower_plaw_amendatory(_synthetic_plaw(body))
     instr = report.instructions[0]
     assert instr.action == "add_at_end"
-    assert instr.operation is None
+    assert instr.operation is not None
+    assert instr.operation.action is StructuralAction.INSERT
+    assert str(instr.operation.target) == "title:18/section:2328"
+    assert instr.operation.witness_rule_id == RULE_ADD_AT_END_NEW_SECTIONS
     assert instr.finding is not None
-    assert instr.finding.rule_id == NEW_SECTION_INSERT_FINDING_RULE_ID
+    assert instr.finding.rule_id == NON_TITLE_TARGET_RULE_ID
 
 
 def test_add_at_end_subsection_content_still_lowers_guard_is_precise():
@@ -1209,6 +1416,216 @@ def test_add_at_end_subsection_content_still_lowers_guard_is_precise():
     assert _payload_opens_new_section("CHAPTER 37—NONPOSTAL SERVICES")
     assert not _payload_opens_new_section("(d) The court may award costs.")
     assert not _payload_opens_new_section("“(2) If a disclosure is made")
+
+
+def test_add_at_end_multisection_payload_splits_into_per_section_inserts():
+    # Container-level add-at-end with a block that defines multiple new sections.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/c11">Chapter 11 of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="insert">adding</amendingAction> at the end the '
+        "following:<quotedContent>SUBCHAPTER V—TEST “§ 1100A. First new section “(a)"
+        " Body one. “§ 1100B. Second new section “(b) Body two.”</quotedContent>."
+        "</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "add_at_end"
+    assert instr.operation is not None
+    targets = {str(op.target) for op in (instr.operation, *instr.extra_operations)}
+    assert targets == {"title:11/section:1100A", "title:11/section:1100B"}
+
+
+def test_title_only_chapeau_threads_ancestor_section_to_conforming_amendment():
+    # Nested conforming-amendment form: the title lives on the parent chapeau, and an
+    # intermediate ancestor names the target section. The leaf inherits that full section.
+    body = (
+        '<section identifier="/us/pl/116/900/s4"><num value="4">SEC. 4. </num>'
+        "<heading>Conforming amendments</heading>"
+        '<subsection identifier="/us/pl/116/900/s4/a" role="instruction">'
+        '<num value="a">(a)</num><heading>Title 11.—</heading>'
+        "<content>Title 11, United States Code, is amended—"
+        '<paragraph identifier="/us/pl/116/900/s4/a/2">'
+        '<num value="2">(2)</num> in section 322(a), '
+        '<amendingAction type="amend">by redesignating</amendingAction> '
+        'subsections <amendingAction type="redesignate">(i) through (k)</amendingAction> '
+        'as subsections <amendingAction type="redesignate">(j) through (l)</amendingAction>.'
+        "</paragraph></content></subsection></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "redesignate"
+    assert str(instr.target_address) == "title:11/section:322/subsection:a"
+    assert instr.operation is not None
+    assert instr.operation.action is StructuralAction.RENUMBER
+    assert instr.operation.witness_rule_id == RULE_REDESIGNATE_RANGE
+
+
+def test_alphabetic_redesignate_range_lowers_to_renumber_high_end_first():
+    # Non-numeric alphabetic redesignation ranges are enumerable by character offset.
+    # High-end-first ordering prevents intermediate relabel collisions.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s322">Section 322 of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="redesignate">redesignating</amendingAction> subsections '
+        '<amendingAction type="redesignate">(i) through (k)</amendingAction> as subsections '
+        '<amendingAction type="redesignate">(j) through (l)</amendingAction>.'
+        "</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "redesignate"
+    assert instr.operation is not None
+    assert instr.operation.action is StructuralAction.RENUMBER
+    ops = (instr.operation, *instr.extra_operations)
+    from_labels: list[str] = []
+    to_labels: list[str] = []
+    for op in ops:
+        assert op.destination is not None
+        assert op.target.path[-1] == ("subsection", op.target.leaf_label())
+        assert op.destination.path[-1] == ("subsection", op.destination.leaf_label())
+        from_labels.append(str(op.target.leaf_label()))
+        to_labels.append(str(op.destination.leaf_label()))
+    assert from_labels == ["k", "j", "i"]
+    assert to_labels == ["l", "k", "j"]
+
+
+def test_effective_date_scope_resolves_at_named_kind_and_marks_covered_ops_pending():
+    # A section-level "Effective Date" paragraph naming "subsections (a) through (e)"
+    # with a conditional trigger ("take effect on the date Administrator submits...")
+    # should mark the covered amendatory leaves as pending, not immediate.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<heading>Title 11 amendment.</heading>'
+        '<subsection identifier="/us/pl/116/900/s1/a" role="instruction">'
+        '<num value="a">(a)</num><content><ref href="/us/usc/t11/s503/b">Section 503(b) '
+        'of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="add">adding</amendingAction> at the end the following: '
+        '<quotedContent><paragraph class="indentUp0"><num value="10">“(10) temporary."'
+        '</num></paragraph></quotedContent>.</content></subsection>'
+        '<subsection identifier="/us/pl/116/900/s1/f" role="instruction">'
+        '<num value="f">(f)</num><heading>Effective Date.</heading>'
+        '<paragraph identifier="/us/pl/116/900/s1/f/1" style="-uslm-lc:I658122">'
+        '<num value="1">(1)</num><heading>Effective date.</heading>'
+        '<chapeau>The amendments made by subsections (a) through (e) shall—</chapeau>'
+        '<subparagraph identifier="/us/pl/116/900/s1/f/1/A">'
+        '<num value="A">(A)</num><content>take effect on the date on which the '
+        'Administrator submits a written determination that the requirements are met; and'
+        '</content></subparagraph>'
+        '<subparagraph identifier="/us/pl/116/900/s1/f/1/B">'
+        '<num value="B">(B)</num><content>apply to cases commenced on or after that date.'
+        '</content></subparagraph>'
+        '</paragraph></subsection>'
+        '</section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    ops = report.operations()
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.source is not None
+    assert op.source.legal_status is PENDING_CONDITION_STATUS
+
+
+def test_effective_date_scope_does_not_leak_across_subsections_at_different_levels():
+    # A temporal subparagraph under subsection (f)(1)(B) naming "subparagraph (A)" must
+    # not mark an unrelated subsection (a) amendment as pending just because both have
+    # a container whose lowercased label sorts within [a, a] (#83).
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<heading>Leak test.</heading>'
+        '<subsection identifier="/us/pl/116/900/s1/a" role="instruction">'
+        '<num value="a">(a)</num><content><ref href="/us/usc/t11/s101">Section 101 '
+        'of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> “<quotedText>old</quotedText>” '
+        'and <amendingAction type="insert">inserting</amendingAction> “<quotedText>new</quotedText>”.'
+        '</content></subsection>'
+        '<subsection identifier="/us/pl/116/900/s1/f" role="instruction">'
+        '<num value="f">(f)</num><heading>Effective Date.</heading>'
+        '<paragraph identifier="/us/pl/116/900/s1/f/1" style="-uslm-lc:I658122">'
+        '<num value="1">(1)</num><heading>Effective date.</heading>'
+        '<subparagraph identifier="/us/pl/116/900/s1/f/1/A">'
+        '<num value="A">(A)</num><content>Some technical note.</content></subparagraph>'
+        '<subparagraph identifier="/us/pl/116/900/s1/f/1/B">'
+        '<num value="B">(B)</num><content>The amendment made by subparagraph (A) shall '
+        'take effect on the date that is 1 year after the date of enactment of this Act.'
+        '</content></subparagraph>'
+        '</paragraph></subsection>'
+        '</section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    ops = report.operations()
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.target.path == (("title", "11"), ("section", "101"))
+    assert op.source is not None
+    assert op.source.legal_status is not PENDING_CONDITION_STATUS
+
+    # SBRA-style conforming amendment: a parent paragraph names the target section
+    # with an em-dash list terminator ("(4) in section 322—"), an intermediate
+    # paragraph names the subsection, and the leaf carries the real edit. The dash
+    # terminator must be recognised, the title inherited from the title-only
+    # chapeau, and the intermediate anchor must refine to the sub-section.
+    body = (
+        '<section identifier="/us/pl/116/900/s4"><num value="4">SEC. 4. </num>'
+        "<heading>Conforming amendments</heading>"
+        '<subsection identifier="/us/pl/116/900/s4/a" role="instruction">'
+        '<num value="a">(a)</num><heading>Title 11.</heading>'
+        "<content>Title 11, United States Code, is amended—</content>"
+        '<paragraph identifier="/us/pl/116/900/s4/a/4">'
+        '<num value="4">(4)</num> in section 322—'
+        '<paragraph identifier="/us/pl/116/900/s4/a/4/A">'
+        '<num value="A">(A)</num> in subsection (a)—'
+        '<subparagraph identifier="/us/pl/116/900/s4/a/4/A/i">'
+        '<num value="i">(i)</num> by <amendingAction type="delete">striking</amendingAction>'
+        " “<quotedText>old text</quotedText>”."
+        "</subparagraph></paragraph></paragraph></subsection></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    accepted = [i for i in report.instructions if i.status == "accepted"]
+    assert len(accepted) == 1, report
+    instr = accepted[0]
+    assert instr.target_address == LegalAddress(path=(("title", "11"), ("section", "322"), ("subsection", "a")))
+
+
+def test_sibling_anchors_do_not_leak_into_ancestor_target_resolution():
+    # When resolving an intermediate ancestor's own section, sibling units must not
+    # donate their <ref> or prose targets to that ancestor. Without sibling exclusion
+    # the first <ref> encountered in document order (the sibling's /us/usc/t11/s521)
+    # would hijack the parent scope onto section 521.
+    body = (
+        '<section identifier="/us/pl/116/900/s4"><num value="4">SEC. 4. </num>'
+        "<heading>Conforming amendments</heading>"
+        '<subsection identifier="/us/pl/116/900/s4/a" role="instruction">'
+        '<num value="a">(a)</num><heading>Title 11.</heading>'
+        "<content>Title 11, United States Code, is amended—</content>"
+        '<paragraph identifier="/us/pl/116/900/s4/a/4">'
+        '<num value="4">(4)</num> in section 322—'
+        '<paragraph identifier="/us/pl/116/900/s4/a/4/A">'
+        '<num value="A">(A)</num> in subsection (a)—'
+        '<subparagraph identifier="/us/pl/116/900/s4/a/4/A/i">'
+        '<num value="i">(i)</num> by <amendingAction type="delete">striking</amendingAction>'
+        " “<quotedText>A</quotedText>”."
+        "</subparagraph></paragraph>"
+        '<paragraph identifier="/us/pl/116/900/s4/a/4/B">'
+        '<num value="B">(B)</num> in subsection (b), '
+        '<ref href="/us/usc/t11/s521">section 521 of title 11</ref>, '
+        'by <amendingAction type="delete">striking</amendingAction>'
+        " “<quotedText>B</quotedText>”."
+        "</paragraph></paragraph></subsection></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    accepted = [i for i in report.instructions if i.status == "accepted"]
+    # The leaf under (A) must target section 322(a), not be hijacked by sibling (B)'s ref.
+    instr_a = next(i for i in accepted if i.instruction_id.endswith("/4/A/i"))
+    assert instr_a.target_address == LegalAddress(path=(("title", "11"), ("section", "322"), ("subsection", "a")))
+    # Sibling (B) carries its own absolute <ref> to section 521; without the
+    # sibling-leak fix its <ref> would steal paragraph (4)'s scope for leaf A.
+    instr_b = next(i for i in accepted if i.instruction_id.endswith("/4/B"))
+    assert instr_b.target_address == LegalAddress(path=(("title", "11"), ("section", "521")))
 
 
 # ---------------------------------------------------------------------------
@@ -1258,3 +1675,245 @@ def test_real_title28_pl115_141_title_only_inheritance_reaches_agreement() -> No
     assert row.match_text == "$40"
     assert row.replacement == "$50"
     assert report.replay_authorized is False
+
+
+def test_precise_text_strike_with_subsection_letter_d_keeps_full_path():
+    # A precise text strike on a subsection whose single-letter label is also a Roman
+    # numeral (e.g., 11 U.S.C. §522(d): ``d``) used to degrade to a whole-section match
+    # because the ambiguity heuristic treated the label as a clause. The labels c/d/m
+    # are ordinary USC subsection labels despite being Roman numerals; the strike must
+    # keep the full subsection path so it applies to the right node.
+    body = (
+        '<section identifier="/us/pl/116/900/s4" role="instruction">'
+        "<num>4.</num>"
+        "<content>"
+        '<ref href="/us/usc/t11/s522/d">Section 522(d) of title 11, '
+        "United States Code</ref>, "
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>; and</quotedText>” and "
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText>;</quotedText>”."
+        "</content>"
+        "</section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    accepted = [i for i in report.instructions if i.status == "accepted"]
+    assert len(accepted) == 1
+    instr = accepted[0]
+    assert instr.target_address == LegalAddress(path=(("title", "11"), ("section", "522"), ("subsection", "d")))
+    op = instr.operation
+    assert op is not None
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == instr.target_address
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "; and"
+    assert op.text_patch.replacement == ";"
+
+
+# ---------------------------------------------------------------------------
+# Terminal punctuation + structural-strike families (typed lowering / findings)
+# ---------------------------------------------------------------------------
+
+
+def _accepted_instr(report):
+    accepted = [i for i in report.instructions if i.status == "accepted"]
+    assert len(accepted) == 1
+    return accepted[0]
+
+
+def test_strike_period_at_the_end_and_insert_quoted_end_punct_with_list_conjunction():
+    # Nested-list leaves end with "; and" — punctuation regex must consume it.
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> the period at the end '
+        'and <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>; and</quotedText>", and'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.witness_rule_id == RULE_STRIKE_INSERT_END_PUNCT
+    patch = _patch(instr)
+    assert patch.selector.match_text == "."
+    assert patch.selector.occurrence == -1
+    assert patch.replacement == "; and"
+
+
+def test_strike_period_at_the_end_and_insert_quoted_end_punct():
+    # Pattern A: "striking the period at the end and inserting '; and'".
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> the period at the end '
+        'and <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>; and</quotedText>".'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "strike_insert_end_punct"
+    assert instr.witness_rule_id == RULE_STRIKE_INSERT_END_PUNCT
+    patch = _patch(instr)
+    assert patch.selector.match_text == "."
+    assert patch.selector.occurrence == -1
+    assert patch.replacement == "; and"
+
+
+def test_strike_quoted_at_the_end_and_insert_new_end_punct():
+    # Pattern B: "striking '; and' at the end and inserting ';'".
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>; and</quotedText>" at the end and '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>;</quotedText>".'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "strike_insert_end_punct"
+    patch = _patch(instr)
+    assert patch.selector.match_text == "; and"
+    assert patch.selector.occurrence == -1
+    assert patch.replacement == ";"
+
+
+def test_insert_before_period_at_the_end_lowers_to_terminal_text_replace():
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText> and section 507(d)</quotedText>" before the period at the end.'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "insert_end_punct"
+    assert instr.witness_rule_id == RULE_INSERT_END_PUNCT
+    patch = _patch(instr)
+    assert patch.selector.match_text == "."
+    assert patch.selector.occurrence == -1
+    assert patch.replacement == " and section 507(d)."
+
+
+def test_insert_after_comma_at_the_end_lowers_to_terminal_text_replace():
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText> including (i)</quotedText>" after the comma at the end.'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "insert_end_punct"
+    patch = _patch(instr)
+    assert patch.selector.match_text == ","
+    assert patch.replacement == ", including (i)"
+
+
+def test_strike_insert_punctuation_word_lowers_to_text_replace():
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>, or</quotedText>" and '
+        '<amendingAction type="insert">inserting</amendingAction> a semicolon.'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "strike_insert_punct_word"
+    assert instr.witness_rule_id == RULE_STRIKE_INSERT_PUNCT_WORD
+    patch = _patch(instr)
+    assert patch.selector.match_text == ", or"
+    assert patch.selector.occurrence == -1
+    assert patch.replacement == ";"
+
+
+def test_sentence_strike_emits_typed_not_section_representable_finding():
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> the second sentence.'
+        "</content></section>"
+    )
+    instr = lower_plaw_amendatory(_synthetic_plaw(body)).instructions[0]
+    assert instr.action == "strike"
+    assert instr.operation is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == SENTENCE_STRIKE_FINDING_RULE_ID
+
+
+def test_heading_strike_emits_typed_not_section_representable_finding():
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> the subsection heading.'
+        "</content></section>"
+    )
+    instr = lower_plaw_amendatory(_synthetic_plaw(body)).instructions[0]
+    assert instr.operation is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == HEADING_STRIKE_FINDING_RULE_ID
+
+
+def test_designation_strike_emits_typed_not_section_representable_finding():
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> the paragraph designation.'
+        "</content></section>"
+    )
+    instr = lower_plaw_amendatory(_synthetic_plaw(body)).instructions[0]
+    assert instr.operation is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == DESIGNATION_STRIKE_FINDING_RULE_ID
+
+
+def test_tail_strike_emits_typed_not_section_representable_finding():
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>unless the trustee</quotedText>" and all that follows.'
+        "</content></section>"
+    )
+    instr = lower_plaw_amendatory(_synthetic_plaw(body)).instructions[0]
+    assert instr.operation is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == TAIL_STRIKE_FINDING_RULE_ID
+
+
+def test_through_tail_strike_emits_typed_not_section_representable_finding():
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>unless the trustee</quotedText>" and all that follows through '
+        '“<quotedText>the holder</quotedText>".'
+        "</content></section>"
+    )
+    instr = lower_plaw_amendatory(_synthetic_plaw(body)).instructions[0]
+    assert instr.operation is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == THROUGH_TAIL_STRIKE_FINDING_RULE_ID
