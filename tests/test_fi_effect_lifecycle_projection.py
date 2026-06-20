@@ -258,7 +258,17 @@ def test_finland_meta_repeal_relation_signal_binds_known_effect() -> None:
     assert relations[0].kind == "repeals_effect"
     assert relations[0].target_effect == source_effects[0]
     assert relations[0].target_instrument is None
-    assert lifecycle_events == ()
+    assert len(lifecycle_events) == 1
+    lifecycle = lifecycle_events[0]
+    assert lifecycle.kind == "repeal_effect"
+    assert lifecycle.effect == source_effects[0]
+    assert lifecycle.relation == relations[0]
+    assert lifecycle.executable is False
+    assert lifecycle.detail["projection"] == "effect_relation_signal"
+    assert lifecycle.detail["non_executable_reason"] == (
+        "meta-repeal signal did not carry a deterministic repeal date"
+    )
+    assert lower_lifecycle_event_to_temporal_event(lifecycle) is None
 
 
 def test_finland_meta_repeal_unresolved_signal_emits_nonexecuting_lifecycle() -> None:

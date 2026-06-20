@@ -544,6 +544,39 @@ def _unresolved_lifecycle_from_relation_signals(
     return tuple(events)
 
 
+def _lifecycle_events_from_resolved_signal_relations(
+    relations: Sequence[EffectRelation],
+) -> tuple[EffectLifecycleEvent, ...]:
+    events: list[EffectLifecycleEvent] = []
+    seen: set[str] = set()
+    for relation in relations:
+        if relation.detail.get("signal_kind") != "meta_repeal":
+            continue
+        if relation.kind != "repeals_effect" or relation.target_effect is None:
+            continue
+        lifecycle_id = _lifecycle_id(relation.relation_id, "repeal_effect")
+        if lifecycle_id in seen:
+            continue
+        seen.add(lifecycle_id)
+        events.append(
+            EffectLifecycleEvent(
+                lifecycle_event_id=lifecycle_id,
+                kind="repeal_effect",
+                source_provision=relation.source_provision,
+                effect=relation.target_effect,
+                relation=relation,
+                executable=False,
+                detail={
+                    "projection": "effect_relation_signal",
+                    "executable_projection": False,
+                    "non_executable_reason": "meta-repeal signal did not carry a deterministic repeal date",
+                    **relation.detail,
+                },
+            )
+        )
+    return tuple(events)
+
+
 def build_finland_effect_lifecycle(
     *,
     target_statute: str,
@@ -585,6 +618,7 @@ def build_finland_effect_lifecycle(
             target_statute=target_statute,
             source_effects=source_effect_context,
         )
+        + _lifecycle_events_from_resolved_signal_relations(relations)
         + _unresolved_lifecycle_from_relation_signals(relation_signals)
     )
     return source_effects, relations, lifecycle_events
