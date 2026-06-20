@@ -56,8 +56,13 @@ def test_min_asetus_grant_registry_miss_still_binds() -> None:
 
 
 def test_pres_asetus_grant() -> None:
+    # A genuine tasavallan presidentin asetus grant. (NB: a bare ``Tämän lain
+    # voimaantulosta säädetään … presidentin asetuksella`` commencement clause is
+    # NOT a grant — production A filters it and the canonical commencement guard
+    # residualizes it; see test_commencement_voimaantulosta_pres_residualized.)
     scan = _grants(
-        "Tämän lain voimaantulosta säädetään tasavallan presidentin asetuksella."
+        "Tarkempia säännöksiä tämän lain täytäntöönpanosta voidaan antaa "
+        "tasavallan presidentin asetuksella."
     )
     assert len(scan.grants) == 1
     assert scan.grants[0].kind == KIND_PRES_ASETUS
@@ -688,3 +693,148 @@ def test_genuine_decision_as_means_paatoksella_survives() -> None:
         "päätöksellä."
     )
     assert any(g.instrument == "päätös" for g in scan.grants)
+
+
+# ---------------------------------------------------------------------------
+# Commencement-clause guard (the flip gate). ``Tämän lain voimaantulosta
+# säädetään … asetuksella`` is the standard commencement-by-decree section that
+# production A FILTERS; the canonical must residualize it too (or the flip would
+# inflate StatuteGraph forward grants by ~1 FP per statute). Mirrors A's EXACT
+# ``voimaan(tulosta|panosta) säädetään`` filter — so ``voimaansaattamisesta
+# säädetään`` (which A KEEPS) and ``täytäntöönpanosta voidaan antaa`` (a genuine
+# decree grant) SURVIVE. Real statute witnesses below.
+# ---------------------------------------------------------------------------
+
+
+def test_commencement_voimaantulosta_pres_residualized() -> None:
+    # 2002/474 §3: ``Tämän lain voimaantulosta säädetään tasavallan presidentin
+    # asetuksella`` — A filters; canonical must residualize, not mint a grant.
+    scan = _grants(
+        "Tämän lain voimaantulosta säädetään tasavallan presidentin asetuksella."
+    )
+    assert scan.grants == ()
+    assert any(r.kind == "commencement_clause" for r in scan.residuals)
+
+
+def test_commencement_voimaantulosta_vn_residualized() -> None:
+    # 2026/278 §3 / 2017/274 §2: ``… tämän lain voimaantulosta säädetään
+    # valtioneuvoston asetuksella`` (the ``voimaantulosta`` directly governs
+    # ``säädetään`` even with a coordinated preceding conjunct).
+    scan = _grants(
+        "Muutosten muiden määräysten voimaansaattamisesta ja tämän lain "
+        "voimaantulosta säädetään valtioneuvoston asetuksella."
+    )
+    assert scan.grants == ()
+    assert any(r.kind == "commencement_clause" for r in scan.residuals)
+
+
+def test_commencement_voimaansaattamisesta_is_grant() -> None:
+    # 2026/278 §2: ``… voimaansaattamisesta säädetään valtioneuvoston
+    # asetuksella`` — bringing OTHER regulations into force. Production A KEEPS this
+    # as a grant (its filter is ``voimaan(tulosta|panosta)``, not
+    # ``voimaansaattamisesta``); the canonical must too (zero genuine-grant loss).
+    scan = _grants(
+        "Muutosten muiden kuin lainsäädännön alaan kuuluvien määräysten "
+        "voimaansaattamisesta säädetään valtioneuvoston asetuksella."
+    )
+    assert len(scan.grants) == 1
+    assert scan.grants[0].instrument == "asetus"
+    assert scan.grants[0].kind == KIND_VN_ASETUS
+
+
+def test_commencement_tarkempia_saannoksia_antaa_is_grant() -> None:
+    # 2002/474 §2: ``Tarkempia säännöksiä tämän lain täytäntöönpanosta voidaan
+    # antaa tasavallan presidentin asetuksella`` — a genuine decree grant for
+    # detailed implementation provisions. NOT the ``voimaantulosta säädetään``
+    # commencement frame; the guard must STAND DOWN (A does not filter it).
+    scan = _grants(
+        "Tarkempia säännöksiä tämän lain täytäntöönpanosta voidaan antaa "
+        "tasavallan presidentin asetuksella."
+    )
+    assert len(scan.grants) == 1
+    assert scan.grants[0].instrument == "asetus"
+    assert scan.grants[0].kind == KIND_PRES_ASETUS
+
+
+# ---------------------------------------------------------------------------
+# Restriction power verbs (recall). ``rajoittaa`` / ``kieltää`` / ``rajoitetaan``
+# / ``kielletään`` are in A's ``_PAT_DECREE_INVERTED``; the canonical verb set
+# lacked them, residualizing the lone A-ONLY drop. Now a genuine grant.
+# ---------------------------------------------------------------------------
+
+
+def test_restriction_decree_grant_rajoittaa() -> None:
+    # 2009/1194 §8.1: ``Valtioneuvoston asetuksella voidaan rajoittaa ilmailua tai
+    # kieltää se`` — the power to issue a decree RESTRICTING / PROHIBITING an
+    # activity is a genuine decree grant (the lone A-ONLY drop, now closed).
+    scan = _grants(
+        "Valtioneuvoston asetuksella voidaan rajoittaa ilmailua tai kieltää se "
+        "maanpuolustuksen kannalta tärkeiden kohteiden läheisyydessä."
+    )
+    assert len(scan.grants) == 1
+    assert scan.grants[0].instrument == "asetus"
+    assert scan.grants[0].kind == KIND_VN_ASETUS
+    assert scan.grants[0].cue.lower() == "rajoittaa"
+
+
+# ---------------------------------------------------------------------------
+# Idiom guards the AGENCY pass missed.
+# ---------------------------------------------------------------------------
+
+
+def test_cause_to_suspect_reference_residualized() -> None:
+    # 2009/1194 §105, §149: ``… osoittanut sellaista yleistä piittaamattomuutta
+    # säännöksistä tai määräyksistä, että se antaa aiheen epäillä …`` — the fixed
+    # idiom ``antaa aiheen [epäillä]``; the elative ``määräyksistä`` is the norm
+    # referenced, not a delegated rule-making power.
+    scan = _grants(
+        "On muulla toiminnallaan osoittanut sellaista yleistä piittaamattomuutta "
+        "säännöksistä tai määräyksistä, että se antaa aiheen epäillä luvan "
+        "haltijan kykyä tai halua noudattaa turvallisuuden kannalta olennaisia "
+        "säännöksiä ja määräyksiä."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "cause_to_suspect_reference" for r in scan.residuals)
+
+
+def test_cause_to_suspect_stands_down_on_genuine_grant() -> None:
+    # STAND-DOWN: a rule-making quantifier (``tarkempia``) heading the object is a
+    # genuine agency grant even if ``antaa aiheen`` text were nearby — the guard
+    # must not suppress a real ``antaa tarkempia määräyksiä`` delegation.
+    scan = _grants("Virasto antaa tarkempia määräyksiä asian käsittelystä.")
+    assert any(g.kind == KIND_AGENCY and g.instrument == "määräys" for g in scan.grants)
+
+
+def test_noncompliance_reference_residualized() -> None:
+    # 2009/1194 §153: ``Jos … luvan haltija jättää noudattamatta … hyväksynnän
+    # ehtoja tai muita määräyksiä …`` — the norm-violation idiom ``jättää
+    # noudattamatta``; the määräykset are VIOLATED, not delegated. (The clause's
+    # matched power verb is the unrelated heading ``annettava``.)
+    scan = _grants(
+        "Organisaatiolle annettava huomautus tai varoitus Jos organisaatiolle "
+        "myönnetyn luvan haltija jättää noudattamatta tässä laissa tarkoitetun "
+        "hyväksynnän ehtoja tai muita määräyksiä, luvan haltijalle voidaan antaa "
+        "huomautus."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "noncompliance_reference" for r in scan.residuals)
+
+
+def test_noncompliance_stands_down_on_genuine_grant() -> None:
+    # STAND-DOWN: a genuine ``antaa tarkempia määräyksiä`` grant survives even
+    # though a ``noudattamatta`` token sits elsewhere in a different sentence.
+    scan = _grants("Virasto antaa tarkempia määräyksiä valvonnasta.")
+    assert any(g.kind == KIND_AGENCY and g.instrument == "määräys" for g in scan.grants)
+
+
+def test_bylaw_provided_norm_tutkintosaanto_residualized() -> None:
+    # 1987/672 §30: ``Tarkemmat määräykset tämän asetuksen soveltamisesta annetaan
+    # tutkintosäännössä …`` — the norm is in an internal ``tutkintosääntö`` charter
+    # (the examination by-law), exactly the työjärjestys / ohjesääntö class, now in
+    # the bylaw guard's noun set.
+    scan = _grants(
+        "Tarkemmat määräykset tämän asetuksen soveltamisesta annetaan "
+        "tutkintosäännössä, jonka korkeakoulu hyväksyy."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "bylaw_provided_norm" for r in scan.residuals)

@@ -123,6 +123,15 @@ _MAY_MODALS: frozenset[str] = frozenset({"voidaan", "voi"})
 #: säädetä`` / ``jollei tässä asetuksessa toisin säädetä`` is a back-reference or
 #: a self-reference, NOT a decree grant, and is residualized by the dedicated
 #: negative-reservation guard (:func:`_is_negative_reservation_without_anchor`).
+#:
+#: ``rajoittaa`` / ``kieltää`` / ``rajoitetaan`` / ``kielletään`` are the
+#: RESTRICTION power verbs production A carries in ``_PAT_DECREE_INVERTED``
+#: (``Valtioneuvoston asetuksella voidaan rajoittaa ilmailua tai kieltää se`` —
+#: the power to issue a decree that RESTRICTS / PROHIBITS an activity is a genuine
+#: decree grant). The old canonical verb set lacked them, residualizing the clause
+#: as ``instrument_without_power_verb`` (fail-loud, not silent) and MISSING the
+#: grant — the lone A-ONLY drop the differential found (2009/1194 §8.1). Added so
+#: the canonical recall covers A's restriction-decree shape.
 _POWER_VERBS: frozenset[str] = frozenset(
     {
         "säädetään",
@@ -139,6 +148,10 @@ _POWER_VERBS: frozenset[str] = frozenset(
         "vahvistetaan",
         "vahvistaa",
         "määritellään",
+        "rajoittaa",
+        "rajoitetaan",
+        "kieltää",
+        "kielletään",
     }
 )
 
@@ -416,10 +429,12 @@ _BYLAW_INSTRUMENT_INESSIVE_SURFACES: tuple[str, ...] = (
     "ohjesäännössä",
     "johtosäännössä",
     "taloussäännössä",
+    "tutkintosäännössä",
     "työjärjestyksellä",
     "ohjesäännöllä",
     "johtosäännöllä",
     "taloussäännöllä",
+    "tutkintosäännöllä",
 )
 
 #: ``julkais-`` PUBLISHING verb prefix. A clause where the ``määräys`` / ``ohje``
@@ -479,8 +494,11 @@ ResidualKind = (
     "procedural_duty_object",          # ``hakemukseen on annettava päätös`` (one-off duty)
     "decision_issuance_object",        # ``hakemukseen annetaan kielteinen päätös`` (one-off)
     "negative_reservation",            # ``jollei muualla laissa toisin säädetä`` (no anchor)
+    "commencement_clause",             # ``Tämän lain voimaantulosta säädetään asetuksella``
     "court_power",                     # ``tuomioistuin voi … määrätä`` (adjudication)
     "penal_clause_reference",          # ``Joka … määräyksen vastaisesti … on tuomittava``
+    "cause_to_suspect_reference",      # ``antaa aiheen epäillä … määräyksistä`` (idiom)
+    "noncompliance_reference",         # ``jättää noudattamatta … määräyksiä`` (violation)
     "single_case_order",               # ``määräyksen antaneelle …`` (one-off order ref)
     "appeal_reference",                # ``saa valittaa päätöksestä … oikeuteen``
     "bylaw_provided_norm",             # ``annetaan työjärjestyksessä`` (internal bylaw)
@@ -968,6 +986,57 @@ def _is_decision_issuance_object(
 _NEGATIVE_RESERVATION_HEADS: frozenset[str] = frozenset({"jollei", "ellei"})
 
 
+#: Commencement / entry-into-force noun PREFIXES. A ``voimaantulo`` /
+#: ``voimaanpano`` noun (in any case: ``voimaantulosta`` / ``voimaanpanosta`` /
+#: ``voimaantulopäivästä`` …) GOVERNING the ``säätää`` family marks the standard
+#: commencement section ``Tämän lain voimaantulosta säädetään … asetuksella`` —
+#: "the entry into force of this Act is provided by decree". Production A FILTERS
+#: this exact shape (``_PAT_NEGATIVE`` ``fi_delegation_commencement_reference_
+#: filtered`` = ``voimaan(tulosta|panosta)\s+säädetään``); it is a recurring,
+#: one-per-statute clause that is not a substantive subordinate-rule-making
+#: delegation. CLOSED prefixes (so ``voimaansaattamisesta`` — bringing OTHER
+#: regulations into force, which A does NOT filter and keeps as a grant — is
+#: DELIBERATELY excluded; only the act's OWN commencement is filtered).
+_COMMENCEMENT_NOUN_PREFIXES: tuple[str, ...] = ("voimaantulo", "voimaanpano")
+
+
+def _is_commencement_clause(
+    tokens: tuple[Token, ...],
+    inst_idx: int,
+    verb_idx: int,
+) -> bool:
+    """Guard (commencement): ``voimaantulosta säädetään … asetuksella``, not a grant.
+
+    The standard commencement section ``Tämän lain voimaantulosta säädetään
+    [valtioneuvoston / tasavallan presidentin] asetuksella`` ("the entry into force
+    of this Act is provided by decree") appears in almost every statute. Production
+    A FILTERS it (``_PAT_NEGATIVE`` ``fi_delegation_commencement_reference_
+    filtered`` / ``fi_delegation_commencement_decree_filtered``); the canonical
+    parser must too, or the flip would inflate StatuteGraph forward grants by ~1 FP
+    per statute's commencement clause. Mirrors A's exact filter: fires only when a
+    commencement noun (``voimaantulo*`` / ``voimaanpano*``) immediately PRECEDES a
+    ``säätää``-family power verb (``säädetään`` / ``säätää`` / ``säädetä``) — the
+    ``[commencement-noun] säädetään`` government A's ``voimaan(tulosta|panosta)\\s+
+    säädetään`` regex keys on. ``voimaansaattamisesta`` (bringing OTHER regulations
+    into force) is DELIBERATELY excluded (A keeps it as a grant), as is any
+    NON-``säätää`` verb. Scoped to the ``asetus`` instrument (the commencement
+    clause's decree); a ``määräys`` / ``ohje`` is not a commencement instrument.
+    """
+    instrument = _instrument_kind_for_surface(tokens[inst_idx].text)
+    if instrument != INSTRUMENT_ASETUS:
+        return False
+    # Mirror A: the säätää-family verb whose IMMEDIATELY-preceding word token is a
+    # commencement noun (the ``voimaantulosta säädetään`` government).
+    verb_low = tokens[verb_idx].text.lower()
+    if verb_low not in ("säädetään", "säätää", "säädetä"):
+        return False
+    prev = _prev_word_token(tokens, verb_idx)
+    if prev is None:
+        return False
+    plow = prev.text.lower()
+    return any(plow.startswith(pre) for pre in _COMMENCEMENT_NOUN_PREFIXES)
+
+
 def _is_negative_reservation_without_anchor(
     verb_idx: int,
     tokens: tuple[Token, ...],
@@ -1093,6 +1162,102 @@ def _is_penal_clause_reference(
     if "joka" not in lowered:
         return False
     return any(low in _PENAL_PREDICATE_SURFACES for low in lowered)
+
+
+def _is_cause_to_suspect_reference(
+    tokens: tuple[Token, ...],
+    clause_lo: int,
+    clause_hi: int,
+    inst_idx: int,
+    verb_idx: int,
+) -> bool:
+    """Guard (idiom): ``antaa aiheen epäillä …``, an idiom — not a grant.
+
+    ``… ei ole … osoittanut sellaista yleistä piittaamattomuutta säännöksistä tai
+    määräyksistä, että se antaa aiheen epäillä …`` — the verb ``antaa`` heads the
+    fixed idiom ``antaa aihe(en) [epäillä]`` ("gives [reasonable] cause [to
+    suspect]"); the ``määräyksistä`` is the ELATIVE norm referenced (what the
+    person was indifferent ABOUT), never a delegated rule-making instrument. The
+    bare instrument-noun + power-verb co-occurrence test mints it because ``antaa``
+    is in :data:`_POWER_VERBS` and ``määräyksistä`` is an instrument noun. Fires
+    only when ALL hold:
+
+      * the triggering instrument is a ``määräys`` / ``ohje`` (the AGENCY family;
+        never ``asetus``); and
+      * the matched power verb is ``antaa`` / ``antavat`` immediately FOLLOWED by
+        ``aiheen`` / ``aihetta`` (the ``antaa aiheen`` idiom head); and
+      * NO rule-making quantifier (``tarkempia`` / ``yleisiä`` …) heads the object
+        (a genuine ``antaa tarkempia määräyksiä`` grant survives).
+
+    Witnessed 2009/1194 §105, §149.
+    """
+    if _instrument_kind_for_surface(tokens[inst_idx].text) not in (
+        INSTRUMENT_MAARAYS,
+        INSTRUMENT_OHJE,
+    ):
+        return False
+    if tokens[verb_idx].text.lower() not in ("antaa", "antavat"):
+        return False
+    nxt = _next_word_token(tokens, verb_idx)
+    if nxt is None or nxt.text.lower() not in ("aiheen", "aihetta"):
+        return False
+    words = _word_tokens(tokens, clause_lo, clause_hi)
+    if any(w.text.lower() in _RULEMAKING_QUANTIFIERS for w in words):
+        return False
+    return True
+
+
+#: ``jättää`` family heads of the norm-VIOLATION idiom ``jättää noudattamatta …
+#: määräyksiä`` ("fails to comply with … orders"). The instrument is the norm
+#: VIOLATED, not a delegated rule-making power. CLOSED.
+_NONCOMPLIANCE_VERB_SURFACES: frozenset[str] = frozenset(
+    {"jättää", "jättävät", "jätti", "jättänyt"}
+)
+
+
+def _is_noncompliance_reference(
+    tokens: tuple[Token, ...],
+    clause_lo: int,
+    clause_hi: int,
+    inst_idx: int,
+) -> bool:
+    """Guard (idiom): ``jättää noudattamatta … määräyksiä``, a violation — not a grant.
+
+    ``Jos … luvan haltija jättää noudattamatta … hyväksynnän ehtoja tai muita
+    määräyksiä …`` — the norm-violation idiom ``jättää noudattamatta [X]`` ("fails
+    to comply with [X]"); the ``määräyksiä`` is the norm being VIOLATED, never a
+    delegated rule-making power. A sibling of the penal guard (guard 7) but with no
+    ``Joka`` / penal predicate, so guard 7 misses it. The clause's matched power
+    verb is often an unrelated ``annettava`` (from the section heading
+    ``Organisaatiolle annettava huomautus``), so this guard keys on the idiom
+    DIRECTLY, not on the matched verb. Fires only when ALL hold:
+
+      * the triggering instrument is a ``määräys`` / ``ohje`` (never ``asetus``);
+        and
+      * a ``noudattamatta`` token sits in the clause governed by a ``jättää``-family
+        verb preceding it; and
+      * NO rule-making quantifier heads the object (a genuine grant survives).
+
+    Witnessed 2009/1194 §153.
+    """
+    if _instrument_kind_for_surface(tokens[inst_idx].text) not in (
+        INSTRUMENT_MAARAYS,
+        INSTRUMENT_OHJE,
+    ):
+        return False
+    words = _word_tokens(tokens, clause_lo, clause_hi)
+    lowered = [w.text.lower() for w in words]
+    if "noudattamatta" not in lowered:
+        return False
+    nc_pos = lowered.index("noudattamatta")
+    has_jattaa_before = any(
+        lowered[k] in _NONCOMPLIANCE_VERB_SURFACES for k in range(nc_pos)
+    )
+    if not has_jattaa_before:
+        return False
+    if any(low in _RULEMAKING_QUANTIFIERS for low in lowered):
+        return False
+    return True
 
 
 def _is_single_case_order(
@@ -1746,6 +1911,24 @@ def _scan_tape(tape: TokenTape, source_text: str) -> DelegationGrantScan:
                 )
             )
             continue
+        # Guard (commencement) — ``Tämän lain voimaantulosta säädetään …
+        # asetuksella``: the standard commencement-by-decree section, NOT a
+        # substantive rule-making delegation. Production A FILTERS it; the canonical
+        # must too, or the flip inflates StatuteGraph forward grants by ~1 FP per
+        # statute. Mirrors A's exact ``voimaan(tulosta|panosta) säädetään`` filter
+        # (so ``voimaansaattamisesta säädetään`` — which A KEEPS — survives).
+        if _is_commencement_clause(tokens, inst_idx, verb_idx):
+            residuals.append(
+                _residual(
+                    "commencement_clause",
+                    tokens,
+                    inst_idx,
+                    instrument,
+                    tokens[verb_idx].text,
+                    source_text,
+                )
+            )
+            continue
         # --- AGENCY-family precision guards (6–10) — reject the ~half of
         # määräys/ohje/päätös AGENCY mints that are NOT a rule-making delegation.
         # Guard 6 — court power: ``tuomioistuin voi … määrätä …`` (in-case
@@ -1764,6 +1947,30 @@ def _scan_tape(tape: TokenTape, source_text: str) -> DelegationGrantScan:
             residuals.append(
                 _residual(
                     "penal_clause_reference",
+                    tokens, inst_idx, instrument, tokens[verb_idx].text, source_text,
+                )
+            )
+            continue
+        # Guard (idiom) — cause-to-suspect: ``antaa aiheen epäillä … määräyksistä``
+        # (the fixed ``antaa aiheen`` idiom; the elative ``määräyksistä`` is the norm
+        # referenced, not a delegated rule-making power).
+        if _is_cause_to_suspect_reference(
+            tokens, clause_lo, clause_hi, inst_idx, verb_idx
+        ):
+            residuals.append(
+                _residual(
+                    "cause_to_suspect_reference",
+                    tokens, inst_idx, instrument, tokens[verb_idx].text, source_text,
+                )
+            )
+            continue
+        # Guard (idiom) — non-compliance: ``jättää noudattamatta … määräyksiä`` (the
+        # norm-violation idiom; the määräykset are VIOLATED, not delegated). Sibling
+        # of the penal guard with no ``Joka`` / penal predicate.
+        if _is_noncompliance_reference(tokens, clause_lo, clause_hi, inst_idx):
+            residuals.append(
+                _residual(
+                    "noncompliance_reference",
                     tokens, inst_idx, instrument, tokens[verb_idx].text, source_text,
                 )
             )
