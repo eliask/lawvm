@@ -7,6 +7,7 @@ from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, Structu
 from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
     EffectRef,
+    EffectRelation,
     SourceInstrumentRef,
     SourceProvisionRef,
     lower_lifecycle_event_to_temporal_event,
@@ -17,7 +18,10 @@ from lawvm.finland.effect_lifecycle_signals import (
     EffectLifecycleOverrideScope,
     EffectRelationSignal,
 )
-from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
+from lawvm.finland.effect_lifecycle_projection import (
+    _lifecycle_events_from_resolved_signal_relations,
+    build_finland_effect_lifecycle,
+)
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.process_result_builder import ProcessCompatSinks, ProcessResultBuilder, ProcessSignalBuffers
 
@@ -308,6 +312,35 @@ def test_finland_meta_repeal_relation_signal_binds_known_effect() -> None:
         "meta-repeal signal did not carry a deterministic repeal date"
     )
     assert lower_lifecycle_event_to_temporal_event(lifecycle) is None
+
+
+def test_meta_repeal_lifecycle_uses_source_rule_id_not_detail_metadata() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2021/2")
+    witness = SourceProvisionRef(
+        instrument=instrument,
+        path=("routing",),
+        rule_id="fi.meta_repeal_effect_relation",
+    )
+    target_instrument = SourceInstrumentRef(instrument_id="2020/1")
+    target_effect = EffectRef(
+        effect_id="effect:2020/1:op-1",
+        source_instrument=target_instrument,
+        target_statute="1990/1",
+        target_address=LegalAddress(path=(("section", "4 a"),)),
+    )
+    relation = EffectRelation(
+        relation_id="relation:meta-repeal",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+        detail={},
+    )
+
+    lifecycle_events = _lifecycle_events_from_resolved_signal_relations((relation,))
+
+    assert len(lifecycle_events) == 1
+    assert lifecycle_events[0].kind == "repeal_effect"
+    assert lifecycle_events[0].relation == relation
 
 
 def test_finland_meta_repeal_unresolved_signal_emits_nonexecuting_lifecycle() -> None:

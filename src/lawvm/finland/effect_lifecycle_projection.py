@@ -585,7 +585,7 @@ def _lifecycle_events_from_resolved_signal_relations(
     events: list[EffectLifecycleEvent] = []
     seen: set[str] = set()
     for relation in relations:
-        if relation.detail.get("signal_kind") != "meta_repeal":
+        if relation.source_provision.rule_id != "fi.meta_repeal_effect_relation":
             continue
         if relation.kind != "repeals_effect" or relation.target_effect is None:
             continue
