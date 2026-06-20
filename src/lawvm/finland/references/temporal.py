@@ -43,11 +43,9 @@ from typing import List, Optional
 from lawvm.core.reference_mention import SourceSpan
 
 # Q3 node-identity reconciliation: ONE canonical Finnish month table for the
-# temporal family — ``temporal_lowering._MONTH_MAP`` (the production date
-# extractor's table that ``legal_surface.temporal_parse`` already reuses). This
-# surface lens imports it rather than keeping a rival copy, so the two temporal
-# recognizers cannot drift on the month vocabulary.
-from lawvm.finland.temporal_lowering import _MONTH_MAP as _MONTHS_PARTITIVE
+# temporal family. This surface lens imports it rather than keeping a rival
+# copy, so the temporal recognizers cannot drift on the month vocabulary.
+from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER as _MONTHS_PARTITIVE
 
 # ---------------------------------------------------------------------------
 # Enums

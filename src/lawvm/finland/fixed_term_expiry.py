@@ -34,10 +34,10 @@ from lawvm.core.statute_validity import (
     StatuteValidityBound,
     expires_on_from_valid_until,
 )
+from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
 from lawvm.finland.metadata import (
     CHAPTER_SCOPED_EXPIRY_RE,
-    FI_MONTH_MAP,
     SECTION_SCOPED_EXPIRY_RE,
     _normalize_fi_parse_text,
     parse_whole_law_validity,
@@ -59,6 +59,7 @@ FIXED_TERM_LATE_EXTENSION_GAP = "TEMPORAL.FIXED_TERM_LATE_EXTENSION_GAP"
 EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT = (
     "TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT"
 )
+FI_MONTH_MAP = FI_MONTH_PARTITIVE_TO_NUMBER
 # Typed residue classes for recognised-but-unresolved validity clauses. Each
 # names the missing authority or the reason the clause is not a bound at all,
 # instead of collapsing every failure into the generic unparseable bucket.

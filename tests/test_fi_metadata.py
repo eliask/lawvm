@@ -12,7 +12,9 @@ from lawvm.finland.metadata import (
     get_operative_body_repeal_candidate,
     get_johtolause,
     get_johtolause_from_tree,
+    separate_commencement_law_witness,
 )
+from lawvm.finland.corpus import get_corpus
 
 # ---------------------------------------------------------------------------
 # Minimal XML helpers
@@ -381,6 +383,23 @@ def test_amendment_effective_date_marks_erikseen_lailla_commencement_as_continge
 
     assert result is None
     assert step == "contingent_text"
+
+
+def test_amendment_effective_date_resolves_erikseen_lailla_from_separate_commencement_law() -> None:
+    corpus = get_corpus()
+    source = corpus.read_source("2018/947")
+    assert source is not None
+    tree = etree.fromstring(source)
+
+    result, step = _amendment_effective_date_with_step(tree)
+    witness = separate_commencement_law_witness("2018/947")
+
+    assert result == dt.date(2019, 1, 1)
+    assert step == "separate_commencement_law"
+    assert witness is not None
+    assert witness.commencement_statute_id == "2018/937"
+    assert witness.source_provision_ref == "2018/937/1"
+    assert witness.rule_id == "fi_separate_commencement_law_list"
 
 
 def test_statute_issue_date_prefers_signature_when_frbr_year_conflicts_with_doc_number_year() -> None:

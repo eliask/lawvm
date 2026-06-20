@@ -72,6 +72,8 @@ from typing import Optional
 
 from lxml import etree
 
+from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER
+
 
 # ---------------------------------------------------------------------------
 # AKN namespace constants (shared with he_acquisition.py)
@@ -382,11 +384,7 @@ _VOIMAANTULO_RE = re.compile(
     re.IGNORECASE,
 )
 
-_MONTH_MAP = {
-    "tammikuuta": 1, "helmikuuta": 2, "maaliskuuta": 3, "huhtikuuta": 4,
-    "toukokuuta": 5, "kesäkuuta": 6, "heinäkuuta": 7, "elokuuta": 8,
-    "syyskuuta": 9, "lokakuuta": 10, "marraskuuta": 11, "joulukuuta": 12,
-}
+_MONTH_MAP = FI_MONTH_PARTITIVE_TO_NUMBER
 
 
 def _extract_proposed_voimaantulo(full_body_text: str) -> Optional[date]:

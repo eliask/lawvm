@@ -18,6 +18,11 @@ import lxml.etree as etree
 
 from lawvm.core.ir import LegalAddress
 from lawvm.core.unicode_folds import CF_FORMAT_CPS, ZS_NON_ASCII_SPACE_CPS
+from lawvm.finland.fi_dates import (
+    FI_MONTH_GENITIVE_TO_NUMBER,
+    FI_MONTH_PARTITIVE_TO_NUMBER,
+    parse_fi_day_month_year,
+)
 from lawvm.finland.helpers import _norm_num_token, _parse_iso_date
 from lawvm.finland.references.sections import parse_body_provision_tail
 from lawvm.finland.temporal_lowering import _extract_expiry_date_from_text
@@ -74,6 +79,26 @@ _TYPO_TRANSLATION_TABLE: dict[int, str] = {
 }
 _NORMALIZE_FI_PARSE_TEXT_CACHE_MAX_CHARS = 4096
 _normalized_tree_text_cache: dict[tuple[int, int], str] = {}
+
+
+@dataclass(frozen=True, slots=True)
+class SeparateCommencementLawWitness:
+    """A source witness that gives an amendment act's deferred commencement date."""
+
+    target_statute_id: str
+    commencement_statute_id: str
+    source_provision_ref: str
+    effective_date: dt.date
+    rule_id: str
+    source_text: str
+
+
+_SEPARATE_COMMENCEMENT_LIST_RE = re.compile(
+    r'\bSeuraavat\s+lait\s+tulevat\s+voimaan\s+'
+    r'(?P<day>\d{1,2})\s+päivänä\s+(?P<month>[a-zäöå]+)\s+(?P<year>\d{4})\s*:',
+    flags=re.IGNORECASE,
+)
+_PAREN_STATUTE_ID_RE = re.compile(r'\((?P<sid>\d{1,4}/\d{4})\)')
 
 
 def _normalize_fi_parse_text(text: str) -> str:
@@ -204,20 +229,6 @@ _OPERATIVE_KEYWORD_PAT = re.compile(
     r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b",
     re.IGNORECASE,
 )
-_FI_MONTH_GENITIVE_TO_NUMBER: dict[str, int] = {
-    "tammikuuta": 1,
-    "helmikuuta": 2,
-    "maaliskuuta": 3,
-    "huhtikuuta": 4,
-    "toukokuuta": 5,
-    "kesäkuuta": 6,
-    "heinäkuuta": 7,
-    "elokuuta": 8,
-    "syyskuuta": 9,
-    "lokakuuta": 10,
-    "marraskuuta": 11,
-    "joulukuuta": 12,
-}
 # Anti-backtracking: the old unbounded lazy gap ``(.+?)`` before the distant
 # ``tule…kuitenkin voimaan`` anchor expands to end-of-text from every subject
 # word (``Lain``/``Sen``/…) on non-matching input — O(N²)+ on long text with
@@ -431,11 +442,7 @@ def _normalize_johtolause_verbs(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 # Finnish month names in partitive (the form used in "N päivään <month> YYYY").
-FI_MONTH_MAP: dict[str, int] = {
-    'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-    'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-    'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-}
+FI_MONTH_MAP = FI_MONTH_PARTITIVE_TO_NUMBER
 
 # Section/chapter-scoped expiry ("Lain X § ovat/on voimassa N päivään MONTH
 # YYYY"). Used only to DETECT a scoped form for diagnostics; v1 does not lift
@@ -587,9 +594,7 @@ _VALIDITY_CAP_ENINTAAN_RE = re.compile(r'\benintään\b', flags=re.IGNORECASE)
 
 # Genitive month names ("tammikuun") alongside the partitive FI_MONTH_MAP
 # keys ("tammikuuta").
-FI_MONTH_GENITIVE_MAP: dict[str, int] = {
-    partitive[:-2] + "n": number for partitive, number in FI_MONTH_MAP.items()
-}
+FI_MONTH_GENITIVE_MAP = FI_MONTH_GENITIVE_TO_NUMBER
 
 # Per-grammar-family rule ids carried onto the extracted bound (one id per
 # date-expression family below, plus the anaphoric family).
@@ -908,12 +913,6 @@ def _amendment_expiry_date(
     if "voimassa" not in raw_text.casefold():
         return None
     full_text = _normalized_tree_text(tree, raw_text)
-    month_map = {
-        'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-        'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-        'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-    }
-
     # IMPORTANT: ALL patterns must be restricted to the entryIntoForce element,
     # not the full document text.  Some amendments MODIFY another statute's
     # voimaantulo clause and embed text like "Tämä laki on voimassa 31 päivään
@@ -939,7 +938,7 @@ def _amendment_expiry_date(
     # The character class only needs en-dash (U+2013) and ordinary space now.
     m2 = SECTION_SCOPED_EXPIRY_RE.search(eit_text)
     if m2:
-        month = month_map.get(m2.group(2).lower())
+        month = FI_MONTH_MAP.get(m2.group(2).lower())
         if month is not None:
             try:
                 return dt.date(int(m2.group(3)), month, int(m2.group(1)))
@@ -974,6 +973,110 @@ def _normalize_textual_statute_id(raw: str) -> Optional[str]:
     if 1800 <= left_int <= 2100 and not (1800 <= right_int <= 2100):
         return f"{left_int}/{right_int}"
     return f"{right_int}/{left_int}"
+
+
+def _statute_id_from_doc_number(tree: "etree._Element") -> str | None:
+    doc_number_el = tree.find('.//{*}docNumber')
+    if doc_number_el is None:
+        return None
+    return _normalize_textual_statute_id(
+        etree.tostring(doc_number_el, method="text", encoding="unicode").strip()
+    )
+
+
+def _date_from_fi_day_month_year_match(match: re.Match[str]) -> dt.date | None:
+    return parse_fi_day_month_year(
+        match.group("day"),
+        match.group("month"),
+        match.group("year"),
+    )
+
+
+def _section_label_for_source_ref(section: "etree._Element") -> str:
+    num_el = section.find("./{*}num")
+    if num_el is None:
+        return ""
+    label = _normalize_fi_parse_text(etree.tostring(num_el, method="text", encoding="unicode"))
+    label = label.strip().removesuffix("§").strip()
+    return label
+
+
+def _separate_commencement_witnesses_from_tree(
+    *,
+    commencement_statute_id: str,
+    tree: "etree._Element",
+) -> tuple[SeparateCommencementLawWitness, ...]:
+    witnesses: list[SeparateCommencementLawWitness] = []
+    for section in tree.findall('.//{*}section'):
+        section_text = _normalize_fi_parse_text(
+            etree.tostring(section, method="text", encoding="unicode")
+        )
+        if "tulevat voimaan" not in section_text.casefold():
+            continue
+        match = _SEPARATE_COMMENCEMENT_LIST_RE.search(section_text)
+        if not match:
+            continue
+        effective = _date_from_fi_day_month_year_match(match)
+        if effective is None:
+            continue
+        source_provision_ref = commencement_statute_id
+        section_label = _section_label_for_source_ref(section)
+        if section_label:
+            source_provision_ref = f"{commencement_statute_id}/{section_label}"
+        for cited in _PAREN_STATUTE_ID_RE.finditer(section_text[match.end():]):
+            target_id = _normalize_textual_statute_id(cited.group("sid"))
+            if target_id is None:
+                continue
+            witnesses.append(
+                SeparateCommencementLawWitness(
+                    target_statute_id=target_id,
+                    commencement_statute_id=commencement_statute_id,
+                    source_provision_ref=source_provision_ref,
+                    effective_date=effective,
+                    rule_id="fi_separate_commencement_law_list",
+                    source_text=match.group(0).strip(),
+                )
+            )
+    return tuple(witnesses)
+
+
+@lru_cache(maxsize=1)
+def _separate_commencement_witness_index() -> dict[str, tuple[SeparateCommencementLawWitness, ...]]:
+    from lawvm.finland.corpus import get_corpus
+
+    corpus = get_corpus()
+    statute_ids = tuple(sorted(corpus.list_statute_ids()))
+    index: dict[str, list[SeparateCommencementLawWitness]] = {}
+    for source_id in statute_ids:
+        xml_bytes = corpus.read_source(source_id)
+        if xml_bytes is None or b"tulevat voimaan" not in xml_bytes:
+            continue
+        tree = etree.fromstring(xml_bytes)
+        for witness in _separate_commencement_witnesses_from_tree(
+            commencement_statute_id=source_id,
+            tree=tree,
+        ):
+            index.setdefault(witness.target_statute_id, []).append(witness)
+    return {
+        target_id: tuple(sorted(rows, key=lambda row: (row.effective_date, row.commencement_statute_id)))
+        for target_id, rows in index.items()
+    }
+
+
+def separate_commencement_law_witness(
+    target_statute_id: str,
+) -> SeparateCommencementLawWitness | None:
+    """Return the deterministic separate-law commencement witness for *target*.
+
+    Finland has amendment acts whose own entry-into-force clause says only that
+    commencement is enacted separately by law. A later voimaanpano act may list
+    those amendment acts under a shared fixed date. This helper resolves only
+    that explicit list shape; absent or ambiguous witnesses stay unresolved.
+    """
+    rows = _separate_commencement_witness_index().get(target_statute_id, ())
+    if len(rows) != 1:
+        return None
+    return rows[0]
 
 
 def _expand_section_range(start: str, end: str) -> Set[str]:
@@ -1310,14 +1413,9 @@ def _temporary_section_expiry_overrides(
     )
     expiry_scan_casefold = expiry_scan_text.casefold()
 
-    month_map = {
-        'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-        'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-        'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-    }
     if "päivään" in expiry_scan_casefold:
         for m in _TEMPORARY_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            month = month_map.get(m.group(4).lower())
+            month = FI_MONTH_MAP.get(m.group(4).lower())
             if month is None:
                 continue
             try:
@@ -1334,7 +1432,7 @@ def _temporary_section_expiry_overrides(
         # The expiry is still section-scoped for replay stamping: the amendment op
         # target carries the exact subsection/item granularity.
         for m in _TEMPORARY_SUBSECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            month = month_map.get(m.group(3).lower())
+            month = FI_MONTH_MAP.get(m.group(3).lower())
             if month is None:
                 continue
             try:
@@ -1348,7 +1446,7 @@ def _temporary_section_expiry_overrides(
         #   "Lain 90 a § on voimassa 31 päivään heinäkuuta 2020 ja 99 a § 31 päivään
         #    toukokuuta 2021."
         for m_chain in _TEMPORARY_CHAINED_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            first_month = month_map.get(m_chain.group(3).lower())
+            first_month = FI_MONTH_MAP.get(m_chain.group(3).lower())
             if first_month is not None:
                 try:
                     first_expiry = dt.date(int(m_chain.group(4)), first_month, int(m_chain.group(2)))
@@ -1362,7 +1460,7 @@ def _temporary_section_expiry_overrides(
                     )
             tail = m_chain.group(5)
             for m_tail in _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE.finditer(tail):
-                tail_month = month_map.get(m_tail.group(3).lower())
+                tail_month = FI_MONTH_MAP.get(m_tail.group(3).lower())
                 if tail_month is None:
                     continue
                 try:
@@ -1480,7 +1578,7 @@ def _section_commencement_effective_override(
     if match is None:
         return None
 
-    month = _FI_MONTH_GENITIVE_TO_NUMBER.get(match.group(3).lower())
+    month = FI_MONTH_MAP.get(match.group(3).lower())
     if month is None:
         return None
     try:
@@ -1537,7 +1635,7 @@ def _section_subsection_commencement_effective_override(
     if match is None:
         return None
 
-    month = _FI_MONTH_GENITIVE_TO_NUMBER.get(match.group(3).lower())
+    month = FI_MONTH_MAP.get(match.group(3).lower())
     if month is None:
         return None
     try:
@@ -1730,12 +1828,7 @@ def _chapter_expiry_from_base(
     )
     if not m:
         return None
-    month_map = {
-        'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-        'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-        'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-    }
-    month = month_map.get(m.group(3).lower())
+    month = FI_MONTH_MAP.get(m.group(3).lower())
     if month is None:
         return None
     try:
@@ -1780,12 +1873,7 @@ def _amendment_effective_date_with_step(
         flags=re.IGNORECASE
     )
     if m:
-        month_map = {
-            'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-            'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-            'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-        }
-        month = month_map.get(m.group(2).lower())
+        month = FI_MONTH_MAP.get(m.group(2).lower())
         if month is not None:
             try:
                 text_date = dt.date(int(m.group(3)), month, int(m.group(1)))
@@ -1800,12 +1888,7 @@ def _amendment_effective_date_with_step(
         flags=re.IGNORECASE,
     )
     if m:
-        month_map = {
-            'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-            'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-            'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-        }
-        month = month_map.get(m.group(2).lower())
+        month = FI_MONTH_MAP.get(m.group(2).lower())
         if month is not None:
             try:
                 text_date = dt.date(int(m.group(3)), month, int(m.group(1)))
@@ -1826,6 +1909,11 @@ def _amendment_effective_date_with_step(
         full_text,
         flags=re.IGNORECASE,
     ):
+        target_id = _statute_id_from_doc_number(tree)
+        if target_id is not None:
+            witness = separate_commencement_law_witness(target_id)
+            if witness is not None:
+                return witness.effective_date, 'separate_commencement_law'
         return None, 'contingent_text'
     # 3. Fall back to publication metadata (publication date, not effective date,
     #    but better than nothing when text regex fails or matched wrong text)
@@ -1862,12 +1950,7 @@ def _statute_issue_date(tree: "etree._Element") -> Optional[dt.date]:
         )
         if not m:
             return None
-        month_map = {
-            'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-            'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-            'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-        }
-        month = month_map.get(m.group(2).lower())
+        month = FI_MONTH_MAP.get(m.group(2).lower())
         if month is None:
             return None
         try:

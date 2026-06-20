@@ -29,6 +29,7 @@ from lawvm.core.effect_intent import Commencement, EffectIntent
 from lawvm.core.phase_result import Finding
 from lawvm.core.temporal import ActivationRule, TemporalEvent
 from lawvm.core.semantic_types import MetaClauseKind
+from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER, parse_fi_day_month_year
 from lawvm.finland.johtolause.surface_model import SurfaceMetaClause
 
 
@@ -258,20 +259,7 @@ _COMMENCEMENT_DATE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-_MONTH_MAP = {
-    "tammikuuta": 1,
-    "helmikuuta": 2,
-    "maaliskuuta": 3,
-    "huhtikuuta": 4,
-    "toukokuuta": 5,
-    "kesäkuuta": 6,
-    "heinäkuuta": 7,
-    "elokuuta": 8,
-    "syyskuuta": 9,
-    "lokakuuta": 10,
-    "marraskuuta": 11,
-    "joulukuuta": 12,
-}
+_MONTH_MAP = FI_MONTH_PARTITIVE_TO_NUMBER
 
 
 def _extract_date_from_text(text: str) -> str:
@@ -279,16 +267,10 @@ def _extract_date_from_text(text: str) -> str:
     m = _COMMENCEMENT_DATE_PATTERN.search(text)
     if m is None:
         return ""
-    month = _MONTH_MAP.get(m.group(2).lower())
-    if month is None:
+    parsed = parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
+    if parsed is None:
         return ""
-    try:
-        import datetime as dt
-
-        d = dt.date(int(m.group(3)), month, int(m.group(1)))
-        return d.isoformat()
-    except ValueError:
-        return ""
+    return parsed.isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -324,15 +306,10 @@ def _extract_expiry_date_from_text(text: str) -> str:
         day_s, month_s, year_s = m.group(1), m.group(2), m.group(3)
     else:
         day_s, month_s, year_s = m.group(4), m.group(5), m.group(6)
-    month = _MONTH_MAP.get(month_s.lower())
-    if month is None:
+    parsed = parse_fi_day_month_year(day_s, month_s, year_s)
+    if parsed is None:
         return ""
-    try:
-        import datetime as _dt
-        d = _dt.date(int(year_s), month, int(day_s))
-        return d.isoformat()
-    except ValueError:
-        return ""
+    return parsed.isoformat()
 
 
 def extract_expiry_date_from_meta_clauses(

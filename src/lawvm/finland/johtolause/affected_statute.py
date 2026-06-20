@@ -13,6 +13,7 @@ from datetime import date
 from functools import lru_cache
 import re
 
+from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER
 from lawvm.finland.morphology import MorphNumber, generate_forms, head_entry
 
 _TARGET_ZONE_CUT_RE = re.compile(
@@ -39,20 +40,7 @@ _AFFECTED_HEAD_TITLE_DATE_RE = re.compile(
 _CITATION_RE = re.compile(r"\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)")
 _NOJALLA_RE = re.compile(r"\bnojalla\b", re.IGNORECASE)
 
-_FI_MONTH_GENITIVE_TO_NUMBER: dict[str, int] = {
-    "tammikuuta": 1,
-    "helmikuuta": 2,
-    "maaliskuuta": 3,
-    "huhtikuuta": 4,
-    "toukokuuta": 5,
-    "kesäkuuta": 6,
-    "heinäkuuta": 7,
-    "elokuuta": 8,
-    "syyskuuta": 9,
-    "lokakuuta": 10,
-    "marraskuuta": 11,
-    "joulukuuta": 12,
-}
+_FI_MONTH_GENITIVE_TO_NUMBER = FI_MONTH_PARTITIVE_TO_NUMBER
 
 
 @dataclass(frozen=True, slots=True)

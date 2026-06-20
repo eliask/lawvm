@@ -854,7 +854,9 @@ def test_temporary_provision_expiry_overrides_compose_subref_grammar_and_canonic
 def test_q3_temporal_lens_shares_canonical_month_table() -> None:
     """Q3: the references/temporal surface lens and the production date extractor
     share ONE canonical Finnish month table (no rival copy that can drift)."""
+    from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER
     from lawvm.finland.references.temporal import _MONTHS_PARTITIVE
     from lawvm.finland.temporal_lowering import _MONTH_MAP
 
-    assert _MONTHS_PARTITIVE is _MONTH_MAP
+    assert _MONTHS_PARTITIVE is FI_MONTH_PARTITIVE_TO_NUMBER
+    assert _MONTH_MAP is FI_MONTH_PARTITIVE_TO_NUMBER
