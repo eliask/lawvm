@@ -24,6 +24,8 @@ from lawvm.finland.effect_lifecycle_projection import (
     _lifecycle_events_from_resolved_signal_relations,
     build_finland_effect_lifecycle,
 )
+from lawvm.finland import process_frontend_normalization as pfn
+from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
 from lawvm.finland.process_result_builder import ProcessCompatSinks, ProcessResultBuilder, ProcessSignalBuffers
@@ -962,6 +964,55 @@ def test_process_result_builder_rejects_conflicting_projected_relation_id() -> N
 
     with pytest.raises(ValueError, match="conflicting duplicate relation_id"):
         builder.build(output_state="state")
+
+
+def test_frontend_normalization_preserves_phase_effect_relation_lane(monkeypatch) -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2025-01-01",
+    )
+
+    class SourceModel:
+        def normalize_and_compile_ops(self, **_kwargs: object) -> PhaseResult[list[object]]:
+            return PhaseResult(
+                output=[],
+                source_effects=(effect,),
+                effect_relations=(relation,),
+                effect_lifecycle_events=(lifecycle,),
+            )
+
+    monkeypatch.setattr(pfn, "_parse_johtolause_clause", lambda _text: None)
+
+    result = ProcessFrontendNormalizationContext(
+        johto="",
+        source_model=cast(Any, SourceModel()),
+        state=object(),
+        base_ir=None,
+        amendment_id="2024/1",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="1990/1",
+        strict_profile=None,
+        regex_recognition_coverage_out=None,
+        normalize_and_compile_ops=lambda **_kwargs: None,
+    ).run()
+
+    assert result.source_effects == (effect,)
+    assert result.effect_relations == (relation,)
+    assert result.effect_lifecycle_events == (lifecycle,)
 
 
 def test_process_compile_signals_rejects_conflicting_source_effect_id() -> None:

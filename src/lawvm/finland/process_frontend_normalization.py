@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, List, Optional
 
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef
+from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir import IRNode
 from lawvm.core.phase_result import Finding
@@ -18,6 +18,11 @@ from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.johtolause import parse_clause as _parse_johtolause_clause
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
+from lawvm.finland.effect_graph_merge import (
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_refs,
+    append_unique_effect_relations,
+)
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import _normalize_frontend_temporal_events
@@ -28,6 +33,7 @@ class FrontendNormalizationResult:
     ops: tuple[AmendmentOp, ...]
     temporal_events: tuple[TemporalEvent, ...]
     source_effects: tuple[EffectRef, ...]
+    effect_relations: tuple[EffectRelation, ...]
     effect_lifecycle_events: tuple[EffectLifecycleEvent, ...]
     elaboration_observations: tuple[dict[str, object], ...]
     process_findings: tuple[Finding, ...]
@@ -78,17 +84,46 @@ class ProcessFrontendNormalizationContext:
             if non_commence_events
             else ()
         )
-        source_effects, _relations, lifecycle_events = build_finland_effect_lifecycle(
+        derived_source_effects, _relations, derived_lifecycle_events = build_finland_effect_lifecycle(
             target_statute=self.parent_id,
             canonical_ops=(),
             temporal_events=temporal_events,
+        )
+        source_effects: list[EffectRef] = []
+        effect_relations: list[EffectRelation] = []
+        lifecycle_events: list[EffectLifecycleEvent] = []
+        append_unique_effect_refs(
+            source_effects,
+            phase_result.source_effects,
+            subject="frontend normalization phase source effects",
+        )
+        append_unique_effect_relations(
+            effect_relations,
+            phase_result.effect_relations,
+            subject="frontend normalization phase effect relations",
+        )
+        append_unique_effect_lifecycle_events(
+            lifecycle_events,
+            phase_result.effect_lifecycle_events,
+            subject="frontend normalization phase lifecycle events",
+        )
+        append_unique_effect_refs(
+            source_effects,
+            derived_source_effects,
+            subject="frontend normalization source effects",
+        )
+        append_unique_effect_lifecycle_events(
+            lifecycle_events,
+            derived_lifecycle_events,
+            subject="frontend normalization lifecycle events",
         )
         findings = phase_result.findings()
         return FrontendNormalizationResult(
             ops=tuple(phase_result.output),
             temporal_events=tuple(temporal_events),
-            source_effects=source_effects,
-            effect_lifecycle_events=lifecycle_events,
+            source_effects=tuple(source_effects),
+            effect_relations=tuple(effect_relations),
+            effect_lifecycle_events=tuple(lifecycle_events),
             elaboration_observations=tuple(
                 dict(finding.detail)
                 for finding in findings

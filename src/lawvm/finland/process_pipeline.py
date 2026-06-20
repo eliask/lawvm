@@ -31,6 +31,7 @@ from lawvm.finland.constraints import muutos_node_lookup_cache_scope
 from lawvm.finland.effect_graph_merge import (
     append_unique_effect_lifecycle_events,
     append_unique_effect_refs,
+    append_unique_effect_relations,
 )
 from lawvm.finland.elaboration_rule_dispatch import (
     PROCESS_AMENDMENT_PIPELINE,
@@ -409,6 +410,11 @@ def process_muutoslaki_resolved(
             append_unique_effect_refs(
                 runtime.source_effects,
                 phase2_result.source_effects,
+                subject="process frontend normalization",
+            )
+            append_unique_effect_relations(
+                runtime.effect_relations,
+                phase2_result.effect_relations,
                 subject="process frontend normalization",
             )
             append_unique_effect_lifecycle_events(
