@@ -103,23 +103,23 @@ def test_materialize_pit_validates_selection_query_once(monkeypatch: pytest.Monk
     timelines = {
         LegalAddress(path=(("section", "1"),)): ProvisionTimeline(
             address=LegalAddress(path=(("section", "1"),)),
-            versions=(_version(),),
+            versions=[_version()],
         ),
         LegalAddress(path=(("section", "2"),)): ProvisionTimeline(
             address=LegalAddress(path=(("section", "2"),)),
-            versions=(
+            versions=[
                 ProvisionVersion(
                     effective="2024-01-01",
                     enacted="2023-12-01",
                     content=IRNode(kind=IRNodeKind.SECTION, label="2", text="Selected two."),
                 ),
-            ),
+            ],
         ),
     }
     validate_calls = 0
     real_validate = timeline_mod._validate_selection_query
 
-    def counting_validate(*args: object, **kwargs: object) -> None:
+    def counting_validate(*args: Any, **kwargs: Any) -> None:
         nonlocal validate_calls
         validate_calls += 1
         real_validate(*args, **kwargs)
