@@ -8,6 +8,7 @@ import types
 from typing import Any, cast
 import pytest
 from lawvm.uk_legislation import uk_prefetch
+from lawvm.uk_legislation import transition_graph_replay
 
 from lawvm.tools import cli, source_dump, uk_bench, uk_candidates, uk_corpus, uk_effect, uk_effects, uk_eids, uk_live_targets, uk_misses, uk_replay
 from lawvm.tools.replay_payloads import build_uk_replay_payload
@@ -29,6 +30,7 @@ def test_uk_archives_default_to_data_dir_in_tool_modules() -> None:
     assert uk_eids._DEFAULT_DB == expected
     assert fetch_uk_affecting_acts._DEFAULT_DB == expected
     assert uk_corpus._DEFAULT_ARCHIVE == expected
+    assert transition_graph_replay._DEFAULT_DB == expected
 
 
 class _StopArchiveOpen(RuntimeError):
@@ -134,6 +136,23 @@ def test_uk_misses_opens_existing_archive_read_only(monkeypatch, tmp_path) -> No
         uk_misses.main(args)
 
     assert calls == [{"path": db, "kwargs": {"readonly": True}}]
+
+
+def test_uk_transition_graph_replay_opens_archive_read_only(monkeypatch) -> None:
+    calls = _install_recording_farchive(monkeypatch)
+
+    with pytest.raises(_StopArchiveOpen):
+        transition_graph_replay.run_uk_transition_graph_replay(
+            "ukpga/2000/1",
+            profile=cast(Any, object()),
+        )
+
+    assert calls == [
+        {
+            "path": transition_graph_replay._DEFAULT_DB,
+            "kwargs": {"readonly": True},
+        }
+    ]
 
 
 def test_uk_cli_help_strings_reference_data_archive_default(capsys) -> None:
