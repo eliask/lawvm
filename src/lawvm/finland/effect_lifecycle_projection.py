@@ -784,6 +784,53 @@ def _lifecycle_events_from_resolved_signal_relations(
     return tuple(events)
 
 
+def _lifecycle_events_from_unresolved_signal_relations(
+    relations: Sequence[EffectRelation],
+) -> tuple[EffectLifecycleEvent, ...]:
+    events: list[EffectLifecycleEvent] = []
+    events_by_id: dict[str, EffectLifecycleEvent] = {}
+    signal_rule_ids = {
+        "fi.pending_amendment_of_parent_effect_relation",
+        "fi.meta_repeal_effect_relation",
+    }
+    for relation in relations:
+        if relation.source_provision.rule_id not in signal_rule_ids:
+            continue
+        if relation.target_effect is not None:
+            continue
+        if relation.detail.get("resolved") is not True:
+            continue
+        detail: dict[str, object] = dict(relation.detail)
+        source_finding = str(detail.get("source_finding") or "").strip()
+        if source_finding:
+            detail["relation_source_finding"] = source_finding
+            detail.pop("source_finding", None)
+        if "non_executable_reason" not in detail:
+            detail["non_executable_reason"] = (
+                "effect relation signal did not bind a unique source-backed target effect"
+            )
+        lifecycle_id = _lifecycle_id(relation.relation_id, "unresolved")
+        _append_unique_lifecycle_event(
+            events,
+            events_by_id,
+            EffectLifecycleEvent(
+                lifecycle_event_id=lifecycle_id,
+                kind="unresolved_effect_target",
+                source_provision=relation.source_provision,
+                relation=relation,
+                executable=False,
+                detail={
+                    "projection": "effect_relation_signal",
+                    "executable_projection": False,
+                    "intended_relation_kind": relation.kind,
+                    **detail,
+                },
+            ),
+            subject="Finland unresolved relation signal lifecycle projection",
+        )
+    return tuple(events)
+
+
 def build_finland_effect_lifecycle(
     *,
     target_statute: str,
@@ -826,6 +873,7 @@ def build_finland_effect_lifecycle(
             source_effects=source_effect_context,
         )
         + _lifecycle_events_from_resolved_signal_relations(relations)
+        + _lifecycle_events_from_unresolved_signal_relations(relations)
         + _unresolved_lifecycle_from_relation_signals(relation_signals)
     )
     return source_effects, relations, lifecycle_events
