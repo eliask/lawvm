@@ -60,6 +60,7 @@ def _without_path_expanded_shards(plan: dict[str, object]) -> dict[str, object]:
 
 CORE_EXECUTION_SHARDS_SORTED = [
     "core_compile_projection",
+    "core_discipline_gates",
     "core_ir_contracts",
     "core_materialization_invariants",
     "core_replay_timeline",
@@ -205,6 +206,7 @@ def test_test_shard_named_groups_expand_to_stable_shards() -> None:
         "starter",
         *SWEDEN_EXECUTION_SHARDS,
         "uk",
+        "core_discipline_gates",
         "core_ir_contracts",
         "core_tree_apply",
         "core_compile_projection",
@@ -282,6 +284,7 @@ def test_test_shard_group_plan_is_jsonable() -> None:
     assert plan["kind"] == "lawvm_pytest_shard_plan"
     assert plan["selected"] == "modules"
     assert [item["name"] for item in plan["shards"]] == [
+        "core_discipline_gates",
         "core_ir_contracts",
         "core_tree_apply",
         "core_compile_projection",
