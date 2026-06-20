@@ -48,6 +48,7 @@ the EMPTY tuple --- an honest unknown, never a fabricated lemma.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from itertools import product
 
 from .api import (
@@ -143,6 +144,19 @@ def analyze_open(surface: str) -> tuple[MorphAnalysis, ...]:
     if not norm:
         return ()
 
+    return _analyze_open_norm(norm)
+
+
+@lru_cache(maxsize=4096)
+def _analyze_open_norm(norm: str) -> tuple[MorphAnalysis, ...]:
+    """Cached normalized analyzer entry point.
+
+    Legal prose repeats the same inflected heads often, and tests intentionally
+    revisit generated surfaces from multiple invariants.  The analyzer is pure
+    for normalized input, so the cache avoids recomputing the same hypothesis
+    space while keeping memory bounded.
+    """
+
     candidates = _hypothesize_lemmas(norm)
     verified: set[MorphAnalysis] = set()
     for lemma, morph_class, gradation, single_k in candidates:
@@ -159,11 +173,33 @@ def _verify(
     gradation: bool,
     single_k: str | None,
 ) -> set[MorphAnalysis]:
-    """Generate the full paradigm of one hypothesis; keep forms equal to ``norm``.
+    """Keep generated analyses of one hypothesis whose forms equal ``norm``.
 
     This IS the safety gate: only ``(case, number)`` pairs whose generated
     surface byte-equals the input are accepted, so a returned analysis is a proof
     that M1 inflects ``lemma`` (under these flags) to ``norm``.
+    """
+    return {
+        analysis
+        for surface, analysis in _generated_hypothesis_forms(
+            lemma, morph_class, gradation, single_k,
+        )
+        if surface == norm
+    }
+
+
+@lru_cache(maxsize=16384)
+def _generated_hypothesis_forms(
+    lemma: str,
+    morph_class: str,
+    gradation: bool,
+    single_k: str | None,
+) -> tuple[tuple[str, MorphAnalysis], ...]:
+    """Generate deterministic forms for one open-vocab lexical hypothesis.
+
+    A single hypothesized lemma/class/flag tuple is commonly tested against
+    several surfaces from the same paradigm.  Cache the generated proof material
+    once, then let :func:`_verify` perform the exact-surface gate.
     """
     entry = MorphEntry(
         lemma_id=f"open:{lemma}",
@@ -178,21 +214,23 @@ def _verify(
     except (ValueError, KeyError, IndexError):
         # An un-buildable hypothesis (e.g. a too-short stem for the class) is not
         # an analysis --- fail loud locally by discarding it, never fabricate.
-        return set()
-    out: set[MorphAnalysis] = set()
+        return ()
+    out: list[tuple[str, MorphAnalysis]] = []
     for form in forms:
         if form.certainty != "deterministic" or not form.surface:
             continue
-        if form.surface.casefold() == norm:
-            out.add(
+        out.append(
+            (
+                form.surface.casefold(),
                 MorphAnalysis(
                     lemma=lemma,
                     morph_class=morph_class,
                     case=form.case,
                     number=form.number,
                 ),
-            )
-    return out
+            ),
+        )
+    return tuple(out)
 
 
 def _hypothesize_lemmas(
