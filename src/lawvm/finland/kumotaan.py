@@ -20,27 +20,27 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
 from lawvm.core.payload_surface import TargetUnitKind
-from lawvm.finland.references.sections import parse_body_provision_tail
+from lawvm.finland.references.sections import (
+    parse_body_provision_tail,
+    parse_body_provision_tail_spanned,
+)
 
 
 _CHAPTER_MARKER_RE = re.compile(r'(\d{1,4}\s{1,4}[a-z]|\d{1,4})\s{1,8}luvun\b')
 
 
-# Whole-section SITE ANCHOR (scaffold, NOT a structural parser): a coordinated
-# number run terminated by a bare ``§`` that is NOT colon-qualified (``§(?!:)``).
+# Whole-section SITE ANCHOR (scaffold, NOT a structural parser): a bare ``§``
+# that is NOT colon-qualified (``§(?!:)``). The candidate run immediately before
+# the marker is recovered by a bounded scanner and validated by the shared
+# grammar below.
 # The trailing ``§:`` exclusion is the whole-section discriminator the grammar
 # does not yet replicate — ``N §:n M momentti`` / ``N §:n edellä oleva
 # väliotsikko`` are sub-provision/heading repeals, never whole-section repeals.
 # The anchor only delimits the run SURFACE; its section/range/coordination/
 # letter-suffix STRUCTURE is enumerated by the grammar (parse_body_provision_tail).
-_WHOLE_SECTION_SITE_RE = re.compile(
-    r'(?P<run>'
-    r'\d+(?:\s*[a-z])?'
-    r'(?:\s*[–—―\-]\s*\d+(?:\s*[a-z])?)?'
-    r'(?:\s*(?:,|ja)\s*\d+(?:\s*[a-z])?(?:\s*[–—―\-]\s*\d+(?:\s*[a-z])?)?)*'
-    r')\s*§(?!:)',
-    re.IGNORECASE,
-)
+_WHOLE_SECTION_SITE_RE = re.compile(r"§(?!:)")
+_WHOLE_SECTION_SITE_SCAN_WINDOW = 240
+_WS_RE = re.compile(r"\s+")
 
 # De-glue coordination joiners fused to a following digit (``ja18`` → ``ja 18``)
 # and a letter-suffix fused to ``ja`` + digit (``16 aja 18`` → ``16 a ja 18``),
@@ -53,6 +53,24 @@ _GLUED_LETTER_JOINER_RE = re.compile(r'([a-zäöå])ja(?=\s*\d)', re.IGNORECASE)
 
 def _deglue_run(run: str) -> str:
     return _GLUED_LETTER_JOINER_RE.sub(r'\1 ja ', _GLUED_JOINER_DIGIT_RE.sub(r'\1 ', run))
+
+
+def _whole_section_run_before_site(block: str, site_start: int) -> str | None:
+    """Return the grammar-consumed whole-section run before a bare ``§`` marker."""
+    window_start = max(0, site_start - _WHOLE_SECTION_SITE_SCAN_WINDOW)
+    left = block[window_start:site_start].rstrip()
+    for offset, ch in enumerate(left):
+        if not ch.isdigit():
+            continue
+        candidate = left[offset:].strip()
+        if "§" in candidate:
+            continue
+        tail = _deglue_run(candidate + " §")
+        normalized_tail = _WS_RE.sub(" ", tail).strip()
+        parsed = parse_body_provision_tail_spanned(tail)
+        if parsed.targets and parsed.consumed_text == normalized_tail:
+            return candidate
+    return None
 
 
 def _grammar_whole_section_labels(block: str) -> List[str]:
@@ -71,7 +89,10 @@ def _grammar_whole_section_labels(block: str) -> List[str]:
     out: List[str] = []
     seen: Set[str] = set()
     for m in _WHOLE_SECTION_SITE_RE.finditer(block):
-        run = _deglue_run(m.group("run"))
+        site_run = _whole_section_run_before_site(block, m.start())
+        if site_run is None:
+            continue
+        run = _deglue_run(site_run)
         for target in parse_body_provision_tail(run + " §"):
             if (
                 target.subsection_num is None

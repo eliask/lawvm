@@ -536,3 +536,39 @@ def test_extract_target_version_bindings_preserves_split_cited_version_owners() 
         (("23",), "2015/195"),
         (("24c", "30b", "34a"), "2018/575"),
     ]
+
+
+def test_whole_section_site_scan_does_not_absorb_prior_heading_facet_target() -> None:
+    from lawvm.finland.kumotaan import _grammar_whole_section_labels
+
+    text = (
+        "tullilain (1466/1994) 20 a §:n edellä oleva väliotsikko, "
+        "20 a–20 j §, 28 §:n 3–5 momentti, "
+        "42 §:n edellä oleva väliotsikko, "
+        "43, 43 a, 44, 45, 45 a, 46, 47 ja 47 a §, "
+        "48 § ja sen edellä oleva väliotsikko sekä 49 ja 50 §,"
+    )
+
+    assert _grammar_whole_section_labels(text) == [
+        "20a",
+        "20b",
+        "20c",
+        "20d",
+        "20e",
+        "20f",
+        "20g",
+        "20h",
+        "20i",
+        "20j",
+        "43",
+        "43a",
+        "44",
+        "45",
+        "45a",
+        "46",
+        "47",
+        "47a",
+        "48",
+        "49",
+        "50",
+    ]
