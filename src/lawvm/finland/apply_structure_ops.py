@@ -10,6 +10,7 @@ from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, List, Optional, cast
 
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalAddress
@@ -397,7 +398,7 @@ def _preserve_live_container_on_merge_duplicate(
     source_statute: str,
     target_unit_kind: TargetUnitKind,
     target_label: str,
-    recovery_kind: str,
+    recovery_kind: RecoveryKind,
     live_node: IRNode,
     payload_node: IRNode,
 ) -> IRNode:
@@ -695,7 +696,7 @@ def _move_section_payload_to_target_chapter(
                 source_statute=source_statute,
                 target_unit_kind="section",
                 target_label=f"{target_chapter} luku {section_ir.label or ''} §",
-                recovery_kind="section_move_destination_same_label_replace",
+                recovery_kind=RecoveryKind.SECTION_MOVE_DESTINATION_SAME_LABEL_REPLACE,
                 live_sibling_count=len(
                     [c for c in (parent_node.children if parent_node is not None else ()) if c.kind is IRNodeKind.SECTION]
                 ),
@@ -1290,7 +1291,7 @@ def _apply_container_op(
                             source_statute=view.source_statute or "",
                             target_unit_kind=_target_unit_kind,
                             target_label=f"{_target_section} {kind}",
-                            recovery_kind="container_replace_fragmentary_heading_merge_duplicate_labels",
+                            recovery_kind=RecoveryKind.CONTAINER_REPLACE_FRAGMENTARY_HEADING_MERGE_DUPLICATE_LABELS,
                             live_node=node,
                             payload_node=muutos_ir,
                         )
@@ -1300,7 +1301,7 @@ def _apply_container_op(
                                 source_statute=view.source_statute or "",
                                 target_unit_kind=_target_unit_kind,
                                 target_label=f"{_target_section} {kind}",
-                                recovery_kind="container_replace_fragmentary_heading_merge",
+                                recovery_kind=RecoveryKind.CONTAINER_REPLACE_FRAGMENTARY_HEADING_MERGE,
                                 live_sibling_count=len(live_section_labels),
                                 payload_sibling_count=len(payload_section_labels),
                             )
@@ -1386,7 +1387,7 @@ def _apply_container_op(
                             source_statute=view.source_statute or "",
                             target_unit_kind=_target_unit_kind,
                             target_label=f"{_target_section} {kind}",
-                            recovery_kind="container_insert_non_base_scaffold_consume",
+                            recovery_kind=RecoveryKind.CONTAINER_INSERT_NON_BASE_SCAFFOLD_CONSUME,
                             live_sibling_count=len([c for c in node.children if c.kind is IRNodeKind.SECTION]),
                             payload_sibling_count=len([c for c in muutos_ir.children if c.kind is IRNodeKind.SECTION]),
                         )
@@ -1423,7 +1424,7 @@ def _apply_container_op(
                     source_statute=view.source_statute or "",
                     target_unit_kind=_target_unit_kind,
                     target_label=f"{_target_section} {kind}",
-                    recovery_kind="container_insert_base_chapter_merge_duplicate_labels",
+                    recovery_kind=RecoveryKind.CONTAINER_INSERT_BASE_CHAPTER_MERGE_DUPLICATE_LABELS,
                     live_node=node,
                     payload_node=muutos_ir,
                 )
@@ -1434,7 +1435,7 @@ def _apply_container_op(
                         source_statute=view.source_statute or "",
                         target_unit_kind=_target_unit_kind,
                         target_label=f"{_target_section} {kind}",
-                        recovery_kind="container_insert_base_chapter_merge",
+                        recovery_kind=RecoveryKind.CONTAINER_INSERT_BASE_CHAPTER_MERGE,
                         live_sibling_count=len([c for c in node.children if c.kind is IRNodeKind.SECTION]),
                         payload_sibling_count=len([c for c in muutos_ir.children if c.kind is IRNodeKind.SECTION]),
                     )
@@ -1468,7 +1469,7 @@ def _apply_container_op(
                             source_statute=view.source_statute or "",
                             target_unit_kind=_target_unit_kind,
                             target_label=f"{_target_section} {kind}",
-                            recovery_kind="container_insert_non_base_scaffold_consume",
+                            recovery_kind=RecoveryKind.CONTAINER_INSERT_NON_BASE_SCAFFOLD_CONSUME,
                             live_sibling_count=len([c for c in existing_node.children if c.kind is IRNodeKind.SECTION]),
                             payload_sibling_count=len([c for c in muutos_ir.children if c.kind is IRNodeKind.SECTION]),
                         )
@@ -1512,7 +1513,7 @@ def _apply_container_op(
                         source_statute=view.source_statute or "",
                         target_unit_kind=_target_unit_kind,
                         target_label=f"{_target_section} {kind}",
-                        recovery_kind="container_insert_base_chapter_merge_duplicate_labels",
+                        recovery_kind=RecoveryKind.CONTAINER_INSERT_BASE_CHAPTER_MERGE_DUPLICATE_LABELS,
                         live_node=existing_node,
                         payload_node=muutos_ir,
                     )
@@ -1523,7 +1524,7 @@ def _apply_container_op(
                             source_statute=view.source_statute or "",
                             target_unit_kind=_target_unit_kind,
                             target_label=f"{_target_section} {kind}",
-                            recovery_kind="container_insert_base_chapter_merge",
+                            recovery_kind=RecoveryKind.CONTAINER_INSERT_BASE_CHAPTER_MERGE,
                             live_sibling_count=len([c for c in existing_node.children if c.kind is IRNodeKind.SECTION]),
                             payload_sibling_count=len([c for c in muutos_ir.children if c.kind is IRNodeKind.SECTION]),
                         )
@@ -1927,7 +1928,7 @@ def _apply_whole_section_op(
                         source_statute=_source_statute or "",
                         target_unit_kind=view.target_unit_kind,
                         target_label=f"{_ts} §",
-                        recovery_kind="sparse_item_replace_merge",
+                        recovery_kind=RecoveryKind.SPARSE_ITEM_REPLACE_MERGE,
                         live_sibling_count=(
                             len([c for c in live_sub.children if c.kind is IRNodeKind.PARAGRAPH]) if live_sub is not None else 0
                         ),
@@ -2066,7 +2067,7 @@ def _apply_whole_section_op(
                                 source_statute=_source_statute or "",
                                 target_unit_kind=view.target_unit_kind,
                                 target_label=f"{_ts} §",
-                                recovery_kind="section_move_replace_destination_rebind",
+                                recovery_kind=RecoveryKind.SECTION_MOVE_REPLACE_DESTINATION_REBIND,
                                 live_sibling_count=len(
                                     [
                                         c
@@ -2101,7 +2102,7 @@ def _apply_whole_section_op(
                                 source_statute=_source_statute or "",
                                 target_unit_kind=view.target_unit_kind,
                                 target_label=f"{_ts} §",
-                                recovery_kind="section_move_replace_destination_rebind",
+                                recovery_kind=RecoveryKind.SECTION_MOVE_REPLACE_DESTINATION_REBIND,
                                 live_sibling_count=len(
                                     [
                                         c
@@ -2160,7 +2161,7 @@ def _apply_whole_section_op(
                                 source_statute=_source_statute or "",
                                 target_unit_kind=view.target_unit_kind,
                                 target_label=f"{_ts} §",
-                                recovery_kind="section_replace_bootstrap_base_prior_parent_insert",
+                                recovery_kind=RecoveryKind.SECTION_REPLACE_BOOTSTRAP_BASE_PRIOR_PARENT_INSERT,
                                 live_sibling_count=0,
                                 payload_sibling_count=len(
                                     [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
@@ -2208,7 +2209,7 @@ def _apply_whole_section_op(
                             source_statute=_source_statute or "",
                             target_unit_kind=view.target_unit_kind,
                             target_label=f"{_ts} §",
-                            recovery_kind="section_replace_bootstrap_gap_establish",
+                            recovery_kind=RecoveryKind.SECTION_REPLACE_BOOTSTRAP_GAP_ESTABLISH,
                             live_sibling_count=0,
                             payload_sibling_count=len(
                                 [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
@@ -2275,7 +2276,7 @@ def _apply_whole_section_op(
                                 source_statute=_source_statute or "",
                                 target_unit_kind=view.target_unit_kind,
                                 target_label=f"{_ts} §",
-                                recovery_kind="section_move_insert_destination_rebind",
+                                recovery_kind=RecoveryKind.SECTION_MOVE_INSERT_DESTINATION_REBIND,
                                 live_sibling_count=len(
                                     [
                                         c
@@ -2317,7 +2318,7 @@ def _apply_whole_section_op(
                                     source_statute=_source_statute or "",
                                     target_unit_kind=view.target_unit_kind,
                                     target_label=f"{_ts} §",
-                                    recovery_kind="section_move_insert_destination_rebind",
+                                    recovery_kind=RecoveryKind.SECTION_MOVE_INSERT_DESTINATION_REBIND,
                                     live_sibling_count=len(
                                         [
                                             c
@@ -2360,7 +2361,7 @@ def _apply_whole_section_op(
                                     source_statute=_source_statute or "",
                                     target_unit_kind=view.target_unit_kind,
                                     target_label=f"{_ts} §",
-                                    recovery_kind="section_move_insert_destination_rebind",
+                                    recovery_kind=RecoveryKind.SECTION_MOVE_INSERT_DESTINATION_REBIND,
                                     live_sibling_count=len(
                                         [
                                             c
@@ -2494,7 +2495,7 @@ def _apply_whole_section_op(
                             source_statute=_source_statute or "",
                             target_unit_kind=view.target_unit_kind,
                             target_label=f"{_ts} §",
-                            recovery_kind="section_insert_chapter_merge_absorb",
+                            recovery_kind=RecoveryKind.SECTION_INSERT_CHAPTER_MERGE_ABSORB,
                             live_sibling_count=len(
                                 [c for c in ch_node.children if c.kind is IRNodeKind.SUBSECTION]
                             ),
@@ -2521,7 +2522,7 @@ def _apply_whole_section_op(
                                     source_statute=_source_statute or "",
                                     target_unit_kind=view.target_unit_kind,
                                     target_label=f"{_ts} §",
-                                    recovery_kind="section_insert_chapter_merge_live_duplicates_preserve_unique_payload",
+                                    recovery_kind=RecoveryKind.SECTION_INSERT_CHAPTER_MERGE_LIVE_DUPLICATES_PRESERVE_UNIQUE_PAYLOAD,
                                     live_sibling_count=len(
                                         [c for c in ch_node.children if c.kind is IRNodeKind.SECTION]
                                     ),
@@ -2536,7 +2537,7 @@ def _apply_whole_section_op(
                             source_statute=_source_statute or "",
                             target_unit_kind=view.target_unit_kind,
                             target_label=f"{_ts} §",
-                            recovery_kind="section_insert_chapter_merge_absorb_duplicate_labels",
+                            recovery_kind=RecoveryKind.SECTION_INSERT_CHAPTER_MERGE_ABSORB_DUPLICATE_LABELS,
                             live_node=ch_node,
                             payload_node=temp_ch,
                         )
@@ -2558,7 +2559,7 @@ def _apply_whole_section_op(
                                 source_statute=_source_statute or "",
                                 target_unit_kind=view.target_unit_kind,
                                 target_label=f"{_ts} §",
-                                recovery_kind="section_insert_chapter_merge_absorb_trailing_siblings",
+                                recovery_kind=RecoveryKind.SECTION_INSERT_CHAPTER_MERGE_ABSORB_TRAILING_SIBLINGS,
                                 live_sibling_count=len(absorbed_paths),
                                 payload_sibling_count=len(
                                     [c for c in merged.children if c.kind is IRNodeKind.SECTION]
@@ -2623,7 +2624,7 @@ def _apply_whole_section_op(
                                 source_statute=_source_statute or "",
                                 target_unit_kind=view.target_unit_kind,
                                 target_label=f"{_ts} §",
-                                recovery_kind="section_insert_non_base_scaffold_consume",
+                                recovery_kind=RecoveryKind.SECTION_INSERT_NON_BASE_SCAFFOLD_CONSUME,
                                 live_sibling_count=len(
                                     [c for c in existing_node.children if c.kind is IRNodeKind.SUBSECTION]
                                 ),
@@ -2796,7 +2797,7 @@ def _apply_whole_section_op(
                                 source_statute=_source_statute or "",
                                 target_unit_kind=view.target_unit_kind,
                                 target_label=f"{_target_part} osa {_target_chapter} luku",
-                                recovery_kind="uncovered_section_insert_source_owned_part_chapter_scaffold",
+                                recovery_kind=RecoveryKind.UNCOVERED_SECTION_INSERT_SOURCE_OWNED_PART_CHAPTER_SCAFFOLD,
                                 live_sibling_count=0,
                                 payload_sibling_count=1,
                             )
@@ -2838,7 +2839,7 @@ def _apply_whole_section_op(
                             source_statute=_source_statute or "",
                             target_unit_kind=view.target_unit_kind,
                             target_label=f"{_ts} §",
-                            recovery_kind="section_insert_same_label_replace_cross",
+                            recovery_kind=RecoveryKind.SECTION_INSERT_SAME_LABEL_REPLACE_CROSS,
                             live_sibling_count=len(
                                 [c for c in (parent_node.children if parent_node is not None else ()) if c.kind is IRNodeKind.SECTION]
                             ),
@@ -2868,7 +2869,7 @@ def _apply_whole_section_op(
                     source_statute=_source_statute or "",
                     target_unit_kind=view.target_unit_kind,
                     target_label=f"{_ts} §",
-                    recovery_kind="section_insert_same_label_replace",
+                    recovery_kind=RecoveryKind.SECTION_INSERT_SAME_LABEL_REPLACE,
                     live_sibling_count=len(
                         [c for c in (parent_node.children if parent_node is not None else ()) if c.kind is IRNodeKind.SECTION]
                     ),
@@ -3012,7 +3013,7 @@ def _apply_materialization(
                         source_statute=view.source_statute or "",
                         target_unit_kind=_target_unit_kind,
                         target_label=f"{_ts} §",
-                        recovery_kind="section_materialization_root_move_destination_rebind",
+                        recovery_kind=RecoveryKind.SECTION_MATERIALIZATION_ROOT_MOVE_DESTINATION_REBIND,
                         live_sibling_count=len(
                             [c for c in (existing_node.children if existing_node is not None else ()) if c.kind is IRNodeKind.SUBSECTION]
                         ),
@@ -3084,7 +3085,7 @@ def _apply_materialization(
                 source_statute=view.source_statute or "",
                 target_unit_kind=_target_unit_kind,
                 target_label=f"{_ts} §",
-                recovery_kind="section_materialization_scoped_insert",
+                recovery_kind=RecoveryKind.SECTION_MATERIALIZATION_SCOPED_INSERT,
                 live_sibling_count=len(
                     [c for c in state.ir.children if c.kind is IRNodeKind.SECTION and c.label == _ts]
                 ),
@@ -3116,7 +3117,7 @@ def _apply_materialization(
                 source_statute=view.source_statute or "",
                 target_unit_kind=_target_unit_kind,
                 target_label=f"{_ts} §",
-                recovery_kind="section_materialization_scoped_insert_same_label_replace",
+                recovery_kind=RecoveryKind.SECTION_MATERIALIZATION_SCOPED_INSERT_SAME_LABEL_REPLACE,
                 live_sibling_count=len(
                     [c for c in (parent_node.children if parent_node is not None else ()) if c.kind is IRNodeKind.SECTION]
                 ),

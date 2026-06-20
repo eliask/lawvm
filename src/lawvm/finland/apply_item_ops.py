@@ -14,6 +14,7 @@ import re
 from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Set
 
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
@@ -189,7 +190,7 @@ def _report_item_intro_list_rebound(
                 source_statute=view.source_statute,
                 target_section=view.target_section,
                 target_paragraph=str(view.target_paragraph or ""),
-                rebound_kind="intro_list_moment_shape",
+                rebound_kind=RecoveryKind.INTRO_LIST_MOMENT_SHAPE,
                 stale_fragment_idx=-1,
                 live_has_paragraphs=any(
                     any(child.kind == IRNodeKind.PARAGRAPH for child in subsec.children) for subsec in subsecs
@@ -224,7 +225,7 @@ def _report_item_johd_subsection_rebound(
             source_statute=view.source_statute,
             target_section=view.target_section,
             target_paragraph=str(view.target_paragraph or ""),
-            rebound_kind="missing_exact_subsection_label",
+            rebound_kind=RecoveryKind.MISSING_EXACT_SUBSECTION_LABEL,
             stale_fragment_idx=-1,
             live_has_paragraphs=any(
                 any(child.kind == IRNodeKind.PARAGRAPH for child in subsec.children) for subsec in subsecs
@@ -269,7 +270,7 @@ def _report_item_missing_exact_subsection_label_rebound(
                 source_statute=view.source_statute,
                 target_section=view.target_section,
                 target_paragraph=str(view.target_paragraph or ""),
-                rebound_kind="missing_exact_subsection_label",
+                rebound_kind=RecoveryKind.MISSING_EXACT_SUBSECTION_LABEL,
                 stale_fragment_idx=-1,
                 live_has_paragraphs=any(
                     any(child.kind == IRNodeKind.PARAGRAPH for child in subsec.children) for subsec in subsecs
@@ -346,7 +347,7 @@ def _collapse_absorbed_tail_subsection_ir(
                 source_statute=source_statute,
                 target_unit_kind="section",
                 target_label=stale_subsection.label or str(subsection_idx + 2),
-                recovery_kind="absorbed_tail_subsection_collapse",
+                recovery_kind=RecoveryKind.ABSORBED_TAIL_SUBSECTION_COLLAPSE,
                 live_sibling_count=len(subsecs),
                 payload_sibling_count=1,
             )
@@ -424,7 +425,7 @@ def _prune_duplicate_tail_subsection_after_sparse_item_merge(
                 source_statute=source_statute,
                 target_unit_kind="section",
                 target_label=next_sub.label or str(next_idx + 1),
-                recovery_kind="sparse_item_tail_subsection_prune",
+                recovery_kind=RecoveryKind.SPARSE_ITEM_TAIL_SUBSECTION_PRUNE,
                 live_sibling_count=len([c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]),
                 payload_sibling_count=1,
             )
@@ -609,7 +610,7 @@ def _absorb_matching_tail_subsection_after_item_replace(
                 source_statute=source_statute,
                 target_unit_kind="section",
                 target_label=stale_subsection.label or str(subsection_index + 2),
-                recovery_kind="item_replace_tail_subsection_absorb",
+                recovery_kind=RecoveryKind.ITEM_REPLACE_TAIL_SUBSECTION_ABSORB,
                 live_sibling_count=len(subsecs),
                 payload_sibling_count=1,
             )
@@ -865,7 +866,7 @@ def _apply_item_replace(
                                     f"{view.target_section} § {view.target_paragraph} mom "
                                     f"{view.target_item} kohta johd"
                                 ),
-                                recovery_kind="item_johd_claimed_subparagraph_merge",
+                                recovery_kind=RecoveryKind.ITEM_JOHD_CLAIMED_SUBPARAGRAPH_MERGE,
                                 live_sibling_count=len(
                                     [c for c in master_para.children if c.kind == IRNodeKind.SUBPARAGRAPH]
                                 ),
@@ -916,7 +917,7 @@ def _apply_item_replace(
                             source_statute=view.source_statute,
                             target_unit_kind=view.target_unit_kind,
                             target_label=f"{view.target_section} § {view.target_paragraph} mom {view.target_item} kohta",
-                            recovery_kind="content_only_row_merge",
+                            recovery_kind=RecoveryKind.CONTENT_ONLY_ROW_MERGE,
                             live_sibling_count=_count_content_row_markers(sub),
                             payload_sibling_count=_count_content_row_markers(amend_sub),
                         )
@@ -971,7 +972,7 @@ def _apply_item_replace(
                                 source_statute=view.source_statute,
                                 target_unit_kind=view.target_unit_kind,
                                 target_label=f"{view.target_section} § {view.target_paragraph} mom {view.target_item} kohta",
-                                recovery_kind="sparse_alakohta_replace_merge",
+                                recovery_kind=RecoveryKind.SPARSE_ALAKOHTA_REPLACE_MERGE,
                                 live_sibling_count=len(
                                     [c for c in paras[para_idx].children if c.kind == IRNodeKind.SUBPARAGRAPH]
                                 ),
@@ -1009,7 +1010,7 @@ def _apply_item_replace(
                                 source_statute=view.source_statute,
                                 target_unit_kind=view.target_unit_kind,
                                 target_label=f"{view.target_section} § {view.target_paragraph} mom {view.target_item} kohta",
-                                recovery_kind="shared_tail_item_replace_sanitize",
+                                recovery_kind=RecoveryKind.SHARED_TAIL_ITEM_REPLACE_SANITIZE,
                                 live_sibling_count=len([c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]),
                                 payload_sibling_count=len(
                                     [
@@ -1067,7 +1068,7 @@ def _apply_item_replace(
                             source_statute=view.source_statute,
                             target_unit_kind=view.target_unit_kind,
                             target_label=f"{view.target_section} § {view.target_paragraph} mom {view.target_item} kohta",
-                            recovery_kind="compound_label_subparagraph_strip",
+                            recovery_kind=RecoveryKind.COMPOUND_LABEL_SUBPARAGRAPH_STRIP,
                             live_sibling_count=len(
                                 [c for c in orig_children if c.kind == IRNodeKind.SUBPARAGRAPH]
                             ),
@@ -1114,7 +1115,7 @@ def _apply_item_replace(
                                         f"{view.target_section} § {view.target_paragraph} mom "
                                         f"{view.target_item} kohta"
                                     ),
-                                    recovery_kind="item_replace_standalone_tail_prune",
+                                    recovery_kind=RecoveryKind.ITEM_REPLACE_STANDALONE_TAIL_PRUNE,
                                     live_sibling_count=len(master_sps),
                                     payload_sibling_count=1,
                                 )
@@ -1177,7 +1178,7 @@ def _apply_item_replace(
                             source_statute=view.source_statute,
                             target_unit_kind=view.target_unit_kind,
                             target_label=f"{view.target_section} § {view.target_paragraph} mom {view.target_item} kohta",
-                            recovery_kind="content_only_letter_row_merge",
+                            recovery_kind=RecoveryKind.CONTENT_ONLY_LETTER_ROW_MERGE,
                             live_sibling_count=_count_content_row_markers(sub),
                             payload_sibling_count=1,
                         )
@@ -1231,9 +1232,9 @@ def _apply_item_replace(
                 )
                 new_sec = _tops.replace_nth(sec, "subsection", n, new_sub)
                 recovery_kind = (
-                    "letter_item_replace_as_insert"
+                    RecoveryKind.LETTER_ITEM_REPLACE_AS_INSERT
                     if re.fullmatch(r"[a-z]", item_norm)
-                    else "numeric_item_replace_as_insert"
+                    else RecoveryKind.NUMERIC_ITEM_REPLACE_AS_INSERT
                 )
                 if source_pathologies_out is not None:
                     source_pathologies_out.append(
@@ -1304,7 +1305,7 @@ def _apply_item_replace(
                         source_statute=view.source_statute,
                         target_unit_kind=view.target_unit_kind,
                         target_label=f"{view.target_section} § {view.target_paragraph} mom {view.target_item} kohta",
-                        recovery_kind="blocked_oor_subsection_append",
+                        recovery_kind=RecoveryKind.BLOCKED_OOR_SUBSECTION_APPEND,
                         live_sibling_count=len(subsecs),
                         payload_sibling_count=1,
                     )
@@ -1423,7 +1424,7 @@ def _apply_item_insert(
                                 source_statute=view.source_statute,
                                 target_unit_kind=view.target_unit_kind,
                                 target_label=f"{view.target_section} § {view.target_paragraph} mom {view.target_item} kohta",
-                                recovery_kind="sparse_alakohta_insert_merge",
+                                recovery_kind=RecoveryKind.SPARSE_ALAKOHTA_INSERT_MERGE,
                                 live_sibling_count=len(
                                     [c for c in paras[existing_idx].children if c.kind == IRNodeKind.SUBPARAGRAPH]
                                 ),
@@ -1494,7 +1495,10 @@ def _apply_item_insert(
                     if any(
                         pathology.code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
                         and pathology.detail.get("recovery_kind")
-                        in {"item_insert_suffix_renumber", "item_insert_tail_wrapup_absorb"}
+                        in {
+                            RecoveryKind.ITEM_INSERT_SUFFIX_RENUMBER,
+                            RecoveryKind.ITEM_INSERT_TAIL_WRAPUP_ABSORB,
+                        }
                         for pathology in new_pathologies
                     ):
                         return None
@@ -1584,7 +1588,7 @@ def _apply_item_insert(
                                 source_statute=view.source_statute,
                                 target_unit_kind="section",
                                 target_label=f"{view.target_section} § {view.target_paragraph} mom {view.target_item} kohta",
-                                recovery_kind="compound_item_insert_append",
+                                recovery_kind=RecoveryKind.COMPOUND_ITEM_INSERT_APPEND,
                                 live_sibling_count=len(existing_sps),
                                 payload_sibling_count=1,
                             )
@@ -1771,7 +1775,7 @@ def _apply_special_targets(
                                     source_statute=view.source_statute,
                                     target_unit_kind=view.target_unit_kind,
                                     target_label=f"{view.target_section} § {view.target_paragraph} mom johd",
-                                    recovery_kind="intro_prepend_letter_list_moment",
+                                    recovery_kind=RecoveryKind.INTRO_PREPEND_LETTER_LIST_MOMENT,
                                     live_sibling_count=len(paragraph_children),
                                     payload_sibling_count=1,
                                 )

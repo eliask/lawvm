@@ -27,6 +27,7 @@ from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Mapping, Optional, Set, Tuple
 
 from lawvm.core.compile_result import AdmissibleBindingCertificate, SourcePathology
+from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.ir_helpers import structural_subtree_hash
@@ -5746,7 +5747,7 @@ def _detect_sparse_subsection_tail_preservation_risk(
             source_statute=source_statute,
             target_unit_kind=target_unit_kind,
             target_label=f"{target_norm} §",
-            recovery_kind="sparse_subsection_tail_preserved",
+            recovery_kind=RecoveryKind.SPARSE_SUBSECTION_TAIL_PRESERVED,
             live_sibling_count=trailing_live,
             payload_sibling_count=0,
         )

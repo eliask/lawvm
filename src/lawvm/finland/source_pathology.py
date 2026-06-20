@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.payload_surface import TargetUnitKind
+from lawvm.core.recovery_kind import RecoveryKind
 
 
 def _target_label(target_section: str, target_chapter: str = "") -> str:
@@ -123,7 +124,7 @@ def build_section_replace_bootstrap_parent_missing_pathology(
             "target_part": target_part,
             "target_chapter": target_chapter,
             "target_section": target_section,
-            "recovery_kind": "section_replace_bootstrap_parent_missing",
+            "recovery_kind": RecoveryKind.SECTION_REPLACE_BOOTSTRAP_PARENT_MISSING,
             "strict_disposition": "block",
             "quirks_disposition": "record",
         },
@@ -157,7 +158,7 @@ def build_same_effective_container_repeal_shadowed_pathology(
         detail={
             "prior_source_statute": prior_source_statute,
             "effective": effective,
-            "recovery_kind": "same_effective_container_repeal_shadowed",
+            "recovery_kind": RecoveryKind.SAME_EFFECTIVE_CONTAINER_REPEAL_SHADOWED,
             "strict_disposition": "record",
             "quirks_disposition": "record",
         },
@@ -256,7 +257,7 @@ def build_recodification_omission_only_section_shell_pathology(
             "target_chapter": target_chapter,
             "target_part": target_part,
             "source_surface": "sparse_omission_shell",
-            "recovery_kind": "recodification_omission_only_section_shell",
+            "recovery_kind": RecoveryKind.RECODIFICATION_OMISSION_ONLY_SECTION_SHELL,
             "strict_disposition": "block",
             "quirks_disposition": "record",
         },
@@ -416,7 +417,7 @@ def build_subsection_target_rebound_pathology(
     source_statute: str,
     target_section: str,
     target_paragraph: str | int,
-    rebound_kind: str,
+    rebound_kind: RecoveryKind,
     stale_fragment_idx: int = -1,
     live_has_paragraphs: bool = False,
     amend_has_paragraphs: bool = False,
@@ -505,7 +506,7 @@ def build_destructive_shape_loss_risk_pathology(
     source_statute: str,
     target_unit_kind: TargetUnitKind,
     target_label: str,
-    recovery_kind: str,
+    recovery_kind: RecoveryKind,
     live_sibling_count: int = 0,
     payload_sibling_count: int = 0,
 ) -> SourcePathology:
@@ -532,7 +533,7 @@ def build_sparse_merge_invariant_skip_pathology(
     source_statute: str,
     target_unit_kind: TargetUnitKind,
     target_label: str,
-    recovery_kind: str,
+    recovery_kind: RecoveryKind,
     live_sibling_count: int = 0,
     payload_sibling_count: int = 0,
 ) -> SourcePathology:
@@ -559,7 +560,7 @@ def build_unique_payload_insert_under_live_duplicates_pathology(
     source_statute: str,
     target_unit_kind: TargetUnitKind,
     target_label: str,
-    recovery_kind: str,
+    recovery_kind: RecoveryKind,
     live_sibling_count: int = 0,
     payload_sibling_count: int = 0,
 ) -> SourcePathology:

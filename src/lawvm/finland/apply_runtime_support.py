@@ -15,6 +15,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, List, Optional, cast
 
 from lawvm.core.regex_safety import compile_classifier_regex
+from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir_helpers import _kind_str, irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
@@ -1133,7 +1134,7 @@ def _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
                 source_statute=source_statute,
                 target_unit_kind="section",
                 target_label=f"{target_norm} §",
-                recovery_kind="section_snapshot_preserve_live_fold_for_descendant_scoped_item",
+                recovery_kind=RecoveryKind.SECTION_SNAPSHOT_PRESERVE_LIVE_FOLD_FOR_DESCENDANT_SCOPED_ITEM,
                 live_sibling_count=live_len,
                 payload_sibling_count=payload_len,
             )
@@ -1374,7 +1375,7 @@ def _emit_section_snapshot(
                         source_statute=op_source.statute_id,
                         target_unit_kind="section",
                         target_label=f"{target_norm} §",
-                        recovery_kind="section_snapshot_preserve_fold_for_descendant_scoped_source",
+                        recovery_kind=RecoveryKind.SECTION_SNAPSHOT_PRESERVE_FOLD_FOR_DESCENDANT_SCOPED_SOURCE,
                         live_sibling_count=live_child_count,
                         payload_sibling_count=len(candidates[0].children),
                     )
@@ -1743,9 +1744,9 @@ def _emit_section_snapshot(
                     target_unit_kind="section",
                     target_label=normalized_target_norm,
                     recovery_kind=(
-                        "section_snapshot_drop_expired_temporary_subsection"
+                        RecoveryKind.SECTION_SNAPSHOT_DROP_EXPIRED_TEMPORARY_SUBSECTION
                         if dropped_expired_temporary_children
-                        else "section_snapshot_rebase_on_latest_exact_parent"
+                        else RecoveryKind.SECTION_SNAPSHOT_REBASE_ON_LATEST_EXACT_PARENT
                     ),
                     live_sibling_count=len(
                         [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
@@ -1858,7 +1859,7 @@ def _emit_section_snapshot(
                     source_statute=op_source.statute_id,
                     target_unit_kind="section",
                     target_label=target_norm,
-                    recovery_kind="section_snapshot_drop_shifted_expired_temporary_subsection",
+                    recovery_kind=RecoveryKind.SECTION_SNAPSHOT_DROP_SHIFTED_EXPIRED_TEMPORARY_SUBSECTION,
                     live_sibling_count=len(
                         [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
                     ),
@@ -1941,7 +1942,7 @@ def _emit_section_snapshot(
                     source_statute=op_source.statute_id,
                     target_unit_kind="section",
                     target_label=target_norm,
-                    recovery_kind="section_snapshot_drop_expired_temporary_subsection",
+                    recovery_kind=RecoveryKind.SECTION_SNAPSHOT_DROP_EXPIRED_TEMPORARY_SUBSECTION,
                     live_sibling_count=len(
                         [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
                     ),
@@ -2006,7 +2007,7 @@ def _emit_section_snapshot(
                     source_statute=op_source.statute_id,
                     target_unit_kind="section",
                     target_label=target_norm,
-                    recovery_kind="section_snapshot_drop_absent_carried_subsection",
+                    recovery_kind=RecoveryKind.SECTION_SNAPSHOT_DROP_ABSENT_CARRIED_SUBSECTION,
                     live_sibling_count=len(
                         [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
                     ),
@@ -2148,7 +2149,7 @@ def _emit_section_snapshot(
                         source_statute=op_source.statute_id,
                         target_unit_kind="section",
                         target_label=target_norm,
-                        recovery_kind="subsection_snapshot_drop_absent_carried_paragraph",
+                        recovery_kind=RecoveryKind.SUBSECTION_SNAPSHOT_DROP_ABSENT_CARRIED_PARAGRAPH,
                         live_sibling_count=len(
                             [child for child in subsection_payload.children if child.kind is IRNodeKind.PARAGRAPH]
                         ),
@@ -2189,7 +2190,7 @@ def _emit_section_snapshot(
                     source_statute=op_source.statute_id,
                     target_unit_kind="section",
                     target_label=target_norm,
-                    recovery_kind="subsection_snapshot_drop_expired_temporary_paragraph",
+                    recovery_kind=RecoveryKind.SUBSECTION_SNAPSHOT_DROP_EXPIRED_TEMPORARY_PARAGRAPH,
                     live_sibling_count=len(
                         [child for child in subsection_payload.children if child.kind is IRNodeKind.PARAGRAPH]
                     ),
@@ -2316,7 +2317,7 @@ def _emit_section_snapshot(
                     source_statute=op_source.statute_id,
                     target_unit_kind="section",
                     target_label=target_norm,
-                    recovery_kind="section_snapshot_drop_carried_target_subsection_text",
+                    recovery_kind=RecoveryKind.SECTION_SNAPSHOT_DROP_CARRIED_TARGET_SUBSECTION_TEXT,
                     live_sibling_count=len(
                         [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
                     ),
@@ -2660,7 +2661,7 @@ def _emit_section_snapshot(
                                 source_statute=op_source.statute_id,
                                 target_unit_kind="section",
                                 target_label=normalized_target_norm,
-                                recovery_kind="section_snapshot_item_payload_fold_merge",
+                                recovery_kind=RecoveryKind.SECTION_SNAPSHOT_ITEM_PAYLOAD_FOLD_MERGE,
                                 live_sibling_count=sum(
                                     1
                                     for child in current_subsection.children
@@ -2706,7 +2707,7 @@ def _emit_section_snapshot(
                     source_statute=op_source.statute_id,
                     target_unit_kind="section",
                     target_label=normalized_target_norm,
-                    recovery_kind="section_snapshot_flattened_item_payload_merge",
+                    recovery_kind=RecoveryKind.SECTION_SNAPSHOT_FLATTENED_ITEM_PAYLOAD_MERGE,
                     live_sibling_count=sum(
                         1
                         for child in base_section.children
@@ -2729,7 +2730,7 @@ def _emit_section_snapshot(
                     source_statute=op_source.statute_id,
                     target_unit_kind="section",
                     target_label=normalized_target_norm,
-                    recovery_kind="section_snapshot_single_subsection_sparse_merge",
+                    recovery_kind=RecoveryKind.SECTION_SNAPSHOT_SINGLE_SUBSECTION_SPARSE_MERGE,
                     live_sibling_count=sum(
                         1
                         for child in base_section.children
@@ -3449,7 +3450,7 @@ def _emit_section_snapshot(
                         source_statute=op_source.statute_id,
                         target_unit_kind="section",
                         target_label=target_norm,
-                        recovery_kind="section_snapshot_repeal_absent_complete_replacement_subsection",
+                        recovery_kind=RecoveryKind.SECTION_SNAPSHOT_REPEAL_ABSENT_COMPLETE_REPLACEMENT_SUBSECTION,
                         live_sibling_count=len(
                             {
                                 _norm_num_token(child.label)
@@ -3990,7 +3991,7 @@ def _emit_section_snapshot(
                             source_statute=op_source.statute_id,
                             target_unit_kind=target_unit_kind,
                             target_label=target_norm,
-                            recovery_kind="container_snapshot_sparse_missing_child_repeal_skip",
+                            recovery_kind=RecoveryKind.CONTAINER_SNAPSHOT_SPARSE_MISSING_CHILD_REPEAL_SKIP,
                             live_sibling_count=len(prior_child_paths),
                             payload_sibling_count=len(effective_child_labels),
                         )

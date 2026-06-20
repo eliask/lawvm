@@ -13,6 +13,7 @@ import re
 from typing import TYPE_CHECKING, List, Optional, cast
 
 from lawvm.core.compile_result import SourcePathology, StrictProfile
+from lawvm.core.recovery_kind import RecoveryKind, coerce_recovery_kind
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.ir_helpers import structural_subtree_hash
@@ -98,13 +99,13 @@ _ITEM_RELABEL_MIGRATION_RULE_ID = "item_relabel_renumber"
 _CHAPTER_RELABEL_MIGRATION_RULE_ID = "chapter_relabel_renumber"
 _PART_RELABEL_MIGRATION_RULE_ID = "part_relabel_renumber"
 _MOVE_REPARENT_MIGRATION_RULE_ID = "move_reparent"
-_INTRO_LIST_MOMENT_SHAPE_RULE_ID = "intro_list_moment_shape"
-_MISSING_EXACT_SUBSECTION_LABEL_RULE_ID = "missing_exact_subsection_label"
-_SPARSE_ALAKOHTA_INSERT_MERGE_RULE_ID = "sparse_alakohta_insert_merge"
-_SPARSE_ALAKOHTA_REPLACE_MERGE_RULE_ID = "sparse_alakohta_replace_merge"
-_SPARSE_ITEM_TAIL_SUBSECTION_PRUNE_RULE_ID = "sparse_item_tail_subsection_prune"
-_SUBSECTION_REPLACE_SPARSE_GAP_INSERT_RULE_ID = "subsection_replace_sparse_gap_insert"
-_SUBSECTION_DISPATCH_LANDED_RECOVERY_RULE_IDS = (
+_INTRO_LIST_MOMENT_SHAPE_RULE_ID = RecoveryKind.INTRO_LIST_MOMENT_SHAPE
+_MISSING_EXACT_SUBSECTION_LABEL_RULE_ID = RecoveryKind.MISSING_EXACT_SUBSECTION_LABEL
+_SPARSE_ALAKOHTA_INSERT_MERGE_RULE_ID = RecoveryKind.SPARSE_ALAKOHTA_INSERT_MERGE
+_SPARSE_ALAKOHTA_REPLACE_MERGE_RULE_ID = RecoveryKind.SPARSE_ALAKOHTA_REPLACE_MERGE
+_SPARSE_ITEM_TAIL_SUBSECTION_PRUNE_RULE_ID = RecoveryKind.SPARSE_ITEM_TAIL_SUBSECTION_PRUNE
+_SUBSECTION_REPLACE_SPARSE_GAP_INSERT_RULE_ID = RecoveryKind.SUBSECTION_REPLACE_SPARSE_GAP_INSERT
+_SUBSECTION_DISPATCH_LANDED_RECOVERY_RULE_IDS: tuple[RecoveryKind, ...] = (
     _INTRO_LIST_MOMENT_SHAPE_RULE_ID,
     _MISSING_EXACT_SUBSECTION_LABEL_RULE_ID,
     _SPARSE_ALAKOHTA_REPLACE_MERGE_RULE_ID,
@@ -431,12 +432,17 @@ def _path_explained_by_effect_roots(path: TreePath, roots: TreePaths) -> bool:
 
 def _new_pathologies_include_recovery_kind(
     pathologies: tuple[SourcePathology, ...],
-    recovery_kind: str,
+    recovery_kind: RecoveryKind,
 ) -> bool:
-    return any(
-        str(pathology.detail.get("recovery_kind", "") or pathology.detail.get("rebound_kind", "")) == recovery_kind
-        for pathology in pathologies
-    )
+    for pathology in pathologies:
+        raw = pathology.detail.get("recovery_kind") or pathology.detail.get("rebound_kind")
+        if raw is None or raw == "":
+            continue
+        # Fail loud (UnregisteredRecoveryKind) rather than silently no-matching a
+        # typoed/unregistered kind: the allowance authorization keys on this value.
+        if coerce_recovery_kind(raw) == recovery_kind:
+            return True
+    return False
 
 
 def _sparse_item_tail_prune_recovery_paths(

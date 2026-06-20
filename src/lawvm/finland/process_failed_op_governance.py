@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Callable, Sequence
 
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.phase_result import Finding
@@ -504,7 +505,7 @@ class ProcessFailedOpGovernance:
             for detail in pathology_details:
                 if detail.get("code") != "DESTRUCTIVE_SHAPE_LOSS_RISK":
                     continue
-                if detail.get("recovery_kind") != "section_insert_chapter_merge_absorb":
+                if detail.get("recovery_kind") != RecoveryKind.SECTION_INSERT_CHAPTER_MERGE_ABSORB:
                     continue
                 if detail.get("target_unit_kind") != "section":
                     continue
