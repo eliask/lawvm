@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
+import datetime as dt
+from typing import Any, cast
 
 from lxml import etree
+import pytest
 
 from lawvm.core.phase_result import Finding
+import lawvm.finland.process_route_rejection as route_rejection_mod
 from lawvm.finland.process_route_rejection import (
     RouteRejectionBranch,
     ProcessRouteRejectionContext,
@@ -154,6 +157,29 @@ def test_route_rejection_meta_repeal_has_stable_rule_metadata() -> None:
     assert signal.source_statute == "2020/100"
     assert signal.target_statute == "2010/123"
     assert signal.resolved is True
+
+
+def test_skipped_amendment_expiry_override_records_lifecycle_when_rewrite_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SourceModel:
+        def commencement_expiry_override(self, amendment_id: str) -> tuple[str, set[str], dt.date]:
+            assert amendment_id == "2020/100"
+            return ("2019/50", {"4 a"}, dt.date(2022, 12, 31))
+
+    ctx, _findings, _prints = _route_context("citation_mismatch_skip")
+    ctx.source_model = cast(Any, SourceModel())
+    monkeypatch.setattr(route_rejection_mod, "_rewrite_lo_op_source_expiry", lambda *args, **kwargs: False)
+
+    ctx._apply_skipped_amendment_expiry_override()
+
+    assert len(ctx.commencement_expiry_override_notes) == 1
+    note = ctx.commencement_expiry_override_notes[0]
+    assert note.source_statute == "2020/100"
+    assert note.target_statute == "2019/50"
+    assert note.scope.kind == "section"
+    assert note.scope.labels == ("4 a",)
+    assert note.expiry == "2022-12-31"
 
 
 def test_route_rejection_title_targets_other_statute_has_stable_rule_metadata() -> None:

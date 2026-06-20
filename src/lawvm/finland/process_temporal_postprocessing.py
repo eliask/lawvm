@@ -110,6 +110,16 @@ class ProcessTemporalPostprocessContext:
             )
         if accepted is not None:
             target_mid, labels, expiry = accepted
+            if target_mid != self.amendment_id:
+                self.commencement_expiry_override_notes.append(
+                    EffectLifecycleOverride(
+                        source_statute=self.amendment_id,
+                        target_statute=target_mid,
+                        scope=_section_override_scope(labels),
+                        expiry=expiry.isoformat(),
+                        context="accepted_amendment",
+                    )
+                )
             if target_mid != self.amendment_id and _rewrite_lo_op_source_expiry(
                 self.lo_ops_out,
                 target_mid,
@@ -124,17 +134,18 @@ class ProcessTemporalPostprocessContext:
                     f"  [{self.amendment_id}] voimaantulo_expiry_override (accepted): "
                     f"{target_mid} {scope} -> {expiry.isoformat()}"
                 )
+
+        for target_mid, labels, expiry in self.section_expiry_overrides:
+            if target_mid == self.amendment_id:
                 self.commencement_expiry_override_notes.append(
                     EffectLifecycleOverride(
                         source_statute=self.amendment_id,
                         target_statute=target_mid,
                         scope=_section_override_scope(labels),
                         expiry=expiry.isoformat(),
-                        context="accepted_amendment",
+                        context="accepted_section_temporary",
                     )
                 )
-
-        for target_mid, labels, expiry in self.section_expiry_overrides:
             if target_mid == self.amendment_id and _rewrite_lo_op_source_expiry(
                 self.lo_ops_out,
                 target_mid,
@@ -148,15 +159,6 @@ class ProcessTemporalPostprocessContext:
                 self.replay_print(
                     f"  [{self.amendment_id}] temporary_section_expiry_override (accepted): "
                     f"{target_mid} {scope} -> {expiry.isoformat()}"
-                )
-                self.commencement_expiry_override_notes.append(
-                    EffectLifecycleOverride(
-                        source_statute=self.amendment_id,
-                        target_statute=target_mid,
-                        scope=_section_override_scope(labels),
-                        expiry=expiry.isoformat(),
-                        context="accepted_section_temporary",
-                    )
                 )
 
     def apply_section_commencement_overrides(self) -> None:
@@ -322,6 +324,16 @@ class ProcessTemporalPostprocessContext:
                 if chap_map_sets is not None:
                     chap_map_sets.setdefault(chapter, set()).update(labels)
 
+        if kumotaan_labels:
+            self.commencement_expiry_override_notes.append(
+                EffectLifecycleOverride(
+                    source_statute=self.amendment_id,
+                    target_statute=self.amendment_id,
+                    scope=_kumotaan_override_scope(kumotaan_labels, chap_map_sets),
+                    expiry=self.amendment_effective_date.isoformat(),
+                    context="repeal_clause",
+                )
+            )
         if kumotaan_labels and _rewrite_lo_op_source_expiry(
             self.lo_ops_out,
             self.amendment_id,
@@ -336,15 +348,6 @@ class ProcessTemporalPostprocessContext:
             self.replay_print(
                 f"  [{self.amendment_id}] kumotaan_section_expiry_override: "
                 f"{self.amendment_id} {scope} -> {self.amendment_effective_date.isoformat()}"
-            )
-            self.commencement_expiry_override_notes.append(
-                EffectLifecycleOverride(
-                    source_statute=self.amendment_id,
-                    target_statute=self.amendment_id,
-                    scope=_kumotaan_override_scope(kumotaan_labels, chap_map_sets),
-                    expiry=self.amendment_effective_date.isoformat(),
-                    context="repeal_clause",
-                )
             )
             _rewrite_kumotaan_snapshot_replaces_to_repeal(
                 self.lo_ops_out,

@@ -341,6 +341,16 @@ class ProcessRouteRejectionContext:
         target_mid, labels, expiry = expiry_override
         if target_mid == self.amendment_id:
             return
+        scope = sorted(labels) if labels else ["*"]
+        self.commencement_expiry_override_notes.append(
+            EffectLifecycleOverride(
+                source_statute=self.amendment_id,
+                target_statute=target_mid,
+                scope=EffectLifecycleOverrideScope.sections(scope),
+                expiry=expiry.isoformat(),
+                context="skipped_amendment",
+            )
+        )
         if not _rewrite_lo_op_source_expiry(
             self.lo_ops_out,
             target_mid,
@@ -351,17 +361,7 @@ class ProcessRouteRejectionContext:
             expiry_convention="inclusive_prose",
         ):
             return
-        scope = sorted(labels) if labels else ["*"]
         self.replay_print(
             f"  [{self.amendment_id}] voimaantulo_expiry_override: "
             f"{target_mid} {scope} -> {expiry.isoformat()}"
-        )
-        self.commencement_expiry_override_notes.append(
-            EffectLifecycleOverride(
-                source_statute=self.amendment_id,
-                target_statute=target_mid,
-                scope=EffectLifecycleOverrideScope.sections(scope),
-                expiry=expiry.isoformat(),
-                context="skipped_amendment",
-            )
         )
