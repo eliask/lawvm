@@ -593,6 +593,9 @@ class SurfaceTextSpanPlacer:
     _lower_segment_groups: list[
         tuple[str, list[tuple[RenderedTextSegment, str]]]
     ] | None = None
+    _normalized_segment_cache: dict[int, tuple[str, list[int]]] = (
+        dataclasses.field(default_factory=dict)
+    )
 
     def _build_lower_segment_groups(
         self,
@@ -736,6 +739,15 @@ class SurfaceTextSpanPlacer:
             for date, segments in self._segment_groups_for_locator(locator)
         ]
 
+    def normalized_segment(self, segment: RenderedTextSegment) -> tuple[str, list[int]]:
+        key = id(segment)
+        cached = self._normalized_segment_cache.get(key)
+        if cached is not None:
+            return cached
+        normalized = _normalize_surface_with_map(segment.text)
+        self._normalized_segment_cache[key] = normalized
+        return normalized
+
     def place(
         self,
         surface_text: str,
@@ -763,7 +775,7 @@ class SurfaceTextSpanPlacer:
 # to the original rendered character offsets so the painted span is exact.
 
 _DASH_CHARS = "-‐‑‒–—―−"
-_DASH_RE = re.compile(f"[{_DASH_CHARS}]")
+_DASH_CHAR_SET = frozenset(_DASH_CHARS)
 _WS_RE = re.compile(r"\s+")
 PLACEMENT_NORMALIZATION_ID = "fi.viewer_place.norm.nbsp_ws_dash.v1"
 
@@ -789,8 +801,10 @@ def _normalize_surface_with_map(text: str) -> tuple[str, list[int]]:
             while i < n and (text[i].isspace() or text[i] == "\xa0"):
                 i += 1
             continue
-        if _DASH_RE.match(ch):
+        if ch in _DASH_CHAR_SET:
             norm_chars.append("-")
+        elif ord(ch) < 128:
+            norm_chars.append(ch)
         else:
             norm_chars.append(unicodedata.normalize("NFC", ch))
         offset_map.append(i)
@@ -876,10 +890,17 @@ def place_occurrence_spans(
             (date, [s for s in segments if _segment_matches_locator(s.address, locator)])
             for date, segments in segments_by_date.items()
         ]
+    required_token = _required_surface_token(surface_text)
     for date, scoped in scoped_groups:
+        if required_token:
+            scan_scoped = [
+                segment for segment in scoped if required_token in segment.text.lower()
+            ]
+        else:
+            scan_scoped = scoped
         # 1. exact_unique — exact surface occurs exactly once across scoped segments.
         exact_hits: list[tuple[RenderedTextSegment, int]] = []
-        for segment in scoped:
+        for segment in scan_scoped:
             for start in _find_all(segment.text, surface_text):
                 exact_hits.append((segment, start))
         if len(exact_hits) == 1:
@@ -899,8 +920,11 @@ def place_occurrence_spans(
             continue
         # 2/3. normalized matches with offset map back to exact rendered coords.
         norm_hits: list[tuple[RenderedTextSegment, int, int, str, list[int]]] = []
-        for segment in scoped:
-            norm_text, offset_map = _normalize_surface_with_map(segment.text)
+        for segment in scan_scoped:
+            if placer is not None:
+                norm_text, offset_map = placer.normalized_segment(segment)
+            else:
+                norm_text, offset_map = _normalize_surface_with_map(segment.text)
             for nstart in _find_all(norm_text, norm_surface):
                 nend = nstart + len(norm_surface)
                 norm_hits.append((segment, nstart, nend, norm_text, offset_map))
