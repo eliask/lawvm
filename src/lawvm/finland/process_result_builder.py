@@ -27,6 +27,10 @@ from lawvm.finland.apply_events import (
 )
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
+from lawvm.finland.effect_graph_merge import (
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_relations,
+)
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.replay_findings import (
@@ -228,21 +232,16 @@ class ProcessResultBuilder:
             relation_signals=tuple(self.buffers.effect_relation_signals),
             known_source_effects=tuple(self.buffers.source_effects),
         )
-        existing_relations = {relation.relation_id for relation in self.buffers.effect_relations}
-        for relation in relations:
-            if relation.relation_id in existing_relations:
-                continue
-            existing_relations.add(relation.relation_id)
-            self.buffers.effect_relations.append(relation)
-
-        existing_events = {
-            event.lifecycle_event_id for event in self.buffers.effect_lifecycle_events
-        }
-        for event in lifecycle_events:
-            if event.lifecycle_event_id in existing_events:
-                continue
-            existing_events.add(event.lifecycle_event_id)
-            self.buffers.effect_lifecycle_events.append(event)
+        append_unique_effect_relations(
+            self.buffers.effect_relations,
+            relations,
+            subject="process effect lifecycle projection",
+        )
+        append_unique_effect_lifecycle_events(
+            self.buffers.effect_lifecycle_events,
+            lifecycle_events,
+            subject="process effect lifecycle projection",
+        )
 
     def project_compat_sinks(self) -> None:
         if self.sinks.failed_ops_out is not None:

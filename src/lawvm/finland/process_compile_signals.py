@@ -10,6 +10,11 @@ from lawvm.core.compile_result import SourcePathology
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
+from lawvm.finland.effect_graph_merge import (
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_refs,
+    append_unique_effect_relations,
+)
 from lawvm.finland.ops import ResolvedOp
 from lawvm.finland.temporal_rewrites import _normalize_frontend_temporal_events
 
@@ -41,16 +46,36 @@ class ProcessCompileSignalsContext:
             target_statute=self.parent_id,
         )
         self.amendment_temporal_events.extend(temporal_events)
-        self.source_effects.extend(self.compile_result.source_effects)
-        self.effect_relations.extend(self.compile_result.effect_relations)
-        self.effect_lifecycle_events.extend(self.compile_result.effect_lifecycle_events)
+        append_unique_effect_refs(
+            self.source_effects,
+            self.compile_result.source_effects,
+            subject="process compile result projection",
+        )
+        append_unique_effect_relations(
+            self.effect_relations,
+            self.compile_result.effect_relations,
+            subject="process compile result projection",
+        )
+        append_unique_effect_lifecycle_events(
+            self.effect_lifecycle_events,
+            self.compile_result.effect_lifecycle_events,
+            subject="process compile result projection",
+        )
         source_effects, _relations, lifecycle_events = build_finland_effect_lifecycle(
             target_statute=self.parent_id,
             canonical_ops=(),
             temporal_events=temporal_events,
         )
-        self.source_effects.extend(source_effects)
-        self.effect_lifecycle_events.extend(lifecycle_events)
+        append_unique_effect_refs(
+            self.source_effects,
+            source_effects,
+            subject="process derived temporal effect projection",
+        )
+        append_unique_effect_lifecycle_events(
+            self.effect_lifecycle_events,
+            lifecycle_events,
+            subject="process derived temporal effect projection",
+        )
         self._cover_temporal_coverage()
         self._project_observations()
         self._project_obligations_and_violations()

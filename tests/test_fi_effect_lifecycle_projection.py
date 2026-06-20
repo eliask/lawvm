@@ -12,6 +12,7 @@ from lawvm.core.effect_lifecycle import (
     SourceProvisionRef,
     lower_lifecycle_event_to_temporal_event,
 )
+from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.finland.effect_lifecycle_signals import (
     EffectLifecycleOverride,
@@ -23,6 +24,7 @@ from lawvm.finland.effect_lifecycle_projection import (
     build_finland_effect_lifecycle,
 )
 from lawvm.finland.migration_ledger import MigrationLedger
+from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
 from lawvm.finland.process_result_builder import ProcessCompatSinks, ProcessResultBuilder, ProcessSignalBuffers
 
 
@@ -741,3 +743,95 @@ def test_process_result_builder_projects_pending_relation_from_typed_signal() ->
     assert relation.kind == "modifies_effect"
     assert relation.target_instrument is not None
     assert relation.target_instrument.instrument_id == "2020/1233"
+
+
+def test_process_result_builder_rejects_conflicting_projected_relation_id() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2022/708")
+    buffers = ProcessSignalBuffers.empty()
+    buffers.effect_relations.append(
+        EffectRelation(
+            relation_id="fi-effect-relation:2022/708:pending_amendment:2020/1233",
+            kind="modifies_effect",
+            source_provision=SourceProvisionRef(
+                instrument=instrument,
+                path=("routing",),
+                rule_id="fi.pending_amendment_of_parent_effect_relation",
+            ),
+            target_instrument=SourceInstrumentRef(instrument_id="2020/1233", title="Old title"),
+            detail={"source_finding": "old"},
+        )
+    )
+    buffers.effect_relation_signals.append(
+        EffectRelationSignal.pending_amendment(
+            source_statute="2022/708",
+            target_statute="2020/1233",
+            target_title="New title",
+            source_finding="new",
+            resolved=True,
+        )
+    )
+    builder = ProcessResultBuilder(
+        amendment_id="2022/708",
+        buffers=buffers,
+        migration_ledger=MigrationLedger(),
+        migration_ledger_initial_len=0,
+        sinks=ProcessCompatSinks(
+            failed_ops_out=None,
+            source_pathologies_out=None,
+            elaboration_observations_out=None,
+            sparse_slot_bindings_out=None,
+            sparse_leftovers_out=None,
+            commencement_expiry_overrides_out=None,
+            mutation_events_out=None,
+            mutation_invariant_reports_out=None,
+        ),
+        target_statute="2011/1552",
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate relation_id"):
+        builder.build(output_state="state")
+
+
+def test_process_compile_signals_rejects_conflicting_source_effect_id() -> None:
+    existing = EffectRef(
+        effect_id="effect:duplicate",
+        source_instrument=SourceInstrumentRef(instrument_id="2024/1"),
+        target_statute="parent-a",
+    )
+    conflicting = EffectRef(
+        effect_id="effect:duplicate",
+        source_instrument=SourceInstrumentRef(instrument_id="2024/1"),
+        target_statute="parent-b",
+    )
+    process_findings: list[Finding] = []
+
+    def record_process_finding(**kwargs: object) -> Finding:
+        finding = Finding(
+            kind=str(kwargs.get("kind") or ""),
+            role="obligation",
+            stage="test",
+            detail={},
+            blocking=True,
+        )
+        process_findings.append(finding)
+        return finding
+
+    context = ProcessCompileSignalsContext(
+        amendment_id="2024/1",
+        parent_id="1990/1",
+        resolved=[],
+        compile_result=PhaseResult(output=[], source_effects=(conflicting,)),
+        amendment_temporal_events=[],
+        source_effects=[existing],
+        effect_relations=[],
+        effect_lifecycle_events=[],
+        source_pathologies=[],
+        elaboration_observations=[],
+        sparse_slot_bindings=[],
+        sparse_leftovers=[],
+        process_findings=process_findings,
+        record_finding=record_process_finding,
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate effect_id"):
+        context.project()
