@@ -53,6 +53,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from lawvm.core.ir import IRNode
@@ -96,6 +97,8 @@ __all__ = [
     # Statute-lifecycle (registry/oracle-driven, no-replay) layer
     "LifecycleCache",
     "oracle_lifecycle_lookup",
+    "lifecycle_lookup_from_artifact",
+    "default_lifecycle_lookup",
 ]
 
 
@@ -695,6 +698,98 @@ def oracle_lifecycle_lookup(
     return lc.get
 
 
+def lifecycle_lookup_from_artifact(
+    artifact_path: str | Path,
+    *,
+    fallback: Optional[LifecycleLookup] = None,
+) -> LifecycleLookup:
+    """Build a ``LifecycleLookup`` from the pre-built statute-name registry artifact.
+
+    The whole-corpus ``statute_name_registry.jsonl`` already carries every act's
+    ``(valid_from, valid_to)`` window — extracted by the SAME functions
+    (``_extract_title_and_date`` / ``_extract_repeal_date``) that
+    ``LifecycleCache._read`` calls per act. So consulting the artifact yields the
+    BYTE-IDENTICAL lifecycle that the per-act oracle path would compute for those
+    ids, but with ZERO per-act XML reads: the artifact is loaded once into an
+    in-memory ``id -> StatuteLifecycle`` table and every lookup is a dict hit. On
+    a full-corpus scan this removes the dominant cost of the lifecycle layer (one
+    source + one oracle read per distinct cited act).
+
+    COMPLETENESS (the no-silent-loss requirement). The artifact is built by
+    enumerating ``list_statute_ids()`` (acts that have a source/title), so it does
+    NOT carry orphan ids that exist only as a consolidated oracle (a repealed act
+    whose enacted source is not in the corpus but whose oracle still publishes a
+    ``repealedBy`` block — e.g. ``1964/591``). The per-act oracle path reaches
+    those by reading the oracle directly by id, so dropping it would silently lose
+    genuine repealed-target findings. To stay a FULL täyslaskenta, an id ABSENT
+    from the artifact is delegated to ``fallback`` (the per-act oracle lookup) when
+    one is given; the fallback's own cache makes the long tail of absent ids cheap.
+    With no fallback, an absent id is ``known=False`` (unverifiable) — never a
+    false BROKEN and never silently judged in force.
+
+    Fail-loud discipline (preserved EXACTLY). An act PRESENT in the artifact with
+    an open ``valid_to`` is "in force" (no recorded supersession), exactly as the
+    oracle path treats a missing ``repealedBy`` block. The artifact is a pure
+    function of the corpus, so a finding produced over it is the same finding the
+    oracle path would produce.
+    """
+    from lawvm.finland.references.registries.statute_name import (
+        load_statute_name_entries,
+    )
+
+    table: dict[str, StatuteLifecycle] = {}
+    for entry in load_statute_name_entries(artifact_path):
+        # First-write-wins so a stable, deterministic window is bound per id even
+        # in the (unexpected) event the artifact carries a duplicate id row.
+        table.setdefault(
+            entry.statute_id,
+            StatuteLifecycle(
+                valid_from=entry.valid_from,
+                valid_to=entry.valid_to,
+                known=True,
+            ),
+        )
+
+    _UNKNOWN = StatuteLifecycle(valid_from=None, valid_to=None, known=False)
+
+    def _lookup(statute_id: str) -> StatuteLifecycle:
+        cached = table.get(statute_id)
+        if cached is not None:
+            return cached
+        # Absent from the artifact: an orphan-oracle id (no source/title) may still
+        # have an in-corpus repeal date. Delegate to the oracle fallback so the
+        # ledger stays complete; fail-loud unverifiable when no fallback is wired.
+        if fallback is not None:
+            return fallback(statute_id)
+        return _UNKNOWN
+
+    return _lookup
+
+
+def default_lifecycle_lookup(store: "CorpusStore") -> LifecycleLookup:
+    """The lifecycle lookup the corpus scan should use: artifact + oracle fallback.
+
+    Prefers the pre-built whole-corpus registry artifact
+    (``statute_name.default_artifact_path``) — a one-shot in-memory load that
+    serves every titled act's window with no per-act XML read (the full-corpus
+    perf path) — and falls back to the per-act oracle lookup
+    (``oracle_lifecycle_lookup``, memoized) for ids the artifact does not carry
+    (orphan-oracle repealed acts), so the ledger loses NO genuine finding. When the
+    artifact is absent entirely (fresh checkout) it uses the oracle path alone, so
+    behavior is unchanged. Both paths read the SAME windows via the SAME
+    extraction; only the access cost differs, so findings are identical.
+    """
+    from lawvm.finland.references.registries.statute_name import (
+        default_artifact_path,
+    )
+
+    oracle = oracle_lifecycle_lookup(store)
+    artifact = default_artifact_path()
+    if artifact.exists():
+        return lifecycle_lookup_from_artifact(artifact, fallback=oracle)
+    return oracle
+
+
 # ===========================================================================
 # DEFAULT MODE: current-state detection (no replay)
 # ===========================================================================
@@ -1055,7 +1150,7 @@ def scan_one_statute_current_state(
     if in_scope is None:
         in_scope = _default_in_scope(store)
     if lifecycle_of is None:
-        lifecycle_of = oracle_lifecycle_lookup(store)
+        lifecycle_of = default_lifecycle_lookup(store)
 
     # CITER SCOPE GATE — fail-loud out-of-scope, never silently dropped.
     try:
@@ -1255,7 +1350,7 @@ def scan_current_state(
     if in_scope is None:
         in_scope = _default_in_scope(store)
     if lifecycle_of is None:
-        lifecycle_of = oracle_lifecycle_lookup(store)
+        lifecycle_of = default_lifecycle_lookup(store)
 
     for sid in statute_ids:
         result = scan_one_statute_current_state(

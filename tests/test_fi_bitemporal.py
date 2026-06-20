@@ -883,3 +883,128 @@ def test_lifecycle_cache_in_force_when_no_repeal_block() -> None:
     assert lc.known is True
     assert lc.valid_from == date(2010, 6, 1)
     assert lc.valid_to is None  # open = in force
+
+
+# ---------------------------------------------------------------------------
+# Artifact-backed lifecycle lookup (the full-corpus perf path): the pre-built
+# statute-name registry artifact already carries every act's (valid_from,
+# valid_to), so the lifecycle layer can serve every window from a one-shot
+# in-memory load with NO per-act XML read — while staying byte-identical and
+# fail-loud (an id absent from the artifact is unverifiable, never broken).
+# ---------------------------------------------------------------------------
+
+from lawvm.finland.legal_surface.bitemporal import (  # noqa: E402
+    lifecycle_lookup_from_artifact,
+)
+from lawvm.finland.references.registries.statute_name import (  # noqa: E402
+    StatuteNameEntry,
+    serialize_entries,
+)
+
+
+def test_artifact_lifecycle_lookup_serves_windows_from_disk(tmp_path) -> None:
+    """A repealed act's (valid_from, valid_to) is read from the artifact, no XML."""
+    path = tmp_path / "registry.jsonl"
+    serialize_entries(
+        [
+            StatuteNameEntry(
+                statute_id="2010/500",
+                canonical_title="Testilaki",
+                valid_from=date(2010, 6, 1),
+                valid_to=date(2015, 4, 1),
+            ),
+            StatuteNameEntry(
+                statute_id="2018/9",
+                canonical_title="Elava laki",
+                valid_from=date(2018, 1, 1),
+                valid_to=None,  # still in force (open)
+            ),
+        ],
+        path,
+    )
+    lookup = lifecycle_lookup_from_artifact(path)
+
+    dead = lookup("2010/500")
+    assert dead.known is True
+    assert dead.valid_from == date(2010, 6, 1)
+    assert dead.valid_to == date(2015, 4, 1)
+
+    live = lookup("2018/9")
+    assert live.known is True
+    assert live.valid_to is None  # open = in force, never guessed
+
+
+def test_artifact_lifecycle_lookup_unknown_id_is_unverifiable(tmp_path) -> None:
+    """An id absent from the artifact -> known=False (fail-loud, never broken)."""
+    path = tmp_path / "registry.jsonl"
+    serialize_entries(
+        [StatuteNameEntry(statute_id="2010/500", canonical_title="Testilaki")],
+        path,
+    )
+    lookup = lifecycle_lookup_from_artifact(path)
+    missing = lookup("9999/1")
+    assert missing.known is False
+
+
+def test_artifact_lifecycle_falls_back_for_absent_id(tmp_path) -> None:
+    """An id absent from the artifact is served by the oracle fallback (completeness).
+
+    The artifact only carries titled acts; an orphan-oracle repealed act (no
+    source/title, but an in-corpus repeal date) must still be found via the
+    fallback so the ledger loses no genuine finding.
+    """
+    path = tmp_path / "registry.jsonl"
+    serialize_entries(
+        [StatuteNameEntry(statute_id="2010/500", canonical_title="Testilaki")],
+        path,
+    )
+    fallback_table = {
+        "1964/591": StatuteLifecycle(
+            valid_from=None, valid_to=date(1987, 6, 1), known=True
+        )
+    }
+
+    def _fallback(sid: str) -> StatuteLifecycle:
+        return fallback_table.get(
+            sid, StatuteLifecycle(valid_from=None, valid_to=None, known=False)
+        )
+
+    lookup = lifecycle_lookup_from_artifact(path, fallback=_fallback)
+    # In the artifact -> served from memory (no fallback consulted).
+    assert lookup("2010/500").known is True
+    # Absent from the artifact -> oracle fallback supplies the repeal date.
+    orphan = lookup("1964/591")
+    assert orphan.known is True
+    assert orphan.valid_to == date(1987, 6, 1)
+    # Absent from BOTH -> unverifiable, never broken.
+    assert lookup("9999/1").known is False
+
+
+def test_artifact_lifecycle_drives_a_repealed_finding(tmp_path) -> None:
+    """End-to-end: the artifact lookup yields the same target_statute_repealed finding."""
+    path = tmp_path / "registry.jsonl"
+    serialize_entries(
+        [
+            StatuteNameEntry(
+                statute_id="2010/500",
+                canonical_title="Testilaki",
+                valid_from=date(2010, 1, 1),
+                valid_to=date(2015, 4, 1),
+            )
+        ],
+        path,
+    )
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
+    result = scan_one_statute_current_state(
+        "2022/711",
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=lambda sid: _TARGET_HAS_SEC5,
+        in_scope=lambda sid: True,
+        lifecycle_of=lifecycle_lookup_from_artifact(path),
+    )
+    assert result.error is None
+    assert len(result.lifecycle_findings) == 1
+    lf = result.lifecycle_findings[0]
+    assert lf.reason is BrokenReason.TARGET_STATUTE_REPEALED
+    assert lf.target.statute_id == "2010/500"
+    assert lf.target_window == (date(2010, 1, 1), date(2015, 4, 1))

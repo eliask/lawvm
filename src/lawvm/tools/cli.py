@@ -10956,6 +10956,19 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         action="store_true",
         help="emit JSON with findings-by-reason, unavailable counts, top statutes",
     )
+    broken_refs_p.add_argument(
+        "--ledger-out",
+        dest="ledger_out",
+        default="",
+        metavar="PATH",
+        help=(
+            "write the COMPLETE dangling-reference ledger (every "
+            "target_statute_repealed finding: citing statute, source span, dead "
+            "target, repeal date) to PATH as JSON (or .md alongside if PATH ends "
+            ".md). Current-state mode only. Independent of --json/--top (which "
+            "summarize); --ledger-out is the full täyslaskenta dump."
+        ),
+    )
 
     # --- surface-graph ---
     surface_graph_p = sub.add_parser(
