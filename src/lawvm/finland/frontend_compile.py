@@ -1855,7 +1855,7 @@ def _body_scope_for_section_label(
 ) -> tuple[str | None, str | None] | None:
     """Return the unique body-backed (part, chapter) scope for one section label."""
     if source_model is not None:
-        return source_model.body_section_scope(section_label)
+        return source_model.body_section_wrapper_scope(section_label)
 
     body = (
         muutos_tree

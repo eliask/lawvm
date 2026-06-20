@@ -228,6 +228,16 @@ class SourceBodyInventoryIndex:
     real_chapter_labels: frozenset[str]
 
 
+@dataclass(frozen=True, slots=True)
+class SourceBodySectionWrapperIndex:
+    """XML-wrapper section scope facts owned by the source-model adapter."""
+
+    section_scopes_by_label: dict[str, frozenset[tuple[str | None, str | None]]]
+    section_parts_by_label: dict[str, frozenset[str | None]]
+    section_chapters_by_label: dict[str, frozenset[str]]
+    section_chapters_by_label_part: dict[tuple[str, str | None], frozenset[str]]
+
+
 def _xml_localname(el: etree._Element) -> str:
     tag = el.tag
     if isinstance(tag, str):
@@ -317,6 +327,79 @@ def _source_body_inventory_index(
         first_section_chapter_by_label=first_chapter,
         pseudo_chapter_labels=frozenset(pseudo_chapters),
         real_chapter_labels=frozenset(real_chapters),
+    )
+
+
+def _source_body_section_wrapper_index(
+    muutos_tree: etree._Element,
+) -> SourceBodySectionWrapperIndex:
+    """Build source-body section scope facts from XML wrapper ancestry once."""
+    body = muutos_tree if _xml_localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
+    if body is None:
+        body = muutos_tree.find(".//body")
+    if body is None:
+        return SourceBodySectionWrapperIndex(
+            section_scopes_by_label={},
+            section_parts_by_label={},
+            section_chapters_by_label={},
+            section_chapters_by_label_part={},
+        )
+
+    def _part_label_for_element(el: etree._Element) -> str | None:
+        parent = el.getparent()
+        while parent is not None:
+            if _xml_localname(parent) == "part":
+                part_num = _xml_num_text(parent)
+                if not part_num:
+                    return None
+                return _normalize_source_part_num(part_num) or None
+            parent = parent.getparent()
+        return None
+
+    def _chapter_label_for_element(el: etree._Element) -> str | None:
+        parent = el.getparent()
+        while parent is not None:
+            if _xml_localname(parent) == "chapter":
+                chapter_num = _xml_num_text(parent)
+                if not chapter_num:
+                    return None
+                return _norm_num_token(chapter_num).removesuffix("luku") or None
+            parent = parent.getparent()
+        return None
+
+    scope_sets: dict[str, set[tuple[str | None, str | None]]] = {}
+    part_sets: dict[str, set[str | None]] = {}
+    chapter_sets: dict[str, set[str]] = {}
+    chapter_sets_by_part: dict[tuple[str, str | None], set[str]] = {}
+    for section in body.findall(".//{*}section"):
+        raw_num = _xml_num_text(section)
+        if not raw_num:
+            continue
+        section_label = _normalize_source_section_num(raw_num)
+        if not section_label:
+            continue
+        part = _part_label_for_element(section)
+        chapter = _chapter_label_for_element(section)
+        scope_sets.setdefault(section_label, set()).add((part, chapter))
+        part_sets.setdefault(section_label, set()).add(part)
+        if chapter is not None:
+            chapter_sets.setdefault(section_label, set()).add(chapter)
+            chapter_sets_by_part.setdefault((section_label, part), set()).add(chapter)
+
+    return SourceBodySectionWrapperIndex(
+        section_scopes_by_label={
+            label: frozenset(scopes) for label, scopes in scope_sets.items()
+        },
+        section_parts_by_label={
+            label: frozenset(parts) for label, parts in part_sets.items()
+        },
+        section_chapters_by_label={
+            label: frozenset(chapters) for label, chapters in chapter_sets.items()
+        },
+        section_chapters_by_label_part={
+            key: frozenset(chapters)
+            for key, chapters in chapter_sets_by_part.items()
+        },
     )
 
 
@@ -462,6 +545,11 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _body_section_wrapper_index_cache: SourceBodySectionWrapperIndex | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _coverage_units: tuple[CoverageUnit, ...] | None = field(
         default=None,
         init=False,
@@ -586,6 +674,13 @@ class AmendmentSourceModel:
                 self.observed_body_inventory()
             )
         return self._body_inventory_index_cache
+
+    def _body_section_wrapper_index(self) -> SourceBodySectionWrapperIndex:
+        if self._body_section_wrapper_index_cache is None:
+            self._body_section_wrapper_index_cache = _source_body_section_wrapper_index(
+                self.muutos_tree
+            )
+        return self._body_section_wrapper_index_cache
 
     def body_coverage_units(
         self,
@@ -717,10 +812,24 @@ class AmendmentSourceModel:
         """Return True when the observed body carries a section in any chapter."""
         wanted = _norm_num_token(target_norm)
         part = _norm_num_token(target_part) if target_part else None
-        return part in self._body_inventory_index().section_parts_by_label.get(
+        return part in self._body_section_wrapper_index().section_parts_by_label.get(
             wanted,
             frozenset(),
         )
+
+    def body_section_wrapper_scope(
+        self,
+        target_norm: str,
+    ) -> tuple[str | None, str | None] | None:
+        """Return the unique XML-wrapper body scope for a section."""
+        wanted = _norm_num_token(target_norm)
+        scopes = self._body_section_wrapper_index().section_scopes_by_label.get(
+            wanted,
+            frozenset(),
+        )
+        if len(scopes) != 1:
+            return None
+        return next(iter(scopes))
 
     def unique_body_section_chapter(
         self,
@@ -730,7 +839,7 @@ class AmendmentSourceModel:
     ) -> str | None:
         """Return the unique chapter wrapper for an observed body section."""
         wanted = _norm_num_token(target_norm)
-        index = self._body_inventory_index()
+        index = self._body_section_wrapper_index()
         if target_part is None:
             chapters = index.section_chapters_by_label.get(wanted, frozenset())
         else:
