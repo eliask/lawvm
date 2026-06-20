@@ -35,6 +35,7 @@ from lawvm.tools import export_transition_graph as etg
 from lawvm.tools.transition_graph_interlinks import (
     LawvmInterlinkTargetRow,
     SurfaceTextSpanPlacer,
+    place_surface_text_spans_many,
 )
 from lawvm.tools.transition_graph_jurisdictions import transition_graph_adapter_for_jurisdiction
 
@@ -920,6 +921,59 @@ def test_surface_text_placer_known_locator_index_matches_default_index() -> None
     assert [(date, segment.address, start) for date, segment, start in known] == [
         ("2010-01-01", "part:1/chapter:2/section:3/subsection:4", 0),
         ("2015-01-01", "part:1/chapter:2/section:3/subsection:4", 0),
+    ]
+
+
+def test_bulk_surface_text_placement_keeps_exact_token_prefilter_semantics() -> None:
+    segments_by_date = {
+        "2010-01-01": [
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="section:1",
+                segment_index=0,
+                text="x2014y alpha",
+            )
+        ],
+        "2015-01-01": [
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:1",
+                segment_index=0,
+                text="2014 alpha",
+            ),
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:2",
+                segment_index=0,
+                text="2014 alpha",
+            ),
+        ],
+        "2020-01-01": [
+            etg.RenderedTextSegment(
+                date="2020-01-01",
+                address="section:1",
+                segment_index=0,
+                text="2014 alpha",
+            )
+        ],
+    }
+
+    placements = place_surface_text_spans_many(
+        ["2014", "alpha"],
+        None,
+        segments_by_date,
+    )
+
+    assert [
+        (date, segment.address, start)
+        for date, segment, start in placements["2014"]
+    ] == [("2020-01-01", "section:1", 0)]
+    assert [
+        (date, segment.address, start)
+        for date, segment, start in placements["alpha"]
+    ] == [
+        ("2010-01-01", "section:1", 7),
+        ("2020-01-01", "section:1", 5),
     ]
 
 

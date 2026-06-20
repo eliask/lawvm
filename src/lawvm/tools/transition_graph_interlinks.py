@@ -507,23 +507,40 @@ def place_surface_text_spans_many(
     placements: dict[str, list[tuple[str, RenderedTextSegment, int]]] = {
         surface: [] for surface in surfaces
     }
+    segments_by_exact_token: dict[str, dict[str, list[RenderedTextSegment]]] = {}
     for date, segments in segments_by_date.items():
-        matches_by_surface: dict[str, list[tuple[RenderedTextSegment, int]]] = {}
         for segment in segments:
-            segment_tokens = set(_SURFACE_PREFILTER_TOKEN_RE.findall(segment.text.lower()))
-            for token in segment_tokens:
-                for surface in token_to_surfaces.get(token, ()):
+            for token in set(_SURFACE_PREFILTER_TOKEN_RE.findall(segment.text.lower())):
+                if token in token_to_surfaces:
+                    segments_by_exact_token.setdefault(token, {}).setdefault(
+                        date,
+                        [],
+                    ).append(segment)
+
+    for token, token_surfaces in token_to_surfaces.items():
+        for date, segments in segments_by_exact_token.get(token, {}).items():
+            for surface in token_surfaces:
+                matches: list[tuple[RenderedTextSegment, int]] = []
+                for segment in segments:
+                    start = segment.text.find(surface)
+                    if start >= 0:
+                        matches.append((segment, start))
+                if len(matches) == 1:
+                    segment, start = matches[0]
+                    placements[surface].append((date, segment, start))
+
+    if fallback_surfaces:
+        for date, segments in segments_by_date.items():
+            matches_by_surface: dict[str, list[tuple[RenderedTextSegment, int]]] = {}
+            for segment in segments:
+                for surface in fallback_surfaces:
                     start = segment.text.find(surface)
                     if start >= 0:
                         matches_by_surface.setdefault(surface, []).append((segment, start))
-            for surface in fallback_surfaces:
-                start = segment.text.find(surface)
-                if start >= 0:
-                    matches_by_surface.setdefault(surface, []).append((segment, start))
-        for surface, matches in matches_by_surface.items():
-            if len(matches) == 1:
-                segment, start = matches[0]
-                placements[surface].append((date, segment, start))
+            for surface, matches in matches_by_surface.items():
+                if len(matches) == 1:
+                    segment, start = matches[0]
+                    placements[surface].append((date, segment, start))
     return placements
 
 
