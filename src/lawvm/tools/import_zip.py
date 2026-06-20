@@ -66,6 +66,11 @@ def _open_import_archive(dest: Path, *, dry_run: bool) -> _ClosableArchive:
         if dest.exists():
             return Farchive(dest, readonly=True)
         return _MissingDryRunArchive()
+    if not dest.exists() and dest.suffix != ".farchive":
+        raise ValueError(
+            f"refusing to create extensionless farchive destination: {dest}; "
+            "use a .farchive path"
+        )
     return Farchive(dest)
 
 
