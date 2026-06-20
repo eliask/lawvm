@@ -9,9 +9,24 @@ For the full current spec map, start with [SPEC_INDEX.md](SPEC_INDEX.md).
 LawVM is a compiler from hostile legal delta sources to a proof-carrying
 temporal legal-state machine.
 
+## Vocabulary: planes, waists, phases, seams
+
+These four words describe the same pipeline at different granularities. The
+normative enumeration of all of them is [LAWVM_PIPELINE_CONTRACT.md](LAWVM_PIPELINE_CONTRACT.md);
+this section is the bridge between the coarse framing used here and in
+[THEORY_OF_LAWVM.md](THEORY_OF_LAWVM.md) and the fine framing the contract pins.
+
+- **Planes** = the *kinds of truth* a value carries (its type discipline).
+- **Waists** = the *narrow typed boundaries* between stages (the canonical
+  input/output types).
+- **Phases** = the *verb sequence* the compiler runs (what it does).
+- **Seams** = specific plane/waist crossings targeted for conversion to the
+  `StageResult` shape (the active enforcement work; see
+  [ARCHITECTURE_LEAK_LEDGER.md](ARCHITECTURE_LEAK_LEDGER.md)).
+
 ## Current Public Planes
 
-LawVM has two interleaved planes:
+The load-bearing axis is two interleaved planes (this framing and THEORY_OF_LAWVM.md §6):
 
 - **Semantic plane:** source bundle -> clause/effect surface -> payload surface
   -> elaborated intent -> canonical operations/effects -> timelines ->
@@ -23,16 +38,49 @@ The semantic output without the epistemic output is not enough. A replay result
 must be able to explain which source facts support it and where uncertainty or
 non-commensurability remains.
 
+These two planes **refine into the six type-distinct planes** that the pipeline
+contract pins ([LAWVM_PIPELINE_CONTRACT.md](LAWVM_PIPELINE_CONTRACT.md) §3, [AGENTS.md](../AGENTS.md) §2.10), which is the
+canonical set: the **semantic** plane splits into **source / surface / legal-state**
+(so that re-deriving meaning from a lossier representation after a typed owner
+exists is a type error — no representation regression); the **epistemic** plane
+is **evidence/proof**; and **projection** and **overlay/enrichment** are promoted
+to first-class planes because each carries its own invariant (a projection must be
+re-derivable from a committed dossier; an external provider may help LawVM see more
+but never become the reason it claims to know — the determinism firewall). The
+central invariant — evidence/overlay never silently becomes legal-state authority —
+governs exactly the crossings between the epistemic/overlay planes and the
+semantic/legal-state planes.
+
 ## Hard Waists
 
-- **Clause surface:** typed representation of operative amendment language.
-- **Payload surface:** source-local amendment body shape before live-state
-  elaboration.
-- **Canonical execution:** typed operation/effect contract consumed by replay.
-- **Temporal graph/timeline:** executable state over time, including PIT
-  materialization.
-- **Authority/branch axis:** enacted law remains the default materialization
-  context; draft/proposal/consultation claims live on explicit branches.
+The canonical waist enumeration is the ten-row table in
+[LAWVM_PIPELINE_CONTRACT.md](LAWVM_PIPELINE_CONTRACT.md) §2 (source_identity, token_structure,
+surface_syntax, surface_families, canonical_op, apply_receipt,
+timeline_materialization, certificate, projection, overlay), each with a canonical
+input type, output type, coverage certificate, and authority status. The coarse
+historical waists below remain a useful reading lens and map onto that table:
+
+- **Clause surface** (-> surface_syntax / surface_families): typed representation
+  of operative amendment language.
+- **Payload surface** (-> canonical_op input): source-local amendment body shape
+  before live-state elaboration.
+- **Canonical execution** (-> canonical_op / apply_receipt): typed operation/effect
+  contract consumed by replay.
+- **Temporal graph/timeline** (-> timeline_materialization): executable state over
+  time, including PIT materialization.
+- **Authority/branch axis** (the authority *surface* carried across waists, not a
+  waist itself): enacted law remains the default materialization context;
+  draft/proposal/consultation claims live on explicit branches.
+
+The fine waists the contract adds beyond this lens — **source_identity**,
+**token_structure**, **certificate**, **projection**, **overlay** — are exactly the
+boundaries where silent drops/guesses were found (see the leak ledger), which is
+why they were promoted to named waists.
+
+The **phases** in [AGENTS.md](../AGENTS.md) §3.1 (Acquire -> Clean -> Parse -> Extract -> Normalize
+-> Elaborate -> Lower -> Replay -> Compile-timelines -> Adjudicate -> Emit) are the
+verb sequence; the waists are the typed nouns produced between those phases. One
+pipeline, two views.
 
 The target direction is that replay applies typed contracts and does not
 rediscover legal meaning from raw source text.

@@ -11,7 +11,7 @@ Stages are **forward-only**: a later stage MAY cite earlier/lower representation
 
 Every transform is **total in the accounting sense**: input material is accepted, rejected, residualized, or marked benign — never silently dropped.
 
-The six planes (legal-state, surface-fact, evidence, authority, projection, overlay) are **type-distinct**. Evidence and overlays do not authorize replay unless a separate execution-authorization/proof path promotes them.
+The six planes (source, surface, legal-state, evidence, projection, overlay — enumerated in §3) are **type-distinct**. Authority is not a plane but a firewall surface carried across them (§7). Evidence and overlays do not authorize replay unless a separate execution-authorization/proof path promotes them.
 
 All public outputs are **projections from checkable dossiers**. Clean claims are forbidden when scoped blocking residue exists. The checker contract — not the generator's confidence — is the public trust boundary.
 

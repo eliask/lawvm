@@ -222,6 +222,8 @@ LawVM must live on both.
 
 That is not optional. If the epistemic plane is weak, the system may still produce text, but it cannot justify that text under high-assurance conditions.
 
+These two planes are the load-bearing axis. For enforcement they refine into the six type-distinct planes of `LAWVM_PIPELINE_CONTRACT.md` §3 (semantic → source/surface/legal-state; epistemic → evidence; plus projection and overlay as first-class planes with their own invariants). `LAWVM_ARCHITECTURE_INDEX.md` holds the bridge between the two framings.
+
 ---
 
 ## 7. The hard waists
