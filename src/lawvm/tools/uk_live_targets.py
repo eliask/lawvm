@@ -171,7 +171,7 @@ def build_live_target_index_rows(
 ) -> tuple[dict[str, Any], ...]:
     from farchive import Farchive
 
-    archive = Farchive(db_path)
+    archive = Farchive(db_path, readonly=True)
     rows: list[dict[str, Any]] = []
     try:
         for statute_id in statute_ids:

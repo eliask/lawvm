@@ -658,7 +658,7 @@ def _emit_witness_attribution_json(statute_id: str, *, db_path: Path) -> None:
     )
     from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
 
-    with Farchive(db_path) as archive:
+    with Farchive(db_path, readonly=True) as archive:
         effect_rows = load_effects_for_statute_from_archive(statute_id, archive)
         pipeline = uk_replay_module.UKReplayPipeline(_REPO_ROOT)
         effect_diagnostics: list[dict[str, Any]] = []
@@ -797,7 +797,7 @@ def main(args: "argparse.Namespace") -> None:
             f"authority={authority_mode}"
         )
 
-    with Farchive(db_path) as archive:
+    with Farchive(db_path, readonly=not fetch_missing) as archive:
         if fetch_missing:
             from lawvm.uk_legislation.uk_prefetch import fetch_missing_for_statute
 

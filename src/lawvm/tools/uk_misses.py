@@ -427,7 +427,7 @@ def main(args: "argparse.Namespace") -> None:
     lowering_rejections: list[dict[str, Any]] = []
     authority_rejections: list[dict[str, Any]] = []
 
-    with Farchive(db_path) as archive:
+    with Farchive(db_path, readonly=True) as archive:
         # 1. Load enacted base
         enacted_url = _archive_url_for_statute(statute_id, pit_date=None, enacted=True)
         base_bytes = archive.get(enacted_url)
