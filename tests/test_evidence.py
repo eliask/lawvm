@@ -37,6 +37,7 @@ from lawvm.tools.evidence import (
     build_oracle_proof_bundle,
     main,
     _review_bundles,
+    _uk_oracle_corpus_statute_ids,
 )
 from lawvm.tools.evidence_claims import build_section_claims_typed
 from lawvm.tools.evidence_statute_rules import build_proof_claims_typed
@@ -67,6 +68,19 @@ def test_finlex_section_url_uses_current_consolidated_scheme() -> None:
         _finlex_section_url("1999/132")
         == "https://www.finlex.fi/fi/lainsaadanto/1999/132"
     )
+
+
+def test_uk_oracle_corpus_missing_archive_does_not_create_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    missing = tmp_path / "unused"
+    monkeypatch.setattr("lawvm.tools.evidence._DEFAULT_UK_FARCHIVE", missing)
+
+    with pytest.raises(RuntimeError, match="UK archive not found"):
+        _uk_oracle_corpus_statute_ids()
+
+    assert not missing.exists()
 
 
 def _fixture_compile_metadata():

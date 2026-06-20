@@ -225,6 +225,19 @@ def test_resolve_explicit_statutes() -> None:
     assert uksc.resolve_uk_statute_ids(_Args()) == ["ukpga/1961/33", "asc/2020/1"]
 
 
+def test_build_uk_store_missing_archive_does_not_create_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "unused"
+    monkeypatch.setattr(uksc, "_DEFAULT_DB", missing)
+
+    with pytest.raises(FileNotFoundError):
+        uksc.build_uk_store()
+
+    assert not missing.exists()
+
+
 # ---------------------------------------------------------------------------
 # End-to-end projector (archive-backed; skipped without the UK Farchive)
 # ---------------------------------------------------------------------------

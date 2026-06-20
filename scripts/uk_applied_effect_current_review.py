@@ -1361,7 +1361,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from farchive import Farchive
 
-    archive = Farchive(args.db)
+    if not args.db.exists():
+        raise SystemExit(f"archive not found: {args.db}")
+    archive = Farchive(args.db, readonly=True)
     try:
         rows = build_review_rows(
             statute_ids,

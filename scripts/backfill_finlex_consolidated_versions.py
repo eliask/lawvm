@@ -85,7 +85,9 @@ def _iter_legacy_main_locators(archive: Farchive) -> Iterable[str]:
 
 
 def run(*, db: Path, dry_run: bool = False, verbose: bool = False) -> BackfillStats:
-    archive = Farchive(db)
+    if not db.exists():
+        raise FileNotFoundError(f"farchive not found: {db}")
+    archive = Farchive(db, readonly=dry_run)
     stats = BackfillStats()
     versions_by_family: dict[str, str] = {}
     written_locators: set[str] = set()
