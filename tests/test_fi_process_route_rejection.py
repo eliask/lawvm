@@ -49,6 +49,7 @@ def _route_context(
         lo_ops_out=None,
         vts_skipped_targets=[],
         commencement_expiry_override_notes=[],
+        effect_relation_signals=[],
         record_finding=record_finding,
         replay_print=prints.append,
     )
@@ -97,6 +98,13 @@ def test_route_rejection_pending_amendment_carries_target_and_rule_metadata() ->
     assert detail["strict_disposition"] == "block"
     assert detail["quirks_disposition"] == "skip_with_finding"
     assert findings[1]["detail"]["target_amendment_id"] == "2019/50"
+    assert len(ctx.effect_relation_signals) == 1
+    signal = ctx.effect_relation_signals[0]
+    assert signal.signal_kind == "pending_amendment"
+    assert signal.relation_kind == "modifies_effect"
+    assert signal.source_statute == "2020/100"
+    assert signal.target_statute == "2019/50"
+    assert signal.resolved is False
 
 
 def test_route_rejection_delegated_authority_has_stable_rule_metadata() -> None:
@@ -139,6 +147,13 @@ def test_route_rejection_meta_repeal_has_stable_rule_metadata() -> None:
     assert detail["quirks_disposition"] == "skip_with_finding"
     assert findings[0]["detail"]["target_amendment_id"] == "2010/123"
     assert findings[0]["role"] == "observation"
+    assert len(ctx.effect_relation_signals) == 1
+    signal = ctx.effect_relation_signals[0]
+    assert signal.signal_kind == "meta_repeal"
+    assert signal.relation_kind == "repeals_effect"
+    assert signal.source_statute == "2020/100"
+    assert signal.target_statute == "2010/123"
+    assert signal.resolved is True
 
 
 def test_route_rejection_title_targets_other_statute_has_stable_rule_metadata() -> None:

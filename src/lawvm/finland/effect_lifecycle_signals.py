@@ -8,6 +8,8 @@ from typing import Iterable, Literal
 from lawvm.core.ir import LegalAddress
 
 EffectLifecycleOverrideScopeKind = Literal["instrument", "section", "address", "mixed"]
+EffectRelationSignalKind = Literal["pending_amendment", "meta_repeal"]
+EffectRelationSignalRelationKind = Literal["modifies_effect", "repeals_effect"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,4 +154,121 @@ class EffectLifecycleOverride:
             row["effective"] = self.effective
         if self.expiry:
             row["expiry"] = self.expiry
+        return row
+
+
+@dataclass(frozen=True, slots=True)
+class EffectRelationSignal:
+    """Typed source instruction relating one amendment instrument/effect to another."""
+
+    signal_kind: EffectRelationSignalKind
+    relation_kind: EffectRelationSignalRelationKind
+    source_statute: str
+    target_statute: str = ""
+    target_title: str = ""
+    base_parent_id: str = ""
+    route_reason: str = ""
+    message: str = ""
+    source_finding: str = ""
+    resolved: bool = False
+
+    def __post_init__(self) -> None:
+        signal_kind = str(self.signal_kind).strip()
+        relation_kind = str(self.relation_kind).strip()
+        source_statute = str(self.source_statute).strip()
+        target_statute = str(self.target_statute).strip()
+        target_title = str(self.target_title).strip()
+        base_parent_id = str(self.base_parent_id).strip()
+        route_reason = str(self.route_reason).strip()
+        message = str(self.message).strip()
+        source_finding = str(self.source_finding).strip()
+        if signal_kind not in {"pending_amendment", "meta_repeal"}:
+            raise ValueError(f"unknown effect relation signal kind: {self.signal_kind!r}")
+        if relation_kind not in {"modifies_effect", "repeals_effect"}:
+            raise ValueError(f"unknown effect relation signal relation kind: {self.relation_kind!r}")
+        if not source_statute:
+            raise ValueError("effect relation signal source_statute must be non-empty")
+        if signal_kind == "pending_amendment" and relation_kind != "modifies_effect":
+            raise ValueError("pending amendment relation signal must modify an effect")
+        if signal_kind == "meta_repeal" and relation_kind != "repeals_effect":
+            raise ValueError("meta-repeal relation signal must repeal an effect")
+        if not isinstance(self.resolved, bool):
+            raise ValueError("effect relation signal resolved must be a bool")
+        if self.resolved and not target_statute:
+            raise ValueError("resolved effect relation signal requires target_statute")
+        object.__setattr__(self, "signal_kind", signal_kind)
+        object.__setattr__(self, "relation_kind", relation_kind)
+        object.__setattr__(self, "source_statute", source_statute)
+        object.__setattr__(self, "target_statute", target_statute)
+        object.__setattr__(self, "target_title", target_title)
+        object.__setattr__(self, "base_parent_id", base_parent_id)
+        object.__setattr__(self, "route_reason", route_reason)
+        object.__setattr__(self, "message", message)
+        object.__setattr__(self, "source_finding", source_finding)
+
+    @classmethod
+    def pending_amendment(
+        cls,
+        *,
+        source_statute: str,
+        target_statute: str,
+        target_title: str = "",
+        base_parent_id: str = "",
+        message: str = "",
+        source_finding: str = "",
+        resolved: bool,
+    ) -> "EffectRelationSignal":
+        return cls(
+            signal_kind="pending_amendment",
+            relation_kind="modifies_effect",
+            source_statute=source_statute,
+            target_statute=target_statute,
+            target_title=target_title,
+            base_parent_id=base_parent_id,
+            message=message,
+            source_finding=source_finding,
+            resolved=resolved,
+        )
+
+    @classmethod
+    def meta_repeal(
+        cls,
+        *,
+        source_statute: str,
+        target_statute: str,
+        route_reason: str = "",
+        message: str = "",
+        source_finding: str = "",
+        resolved: bool,
+    ) -> "EffectRelationSignal":
+        return cls(
+            signal_kind="meta_repeal",
+            relation_kind="repeals_effect",
+            source_statute=source_statute,
+            target_statute=target_statute,
+            route_reason=route_reason,
+            message=message,
+            source_finding=source_finding,
+            resolved=resolved,
+        )
+
+    def to_meta_row(self) -> dict[str, object]:
+        row: dict[str, object] = {
+            "signal_kind": self.signal_kind,
+            "relation_kind": self.relation_kind,
+            "source_statute": self.source_statute,
+            "resolved": self.resolved,
+        }
+        if self.target_statute:
+            row["target_amendment_id"] = self.target_statute
+        if self.target_title:
+            row["target_amendment_title"] = self.target_title
+        if self.base_parent_id:
+            row["base_parent_id"] = self.base_parent_id
+        if self.route_reason:
+            row["route_reason"] = self.route_reason
+        if self.message:
+            row["message"] = self.message
+        if self.source_finding:
+            row["source_finding"] = self.source_finding
         return row

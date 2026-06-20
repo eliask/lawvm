@@ -11,7 +11,7 @@ from lawvm.core.compile_result import SourcePathology
 from lawvm.core.phase_result import Finding
 from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.corpus import _get_corpus_store
-from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.process_call import ResolvedProcessAmendmentCall
@@ -41,6 +41,7 @@ class ProcessRuntimeContext:
     compat_sparse_slot_bindings: list[dict[str, object]]
     compat_sparse_leftovers: list[dict[str, object]]
     commencement_expiry_override_notes: list[EffectLifecycleOverride]
+    effect_relation_signals: list[EffectRelationSignal]
     vts_skipped_targets: list[VtsSkippedTarget]
     finding_recorder: ProcessFindingRecorder
     record_process_finding: Callable[..., Finding]
@@ -95,6 +96,7 @@ def build_process_runtime(process_call: ResolvedProcessAmendmentCall) -> Process
         compat_sparse_slot_bindings=signals.sparse_slot_bindings,
         compat_sparse_leftovers=signals.sparse_leftovers,
         commencement_expiry_override_notes=signals.commencement_expiry_override_notes,
+        effect_relation_signals=signals.effect_relation_signals,
         vts_skipped_targets=signals.vts_skipped_targets,
         finding_recorder=finding_recorder,
         record_process_finding=finding_recorder.record,

@@ -16,6 +16,7 @@ from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.finland.effect_lifecycle_signals import (
     EffectLifecycleOverride,
     EffectLifecycleOverrideScope,
+    EffectRelationSignal,
 )
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.migration_ledger import MigrationLedger
@@ -142,6 +143,36 @@ def test_finland_pending_amendment_unresolved_emits_relation_and_nonexecuting_li
     assert lifecycle_events[0].executable is False
 
 
+def test_finland_pending_amendment_relation_signal_is_authority_input() -> None:
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(),
+        temporal_events=(),
+        findings=(),
+        relation_signals=(
+            EffectRelationSignal.pending_amendment(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                target_title="Target amendment",
+                base_parent_id="1990/1",
+                message="pending target unresolved",
+                source_finding="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
+                resolved=False,
+            ),
+        ),
+    )
+
+    assert source_effects == ()
+    assert len(relations) == 1
+    assert relations[0].kind == "modifies_effect"
+    assert relations[0].target_instrument is not None
+    assert relations[0].target_instrument.instrument_id == "2020/1"
+    assert relations[0].detail["source_finding"] == "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED"
+    assert len(lifecycle_events) == 1
+    assert lifecycle_events[0].kind == "unresolved_effect_target"
+    assert lifecycle_events[0].detail["projection"] == "effect_relation_signal"
+
+
 def test_finland_meta_repeal_recorded_emits_repeal_relation() -> None:
     finding = Finding(
         kind="APPLY.META_REPEAL_EFFECT_RECORDED",
@@ -167,6 +198,32 @@ def test_finland_meta_repeal_recorded_emits_repeal_relation() -> None:
     assert relations[0].kind == "repeals_effect"
     assert relations[0].target_instrument is not None
     assert relations[0].target_instrument.instrument_id == "2020/1"
+    assert lifecycle_events == ()
+
+
+def test_finland_meta_repeal_relation_signal_is_authority_input() -> None:
+    _source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(),
+        temporal_events=(),
+        findings=(),
+        relation_signals=(
+            EffectRelationSignal.meta_repeal(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                route_reason="citation_mismatch_skip",
+                message="meta repeal recorded",
+                source_finding="APPLY.META_REPEAL_EFFECT_RECORDED",
+                resolved=True,
+            ),
+        ),
+    )
+
+    assert len(relations) == 1
+    assert relations[0].kind == "repeals_effect"
+    assert relations[0].target_instrument is not None
+    assert relations[0].target_instrument.instrument_id == "2020/1"
+    assert relations[0].detail["source_finding"] == "APPLY.META_REPEAL_EFFECT_RECORDED"
     assert lifecycle_events == ()
 
 
@@ -399,20 +456,16 @@ def test_process_result_builder_preserves_effect_lifecycle_side_channels() -> No
     assert result.effect_lifecycle_events == (lifecycle,)
 
 
-def test_process_result_builder_projects_pending_relation_from_findings() -> None:
+def test_process_result_builder_projects_pending_relation_from_typed_signal() -> None:
     buffers = ProcessSignalBuffers.empty()
-    buffers.process_findings.append(
-        Finding(
-            kind="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
-            role="observation",
-            stage="process_muutoslaki",
+    buffers.effect_relation_signals.append(
+        EffectRelationSignal.pending_amendment(
             source_statute="2022/708",
-            blocking=False,
-            detail={
-                "target_amendment_id": "2020/1233",
-                "target_amendment_title": "Laki valmiuslain 109 §:n muuttamisesta",
-                "base_parent_id": "2011/1552",
-            },
+            target_statute="2020/1233",
+            target_title="Laki valmiuslain 109 §:n muuttamisesta",
+            base_parent_id="2011/1552",
+            source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
+            resolved=True,
         )
     )
     builder = ProcessResultBuilder(

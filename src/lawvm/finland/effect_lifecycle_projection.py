@@ -16,7 +16,7 @@ from lawvm.core.effect_lifecycle import (
 from lawvm.core.ir import LegalOperation
 from lawvm.core.phase_result import Finding
 from lawvm.core.temporal import TemporalEvent
-from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
 
 
 def _typed_override_rows(
@@ -26,6 +26,17 @@ def _typed_override_rows(
     for row in lifecycle_overrides:
         if not isinstance(row, EffectLifecycleOverride):
             raise TypeError("lifecycle_overrides must contain EffectLifecycleOverride rows")
+        rows.append(row)
+    return tuple(rows)
+
+
+def _typed_relation_signals(
+    relation_signals: Sequence[EffectRelationSignal],
+) -> tuple[EffectRelationSignal, ...]:
+    rows: list[EffectRelationSignal] = []
+    for row in relation_signals:
+        if not isinstance(row, EffectRelationSignal):
+            raise TypeError("relation_signals must contain EffectRelationSignal rows")
         rows.append(row)
     return tuple(rows)
 
@@ -428,6 +439,47 @@ def _pending_relations_from_findings(findings: Sequence[Finding]) -> tuple[Effec
     return tuple(relations)
 
 
+def _relation_from_signal(signal: EffectRelationSignal) -> EffectRelation | None:
+    witness = _source_witness(
+        source_statute=signal.source_statute,
+        path=("routing",),
+        rule_id=(
+            "fi.pending_amendment_of_parent_effect_relation"
+            if signal.signal_kind == "pending_amendment"
+            else "fi.meta_repeal_effect_relation"
+        ),
+        text_excerpt=signal.message,
+    )
+    if witness is None:
+        return None
+    target_instrument = (
+        SourceInstrumentRef(instrument_id=signal.target_statute, title=signal.target_title)
+        if signal.target_statute
+        else None
+    )
+    if target_instrument is None:
+        return None
+    return EffectRelation(
+        relation_id=_relation_id(signal.source_statute, signal.signal_kind, signal.target_statute),
+        kind=signal.relation_kind,
+        source_provision=witness,
+        target_instrument=target_instrument,
+        detail=signal.to_meta_row(),
+    )
+
+
+def _relations_from_signals(relation_signals: Sequence[EffectRelationSignal]) -> tuple[EffectRelation, ...]:
+    relations: list[EffectRelation] = []
+    seen: set[str] = set()
+    for signal in _typed_relation_signals(relation_signals):
+        relation = _relation_from_signal(signal)
+        if relation is None or relation.relation_id in seen:
+            continue
+        seen.add(relation.relation_id)
+        relations.append(relation)
+    return tuple(relations)
+
+
 def _meta_repeal_relation_from_finding(finding: Finding) -> EffectRelation | None:
     detail = dict(finding.detail)
     source_statute = str(finding.source_statute or "")
@@ -496,6 +548,38 @@ def _unresolved_lifecycle_from_pending_findings(
     return tuple(events)
 
 
+def _unresolved_lifecycle_from_relation_signals(
+    relation_signals: Sequence[EffectRelationSignal],
+) -> tuple[EffectLifecycleEvent, ...]:
+    events: list[EffectLifecycleEvent] = []
+    seen: set[str] = set()
+    for signal in _typed_relation_signals(relation_signals):
+        if signal.resolved:
+            continue
+        relation = _relation_from_signal(signal)
+        if relation is None:
+            continue
+        lifecycle_id = _lifecycle_id(signal.source_statute, signal.signal_kind, "unresolved")
+        if lifecycle_id in seen:
+            continue
+        seen.add(lifecycle_id)
+        events.append(
+            EffectLifecycleEvent(
+                lifecycle_event_id=lifecycle_id,
+                kind="unresolved_effect_target",
+                source_provision=relation.source_provision,
+                relation=relation,
+                executable=False,
+                detail={
+                    "projection": "effect_relation_signal",
+                    "intended_relation_kind": signal.relation_kind,
+                    **signal.to_meta_row(),
+                },
+            )
+        )
+    return tuple(events)
+
+
 def _unresolved_lifecycle_from_meta_repeal_findings(
     findings: Sequence[Finding],
 ) -> tuple[EffectLifecycleEvent, ...]:
@@ -536,6 +620,7 @@ def build_finland_effect_lifecycle(
     temporal_events: Sequence[TemporalEvent],
     findings: Sequence[Finding],
     lifecycle_overrides: Sequence[EffectLifecycleOverride] = (),
+    relation_signals: Sequence[EffectRelationSignal] = (),
     known_source_effects: Sequence[EffectRef] = (),
 ) -> tuple[tuple[EffectRef, ...], tuple[EffectRelation, ...], tuple[EffectLifecycleEvent, ...]]:
     """Build Finland's current effect-lifecycle evidence projection.
@@ -561,6 +646,7 @@ def build_finland_effect_lifecycle(
             target_statute=target_statute,
             source_effects=source_effect_context,
         )
+        + _relations_from_signals(relation_signals)
         + _pending_relations_from_findings(findings)
         + _meta_repeal_relations_from_findings(findings)
     )
@@ -571,6 +657,7 @@ def build_finland_effect_lifecycle(
             target_statute=target_statute,
             source_effects=source_effect_context,
         )
+        + _unresolved_lifecycle_from_relation_signals(relation_signals)
         + _unresolved_lifecycle_from_pending_findings(findings)
         + _unresolved_lifecycle_from_meta_repeal_findings(findings)
     )

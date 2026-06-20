@@ -14,6 +14,7 @@ from lawvm.finland.acquisition import (
     build_amendment_acquisition_result,
 )
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
+from lawvm.finland.effect_lifecycle_signals import EffectRelationSignal
 from lawvm.finland.process_findings import ProcessFindingRecorder
 from lawvm.finland.source_model import AmendmentSourceModel
 
@@ -44,6 +45,7 @@ class ProcessAcquisitionContext:
     xml_bytes: bytes
     strict_profile: StrictProfile | None
     processed_amendment_titles: dict[str, str]
+    effect_relation_signals: list[EffectRelationSignal]
     finding_recorder: ProcessFindingRecorder
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
@@ -189,6 +191,17 @@ class ProcessAcquisitionContext:
             parent_issue_date="",
             lacks_operative_structure=lacks_operative_structure,
             operative_tags=operative_tags,
+        )
+        self.effect_relation_signals.append(
+            EffectRelationSignal.pending_amendment(
+                source_statute=self.amendment_id,
+                target_statute=pending_target_mid,
+                target_title=pending_target_title,
+                base_parent_id=self.parent_id,
+                message="Pending amendment-of-amendment composed onto already-processed target amendment.",
+                source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
+                resolved=True,
+            )
         )
         self.record_finding(
             kind="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",

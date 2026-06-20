@@ -24,6 +24,7 @@ from lawvm.finland.citation_routing import (
 from lawvm.finland.effect_lifecycle_signals import (
     EffectLifecycleOverride,
     EffectLifecycleOverrideScope,
+    EffectRelationSignal,
 )
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.source_model import AmendmentSourceModel
@@ -151,6 +152,7 @@ class ProcessRouteRejectionContext:
     lo_ops_out: Optional[List[_LegalOperation]]
     vts_skipped_targets: list[VtsSkippedTarget]
     commencement_expiry_override_notes: list[EffectLifecycleOverride]
+    effect_relation_signals: list[EffectRelationSignal]
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
 
@@ -238,6 +240,19 @@ class ProcessRouteRejectionContext:
                 f"  [{self.amendment_id}] SKIPPED — pending amendment of parent recognized "
                 f"but not yet composed into {self.parent_id}{target_suffix}"
             )
+            self.effect_relation_signals.append(
+                EffectRelationSignal.pending_amendment(
+                    source_statute=self.amendment_id,
+                    target_statute=self.route_target_amendment_id,
+                    base_parent_id=self.parent_id,
+                    message=(
+                        "Pending amendment-of-amendment target could not be resolved "
+                        "to a prior source-backed effect."
+                    ),
+                    source_finding="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
+                    resolved=False,
+                )
+            )
             self.record_finding(
                 kind="APPLY.SOURCE_INCOMPLETE",
                 message="Amendment skipped: pending amendment-of-amendment target not yet composed.",
@@ -277,6 +292,16 @@ class ProcessRouteRejectionContext:
             cited_ids = self._cited_statute_ids()
             if cited_ids:
                 for cited_id in cited_ids:
+                    self.effect_relation_signals.append(
+                        EffectRelationSignal.meta_repeal(
+                            source_statute=self.amendment_id,
+                            target_statute=cited_id,
+                            route_reason=disposition.route_reason,
+                            message="Meta-repeal of prior amending instrument recorded as lifecycle evidence.",
+                            source_finding="APPLY.META_REPEAL_EFFECT_RECORDED",
+                            resolved=True,
+                        )
+                    )
                     self.record_finding(
                         kind="APPLY.META_REPEAL_EFFECT_RECORDED",
                         message="Meta-repeal of prior amending instrument recorded as lifecycle evidence.",

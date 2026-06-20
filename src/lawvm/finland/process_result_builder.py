@@ -25,7 +25,7 @@ from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     build_apply_mutation_invariant_reports,
 )
-from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import FailedOp
@@ -60,6 +60,7 @@ class ProcessSignalBuffers:
     sparse_slot_bindings: list[dict[str, object]]
     sparse_leftovers: list[dict[str, object]]
     commencement_expiry_override_notes: list[EffectLifecycleOverride]
+    effect_relation_signals: list[EffectRelationSignal]
     vts_skipped_targets: list[VtsSkippedTarget]
 
     @classmethod
@@ -76,6 +77,7 @@ class ProcessSignalBuffers:
             sparse_slot_bindings=[],
             sparse_leftovers=[],
             commencement_expiry_override_notes=[],
+            effect_relation_signals=[],
             vts_skipped_targets=[],
         )
 
@@ -224,6 +226,7 @@ class ProcessResultBuilder:
             temporal_events=(),
             findings=tuple(findings),
             lifecycle_overrides=tuple(self.buffers.commencement_expiry_override_notes),
+            relation_signals=tuple(self.buffers.effect_relation_signals),
             known_source_effects=tuple(self.buffers.source_effects),
         )
         existing_relations = {relation.relation_id for relation in self.buffers.effect_relations}
