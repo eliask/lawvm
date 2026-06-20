@@ -4,7 +4,7 @@ import copy
 import datetime as dt
 from contextlib import redirect_stdout
 from io import StringIO
-from typing import cast
+from typing import Any, cast
 
 import lxml.etree as etree
 import pytest
@@ -20,6 +20,7 @@ from lawvm.core.ir import ProvisionVersion
 from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
     EffectRef,
+    EffectRelation,
     SourceInstrumentRef,
     SourceProvisionRef,
 )
@@ -4210,6 +4211,89 @@ def test_build_replay_products_accepts_lifecycle_events_for_materialization() ->
     active = products.timelines[LegalAddress(path=(("section", "1"),))].versions[-1]
     assert active.effective == "2010-01-01"
     assert products.materialized_state.ir.children[0].text == "Updated"
+
+
+def test_replay_products_require_typed_effect_graph_records() -> None:
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+
+    with pytest.raises(TypeError, match="source_effects"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            source_effects=cast(Any, ("effect:1",)),
+        )
+    with pytest.raises(TypeError, match="effect_relations"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            effect_relations=cast(Any, ("relation:1",)),
+        )
+    with pytest.raises(TypeError, match="effect_lifecycle_events"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            effect_lifecycle_events=cast(Any, ("lifecycle:1",)),
+        )
+
+
+def test_replay_products_reject_duplicate_effect_graph_ids() -> None:
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect_a = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    effect_b = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    target_effect = EffectRef(effect_id="effect:target", source_instrument=instrument)
+    relation_a = EffectRelation(
+        relation_id="relation:1",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    relation_b = EffectRelation(
+        relation_id="relation:1",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    lifecycle_a = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        relation=relation_a,
+        executable=False,
+    )
+    lifecycle_b = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        relation=relation_b,
+        executable=False,
+    )
+
+    with pytest.raises(ValueError, match="duplicate effect_id"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            source_effects=(effect_a, effect_b),
+        )
+    with pytest.raises(ValueError, match="duplicate relation_id"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            effect_relations=(relation_a, relation_b),
+        )
+    with pytest.raises(ValueError, match="duplicate lifecycle_event_id"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            effect_lifecycle_events=(lifecycle_a, lifecycle_b),
+        )
 
 
 def test_build_replay_products_requires_explicit_effective_date_for_derived_temporal_events() -> None:

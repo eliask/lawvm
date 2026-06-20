@@ -146,6 +146,42 @@ class ReplayProducts:
     fold_timeline_backfills: tuple["FoldTimelineBackfillRecord", ...] = ()
     timeline_version_dedupes: tuple["TimelineVersionDedupeRecord", ...] = ()
 
+    def __post_init__(self) -> None:
+        source_effects = tuple(self.source_effects)
+        effect_relations = tuple(self.effect_relations)
+        effect_lifecycle_events = tuple(self.effect_lifecycle_events)
+        if not all(isinstance(effect, EffectRef) for effect in source_effects):
+            raise TypeError("ReplayProducts.source_effects must contain EffectRef records")
+        if not all(isinstance(relation, EffectRelation) for relation in effect_relations):
+            raise TypeError("ReplayProducts.effect_relations must contain EffectRelation records")
+        if not all(isinstance(event, EffectLifecycleEvent) for event in effect_lifecycle_events):
+            raise TypeError(
+                "ReplayProducts.effect_lifecycle_events must contain EffectLifecycleEvent records"
+            )
+        seen_effect_ids: set[str] = set()
+        for effect in source_effects:
+            if effect.effect_id in seen_effect_ids:
+                raise ValueError(f"ReplayProducts.source_effects duplicate effect_id: {effect.effect_id!r}")
+            seen_effect_ids.add(effect.effect_id)
+        seen_relation_ids: set[str] = set()
+        for relation in effect_relations:
+            if relation.relation_id in seen_relation_ids:
+                raise ValueError(
+                    f"ReplayProducts.effect_relations duplicate relation_id: {relation.relation_id!r}"
+                )
+            seen_relation_ids.add(relation.relation_id)
+        seen_lifecycle_event_ids: set[str] = set()
+        for event in effect_lifecycle_events:
+            if event.lifecycle_event_id in seen_lifecycle_event_ids:
+                raise ValueError(
+                    "ReplayProducts.effect_lifecycle_events duplicate "
+                    f"lifecycle_event_id: {event.lifecycle_event_id!r}"
+                )
+            seen_lifecycle_event_ids.add(event.lifecycle_event_id)
+        self.source_effects = source_effects
+        self.effect_relations = effect_relations
+        self.effect_lifecycle_events = effect_lifecycle_events
+
     @property
     def identity_ledger(self) -> IdentityLedger:
         """Frozen read-only lineage snapshot over replay migration events."""
