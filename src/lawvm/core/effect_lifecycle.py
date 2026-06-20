@@ -208,6 +208,14 @@ class EffectLifecycleEvent:
             raise ValueError("resolved EffectLifecycleEvent requires effect")
         if self.executable and self.effect is None:
             raise ValueError("executable EffectLifecycleEvent requires effect")
+        if self.kind in {
+            "change_effect_commencement",
+            "change_effect_expiry",
+            "repeal_effect",
+        } and self.relation is None:
+            raise ValueError(
+                "effect-modifying EffectLifecycleEvent requires EffectRelation"
+            )
         if (
             self.executable
             and self.temporal_event is None

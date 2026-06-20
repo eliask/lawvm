@@ -4168,6 +4168,7 @@ def test_build_replay_products_accepts_lifecycle_events_for_materialization() ->
             source=OperationSource(
                 statute_id="2010/100",
                 enacted="2005-01-01",
+                effective="2010-01-01",
             ),
         )
     ]
@@ -4180,18 +4181,26 @@ def test_build_replay_products_accepts_lifecycle_events_for_materialization() ->
         path=("voimaantulo",),
         text_excerpt="Tulee voimaan 1.1.2010.",
     )
-    lifecycle = EffectLifecycleEvent(
-        lifecycle_event_id="life:2011/200:replace_1:commence",
-        kind="change_effect_commencement",
+    effect = EffectRef(
+        effect_id="effect:2010/100:replace_1",
+        source_instrument=SourceInstrumentRef(instrument_id="2010/100"),
+        target_statute="test/lifecycle-products",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        projection_group_id="g:fi-lifecycle-replay",
+    )
+    relation = EffectRelation(
+        relation_id="relation:2011/200:replace_1:expiry",
+        kind="extends_effect_expiry",
         source_provision=witness,
-        effect=EffectRef(
-            effect_id="effect:2010/100:replace_1",
-            source_instrument=SourceInstrumentRef(instrument_id="2010/100"),
-            target_statute="test/lifecycle-products",
-            target_address=LegalAddress(path=(("section", "1"),)),
-            projection_group_id="g:fi-lifecycle-replay",
-        ),
-        effective="2010-01-01",
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="life:2011/200:replace_1:expiry",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2012-01-01",
         executable=True,
     )
 
@@ -4205,11 +4214,15 @@ def test_build_replay_products_accepts_lifecycle_events_for_materialization() ->
     )
 
     assert products.timelines is not None
-    assert len(products.temporal_events) == 1
-    assert products.temporal_events[0].event_id == "life:2011/200:replace_1:commence:temporal"
-    assert products.temporal_events[0].group_id == "g:fi-lifecycle-replay"
+    lifecycle_temporal = next(
+        event
+        for event in products.temporal_events
+        if event.event_id == "life:2011/200:replace_1:expiry:temporal"
+    )
+    assert lifecycle_temporal.group_id == "g:fi-lifecycle-replay"
     active = products.timelines[LegalAddress(path=(("section", "1"),))].versions[-1]
     assert active.effective == "2010-01-01"
+    assert active.expires == "2012-01-01"
     assert products.materialized_state.ir.children[0].text == "Updated"
 
 

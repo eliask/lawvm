@@ -249,6 +249,12 @@ def test_executable_expiry_lifecycle_event_requires_resolved_date() -> None:
     instrument = SourceInstrumentRef(instrument_id="2020/1")
     witness = SourceProvisionRef(instrument=instrument)
     effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=effect,
+    )
 
     with pytest.raises(
         ValueError,
@@ -259,7 +265,26 @@ def test_executable_expiry_lifecycle_event_requires_resolved_date() -> None:
             kind="repeal_effect",
             source_provision=witness,
             effect=effect,
+            relation=relation,
             executable=True,
+        )
+
+
+def test_effect_modifying_lifecycle_event_requires_relation() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument)
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+
+    with pytest.raises(
+        ValueError,
+        match="effect-modifying EffectLifecycleEvent requires EffectRelation",
+    ):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:1",
+            kind="change_effect_commencement",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-01-01",
         )
 
 
