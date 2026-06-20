@@ -75,12 +75,26 @@ def _attach_profile_metadata(table: Any, profile: ProfileTag) -> Any:
 # ---------------------------------------------------------------------------
 
 
+# Authority firewall (AGENTS.md §1.11/§2.10, contract §7, legal_surface_graph D7):
+# deterministic extraction is a SURFACE projection — surface_only by construction.
+# A deterministic row records WHERE a reference was extracted from; it carries NO
+# replay/review authority. So these columns must hold surface-truthful values that
+# do NOT claim a human verified the row or that replay is authorized:
+#   - replay_authorized = False   (no execution authority; the legal_surface_graph
+#                                  plane already enforces this and RAISES on a True)
+#   - review_status     = PROPOSED   (machine-produced, NOT human_reviewed)
+#   - validator_status  = UNVALIDATED (no span/entailment human validation)
+# The decision-driven NULL-slot-fill path (_apply_null_slot_fills) legitimately
+# overwrites these from the composer-derived ClaimCompositionDecision; only the
+# author-set deterministic default lived here, and it was an authority leak.
+# `deterministic_extraction` is the positive surface fact this row actually carries.
 _DETERMINISTIC_ROW_EXTRAS = {
     "source_witness_type": SourceWitnessType.FINLEX_AKN.value,
     "claim_id": None,
-    "validator_status": ValidatorStatus.SPAN_VERIFIED.value,
-    "review_status": ReviewStatus.HUMAN_REVIEWED.value,
-    "replay_authorized": True,
+    "validator_status": ValidatorStatus.UNVALIDATED.value,
+    "review_status": ReviewStatus.PROPOSED.value,
+    "replay_authorized": False,
+    "deterministic_extraction": True,
 }
 
 
@@ -453,6 +467,9 @@ def _try_write_parquet(
             pa.field("validator_status", pa.string()),
             pa.field("review_status", pa.string()),
             pa.field("replay_authorized", pa.bool_()),
+            # Surface fact: this row was produced by deterministic extraction
+            # (carries NO replay/review authority — see _DETERMINISTIC_ROW_EXTRAS).
+            pa.field("deterministic_extraction", pa.bool_()),
             pa.field("emit_profile", pa.string()),
         ])
         table = pa.table({col: [] for col in schema.names}, schema=schema)
