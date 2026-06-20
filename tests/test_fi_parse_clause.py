@@ -303,6 +303,40 @@ def test_parse_clause_historical_passive_preverbal_replace_keeps_section_list() 
     )
 
 
+def test_parse_clause_transport_glued_verb_numeric_target_space_keeps_replace_group() -> None:
+    text = (
+        "muutetaan12 §, 13 §:n 2 momentti, 16 §:n 1, 2 ja 4 momentti, "
+        "16 a §:n 4 momentti, 17 §:n 2 ja 3 momentti, 18 §:n 1 momentti, "
+        "23 §:n 3 momentti, 26 §:n 1, 2 ja 4 momentti sekä 28 §:n 5 momentti"
+    )
+
+    result = parse_clause(text)
+
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 12",
+        "M P 13 2",
+        "M P 16 1",
+        "M P 16 2",
+        "M P 16 4",
+        "M P 16a 4",
+        "M P 17 2",
+        "M P 17 3",
+        "M P 18 1",
+        "M P 23 3",
+        "M P 26 1",
+        "M P 26 2",
+        "M P 26 4",
+        "M P 28 5",
+    ]
+    assert result.surface_clause is not None
+    assert result.surface_clause.source_text == text
+    assert any(
+        diagnostic.rule_id
+        == "fi.johtolause.transport_glued_verb_numeric_target_space.v1"
+        for diagnostic in result.typed_diagnostics
+    )
+
+
 def test_parse_clause_container_provenance_bridge_keeps_first_section_target() -> None:
     """A provenance span after a chapter target must not swallow the first
     following section target.

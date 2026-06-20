@@ -87,6 +87,15 @@ FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY = FrontendCapability(
 _HISTORICAL_PASSIVE_REPLACE_RULE_ID = (
     "fi.johtolause.historical_passive_preverbal_replace.v1"
 )
+_TRANSPORT_GLUED_VERB_NUMERIC_TARGET_SPACE_RULE_ID = (
+    "fi.johtolause.transport_glued_verb_numeric_target_space.v1"
+)
+_TRANSPORT_GLUED_VERB_NUMERIC_TARGET_RE = re.compile(
+    r"\b(?P<verb>kumotaan|muutetaan|lisätään|siirretään|korvataan)"
+    r"(?P<label>\d{1,4}[a-z]?)"
+    r"(?=\s*(?:§|luku\b|luvun\b|osa\b|osan\b))",
+    re.I,
+)
 _HISTORICAL_PASSIVE_ANAPHORS = frozenset({"näistä", "niistä", "joista"})
 _PREVERBAL_REPLACE_ENUM_CATS = frozenset(
     {
@@ -103,6 +112,18 @@ _PREVERBAL_REPLACE_ENUM_CATS = frozenset(
         "KOHTA",
     }
 )
+
+
+def _normalize_transport_glued_verb_numeric_target(
+    text: str,
+) -> tuple[str, tuple[str, ...]]:
+    normalized = _TRANSPORT_GLUED_VERB_NUMERIC_TARGET_RE.sub(
+        r"\g<verb> \g<label>",
+        text,
+    )
+    if normalized == text:
+        return text, ()
+    return normalized, (_TRANSPORT_GLUED_VERB_NUMERIC_TARGET_SPACE_RULE_ID,)
 
 
 def infer_move_clause_target_unit_kind(
@@ -315,14 +336,19 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         SurfaceClause as SurfaceClauseModel,
     )
 
-    raw_tokens = tokenize(text)
+    parser_text, text_normalization_rule_ids = _normalize_transport_glued_verb_numeric_target(text)
+    raw_tokens = tokenize(parser_text)
     core_token_tape = _core_token_tape_from_finland_tokens(text, raw_tokens)
     target_version_bindings = extract_target_version_bindings(raw_tokens)
     tokens, _jolloin_pairs = apply_annotations_with_jolloin_pairs(raw_tokens)
-    parser_tokens, parser_normalization_rule_ids = (
+    parser_tokens, parser_token_normalization_rule_ids = (
         _normalize_historical_passive_preverbal_replace(tokens)
         if not _jolloin_pairs
         else (tokens, ())
+    )
+    parser_normalization_rule_ids = (
+        *text_normalization_rule_ids,
+        *parser_token_normalization_rule_ids,
     )
 
     # -- Phase 1: Parse -> real SurfaceClause --
@@ -940,26 +966,26 @@ def _build_finland_frontend_diagnostics(
 ) -> tuple[FrontendDiagnostic, ...]:
     out: list[FrontendDiagnostic] = []
     for rule_id in parser_normalization_rule_ids:
+        (
+            diagnostic_id,
+            message,
+            safe_default,
+            forbidden_shortcuts,
+        ) = _parser_normalization_diagnostic_contract(rule_id)
         out.append(
             FrontendDiagnostic(
-                diagnostic_id="fi-johtolause-parser-normalization-historical-passive-preverbal-replace",
+                diagnostic_id=diagnostic_id,
                 jurisdiction="fi",
                 frontend=FINLAND_JOHTOLAUSE_FRONTEND_ID,
                 phase="surface_parse",
                 severity="info",
                 rule_id=rule_id,
-                message=(
-                    "Historical Finnish passive replacement formula with "
-                    "pre-verbal targets was normalized to verb-led target order."
-                ),
+                message=message,
                 blocking=False,
                 strict_disposition="record",
                 quirks_disposition="record",
-                safe_default="preserve_only_the_witnessed_preverbal_target_enumeration",
-                forbidden_shortcuts=(
-                    "treat_provenance_rementions_as_additional_targets",
-                    "infer_unlisted_targets_from_payload_body",
-                ),
+                safe_default=safe_default,
+                forbidden_shortcuts=forbidden_shortcuts,
                 detail={"human_diagnostics": tuple(diagnostics)},
             )
         )
@@ -1072,6 +1098,43 @@ def _build_finland_frontend_diagnostics(
             )
         )
     return tuple(out)
+
+
+def _parser_normalization_diagnostic_contract(
+    rule_id: str,
+) -> tuple[str, str, str, tuple[str, ...]]:
+    if rule_id == _HISTORICAL_PASSIVE_REPLACE_RULE_ID:
+        return (
+            "fi-johtolause-parser-normalization-historical-passive-preverbal-replace",
+            (
+                "Historical Finnish passive replacement formula with "
+                "pre-verbal targets was normalized to verb-led target order."
+            ),
+            "preserve_only_the_witnessed_preverbal_target_enumeration",
+            (
+                "treat_provenance_rementions_as_additional_targets",
+                "infer_unlisted_targets_from_payload_body",
+            ),
+        )
+    if rule_id == _TRANSPORT_GLUED_VERB_NUMERIC_TARGET_SPACE_RULE_ID:
+        return (
+            "fi-johtolause-parser-normalization-transport-glued-verb-numeric-target-space",
+            (
+                "Source transport glued an operative verb to a following numeric "
+                "legal target; a single parser-only space was restored."
+            ),
+            "parse_only_the_witnessed_glued_numeric_target_after_the_source_verb",
+            (
+                "infer_unlisted_targets_from_payload_body",
+                "treat_arbitrary_glued_words_as_operative_verbs",
+            ),
+        )
+    return (
+        "fi-johtolause-parser-normalization-unknown",
+        f"Parser normalization rule {rule_id} was applied.",
+        "record_the_unknown_normalization_without_expanding_targets",
+        ("infer_unlisted_targets_from_payload_body",),
+    )
 
 
 def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:

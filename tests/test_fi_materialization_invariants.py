@@ -1367,6 +1367,25 @@ class TestSubsectionInsertChapterCarryforward:
             + "; ".join(f"{f.amendment_id}: {f.description}" for f in bad)
         )
 
+    def test_1984_602_1996_666_glued_muutetaan_group_reaches_replay(self) -> None:
+        replay = pinned_replay(
+            "1984/602",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        )
+
+        section_12 = replay.find_section("12")
+        section_23 = replay.find_section("23")
+        assert section_12 is not None
+        assert section_23 is not None
+
+        section_12_text = " ".join(irnode_to_text(section_12).split())
+        section_23_text = " ".join(irnode_to_text(section_23).split())
+
+        assert "seitsemää täyttä työpäivää" in section_12_text
+        assert "vakiintuneen palkan pohjalta työttömyyttä välittömästi edeltäneeltä" in section_23_text
+
 
 # ---------------------------------------------------------------------------
 # Bug family 3: consolidation split must preserve 1981/555 §11 as 4 + 5 mom.
