@@ -510,6 +510,48 @@ def _is_wrapup_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     return right_norm == left_norm + tail_norm
 
 
+def _is_wrapup_shifted_subsection_projection_diff(events: list[dict[str, Any]]) -> bool:
+    """Detect wrapUp ownership that shifts the following subsection ordinal.
+
+    Provenance: 2021/487 § 10.  The source XML carries a post-list penalty tail
+    as a separate subsection, while the consolidated oracle projects the same
+    text as an unnumbered wrapUp paragraph under the preceding list subsection
+    and shifts the following subsection up by one.  This is comparison-only and
+    requires exact normalized text conservation for both moved texts.
+    """
+
+    if len(events) != 3:
+        return False
+    facet_events = [event for event in events if _event_is_wrapup_facet_delta(event)]
+    wording_events = [event for event in events if event.get("kind") == "wording_text_changed"]
+    missing_events = [
+        event
+        for event in events
+        if event.get("kind") in {"unit_missing_left", "unit_missing_right"}
+        and event.get("unit_kind") == "subsection"
+    ]
+    if len(facet_events) != 1 or len(wording_events) != 1 or len(missing_events) != 1:
+        return False
+
+    facet_event = facet_events[0]
+    wording_event = wording_events[0]
+    missing_event = missing_events[0]
+    facet_left = _normalize_for_pres_text((facet_event.get("left_text") or "").strip())
+    facet_right = _normalize_for_pres_text((facet_event.get("right_text") or "").strip())
+    wording_left = _normalize_for_pres_text((wording_event.get("left_text") or "").strip())
+    wording_right = _normalize_for_pres_text((wording_event.get("right_text") or "").strip())
+    missing_left = _normalize_for_pres_text((missing_event.get("left_text") or "").strip())
+    missing_right = _normalize_for_pres_text((missing_event.get("right_text") or "").strip())
+    if not wording_left or not wording_right or wording_left == wording_right:
+        return False
+
+    if facet_right and not facet_left and missing_left and not missing_right:
+        return facet_right == wording_left and missing_left == wording_right
+    if facet_left and not facet_right and missing_right and not missing_left:
+        return facet_left == wording_right and missing_right == wording_left
+    return False
+
+
 def _is_intro_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     """Detect same-text wording-vs-intro owner projection differences."""
 
@@ -698,6 +740,8 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
         return False
 
     if _is_wrapup_owner_projection_diff(events):
+        return True
+    if _is_wrapup_shifted_subsection_projection_diff(events):
         return True
     if _is_intro_owner_projection_diff(events):
         return True

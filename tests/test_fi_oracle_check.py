@@ -3136,6 +3136,61 @@ def test_is_presentation_structural_diff_item_suffix_vs_wrapup_owner_projection(
     assert is_presentation_structural_diff(sd, changed_events) is False
 
 
+def test_is_presentation_structural_diff_wrapup_shifted_subsection_projection() -> None:
+    # 2021/487 § 10 style: source/replay owns a post-list penalty tail as the
+    # next subsection, while Finlex projects it as wrapUp under the list
+    # subsection and shifts the following subsection ordinal up.
+    sd = {"label": ""}
+    tail = (
+        "on tuomittava, jollei teosta muualla laissa säädetä ankarampaa "
+        "rangaistusta, luonnontuotteita keräävien ulkomaalaisten "
+        "oikeudellisesta asemasta annetun lain rikkomuksesta sakkoon."
+    )
+    following = (
+        "Rangaistusvastuun kohdentumiseen luonnontuotekeruualan toimijan ja "
+        "tämän edustajan kesken sovelletaan, mitä rikoslain 47 luvun 7 §:ssä "
+        "säädetään."
+    )
+    events = [
+        {
+            "kind": "facet_added",
+            "unit_kind": "wrapUp",
+            "semantic_path": ["section:10", "subsection:1", "wrapUp"],
+            "left_text": None,
+            "right_text": tail,
+            "right_badge": "loppukappale",
+        },
+        {
+            "kind": "wording_text_changed",
+            "unit_kind": "subsection",
+            "unit_label": "2",
+            "semantic_path": ["section:10", "subsection:2"],
+            "left_text": tail,
+            "right_text": following,
+        },
+        {
+            "kind": "unit_missing_right",
+            "unit_kind": "subsection",
+            "unit_label": "3",
+            "semantic_path": ["section:10", "subsection:3"],
+            "left_text": following,
+            "right_text": None,
+        },
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_events = [
+        events[0],
+        events[1],
+        {
+            **events[2],
+            "left_text": following.replace("rikoslain", "muun lain"),
+        },
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
 def test_is_presentation_structural_diff_value_table_subsections_vs_items() -> None:
     # 2020/82 § 4 style: source/replay owns two unlabeled table blocks as
     # subsection siblings, while Finlex projects the same blocks as list items.
