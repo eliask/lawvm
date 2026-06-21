@@ -290,6 +290,35 @@ def _title_targets_pending_amendment_of_parent(source_title: str, parent_title: 
     return any(variant in source_norm for variant in parent_variants)
 
 
+def title_targets_pending_amendment_title(source_title: str, pending_title: str) -> bool:
+    """Return True when ``source_title`` targets a cited pending amendment act.
+
+    This is the title-side half of pending amendment composition for cases where
+    the base statute has been renamed. The replay context may still carry the
+    original parent title, while a later amendment-of-amendment names the already
+    processed pending amending act by its own title:
+
+    ``Laki ydinvastuulain muuttamisesta annetun lain muuttamisesta``
+    targets pending act title ``Laki ydinvastuulain muuttamisesta``.
+
+    The cited instrument id still has to come from routing/citation evidence;
+    this helper only answers whether the two titles form that exact source-title
+    family.
+    """
+    source_norm = re.sub(r"\s+", " ", (source_title or "").strip().lower())
+    if not source_norm:
+        return False
+    if "muuttamisesta annetun lain" not in source_norm:
+        return False
+    if any(token in source_norm for token in ("eräiden", "kumoamisesta", "voimaantulosta")):
+        return False
+
+    pending_variants = _parent_title_reference_variants(pending_title)
+    if not pending_variants:
+        return False
+    return any(variant in source_norm for variant in pending_variants)
+
+
 def extract_pending_amendment_target_id(
     johto: str,
     amendment_id: str,

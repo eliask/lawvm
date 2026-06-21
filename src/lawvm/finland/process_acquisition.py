@@ -13,6 +13,10 @@ from lawvm.finland.acquisition import (
     AmendmentAcquisitionResult,
     build_amendment_acquisition_result,
 )
+from lawvm.finland.citation_routing import (
+    johtolause_cited_target_ids,
+    title_targets_pending_amendment_title,
+)
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
 from lawvm.finland.effect_lifecycle_signals import EffectRelationSignal
 from lawvm.finland.process_findings import ProcessFindingRecorder
@@ -252,9 +256,16 @@ class ProcessAcquisitionContext:
         lacks_operative_structure: bool,
         operative_tags: Sequence[str],
     ) -> AmendmentAcquisitionResult:
-        if acquisition.decision.route_reason != "pending_amendment_of_parent_skip":
+        pending_target_mid = ""
+        if acquisition.decision.route_reason == "pending_amendment_of_parent_skip":
+            pending_target_mid = str(acquisition.decision.route_target_amendment_id or "")
+        elif acquisition.decision.route_reason == "citation_mismatch_skip":
+            pending_target_mid = self._processed_pending_target_from_citation(
+                acquisition=acquisition,
+                source_title=source_title,
+            )
+        else:
             return acquisition
-        pending_target_mid = str(acquisition.decision.route_target_amendment_id or "")
         pending_target_title = str(self.processed_amendment_titles.get(pending_target_mid) or "")
         if not pending_target_mid or not pending_target_title:
             return acquisition
@@ -300,3 +311,44 @@ class ProcessAcquisitionContext:
             f"from {self.parent_id} onto processed target {pending_target_mid}"
         )
         return composed
+
+    def _processed_pending_target_from_citation(
+        self,
+        *,
+        acquisition: AmendmentAcquisitionResult,
+        source_title: str,
+    ) -> str:
+        """Resolve a cited already-processed pending amendment target.
+
+        The normal pending-amendment route uses the base statute title to prove
+        that a citation mismatch is actually an amendment of a pending amendment
+        of this parent. That misses renamed statutes: the replay context may
+        still carry the base title, while the later source title names the
+        pending amending act by its own title. Here the guard is stricter:
+        compose only when the johtolause cites exactly one already-processed
+        amendment and the source title targets that amendment's own title.
+        """
+        source_year_text, separator, _source_num_text = self.amendment_id.partition("/")
+        if separator != "/" or not source_year_text.isdigit():
+            return ""
+        source_year = int(source_year_text)
+        cited_ids = [
+            target_id
+            for target_id in johtolause_cited_target_ids(
+                acquisition.decision.citation_guard_johto
+                or acquisition.decision.chosen_normalized_text,
+                source_year,
+            )
+            if target_id in self.processed_amendment_titles
+        ]
+        matches = [
+            target_id
+            for target_id in cited_ids
+            if title_targets_pending_amendment_title(
+                source_title,
+                self.processed_amendment_titles[target_id],
+            )
+        ]
+        if len(matches) != 1:
+            return ""
+        return matches[0]

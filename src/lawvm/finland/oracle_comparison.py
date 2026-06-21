@@ -552,6 +552,80 @@ def _is_wrapup_shifted_subsection_projection_diff(events: list[dict[str, Any]]) 
     return False
 
 
+def _semantic_path(event: dict[str, Any]) -> list[str]:
+    path = event.get("semantic_path")
+    if not isinstance(path, list):
+        return []
+    return [str(part) for part in path]
+
+
+def _is_wrapup_subitem_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
+    """Detect wrapUp text projected as a subitem under the final item.
+
+    Provenance: 2014/387 § 46 at the 2022/16 bench-comparable snapshot.  Replay
+    owns the final penalty sentence as the subsection ``wrapUp``.  The selected
+    Finlex XML projects the same sentence as ``item:8/subitem:1`` and projects
+    replay's item wording as ``item:8`` intro.  This is comparison-only and
+    requires exact normalized text conservation for both moved texts.
+    """
+
+    if len(events) != 4:
+        return False
+    facet_events = [event for event in events if _event_is_wrapup_facet_delta(event)]
+    intro_events = [event for event in events if _event_is_intro_facet_delta(event)]
+    wording_events = [event for event in events if event.get("kind") == "wording_text_changed"]
+    subitem_events = [
+        event
+        for event in events
+        if event.get("kind") in {"unit_missing_left", "unit_missing_right"}
+        and event.get("unit_kind") == "subitem"
+    ]
+    if (
+        len(facet_events) != 1
+        or len(intro_events) != 1
+        or len(wording_events) != 1
+        or len(subitem_events) != 1
+    ):
+        return False
+
+    wrap_event = facet_events[0]
+    intro_event = intro_events[0]
+    wording_event = wording_events[0]
+    subitem_event = subitem_events[0]
+
+    wrap_left = _normalize_for_pres_text(str(wrap_event.get("left_text") or "").strip())
+    wrap_right = _normalize_for_pres_text(str(wrap_event.get("right_text") or "").strip())
+    intro_left = _normalize_for_pres_text(str(intro_event.get("left_text") or "").strip())
+    intro_right = _normalize_for_pres_text(str(intro_event.get("right_text") or "").strip())
+    wording_left = _normalize_for_pres_text(str(wording_event.get("left_text") or "").strip())
+    wording_right = _normalize_for_pres_text(str(wording_event.get("right_text") or "").strip())
+    subitem_left = _normalize_for_pres_text(str(subitem_event.get("left_text") or "").strip())
+    subitem_right = _normalize_for_pres_text(str(subitem_event.get("right_text") or "").strip())
+
+    if bool(wrap_left) == bool(wrap_right) or bool(intro_left) == bool(intro_right):
+        return False
+    if wrap_left:
+        if not subitem_right or subitem_left or wrap_left != subitem_right:
+            return False
+    elif not subitem_left or subitem_right or wrap_right != subitem_left:
+        return False
+
+    if intro_left:
+        if not wording_right or wording_left or intro_left != wording_right:
+            return False
+    elif not wording_left or wording_right or intro_right != wording_left:
+        return False
+
+    wording_path = _semantic_path(wording_event)
+    intro_path = _semantic_path(intro_event)
+    subitem_path = _semantic_path(subitem_event)
+    if wording_path and intro_path and intro_path[:-1] != wording_path:
+        return False
+    if wording_path and subitem_path and subitem_path[:-1] != wording_path:
+        return False
+    return True
+
+
 def _is_intro_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     """Detect same-text wording-vs-intro owner projection differences."""
 
@@ -742,6 +816,8 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
     if _is_wrapup_owner_projection_diff(events):
         return True
     if _is_wrapup_shifted_subsection_projection_diff(events):
+        return True
+    if _is_wrapup_subitem_owner_projection_diff(events):
         return True
     if _is_intro_owner_projection_diff(events):
         return True

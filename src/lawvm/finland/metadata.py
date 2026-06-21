@@ -98,6 +98,12 @@ _SEPARATE_COMMENCEMENT_LIST_RE = re.compile(
     r'(?P<day>\d{1,2})\s+päivänä\s+(?P<month>[a-zäöå]+)\s+(?P<year>\d{4})\s*:',
     flags=re.IGNORECASE,
 )
+_SEPARATE_COMMENCEMENT_INLINE_LIST_RE = re.compile(
+    r'\b(?P<subjects>(?:Laki|Asetus|Päätös)\s+.{0,2000}?)\s+'
+    r'tulevat\s+voimaan\s+'
+    r'(?P<day>\d{1,2})\s+päivänä\s+(?P<month>[a-zäöå]+)\s+(?P<year>\d{4})',
+    flags=re.IGNORECASE,
+)
 _PAREN_STATUTE_ID_RE = re.compile(r'\((?P<sid>\d{1,4}/\d{4})\)')
 
 
@@ -994,29 +1000,56 @@ def _separate_commencement_witnesses_from_tree(
         )
         if "tulevat voimaan" not in section_text.casefold():
             continue
-        match = _SEPARATE_COMMENCEMENT_LIST_RE.search(section_text)
-        if not match:
-            continue
-        effective = _date_from_fi_day_month_year_match(match)
-        if effective is None:
-            continue
         source_provision_ref = commencement_statute_id
         section_label = _section_label_for_source_ref(section)
         if section_label:
             source_provision_ref = f"{commencement_statute_id}/{section_label}"
-        for cited in _PAREN_STATUTE_ID_RE.finditer(section_text[match.end():]):
-            target_id = _normalize_textual_statute_id(cited.group("sid"))
-            if target_id is None:
-                continue
-            witnesses.append(
-                SeparateCommencementLawWitness(
-                    target_statute_id=target_id,
-                    commencement_statute_id=commencement_statute_id,
-                    source_provision_ref=source_provision_ref,
+
+        def _append_witnesses(
+            *,
+            cited_text: str,
+            effective_date: dt.date,
+            rule_id: str,
+            source_provision_ref: str,
+            source_text: str,
+        ) -> None:
+            for cited in _PAREN_STATUTE_ID_RE.finditer(cited_text):
+                target_id = _normalize_textual_statute_id(cited.group("sid"))
+                if target_id is None:
+                    continue
+                witnesses.append(
+                    SeparateCommencementLawWitness(
+                        target_statute_id=target_id,
+                        commencement_statute_id=commencement_statute_id,
+                        source_provision_ref=source_provision_ref,
+                        effective_date=effective_date,
+                        rule_id=rule_id,
+                        source_text=source_text,
+                    )
+                )
+
+        match = _SEPARATE_COMMENCEMENT_LIST_RE.search(section_text)
+        if match:
+            effective = _date_from_fi_day_month_year_match(match)
+            if effective is not None:
+                _append_witnesses(
+                    cited_text=section_text[match.end():],
                     effective_date=effective,
                     rule_id="fi_separate_commencement_law_list",
+                    source_provision_ref=source_provision_ref,
                     source_text=match.group(0).strip(),
                 )
+
+        for inline in _SEPARATE_COMMENCEMENT_INLINE_LIST_RE.finditer(section_text):
+            effective = _date_from_fi_day_month_year_match(inline)
+            if effective is None:
+                continue
+            _append_witnesses(
+                cited_text=inline.group("subjects"),
+                effective_date=effective,
+                rule_id="fi_separate_commencement_decree_inline_list",
+                source_provision_ref=source_provision_ref,
+                source_text=inline.group(0).strip(),
             )
     return tuple(witnesses)
 
@@ -1967,7 +2000,8 @@ def _amendment_effective_date_with_step(
     ):
         return None, 'contingent_text'
     if re.search(
-        r'(?:Tämän|Taman|Lain|Asetuksen|Päätöksen)\s+voimaantulosta\s+säädetään\s+(?:asetuksella|erikseen\s+lailla)',
+        r'(?:Tämän|Taman|Lain|Asetuksen|Päätöksen)\s+voimaantulosta\s+säädetään\s+'
+        r'(?:(?:valtioneuvoston\s+)?asetuksella|erikseen\s+lailla)',
         full_text,
         flags=re.IGNORECASE,
     ):

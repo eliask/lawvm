@@ -3210,6 +3210,65 @@ def test_is_presentation_structural_diff_wrapup_shifted_subsection_projection() 
     assert is_presentation_structural_diff(sd, changed_events) is False
 
 
+def test_is_presentation_structural_diff_wrapup_projected_as_last_item_subitem() -> None:
+    # 2014/387 § 46 at the 2022/16 snapshot: replay owns the final penalty
+    # sentence as subsection wrapUp, while Finlex projects it as item 8's first
+    # subitem and item 8's text as an intro.  This is comparison-only and must
+    # require exact conservation of both texts.
+    sd = {"label": ""}
+    item_text = "laiminlyö 38 §:n mukaisen avunantovelvollisuutensa,"
+    penalty = (
+        "on tuomittava, jollei teosta muualla laissa säädetä ankarampaa "
+        "rangaistusta, eläinten lääkitsemisrikkomuksesta sakkoon."
+    )
+    events = [
+        {
+            "kind": "facet_removed",
+            "unit_kind": "wrapUp",
+            "facet_kind": "wrapUp",
+            "semantic_path": ["section:46", "subsection:1", "wrapUp"],
+            "left_text": penalty,
+            "left_badge": "loppukappale",
+        },
+        {
+            "kind": "facet_added",
+            "unit_kind": "intro",
+            "facet_kind": "intro",
+            "semantic_path": ["section:46", "subsection:1", "item:8", "intro"],
+            "right_text": item_text,
+            "right_badge": "johdanto",
+        },
+        {
+            "kind": "wording_text_changed",
+            "unit_kind": "item",
+            "unit_label": "8",
+            "semantic_path": ["section:46", "subsection:1", "item:8"],
+            "left_text": item_text,
+            "left_badge": "8 kohta",
+            "right_badge": "8 kohta",
+        },
+        {
+            "kind": "unit_missing_left",
+            "unit_kind": "subitem",
+            "unit_label": "1",
+            "semantic_path": ["section:46", "subsection:1", "item:8", "subitem:1"],
+            "right_text": penalty,
+            "right_badge": "1 alakohta",
+        },
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_events = [
+        *events[:-1],
+        {
+            **events[-1],
+            "right_text": penalty.replace("sakkoon", "vankeuteen"),
+        },
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
 def test_is_presentation_structural_diff_value_table_subsections_vs_items() -> None:
     # 2020/82 § 4 style: source/replay owns two unlabeled table blocks as
     # subsection siblings, while Finlex projects the same blocks as list items.

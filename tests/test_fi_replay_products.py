@@ -1159,6 +1159,28 @@ def test_replay_xml_2014_938_composes_pending_amendment_children(
     assert "8 §:n 2 momentin tai 8 a §:n" in text41
 
 
+def test_replay_xml_1972_484_composes_pending_amendment_after_renamed_base() -> None:
+    replay = pinned_replay(
+        "1972/484",
+        oracle_version="20211061",
+        mode="official_consolidation",
+        quiet=True,
+    )
+
+    sec18 = replay.materialized_state.find_section("18")
+
+    assert sec18 is not None
+    text18 = " ".join(irnode_to_text(sec18).split())
+    assert "1,2 miljardia euroa" in text18
+    assert "600 miljoonaa erityisnosto-oikeutta" not in text18
+    assert any(
+        str(f.kind or "") == "APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET"
+        and str(f.source_statute or "") == "2021/1061"
+        and str(f.detail.get("target_amendment_id") or "") == "2005/493"
+        for f in replay.findings or ()
+    )
+
+
 def test_replay_xml_2014_938_keeps_permanent_section_25_change_after_temporary_51_expires(
     replay_2014_938_finlex_oracle: ReplayResult,
 ) -> None:
