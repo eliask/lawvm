@@ -27,7 +27,6 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 from typing import Any, Dict, List, Literal, Mapping, NamedTuple, Sequence, TypedDict
 
-import re
 
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.invariant_profiles import TimelineInvariantFamily
@@ -665,31 +664,6 @@ def _with_timeline_tier(
         address_path=violation.address_path,
         message=violation.message,
         detail=detail,
-    )
-
-
-def _section_label_from_address_text(address_text: str) -> str:
-    """Extract the first section label from a rendered LegalAddress string."""
-    match = re.search(r"(?:^|/)section:([^/]+)", address_text)
-    if match is not None:
-        return match.group(1)
-    return ""
-
-
-def _typed_violation(
-    *,
-    kind: InvariantKind,
-    message: str,
-) -> TimelineInvariantViolation:
-    """Build a typed violation from a rendered invariant message."""
-    address_text, sep, _rest = message.partition(": ")
-    if not sep:
-        address_text = ""
-    return TimelineInvariantViolation(
-        kind=kind,
-        section_label=_section_label_from_address_text(address_text),
-        address_path=address_text,
-        message=message,
     )
 
 
