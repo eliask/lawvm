@@ -23,6 +23,9 @@ BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION: Final[str] = "base_dotted_paragraph_
 BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT: Final[str] = "base_unnumbered_subparagraph_moment_split"
 BASE_HEADING_BODY_SUBSECTION_SPLIT: Final[str] = "base_heading_body_subsection_split"
 HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR: Final[str] = "fi_heading_body_subsection_split_v1"
+BASE_TABLE_CONTINUATION_SUBSECTION_MERGE: Final[str] = "base_table_continuation_subsection_merge"
+TABLE_CONTINUATION_SUBSECTION_MERGE_RULE_ATTR: Final[str] = "fi_table_continuation_subsection_merge_v1"
+BASE_TABLE_CONTINUATION_HEADER_REPAIR: Final[str] = "base_table_continuation_header_repair"
 TRAILING_CHAPTER_REPARENT: Final[str] = "trailing_chapter_reparent"
 
 FINLAND_SOURCE_NORMALIZATION_KINDS: Final[tuple[str, ...]] = (
@@ -40,5 +43,7 @@ FINLAND_SOURCE_NORMALIZATION_KINDS: Final[tuple[str, ...]] = (
     BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION,
     BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT,
     BASE_HEADING_BODY_SUBSECTION_SPLIT,
+    BASE_TABLE_CONTINUATION_SUBSECTION_MERGE,
+    BASE_TABLE_CONTINUATION_HEADER_REPAIR,
     TRAILING_CHAPTER_REPARENT,
 )

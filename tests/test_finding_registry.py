@@ -361,6 +361,22 @@ def test_base_dotted_paragraph_subsection_promotion_registry_code_is_observation
     validate_finding_projection(spec.code, "observation", False)
 
 
+def test_base_table_continuation_subsection_merge_registry_code_is_observation() -> None:
+    spec = get_finding_spec("BASE_TABLE_CONTINUATION_SUBSECTION_MERGE")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
+def test_base_table_continuation_header_repair_registry_code_is_observation() -> None:
+    spec = get_finding_spec("BASE_TABLE_CONTINUATION_HEADER_REPAIR")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_source_corrected_by_patch_registry_code_is_runtime_obligation() -> None:
     spec = get_finding_spec("APPLY.SOURCE_CORRECTED_BY_PATCH")
     assert spec is not None

@@ -130,8 +130,11 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
     BASE_TAIL_PROSE_ABSORB,
+    BASE_TABLE_CONTINUATION_SUBSECTION_MERGE,
+    BASE_TABLE_CONTINUATION_HEADER_REPAIR,
     BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT,
     TRAILING_CHAPTER_REPARENT,
+    TABLE_CONTINUATION_SUBSECTION_MERGE_RULE_ATTR,
     UNNUMBERED_PEER_REPARENT,
 )
 
@@ -294,6 +297,251 @@ def _split_body_heading_into_first_subsection(
             confidence=0.94,
         )
     )
+    return rewritten
+
+
+def _contains_node_kind(node: IRNode, kind: IRNodeKind) -> bool:
+    return node.kind == kind or any(_contains_node_kind(child, kind) for child in node.children)
+
+
+def _first_text_segment(node: IRNode) -> str:
+    if node.text and node.text.strip():
+        return node.text.strip()
+    for child in node.children:
+        text = _first_text_segment(child)
+        if text:
+            return text
+    return ""
+
+
+def _relabel_subsection_with_source_label(subsection: IRNode, label: int) -> IRNode:
+    source_label = str(subsection.label or "")
+    if not source_label.isdigit() or int(source_label) == label:
+        return subsection
+    attrs = dict(subsection.attrs)
+    source_eid = attrs.pop("eId", None)
+    if source_eid:
+        attrs["lawvm_source_subsection_eid"] = str(source_eid)
+    attrs.setdefault("lawvm_source_normalization_original_label", source_label)
+    attrs["lawvm_source_normalization_rule"] = TABLE_CONTINUATION_SUBSECTION_MERGE_RULE_ATTR
+    return IRNode(
+        kind=subsection.kind,
+        label=str(label),
+        text=subsection.text,
+        attrs=attrs,
+        children=tuple(subsection.children),
+    )
+
+
+def _table_cell_texts(row: IRNode) -> list[str]:
+    if row.kind != IRNodeKind.ROW:
+        return []
+    return [" ".join(irnode_to_text(cell).split()) for cell in row.children if cell.kind == IRNodeKind.CELL]
+
+
+def _table_row_from_texts(cells: tuple[str, ...]) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.ROW,
+        children=tuple(IRNode(kind=IRNodeKind.CELL, text=cell) for cell in cells),
+    )
+
+
+def _normalize_table_number_cell(cell: IRNode) -> IRNode:
+    text = " ".join(irnode_to_text(cell).split())
+    if len(text) == 4 and text.isdigit():
+        attrs = dict(cell.attrs)
+        attrs["lawvm_source_normalization_rule"] = TABLE_CONTINUATION_SUBSECTION_MERGE_RULE_ATTR
+        return IRNode(kind=cell.kind, label=cell.label, text=f"{text[0]} {text[1:]}", attrs=attrs)
+    return cell
+
+
+def _repair_table_continuation_header(table: IRNode) -> tuple[IRNode, bool]:
+    if table.kind != IRNodeKind.TABLE or not table.children:
+        return table, False
+    first_row = table.children[0]
+    cells = _table_cell_texts(first_row)
+    if len(cells) != 4:
+        return table, False
+    third_tokens = cells[2].split()
+    if (
+        cells[0] != "Alue"
+        or cells[1] != "Mänty"
+        or cells[3] != "Muu puulaji"
+        or third_tokens != ["Pääpuulaji", "Kuusi", "kpl/hehtaari"]
+    ):
+        return table, False
+
+    data_rows = []
+    for row in table.children[1:]:
+        if row.kind == IRNodeKind.ROW:
+            data_rows.append(
+                IRNode(
+                    kind=row.kind,
+                    label=row.label,
+                    attrs=row.attrs,
+                    children=tuple(
+                        _normalize_table_number_cell(cell)
+                        if cell.kind == IRNodeKind.CELL
+                        else cell
+                        for cell in row.children
+                    ),
+                )
+            )
+        else:
+            data_rows.append(row)
+    rewritten = IRNode(
+        kind=table.kind,
+        label=table.label,
+        text=table.text,
+        attrs=dict(table.attrs),
+        children=(
+            _table_row_from_texts(("", "", "Pääpuulaji", "")),
+            _table_row_from_texts(("Alue", "Mänty", "Kuusi", "Muu puulaji")),
+            _table_row_from_texts(("", "", "kpl/hehtaari", "")),
+            *data_rows,
+        ),
+    )
+    return rewritten, True
+
+
+def _repair_table_continuation_payload(
+    node: IRNode,
+) -> tuple[IRNode, bool]:
+    changed = False
+    rewritten_children = []
+    for child in node.children:
+        if child.kind == IRNodeKind.TABLE:
+            rewritten_child, child_changed = _repair_table_continuation_header(child)
+        else:
+            rewritten_child, child_changed = _repair_table_continuation_payload(child)
+        rewritten_children.append(rewritten_child)
+        changed = changed or child_changed
+    if not changed:
+        return node, False
+    return (
+        IRNode(
+            kind=node.kind,
+            label=node.label,
+            text=node.text,
+            attrs=node.attrs,
+            children=tuple(rewritten_children),
+        ),
+        True,
+    )
+
+
+def _merge_table_continuation_subsection(
+    children: list[IRNode],
+    statute_id: str,
+    parent_path: tuple[str, ...],
+    facts: list[SourceNormalizationFact],
+) -> list[IRNode]:
+    """Merge a table-bearing continuation split out as a fake momentti.
+
+    Some Finlex enacted XML splits a first momentti immediately before a table:
+    ``subsection:1`` ends mid-sentence and ``subsection:2`` starts with a
+    lowercase continuation plus the table. Consolidated XML for the same text
+    treats them as one momentti. This repair is limited to the initial
+    subsection run so it cannot merge real later legal paragraphs.
+    """
+    subsections = [child for child in children if child.kind == IRNodeKind.SUBSECTION]
+    if len(subsections) < 3:
+        return children
+    if not _numeric_subsection_labels_are_initial_run(subsections):
+        return children
+
+    first, second, *remaining = subsections
+    first_text = " ".join(irnode_to_text(first).split())
+    second_first_text = _first_text_segment(second)
+    if not first_text or first_text[-1] in ".;:":
+        return children
+    first_char = second_first_text[:1]
+    if not first_char or not first_char.islower():
+        return children
+    if not _contains_node_kind(second, IRNodeKind.TABLE):
+        return children
+
+    first_index = children.index(first)
+    second_index = children.index(second)
+    if second_index != first_index + 1:
+        return children
+
+    repaired_second, repaired_table_header = _repair_table_continuation_payload(second)
+
+    first_attrs = dict(first.attrs)
+    first_attrs["lawvm_source_normalization_rule"] = TABLE_CONTINUATION_SUBSECTION_MERGE_RULE_ATTR
+    first_attrs["lawvm_source_normalization_merged_label"] = str(second.label or "")
+    merged_first = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text=first.text,
+        attrs=first_attrs,
+        children=tuple(first.children) + tuple(repaired_second.children),
+    )
+    rewritten_subsections = [merged_first] + [
+        _relabel_subsection_with_source_label(subsection, idx)
+        for idx, subsection in enumerate(remaining, start=2)
+    ]
+    subsection_iter = iter(rewritten_subsections)
+    rewritten: list[IRNode] = []
+    skip_second = False
+    for child in children:
+        if child is first:
+            rewritten.append(next(subsection_iter))
+            skip_second = True
+            continue
+        if skip_second and child is second:
+            skip_second = False
+            continue
+        if child.kind == IRNodeKind.SUBSECTION:
+            rewritten.append(next(subsection_iter))
+        else:
+            rewritten.append(child)
+
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=BASE_TABLE_CONTINUATION_SUBSECTION_MERGE,
+            basis=SourceNormalizationBasis.PROFILE_INVALID,
+            before=(
+                "first subsection ended without terminal punctuation and the next "
+                "subsection began with a lowercase table continuation; "
+                f"first_excerpt={first_text[:120]!r}; second_start={second_first_text[:80]!r}"
+            ),
+            after="subsection:2 payload merged into subsection:1 and later subsection labels shifted by -1",
+            explanation=(
+                "The source XML split one printed momentti around a table. The first "
+                "subsection ends mid-sentence, the following subsection starts as a "
+                "lowercase continuation and contains the table, while the remaining "
+                "siblings form a consecutive momentti run. Preserve the legal text by "
+                "merging the continuation into momentti 1."
+            ),
+            path=parent_path,
+            confidence=0.95,
+        )
+    )
+    if repaired_table_header:
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_TABLE_CONTINUATION_HEADER_REPAIR,
+                basis=SourceNormalizationBasis.PROFILE_INVALID,
+                before="table continuation had one fused header row: Alue | Mänty | Pääpuulaji Kuusi kpl/hehtaari | Muu puulaji",
+                after=(
+                    "table header split into superheader, column-label, and unit rows; "
+                    "four-digit numeric cells normalized with a thousands space"
+                ),
+                explanation=(
+                    "The same malformed source split that separated the table from "
+                    "the first moment also fused the table's multi-row header into one "
+                    "cell. The consolidated witness presents the header as distinct "
+                    "rows. Reconstruct that local table header shape while preserving "
+                    "the data rows."
+                ),
+                path=parent_path,
+                confidence=0.94,
+            )
+        )
     return rewritten
 
 
@@ -3224,6 +3472,9 @@ def normalize_source_ir(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _split_body_heading_into_first_subsection(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _merge_table_continuation_subsection(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _split_intro_then_numbered_list_subsections(

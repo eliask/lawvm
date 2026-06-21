@@ -41,6 +41,8 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_INTRO_LIST_TAIL_MOMENT_SPLIT,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
+    BASE_TABLE_CONTINUATION_SUBSECTION_MERGE,
+    BASE_TABLE_CONTINUATION_HEADER_REPAIR,
     BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT,
     TRAILING_CHAPTER_REPARENT,
 )
@@ -61,6 +63,14 @@ def test_source_normalization_fact_finding_kind_resolves_registered_base_codes()
     assert (
         source_normalization_fact_finding_kind("base_intro_list_tail_moment_split")
         == "BASE_INTRO_LIST_TAIL_MOMENT_SPLIT"
+    )
+    assert (
+        source_normalization_fact_finding_kind("base_table_continuation_subsection_merge")
+        == "BASE_TABLE_CONTINUATION_SUBSECTION_MERGE"
+    )
+    assert (
+        source_normalization_fact_finding_kind("base_table_continuation_header_repair")
+        == "BASE_TABLE_CONTINUATION_HEADER_REPAIR"
     )
     assert source_normalization_fact_finding_kind("") is None
     assert source_normalization_fact_finding_kind("not_registered") is None
@@ -2145,3 +2155,91 @@ def test_heading_body_subsection_split_does_not_rehome_real_section_title() -> N
         IRNodeKind.SUBSECTION,
     ]
     assert not any(fact.kind_value == BASE_HEADING_BODY_SUBSECTION_SPLIT for fact in facts)
+
+
+def test_table_continuation_subsection_merge_joins_interrupted_first_moment() -> None:
+    raw = fi_xml_to_ir_node(
+        etree.fromstring(
+            """
+            <section>
+              <num>21 §</num>
+              <subsection><content><p>Ensimmäisessä momentissa säädetty määrä koskee seuraavia</p></content></subsection>
+              <subsection>
+                <content>
+                  <p>hyväksyttäviä ryhmiä:</p>
+                  <table>
+                    <tr><td><p>Alue</p></td><td><p>Mänty</p></td><td><p>Pääpuulaji Kuusi kpl/hehtaari</p></td><td><p>Muu puulaji</p></td></tr>
+                    <tr><td><p>Pohjoinen</p></td><td><p>1 000</p></td><td><p>1 000</p></td><td><p>1000</p></td></tr>
+                  </table>
+                </content>
+              </subsection>
+              <subsection eId="sec_21__subsec_3"><content><p>Edellä 1 momentissa tarkoitettua määrää voidaan alentaa.</p></content></subsection>
+              <subsection eId="sec_21__subsec_4"><content><p>Päätös tehdään hakemuksesta.</p></content></subsection>
+            </section>
+            """
+        ),
+        _fi_label_postprocessor,
+    )
+
+    normalized, facts = normalize_source_ir(raw, "1991/1208")
+
+    subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+    assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+    assert "koskee seuraavia hyväksyttäviä ryhmiä" in irnode_to_text(subsections[0])
+    table = next(child for child in subsections[0].children[1].children if child.kind == IRNodeKind.TABLE)
+    assert [irnode_to_text(row) for row in table.children[:3]] == [
+        "Pääpuulaji",
+        "Alue Mänty Kuusi Muu puulaji",
+        "kpl/hehtaari",
+    ]
+    assert "Pohjoinen 1 000 1 000 1 000" in irnode_to_text(table)
+    assert subsections[0].attrs["lawvm_source_normalization_rule"] == (
+        "fi_table_continuation_subsection_merge_v1"
+    )
+    assert subsections[0].attrs["lawvm_source_normalization_merged_label"] == "2"
+    assert subsections[1].attrs["lawvm_source_normalization_original_label"] == "3"
+    assert "eId" not in subsections[1].attrs
+    assert subsections[1].attrs["lawvm_source_subsection_eid"] == "sec_21__subsec_3"
+
+    repair_facts = [
+        fact for fact in facts if fact.kind_value == BASE_TABLE_CONTINUATION_SUBSECTION_MERGE
+    ]
+    assert len(repair_facts) == 1
+    assert repair_facts[0].basis == SourceNormalizationBasis.PROFILE_INVALID
+    assert "table continuation" in repair_facts[0].before
+    header_facts = [
+        fact for fact in facts if fact.kind_value == BASE_TABLE_CONTINUATION_HEADER_REPAIR
+    ]
+    assert len(header_facts) == 1
+    assert check_invariants(normalized) == []
+
+
+def test_table_continuation_subsection_merge_keeps_real_table_moment() -> None:
+    raw = fi_xml_to_ir_node(
+        etree.fromstring(
+            """
+            <section>
+              <num>2 §</num>
+              <subsection><content><p>Ensimmäinen momentti on kokonainen.</p></content></subsection>
+              <subsection>
+                <content>
+                  <p>Toisessa momentissa säädetään taulukosta:</p>
+                  <table>
+                    <tr><td><p>Alue</p></td><td><p>Määrä</p></td></tr>
+                  </table>
+                </content>
+              </subsection>
+              <subsection><content><p>Kolmas momentti säilyy erillisenä.</p></content></subsection>
+            </section>
+            """
+        ),
+        _fi_label_postprocessor,
+    )
+
+    normalized, facts = normalize_source_ir(raw, "2020/1")
+
+    subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+    assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+    assert not any(
+        fact.kind_value == BASE_TABLE_CONTINUATION_SUBSECTION_MERGE for fact in facts
+    )
