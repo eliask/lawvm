@@ -604,6 +604,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "tools_runtime_io": (
         "test_fi_acquisition.py",
+        "test_fi_source_anchor.py",
         "test_fi_process_acquisition_digest_consumer.py",
         "test_fi_consolidated_artifacts.py",
         "test_branch_demo.py",
