@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from lawvm.core.coverage import CoverageUnit
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_realization import (
@@ -12,27 +11,23 @@ from lawvm.core.payload_realization import (
 )
 from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.body_coverage import BodyCoveragePayloadRef
-from lawvm.finland.source_model import AmendmentSourceModel
-
-
-_IGNORED_UNIT_TAGS = frozenset({"container", "nonoperative", "provenance"})
+from lawvm.finland.ops import ResolvedOp
 
 
 def payload_realization_findings(
     *,
-    source_model: AmendmentSourceModel,
+    resolved_ops: tuple[ResolvedOp, ...],
     after_ir: IRNode,
     amendment_id: str,
 ) -> tuple[Finding, ...]:
-    """Return audit findings for source payload text absent from ``after_ir``.
+    """Return audit findings for claimed operation payload absent from ``after_ir``.
 
     The comparison is intentionally text-realization only.  A failure here says
-    "the source payload text did not survive the fold"; it does not infer a
-    target address, change action family, or mutate replay output.
+    "a resolved operation's payload text did not survive the fold"; it does not
+    infer a target address, change action family, or mutate replay output.
     """
 
-    units = _payload_realization_units(source_model)
+    units = _payload_realization_units(resolved_ops)
     gaps = audit_payload_realization(
         units=units,
         after_text=irnode_to_text(after_ir),
@@ -41,32 +36,25 @@ def payload_realization_findings(
 
 
 def _payload_realization_units(
-    source_model: AmendmentSourceModel,
+    resolved_ops: tuple[ResolvedOp, ...],
 ) -> tuple[PayloadRealizationUnit, ...]:
     units: list[PayloadRealizationUnit] = []
-    for unit in source_model.body_coverage_units():
-        if _skip_unit(unit):
+    for index, rop in enumerate(resolved_ops):
+        payload_ir = rop.resolved_amend_sub_ir() or rop.muutos_ir or rop.cross_ir
+        if payload_ir is None:
             continue
-        payload_ref = unit.payload_ref
-        if not isinstance(payload_ref, BodyCoveragePayloadRef):
-            continue
-        lookup = source_model.lookup_payload_ir_for_coverage_ref(payload_ref)
-        if lookup.payload_ir is None:
-            continue
+        unit_id = rop.op_id or f"resolved_op_{index}"
+        target = rop.resolved_target_address
         units.append(
             PayloadRealizationUnit(
-                unit_id=unit.unit_id,
-                unit_kind=unit.kind,
-                observed_label=str(unit.observed_label or ""),
-                parent_label=str(unit.parent_label or ""),
-                text_chunks=_payload_text_chunks(lookup.payload_ir),
+                unit_id=unit_id,
+                unit_kind=rop.resolved_action_type,
+                observed_label=rop.resolved_target_label,
+                parent_label=str(target or ""),
+                text_chunks=_payload_text_chunks(payload_ir),
             )
         )
     return tuple(units)
-
-
-def _skip_unit(unit: CoverageUnit) -> bool:
-    return bool(_IGNORED_UNIT_TAGS.intersection(unit.tags))
 
 
 def _payload_text_chunks(node: IRNode) -> tuple[str, ...]:

@@ -642,7 +642,7 @@ def process_muutoslaki_resolved(
         )
         process_findings.extend(
             payload_realization_findings(
-                source_model=source_model,
+                resolved_ops=tuple(resolved),
                 after_ir=final_state.ir,
                 amendment_id=amendment_id,
             )
