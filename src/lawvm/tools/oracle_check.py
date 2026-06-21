@@ -46,7 +46,7 @@ from lawvm.finland.oracle_comparison import (
 from lawvm.tools.divergence_heuristics import blame_title_indicates_temporary_amendment
 from lawvm.tools.divergence_heuristics import blame_source_postdates_oracle_version
 from lawvm.tools.divergence_heuristics import high_overlap_text_corruption
-from lawvm.tools.divergence_heuristics import has_source_corruption_marker
+from lawvm.tools.divergence_heuristics import high_overlap_unblamed_text_corruption
 from lawvm.tools.divergence_heuristics import is_probable_repeal_stale_oracle
 from lawvm.tools.divergence_heuristics import oracle_has_future_repeal_overlay
 from lawvm.tools.divergence_heuristics import oracle_has_repeal_banner_with_prior_wording
@@ -906,27 +906,7 @@ def _diagnose(
         if c_r and c_o_ordinals and Levenshtein.ratio(c_r, c_o_ordinals) >= 0.999:
             return "EDITORIAL_CONVENTION"
 
-    # High-overlap source-text corruption/truncation. Two lanes:
-    #   * the pre-existing unblamed lane (no amendment explains the
-    #     divergence): a high-overlap divergence that no blame_op owns is itself
-    #     the witness, so it fires unguarded (preserves the pre-9e3f5b3a
-    #     contract pinned by the unblamed base-text-corruption tests);
-    #   * the blamed lane added in 9e3f5b3a: a blamed divergence must *also*
-    #     carry a source-corruption marker (stray ``<`` / ``>`` / un-escaped XML
-    #     entity) via ``has_source_corruption_marker`` — without one, a
-    #     high-overlap blamed divergence is more plausibly a substantive
-    #     replace / stale-oracle shape, and must fall through to the more
-    #     specific classifiers below. Without the marker gate the bare
-    #     high_overlap_text_corruption call fired on ministry rename
-    #     (substantive rewrite) and on stale-oracle banner sentences,
-    #     masking their ORACLE_STALE verdicts.
-    # The call runs after the more specific editorial classifiers above (figure
-    # legend residue, source-residue, subsection-ordinal projections,
-    # kumottu-attribution) so a divergence they fully explain keeps its more
-    # specific verdict.
-    if high_overlap_text_corruption(r_stripped, o_stripped) and (
-        not blame_op or has_source_corruption_marker(r_text, o_text)
-    ):
+    if not blame_op and high_overlap_unblamed_text_corruption(r_text, o_text):
         return "SOURCE_PATHOLOGY"
 
     c_diff = len(c_r) - len(c_o)

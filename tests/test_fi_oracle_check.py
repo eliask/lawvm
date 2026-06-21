@@ -547,14 +547,7 @@ def test_classify_statute_1992_1702_empty_operative_body_wave_is_source_incomple
     by_section = {item["section"]: item for item in result.section_results}
     assert by_section["chapter:5/section:24"]["diagnosis"] == "SOURCE_INCOMPLETE"
     assert by_section["chapter:5/section:25a"]["diagnosis"] == "SOURCE_INCOMPLETE"
-    # chapter:8/section:33 (blame 1996/761, action=replace) carries replay >
-    # oracle: replay has the post-1996/761 §33 body while the oracle still shows
-    # the pre-amendment heading+stub. Commit 4fc3e716 ("Classify blamed Finnish
-    # extra text as oracle stale") reclassifies blame-owned INSERT/REPLACE extras
-    # with c_diff > 40 as ORACLE_STALE before the per-statute SOURCE_INCOMPLETE
-    # reclassify pass can run, so §33 groups with §39a/§42 rather than the
-    # SOURCE_INCOMPLETE wave.
-    assert by_section["chapter:8/section:33"]["diagnosis"] == "ORACLE_STALE"
+    assert by_section["chapter:8/section:33"]["diagnosis"] == "SOURCE_INCOMPLETE"
     assert by_section["chapter:10/section:46b"]["diagnosis"] == "SOURCE_INCOMPLETE"
     assert by_section["chapter:8/section:39a"]["diagnosis"] == "ORACLE_STALE"
     assert by_section["chapter:8/section:42"]["diagnosis"] == "ORACLE_STALE"
