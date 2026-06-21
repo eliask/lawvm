@@ -190,6 +190,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_parse_clause.py",
         "test_fi_parse_explain.py",
         "test_fi_payload_normalize.py",
+        "test_fi_sparse_tail_claims.py",
         "test_fi_source_syntax_graph.py",
         "test_fi_token_partition_coverage.py",
         "test_fi_union_ownership_census.py",
@@ -213,6 +214,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "finland_replay_products_support": (
         "test_fi_replay_fold_timeline_backfill.py",
         "test_fi_replay_pipeline.py",
+        "test_fi_process_temporal_postprocessing.py",
         "test_fi_replay_revision.py",
         "test_fi_session_regressions_2026_04.py",
         "test_fi_provision_state_consumer_contract.py",
