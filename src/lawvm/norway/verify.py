@@ -418,7 +418,13 @@ def collect_no_touched_path_counts(
     from lawvm.norway.grafter import iter_no_document_change_ops
     from lawvm.norway.sources import load_no_amendment_artifact_bytes
 
-    source_path = resolve_no_source_path(Path(index.data_dir) if getattr(index, "data_dir", None) else data_dir)
+    # ``NOAmendmentIndex.data_dir`` is a required field (declared in
+    # src/lawvm/norway/index.py); the previous ``getattr(index, "data_dir",
+    # None)`` defense was redundant §1.9 dynamic-shape over an already-typed
+    # object. The precedence (prefer the index's recorded source path, fall
+    # back to the explicit data_dir arg) is preserved unchanged — the original
+    # intent of preferring the path the index was built against is honored.
+    source_path = resolve_no_source_path(Path(index.data_dir) if index.data_dir else data_dir)
     norm_base_id = base_id if base_id.startswith("no/") else f"no/{base_id.removeprefix('lov/')}"
     touched_path_counts: Counter[TreePath] = Counter()
     touched_source_count = 0
@@ -440,12 +446,20 @@ def collect_no_touched_path_counts(
             for op in ops:
                 touched_op_count += 1
                 op_paths = {tuple(op.target.path)}
+                # ``op.targets`` is an *optional* multi-target view some IR
+                # node subtypes carry (not in the base ``LegalOperation``
+                # dataclass, hence getattr); ``op.anchor`` and
+                # ``op.destination`` are typed Optional fields on every
+                # LegalOperation, so the getattr defenses against them were
+                # §1.9 dynamic-shape over typed carriers. Direct attribute
+                # access now: the typed Optional[LegalAddress] = None default
+                # is the contract.
                 for candidate in getattr(op, "targets", []) or []:
                     op_paths.add(tuple(candidate.path))
-                anchor = getattr(op, "anchor", None)
+                anchor = op.anchor
                 if anchor is not None:
                     op_paths.add(tuple(anchor.path))
-                destination = getattr(op, "destination", None)
+                destination = op.destination
                 if destination is not None:
                     op_paths.add(tuple(destination.path))
                 if op_paths:
