@@ -69,6 +69,22 @@ def test_fi_xml_to_ir_node_preserves_terminal_omission_inside_content_wrapper() 
     assert irnode_to_text(content) == "Raasepori Tammisaari Hanko Kirkkonummi"
 
 
+def test_fi_xml_to_ir_node_records_inline_text_markup_on_content() -> None:
+    xml = etree.fromstring(
+        """
+        <content>
+          <p><i>Kunnan työttömyysetuuksien korvauksen laskeminen</i></p>
+        </content>
+        """
+    )
+
+    content = fi_xml_to_ir_node(xml)
+
+    assert content.kind == IRNodeKind.CONTENT
+    assert content.attrs["lawvm_source_inline_tags"] == ("i",)
+    assert irnode_to_text(content) == "Kunnan työttömyysetuuksien korvauksen laskeminen"
+
+
 def test_fi_xml_to_ir_node_hoists_inline_content_omission_to_subsection_level() -> None:
     xml = etree.fromstring(
         """

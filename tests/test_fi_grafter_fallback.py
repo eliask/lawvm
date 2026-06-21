@@ -15404,6 +15404,37 @@ def test_inspect_amendment_1966_611_1981_20_recovers_heading_tagged_subsection_p
     )
 
 
+def test_inspect_amendment_2020_811_2021_278_promotes_leading_subsection_heading_payload() -> None:
+    """A whole-section insert may carry the section heading as its first subsection."""
+    bundle = build_amendment_bundle("2020/811", "2021/278", mode="legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "11a")
+
+    assert bundle["compiled_ops"] == ["INSERT 1 luku 11a §"]
+    assert group["ops_raw"] == ["INSERT 1 luku 11a §"]
+    assert group["ops_final"] == ["INSERT 1 luku 11a §"]
+    assert group["source_pathologies"] == []
+    assert any(
+        observation["kind"] == "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
+        and observation["detail"]["shifted_subsection_count"] == 1
+        and observation["detail"]["rule"] == "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
+        for observation in group["elaboration_observations"]
+    )
+
+
+def test_inspect_amendment_2022_1393_2024_870_keeps_inline_styled_leading_subsection() -> None:
+    """Inline-styled leading subsection text is not promoted to a section heading."""
+    bundle = build_amendment_bundle("2022/1393", "2024/870", mode="legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "7a")
+
+    assert "INSERT 7a §" in bundle["compiled_ops"]
+    assert group["ops_raw"] == ["INSERT 7a §"]
+    assert group["ops_final"] == ["INSERT 7a §"]
+    assert all(
+        observation["kind"] != "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
+        for observation in group["elaboration_observations"]
+    )
+
+
 def test_inspect_amendment_1962_420_2024_247_keeps_heading_insert_out_of_subsection_payload() -> None:
     """A same-group heading-facet insert is not subsection body authority."""
     bundle = build_amendment_bundle("1962/420", "2024/247", mode="official_consolidation")

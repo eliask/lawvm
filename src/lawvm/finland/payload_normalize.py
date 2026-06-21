@@ -2122,10 +2122,21 @@ class HeadingTaggedSubsectionPayloadResult:
     heading_text_chars: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class LeadingSubsectionHeadingPayloadResult:
+    """Result for repairing a section heading mis-tagged as first subsection."""
+
+    muutos_ir: Optional[IRNode]
+    rewritten: bool = False
+    heading_text_chars: int = 0
+    shifted_subsection_count: int = 0
+
+
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
 _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE = "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL"
 _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
+_LEADING_SUBSECTION_HEADING_PAYLOAD_RULE = "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
 _TEXT_TABLE_ROW_CONTINUATION_RULE = "ELAB.TEXT_TABLE_ROW_CONTINUATION"
 
 
@@ -2355,6 +2366,123 @@ def _normalize_heading_tagged_subsection_payload(
         rewritten=True,
         target_paragraph=target_paragraph,
         heading_text_chars=len(heading_text),
+    )
+
+
+def _plain_content_only_subsection_text(subsection: IRNode) -> str | None:
+    if subsection.kind is not IRNodeKind.SUBSECTION:
+        return None
+    if len(subsection.children) != 1:
+        return None
+    child = subsection.children[0]
+    if child.kind is not IRNodeKind.CONTENT:
+        return None
+    if child.children:
+        return None
+    text = " ".join(irnode_to_text(child).split())
+    return text or None
+
+
+def _plain_content_only_subsection_has_inline_markup(subsection: IRNode) -> bool:
+    if subsection.kind is not IRNodeKind.SUBSECTION or len(subsection.children) != 1:
+        return False
+    child = subsection.children[0]
+    return bool(child.attrs.get("lawvm_source_inline_tags"))
+
+
+def _looks_like_orphan_section_heading_text(text: str) -> bool:
+    if len(text) > 160:
+        return False
+    if text.endswith((".", ":", ";", "!", "?")):
+        return False
+    words = text.split()
+    return 1 <= len(words) <= 18
+
+
+def _looks_like_body_subsection_text(text: str) -> bool:
+    return bool(text) and text.endswith((".", "!", "?"))
+
+
+def _normalize_leading_subsection_heading_payload(
+    target_unit_kind: TargetUnitKind,
+    group_ops: List[AmendmentOp],
+    muutos_ir: Optional[IRNode],
+) -> LeadingSubsectionHeadingPayloadResult:
+    """Promote a whole-section payload's orphan first subsection into a heading.
+
+    Some Finlex amendment XML encodes a newly inserted section title as the
+    first content-only subsection, followed by the real first body subsection.
+    The consolidated oracle projects the first child as the section heading.
+    This rule is whole-section only and refuses mixed same-group descendant or
+    heading-facet authority, so it cannot absorb an explicit subsection target.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+    if any(op.target_special in {"otsikko", "otsikko_edella"} for op in group_ops):
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+    whole_section_ops = [
+        op
+        for op in group_ops
+        if (
+            op.op_type in {"INSERT", "REPLACE"}
+            and op.target_unit_kind == "section"
+            and op.target_paragraph is None
+            and not op.target_item
+            and not op.target_special
+        )
+    ]
+    if len(whole_section_ops) != 1 or len(group_ops) != 1:
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+    if any(child.kind is IRNodeKind.HEADING for child in muutos_ir.children):
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+    if any(child.kind not in {IRNodeKind.NUM, IRNodeKind.SUBSECTION, IRNodeKind.OMISSION} for child in muutos_ir.children):
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+
+    subsections = [child for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION]
+    if len(subsections) < 2:
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+
+    heading_text = _plain_content_only_subsection_text(subsections[0])
+    first_body_text = _plain_content_only_subsection_text(subsections[1])
+    if heading_text is None or first_body_text is None:
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+    if _plain_content_only_subsection_has_inline_markup(subsections[0]):
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+    if not _looks_like_orphan_section_heading_text(heading_text):
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+    if not _looks_like_body_subsection_text(first_body_text):
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+
+    rewritten_subsections = {
+        id(subsection): IRNode(
+            kind=subsection.kind,
+            label=str(index),
+            text=subsection.text,
+            attrs=dict(subsection.attrs),
+            children=tuple(subsection.children),
+        )
+        for index, subsection in enumerate(subsections[1:], start=1)
+    }
+    heading = _with_payload_normalization_rule(
+        IRNode(kind=IRNodeKind.HEADING, text=heading_text),
+        _LEADING_SUBSECTION_HEADING_PAYLOAD_RULE,
+    )
+    new_children: list[IRNode] = []
+    heading_inserted = False
+    for child in muutos_ir.children:
+        if child is subsections[0]:
+            new_children.append(heading)
+            heading_inserted = True
+            continue
+        replacement = rewritten_subsections.get(id(child))
+        new_children.append(replacement if replacement is not None else child)
+    if not heading_inserted:
+        return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
+    return LeadingSubsectionHeadingPayloadResult(
+        muutos_ir=_tops._with_children(muutos_ir, new_children),
+        rewritten=True,
+        heading_text_chars=len(heading_text),
+        shifted_subsection_count=len(rewritten_subsections),
     )
 
 
@@ -6064,6 +6192,24 @@ def elaborate_payload_against_live(
                 target_paragraph=heading_tagged_payload.target_paragraph,
                 heading_text_chars=heading_tagged_payload.heading_text_chars,
                 rule=_HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE,
+            )
+        )
+    leading_subsection_heading_payload = _normalize_leading_subsection_heading_payload(
+        target_unit_kind,
+        group_ops,
+        muutos_ir,
+    )
+    muutos_ir = leading_subsection_heading_payload.muutos_ir
+    if leading_subsection_heading_payload.rewritten:
+        observations.append(
+            _obs(
+                _LEADING_SUBSECTION_HEADING_PAYLOAD_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                heading_text_chars=leading_subsection_heading_payload.heading_text_chars,
+                shifted_subsection_count=leading_subsection_heading_payload.shifted_subsection_count,
+                rule=_LEADING_SUBSECTION_HEADING_PAYLOAD_RULE,
             )
         )
     normalized_group_ops: list[AmendmentOp] = []

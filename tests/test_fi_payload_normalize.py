@@ -5575,6 +5575,142 @@ def test_normalize_group_payload_keeps_explicit_heading_and_subsection_replace_s
     assert "New first moment" in " ".join(irnode_to_text(mapped).split())
 
 
+def test_normalize_group_payload_promotes_leading_subsection_heading_for_whole_section_insert() -> None:
+    ctx = _mock_ctx("section", "11a", target_chapter="1", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="11a",
+        target_chapter="1",
+        source_statute="2021/278",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="11a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="11 a §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Veroilmoituksen antamisaikaa koskeva poikkeava määräys",
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Poiketen 11 §:stä ilmoitus annetaan myöhemmin."),),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    normalized = _muutos_ir(got)
+    assert [child.kind for child in normalized.children] == [
+        IRNodeKind.NUM,
+        IRNodeKind.HEADING,
+        IRNodeKind.SUBSECTION,
+    ]
+    assert irnode_to_text(normalized.children[1]) == "Veroilmoituksen antamisaikaa koskeva poikkeava määräys"
+    assert normalized.children[2].label == "1"
+    assert any(
+        observation.kind == "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
+        and (observation.detail or {})["shifted_subsection_count"] == 1
+        for observation in _observations(got)
+    )
+
+
+def test_normalize_group_payload_does_not_promote_sentence_like_first_subsection() -> None:
+    ctx = _mock_ctx("section", "11a", target_chapter="1", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="11a",
+        target_chapter="1",
+        source_statute="2021/278",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="11a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="11 a §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Ensimmäinen momentti on tavallista virkettä."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Toinen momentti säilyy toisena."),),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    normalized = _muutos_ir(got)
+    assert [child.kind for child in normalized.children] == [
+        IRNodeKind.NUM,
+        IRNodeKind.SUBSECTION,
+        IRNodeKind.SUBSECTION,
+    ]
+    assert all(
+        observation.kind != "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
+        for observation in _observations(got)
+    )
+
+
+def test_normalize_group_payload_does_not_promote_inline_styled_first_subsection() -> None:
+    ctx = _mock_ctx("section", "7a", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="7a",
+        source_statute="2024/870",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="7a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 a §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Kunnan työttömyysetuuksien rahoitusvastuun laajentamista koskevan korvauksen laskeminen",
+                        attrs={"lawvm_source_inline_tags": ("i",)},
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Laskettaessa korvausta otetaan huomioon puolet summasta."),),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    normalized = _muutos_ir(got)
+    assert [child.kind for child in normalized.children] == [
+        IRNodeKind.NUM,
+        IRNodeKind.SUBSECTION,
+        IRNodeKind.SUBSECTION,
+    ]
+    assert all(
+        observation.kind != "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
+        for observation in _observations(got)
+    )
+
+
 def test_normalize_group_payload_drops_intro_only_heading_and_subsection_shell() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

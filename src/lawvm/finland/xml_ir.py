@@ -64,6 +64,7 @@ from lawvm.finland.profile.normalize import (
 
 _HEADER_TOKENS = ("käräjäoikeus", "kanslia", "istunnot")
 _FI_EMPTY_NUMBERED_SECTION_SHELL_MERGE_RULE = "fi_empty_numbered_section_shell_merge_v1"
+_INLINE_TEXT_MARKUP_TAGS = frozenset({"b", "em", "i", "span", "strong", "sub", "sup", "u"})
 
 
 # _paragraph_has_introducer_signal is imported from lawvm.finland.profile.normalize above.
@@ -84,6 +85,17 @@ def _table_row_cells(tr_el: etree._Element) -> List[str]:
 def _looks_like_header_row(cells: List[str]) -> bool:
     lowered = [_norm_anchor(cell) for cell in cells if cell.strip()]
     return all(token in " ".join(lowered) for token in _HEADER_TOKENS)
+
+
+def _inline_text_markup_tags(el: etree._Element) -> tuple[str, ...]:
+    return tuple(sorted({_tag(descendant) for descendant in el.iterdescendants() if _tag(descendant) in _INLINE_TEXT_MARKUP_TAGS}))
+
+
+def _attrs_with_inline_text_markup(attrs: Dict[str, str], el: etree._Element) -> Dict[str, object]:
+    inline_tags = _inline_text_markup_tags(el)
+    if not inline_tags:
+        return dict(attrs)
+    return {**attrs, "lawvm_source_inline_tags": inline_tags}
 
 
 def _parse_table_subsection(
@@ -387,7 +399,7 @@ def fi_xml_to_ir_node(
             kind=tag,
             label=label,
             text=_collapse_text(el),
-            attrs=attrs,
+            attrs=_attrs_with_inline_text_markup(attrs, el),
             children=tuple(omission_children),
         )
 
