@@ -423,6 +423,31 @@ def test_oracle_reflected_section_original_versions_excludes_shadow_when_current
     assert got == set()
 
 
+def test_oracle_reflected_section_original_versions_reads_versioned_subsections() -> None:
+    sid = "1948/404"
+    oracle_path = "akn/fi/act/statute-consolidated/1948/404/fin@20240118/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="chp_2__sec_6bv20220569">
+          <num>6 b §</num>
+          <subsection eId="chp_2__sec_6bv20220569__subsec_1v20220569">
+            <content><p>Older surrounding text.</p></content>
+          </subsection>
+          <subsection eId="chp_2__sec_6bv20220569__subsec_3v20240118">
+            <content><p>Delayed reflected subsection text.</p></content>
+          </subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    got = corpus.get_consolidated_oracle_reflected_section_original_versions(sid, cast(Any, fake))
+
+    assert "2024/118" in got
+
+
 def test_get_ground_truth_preserves_distinct_same_slot_versioned_subsections() -> None:
     """Full-text oracle extraction must preserve distinct same-eId-base siblings.
 

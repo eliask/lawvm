@@ -1370,6 +1370,15 @@ class TestNoDuplicatesInPIT:
         assert "6 ja 9-19 §:ssä määrätyt" not in text
         assert "sähköiseen allekirjoitukseen liittyviä laatuvarmenteita" in text
 
+    def test_1948_404_versioned_subsection_extends_oracle_horizon(self) -> None:
+        """fin@20240118 embeds delayed 2024/118 text in §6 b subsection 3."""
+        ir = _replay("1948/404")
+        section_6b = _first_descendant(ir, IRNodeKind.SECTION, "6b")
+        text = irnode_to_text(section_6b)
+
+        assert "vuosittain viimeistään tammikuun 31 päivänä" in text
+        assert "kahdessatoista yhtä suuressa erässä" not in text
+
     def test_1995_57_misspelled_momenti_targets_section_8_subsection_3(self) -> None:
         """2000/235 typo ``8 §:n 3 momenti`` must not widen to whole §8."""
         ir = _replay("1995/57")
