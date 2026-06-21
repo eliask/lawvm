@@ -86,6 +86,32 @@ def test_diagnose_treats_trailing_figure_legend_as_editorial_convention() -> Non
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_unblamed_high_overlap_truncation_as_source_pathology() -> None:
+    # Real shape: 1989/573 §14. Both surfaces carry the same base provision and
+    # no amendment touches it, but the consolidated witness drops/mangles a
+    # phrase. This must not be reported as replay emitting an extra unit.
+    replay = (
+        "14 § Uudistaminen ja kumoaminen Ennen tämän lain voimaantuloa annetut "
+        "määräykset ja ohjeet on saatettava 4§:n sekä tämän lain nojalla "
+        "annettujen määräysten mukaisiksi 31 päivään joulukuuta 1990 mennessä. "
+        "Ennen tämän lain voimaantuloa annetut määräykset on julkaistava ja "
+        "rekisteröitävä viimeistään 31 päivänä joulukuuta 1990 tai kumottava "
+        "vuoden 1991 alusta lukien. Samasta ajankohdasta lukien on niin ikään "
+        "kumottava ohjeet, joita ei ole rekisteröity viimeistään 31 päivänä "
+        "joulukuuta 1990."
+    )
+    oracle = (
+        "14 § Uudistaminen ja kumoaminen Ennen tämän lain voimaantuloa annetut "
+        "määräykset ja ohjeet on annettujen määräysten mukaisiksi 31 päivään "
+        "joulukuuta 1990 mennessä. Ennen tämän lain voimaantuloa annetut "
+        "määräykset on julkaistava ja rekisteröitävä viimeistään 31 päivänä "
+        "joulukuuta1lukien. Samasta ajankohdasta lukien on niin ikään kumottava "
+        "ohjeet, joita ei ole rekisteröity viimeistään 31 päivänä joulukuuta 1990."
+    )
+
+    assert _diagnose(replay, oracle, None) == "SOURCE_PATHOLOGY"
+
+
 def test_diagnose_keeps_replay_missing_when_drop_exceeds_figure_legend() -> None:
     # A genuine mid-text drop beyond the trailing legend must stay flagged: the
     # self-validating gate only reclassifies when replay matches oracle minus
@@ -201,6 +227,31 @@ def test_classify_statute_1988_451_subsection_repeal_not_extra() -> None:
     row = next(item for item in result.section_results if item["section"] == "section:17")
     assert row["diagnosis"] != "REPLAY_EXTRA"
     assert row["diagnosis"] == "EDITORIAL_CONVENTION"
+
+
+def test_classify_statute_1989_573_unblamed_text_corruption_is_not_replay_extra() -> None:
+    result = _classify_statute("1989/573", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+    assert by_section["section:11"]["diagnosis"] == "SOURCE_PATHOLOGY"
+    assert by_section["section:14"]["diagnosis"] == "SOURCE_PATHOLOGY"
+
+
+def test_classify_statute_1988_852_unblamed_base_text_corruption_is_source_pathology() -> None:
+    result = _classify_statute("1988/852", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+    assert by_section["section:2"]["diagnosis"] == "SOURCE_PATHOLOGY"
+
+
+def test_classify_statute_1979_130_unblamed_base_text_gap_is_source_pathology() -> None:
+    result = _classify_statute("1979/130", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+    assert by_section["section:6"]["diagnosis"] == "SOURCE_PATHOLOGY"
 
 
 def test_source_pathology_diagnosis_maps_recodification_omission_shell_to_source_incomplete() -> None:

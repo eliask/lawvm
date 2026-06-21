@@ -42,6 +42,7 @@ from lawvm.core.compile_views import (
 )
 from lawvm.tools.divergence_heuristics import blame_title_indicates_temporary_amendment
 from lawvm.tools.divergence_heuristics import blame_source_postdates_oracle_version
+from lawvm.tools.divergence_heuristics import high_overlap_unblamed_text_corruption
 from lawvm.tools.divergence_heuristics import is_probable_repeal_stale_oracle
 from lawvm.tools.divergence_heuristics import oracle_has_repeal_banner_with_prior_wording
 from lawvm.tools.divergence_heuristics import oracle_section_duplicates_adjacent_section
@@ -488,6 +489,12 @@ def _diagnose(
         return (
             "ORACLE_STALE",
             "oracle duplicates one same-section sentence fragment beyond the replay/source-backed text",
+        )
+
+    if not blame_op and high_overlap_unblamed_text_corruption(r_text, o_text):
+        return (
+            "SOURCE_PATHOLOGY",
+            "unblamed same-section text mostly overlaps but one witness is truncated or corrupted",
         )
 
     # Use cleaned lengths for the sign check: oracle XML whitespace can add

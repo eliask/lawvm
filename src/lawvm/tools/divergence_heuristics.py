@@ -40,6 +40,38 @@ def oracle_text_reduces_to_bare_section_stub(text: str) -> bool:
     return looks_like_bare_section_stub(strip_editorial_annotations(text))
 
 
+def high_overlap_unblamed_text_corruption(
+    replay_text: str,
+    oracle_text: str,
+    *,
+    min_ratio: float = 0.90,
+    min_abs_delta: int = 25,
+    small_delta_min_ratio: float = 0.97,
+    small_delta_min_abs_delta: int = 8,
+    min_shorter_fraction: float = 0.60,
+) -> bool:
+    """Return True for unblamed same-section text corruption/truncation.
+
+    This is a classifier-only signal for cases where both surfaces contain the
+    same provision, no amendment can explain the difference, and the oracle text
+    appears to have dropped or mangled a bounded phrase while preserving most of
+    the section.  It must not be used to mutate replay output.
+    """
+    replay_clean = _clean(replay_text)
+    oracle_clean = _clean(oracle_text)
+    if not replay_clean or not oracle_clean:
+        return False
+    delta = abs(len(replay_clean) - len(oracle_clean))
+    shorter = min(len(replay_clean), len(oracle_clean))
+    longer = max(len(replay_clean), len(oracle_clean))
+    if shorter / longer < min_shorter_fraction:
+        return False
+    ratio = Levenshtein.ratio(replay_clean, oracle_clean)
+    if delta >= min_abs_delta:
+        return ratio >= min_ratio
+    return delta >= small_delta_min_abs_delta and ratio >= small_delta_min_ratio
+
+
 # Whole-section oracle repeal stub: "<N> § on kumottu L:lla DD.MM.YYYY/NNN."
 # The leading "<N> §" num is optional because etree text-serialization of
 # <num>47 §</num><content><p><i>47 § on kumottu ...</i></p></content> can repeat

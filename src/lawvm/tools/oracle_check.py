@@ -43,6 +43,7 @@ from lawvm.finland.oracle_comparison import (
 )
 from lawvm.tools.divergence_heuristics import blame_title_indicates_temporary_amendment
 from lawvm.tools.divergence_heuristics import blame_source_postdates_oracle_version
+from lawvm.tools.divergence_heuristics import high_overlap_unblamed_text_corruption
 from lawvm.tools.divergence_heuristics import is_probable_repeal_stale_oracle
 from lawvm.tools.divergence_heuristics import oracle_has_future_repeal_overlay
 from lawvm.tools.divergence_heuristics import oracle_has_repeal_banner_with_prior_wording
@@ -874,6 +875,9 @@ def _diagnose(
         c_o_legend = _clean(o_legend_stripped)
         if c_r and c_o_legend and Levenshtein.ratio(c_r, c_o_legend) >= 0.95:
             return "EDITORIAL_CONVENTION"
+
+    if not blame_op and high_overlap_unblamed_text_corruption(r_text, o_text):
+        return "SOURCE_PATHOLOGY"
 
     c_diff = len(c_r) - len(c_o)
     if c_diff > 40:
