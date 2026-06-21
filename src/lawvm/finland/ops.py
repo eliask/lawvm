@@ -17,6 +17,7 @@ from typing_extensions import override
 
 import datetime as dt
 import logging
+import re
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from enum import StrEnum
@@ -409,7 +410,7 @@ def lo_with_added_scope_tag(lo: _LegalOperation, tag: str) -> _LegalOperation:
 # LegalOperation path helpers
 # ---------------------------------------------------------------------------
 
-_PATH_KINDS = ("part", "chapter", "section", "subsection", "item")
+_PATH_KINDS = ("part", "chapter", "section", "subsection", "item", "subitem")
 
 
 def _format_operation_description(
@@ -479,13 +480,20 @@ def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
         ts = "johd"
     else:
         ts = None
+    # kohta (item) and alakohta (subitem) are distinct hierarchy levels in the
+    # canonical address. The legacy late-waist still carries a single combined
+    # ``target_item`` slot that the apply layer splits on demand, so combine the
+    # two segments here while exposing the alakohta separately.
+    item_label = pd.get("item")
+    subitem_label = pd.get("subitem")
     return dict(
         target_section=section,
         target_unit_kind=target_unit_kind,
         target_chapter=chapter,
         target_part=pd.get("part"),
         target_paragraph=int(sub_val) if sub_val and sub_val.isdigit() else None,
-        target_item=pd.get("item"),
+        target_item=(f"{item_label}{subitem_label}" if item_label and subitem_label else item_label),
+        target_subitem=subitem_label,
         target_special=ts,
     )
 
@@ -640,6 +648,7 @@ class AmendmentOp:
     target_part: Optional[str] = None
     target_paragraph: Optional[int] = None
     target_item: Optional[str] = None
+    target_subitem: Optional[str] = None
     target_special: Optional[str] = None
     named_row_targets: Tuple[str, ...] = ()
     numbered_table_targets: Tuple[str, ...] = ()
@@ -690,6 +699,7 @@ class AmendmentOp:
         target_part: Optional[str] = None,
         target_paragraph: Optional[int] = None,
         target_item: Optional[str] = None,
+        target_subitem: Optional[str] = None,
         target_special: Optional[str] = None,
         named_row_targets: Tuple[str, ...] = (),
         numbered_table_targets: Tuple[str, ...] = (),
@@ -744,6 +754,8 @@ class AmendmentOp:
                 target_paragraph = cast(Optional[int], lo_fields["target_paragraph"])
             if target_item is None:
                 target_item = cast(Optional[str], lo_fields["target_item"])
+            if target_subitem is None:
+                target_subitem = cast(Optional[str], lo_fields["target_subitem"])
             if target_special is None:
                 target_special = cast(Optional[str], lo_fields["target_special"])
 
@@ -759,6 +771,7 @@ class AmendmentOp:
         self.target_part = target_part
         self.target_paragraph = target_paragraph
         self.target_item = target_item
+        self.target_subitem = target_subitem
         self.target_special = target_special
         self.named_row_targets = named_row_targets
         self.numbered_table_targets = numbered_table_targets
@@ -1118,6 +1131,7 @@ class ResolvedOp:
         part_label: str | None = None
         subsection_label: str | None = None
         item_label: str | None = None
+        subitem_label: str | None = None
         resolved_special: str | None = None
         if address is not None:
             for kind, label in address.path:
@@ -1131,6 +1145,8 @@ class ResolvedOp:
                     subsection_label = label
                 elif kind == "item":
                     item_label = label
+                elif kind == "subitem":
+                    subitem_label = label
             if address.special == FacetKind.HEADING:
                 resolved_special = "otsikko"
             elif address.special == FacetKind.INTRO:
@@ -1153,13 +1169,18 @@ class ResolvedOp:
         if subsection_label is not None and subsection_label.isdigit():
             target_paragraph = int(subsection_label)
 
+        # The apply late-waist consumes a single combined kohta+alakohta slot;
+        # combine the distinct item/subitem address segments here while keeping
+        # the alakohta available separately for consumers that need the split.
+        combined_item = f"{item_label}{subitem_label}" if item_label and subitem_label else item_label
         return ResolvedTargetScopeView(
             target_norm=target_norm,
             target_chapter=target_chapter,
             target_part=target_part,
             target_paragraph=target_paragraph,
-            target_item=item_label,
+            target_item=combined_item,
             target_special=resolved_special,
+            target_subitem=subitem_label,
         )
 
     @property
@@ -1345,7 +1366,13 @@ class ResolvedOp:
 
     @property
     def resolved_target_item_label(self) -> str | None:
-        return self._resolved_target_path_label("item")
+        # kohta + alakohta are distinct address segments; the apply late-waist
+        # consumes them as one combined slot, so recombine them here.
+        return self.effective_target_item_label
+
+    @property
+    def resolved_target_subitem_label(self) -> str | None:
+        return self._resolved_target_path_label("subitem")
 
     @property
     def resolved_target_special(self) -> str | None:
@@ -1383,10 +1410,21 @@ class ResolvedOp:
         address = self.resolved_target_address
         if address is None:
             return None
+        item_label: str | None = None
+        subitem_label: str | None = None
         for kind, label in reversed(address.path):
-            if kind == "item":
-                return label
-        return None
+            if kind == "subitem" and subitem_label is None:
+                subitem_label = label
+            elif kind == "item" and item_label is None:
+                item_label = label
+        if item_label is None:
+            return None
+        # The apply late-waist consumes a single combined kohta+alakohta slot
+        # (which it re-splits as needed), so recombine the distinct item/subitem
+        # address segments here.
+        if subitem_label:
+            return f"{item_label}{subitem_label}"
+        return item_label
 
     @property
     def effective_target_paragraph(self) -> int | None:
@@ -1683,6 +1721,7 @@ class ResolvedTargetScopeView:
     target_paragraph: int | None
     target_item: str | None
     target_special: str | None
+    target_subitem: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1801,7 +1840,17 @@ def _synthesize_target_address(
         path_parts.append(("subsection", str(target_paragraph)))
 
     if target_item is not None:
-        path_parts.append(("item", str(target_item)))
+        # kohta (item) and alakohta (subitem) are distinct hierarchy levels.
+        # The legacy combined slot may still carry a ``<digit><letter>`` compound
+        # (e.g. ``3d``); split it back into the two separate address segments so
+        # the canonical address never collapses the alakohta into the kohta.
+        item_text = str(target_item)
+        compound = re.fullmatch(r"(\d+)([a-z])", item_text)
+        if compound is not None:
+            path_parts.append(("item", compound.group(1)))
+            path_parts.append(("subitem", compound.group(2)))
+        else:
+            path_parts.append(("item", item_text))
 
     special: Optional[FacetKind] = None
     if target_special in {"otsikko", "otsikko_edella"}:
@@ -1855,13 +1904,21 @@ def _rebind_resolved_target_address(
     if address is not None:
         prefix: list[tuple[str, str]] = []
         for kind, label in address.path:
-            if kind in {"subsection", "item"}:
+            if kind in {"subsection", "item", "subitem"}:
                 break
             prefix.append((kind, label))
         if target_paragraph is not None:
             prefix.append(("subsection", str(target_paragraph)))
         if target_item is not None:
-            prefix.append(("item", str(target_item)))
+            # Re-expand a combined kohta+alakohta slot into separate segments so
+            # the rebound address keeps the alakohta as its own level.
+            item_text = str(target_item)
+            compound = re.fullmatch(r"(\d+)([a-z])", item_text)
+            if compound is not None:
+                prefix.append(("item", compound.group(1)))
+                prefix.append(("subitem", compound.group(2)))
+            else:
+                prefix.append(("item", item_text))
         special: FacetKind | None = None
         if target_special in {"otsikko", "otsikko_edella"}:
             special = FacetKind.HEADING

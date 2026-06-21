@@ -79,7 +79,7 @@ def test_parse_clause_alakohta_replace_preserves_later_chapter_scoped_targets():
     )
     result = parse_clause(text)
     assert [op.code() for op in result.parsed_ops] == [
-        "M P L:1 11b 1 6a",
+        "M P L:1 11b 1 6 a",
         "M P L:3 20 1",
         "M P L:4 5 3",
         "M P L:5 2 o",
@@ -1014,7 +1014,7 @@ def test_insertion_alakohta_into_existing_item_uses_compound_item_label() -> Non
     text = "lisätään 1 §:n 1 momentin 1 kohtaan uusi c alakohta seuraavasti:"
     ops = parse_clause(text).parsed_ops
 
-    assert [op.code() for op in ops] == ["L P 1 1 1c"]
+    assert [op.code() for op in ops] == ["L P 1 1 1 c"]
     assert ops[0].witness is not None
     assert ops[0].witness.rule_id == "fi.insertion_alakohta_into_item"
 
@@ -1025,7 +1025,7 @@ def test_replace_alakohta_under_existing_item_uses_compound_item_label() -> None
     text = "muutetaan 1 §:n 2 kohdan h alakohta seuraavasti:"
     codes = [op.code() for op in parse_clause(text).parsed_ops]
 
-    assert codes == ["M P 1 1 2h"]
+    assert codes == ["M P 1 1 2 h"]
 
 
 def test_2002_276_replace_alakohta_then_insert_sibling_alakohta_targets_are_distinct() -> None:
@@ -1041,11 +1041,11 @@ def test_2002_276_replace_alakohta_then_insert_sibling_alakohta_targets_are_dist
     codes = [op.code() for op in parse_clause(text, statute_id="2000/1106").parsed_ops]
 
     assert codes == [
-        "M P 1 1 2h",
-        "M P 3 1 1a",
-        "M P 3 1 2a",
-        "M P 3 1 2d",
-        "L P 1 1 2i",
+        "M P 1 1 2 h",
+        "M P 3 1 1 a",
+        "M P 3 1 2 a",
+        "M P 3 1 2 d",
+        "L P 1 1 2 i",
     ]
 
 
@@ -1055,7 +1055,7 @@ def test_insert_coordinated_alakohta_under_existing_item_uses_compound_item_labe
     text = "lisätään 4 §:n 1 momentin 1 kohtaan uusi e ja f alakohta seuraavasti:"
     codes = [op.code() for op in parse_clause(text).parsed_ops]
 
-    assert codes == ["L P 4 1 1e", "L P 4 1 1f"]
+    assert codes == ["L P 4 1 1 e", "L P 4 1 1 f"]
 
 
 def test_2024_539_replace_and_insert_alakohta_lists_survive_cross_verb_clause() -> None:
@@ -1081,26 +1081,26 @@ def test_2024_539_replace_and_insert_alakohta_lists_survive_cross_verb_clause() 
     assert codes == [
         "M P 1 1 1",
         "M P 2 1 1",
-        "M P 2 1 4a",
-        "M P 2 1 4b",
-        "M P 2 1 5d",
-        "M P 2 1 5e",
+        "M P 2 1 4 a",
+        "M P 2 1 4 b",
+        "M P 2 1 5 d",
+        "M P 2 1 5 e",
         "M P 3 j",
         "M P 3 1 4",
         "M P 3 1 6",
-        "M P 4 1 1a",
-        "M P 4 1 2c",
-        "M P 4 1 2d",
-        "M P 4 1 2f",
-        "M P 4 1 2g",
+        "M P 4 1 1 a",
+        "M P 4 1 2 c",
+        "M P 4 1 2 d",
+        "M P 4 1 2 f",
+        "M P 4 1 2 g",
         "M P 8 1",
         "L P 1 1 10",
-        "L P 2 1 3d",
+        "L P 2 1 3 d",
         "L P 3 1 7",
-        "L P 4 1 1e",
-        "L P 4 1 1f",
-        "L P 4 1 2h",
-        "L P 4 1 2i",
+        "L P 4 1 1 e",
+        "L P 4 1 1 f",
+        "L P 4 1 2 h",
+        "L P 4 1 2 i",
     ]
 
 
@@ -1109,12 +1109,12 @@ def test_2024_539_replace_and_insert_alakohta_lists_survive_cross_verb_clause() 
     [
         (
             "lisätään 4 §:n 2 kohtaan uusi h alakohta seuraavasti:",
-            "L P 4 1 2h",
+            "L P 4 1 2 h",
         ),
         (
             "lisätään 4 §:n 2 kohtaan, sellaisena kuin se on osaksi laissa 650/2014, "
             "uusi i alakohta, seuraavasti:",
-            "L P 4 1 2i",
+            "L P 4 1 2 i",
         ),
     ],
 )
@@ -1149,7 +1149,7 @@ def test_2014_692_insertion_list_keeps_anaphoric_momentti_and_alakohta_targets()
         "M P 1 3 6",
         "L P 1 2 16",
         "L P 1 3 7",
-        "L P 4 1 2i",
+        "L P 4 1 2 i",
     ]
 
 
@@ -2444,7 +2444,7 @@ def test_parse_clause_alakohta_continuation_does_not_block_later_section_targets
 
     codes = [op.code() for op in parse_clause(text).parsed_ops]
 
-    assert "M P L:1 4 1 11i" in codes
+    assert "M P L:1 4 1 11 i" in codes
     assert "M P L:1 4 1 19" in codes
     assert "M P L:3 10 1" in codes
     assert "M P L:3 13 3" in codes
