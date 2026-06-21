@@ -21,7 +21,9 @@ from lawvm.core.semantic_types import FacetKind
 from lawvm.core.unicode_folds import CF_FORMAT_CPS, ZS_NON_ASCII_SPACE_CPS
 from lawvm.finland.fi_dates import (
     FI_MONTH_GENITIVE_TO_NUMBER,
+    FiDateForm,
     fi_partitive_month_number,
+    match_fi_date,
     parse_fi_day_month_year,
 )
 from lawvm.finland.helpers import _norm_num_token, _parse_iso_date
@@ -462,7 +464,8 @@ def _normalize_johtolause_verbs(text: str) -> str:
 # scoped expiry into a statute-level bound.
 SECTION_SCOPED_EXPIRY_RE = re.compile(
     r'(?:Lain|Asetuksen|Päätöksen)\s+[\d\w\s,–:§]+?'
-    r'\s*§\s+(?:ovat|on)\s+voimassa\s+(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
+    r'\s*§\s+(?:ovat|on)\s+voimassa\s+'
+    r'(?P<datetail>\d{1,2}\s+päivään\s+[a-zäöå]+\s+\d{4})',
     flags=re.IGNORECASE,
 )
 
@@ -940,7 +943,13 @@ def _amendment_expiry_date(
     # The character class only needs en-dash (U+2013) and ordinary space now.
     m2 = SECTION_SCOPED_EXPIRY_RE.search(eit_text)
     if m2:
-        return parse_fi_day_month_year(m2.group(1), m2.group(2), m2.group(3))
+        # DATE: the allative ``NN päivään Kkkuuta YYYY`` tail isolated by the
+        # anchor is lexed by the shared recognizer (the anchor owns the
+        # section-scope discrimination; the recognizer owns the date token).
+        scoped_date = match_fi_date(m2.group("datetail"), forms={FiDateForm.ALLATIVE})
+        if scoped_date is not None:
+            return scoped_date.value
+        return None
 
     # Pattern 4 (section-scoped "vuoden YYYY loppuun") is intentionally NOT implemented
     # here.  See docstring for the rationale.  When added, it belongs in
@@ -1226,7 +1235,7 @@ _TEMPORARY_SECTION_EXPIRY_RE = re.compile(
     rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§"
     rf"(?:\s*sekä\s+({_TEMPORARY_SECTION_CHARS_SIMPLE}+?)\s*§[^.]*?(?=\s+(?:ovat|on)\s))?"
     rf"\s+(?:ovat|on)\s+voimassa\s+(?:\d{{1,2}}\s+päivästä\s+[a-zäöå]+\s+)?"
-    rf"(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
+    rf"(?P<datetail>\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})",
     re.IGNORECASE,
 )
 _TEMPORARY_ADDED_SECTION_EXPIRY_RE = re.compile(
@@ -1239,17 +1248,17 @@ _TEMPORARY_ADDED_SECTION_EXPIRY_RE = re.compile(
 _TEMPORARY_SUBSECTION_EXPIRY_RE = re.compile(
     rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§:n\s+"
     rf"\d+\s+momentti\s+(?:ovat|on)\s+voimassa\s+"
-    rf"(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
+    rf"(?P<datetail>\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})",
     re.IGNORECASE,
 )
 _TEMPORARY_CHAINED_SECTION_EXPIRY_RE = re.compile(
-    rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SINGLE_SECTION_CHARS}+?)\s*§\s+on\s+voimassa\s+"
-    rf"(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})"
-    rf"((?:\s+(?:ja|sekä)\s+{_TEMPORARY_SINGLE_SECTION_CHARS}+?\s*§\s+\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})+)",
+    rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+(?P<section>{_TEMPORARY_SINGLE_SECTION_CHARS}+?)\s*§\s+on\s+voimassa\s+"
+    rf"(?P<datetail>\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})"
+    rf"(?P<chain>(?:\s+(?:ja|sekä)\s+{_TEMPORARY_SINGLE_SECTION_CHARS}+?\s*§\s+\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})+)",
     re.IGNORECASE,
 )
 _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE = re.compile(
-    rf"(?:ja|sekä)\s+({_TEMPORARY_SINGLE_SECTION_CHARS}+?)\s*§\s+(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
+    rf"(?:ja|sekä)\s+(?P<section>{_TEMPORARY_SINGLE_SECTION_CHARS}+?)\s*§\s+(?P<datetail>\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})",
     re.IGNORECASE,
 )
 _TEMPORARY_CHAINED_PROVISION_EXPIRY_TAIL_RE = re.compile(
@@ -1259,12 +1268,12 @@ _TEMPORARY_CHAINED_PROVISION_EXPIRY_TAIL_RE = re.compile(
     re.IGNORECASE,
 )
 _TEMPORARY_SECTION_YEAR_END_EXPIRY_RE = re.compile(
-    rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§\s+(?:ovat|on)\s+voimassa\s+vuoden\s+(\d{{4}})\s+loppuun",
+    rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§\s+(?:ovat|on)\s+voimassa\s+(?P<datetail>vuoden\s+\d{{4}}\s+loppuun)",
     re.IGNORECASE,
 )
 _TEMPORARY_SUBSECTION_YEAR_END_EXPIRY_RE = re.compile(
     rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§:n\s+"
-    rf"\d+\s+momentti\s+(?:ovat|on)\s+voimassa\s+vuoden\s+(\d{{4}})\s+loppuun",
+    rf"\d+\s+momentti\s+(?:ovat|on)\s+voimassa\s+(?P<datetail>vuoden\s+\d{{4}}\s+loppuun)",
     re.IGNORECASE,
 )
 _TEMPORARY_SECTION_CESSATION_RE = re.compile(
@@ -1512,9 +1521,12 @@ def _temporary_section_expiry_overrides(
 
     if "päivään" in expiry_scan_casefold:
         for m in _TEMPORARY_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            expiry = parse_fi_day_month_year(m.group(3), m.group(4), m.group(5))
-            if expiry is None:
+            expiry_match = match_fi_date(
+                m.group("datetail"), forms={FiDateForm.ALLATIVE}
+            )
+            if expiry_match is None:
                 continue
+            expiry = expiry_match.value
             labels = _parse_section_list_labels(m.group(1))
             if m.group(2):
                 labels |= _parse_section_list_labels(m.group(2))
@@ -1540,9 +1552,12 @@ def _temporary_section_expiry_overrides(
         # The expiry is still section-scoped for replay stamping: the amendment op
         # target carries the exact subsection/item granularity.
         for m in _TEMPORARY_SUBSECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            expiry = parse_fi_day_month_year(m.group(2), m.group(3), m.group(4))
-            if expiry is None:
+            expiry_match = match_fi_date(
+                m.group("datetail"), forms={FiDateForm.ALLATIVE}
+            )
+            if expiry_match is None:
                 continue
+            expiry = expiry_match.value
             _append_override(target_mid_from_cited, _parse_section_list_labels(m.group(1)), expiry)
 
         # Chained same-sentence temporary sunset where only the first section repeats
@@ -1550,47 +1565,47 @@ def _temporary_section_expiry_overrides(
         #   "Lain 90 a § on voimassa 31 päivään heinäkuuta 2020 ja 99 a § 31 päivään
         #    toukokuuta 2021."
         for m_chain in _TEMPORARY_CHAINED_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
-            first_expiry = parse_fi_day_month_year(
-                m_chain.group(2),
-                m_chain.group(3),
-                m_chain.group(4),
+            first_match = match_fi_date(
+                m_chain.group("datetail"), forms={FiDateForm.ALLATIVE}
             )
-            if first_expiry is not None:
+            if first_match is not None:
                 _append_override(
                     target_mid_from_cited,
-                    _parse_section_list_labels(m_chain.group(1)),
-                    first_expiry,
+                    _parse_section_list_labels(m_chain.group("section")),
+                    first_match.value,
                 )
-            tail = m_chain.group(5)
+            tail = m_chain.group("chain")
             for m_tail in _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE.finditer(tail):
-                tail_expiry = parse_fi_day_month_year(
-                    m_tail.group(2),
-                    m_tail.group(3),
-                    m_tail.group(4),
+                tail_match = match_fi_date(
+                    m_tail.group("datetail"), forms={FiDateForm.ALLATIVE}
                 )
-                if tail_expiry is None:
+                if tail_match is None:
                     continue
                 _append_override(
                     target_mid_from_cited,
-                    _parse_section_list_labels(m_tail.group(1)),
-                    tail_expiry,
+                    _parse_section_list_labels(m_tail.group("section")),
+                    tail_match.value,
                 )
 
     if "vuoden" in expiry_scan_casefold and "loppuun" in expiry_scan_casefold:
         for m_yend in _TEMPORARY_SECTION_YEAR_END_EXPIRY_RE.finditer(expiry_scan_text):
-            try:
-                expiry = dt.date(int(m_yend.group(2)), 12, 31)
-            except ValueError:
+            yend_match = match_fi_date(
+                m_yend.group("datetail"), forms={FiDateForm.YEAR_END}
+            )
+            if yend_match is None:
                 continue
+            expiry = yend_match.value
             raw_secs = _LEADING_CHAPTER_CONTEXT_RE.sub("", m_yend.group(1)).strip()
             labels = _parse_section_list_labels(raw_secs)
             _append_override(target_mid_from_cited, labels, expiry)
 
         for m_yend_moment in _TEMPORARY_SUBSECTION_YEAR_END_EXPIRY_RE.finditer(expiry_scan_text):
-            try:
-                expiry = dt.date(int(m_yend_moment.group(2)), 12, 31)
-            except ValueError:
+            yend_match = match_fi_date(
+                m_yend_moment.group("datetail"), forms={FiDateForm.YEAR_END}
+            )
+            if yend_match is None:
                 continue
+            expiry = yend_match.value
             _append_override(
                 target_mid_from_cited,
                 _parse_section_list_labels(m_yend_moment.group(1)),
