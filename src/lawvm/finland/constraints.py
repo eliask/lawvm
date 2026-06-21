@@ -571,7 +571,7 @@ def _c_false_positive_reference(op: AmendmentOp, all_ops: List[AmendmentOp], ctx
     )
     if (
         op.target_unit_kind == "section"
-        and op.op_type != "REPEAL"
+        and op.op_type not in {"REPEAL", "RENUMBER"}
         and target_section
         and not op.target_special
         and not has_source_node

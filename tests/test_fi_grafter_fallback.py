@@ -21,6 +21,7 @@ from lawvm.core.elaboration_context import (
     snapshot_replay_lookups,
     snapshot_target_context,
 )
+from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.apply_events import ApplyMutationEvent
@@ -137,6 +138,7 @@ from lawvm.finland.temporal_rewrites import (
 )
 from lawvm.finland.payload_normalize import (
     _container_pruning_is_expected_heading_only,
+    _unsupported_payload_rejected_ops,
     _prune_container_payload_sections_shadowed_by_standalone_targets as _prune_container_payload_sections_shadowed_by_standalone_targets_impl,
 )
 from lawvm.finland.process_pipeline import process_muutoslaki as _process_muutoslaki_typed
@@ -202,7 +204,7 @@ from lawvm.finland.uncovered_recovery_state import (
 )
 from tests.corpus_pin_helpers import pinned_replay
 from lawvm.finland.apply import apply_op
-from lawvm.finland.constraints import _find_muutos_node
+from lawvm.finland.constraints import _FilterCtx, _filter_ops_by_constraints, _find_muutos_node
 from lawvm.finland.group_ops import append_compiled_group_ops, normalize_group_ops_for_repeal_reenact
 from lawvm.finland.group_plan import GroupTargetKey
 from lawvm.finland.scope import assign_scope_from_renumber_destinations
@@ -6263,6 +6265,71 @@ def test_drop_payloadless_source_replace_shadowed_by_same_group_relabel_keeps_re
 
     assert [op.op_type for op in kept] == ["REPLACE", "RENUMBER"]
     assert rejected == []
+
+
+def test_false_positive_reference_constraint_keeps_payloadless_relabel() -> None:
+    relabel_op = AmendmentOp(
+        op_id="renumber_27h_27i",
+        op_type="RENUMBER",
+        target_section="27h",
+        target_unit_kind="section",
+        target_chapter="6a",
+        source_statute="2003/444",
+        lo=LegalOperation(
+            op_id="renumber_27h_27i",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("chapter", "6a"), ("section", "27h"))),
+            destination=LegalAddress(path=(("chapter", "6a"), ("section", "27i"))),
+            source=OperationSource(statute_id="2003/444"),
+        ),
+    )
+    rejected: list[Any] = []
+
+    kept = _filter_ops_by_constraints(
+        [relabel_op],
+        _FilterCtx(
+            muutos_ir=None,
+            johto="nykyinen 27 g-27 i § siirtyy 27 h-27 j §:ksi",
+        ),
+        rejected_ops_out=rejected,
+    )
+
+    assert kept == [relabel_op]
+    assert rejected == []
+
+
+def test_unsupported_payload_rejection_does_not_reject_relabel() -> None:
+    relabel_op = AmendmentOp(
+        op_id="renumber_27i_27j",
+        op_type="RENUMBER",
+        target_section="27i",
+        target_unit_kind="section",
+        target_chapter="6a",
+        source_statute="2003/444",
+    )
+    replace_op = AmendmentOp(
+        op_id="replace_27i",
+        op_type="REPLACE",
+        target_section="27i",
+        target_unit_kind="section",
+        target_chapter="6a",
+        source_statute="2003/444",
+    )
+
+    rejected = _unsupported_payload_rejected_ops(
+        group_ops=[relabel_op, replace_op],
+        rejected_ops=[],
+        payload_completeness=PayloadCompletenessWitness(
+            kind="unsupported",
+            reasons=("missing_payload_ir",),
+            tail_policy="classify_only",
+            detail={},
+        ),
+    )
+
+    assert [item.description for item in rejected] == [replace_op.description()]
+    assert rejected[0].reason_code == "UNSUPPORTED_PAYLOAD_MISSING_PAYLOAD_IR"
 
 
 def test_build_amendment_bundle_keeps_scoped_move_targets_as_section_groups(

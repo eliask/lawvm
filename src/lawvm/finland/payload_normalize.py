@@ -699,6 +699,8 @@ def _unsupported_payload_rejected_ops(
     reason = "ELAB." + reason_code
     generated: list[FailedOp] = []
     for op in group_ops:
+        if op.op_type == "RENUMBER":
+            continue
         key = (
             op.description(),
             op.target_unit_kind,
