@@ -480,24 +480,25 @@ def _maybe_update_section_heading(
         return result
 
     if isinstance(dispatch_op, ResolvedOp):
+        op_type = dispatch_op.op.op_type
         target_paragraph = dispatch_op.effective_target_paragraph
         target_item = dispatch_op.effective_target_item_label
         target_special = dispatch_op.effective_target_special
     else:
+        op_type = dispatch_op.op_type
         target_paragraph = dispatch_op.target_paragraph
         target_item = dispatch_op.target_item
         target_special = dispatch_op.target_special
 
-    # Descendant-scoped payloads often arrive in a whole-section XML shell
-    # whose heading is carried context, not source ownership for a heading
-    # mutation. A separate heading target must own heading changes.
-    if target_special != "otsikko":
+    if target_special != "otsikko" and op_type != "REPLACE":
         return result
 
     # Sparse subsection/item payloads often carry a whole-section shell with the
     # live heading plus an omission wrapper around the real targeted child. That
     # shell is not ownership for rewriting the section heading when the op itself
-    # only targets a descendant.
+    # only targets a descendant. A non-omission section shell is still allowed to
+    # update the heading: whole-section amendments can be routed through the
+    # subsection path when the parser over-scopes the target.
     if (
         target_paragraph is not None
         or target_item is not None

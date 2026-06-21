@@ -114,13 +114,6 @@ def diagnose_section_divergence(
                 include_explanation,
             )
 
-    if high_overlap_text_corruption(replay_stripped, oracle_stripped):
-        return _finish(
-            "SOURCE_PATHOLOGY",
-            "same-section source/oracle text mostly overlaps but one witness is corrupted",
-            include_explanation,
-        )
-
     if (
         replay_clean
         and oracle_clean
@@ -152,6 +145,13 @@ def diagnose_section_divergence(
                 "oracle carries figure-legend caption paragraphs absent from replay",
                 include_explanation,
             )
+
+    if high_overlap_text_corruption(replay_stripped, oracle_stripped):
+        return _finish(
+            "SOURCE_PATHOLOGY",
+            "same-section source/oracle text mostly overlaps but one witness is corrupted",
+            include_explanation,
+        )
 
     replay_source_residue_stripped = strip_non_substantive_source_projection_residue(replay_text)
     if replay_source_residue_stripped != replay_text:

@@ -157,46 +157,36 @@ class TestApplyDeclineRatchet:
         )
 
     def test_witnessed_cross_check_sites_read_as_witnessed(self) -> None:
-        """The apply_item_ops / apply_structure_ops sites that were explicitly
-        witnessed by the recent re-audit fixes MUST read as witnessed (zero false
-        positives), or the detector is mis-tuned."""
+        """The recently audited apply-decline families must read as witnessed.
+
+        This is deliberately keyed by file/function family, not physical source
+        line. Line-number assertions are noise: formatting or nearby edits should
+        not make a legal-state accounting gate fail.
+        """
         state = _INV.scan_apply_declines(_REPO_ROOT)
-        by_loc = {
-            (r["file"].split("/")[-1], r["line"]): r["status"] for r in state["records"]
+        witnessed_by_function: dict[tuple[str, str], int] = {}
+        for record in state["records"]:
+            if record["status"] != "witnessed":
+                continue
+            key = (record["file"].split("/")[-1], record["function"])
+            witnessed_by_function[key] = witnessed_by_function.get(key, 0) + 1
+
+        expected_minimums = {
+            ("apply_item_ops.py", "_apply_item_repeal"): 1,
+            ("apply_item_ops.py", "_apply_special_targets"): 3,
+            ("apply_structure_ops.py", "_apply_container_op"): 5,
+            ("apply_subsection_ops.py", "_apply_subsection_repeal"): 1,
+            ("apply_typed_dispatch.py", "_apply_intent_replace"): 1,
+            ("apply_typed_dispatch.py", "_apply_intent_insert"): 1,
+            ("apply_typed_dispatch.py", "_apply_intent_repeal"): 1,
+            ("apply_typed_dispatch.py", "_apply_canonical_intent"): 2,
         }
-        # apply_item_ops.py declines that append a typed pathology before returning.
-        for line in (793, 1752, 1784, 1824):
-            status = by_loc.get(("apply_item_ops.py", line))
-            assert status == "witnessed", (
-                f"apply_item_ops.py:{line} should read as a witnessed decline "
-                f"(got {status!r}); the detector regressed into a false positive."
-            )
-        # apply_structure_ops.py witnessed sites: the REPLACE-target-absent arm
-        # (1253), the container REPEAL/RENUMBER-target-absent arm (1269), the
-        # otsikko ABSENT-target arm (1293, witnessed by the G2 hardening round —
-        # was the live G2-masked drop), and the container-otsikko no-heading /
-        # fall-through arms (1320, 1347).
-        for line in (1253, 1269, 1293, 1320, 1347):
-            status = by_loc.get(("apply_structure_ops.py", line))
-            assert status == "witnessed", (
-                f"apply_structure_ops.py:{line} should read as a witnessed "
-                f"decline (got {status!r})."
-            )
-        # apply_subsection_ops.py: the momentti REPEAL out-of-range-target arm
-        # (906) — the second G2-masked live drop, now witnessed.
-        assert by_loc.get(("apply_subsection_ops.py", 906)) == "witnessed", (
-            "apply_subsection_ops.py:906 (momentti REPEAL out-of-range target) "
-            "should read as a witnessed decline."
-        )
-        # apply_typed_dispatch.py case-arm declines (G1): the unhandled-target /
-        # unknown-intent `case _:` arms MUST be (a) VISIBLE to the detector at
-        # all and (b) read as witnessed (each stamps a mutation event / _fail).
-        for line in (1169, 1273, 1372, 2195, 2207):
-            status = by_loc.get(("apply_typed_dispatch.py", line))
-            assert status == "witnessed", (
-                f"apply_typed_dispatch.py:{line} (a `case _:` decline) should be "
-                f"visible AND witnessed (got {status!r}); the G1 match/case walk "
-                f"or the _fail/_emit witness recognition regressed."
+        for key, expected_count in expected_minimums.items():
+            actual_count = witnessed_by_function.get(key, 0)
+            assert actual_count >= expected_count, (
+                f"{key[0]}::{key[1]} should expose at least {expected_count} "
+                f"witnessed decline(s), got {actual_count}; the apply-decline "
+                "detector regressed or the audited family disappeared."
             )
 
 

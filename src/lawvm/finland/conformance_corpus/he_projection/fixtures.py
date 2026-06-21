@@ -388,7 +388,11 @@ REF_CROSSLINKS_HE = HEProjectionFixture(
         {
             "target_statute_id": "1996/86",
             "cite_kind": "cross_statute",
-            "cite_confidence": "exact",
+            # Bare-act <ref href=".../1996/86"> ("vesilakia") with no #sec_N
+            # provision fragment: the act is known but the in-act provision is
+            # pending, so the resolution-status-driven confidence is
+            # STATUTE_ONLY, not a guessed whole-act EXACT (catalogue §0.1).
+            "cite_confidence": "statute_only",
             "phrase_lemma": "ref_element",
         },
     ],
