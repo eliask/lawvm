@@ -192,6 +192,7 @@ def _rewrite_lo_op_source_effective_for_address_suffixes(
     *,
     address_suffixes: tuple[LegalAddress, ...],
     new_group_id: str,
+    include_payload_carriers: bool = False,
 ) -> tuple[LegalAddress, ...]:
     """Update exact child-address effective dates from scoped commencement text."""
     if lo_ops_out is None or not address_suffixes:
@@ -202,7 +203,14 @@ def _rewrite_lo_op_source_effective_for_address_suffixes(
         src = lo.source
         if src is None or src.statute_id != target_source_statute:
             continue
-        if not any(_address_matches_commencement_suffix(lo.target, suffix) for suffix in address_suffixes):
+        if not any(
+            _op_carries_commencement_suffix(
+                lo,
+                suffix,
+                include_payload_carriers=include_payload_carriers,
+            )
+            for suffix in address_suffixes
+        ):
             continue
         lo_ops_out[i] = dc_replace(
             lo,
@@ -212,6 +220,30 @@ def _rewrite_lo_op_source_effective_for_address_suffixes(
         if lo.target not in touched:
             touched.append(lo.target)
     return tuple(touched)
+
+
+def _op_carries_commencement_suffix(
+    op: _LegalOperation,
+    suffix: LegalAddress,
+    *,
+    include_payload_carriers: bool,
+) -> bool:
+    """Return whether an op would materialize the delayed commencement suffix."""
+    if _address_matches_commencement_suffix(op.target, suffix):
+        return True
+    if not include_payload_carriers:
+        return False
+    if suffix.special is not None:
+        return False
+    target_path = tuple(op.target.path)
+    suffix_path = tuple(suffix.path)
+    if not target_path or len(target_path) >= len(suffix_path):
+        return False
+    if suffix_path[: len(target_path)] != target_path:
+        return False
+    if op.payload is None:
+        return False
+    return _tops.resolve(op.payload, suffix_path[len(target_path):]) is not None
 
 
 def _rewrite_compiled_op_activation_rule_effective_for_address_suffixes(

@@ -1399,6 +1399,18 @@ class AmendmentSourceModel:
             source_statute_id,
         )
 
+    def section_subsection_application_commencement_effective_override(
+        self,
+        source_statute_id: str,
+    ) -> tuple[str, tuple[LegalAddress, ...], dt.date] | None:
+        """Return subsection-scoped application-start effective override metadata."""
+        from lawvm.finland.metadata import _section_subsection_application_commencement_effective_override
+
+        return _section_subsection_application_commencement_effective_override(
+            self.muutos_tree,
+            source_statute_id,
+        )
+
     def operative_body_repeal_candidate(self) -> str:
         """Return body-prose repeal text when no structured operative body exists."""
         from lawvm.finland.metadata import get_operative_body_repeal_candidate

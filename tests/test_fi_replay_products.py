@@ -1330,6 +1330,30 @@ def test_replay_xml_2005_623_applies_2018_947_after_separate_commencement_law() 
     assert resolved[0].detail.get("witness_ref") == "2018/937/1"
 
 
+def test_replay_xml_1991_1707_delays_scoped_2006_application_date() -> None:
+    lo_ops: list[LegalOperation] = []
+    replay = replay_xml_for_test(
+        "1991/1707",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+    section = replay.materialized_state.find_section("4")
+
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "97 prosenttia yleisesti verovelvollisen merenkulkijan" in text
+    assert "1 päivän tammikuuta 2007 ja 31 päivän joulukuuta 2009 väliseltä ajalta" not in text
+
+    retimed_2006_targets = {
+        str(op.target): op.source.effective
+        for op in lo_ops
+        if op.source is not None and op.source.statute_id == "2006/1322"
+    }
+    assert retimed_2006_targets["section:4"] == "2007-01-01"
+    assert retimed_2006_targets["section:4/subsection:2"] == "2007-01-01"
+
+
 def test_replay_xml_2011_1552_composes_pending_amendment_children() -> None:
     replay = pinned_replay("2011/1552", mode="official_consolidation", quiet=True)
 

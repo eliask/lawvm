@@ -14,6 +14,7 @@ from lawvm.finland.metadata import (
     _infer_expiry_date_from_temporary_payload_text,
     _normalize_fi_parse_text,
     _section_commencement_effective_override,
+    _section_subsection_application_commencement_effective_override,
     _section_subsection_commencement_effective_override,
     _temporary_provision_expiry_overrides,
     _temporary_section_expiry_overrides,
@@ -910,6 +911,34 @@ def test_subsection_commencement_effective_override_parses_mixed_child_and_repea
         LegalAddress(path=(("section", "12"), ("subsection", "1"))),
     }
     assert effective.isoformat() == "2026-01-01"
+
+
+def test_subsection_application_commencement_effective_override_parses_scoped_application_date() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan valtioneuvoston asetuksella säädettävänä ajankohtana. "
+        "Lain 4 §:n 2 momenttia sovelletaan kuitenkin 1 päivänä tammikuuta 2007 "
+        "tai sen jälkeen aiheutuneista kustannuksista maksettavaan tukeen."
+    )
+
+    override = _section_subsection_application_commencement_effective_override(tree, "2006/1322")
+
+    assert override is not None
+    target_mid, addresses, effective = override
+    assert target_mid == "2006/1322"
+    assert addresses == (LegalAddress(path=(("section", "4"), ("subsection", "2"))),)
+    assert effective.isoformat() == "2007-01-01"
+
+
+def test_subsection_application_commencement_effective_override_rejects_fixed_transition() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2024. "
+        "Lain 4 §:n 2 momenttia sovelletaan kuitenkin 1 päivänä tammikuuta 2024 "
+        "tai sen jälkeen vireille tuleviin asioihin."
+    )
+
+    override = _section_subsection_application_commencement_effective_override(tree, "2023/1")
+
+    assert override is None
 
 
 def test_temporary_provision_expiry_overrides_compose_subref_grammar_and_canonical_date() -> None:

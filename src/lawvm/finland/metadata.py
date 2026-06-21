@@ -261,6 +261,12 @@ _SCOPED_COMMENCEMENT_RE = re.compile(
     r"(\d{1,2})\s+päivänä\s+([a-zäöå]+)\s+(\d{4})",
     re.IGNORECASE,
 )
+_SCOPED_APPLICATION_COMMENCEMENT_RE = re.compile(
+    r"(?:Tämän\s+lain|Lain|Asetuksen|Päätöksen|Sen)\s+(.{1,2000}?)\s+"
+    r"sovelletaan\s+kuitenkin\s+"
+    r"(\d{1,2})\s+päivänä\s+([a-zäöå]+)\s+(\d{4})",
+    re.IGNORECASE,
+)
 _COMMENCEMENT_SUBSECTION_REF_RE = re.compile(
     r"(?:(?P<chapter>\d+\s*[a-z]?)\s+luvun\s+)?"
     r"(?P<section>\d+\s*[a-z]?)\s*§\s*:\s*n\s+"
@@ -287,13 +293,14 @@ _COMMENCEMENT_REPEAL_REF_RE = re.compile(
 def _scoped_commencement_guard(text: str) -> bool:
     """Cheap literal pre-guard for ``_SCOPED_COMMENCEMENT_RE``.
 
-    Both ``kuitenkin`` and ``voimaan`` are mandatory literals of the anchor, so
+    ``kuitenkin`` and either ``voimaan`` or ``sovelletaan`` are mandatory
+    literals of the anchor, so
     text lacking either can never match.  Running this O(n) substring check
     first keeps the regex off non-matching input entirely — the key defence
     against the bounded-but-still-superlinear matching path on long text.
     """
     lo = text.lower()
-    return "kuitenkin" in lo and "voimaan" in lo
+    return "kuitenkin" in lo and ("voimaan" in lo or "sovelletaan" in lo)
 
 
 def _strip_cross_law_description(text: str) -> str:
@@ -1832,6 +1839,41 @@ def _section_subsection_commencement_effective_override(
         return None
     # lawvm-regex: owning_parser C-commence scoped-commencement clause LOCATOR (subsection-exact consumer); date/provision structure delegated downstream — anchor only
     match = _SCOPED_COMMENCEMENT_RE.search(eit_text)
+    if match is None:
+        return None
+
+    effective = parse_fi_day_month_year(match.group(2), match.group(3), match.group(4))
+    if effective is None:
+        return None
+
+    addresses = _commencement_subject_exact_address_suffixes(match.group(1))
+
+    if not addresses:
+        return None
+    return source_statute_id, addresses, effective
+
+
+def _section_subsection_application_commencement_effective_override(
+    tree: "etree._Element",
+    source_statute_id: str,
+) -> Optional[Tuple[str, tuple[LegalAddress, ...], dt.date]]:
+    """Return exact child-address application-start overrides.
+
+    This is intentionally narrower than ordinary transitional applicability
+    prose.  The family exists for contingent temporary provisions whose legal
+    text is carried by a parent payload before a decree-set commencement, while
+    the provision itself applies only from a fixed date.
+    """
+
+    full_text = _normalized_tree_text(tree)
+    eit_text = _normalized_entry_into_force_text(tree, full_text)
+
+    if not _scoped_commencement_guard(eit_text):
+        return None
+    if "valtioneuvoston asetuksella" not in eit_text.lower():
+        return None
+    # lawvm-regex: owning_parser C-commence scoped-application clause LOCATOR (subsection-exact consumer); date/provision structure delegated downstream — anchor only
+    match = _SCOPED_APPLICATION_COMMENCEMENT_RE.search(eit_text)
     if match is None:
         return None
 

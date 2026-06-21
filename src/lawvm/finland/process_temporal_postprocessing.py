@@ -222,16 +222,62 @@ class ProcessTemporalPostprocessContext:
         subsection_override = self.source_model.section_subsection_commencement_effective_override(
             self.amendment_id
         )
-        if subsection_override is None:
+        if subsection_override is not None:
+            target_mid, address_suffixes, effective = subsection_override
+            scoped_group_id = f"finland-johto:{self.amendment_id}:subsection_commencement"
+            scoped_addresses = _rewrite_lo_op_source_effective_for_address_suffixes(
+                self.lo_ops_out,
+                target_mid,
+                effective,
+                address_suffixes=address_suffixes,
+                new_group_id=scoped_group_id,
+            )
+            compiled_updated = _rewrite_compiled_op_activation_rule_effective_for_address_suffixes(
+                self.compiled_ops_out,
+                target_mid,
+                effective,
+                address_suffixes=address_suffixes,
+            )
+            if scoped_addresses:
+                self.amendment_temporal_events.append(
+                    self._commence_event(
+                        event_group_id=scoped_group_id,
+                        exact_addresses=scoped_addresses,
+                        effective=effective,
+                    )
+                )
+            if scoped_addresses or compiled_updated:
+                scope = sorted(str(address) for address in scoped_addresses)
+                self.replay_print(
+                    f"  [{self.amendment_id}] subsection_commencement_effective_override (accepted): "
+                    f"{target_mid} {scope} -> {effective.isoformat()}"
+                )
+                self.commencement_expiry_override_notes.append(
+                    EffectLifecycleOverride(
+                        source_statute=self.amendment_id,
+                        target_statute=target_mid,
+                        scope=EffectLifecycleOverrideScope.exact_addresses(scoped_addresses),
+                        effective=effective.isoformat(),
+                        context="accepted_subsection_commencement",
+                    )
+                )
+
+        application_override = (
+            self.source_model.section_subsection_application_commencement_effective_override(
+                self.amendment_id
+            )
+        )
+        if application_override is None:
             return
-        target_mid, address_suffixes, effective = subsection_override
-        scoped_group_id = f"finland-johto:{self.amendment_id}:subsection_commencement"
+        target_mid, address_suffixes, effective = application_override
+        scoped_group_id = f"finland-johto:{self.amendment_id}:subsection_application_commencement"
         scoped_addresses = _rewrite_lo_op_source_effective_for_address_suffixes(
             self.lo_ops_out,
             target_mid,
             effective,
             address_suffixes=address_suffixes,
             new_group_id=scoped_group_id,
+            include_payload_carriers=True,
         )
         compiled_updated = _rewrite_compiled_op_activation_rule_effective_for_address_suffixes(
             self.compiled_ops_out,
@@ -250,8 +296,8 @@ class ProcessTemporalPostprocessContext:
         if scoped_addresses or compiled_updated:
             scope = sorted(str(address) for address in scoped_addresses)
             self.replay_print(
-                f"  [{self.amendment_id}] subsection_commencement_effective_override (accepted): "
-                f"{target_mid} {scope} -> {effective.isoformat()}"
+                f"  [{self.amendment_id}] subsection_application_commencement_effective_override "
+                f"(accepted): {target_mid} {scope} -> {effective.isoformat()}"
             )
             self.commencement_expiry_override_notes.append(
                 EffectLifecycleOverride(
@@ -259,7 +305,7 @@ class ProcessTemporalPostprocessContext:
                     target_statute=target_mid,
                     scope=EffectLifecycleOverrideScope.exact_addresses(scoped_addresses),
                     effective=effective.isoformat(),
-                    context="accepted_subsection_commencement",
+                    context="accepted_subsection_application_commencement",
                 )
             )
 
