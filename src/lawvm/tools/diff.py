@@ -37,6 +37,7 @@ from lawvm.tools.section_keys import (
     section_key_sort_key,
 )
 from lawvm.tools.divergence_heuristics import oracle_text_reduces_to_bare_section_stub
+from lawvm.tools.pit_projection import comparison_ir_for_pit
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import (
     _oracle_version_label,
@@ -49,6 +50,10 @@ from lawvm.finland.strict_profile import FINLAND_INGESTION_V1
 
 
 _LATEST_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.latest_cached_editorial()
+
+
+def _comparison_ir(master: Any) -> IRNode:
+    return comparison_ir_for_pit(master, query_type="in_force")
 
 
 # ---------------------------------------------------------------------------
@@ -590,7 +595,14 @@ def _diff_sync(
                 source_adjudication=master.source_adjudication,
             ),
         )
-        _diff_sections_ir_vs_xml(master.ir, oracle_root, address_filter, threshold, show_all, show_text=show_text)
+        _diff_sections_ir_vs_xml(
+            _comparison_ir(master),
+            oracle_root,
+            address_filter,
+            threshold,
+            show_all,
+            show_text=show_text,
+        )
         return
 
     master = call_replay_xml(
@@ -631,7 +643,14 @@ def _diff_sync(
     print()
 
     # Use IRNode-based diff (master.tree is no longer mutated during replay)
-    _diff_sections_ir_vs_xml(master.ir, oracle_root, address_filter, threshold, show_all, show_text=show_text)
+    _diff_sections_ir_vs_xml(
+        _comparison_ir(master),
+        oracle_root,
+        address_filter,
+        threshold,
+        show_all,
+        show_text=show_text,
+    )
 
 
 def _parse_address(address: Optional[str]) -> Optional[Tuple[str, str]]:

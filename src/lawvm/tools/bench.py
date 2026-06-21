@@ -49,6 +49,7 @@ from lawvm.finland.replay_timeline_diagnostics import (
 from lawvm.finland.proof_surfaces import finland_bench_run_evidence_surface
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.transparent_store import is_known_missing_source
+from lawvm.finland.xml_statute import serialize_text as _serialize_ir_text
 from lawvm.semantic.projection import get_oracle_text_normalizer
 from lawvm.tools.editorial_hygiene import (  # via shim (pulls registration)
     count_kumottu_bytes,
@@ -56,6 +57,7 @@ from lawvm.tools.editorial_hygiene import (  # via shim (pulls registration)
     strip_editorial_annotations,
 )
 from lawvm.tools.frontier import _run_oracle_checks_parallel
+from lawvm.tools.pit_projection import comparison_ir_for_pit
 from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
 from lawvm.tools.bench_diagnostic_tiers import (
     bench_diagnostic_sidecar_rows,
@@ -404,6 +406,14 @@ def _clean_oracle_section_text(t: str) -> str:
     return _CLEAN_RE.sub("", strip_editorial_annotations(norm(t)).lower())
 
 
+def _comparison_ir(master: Any) -> Any:
+    return comparison_ir_for_pit(master, query_type="in_force")
+
+
+def _comparison_text(master: Any) -> str:
+    return _serialize_ir_text(_comparison_ir(master))
+
+
 def _levenshtein_ratio(left: str, right: str) -> float:
     """Return the same normalized indel similarity as ``python-Levenshtein.ratio``."""
 
@@ -417,7 +427,7 @@ def _lev_sim_fast(sid: str, master: Any) -> float:
     Returns -1.0 on any error.
     """
     try:
-        c_res = _clean(master.serialize_text())
+        c_res = _clean(_comparison_text(master))
         c_truth = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -670,11 +680,7 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
     if is_oracle_content_absent(oracle_root):
         return _empty_bench_semantic_score(-1.0, -1.0)
 
-    replay_ir = (
-        master.materialized_state.ir
-        if getattr(master, "materialized_state", None) is not None
-        else master.ir
-    )
+    replay_ir = _comparison_ir(master)
     replay_sections = extract_ir_sections(replay_ir)
     oracle_sections = extract_oracle_sections(oracle_root) if oracle_root is not None else {}
     replay_sections, oracle_sections = reconcile_unique_unscoped_aliases(
@@ -687,7 +693,7 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
 
     raw_lev = -1.0
     if text_scores:
-        raw_replay_text = _clean(master.serialize_text())
+        raw_replay_text = _clean(_comparison_text(master))
         raw_oracle_text = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -1098,7 +1104,7 @@ def _section_score(
         )
 
         # Full-text similarity (existing metric)
-        c_res = _clean(master.serialize_text())
+        c_res = _clean(_comparison_text(master))
         c_truth = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -1115,7 +1121,7 @@ def _section_score(
         if oracle_root is None:
             return sid, text_sim, -1.0, "NO_ORACLE_TREE"
 
-        replay_secs = extract_ir_sections(master.ir)
+        replay_secs = extract_ir_sections(_comparison_ir(master))
         oracle_secs = extract_oracle_sections(oracle_root)
         replay_secs, oracle_secs = reconcile_unique_unscoped_aliases(replay_secs, oracle_secs)
 
@@ -1177,7 +1183,7 @@ def _section_score_with_warning_summary(
             },
         )
 
-        c_res = _clean(master.serialize_text())
+        c_res = _clean(_comparison_text(master))
         c_truth = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -1192,7 +1198,7 @@ def _section_score_with_warning_summary(
         if oracle_root is None:
             return sid, text_sim, -1.0, "NO_ORACLE_TREE", warning_counts
 
-        replay_secs = extract_ir_sections(master.ir)
+        replay_secs = extract_ir_sections(_comparison_ir(master))
         oracle_secs = extract_oracle_sections(oracle_root)
         replay_secs, oracle_secs = reconcile_unique_unscoped_aliases(replay_secs, oracle_secs)
 
