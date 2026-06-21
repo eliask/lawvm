@@ -191,6 +191,11 @@ class TestAlakohta:
     """Alakohta tokens are preserved instead of silently broadening to kohta."""
 
     def test_alakohta_preserved_in_target_item_label(self):
-        """1 momentin 2 kohdan a alakohta keeps the alakohta precision."""
+        """1 momentin 2 kohdan a alakohta keeps the alakohta as its own level.
+
+        The kohta (``2``) and alakohta (``a``) are distinct hierarchy levels in
+        the canonical model, emitted as separate code tokens rather than a
+        collapsed ``2a`` compound.
+        """
         codes = _ops("muutetaan 70 §:n 1 momentin 2 kohdan a alakohta")
-        assert codes == ["M P 70 1 2a"]
+        assert codes == ["M P 70 1 2 a"]

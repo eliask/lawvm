@@ -34,6 +34,9 @@ class ParsedOp:
         number:  Section or chapter number string
         momentti: Subsection ordinal (1-based), 0 = whole section
         item:    Item (kohta) identifier string, "" if none
+        subitem: Sub-item (alakohta) identifier string, "" if none. The alakohta
+                 is a distinct hierarchy level under the kohta (§ -> momentti ->
+                 kohta -> alakohta), never folded into the ``item`` label.
         facet:   FacetKind for heading/intro, None for whole section
         raw:     Reconstructed op-code string (for debugging)
     """
@@ -45,6 +48,7 @@ class ParsedOp:
     momentti: int
     item: str
     raw: str
+    subitem: str = ""
     special: str = ""
     facet: Optional[FacetKind] = None
     part: str = ""
@@ -89,6 +93,8 @@ class ParsedOp:
             parts.append(str(self.momentti))
             if self.item:
                 parts.append(self.item)
+                if self.subitem:
+                    parts.append(self.subitem)
         if self.facet:
             if self.facet == FacetKind.HEADING:
                 parts.append("o")

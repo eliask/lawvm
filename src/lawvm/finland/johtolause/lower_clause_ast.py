@@ -192,11 +192,6 @@ def _supplementary_text_targets(resolved: ResolvedSurfaceClause) -> Tuple[LegalA
 # ---------------------------------------------------------------------------
 
 
-def _legacy_item_label(sr: SurfaceSubRef) -> str:
-    """Encode ``kohta`` + ``alakohta`` for the current replay item slot."""
-    return f"{sr.item}{sr.subitem}" if sr.item and sr.subitem else sr.item
-
-
 def _build_target_address(
     kind: TargetKind,
     label: str,
@@ -205,11 +200,16 @@ def _build_target_address(
     momentti: int,
     item: str,
     special: str,
+    subitem: str = "",
 ) -> LegalAddress:
     """Construct a LegalAddress from resolved target fields.
 
     Mirrors the address-construction logic in parsed_op_to_clause_node
     (clause_ast.py) but operates on surface model types.
+
+    The Finnish provision hierarchy is § -> momentti -> kohta -> alakohta.
+    The kohta is the ``item`` segment; the alakohta is its own ``subitem``
+    segment nested under the item, never collapsed into a compound label.
     """
     path: list[tuple[str, str]] = []
     if part:
@@ -223,6 +223,8 @@ def _build_target_address(
             path.append(("subsection", str(momentti)))
             if item:
                 path.append(("item", item))
+                if subitem:
+                    path.append(("subitem", subitem))
     elif kind == TargetKind.CHAPTER:
         path.append(("chapter", label))
     elif kind == TargetKind.PART:
@@ -249,6 +251,7 @@ def _build_destination_address(
     momentti: int = 0,
     item: str = "",
     special: str = "",
+    subitem: str = "",
 ) -> Optional[LegalAddress]:
     """Build the destination LegalAddress for renumber/move ops.
 
@@ -265,6 +268,8 @@ def _build_destination_address(
             TargetKind.NIMIKE: "nimike",
             TargetKind.APPENDIX: "appendix",
         }.get(kind)
+    elif subitem:
+        dest_kind = "subitem"
     elif item:
         dest_kind = "item"
     elif momentti:
@@ -285,12 +290,14 @@ def _build_destination_address(
     dest_path: list[tuple[str, str]] = []
     if dest_kind not in ("part",) and renumber_dest_part:
         dest_path.append(("part", renumber_dest_part))
-    if dest_kind in ("section", "subsection", "item") and renumber_dest_chapter:
+    if dest_kind in ("section", "subsection", "item", "subitem") and renumber_dest_chapter:
         dest_path.append(("chapter", renumber_dest_chapter))
-    if dest_kind in ("subsection", "item") and source_label:
+    if dest_kind in ("subsection", "item", "subitem") and source_label:
         dest_path.append(("section", source_label))
-    if dest_kind == "item" and momentti:
+    if dest_kind in ("item", "subitem") and momentti:
         dest_path.append(("subsection", str(momentti)))
+    if dest_kind == "subitem" and item:
+        dest_path.append(("item", item))
     if effective_label:
         dest_path.append((dest_kind, effective_label))
     return LegalAddress(path=tuple(dest_path)) if dest_path else None
@@ -429,8 +436,9 @@ def _lower_resolved_target_ref(
             node.chapter,
             node.part,
             momentti=sr.momentti,
-            item=_legacy_item_label(sr),
+            item=sr.item,
             special=special_str,
+            subitem=sr.subitem,
         )
         notes = node.notes
 
@@ -443,8 +451,9 @@ def _lower_resolved_target_ref(
                 node.renumber_dest_part,
                 source_label=node.label,
                 momentti=sr.momentti,
-                item=_legacy_item_label(sr),
+                item=sr.item,
                 special=special_str,
+                subitem=sr.subitem,
             )
             heading_action = LabelAction.RENUMBER if verb == VerbKind.SIIRTAA else LabelAction.HEADING_REPLACE
             result.append(
@@ -471,8 +480,9 @@ def _lower_resolved_target_ref(
                 node.renumber_dest_part,
                 source_label=node.label,
                 momentti=sr.momentti,
-                item=_legacy_item_label(sr),
+                item=sr.item,
                 special=special_str,
+                subitem=sr.subitem,
             )
             result.append(
                 LabelAmend(
@@ -576,10 +586,12 @@ def _lower_resolved_insertion(
 
     momentti = 0
     item = ""
+    subitem = ""
     special = ""
     if node.sub_target is not None:
         momentti = node.sub_target.momentti
-        item = _legacy_item_label(node.sub_target)
+        item = node.sub_target.item
+        subitem = node.sub_target.subitem
         # Map FacetKind enum to legacy special string
         if node.sub_target.facet is FacetKind.HEADING:
             special = "otsikko"
@@ -594,6 +606,7 @@ def _lower_resolved_insertion(
         momentti=momentti,
         item=item,
         special=special,
+        subitem=subitem,
     )
     return [
         RefAmend(
@@ -743,8 +756,9 @@ def _lower_resolved_descendant_coordination(
             node.base.chapter,
             node.base.part,
             momentti=sr.momentti,
-            item=_legacy_item_label(sr),
+            item=sr.item,
             special=special_str,
+            subitem=sr.subitem,
         )
         notes: Tuple[str, ...] = node.base.notes
 

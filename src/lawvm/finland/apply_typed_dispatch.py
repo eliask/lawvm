@@ -1096,7 +1096,7 @@ def _apply_intent_replace(
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
             )
-        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "row", "subsection"}:
+        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "subitem", "row", "subsection"}:
             return _apply_intent_section_level(
                 state,
                 rop,
@@ -1200,7 +1200,7 @@ def _apply_intent_insert(
 
     muutos_ir = rop.muutos_ir
     match intent.target:
-        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "row", "subsection"}:
+        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "subitem", "row", "subsection"}:
             return _apply_intent_section_level(
                 state,
                 rop,
@@ -1302,7 +1302,7 @@ def _apply_intent_repeal(
 
     muutos_ir = rop.muutos_ir
     match intent.target:
-        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "row", "subsection"}:
+        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "subitem", "row", "subsection"}:
             return _apply_intent_section_level(
                 state,
                 rop,

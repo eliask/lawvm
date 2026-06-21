@@ -1776,7 +1776,7 @@ def _resolve_anaphoric_sub_nodes(
             momentti = st.momentti
             if parsed.momentti_from_context and st.item:
                 momentti = prev_mom or 1
-            sub_target = SurfaceSubRef(momentti=momentti, item=st.item, facet=st.facet)
+            sub_target = SurfaceSubRef(momentti=momentti, item=st.item, subitem=st.subitem, facet=st.facet)
         out.append(
             SurfaceInsertion(
                 kind=node.kind,
@@ -1966,6 +1966,7 @@ def _try_cross_verb_anaphoric_insert(
                 sub_target=SurfaceSubRef(
                     momentti=node.sub_target.momentti,
                     item=node.sub_target.item,
+                    subitem=node.sub_target.subitem,
                     facet=node.sub_target.facet,
                 ),
                 witness=SurfaceWitness(rule_id=rule_id, source_span=span),
