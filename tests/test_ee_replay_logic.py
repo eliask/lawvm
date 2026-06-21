@@ -4214,3 +4214,150 @@ def test_ee_precompose_pending_amendment_text_patches_emits_adjudication_when_pa
     assert "simulated LegalOperation invariant violation" in failure.detail["exception"]
     assert failure.detail["phase"] == "parse"
     assert failure.detail["blocking"] is False
+
+
+def _force_et_fromstring_to_raise(monkeypatch: pytest.MonkeyPatch, exc: Exception) -> None:
+    """Monkeypatch ``ET.fromstring`` as seen by ``lawvm.estonia.replay``.
+
+    The replay module imports ``xml.etree.ElementTree as ET`` at module
+    scope, so patching ``ee_replay_module.ET.fromstring`` is sufficient
+    to drive the broad ``except Exception`` clause in any prefilter helper
+    that opens with ``ET.fromstring(xml_bytes)``.
+    """
+    monkeypatch.setattr(ee_replay_module.ET, "fromstring", lambda data: (_ for _ in ()).throw(exc))
+
+
+def test_ee_extract_act_title_emits_adjudication_when_xml_parse_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Guard-liveness for ``_ee_extract_act_title``: a malformed XML body must
+    surface as a typed ``ee_extract_act_title_parse_failed`` adjudication,
+    not silently return an empty string (AGENTS.md §1.10).
+    """
+    adjudications: list = []
+    _force_et_fromstring_to_raise(monkeypatch, xml.etree.ElementTree.ParseError("simulated malformed xml"))
+    title = ee_replay_module._ee_extract_act_title(
+        b"<oigusakt></oigusakt",
+        akt_viide="1234567890123",
+        adjudications_out=adjudications,
+    )
+    assert title == ""
+    kinds = [a.kind for a in adjudications]
+    assert "ee_extract_act_title_parse_failed" in kinds
+    failure = next(a for a in adjudications if a.kind == "ee_extract_act_title_parse_failed")
+    assert failure.detail["ref_amendment"] == "1234567890123"
+    assert failure.detail["reason"] == "act_title_source_xml_parse_failed"
+    assert failure.detail["exception_type"] == "ParseError"
+    assert failure.detail["phase"] == "parse"
+    assert failure.detail["blocking"] is False
+
+
+def test_ee_extract_target_matching_paragraph_numbers_emits_adjudication_when_xml_parse_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Guard-liveness for ``_ee_extract_target_matching_paragraph_numbers``."""
+    import xml.etree.ElementTree as _et
+    adjudications: list = []
+    monkeypatch.setattr(ee_replay_module.ET, "fromstring", lambda data: (_ for _ in ()).throw(_et.ParseError("simulated malformed xml")))
+    result = ee_replay_module._ee_extract_target_matching_paragraph_numbers(
+        b"<oigusakt></oigusakt",
+        "Sihtseadus",
+        akt_viide="1234567890123",
+        adjudications_out=adjudications,
+    )
+    assert result == set()
+    kinds = [a.kind for a in adjudications]
+    assert "ee_extract_target_matching_paragraphs_parse_failed" in kinds
+    failure = next(a for a in adjudications if a.kind == "ee_extract_target_matching_paragraphs_parse_failed")
+    assert failure.detail["ref_amendment"] == "1234567890123"
+    assert failure.detail["reason"] == "target_matching_paragraphs_source_xml_parse_failed"
+    assert failure.detail["blocking"] is False
+
+
+def test_ee_extract_repealed_source_paragraph_numbers_emits_adjudication_when_xml_parse_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Guard-liveness for ``_ee_extract_repealed_source_paragraph_numbers``."""
+    import xml.etree.ElementTree as _et
+    adjudications: list = []
+    monkeypatch.setattr(ee_replay_module.ET, "fromstring", lambda data: (_ for _ in ()).throw(_et.ParseError("simulated malformed xml")))
+    result = ee_replay_module._ee_extract_repealed_source_paragraph_numbers(
+        b"<oigusakt></oigusakt",
+        "Sihtseadus",
+        akt_viide="1234567890123",
+        adjudications_out=adjudications,
+    )
+    assert result == set()
+    kinds = [a.kind for a in adjudications]
+    assert "ee_extract_repealed_source_paragraphs_parse_failed" in kinds
+    failure = next(a for a in adjudications if a.kind == "ee_extract_repealed_source_paragraphs_parse_failed")
+    assert failure.detail["ref_amendment"] == "1234567890123"
+    assert failure.detail["reason"] == "repealed_source_paragraphs_source_xml_parse_failed"
+    assert failure.detail["blocking"] is False
+
+
+def test_ee_extract_rewritten_source_paragraph_numbers_emits_adjudication_when_xml_parse_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Guard-liveness for ``_ee_extract_rewritten_source_paragraph_numbers``."""
+    import xml.etree.ElementTree as _et
+    adjudications: list = []
+    monkeypatch.setattr(ee_replay_module.ET, "fromstring", lambda data: (_ for _ in ()).throw(_et.ParseError("simulated malformed xml")))
+    result = ee_replay_module._ee_extract_rewritten_source_paragraph_numbers(
+        b"<oigusakt></oigusakt",
+        "Sihtseadus",
+        akt_viide="1234567890123",
+        adjudications_out=adjudications,
+    )
+    assert result == set()
+    kinds = [a.kind for a in adjudications]
+    assert "ee_extract_rewritten_source_paragraphs_parse_failed" in kinds
+    failure = next(a for a in adjudications if a.kind == "ee_extract_rewritten_source_paragraphs_parse_failed")
+    assert failure.detail["ref_amendment"] == "1234567890123"
+    assert failure.detail["reason"] == "rewritten_source_paragraphs_source_xml_parse_failed"
+    assert failure.detail["blocking"] is False
+
+
+def test_ee_extract_act_title_adjudication_none_out_does_not_raise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When ``adjudications_out`` is None (legacy callers), the helper still
+    raises neither on the parse failure nor on the missing list — the
+    conservative-empty-return behavior is preserved exactly."""
+    import xml.etree.ElementTree as _et
+    monkeypatch.setattr(ee_replay_module.ET, "fromstring", lambda data: (_ for _ in ()).throw(_et.ParseError("simulated malformed xml")))
+    title = ee_replay_module._ee_extract_act_title(b"<oigusakt></oigusakt")
+    assert title == ""
+
+
+def test_ee_precompose_pending_amendment_text_patches_propagates_act_title_parse_adjudication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Guard-liveness through the full production path: when the metapass
+    title-lookup calls ``_ee_extract_act_title`` and the XML fails to parse,
+    the resulting ``ee_extract_act_title_parse_failed`` adjudication must
+    propagate to the caller's adjudications tuple (AGENTS.md §1.10).
+    """
+    import xml.etree.ElementTree as _et
+    earlier_xml = (
+        '<oigusakt xmlns="muutmismaarus_1_10.02.2010">'
+        "<aktinimi><nimi><pealkiri>Varasema seaduse muutmine</pealkiri></nimi></aktinimi>"
+        "<sisu><sisuTekst><tavatekst>Varasema seaduse muutmise määrus muudetakse järgmiselt.</tavatekst></sisuTekst></sisu>"
+        "</oigusakt>"
+    ).encode("utf-8")
+    refs = (_ref("109012025001", "2025-06-18", "2025-09-01"),)
+    monkeypatch.setattr(ee_replay_module.ET, "fromstring", lambda data: (_ for _ in ()).throw(_et.ParseError("simulated malformed xml")))
+    _, adjudications = _ee_precompose_pending_amendment_text_patches(
+        ops=[],
+        refs=refs,
+        amendment_xml_by_ref={"109012025001": earlier_xml},
+    )
+    kinds = [a.kind for a in adjudications]
+    assert "ee_extract_act_title_parse_failed" in kinds
+    failure = next(a for a in adjudications if a.kind == "ee_extract_act_title_parse_failed")
+    assert failure.detail["ref_amendment"] == "109012025001"
+    assert failure.detail["phase"] == "parse"
+    assert failure.detail["blocking"] is False
+
+
+import xml.etree.ElementTree  # noqa: E402  (used by the force-raise helpers above)
