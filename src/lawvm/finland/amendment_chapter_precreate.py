@@ -235,12 +235,12 @@ def _chapter_heading_anchors(johto: str) -> dict[str, str]:
     anchors: dict[str, str] = {}
     if "luvun otsikko" not in johto or "§:n edelle" not in johto:
         return anchors
-    for match in _CHAPTER_HEADING_ANCHOR_RE.finditer(johto):
+    for match in _CHAPTER_HEADING_ANCHOR_RE.finditer(johto):  # lawvm-regex: owning_parser chapter-heading anchor over the amendment's own johtolause (optional E3 johto-anchor consolidation)
         section_label = _section_label_from_num_text(match.group("section"))
         chapter_label = _norm_num_token(match.group("chapter")).removesuffix("luku")
         if section_label and chapter_label:
             anchors[chapter_label] = section_label
-    for match in _NEW_CHAPTER_AND_HEADING_ANCHOR_RE.finditer(johto):
+    for match in _NEW_CHAPTER_AND_HEADING_ANCHOR_RE.finditer(johto):  # lawvm-regex: owning_parser new-chapter+heading anchor over own johtolause (optional E3 johto-anchor consolidation)
         section_label = _section_label_from_num_text(match.group("section"))
         chapter_label = _norm_num_token(match.group("chapter")).removesuffix("luku")
         if section_label and chapter_label:
@@ -253,16 +253,16 @@ def _unnumbered_chapter_heading_anchor_labels(johto: str) -> frozenset[str]:
         return frozenset()
     labels = {
         _section_label_from_num_text(match.group("section"))
-        for match in _UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE.finditer(johto)
+        for match in _UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE.finditer(johto)  # lawvm-regex: owning_parser unnumbered chapter-heading anchor over own johtolause (optional E3 johto-anchor consolidation)
     }
-    for match in _UNNUMBERED_CHAPTER_HEADING_ANCHOR_PHRASE_RE.finditer(johto):
+    for match in _UNNUMBERED_CHAPTER_HEADING_ANCHOR_PHRASE_RE.finditer(johto):  # lawvm-regex: owning_parser unnumbered chapter-heading phrase anchor over own johtolause (optional E3 johto-anchor consolidation)
         labels.update(_chapter_heading_anchor_list_labels_before(johto[: match.start()]))
     return frozenset(label for label in labels if label)
 
 
 def _chapter_heading_anchor_list_labels_before(prefix: str) -> tuple[str, ...]:
     stripped_prefix = prefix.rstrip()
-    tokens = list(_ANCHOR_LIST_TOKEN_RE.finditer(stripped_prefix))
+    tokens = list(_ANCHOR_LIST_TOKEN_RE.finditer(stripped_prefix))  # lawvm-regex: owning_parser anchor-list tokenizer over a johtolause-derived prefix (optional E3 johto-anchor consolidation)
     if not tokens:
         return ()
 
@@ -301,7 +301,7 @@ def _singular_same_label_move_starts(johto: str) -> dict[str, str]:
     if "siirret" not in johto or "lukuun" not in johto:
         return {}
     starts: dict[str, str] = {}
-    for match in _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE.finditer(johto):
+    for match in _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE.finditer(johto):  # lawvm-regex: owning_parser same-label move-clause anchor over own johtolause (optional E3 johto-anchor consolidation)
         section_label = _section_label_from_num_text(match.group("section"))
         chapter_label = _norm_num_token(match.group("chapter")).removesuffix("luku")
         if section_label and chapter_label:
