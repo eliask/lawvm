@@ -638,6 +638,23 @@ def test_explain_diagnose_treats_oracle_subsection_ordinals_as_editorial() -> No
     assert "subsection ordinal prefixes" in explanation
 
 
+def test_explain_diagnose_treats_blame_owned_extra_insert_as_oracle_stale() -> None:
+    replay = (
+        "12 b § Tavarankuljetustukea voidaan myöntää. "
+        "Asetuksella annetaan tarkempia säännöksiä ehdoista."
+    )
+    oracle = "12 b § Tavarankuljetustukea voidaan myöntää."
+
+    diagnosis, explanation = _diagnose(
+        replay,
+        oracle,
+        {"action": "insert", "source_statute": "1981/935"},
+    )
+
+    assert diagnosis == "ORACLE_STALE"
+    assert "1981/935" in explanation
+
+
 def test_explain_source_pathology_demotes_absent_subsection_target() -> None:
     master = SimpleNamespace(
         findings=(),

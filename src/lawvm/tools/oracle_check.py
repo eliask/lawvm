@@ -907,6 +907,9 @@ def _diagnose(
 
     c_diff = len(c_r) - len(c_o)
     if c_diff > 40:
+        action = str(blame_op.get("action", "") if blame_op else "").upper()
+        if blame_op and action in {"REPLACE", "INSERT"}:
+            return "ORACLE_STALE"
         return "REPLAY_EXTRA"
     if c_diff < -40:
         return "REPLAY_MISSING"

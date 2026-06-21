@@ -542,7 +542,7 @@ def _diagnose(
     # and punctuation so only alphanumeric content is compared.
     clean_len_diff = len(_clean(r_text)) - len(_clean(o_text))
     src = blame_op.get("source_statute", "?") if blame_op else None
-    action = blame_op.get("action", "") if blame_op else ""
+    action = str(blame_op.get("action", "") if blame_op else "").upper()
 
     # Keep the coarse replay-vs-oracle size heuristic aligned with
     # oracle_check._diagnose(): moderate extra/missing content should not fall

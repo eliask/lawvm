@@ -219,6 +219,22 @@ def test_diagnose_treats_oracle_subsection_ordinals_as_editorial_convention() ->
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_blame_owned_extra_insert_as_oracle_stale() -> None:
+    # Real shape: 1974/1086 §12b. Replay carries text inserted by 1981/935 that
+    # the selected oracle omits; this is an oracle/source mismatch, not an
+    # unowned replay extra.
+    replay = (
+        "12 b § Tavarankuljetustukea voidaan myöntää. "
+        "Asetuksella annetaan tarkempia säännöksiä ehdoista."
+    )
+    oracle = "12 b § Tavarankuljetustukea voidaan myöntää."
+
+    assert (
+        _diagnose(replay, oracle, {"action": "insert", "source_statute": "1981/935"})
+        == "ORACLE_STALE"
+    )
+
+
 def test_diagnose_treats_promulgation_closure_as_editorial_convention() -> None:
     # Real shape: 1922/148 §26. The final promulgation closure is source-side
     # formula text, not consolidated provision body text.
