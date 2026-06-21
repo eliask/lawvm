@@ -1032,7 +1032,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "warn", "grafter_uncovered",
                 "uncovered-body recovery skipped a repeal-placeholder slot without an explicit restoring insert witness",
                 ("preservation", "strictness"), role="observation"),
-    FindingSpec("APPLY.UNCOVERED_BODY_JOHTO_GUARD", "grafter_uncovered",
+    FindingSpec("APPLY.UNCOVERED_BODY_PREAMBLE_GUARD", "grafter_uncovered",
                 "recovery", "warn", "grafter_uncovered",
                 "uncovered-body recovery skipped a section because preamble (fi: johtolause) scope did not justify the label",
                 ("preservation", "ambiguity_resolution"), role="observation"),

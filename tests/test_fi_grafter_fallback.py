@@ -9389,7 +9389,7 @@ def test_uncovered_body_skip_helper_maps_peg_owned_same_chapter_reason() -> None
         ("body_pairing_guard", "APPLY.UNCOVERED_BODY_BODY_PAIRING_GUARD"),
         ("no_content_ops", "APPLY.UNCOVERED_BODY_NO_CONTENT_OPS"),
         ("would_lose_subsections", "APPLY.UNCOVERED_BODY_WOULD_LOSE_SUBSECTIONS"),
-        ("johto_guard", "APPLY.UNCOVERED_BODY_JOHTO_GUARD"),
+        ("johto_guard", "APPLY.UNCOVERED_BODY_PREAMBLE_GUARD"),
         ("omission_merge_failed", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_FAILED"),
         ("omission_merge_low_text_ratio", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_LOW_TEXT_RATIO"),
         ("omission_merge_duplicate_subsection_labels", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_DUPLICATE_LABELS"),

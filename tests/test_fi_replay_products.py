@@ -2798,7 +2798,7 @@ def test_replay_xml_2019_371_johto_guard_skips_omission_shell_uncovered_recovery
     findings = [
         finding
         for finding in replay.findings
-        if finding.kind == "APPLY.UNCOVERED_BODY_JOHTO_GUARD"
+        if finding.kind == "APPLY.UNCOVERED_BODY_PREAMBLE_GUARD"
         and finding.source_statute == "2019/371"
         and str((finding.detail or {}).get("target_section")) in {"209", "210", "211", "212"}
     ]
