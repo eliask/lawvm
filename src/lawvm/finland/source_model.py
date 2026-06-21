@@ -1534,6 +1534,7 @@ class AmendmentSourceModel:
         ):
             return True
         return bool(
+            # lawvm-regex: prefilter content-authorization boolean gate for body recovery; op-bearing branches above use typed op.op_type/target_unit_kind, this only answers "is recovery content-authorized?"
             re.search(
                 r"\bmuutetaan\b|\blisätään\b",
                 self.preamble_text(),

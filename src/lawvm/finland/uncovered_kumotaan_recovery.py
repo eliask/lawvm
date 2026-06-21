@@ -161,6 +161,7 @@ def _apply_uncovered_kumotaan_typed(
 
     has_peg_repeals = any(op.op_type == "REPEAL" for op in ops)
     has_vts_repeals = bool(vts_section_refs or vts_container_refs["chapter"] or vts_container_refs["part"])
+    # lawvm-regex: prefilter cheap presence GATE (does this johto mention kumotaan?); actual targets come from typed _extract_kumotaan_* maps + VTS ops, every injected op witnessed
     if not has_peg_repeals and not has_vts_repeals and not re.search(r"\bkumotaan\b", johto, re.IGNORECASE):
         return KumotaanRecoveryResult(state=state)
 

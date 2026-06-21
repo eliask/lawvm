@@ -106,6 +106,26 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/transparent_store.py": "source_plane",
     "src/lawvm/finland/finlex_api.py": "source_plane",
     "src/lawvm/finland/xml_ir.py": "source_plane",
+    # PDF/XML corrigendum corrector: parses corrigendum PDF text + AKN XML and
+    # emits CORRECTED XML bytes (text_replace on bytes) consumed pre-parse; the
+    # derived LegalAddress is metadata only (not a patch-lookup target). No
+    # timeline op / legal-state is minted from these regexes (C4 triage).
+    "src/lawvm/finland/corrigendum.py": "source_plane",
+    # finlex:// locator + FRBR/AKN identity-byte parsing for canonical artifact
+    # identity / version derivation. Plane A throughout (C4 triage).
+    "src/lawvm/finland/consolidated_artifacts.py": "source_plane",
+    # Source-fact amendment->parent edge discovery over consolidated oracle
+    # metadata; johtolause gating is delegated to the owning citation router, not
+    # local regex. Index/identity layer, not a timeline producer (C4 triage).
+    "src/lawvm/finland/amendment_index.py": "source_plane",
+    # HTML/RSC oracle ingest: regex heading fallback when JSON parse fails. Plane
+    # A byte/HTML ingest (C4 triage).
+    "src/lawvm/finland/finlex_html.py": "source_plane",
+    # Own-source structural normalization between raw XML parse and body-pairing:
+    # every regex reads an IRNode label/text/irnode_to_text of the node being
+    # normalized (plane-A source-IR, the module's own input); every rewrite emits
+    # a witnessed SourceNormalizationFact reaching production (RB-C triage).
+    "src/lawvm/finland/source_normalize.py": "source_plane",
     # --- lexer (B): label / numeric-token normalization only ---
     "src/lawvm/core/tree_ops.py": "lexer",
     "src/lawvm/finland/labels.py": "lexer",
@@ -119,6 +139,13 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/references/by_name.py": "owning_parser",
     "src/lawvm/finland/references/sections.py": "owning_parser",
     "src/lawvm/finland/amendment_payload_lookup.py": "owning_parser",
+    # THE owning voimaantulosäännös (transitional-provision) cross-statute repeal
+    # extractor: reads its OWN amendment source XML (xml_bytes) and mints REPEAL
+    # ops via the §1.12-sanctioned owning rail; address parse already delegated to
+    # the shared scan_legal_addresses grammar driver; fails closed (records
+    # VtsSkippedTarget/VtsSourceDiagnostic). Local regexes are the citation/title
+    # lexer + fragment-boundary truncation feeding it (C4 triage).
+    "src/lawvm/finland/vts.py": "owning_parser",
     # --- diagnostic (D/E): audit / oracle-comparison rendering, no authority ---
     "src/lawvm/core/ir_helpers.py": "diagnostic",
     "src/lawvm/finland/inline_repeal_stub.py": "diagnostic",
