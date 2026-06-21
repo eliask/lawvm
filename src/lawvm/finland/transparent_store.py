@@ -48,7 +48,18 @@ from pathlib import Path
 from typing import Any, cast
 
 from lawvm.corpus_store import CorpusStore, oracle_url
+from lawvm.core.source_acquisition import (
+    SourceAcquisitionAssertion,
+    SourceBundleAdmission,
+    SourceBundlePolicy,
+)
 from lawvm.core.source_witness import SourceWitness
+from lawvm.core.stage_result import (
+    EMPTY_COVERAGE,
+    AuthoritySurface,
+    EvidenceBundle,
+    StageResult,
+)
 from lawvm.finland.source_model import content_digest_witness
 from lawvm.finland.corpus import (
     list_cached_consolidated_locators,
@@ -200,6 +211,28 @@ def is_known_missing_source(sid: str) -> bool:
     than letting it fail with FileNotFoundError.
     """
     return sid in _KNOWN_MISSING_SOURCES
+
+
+# ---------------------------------------------------------------------------
+# Source-bundle admission for staged reads
+# ---------------------------------------------------------------------------
+#
+# Finland source/amendment XML is read EXCLUSIVELY from the Farchive cache
+# (finlex://sd/... locators; see read_source/read_amendment). The conservative
+# default policy admits EXACTLY that lane and nothing else — it type-carries the
+# current behavior (every byte the store returns today comes from this lane) and
+# changes no acceptance decision. It is NOT replay authority: an admitted source
+# is footing only, never authorization to mutate legal state (the firewall stays
+# in AuthoritySurface.replay_authorized, which is False without an explicit
+# ExecutionAuthorization). Tightening the admitted-lane set is a separate,
+# escalated source-acquisition-policy decision.
+_FI_FARCHIVE_SOURCE_LANE: str = "finlex_farchive_cache"
+
+_FI_DEFAULT_SOURCE_BUNDLE_POLICY: SourceBundlePolicy = SourceBundlePolicy(
+    policy_id="fi.source_bundle.farchive_cache.v0",
+    jurisdiction="fi",
+    admitted_source_lanes=(_FI_FARCHIVE_SOURCE_LANE,),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -517,8 +550,18 @@ class TransparentCorpusStore(CorpusStore):
     def read_source(self, sid: str) -> bytes | None:
         """Read original enacted statute XML.
 
-        Checks Farchive cache only. Live source fetch is reserved for
-        explicit refresh_source() calls.
+        Thin value-only wrapper over :meth:`read_source_staged`: returns just the
+        bytes (or None) so the ~30 bare consumers are byte-identical (0-delta).
+        The staged form carries the additive content-witness + bundle-admission
+        accounts; this surface exposes only the value.
+        """
+        result = self.read_source_staged(sid)
+        return result.value if result is not None else None
+
+    def _read_source_bytes(self, sid: str) -> bytes | None:
+        """Read original enacted statute XML bytes (Farchive cache only).
+
+        Live source fetch is reserved for explicit refresh_source() calls.
         Returns None immediately for IDs in the repo-managed permanent-404 list.
         """
         if sid in _KNOWN_MISSING_SOURCES:
@@ -533,6 +576,57 @@ class TransparentCorpusStore(CorpusStore):
             return None
 
         return None
+
+    def read_source_staged(self, sid: str) -> StageResult[bytes] | None:
+        """Read enacted statute XML as a typed :class:`StageResult`.
+
+        Returns ``None`` on an absent read (the same fail-loud contract as
+        :meth:`read_source`; "source absent" is enforced at certificate totality,
+        not by a value-less StageResult). On a present read the account carries:
+
+          * ``value`` — the source bytes (identical to ``read_source``);
+          * ``evidence`` — an :class:`EvidenceBundle` holding the existing
+            content-addressed :class:`SourceWitness` (sha256 ``DigestWitness``
+            over the ACTUAL bytes, never derived from ``sid``). This is the
+            rewire that makes the previously-severed witness flow out of the read;
+          * ``authority`` — an :class:`AuthoritySurface` carrying the
+            :class:`SourceBundleAdmission` from the conservative Farchive-cache
+            policy. ``replay_authorized`` stays False (footing, not authority).
+
+        ``coverage`` is the identity empty certificate (a single-artifact read has
+        nothing to partition) and there are no residuals/findings on success.
+        """
+        witnessed = self._read_with_witness(
+            self._read_source_bytes(sid), sid, "amendment_source_xml"
+        )
+        if witnessed is None:
+            return None
+        data, witness = witnessed
+        admission = self._source_bundle_admission(sid)
+        return StageResult(
+            value=data,
+            evidence=EvidenceBundle((witness,)),
+            coverage=EMPTY_COVERAGE,
+            authority=AuthoritySurface(source_admission=admission),
+        )
+
+    @staticmethod
+    def _source_bundle_admission(sid: str) -> SourceBundleAdmission:
+        """Admit one Farchive-cache source read under the conservative policy.
+
+        Type-carries current behavior: every byte the store returns comes from the
+        Farchive cache lane, which the default policy admits. Admission is source
+        footing, never replay authority.
+        """
+        assertion = SourceAcquisitionAssertion(
+            assertion_id=f"fi:source:{sid}",
+            jurisdiction="fi",
+            artifact_id=sid,
+            source_lane=_FI_FARCHIVE_SOURCE_LANE,
+            assertion_kind="enacted_statute_source",
+            acquisition_status="cached",
+        )
+        return _FI_DEFAULT_SOURCE_BUNDLE_POLICY.evaluate(assertion)
 
     @override
     def read_amendment(self, sid: str) -> bytes | None:

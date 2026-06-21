@@ -9,14 +9,41 @@ the strict read-only archive adapter for other corpus consumers.
 from __future__ import annotations
 from typing_extensions import override
 
+import hashlib
 import os
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from lawvm.core.source_witness import DigestWitness, SourceWitness
+
 if TYPE_CHECKING:
     from farchive import Farchive
+    from lawvm.core.stage_result import StageResult
+
+
+def _read_with_content_witness(
+    data: bytes | None,
+    sid: str,
+    source_role: str,
+) -> tuple[bytes, SourceWitness] | None:
+    """Pair source bytes with a content-addressed :class:`SourceWitness`.
+
+    The sha256 ``DigestWitness`` is computed from the ACTUAL bytes (never from
+    ``sid``), so two reads agree iff their bytes agree. Returns None for an
+    absent read (preserving the ``read_source`` contract).
+    """
+    if data is None:
+        return None
+    witness = SourceWitness(
+        source_role=source_role,
+        artifact_id=sid,
+        digest=DigestWitness(
+            digest_algorithm="sha256", digest=hashlib.sha256(data).hexdigest()
+        ),
+    )
+    return data, witness
 
 from lawvm.finland.consolidated_artifacts import (
     build_canonical_consolidated_locator,
@@ -212,6 +239,46 @@ class CorpusStore(ABC):
         both live under akn/fi/act/statute/.  Provided for call-site clarity.
         """
         return self.read_source(sid)
+
+    # ------------------------------------------------------------------
+    # Content-addressed / staged read surface (StageResult WAIST #1)
+    # ------------------------------------------------------------------
+
+    def read_source_witness(
+        self, sid: str
+    ) -> "tuple[bytes, SourceWitness] | None":
+        """Source bytes paired with a content-addressed witness (or None).
+
+        The witness carries a sha256 ``DigestWitness`` over the ACTUAL bytes
+        (never derived from ``sid``). Default implementation wraps
+        :meth:`read_source`; backends may override.
+        """
+        return _read_with_content_witness(
+            self.read_source(sid), sid, "amendment_source_xml"
+        )
+
+    def read_amendment_witness(
+        self, sid: str
+    ) -> "tuple[bytes, SourceWitness] | None":
+        """Amendment bytes paired with a content-addressed witness (or None)."""
+        return _read_with_content_witness(
+            self.read_amendment(sid), sid, "amendment_source_xml"
+        )
+
+    def read_source_staged(self, sid: str) -> "StageResult[bytes] | None":
+        """Read enacted source XML as a typed :class:`StageResult` (or None).
+
+        Carries the content witness as ``evidence``; the value is byte-identical
+        to :meth:`read_source`. Backends with a source-acquisition policy
+        (e.g. the Finland store) override to also attach a bundle admission.
+        """
+        from lawvm.core.stage_result import EvidenceBundle, StageResult
+
+        witnessed = self.read_source_witness(sid)
+        if witnessed is None:
+            return None
+        data, witness = witnessed
+        return StageResult(value=data, evidence=EvidenceBundle((witness,)))
 
     @abstractmethod
     def read_locator(self, locator: str) -> bytes | None:

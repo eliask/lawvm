@@ -374,6 +374,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_downgrade_witness_lint.py",
         "test_dual_registration_completeness.py",
         "test_authority_boundary_ratchet.py",
+        "test_source_witness_liveness_ratchet.py",
     ),
     "core_ir_contracts": (
         "test_fi_address_parse.py",
@@ -544,6 +545,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_sanction.py",
         "test_fi_sanction_reference.py",
         "test_fi_segmentation_graph.py",
+        "test_fi_source_identity_stage.py",
         "test_fi_source_unit_stage.py",
         "test_fi_term_use.py",
         "test_fi_treaty_article.py",

@@ -20,6 +20,8 @@ from lawvm.core.invariant_surface_matrix import (
 )
 from lawvm.core.mutation_accounting import MutationAccountingResult
 from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.source_acquisition import SourceBundleAdmission
+from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.effect_lifecycle import (
     append_unique_effect_lifecycle_events,
     append_unique_effect_refs,
@@ -87,6 +89,59 @@ def _run_process_stage(
         source_statute=parent_id,
         amendment_id=amendment_id,
     )
+
+
+def _verify_staged_source_identity(
+    *,
+    amendment_id: str,
+    source_model: AmendmentSourceModel,
+    read_witness: SourceWitness | DigestWitness | None,
+    admission: SourceBundleAdmission | None,
+) -> None:
+    """Consume the staged source read's evidence + authority (WAIST #1).
+
+    The content witness carried out of ``read_source_staged`` must agree with the
+    source model's own intrinsic content digest over the bytes the read returned
+    (the pre-correction bytes acquisition received), and the source lane must be
+    admitted to the bundle. This is the production read that proves the witness is
+    no longer severed: a content/lane divergence at the source identity boundary
+    becomes a fail-loud stop instead of a silent acceptance. Source-bundle
+    admission is footing, never replay authority.
+    """
+    if read_witness is None:
+        raise ValueError(
+            f"staged source read for {amendment_id} returned no content witness; "
+            "the source identity account must be present"
+        )
+    # Admission is the FI store's authority half. When a backing store evaluates a
+    # source-bundle policy (the production TransparentCorpusStore always does), an
+    # UN-admitted lane is a typed boundary fact, not a silent acceptance. A store
+    # with no policy (the ABC default / a duck-typed stub) carries no admission;
+    # the witness-digest consistency below still holds.
+    if admission is not None and not admission.admitted:
+        raise ValueError(
+            f"source lane for {amendment_id} not admitted to the bundle "
+            f"(status={admission.admission_status!r}, lane={admission.source_lane!r})"
+        )
+    witness_digest = (
+        read_witness.digest
+        if isinstance(read_witness, SourceWitness)
+        else read_witness
+    )
+    if witness_digest is None:
+        raise ValueError(
+            f"staged source witness for {amendment_id} carries no content digest"
+        )
+    # The read returns the pre-correction bytes acquisition consumes; the model's
+    # pre_correction_digest is set iff a correction changed bytes, else the bytes
+    # are unchanged and source_digest is over those same bytes.
+    expected = source_model.pre_correction_digest or source_model.source_digest
+    if expected is not None and expected.digest != witness_digest.digest:
+        raise ValueError(
+            f"staged source content digest for {amendment_id} "
+            f"({witness_digest.digest}) diverges from the source model digest "
+            f"({expected.digest}) over the same read bytes"
+        )
 
 
 def _finish_process_amendment(
@@ -219,8 +274,14 @@ def process_muutoslaki_resolved(
     )
 
     try:
-        xml_bytes = corpus.read_source(amendment_id)
-        if xml_bytes is None:
+        # Staged source read (WAIST #1): the dominant amendment-source consumer.
+        # Reads .value as the bytes AND the additive accounts — the content
+        # SourceWitness/DigestWitness (.evidence) and the SourceBundleAdmission
+        # (.authority.source_admission) — so the source identity is type-carried,
+        # not convention-bridged. read_source_staged is the production consumer
+        # that un-severs the previously-dead read_source_witness asset.
+        source_staged = corpus.read_source_staged(amendment_id)
+        if source_staged is None:
             _replay_print(f"  [{amendment_id}] not found in corpus — skipping")
             return _finish_process_amendment(
                 state,
@@ -229,6 +290,13 @@ def process_muutoslaki_resolved(
                 parent_id=parent_id,
                 amendment_id=amendment_id,
             )
+        xml_bytes = source_staged.value
+        source_admission = source_staged.authority.source_admission
+        source_read_witness = (
+            source_staged.evidence.witnesses[0]
+            if source_staged.evidence.witnesses
+            else None
+        )
         acquired = _run_process_stage(
             "fi.process.acquisition",
             lambda: ProcessAcquisitionContext(
@@ -257,6 +325,20 @@ def process_muutoslaki_resolved(
         source_title = acquired.source_title
         acquisition = acquired.acquisition
         used_preamble_body_fallback = acquired.used_preamble_body_fallback
+
+        # Consume the staged-read evidence/authority (WAIST #1): the content
+        # witness from the READ must agree with the source model's own intrinsic
+        # content digest (over the SAME pre-correction bytes the read returned),
+        # and the source lane must be admitted to the bundle. Both are typed,
+        # returned facts now — a content/lane divergence at the source boundary is
+        # caught here, not silently accepted. 0-delta on the green corpus (same
+        # bytes -> same sha256; the Farchive lane is admitted).
+        _verify_staged_source_identity(
+            amendment_id=amendment_id,
+            source_model=source_model,
+            read_witness=source_read_witness,
+            admission=source_admission,
+        )
 
         should_apply = acquisition.decision.should_apply
         route_reason = acquisition.decision.route_reason

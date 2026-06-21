@@ -502,8 +502,120 @@ def scope_source_baseline_snapshot(repo_root: Path | None = None) -> dict[str, A
 
 
 # ===========================================================================
+# Ratchet — source-witness liveness (StageResult WAIST #1)
+# ===========================================================================
+#
+# The content-addressed read witnesses on the corpus store
+# (``read_source_witness`` / ``read_amendment_witness`` / ``read_oracle_witness``)
+# build a sha256 ``DigestWitness`` over the actual bytes. They were once SEVERED
+# (only tests called them), the recurring "witness built-then-severed" failure
+# class. This ratchet asserts each named witness method has >= 1 NON-TEST caller
+# (a method-name call ``<recv>.<method>(...)`` in a non-test src file) and is
+# MONOTONE: the per-method non-test caller count may not fall below the committed
+# baseline (severance cannot regress). Defining methods are not counted as
+# callers.
+_WITNESS_LIVENESS_METHODS: tuple[str, ...] = (
+    "read_source_witness",
+    "read_amendment_witness",
+    "read_oracle_witness",
+)
+_WITNESS_LIVENESS_SCAN_ROOTS = ("src/lawvm",)
+
+
+def scan_file_witness_callers(rel_path: str, text: str) -> list[dict[str, Any]]:
+    """Find every non-defining call to a tracked witness method in one file.
+
+    A caller is a ``Call`` whose func is an attribute access naming one of the
+    tracked methods (``corpus.read_source_witness(...)`` etc.). ``FunctionDef``
+    nodes that DEFINE the method are not callers.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    records: list[dict[str, Any]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr in _WITNESS_LIVENESS_METHODS:
+            records.append(
+                {"file": rel_path, "line": node.lineno, "method": func.attr}
+            )
+    return records
+
+
+def scan_witness_liveness_ratchet(repo_root: Path | None = None) -> dict[str, Any]:
+    """Compute per-method NON-TEST caller counts for the witness methods.
+
+    ``_iter_python_files`` already excludes test files, so every record here is a
+    production (non-test) caller — the load-bearing quantity.
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    records: list[dict[str, Any]] = []
+    for rel in _iter_python_files(root, *_WITNESS_LIVENESS_SCAN_ROOTS):
+        path = root / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        records.extend(scan_file_witness_callers(rel, text))
+
+    caller_counts: Counter[str] = Counter()
+    for rec in records:
+        caller_counts[rec["method"]] += 1
+    # Ensure every tracked method appears (0 if severed) so the ratchet sees it.
+    nontest_caller_counts = {
+        method: caller_counts.get(method, 0) for method in _WITNESS_LIVENESS_METHODS
+    }
+
+    return {
+        "nontest_caller_counts": dict(sorted(nontest_caller_counts.items())),
+        "total_nontest_callers": sum(nontest_caller_counts.values()),
+        "records": records,
+    }
+
+
+WITNESS_LIVENESS_BASELINE_PATH = Path("tests/data/source_witness_liveness_baseline.json")
+
+
+def witness_liveness_baseline_snapshot(repo_root: Path | None = None) -> dict[str, Any]:
+    state = scan_witness_liveness_ratchet(repo_root)
+    return {
+        "_doc": (
+            "Monotone source-witness liveness ratchet (StageResult WAIST #1). "
+            "Counts NON-TEST callers of read_source_witness / read_amendment_witness "
+            "/ read_oracle_witness on the corpus store. The two witnesses un-severed "
+            "by WAIST #1 (read_source_witness, read_amendment_witness) MUST stay "
+            ">= 1 (a production consumer reads them; severance cannot regress). "
+            "read_oracle_witness is still severed (its consumer is an oracle-read "
+            "path outside the source-identity locus, a deferred follow-up) so its "
+            "floor is its committed count. ALL per-method counts are monotone: they "
+            "may only rise or hold relative to the committed baseline; regenerate "
+            "with `uv run python scripts/inventory_architecture_smells.py --ratchet "
+            "witness --update-baseline`. See "
+            "tests/test_source_witness_liveness_ratchet.py."
+        ),
+        "total_nontest_callers": state["total_nontest_callers"],
+        "nontest_caller_counts": state["nontest_caller_counts"],
+    }
+
+
+# ===========================================================================
 # CLI
 # ===========================================================================
+
+
+def write_witness_liveness_baseline(repo_root: Path | None = None) -> Path:
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    out_path = root / WITNESS_LIVENESS_BASELINE_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = witness_liveness_baseline_snapshot(root)
+    out_path.write_text(
+        json.dumps(snapshot, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return out_path
 
 
 def write_authority_boundary_baseline(repo_root: Path | None = None) -> Path:
@@ -536,7 +648,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--ratchet",
-        choices=("authority", "scope", "all"),
+        choices=("authority", "scope", "witness", "all"),
         default="all",
         help="Which ratchet to scan / update.",
     )
@@ -571,6 +683,10 @@ def main(argv: list[str] | None = None) -> int:
             out = write_scope_source_baseline()
             snap = json.loads(out.read_text(encoding="utf-8"))
             print(f"wrote {out} (total_raw_string={snap['total_raw_string']})")
+        if args.ratchet in {"witness", "all"}:
+            out = write_witness_liveness_baseline()
+            snap = json.loads(out.read_text(encoding="utf-8"))
+            print(f"wrote {out} (total_nontest_callers={snap['total_nontest_callers']})")
         return 0
 
     payload: dict[str, Any] = {}
@@ -578,6 +694,8 @@ def main(argv: list[str] | None = None) -> int:
         payload["authority_boundary"] = scan_authority_boundary_ratchet()
     if args.ratchet in {"scope", "all"}:
         payload["scope_source"] = scan_scope_source_ratchet()
+    if args.ratchet in {"witness", "all"}:
+        payload["witness_liveness"] = scan_witness_liveness_ratchet()
     print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
     return 0
 

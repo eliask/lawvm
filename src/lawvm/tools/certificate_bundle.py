@@ -968,13 +968,29 @@ def build_certificate_bundle(
     artifact_id_by_engine_sid: Dict[str, str] = {}
     for sid in sorted(source_statutes):
         role = source_statutes[sid]
-        data = corpus.read_source(sid) if role == "enacted_text" else corpus.read_amendment(sid)
-        if data is None:
+        # Read through the content-witnessed surface (WAIST #1): the witness's
+        # sha256 DigestWitness over the ACTUAL bytes becomes the source identity's
+        # raw_source_hash committed into source_bundle_root — so the witness flows
+        # from the read into the dossier root, derived from the read and never
+        # reconstructed from sid. This un-severs read_source_witness /
+        # read_amendment_witness in the certificate path.
+        witnessed = (
+            corpus.read_source_witness(sid)
+            if role == "enacted_text"
+            else corpus.read_amendment_witness(sid)
+        )
+        if witnessed is None:
             raise BundleSpecError(
                 f"source bytes for {sid} unavailable in local corpus; the experimental "
                 "writer MUST bundle all source bytes (§11.3) — no URL-only references"
             )
-        raw_hash = _sha256_rendered(data)
+        data, source_witness = witnessed
+        if source_witness.digest is None:
+            raise BundleSpecError(
+                f"source witness for {sid} carries no content digest; the source "
+                "identity must commit a content-addressed hash"
+            )
+        raw_hash = f"{source_witness.digest.digest_algorithm}:{source_witness.digest.digest}"
         aid = _artifact_id(sid)
         artifact_id_by_engine_sid[sid] = aid
         source_blobs[aid] = data
