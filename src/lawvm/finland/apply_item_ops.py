@@ -70,6 +70,35 @@ _COMPOUND_SUBPARAGRAPH_LABEL_RE = re.compile(r"^\d+[a-z]+$")
 _COMPOUND_LABEL_SPLIT_RE = re.compile(r"^(\d+)([a-z])$")
 # Counts capital-letter sentence markers (``A.``) in owned payload text.
 _CONTENT_ROW_MARKER_RE = re.compile(r"(?<!\w)[A-ZÅÄÖ]\.")
+_INTRO_REPLACEMENT_NODE_KINDS: frozenset[IRNodeKind] = frozenset(
+    {IRNodeKind.INTRO, IRNodeKind.CONTENT}
+)
+_PRESERVED_INTRO_TAIL_NODE_KINDS: frozenset[IRNodeKind] = frozenset(
+    {IRNodeKind.BLOCK, IRNodeKind.HCONTAINER, IRNodeKind.TABLE}
+)
+
+
+def _intro_replacement_with_preserved_structural_tail(
+    live_intro_child: IRNode,
+    amend_intro: IRNode,
+) -> IRNode:
+    """Replace an explicit johd facet without deleting live structural tail."""
+    if live_intro_child.kind not in _INTRO_REPLACEMENT_NODE_KINDS:
+        return amend_intro
+    preserved_tail = tuple(
+        child
+        for child in live_intro_child.children
+        if child.kind in _PRESERVED_INTRO_TAIL_NODE_KINDS
+    )
+    if not preserved_tail:
+        return amend_intro
+    return IRNode(
+        kind=amend_intro.kind,
+        label=amend_intro.label,
+        text=amend_intro.text,
+        attrs=dict(amend_intro.attrs),
+        children=tuple(amend_intro.children) + preserved_tail,
+    )
 
 
 def _is_lettered_subparagraph_payload(child: IRNode) -> bool:
@@ -2035,7 +2064,9 @@ def _apply_special_targets(
                 new_children = []
                 for c in sub.children:
                     if c.kind in {IRNodeKind.INTRO, IRNodeKind.CONTENT} and not replaced:
-                        new_children.append(amend_intro)
+                        new_children.append(
+                            _intro_replacement_with_preserved_structural_tail(c, amend_intro)
+                        )
                         replaced = True
                         skipping_leading_intro_block = True
                         continue

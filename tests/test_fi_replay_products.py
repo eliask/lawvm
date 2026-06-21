@@ -979,6 +979,24 @@ def test_replay_xml_1992_772_applies_1994_1281_replace_to_section_6() -> None:
     assert "terveydenhoitolain (469/65)" not in text
 
 
+def test_replay_xml_1992_371_preserves_section_6_table_on_johd_replace() -> None:
+    replay = pinned_replay(
+        "1992/371",
+        oracle_version="20100130",
+        mode="official_consolidation",
+        quiet=True,
+    )
+
+    section = replay.materialized_state.find_section("6")
+    assert section is not None
+
+    text = " ".join(irnode_to_text(section).split())
+    assert "mittanormaalijärjestelmästä annetun lain 3 §:n 1 momentissa" in text
+    assert "mittaamisvälineiden vakaamisesta annetun lain 4 §:n 1 momentissa" not in text
+    assert "Etuliite Tunnus Tekijä, jolla mittayksikkö tulee kerrotuksi" in text
+    assert "jokto y 0,000 000 000 000 000 000 000 001 = 10 -24" in text
+
+
 def test_build_amendment_bundle_2002_1000_does_not_collapse_dotted_kohta_repeal_to_section_repeal() -> None:
     bundle = build_amendment_bundle("2002/1000", "2007/180", "official_consolidation")
     all_ops = [op for group in bundle["groups"] for op in group["ops_final"]]
