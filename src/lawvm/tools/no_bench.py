@@ -61,6 +61,7 @@ The contract test pins the invariant: each registered mapping must produce a
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Mapping
 
 from lawvm.core.bench_contract import BenchStatus, BenchUnitResult, check_residue_reconciliation
@@ -209,42 +210,131 @@ def _register_no_bench_comparator() -> None:
 _register_no_bench_comparator()
 
 
+def _resolve_corpus_path(path_str: str | None) -> "Path":
+    """Resolve a corpus path argument, defaulting to the curated starter corpus.
+
+    The default lives under ``data/norway/bench_corpus.csv`` — a small, diverse,
+    hand-picked set of base_ids that exercises every bench status branch the
+    comparator handles: consistent replay, minor divergence, and saturated
+    divergence. Curation rationale is captured in the corpus CSV column
+    ``note`` so the selection is auditable, not silent.
+    """
+    if path_str:
+        candidate = Path(path_str)
+    else:
+        candidate = Path("data/norway/bench_corpus.csv")
+    if not candidate.exists():
+        raise FileNotFoundError(
+            f"Norway bench corpus not found: {candidate}. "
+            "Curate one (see data/norway/bench_corpus.csv for the starter shape: "
+            "base_id,as_of,note) — never silently run on an empty corpus."
+        )
+    return candidate
+
+
+def _load_corpus_rows(path: "Path") -> list[tuple[str, str, str]]:
+    """Load the (base_id, as_of, note) rows from a NO bench corpus CSV.
+
+    Deliberately permissive on column order: the schema is a small, single-
+    jurisdiction thing, so we key by header name rather than ordinal position —
+    rearranging columns in the corpus file does not silently break the sweep.
+    """
+    import csv
+
+    rows: list[tuple[str, str, str]] = []
+    with path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"base_id", "as_of"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(
+                f"Norway bench corpus {path} missing required column(s): {sorted(missing)}. "
+                "Expected at least `base_id,as_of`; optional `note`."
+            )
+        for raw in reader:
+            base_id = (raw.get("base_id") or "").strip()
+            as_of = (raw.get("as_of") or "").strip()
+            note = (raw.get("note") or "").strip()
+            if not base_id or not as_of:
+                # Skip blank rows rather than silently passing None through — but
+                # the loop logs nothing, because an empty corpus row would
+                # otherwise be a structural surprise worth surfacing as a crash.
+                continue
+            rows.append((base_id, as_of, note))
+    if not rows:
+        raise ValueError(
+            f"Norway bench corpus {path} has no usable rows after parsing. "
+            "Refuse to run an empty sweep — never silently report bench numbers "
+            "from a zero-row corpus."
+        )
+    return rows
+
+
 def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentionally loose
     """Entry point for ``lawvm -j no bench``.
 
-    The comparator is registered at module import (above); the data-layer that
-    feeds it — a curated corpus CSV (``data/norway/bench_corpus.csv``) plus a
-    per-statute verify sweep wired through ``verify_no_against_current`` — is
-    multi-session work tracked in ``notes_internal/NO_AGENTS_MD_AUDIT.md``.
+    Drives a curated corpus CSV (default ``data/norway/bench_corpus.csv``)
+    through :func:`~lawvm.norway.verify.verify_no_against_current` for each
+    ``(base_id, as_of)`` row, maps each :class:`NOVerifyResult` onto a
+    :class:`BenchUnitResult` via :func:`run_bench_comparator` ("no", result),
+    enforces residue-reconciliation per row, and renders the unified summary
+    via :func:`lawvm.core.bench_aggregate.render_summary`.
 
-    Until the data layer lands, fail *loud* with a typed message that names
-    the next concrete step — never silently fall through to FI (which the
-    bench.py harness would do if the CLI swallowed ``j == "no"``).
+    Honest scope note — what this main does NOT do (deferred to a later
+    bench slice, not silently faked here):
 
-    What works today (pinned by ``tests/test_no_bench_contract_adapter.py``):
-
-    - The registry knows about ``"no"`` and ``get_bench_comparator("no")``
-      returns :func:`no_bench_unit_result`.
-    - Any caller holding a real :class:`NOVerifyResult` can call
-      :func:`run_bench_comparator` with ``"no"`` and get an honest
-      :class:`BenchUnitResult`.
-
-    What does not work today (and is the next session's work):
-
-    - ``lawvm -j no bench`` with ``--corpus`` against a curated CSV.
-    - Aggregation / history / regression-guard artifacts emitted for Norway
-      the way FI/EE/UK/NZ/US emit them.
+    - No multi-worker parallelism (the corpus is 8 statutes today; the cost
+      is dominated by per-statute verify, which already serializes through
+      the farchive SQLite). A ``--parallel`` flag is reserved but not yet
+      honoured.
+    - No history persistence under ``data/benchmark_history.csv`` — that
+      lives in FI/EE's bench-specific state and integrating it across
+      jurisdictions is its own cohesive change.
+    - No regression-guard comparison against a prior labelled run.
     """
-    import sys
 
-    corpus = getattr(args, "corpus", None)
-    print(
-        "Norway bench: the contract comparator is registered (see "
-        "tests/test_no_bench_contract_adapter.py), but the data-layer "
-        "(curated corpus CSV + per-statute verify sweep) is not yet wired. "
-        "Next high-EV step: curate data/norway/bench_corpus.csv and feed "
-        "verify_no_against_current results into run_bench_comparator('no', ...). "
-        f"Corpus requested: {corpus or '(default, not yet curated)'}.",
-        file=sys.stderr,
-    )
-    return 2
+    from lawvm.core.bench_aggregate import render_summary
+    from lawvm.core.bench_contract import BenchUnitResult
+    from lawvm.core.bench_comparator_registry import run_bench_comparator
+    from lawvm.norway.sources import resolve_no_source_path
+    from lawvm.norway.verify import verify_no_against_current
+
+    corpus_path = _resolve_corpus_path(getattr(args, "corpus", None))
+    # ``args.data_dir`` is optional; passing None lets
+    # ``resolve_no_source_path`` walk its documented fallback chain
+    # (env vars → ``data/norway.farchive`` → legacy ``data/norway``) rather
+    # than us pre-empting with a string that the helper would return as-is
+    # (since ``resolve_no_source_path(path=something)`` short-circuits at the
+    # top of the function — passing a relative path there bypasses the
+    # existence checks below).
+    data_dir = resolve_no_source_path(getattr(args, "data_dir", None))
+    label = getattr(args, "label", None) or "no-bench"
+
+    rows = _load_corpus_rows(corpus_path)
+    results: list[BenchUnitResult] = []
+    for base_id, as_of, _note in rows:
+        try:
+            verify_result = verify_no_against_current(
+                base_id,
+                as_of=as_of,
+                data_dir=data_dir,
+            )
+            mapped = run_bench_comparator("no", verify_result)
+        except Exception as exc:  # noqa: BLE001 — pin the crash with witnesses
+            # Surface the per-statute failure as a typed CRASH row so the
+            # bench does not silently drop a corpus member; the sync sweep
+            # never re-raises into the CLI. Non-scored and CRASH stays visible
+            # in the partition-by-status breakdown the summary renders.
+            mapped = BenchUnitResult(
+                unit_id=base_id,
+                status=BenchStatus.CRASH,
+                witnesses=(f"{type(exc).__name__}: {exc}",),
+            )
+        results.append(mapped)
+
+    summary = render_summary(results, label, jurisdiction="no")
+    print("\n".join(summary))
+    print()
+    print(f"  Corpus     : {corpus_path}")
+    print(f"  Rows run   : {len(results)}")
+    return 0

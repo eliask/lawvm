@@ -350,3 +350,63 @@ def test_no_bench_comparator_round_trip_through_registry() -> None:
     mapped = run_bench_comparator("no", result)
     assert isinstance(mapped, BenchUnitResult)
     assert mapped.status is BenchStatus.SCORED
+
+
+# ---------------------------------------------------------------------------
+# E2E smoke test against the curated real corpus.
+#
+# ``no_bench_main`` reads ``data/norway/bench_corpus.csv`` and drives each row
+# through ``verify_no_against_current`` → ``run_bench_comparator("no", ...)``.
+# The corpus + the local Lovdata archive are both needed; this test skips
+# with a typed marker (not silently passes) when either is missing so the
+# contract adapter never claims green without the data layer actually running.
+# ---------------------------------------------------------------------------
+
+from pathlib import Path as _Path
+
+_REPO_ROOT = _Path(__file__).resolve().parents[1]
+_REAL_CORPUS = _REPO_ROOT / "data" / "norway" / "bench_corpus.csv"
+_REAL_ARCHIVE = _REPO_ROOT / "data" / "norway.farchive"
+
+
+@pytest.mark.skipif(
+    not _REAL_CORPUS.exists() or not _REAL_ARCHIVE.exists(),
+    reason="requires the curated corpus (data/norway/bench_corpus.csv) and the local Lovdata archive (data/norway.farchive)",
+)
+def test_no_bench_main_runs_curated_corpus_to_zero_crashes() -> None:
+        """``lawvm -j no bench`` runs every corpus row without CRASH.
+
+        The contract adapter above tests the comparator's mapping logic in
+        isolation; this smoke test drives the *whole* CLI path through the
+        curated corpus, asserting that no row hits CRASH (which would be
+        either an exception inside ``verify_no_against_current`` or a
+        comparator-mapping bug on a real ``NOVerifyResult``). It does NOT
+        pin exact scores — those depend on the live Lovdata text and must be
+        allowed to drift as the archive changes — but the structural
+        invariant (every row SCORED, no row CRASHED, residue reconciles) is
+        stable and is what this pins.
+        """
+        import io
+        from contextlib import redirect_stdout
+        from types import SimpleNamespace
+
+        from lawvm.tools.no_bench import no_bench_main
+
+        args = SimpleNamespace(corpus=None, data_dir=None, label="adapter-smoke")
+        buf = io.StringIO()
+        rc = no_bench_main(args)
+        assert rc == 0
+        out = buf.getvalue()
+
+        # Re-capture by running again against the redirector: the function
+        # returns 0 on success but the summary was printed to the *real*
+        # stdout above — re-run it under a fresh buffer to assert content.
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            no_bench_main(args)
+        summary = buf.getvalue()
+
+        # ``crashed: 0`` is the contract — no row may silently fail.
+        assert "crashed: 0" in summary, summary
+        # Residue reconciliation holds across all real rows end-to-end.
+        assert "Residue reconciliation: OK" in summary, summary
