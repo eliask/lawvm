@@ -17,6 +17,7 @@ from lxml import etree
 from lawvm.finland.helpers import _norm_num_token
 
 _ORACLE_VERSION_SUFFIX_RE = re.compile(r"v(?P<version>\d{8})$")
+_PRIOR_WORDING_RE = re.compile(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE)
 
 
 def _tag(el: etree._Element) -> str:
@@ -93,6 +94,36 @@ def _sequence_ratio_at_least(left: str, right: str, threshold: float) -> bool:
     if matcher.quick_ratio() < threshold:
         return False
     return matcher.ratio() >= threshold
+
+
+def strip_prior_wording_sibling(note: etree._Element) -> bool:
+    """Remove the same-slot sibling introduced as Finlex prior wording.
+
+    Finlex consolidated XML can encode a changed provision as:
+
+    current versioned child, editorial note containing ``Aiempi sanamuoto
+    kuuluu:``, prior versioned child. The note is editorial comparison metadata;
+    once stripped, the following prior child must be stripped with it or the
+    oracle projection counts stale text as current law.
+    """
+    note_text = etree.tostring(note, method="text", encoding="unicode")
+    if not _PRIOR_WORDING_RE.search(note_text):
+        return False
+    previous = note.getprevious()
+    candidate = note.getnext()
+    if previous is None or candidate is None:
+        return False
+    if _tag(previous) != _tag(candidate):
+        return False
+    previous_base = _oracle_eid_base(previous)
+    candidate_base = _oracle_eid_base(candidate)
+    if previous_base is None or previous_base != candidate_base:
+        return False
+    parent = candidate.getparent()
+    if parent is None:
+        return False
+    parent.remove(candidate)
+    return True
 
 
 def dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:

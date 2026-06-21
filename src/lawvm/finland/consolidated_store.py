@@ -155,6 +155,11 @@ def _is_self_comparable_with_tolerance(
     if ordering_date is None:
         return False, False
 
+    if ordering_date <= dt.date.today():
+        if expiry_date is not None and expiry_date <= ordering_date:
+            return False, False
+        return True, False
+
     tolerance_applied = False
     if artifact.date_consolidated is not None:
         gap_days = (ordering_date - artifact.date_consolidated).days

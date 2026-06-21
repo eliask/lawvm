@@ -26,6 +26,7 @@ from lawvm.finland.consolidated_store import select_cached_consolidated_path_ind
 from lawvm.finland.consolidated_store import select_cached_consolidated_artifact_with_info
 from lawvm.finland.helpers import _parse_iso_date
 from lawvm.finland.oracle_comparison import normalize_finlex_oracle_comparison_text
+from lawvm.finland.oracle_versioned_children import strip_prior_wording_sibling
 importlib.import_module("lawvm.finland.inline_repeal_stub")
 from lawvm.finland.metadata import (
     _amendment_effective_date,
@@ -800,6 +801,7 @@ def _strip_editorial_note_containers(root: "etree._Element") -> None:
     for name in _STRIP_NAMES:
         for tag in ("hcontainer", "block", "container"):
             for el in cast(List["etree._Element"], root.xpath(f'//*[local-name()="{tag}" and @name="{name}"]')):
+                strip_prior_wording_sibling(el)
                 parent = el.getparent()
                 if parent is not None:
                     parent.remove(el)
