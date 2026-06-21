@@ -1265,7 +1265,11 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
             path_dict[kind] = label
 
         leaf_kind = target.leaf_kind() if target.path else ""
-        maybe_kind = TargetKind.for_leaf_kind(leaf_kind)
+        # An alakohta (subitem) leaf still maps onto the section family: the kohta
+        # and alakohta are carried as the item/subitem ParsedOp slots under the
+        # owning section, not as a target kind of their own.
+        kind_leaf = "section" if leaf_kind == "subitem" else leaf_kind
+        maybe_kind = TargetKind.for_leaf_kind(kind_leaf)
         if maybe_kind is None:
             return
         kind = maybe_kind
@@ -1275,6 +1279,7 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
         number = ""
         momentti = 0
         item = ""
+        subitem = ""
 
         # Map target.special to facet (keep as FacetKind enum)
         facet = target.special if target.special else None
@@ -1283,6 +1288,7 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
             number = path_dict.get("section", "")
             momentti = int(path_dict.get("subsection", "0") or "0")
             item = path_dict.get("item", "")
+            subitem = path_dict.get("subitem", "")
         elif kind is TargetKind.CHAPTER:
             number = path_dict.get("chapter", "")
             chapter = ""  # chapter-kind ops don't carry chapter context
@@ -1336,6 +1342,7 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
             number=number,
             momentti=momentti,
             item=item,
+            subitem=subitem,
             raw="",
             facet=facet,
             part=part,

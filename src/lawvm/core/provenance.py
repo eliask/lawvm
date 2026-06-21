@@ -31,6 +31,95 @@ class ExpiryOverride:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceAnchor:
+    """A byte-level anchor into the RAW source bytes of an amendment clause.
+
+    This is the source-side anchor required by the certified-transition trace
+    spec (§5.1/§7): a half-open byte ``[byte_offset, byte_offset + byte_len)``
+    span over the *raw* source artifact bytes (``span_unit=byte``), plus a
+    ``quote_hash`` = sha256 of those exact raw bytes. It lets a certificate
+    point at the verbatim source clause that drove a write, instead of carrying
+    only diff-derived state with no provenance.
+
+    It is distinct from :class:`lawvm.core.span_anchor.SpanAnchor` (a
+    content-addressed anchor into the RESULT tree) and mirrors the source-side
+    byte-span vocabulary of :class:`lawvm.core.interlinks.InterlinkSourceSpan`.
+
+    The anchor is only ever constructed when a verbatim contiguous byte span
+    is genuinely present in the raw artifact. When the clause text cannot be
+    located verbatim in the raw bytes (e.g. it spans tag boundaries after
+    text-flattening), NO anchor is produced — the caller keeps the fail-loud
+    ``SOURCE_ANCHOR_UNAVAILABLE`` path. An anchor is never fabricated.
+    """
+
+    source_artifact_id: str
+    byte_offset: int
+    byte_len: int
+    quote_hash: str  # "sha256:" + hexdigest of raw_bytes[byte_offset:byte_offset+byte_len]
+
+    def __post_init__(self) -> None:
+        if not self.source_artifact_id:
+            raise ValueError("SourceAnchor.source_artifact_id must be non-empty")
+        if self.byte_offset < 0:
+            raise ValueError("SourceAnchor.byte_offset must be >= 0")
+        if self.byte_len <= 0:
+            raise ValueError("SourceAnchor.byte_len must be > 0")
+        if not self.quote_hash.startswith("sha256:"):
+            raise ValueError("SourceAnchor.quote_hash must be a 'sha256:'-prefixed digest")
+
+    def as_jsonable(self) -> dict[str, object]:
+        """Stable JSON projection for certificate transition rows (§5.1)."""
+        return {
+            "source_artifact_id": self.source_artifact_id,
+            "span_unit": "byte",
+            "byte_offset": self.byte_offset,
+            "byte_len": self.byte_len,
+            "quote_hash": self.quote_hash,
+        }
+
+
+def compute_source_anchor(
+    *,
+    source_artifact_id: str,
+    raw_bytes: bytes,
+    clause_text: str,
+) -> "SourceAnchor | None":
+    """Locate ``clause_text`` verbatim in ``raw_bytes`` and build a SourceAnchor.
+
+    Returns ``None`` (fail-loud, never fabricate) when:
+
+    * either input is empty, or
+    * the clause text does not appear as a single contiguous verbatim byte
+      substring of the raw artifact (the common case after text-flattening
+      across XML tag boundaries), or
+    * the clause text appears more than once (ambiguous — we cannot certify
+      WHICH occurrence drove the write).
+
+    A returned anchor satisfies the invariant
+    ``raw_bytes[off:off+len] == clause_text.encode('utf-8')`` and carries the
+    sha256 of those exact bytes, so a verifier can re-derive it independently.
+    """
+    import hashlib
+
+    if not source_artifact_id or not raw_bytes or not clause_text:
+        return None
+    needle = clause_text.encode("utf-8")
+    first = raw_bytes.find(needle)
+    if first < 0:
+        return None
+    # Ambiguous if it occurs more than once — refuse rather than guess.
+    if raw_bytes.find(needle, first + 1) >= 0:
+        return None
+    quote_hash = "sha256:" + hashlib.sha256(needle).hexdigest()
+    return SourceAnchor(
+        source_artifact_id=source_artifact_id,
+        byte_offset=first,
+        byte_len=len(needle),
+        quote_hash=quote_hash,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class OperationSource:
     """Provenance for a legal operation.
 
@@ -49,6 +138,7 @@ class OperationSource:
     expires_original: str = ""  # original temporary-act expiry before extensions
     expiry_chain: Tuple[ExpiryOverride, ...] = ()  # audit trail of expiry overrides
     raw_text: str = ""  # original amendment language
+    source_anchor: "SourceAnchor | None" = None  # byte span of the clause in raw source bytes
     corrected_by: str = ""  # corrigendum ID that patched this source (e.g. "corr/984/2018/1")
     # UK commencement provenance: text-writing act vs force-activating SI
     commencement_source: str = ""  # SI/order that brings this into force

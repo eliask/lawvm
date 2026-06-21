@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from typing import TypeVar
 
 from lawvm.core.compile_result import StrictProfile
@@ -345,6 +346,13 @@ def process_muutoslaki_resolved(
             skip_to_compile = False
 
         amendment_tree_metadata = source_model.amendment_tree_metadata(amendment_id)
+        # Stamp the byte-level source anchor captured at acquisition (which owns
+        # the raw bytes + chosen operative clause) onto the frontend metadata so
+        # it reaches OperationSource -> WriteReceipt. None stays fail-loud.
+        if acquired.source_anchor is not None:
+            amendment_tree_metadata = replace(
+                amendment_tree_metadata, source_anchor=acquired.source_anchor
+            )
 
         precompile_selection = _run_process_stage(
             "fi.process.precompile_selection",

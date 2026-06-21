@@ -99,10 +99,11 @@ class OutOfScopeInsertion(Exception):
 
 @dataclass(frozen=True, slots=True)
 class InsSubTarget:
-    """A parsed insertion sub-target: a momentti or kohta being inserted."""
+    """A parsed insertion sub-target: a momentti, kohta, or alakohta being inserted."""
 
     momentti: int = 0
     item: str = ""
+    subitem: str = ""  # alakohta — a distinct level under the kohta
     facet: Optional[FacetKind] = None
 
 
@@ -517,12 +518,11 @@ def _recognize_alakohta_insert_into_item(
     mom: int,
     item: str,
 ) -> Optional[list[InsNode]]:
-    """Recognize ``K kohtaan uusi c alakohta`` as compound item ``Kc``.
+    """Recognize ``K kohtaan uusi c alakohta`` with the alakohta as its own level.
 
-    Finland's current flat compatibility op has no first-class alakohta carrier.
-    Existing replay uses the compound item label convention (``4b``) for
-    subparagraph appends, so keep that explicit at the parse boundary rather than
-    silently dropping the ``alakohta`` token.
+    The kohta (``K``) and alakohta (``c``) are distinct hierarchy levels
+    (§ -> momentti -> kohta -> alakohta); the alakohta is carried in the
+    sub-target's ``subitem`` slot rather than collapsed into the kohta label.
     """
     saved = scan.pos
     item_nums = _number_list(scan)
@@ -555,7 +555,7 @@ def _recognize_alakohta_insert_into_item(
             label=sec,
             chapter=chapter,
             part=part,
-            sub_target=InsSubTarget(momentti=mom, item=f"{base_item}{letter}"),
+            sub_target=InsSubTarget(momentti=mom, item=base_item, subitem=letter),
             witness_rule_id="fi.insertion_alakohta_into_item",
         )
         for letter in letters
@@ -2520,7 +2520,7 @@ def emit_insertion_nodes(parsed: ParsedInsertion) -> list[SurfaceNode]:
             elif st.facet == FacetKind.INTRO:
                 special = "johd"
             sub_target = SurfaceSubRef(
-                momentti=st.momentti, item=st.item, facet=st.facet, special=special
+                momentti=st.momentti, item=st.item, subitem=st.subitem, facet=st.facet, special=special
             )
         out.append(
             SurfaceInsertion(
