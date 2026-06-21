@@ -200,6 +200,35 @@
   notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): base source XML labels first section as sec_131 / 131 §, while consolidated Finlex and legal sequence identify it as 1 §; exact full-section fragment patch repairs structural identity and eIds before replay."
   verified: "2026-06-17"
 
+# 1161/1991 (Asetus kansaneläkelaitoksen järjestämästä kuntoutuksesta) — the
+# enacted SD source XML contains only an empty 9 § shell. The consolidated
+# Finlex witness carries finlex:vsId="1161/1991" on section 9, proving this
+# commencement provision belongs to the base source rather than a later
+# amendment. Exact full-section fragment patch fills the missing base body.
+- amendment_id: "1161/1991"
+  wrong_text: |-
+    <section eId="sec_9">
+                        <num>9 § </num>
+                    </section>
+  correct_text: |-
+    <section eId="sec_9">
+                        <num>9 §</num>
+                        <heading eId="sec_9__heading">Voimaantulo</heading>
+                        <subsection eId="sec_9__subsec_1">
+                            <content>
+                                <p>Tämä asetus tulee voimaan 1 päivänä lokakuuta 1991.</p>
+                            </content>
+                        </subsection>
+                        <subsection eId="sec_9__subsec_2">
+                            <content>
+                                <p>Ennen tämän asetuksen voimaantuloa voidaan ryhtyä sen täytäntöönpanon edellyttämiin toimenpiteisiin.</p>
+                            </content>
+                        </subsection>
+                    </section>
+  correction_type: body_text
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): enacted SD source XML has an empty section 9 shell; consolidated Finlex section 9 is tagged finlex:vsId='1161/1991', so the missing Voimaantulo body is source-owned by the base act."
+  verified: "2026-06-21"
+
 # Family A — "kumotun NN§:n tilalle uusi näin kuuluva NN§:" glued-§ shape.
 # The pykälä symbol § is glued to the section number with no space ("18§"); the
 # canonical drafting form is "18 §". Each johtolause has two occurrences (the

@@ -297,6 +297,40 @@ def test_replay_xml_1982_182_applies_owned_section_57_source_defects() -> None:
     assert "merkkien 412–415" in section_57
 
 
+def test_manual_base_source_patch_1991_1161_fills_empty_section_9_shell() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrong = """<section eId="sec_9">
+                        <num>9 § </num>
+                    </section>"""
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f"<akomaNtoso><act><body>{wrong}</body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "1991/1161")
+
+    assert applied == ["body_patch/1991/1161/0"]
+    assert wrong.encode("utf-8") not in patched
+    assert b'eId="sec_9__heading">Voimaantulo' in patched
+    assert "Tämä asetus tulee voimaan 1 päivänä lokakuuta 1991.".encode("utf-8") in patched
+    assert "täytäntöönpanon edellyttämiin toimenpiteisiin.".encode("utf-8") in patched
+
+
+def test_replay_xml_1991_1161_applies_owned_section_9_source_defect() -> None:
+    replay = replay_xml_for_test(
+        "1991/1161",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_9 = " ".join(irnode_to_text(sections["section:9"]).split())
+
+    assert "Voimaantulo" in section_9
+    assert "Tämä asetus tulee voimaan 1 päivänä lokakuuta 1991." in section_9
+    assert "täytäntöönpanon edellyttämiin toimenpiteisiin" in section_9
+
+
 def test_patch_table_keeps_johtolauseen_jalkeen_in_body_patch_lane(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
     manual_path = tmp_path / "corrigendum_manual.yaml"
