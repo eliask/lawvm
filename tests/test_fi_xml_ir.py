@@ -291,6 +291,83 @@ def test_fi_xml_to_ir_node_nests_lettered_subparagraphs_under_digit_paragraphs()
     assert [s.label for s in subs3] == ["a", "b", "c"]
 
 
+def test_fi_xml_to_ir_node_nests_unique_letter_subparagraphs_under_introducer_item() -> None:
+    """A colon-introducer digit item owns following lettered subitems even in a short list."""
+    xml = etree.fromstring(
+        """
+        <subsection>
+          <intro><p>Tässä luvussa tarkoitetaan:</p></intro>
+          <paragraph>
+            <num>1)</num>
+            <content><p>kansainvälisen liikenteen kuljetusluvalla lupaa, jonka nojalla:</p></content>
+          </paragraph>
+          <paragraph>
+            <num>a)</num>
+            <content><p>ulkomailla rekisteröityä kuorma-autoa saa käyttää Suomessa;</p></content>
+          </paragraph>
+          <paragraph>
+            <num>b)</num>
+            <content><p>Suomessa rekisteröityä kuorma-autoa saa käyttää ulkomailla;</p></content>
+          </paragraph>
+          <paragraph>
+            <num>c)</num>
+            <content><p>linja-autolla saa harjoittaa kansainvälistä liikennettä;</p></content>
+          </paragraph>
+          <paragraph>
+            <num>2)</num>
+            <content><p>kansainvälisellä yhdistetyllä kuljetuksella tiettyjä kuljetuksia.</p></content>
+          </paragraph>
+        </subsection>
+        """
+    )
+
+    subsection = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    assert check_invariants(subsection) == []
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs] == ["1", "2"]
+    nested = [child for child in paragraphs[0].children if child.kind == IRNodeKind.SUBPARAGRAPH]
+    assert [child.label for child in nested] == ["a", "b", "c"]
+    assert "kansainvälisellä yhdistetyllä" in irnode_to_text(paragraphs[1])
+
+
+def test_fi_xml_to_ir_node_keeps_short_generic_colon_letter_items_flat() -> None:
+    """A short generic colon list is not enough to reclassify letters as subitems."""
+    xml = etree.fromstring(
+        """
+        <subsection>
+          <intro><p>Asetusta sovelletaan:</p></intro>
+          <paragraph>
+            <num>1)</num>
+            <content><p>varusteeseen, joka asennetaan alukseen:</p></content>
+          </paragraph>
+          <paragraph>
+            <num>a)</num>
+            <content><p>jossa varustetta ei aiemmin ole ollut; tai</p></content>
+          </paragraph>
+          <paragraph>
+            <num>b)</num>
+            <content><p>jossa aiemmin ollut varuste uusitaan.</p></content>
+          </paragraph>
+          <paragraph>
+            <num>2)</num>
+            <content><p>muuhun varusteeseen.</p></content>
+          </paragraph>
+        </subsection>
+        """
+    )
+
+    subsection = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs] == ["1", "a", "b", "2"]
+    assert all(
+        child.kind is not IRNodeKind.SUBPARAGRAPH
+        for paragraph in paragraphs
+        for child in paragraph.children
+    )
+
+
 def test_fi_xml_to_ir_node_nests_repeated_simple_letter_families_for_1997_1339_section_4() -> None:
     """Repeated simple-letter families must still nest across multiple digit items.
 

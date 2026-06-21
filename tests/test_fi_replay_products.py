@@ -25,6 +25,7 @@ from lawvm.core.effect_lifecycle import (
     SourceProvisionRef,
 )
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.tree_ops import check_invariants
 from lawvm.core.ir import LegalOperation
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.temporal import TemporalEvent, TemporalScope
@@ -6811,6 +6812,16 @@ def test_replay_xml_2017_320_section_19_definitions_do_not_emit_flattened_sublis
         and "section:19" in str(finding.detail.get("path") or "")
     ]
     assert flat_warnings == []
+    section = replay.materialized_state.find_section("19", chapter_num="2", part_num="2")
+    assert section is not None
+    assert check_invariants(section) == []
+
+    subsection = next(child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1")
+    paragraph_labels = [child.label for child in subsection.children if child.kind is IRNodeKind.PARAGRAPH]
+    assert paragraph_labels == ["1", "2"]
+    item_one = next(child for child in subsection.children if child.kind is IRNodeKind.PARAGRAPH and child.label == "1")
+    subparagraph_labels = [child.label for child in item_one.children if child.kind is IRNodeKind.SUBPARAGRAPH]
+    assert subparagraph_labels == ["a", "b", "c"]
 
 
 @pytest.mark.slow

@@ -193,6 +193,20 @@ def _paragraph_has_introducer_signal(para: IRNode) -> bool:
     return any(phrase in text_lower for phrase in _FI_INTRODUCER_PHRASES)
 
 
+def _paragraph_has_jonka_nojalla_introducer(para: IRNode) -> bool:
+    """Return True for ``jonka nojalla:`` item payloads that introduce subitems."""
+    parts: List[str] = []
+    for child in para.children:
+        if child.kind in (IRNodeKind.CONTENT, IRNodeKind.INTRO):
+            t = irnode_to_text(child).strip()
+            if t:
+                parts.append(t)
+    if not parts and para.text:
+        parts.append(para.text.strip())
+    text = " ".join(parts).strip().lower()
+    return bool(text.endswith(":") and "jonka nojalla" in text)
+
+
 def _subsection_leaf_text(node: IRNode) -> Optional[str]:
     """Extract the leaf text content from a simple subsection."""
     parts: List[str] = []
@@ -464,10 +478,15 @@ def _apply_nest_lettered_subparagraphs(children: List[IRNode]) -> List[IRNode]:
         and _paragraph_has_introducer_signal(child)
         for child in children
     )
-    can_nest_unique_letters_under_introducer = (
-        has_dense_digit_family
-        and has_letter_paragraphs
-        and has_introducer_digit_parent
+    has_jonka_nojalla_digit_parent = any(
+        child.kind == IRNodeKind.PARAGRAPH
+        and _is_digit_label(child.label)
+        and _paragraph_has_jonka_nojalla_introducer(child)
+        for child in children
+    )
+    can_nest_unique_letters_under_introducer = has_letter_paragraphs and (
+        (has_dense_digit_family and has_introducer_digit_parent)
+        or has_jonka_nojalla_digit_parent
     )
     if not duplicate_labels and not can_nest_unique_letters_under_introducer:
         return children
@@ -567,7 +586,7 @@ def _apply_nest_lettered_subparagraphs(children: List[IRNode]) -> List[IRNode]:
             elif has_mixed_compound_family:
                 sub = _make_subparagraph(child)
                 pending_parent = _attach_subs(pending_parent, [sub])
-            elif has_dense_digit_family and _is_letter_label(lbl):
+            elif can_nest_unique_letters_under_introducer and _is_letter_label(lbl):
                 sub = _make_subparagraph(child)
                 pending_parent = _attach_subs(pending_parent, [sub])
             else:
