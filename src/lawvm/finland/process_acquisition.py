@@ -107,6 +107,7 @@ class ProcessAcquisitionContext:
             used_preamble_body_fallback=(
                 acquisition.decision.pre_routing_sec1_applied
                 or acquisition.decision.post_routing_sec1_applied
+                or acquisition.decision.preamble_body_lead_combine_applied
             ),
             sec1_text=sec1_text,
             source_anchor=acquisition.source_anchor,

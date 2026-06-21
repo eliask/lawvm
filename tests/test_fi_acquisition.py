@@ -137,6 +137,33 @@ def _operative_preamble_wins_xml() -> bytes:
     """.encode("utf-8")
 
 
+def _split_preamble_body_lead_xml() -> bytes:
+    return """
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <preamble>
+        <formula name="enactingClause">
+          <p>kumotaan yritystuen yleisistä ehdoista annetun lain (786/1997) 10 §:n 2 momentti sekä</p>
+        </formula>
+      </preamble>
+      <body>
+        <hcontainer name="statuteProvisionsWrapper">
+          <section eId="body_lead">
+            <subsection>
+              <content>
+                <p><i>muutetaan </i>9 § seuraavasti:</p>
+              </content>
+            </subsection>
+          </section>
+          <section eId="sec_9">
+            <num>9 §</num>
+            <heading>Salassa pidettävien tietojen luovuttaminen</heading>
+          </section>
+        </hcontainer>
+      </body>
+    </akn>
+    """.encode("utf-8")
+
+
 def _corrupt_citation_rewrite_xml() -> bytes:
     return """
     <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -457,6 +484,49 @@ def test_build_amendment_acquisition_result_keeps_operative_preamble_over_body_l
     assert result.decision.selected_lane == "preamble"
     assert "13 luvun 3 §:ää seuraavasti" in result.decision.chosen_normalized_text
     assert "8 a kohta" not in result.decision.chosen_normalized_text
+
+
+def test_build_amendment_acquisition_result_combines_split_preamble_body_lead() -> None:
+    result = build_amendment_acquisition_result(
+        xml_bytes=_split_preamble_body_lead_xml(),
+        parent_id="1997/786",
+        amendment_id="1999/638",
+        source_title="Laki yritystuen yleisistä ehdoista annetun lain muuttamisesta",
+        parent_title="Laki yritystuen yleisistä ehdoista",
+    )
+
+    assert result.decision.selected_lane == "preamble_body_lead_combined"
+    assert result.decision.preamble_body_lead_combine_requested is True
+    assert result.decision.preamble_body_lead_combine_applied is True
+    assert "10 §:n 2 momentti sekä muutetaan 9 § seuraavasti" in result.decision.chosen_normalized_text
+    assert result.decision.should_apply is True
+    assert [candidate.lane for candidate in result.candidates] == [
+        "preamble",
+        "body_lead_fallback",
+        "preamble_body_lead_combined",
+    ]
+    assert result.candidates[-1].selected is True
+
+
+def test_build_amendment_acquisition_result_strict_blocks_split_preamble_body_lead() -> None:
+    result = build_amendment_acquisition_result(
+        xml_bytes=_split_preamble_body_lead_xml(),
+        parent_id="1997/786",
+        amendment_id="1999/638",
+        source_title="Laki yritystuen yleisistä ehdoista annetun lain muuttamisesta",
+        parent_title="Laki yritystuen yleisistä ehdoista",
+        strict_profile=StrictProfile(
+            name="test_strict",
+            allows_context_dependent_anchor_resolution=False,
+        ),
+    )
+
+    assert result.decision.selected_lane == "preamble"
+    assert result.decision.preamble_body_lead_combine_requested is True
+    assert result.decision.preamble_body_lead_combine_applied is False
+    assert "muutetaan 9 §" not in result.decision.chosen_normalized_text
+    assert [diagnostic.lane for diagnostic in result.diagnostics] == ["preamble_body_lead_combined"]
+    assert result.diagnostics[0].rule_id == "ACQ.OPERATIVE_LANE_STRICT_BLOCKED"
 
 
 def test_build_amendment_acquisition_result_extracts_pending_amendment_target_id() -> None:

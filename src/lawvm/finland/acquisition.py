@@ -55,6 +55,8 @@ class OperativeLaneDecision:
     route_reason: str
     pre_routing_sec1_requested: bool
     pre_routing_sec1_applied: bool
+    preamble_body_lead_combine_requested: bool
+    preamble_body_lead_combine_applied: bool
     post_routing_sec1_applied: bool
     body_repeal_candidate_used: bool
     citation_guard_johto: str
@@ -117,6 +119,8 @@ def operative_lane_selection_evidence(result: AmendmentAcquisitionResult) -> dic
         "route_target_amendment_id": result.decision.route_target_amendment_id,
         "pre_routing_sec1_requested": result.decision.pre_routing_sec1_requested,
         "pre_routing_sec1_applied": result.decision.pre_routing_sec1_applied,
+        "preamble_body_lead_combine_requested": result.decision.preamble_body_lead_combine_requested,
+        "preamble_body_lead_combine_applied": result.decision.preamble_body_lead_combine_applied,
         "post_routing_sec1_applied": result.decision.post_routing_sec1_applied,
         "body_repeal_candidate_used": result.decision.body_repeal_candidate_used,
     }
@@ -384,6 +388,26 @@ def _extract_body_lead_text(muutos_tree: etree._Element) -> str:
     return ""
 
 
+def _preamble_requests_body_lead_continuation(preamble_text: str, body_lead_text: str) -> bool:
+    """Recognize a split operative formula, not a competing body fallback.
+
+    Finnish amendments sometimes put the first operation in the preamble and
+    continue the same conjunctive formula in the first unnumbered body section:
+    ``kumotaan ... sekä`` + ``muutetaan ... seuraavasti``.  The continuation is
+    valid only when both lanes are operative and the preamble visibly ends in
+    the open coordinator.
+    """
+    preamble_stripped = (preamble_text or "").strip()
+    body_lead_lower = (body_lead_text or "").lower()
+    if not preamble_stripped or not body_lead_lower:
+        return False
+    if not any(kw in preamble_stripped.lower() for kw in OP_KEYWORDS):
+        return False
+    if not any(kw in body_lead_lower for kw in OP_KEYWORDS):
+        return False
+    return preamble_stripped.rstrip(" ,;:").lower().endswith(" sekä")
+
+
 def build_amendment_acquisition_result(
     *,
     xml_bytes: bytes,
@@ -435,11 +459,33 @@ def build_amendment_acquisition_result(
     body_lead_pre_routing_blocked = bool(
         body_lead_pre_routing_requested and not allows_context_dependent_anchor_resolution
     )
+    preamble_body_lead_combine_requested = bool(
+        not pre_routing_sec1_applied
+        and body_lead_text
+        and _preamble_requests_body_lead_continuation(preamble_text, body_lead_text)
+    )
+    preamble_body_lead_combine_applied = bool(
+        preamble_body_lead_combine_requested
+        and allows_context_dependent_anchor_resolution
+    )
+    preamble_body_lead_combine_blocked = bool(
+        preamble_body_lead_combine_requested
+        and not allows_context_dependent_anchor_resolution
+    )
+    preamble_body_lead_combined_text = ""
+    preamble_body_lead_combined_normalized = ""
+    if preamble_body_lead_combine_requested:
+        preamble_body_lead_combined_text = f"{preamble_text.rstrip()} {body_lead_text.lstrip()}"
+        preamble_body_lead_combined_normalized = _normalize_johtolause_verbs(
+            preamble_body_lead_combined_text
+        )
 
     working_text = preamble_text
     body_repeal_candidate_used = False
     if pre_routing_sec1_applied:
         working_text = sec1_text
+    elif preamble_body_lead_combine_applied:
+        working_text = preamble_body_lead_combined_text
     elif body_lead_pre_routing_applied:
         working_text = body_lead_text
     elif not any(kw in (working_text or "").lower() for kw in OP_KEYWORDS) and body_repeal_candidate:
@@ -492,6 +538,8 @@ def build_amendment_acquisition_result(
 
     if pre_routing_sec1_applied:
         selected_lane = "sec1_fallback_pre_routing"
+    elif preamble_body_lead_combine_applied:
+        selected_lane = "preamble_body_lead_combined"
     elif body_lead_pre_routing_applied:
         selected_lane = "body_lead_fallback_pre_routing"
     elif post_routing_sec1_applied:
@@ -504,6 +552,7 @@ def build_amendment_acquisition_result(
     selected_reason_map = {
         "preamble": "selected_as_primary_preamble_lane",
         "sec1_fallback_pre_routing": "preamble_missing_or_too_short",
+        "preamble_body_lead_combined": "preamble_trailing_coordinator_body_lead_continuation",
         "body_lead_fallback_pre_routing": "preamble_ceremonial_body_lead_selected",
         "sec1_fallback_post_routing": "preamble_not_operative_after_routing",
         "body_repeal_candidate": "body_repeal_candidate_selected",
@@ -553,6 +602,20 @@ def build_amendment_acquisition_result(
                 quirks_disposition="record",
             )
         )
+    if preamble_body_lead_combine_blocked:
+        diagnostics.append(
+            AcquisitionDiagnostic(
+                rule_id="ACQ.OPERATIVE_LANE_STRICT_BLOCKED",
+                family="target_resolution_recovery",
+                phase="acquisition",
+                reason="strict profile blocked split preamble/body operative formula composition",
+                lane="preamble_body_lead_combined",
+                strict_profile=strict_profile.name if strict_profile is not None else "",
+                blocking=True,
+                strict_disposition="block",
+                quirks_disposition="record",
+            )
+        )
 
     candidates = [
         OperativeLaneCandidate(
@@ -561,7 +624,15 @@ def build_amendment_acquisition_result(
             normalized_text=preamble_normalized,
             usable=bool(preamble_text),
             selected=selected_lane == "preamble",
-            reason=selected_reason if selected_lane == "preamble" else "not_selected",
+            reason=(
+                selected_reason
+                if selected_lane == "preamble"
+                else (
+                    "composed_into_preamble_body_lead_combined"
+                    if selected_lane == "preamble_body_lead_combined"
+                    else "not_selected"
+                )
+            ),
         )
     ]
     if sec1_text:
@@ -585,8 +656,29 @@ def build_amendment_acquisition_result(
                 normalized_text=body_lead_normalized,
                 usable=bool(body_lead_text),
                 selected=selected_lane == "body_lead_fallback_pre_routing",
-                reason=selected_reason if selected_lane == "body_lead_fallback_pre_routing" else (
-                    strict_block_reason if body_lead_pre_routing_blocked else "not_selected"
+                reason=(
+                    selected_reason
+                    if selected_lane == "body_lead_fallback_pre_routing"
+                    else (
+                        "composed_into_preamble_body_lead_combined"
+                        if selected_lane == "preamble_body_lead_combined"
+                        else strict_block_reason if body_lead_pre_routing_blocked else "not_selected"
+                    )
+                ),
+            )
+        )
+    if preamble_body_lead_combined_text:
+        candidates.append(
+            OperativeLaneCandidate(
+                lane="preamble_body_lead_combined",
+                raw_text=preamble_body_lead_combined_text,
+                normalized_text=preamble_body_lead_combined_normalized,
+                usable=bool(preamble_body_lead_combined_text),
+                selected=selected_lane == "preamble_body_lead_combined",
+                reason=(
+                    selected_reason
+                    if selected_lane == "preamble_body_lead_combined"
+                    else strict_block_reason if preamble_body_lead_combine_blocked else "not_selected"
                 ),
             )
         )
@@ -603,7 +695,7 @@ def build_amendment_acquisition_result(
         )
 
     rejected_lanes: list[tuple[str, str]] = []
-    if preamble_text and selected_lane != "preamble":
+    if preamble_text and selected_lane not in {"preamble", "preamble_body_lead_combined"}:
         rejected_lanes.append(("preamble", selected_reason))
     if sec1_text and not selected_lane.startswith("sec1_fallback"):
         rejected_lanes.append(
@@ -614,7 +706,10 @@ def build_amendment_acquisition_result(
                 ),
             )
         )
-    if body_lead_text and selected_lane != "body_lead_fallback_pre_routing":
+    if body_lead_text and selected_lane not in {
+        "body_lead_fallback_pre_routing",
+        "preamble_body_lead_combined",
+    }:
         rejected_lanes.append(
             (
                 "body_lead_fallback",
@@ -661,6 +756,8 @@ def build_amendment_acquisition_result(
             route_reason=str(route_reason or ""),
             pre_routing_sec1_requested=pre_routing_sec1_requested,
             pre_routing_sec1_applied=pre_routing_sec1_applied,
+            preamble_body_lead_combine_requested=preamble_body_lead_combine_requested,
+            preamble_body_lead_combine_applied=preamble_body_lead_combine_applied,
             post_routing_sec1_applied=post_routing_sec1_applied,
             body_repeal_candidate_used=body_repeal_candidate_used,
             citation_guard_johto=citation_guard_johto,

@@ -2734,6 +2734,24 @@ def test_replay_xml_1966_611_applies_heading_tagged_subsection_payload() -> None
     assert "henkikirjoittajan" not in text
 
 
+def test_compile_fi_1997_786_combines_split_preamble_body_lead_formula() -> None:
+    facade = compile_fi_facade("1997/786", replay_mode="official_consolidation")
+
+    section9_ops = [
+        op
+        for op in facade.bundle.structural_ops
+        if op.action is StructuralAction.REPLACE
+        and str(op.target) == "section:9"
+        and op.source is not None
+        and op.source.statute_id == "1999/638"
+    ]
+    assert len(section9_ops) == 1
+    assert section9_ops[0].source is not None
+    raw_text = " ".join(section9_ops[0].source.raw_text.split())
+    assert "kumotaan yritystuen yleisistä ehdoista" in raw_text
+    assert "muutetaan 9 § seuraavasti" in raw_text
+
+
 def test_replay_xml_1996_1200_merges_sparse_omission_item_rows_in_targeted_subsection() -> None:
     replay = pinned_replay("1996/1200", mode="official_consolidation", quiet=True)
     section9 = extract_ir_sections(replay.materialized_state.ir)["section:9"]
