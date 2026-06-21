@@ -360,7 +360,7 @@ class UKReplayTargetLookupMixin:
                                             reason=(
                                                 "explicit_schedule_paragraph_resolved_through_partition_wrappers"
                                             ),
-                                            status=TARGET_RECOVERED,
+                                            resolution_status=TARGET_RECOVERED,
                                             source_target=str(target),
                                             candidate_count=1,
                                             candidates=(
@@ -435,7 +435,7 @@ class UKReplayTargetLookupMixin:
                                                     reason=(
                                                         "explicit_schedule_paragraph_resolved_through_unlabeled_wrapper"
                                                     ),
-                                                    status=TARGET_RECOVERED,
+                                                    resolution_status=TARGET_RECOVERED,
                                                     source_target=str(target),
                                                     candidate_count=1,
                                                     candidates=(
@@ -528,7 +528,7 @@ class UKReplayTargetLookupMixin:
                                                 rule_id=UK_REPLAY_TARGET_RESOLVED_BY_RECURSIVE_DESCENT_RULE_ID,
                                                 phase="replay",
                                                 reason="unique_recursive_descendant_matched_failed_target_step",
-                                                status=TARGET_RECOVERED,
+                                                resolution_status=TARGET_RECOVERED,
                                                 source_target=str(target),
                                                 candidate_count=1,
                                                 candidates=(
@@ -626,7 +626,7 @@ class UKReplayTargetLookupMixin:
                                                 rule_id=UK_REPLAY_TARGET_AMBIGUOUS_RECURSIVE_DESCENT_RULE_ID,
                                                 phase="replay",
                                                 reason="multiple_recursive_descendants_matched_failed_target_step",
-                                                status=TARGET_AMBIGUOUS,
+                                                resolution_status=TARGET_AMBIGUOUS,
                                                 source_target=str(target),
                                                 candidate_count=len(all_recursive),
                                                 candidates=target_resolution_candidates,

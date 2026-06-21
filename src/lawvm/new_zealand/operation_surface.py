@@ -882,7 +882,7 @@ def _target_resolution_evidence(
         rule_id=rule_id,
         phase=phase,
         reason=reason,
-        status=status,
+        resolution_status=status,
         source_target=_source_target_for_resolution(row),
         selected_target=candidate.address if status == TARGET_RECOVERED else "",
         candidate_count=max(1, len(candidates)) if status == TARGET_RECOVERED else len(candidates),

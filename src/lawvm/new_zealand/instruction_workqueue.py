@@ -528,7 +528,7 @@ def _latest_oracle_target_resolution_evidence(row: NZInstructionWorkQueueRow) ->
         rule_id=row.latest_oracle_target_resolution_rule_id,
         phase="oracle",
         reason="latest oracle source node resolved for instruction text witness",
-        status=status,
+        resolution_status=status,
         source_target=row.target_address,
         selected_target="/".join(row.latest_oracle_target_source_path),
         candidate_count=1,

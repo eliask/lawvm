@@ -829,7 +829,7 @@ def refine_enacted_schedule_table_row_part_target(
                     "UK enacted affecting source exposes the added schedule "
                     "paragraph under a unique schedule Part."
                 ),
-                status=TARGET_RECOVERED,
+                resolution_status=TARGET_RECOVERED,
                 source_target=str(target),
                 selected_target=str(refined_target),
                 candidate_count=1,
@@ -910,7 +910,7 @@ def refine_source_text_schedule_paragraph_target(
                     "UK source text explicitly names the affected schedule "
                     "paragraph and overrides the effect metadata target."
                 ),
-                status=TARGET_RECOVERED,
+                resolution_status=TARGET_RECOVERED,
                 source_target=t_str,
                 selected_target=str(refined_target),
                 candidate_count=1,
@@ -976,7 +976,7 @@ def refine_flat_p1para_schedule_insert_target(
                     "UK source names a schedule Part as insertion context while "
                     "the source-owned payload is a direct labelled schedule paragraph."
                 ),
-                status=TARGET_RECOVERED,
+                resolution_status=TARGET_RECOVERED,
                 source_target=str(target),
                 selected_target=str(refined_target),
                 candidate_count=1,

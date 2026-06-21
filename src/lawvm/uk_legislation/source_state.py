@@ -807,7 +807,7 @@ def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
                 "UK effects metadata named a schedule Part context represented as "
                 "an ancestor in the affecting-source XML."
             ),
-            status=TARGET_RECOVERED,
+            resolution_status=TARGET_RECOVERED,
             source_target=affecting_provisions,
             selected_target=normalized_affecting_provisions,
             candidate_count=1,
@@ -862,7 +862,7 @@ def uk_affecting_act_single_unnumbered_schedule_context_ignored(
                 "UK effects metadata named Schedule 1 while the affecting-source XML "
                 "exposes a single unnumbered Schedule context."
             ),
-            status=TARGET_RECOVERED,
+            resolution_status=TARGET_RECOVERED,
             source_target=affecting_provisions,
             selected_target=normalized_affecting_provisions,
             candidate_count=1,
@@ -966,7 +966,7 @@ def uk_affecting_act_implicit_first_subparagraph_context_ignored(
                 "UK effects metadata included an implicit first-subparagraph source "
                 "context while the affecting-source XML exposes the child directly."
             ),
-            status=TARGET_RECOVERED,
+            resolution_status=TARGET_RECOVERED,
             source_target=affecting_provisions,
             selected_target=normalized_affecting_provisions,
             candidate_count=1,

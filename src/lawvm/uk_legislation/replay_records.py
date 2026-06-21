@@ -167,7 +167,7 @@ def uk_replay_recovery_action_target_detail(
             rule_id=str(detail.get("rule_id") or family),
             phase="replay",
             reason=str(detail.get("reason") or "recovery_selected_alternate_target"),
-            status=TARGET_RECOVERED,
+            resolution_status=TARGET_RECOVERED,
             source_target=str(op.target),
             candidate_count=1,
             candidates=(

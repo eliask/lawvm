@@ -319,7 +319,7 @@ class TestTriggerCoverageConstruction:
         detail: dict[str, Any] = {"nested": {"sources": ["a"]}}
         cert = TriggerCoverage(
             certificate_id="coverage-1",
-            status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
+            certificate_status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
             as_of="2026-04-07",
             activation_rule_ref="event:1",
             checked_sources=_runtime_string_tuple(["decree-register"]),
@@ -332,7 +332,7 @@ class TestTriggerCoverageConstruction:
         assert cert.checked_sources == ("decree-register",)
         assert cert.source_scope == ("commencement-instruments",)
         assert cert.detail == {"nested": {"sources": ("a",)}}
-        assert cert.to_dict()["status"] == "complete_no_resolution"
+        assert cert.to_dict()["certificate_status"] == "complete_no_resolution"
         frozen_detail = cast(Any, cert.detail)
         with pytest.raises(TypeError, match="immutable"):
             frozen_detail["extra"] = "blocked"
@@ -341,7 +341,7 @@ class TestTriggerCoverageConstruction:
         with pytest.raises(ValueError, match="checked_sources"):
             TriggerCoverage(
                 certificate_id="coverage-1",
-                status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
+                certificate_status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
                 as_of="2026-04-07",
             )
 
@@ -349,7 +349,7 @@ class TestTriggerCoverageConstruction:
         with pytest.raises(ValueError, match="missing_sources"):
             TriggerCoverage(
                 certificate_id="coverage-1",
-                status=TRIGGER_COVERAGE_INCOMPLETE,
+                certificate_status=TRIGGER_COVERAGE_INCOMPLETE,
             )
 
 
