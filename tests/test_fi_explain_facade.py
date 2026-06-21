@@ -623,7 +623,9 @@ def test_explain_source_pathology_demotes_absent_subsection_target() -> None:
         "target_paragraph": "2",
     }
 
-    diagnosis, explanation = _source_pathology_diagnosis_for_blame(master, blame_op)
+    result = _source_pathology_diagnosis_for_blame(master, blame_op)
+    assert result is not None
+    diagnosis, explanation = result
 
     assert diagnosis == "SOURCE_PATHOLOGY"
     assert "SUBSECTION_TARGET_ABSENT" in explanation
