@@ -3809,6 +3809,103 @@ def test_check_se_official_replay_repeal_section_classifies_oracle_stub_as_match
     assert summary["bucket_genuine_mismatch_count"] == 0
 
 
+def test_check_se_official_replay_repeal_then_later_readded_classifies_as_oracle_version_mismatch() -> None:
+    """Repealed-in-this-act + later-reinstated section is oracle_version_mismatch.
+
+    Real-corpus witness: SFS 2001:920 §5 — the amending act structurally
+    repeals §5 ("5 § förordningen (...) skall upphöra att gälla vid utgången
+    av år 2001."), so the replay-fold produces an empty §5 at the act's
+    effective date. The official current-surface oracle carries a §5 with
+    non-stub text because a *later* amendment re-introduced the section after
+    2001:920 (the post text references "I 4 a kap. förordningen (2007:572)
+    om värdepappersmarknaden..." — 2007:572 is strictly later than 2001:920).
+
+    Both surfaces are correct at their different time points: replay
+    deterministically reflects the post-2001:920 repeal state; the oracle
+    reflects the post-2007:572-reinstatement consolidated state. The replay
+    is provably correct (REPEAL op + strictly-later consolidation stamp), so
+    the row MUST classify as match=True with the
+    ``repeal_then_later_replaced_oracle_only`` shape, NOT ``content_mismatch``
+    (genuine_mismatch).
+
+    Regression: a synthetic fixture pinning the shape — an amending act that
+    REPEALS §5, a base act whose current-text oracle carries a different
+    post-2001:920 §5 body sourced from a strictly-later amendment, and a
+    consolidation stamp strictly later than 2001:920's effective date.
+    """
+    base_payload = {
+        "beteckning": "1999:146",
+        "rubrik": "Förordning (1999:146) om värdepappersmarknaden",
+        "ikraftDateTime": "1999-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Finansdepartementet", "namnOchEnhet": "Finansdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "1999-01-01T00:00:00",
+            # Later consolidation -- post-text reflects a strictly-later
+            # amendment reintroducing §5 with different content from 2001:920.
+            "andringInford": "t.o.m. SFS 2007:572",
+            "forfattningstext": (
+                "5 § /Upphör att gälla U:2001-12-31/\n"
+                "Gammal §5 lydelse före 2001:920.\n\n"
+                # Later amendment reintroduced §5 with different content
+                # observed by 2007:572 consolidation. The post-stamp names
+                # a strictly later amendment (2007 > 2001).
+                "5 § /Träder i kraft I:2007-XX-XX/\n"
+                "I 4 a kap. förordningen (2007:572) om värdepappersmarknaden finns bestämmelser."
+            ),
+        },
+        "publiceradDateTime": "2001-12-31T12:00:00",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2001:920",
+        "title": "Förordning om ändring i förordningen (1999:146) om värdepappersmarknaden",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "1999:146",
+        "is_amending_act": True,
+        "published_date": "2001-11-30",
+        "issued_date": "2001-11-15",
+        # Repeal-only enacting clause -- compiles to ``REPEAL section:5`` op,
+        # so the replay-fold produces no §5 in the materialized post-tree.
+        "enacting_clause": (
+            "Regeringen föreskriver att 5 § förordningen (1999:146) om "
+            "värdepappersmarknaden skall upphöra att gälla vid utgången av år 2001."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 1 januari 2002.",
+        "affected_section_labels": ["5"],
+        "provisions": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/1999:146/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2001:920/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2001:920")
+
+    assert result["match_count"] == 1, [r for r in result["rows"]]
+    section_row = result["rows"][0]
+    assert section_row["section"] == "5"
+    # The replay produced no text for §5 (structurally repealed) -- the
+    # classification MUST NOT be ``content_mismatch`` (the previous behavior,
+    # when the comparator diffed the empty replay against the later-oracle's
+    # readded §5 text).
+    assert section_row["match"] is True
+    assert section_row["classification"] == "repeal_then_later_replaced_oracle_only"
+
+    # Aggregated bucket: the row MUST count toward the oracle_version_mismatch
+    # bucket (correct replay measured against a later consolidation), NOT the
+    # genuine_mismatch bucket.
+    summary = scan_se_official_replay_act(archive, "2001:920")
+    assert summary["bucket_oracle_version_mismatch_count"] == 1, summary
+    assert summary["bucket_genuine_mismatch_count"] == 0, summary
+
+
 def test_check_se_official_replay_repeal_stub_pattern_is_narrow() -> None:
     """The repeal-stub matcher MUST NOT fire on adjacent-but-different phrasings.
 

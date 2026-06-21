@@ -3180,6 +3180,28 @@ def check_se_official_replay(
             # genuine content disagreement. Real witness: 2002:12 §17.
             match = True
             classification = "repeal_stub_oracle_only"
+        elif (
+            op.action is StructuralAction.REPEAL
+            and (replay_text or "").strip() == ""
+            and (post_text or "").strip() != ""
+            and not _is_oracle_repeal_stub(post_text)
+            and oracle_version_relation == "later"
+        ):
+            # Repealed-by-this-act-then-later-readded: the amending act's REPEAL
+            # deterministically produced an empty post-section at its own
+            # effective date (replay correctly reflects that), but the current
+            # oracle is a strictly-later consolidation in which a later
+            # amendment re-introduced the section with different content. The
+            # replay is provably correct and the current oracle carries a newer
+            # time-point version — this is the genuine ``oracle_version_mismatch``
+            # bucket without the official-act oracle fallback (the amending act
+            # has no replacement text to verify against; the determinism is
+            # provided by the REPEAL op + the strictly-later stamp).
+            # Real witness: SFS 2001:920 §5 — 2001:920 repealed §5, a later
+            # amendment (2007:572, etc.) re-added it with the post text the
+            # current consolidation carries.
+            match = True
+            classification = "repeal_then_later_replaced_oracle_only"
         else:
             match = _normalize_compare_text(replay_text) == _normalize_compare_text(post_text)
             classification = (
@@ -3269,7 +3291,7 @@ SE_OFFICIAL_ORACLE_MATCH_CLASSIFICATIONS = frozenset(
 # ("Ändring införd: t.o.m. SFS YYYY:N") names a strictly later SFS. These are NOT
 # content failures and must not be conflated with genuine surface drift.
 SE_ORACLE_VERSION_MISMATCH_CLASSIFICATIONS = frozenset(
-    {"official_oracle_version_mismatch"}
+    {"official_oracle_version_mismatch", "repeal_then_later_replaced_oracle_only"}
 )
 # Oracle-fallback rows where the consolidation stamp is missing/unparseable, or
 # the current surface is absent — the version relation cannot be trusted, so they
