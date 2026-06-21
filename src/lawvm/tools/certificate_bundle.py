@@ -38,6 +38,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from lawvm.core.observation_registry import FINDING_REGISTRY, FindingSpec
 from lawvm.core.provenance import SourceAnchor
+from lawvm.core.stage_result import StageResult
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 from lawvm.tools.export_transition_graph import (
     DEFAULT_GRANULARITY,
@@ -94,6 +95,19 @@ D_CHECKER_CONTRACT = "lawvm.checker_contract.v0"
 # strings under this domain, the one named exception to the digest-member
 # rule of §3.1.1.
 D_CHANGE_DATES = "lawvm.change_dates.v0"
+
+# StageResult endgame (WAIST #9): the per-stage account ledger. The dossier
+# commits, ADDITIVELY beside the flat residual/finding/coverage roots, one
+# subroot per pipeline stage's `core.stage_result.StageResult` account so a
+# checker can attribute a divergence to a SPECIFIC stage. These roots aggregate
+# the per-stage residual/finding/coverage subroots; they are NOT folded into the
+# writer's flat §5.4 ledgers (which stay value-identical — 0-delta). See
+# `core.stage_result_ledger` for the canonical row mapping.
+D_STAGE_RESIDUAL_LEDGER = "lawvm.stage_residual_ledger.v0"
+D_STAGE_FINDING_LEDGER = "lawvm.stage_finding_ledger.v0"
+D_STAGE_COVERAGE = "lawvm.stage_coverage.v0"
+D_STAGE_ACCOUNT = "lawvm.stage_account.v0"
+D_STAGE_ACCOUNTS = "lawvm.stage_accounts.v0"
 
 # Certificate spec §3.5: bundle-local certificate-layer code (CERT.
 # namespace) carried by kind=source_anchor_unavailable residuals (§5.4,
@@ -229,6 +243,125 @@ def set_root(domain: str, leaf_hashes: Iterable[str]) -> str:
 
 def _sha256_rendered(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# StageResult endgame (WAIST #9): per-stage account subroots.
+#
+# Each pipeline stage's `core.stage_result.StageResult` account maps (via the
+# canonical `core.stage_result_ledger` row mapping) onto three subroots built
+# with the EXISTING leaf_hash/set_root vocabulary — no new hash machinery:
+#
+#   residual_subroot = set_root(D_STAGE_RESIDUAL_LEDGER, [leaf_hash(...) per row])
+#   finding_subroot  = set_root(D_STAGE_FINDING_LEDGER,  [leaf_hash(...) per row])
+#   coverage_subroot = leaf_hash(D_STAGE_COVERAGE, coverage_row)
+#
+# A per-stage `stage_account_root` commits the three together with the stage id;
+# the aggregate `stage_accounts_root` is the set_root over the per-stage account
+# roots. This is the additive attribution layer: with ZERO stages it is the
+# empty set_root (a stable constant) and it never perturbs the flat
+# residual/finding/coverage roots.
+# ---------------------------------------------------------------------------
+
+
+def stage_residual_subroot(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Subroot over one stage's canonical residual rows (order-independent set)."""
+    return set_root(D_STAGE_RESIDUAL_LEDGER, [leaf_hash(D_STAGE_RESIDUAL_LEDGER, row) for row in rows])
+
+
+def stage_finding_subroot(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Subroot over one stage's canonical finding rows (order-independent set)."""
+    return set_root(D_STAGE_FINDING_LEDGER, [leaf_hash(D_STAGE_FINDING_LEDGER, row) for row in rows])
+
+
+def stage_coverage_subroot(row: Mapping[str, Any]) -> str:
+    """Subroot over one stage's canonical coverage row (single leaf)."""
+    return leaf_hash(D_STAGE_COVERAGE, row)
+
+
+def stage_account_root(account_row: Mapping[str, Any]) -> str:
+    """Root committing one stage's three subroots + its stage id (a leaf)."""
+    return leaf_hash(
+        D_STAGE_ACCOUNT,
+        {
+            "stage": account_row["stage"],
+            "residual_subroot": account_row["residual_subroot"],
+            "finding_subroot": account_row["finding_subroot"],
+            "coverage_subroot": account_row["coverage_subroot"],
+        },
+    )
+
+
+def build_stage_account_row(stage_id: str, stage: StageResult[Any]) -> Dict[str, Any]:
+    """Project ONE StageResult onto its committed stage-account row.
+
+    The row carries the canonical residual/finding/coverage rows (so the artifact
+    is self-evidencing — a checker reads WHAT was accounted, not just a hash) plus
+    the three subroots and the per-stage account root the aggregate folds.
+    """
+    from lawvm.core.stage_result_ledger import (
+        stage_coverage_row,
+        stage_finding_rows,
+        stage_residual_rows,
+    )
+
+    residual_rows = stage_residual_rows(stage)
+    finding_rows = stage_finding_rows(stage)
+    coverage = stage_coverage_row(stage)
+    residual_subroot = stage_residual_subroot(residual_rows)
+    finding_subroot = stage_finding_subroot(finding_rows)
+    coverage_subroot = stage_coverage_subroot(coverage)
+    row: Dict[str, Any] = {
+        "stage": stage_id,
+        "residual_rows": residual_rows,
+        "finding_rows": finding_rows,
+        "coverage_row": coverage,
+        "residual_subroot": residual_subroot,
+        "finding_subroot": finding_subroot,
+        "coverage_subroot": coverage_subroot,
+    }
+    row["stage_account_root"] = stage_account_root(row)
+    return row
+
+
+def stage_accounts_root(account_rows: Sequence[Mapping[str, Any]]) -> str:
+    """Aggregate root over the per-stage account roots (the additive layer).
+
+    Order-independent set over the stage account roots. With zero stages this is
+    the empty set_root under D_STAGE_ACCOUNTS — a stable constant — so an empty
+    stage-account ledger never perturbs anything.
+    """
+    return set_root(
+        D_STAGE_ACCOUNTS, [stage_account_root(row) for row in account_rows]
+    )
+
+
+def _verify_stage_accounts(account_rows: Sequence[Mapping[str, Any]]) -> str:
+    """Recompute the per-stage subroots FROM the committed rows and re-aggregate.
+
+    The writer-side self-check consumer (`verify_bundle`): a stage account that
+    was dropped/severed before the dossier, or whose committed subroot disagrees
+    with its committed rows, makes this recompute diverge from the committed
+    `stage_accounts_root` (BundleSelfCheckError) — the guard-liveness property.
+    """
+    for row in account_rows:
+        _require(
+            stage_residual_subroot(row["residual_rows"]) == row["residual_subroot"],
+            f"stage {row['stage']!r} residual_subroot does not recompute from its rows",
+        )
+        _require(
+            stage_finding_subroot(row["finding_rows"]) == row["finding_subroot"],
+            f"stage {row['stage']!r} finding_subroot does not recompute from its rows",
+        )
+        _require(
+            stage_coverage_subroot(row["coverage_row"]) == row["coverage_subroot"],
+            f"stage {row['stage']!r} coverage_subroot does not recompute from its row",
+        )
+        _require(
+            stage_account_root(row) == row["stage_account_root"],
+            f"stage {row['stage']!r} stage_account_root does not recompute from its subroots",
+        )
+    return stage_accounts_root(account_rows)
 
 
 def projection_hash_view(payload: Mapping[str, Any], excluded_members: Sequence[str]) -> Dict[str, Any]:
@@ -863,6 +996,23 @@ def build_certificate_bundle(
     source_leaves = [leaf_hash(D_SOURCE_ARTIFACT, identity) for identity in source_identities]
     source_bundle_root = set_root(D_SOURCE_BUNDLE, source_leaves)
     base_artifact_id = artifact_id_by_engine_sid[engine_id]
+
+    # --- per-stage account subroots (StageResult endgame WAIST #9) ---
+    # The FI token/source-unit stage is the first LIVE feeder: its
+    # `StageResult[SourceSurfaceBundle]` coverage/residuals (the segmentation
+    # partition) flow into the dossier as a per-stage account. Built from the
+    # SAME enacted body bytes already bundled above (0-delta: no new read). Each
+    # later StageResult-carried waist appends its row here.
+    from lawvm.finland.legal_surface.bundle import build_surface_bundle_staged
+
+    stage_account_rows: List[Dict[str, Any]] = []
+    surface_stage = build_surface_bundle_staged(
+        source_blobs[base_artifact_id], canonical_id
+    )
+    stage_account_rows.append(
+        build_stage_account_row("fi.legal_surface.source_unit", surface_stage)
+    )
+    stage_accounts_root_value = stage_accounts_root(stage_account_rows)
 
     # --- trace: covering-state evolution per boundary date (§10 carve-out) ---
     ops_by_date = _index_ops_by_date(bundle.lo_ops)
@@ -1541,6 +1691,11 @@ def build_certificate_bundle(
             "root": potential_op_coverage_root,
             "locator": "coverage/potential_operation_coverage.jsonl",
         },
+        "stage_accounts": {
+            "schema": D_STAGE_ACCOUNTS,
+            "root": stage_accounts_root_value,
+            "locator": "stages/stage_accounts.jsonl",
+        },
     }
 
     roots = {
@@ -1553,6 +1708,9 @@ def build_certificate_bundle(
         "residual_root": residual_root,
         "finding_root": finding_root,
         "coverage_root": coverage_root,
+        # Additive per-stage attribution layer (WAIST #9); does NOT fold into the
+        # flat residual/finding/coverage roots above (they stay value-identical).
+        "stage_accounts_root": stage_accounts_root_value,
     }
 
     envelope: Dict[str, Any] = {
@@ -1632,6 +1790,7 @@ def build_certificate_bundle(
     _write_jsonl(out_path / "residue" / "findings.jsonl", finding_rows)
     _write_jsonl(out_path / "coverage" / "source_unit_coverage.jsonl", source_unit_rows)
     _write_jsonl(out_path / "coverage" / "potential_operation_coverage.jsonl", potential_op_rows)
+    _write_jsonl(out_path / "stages" / "stage_accounts.jsonl", stage_account_rows)
 
     # Writer-side self-check: recompute every committed root from the bundle
     # files independently. Not a checker; raises on writer inconsistency.
@@ -2020,6 +2179,13 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         {"source_unit_coverage": src_cov_root, "potential_operation_coverage": op_cov_root},
     )
 
+    # per-stage account subroots (WAIST #9): recompute each stage's subroots FROM
+    # its committed rows and re-aggregate. A stage account severed before the
+    # dossier (or whose subroot disagrees with its rows) diverges here — the
+    # guard-liveness property the StageResult endgame demands.
+    stage_account_rows = _read_jsonl(bundle_path / artifacts["stage_accounts"]["locator"])
+    recomputed["stage_accounts_root"] = _verify_stage_accounts(stage_account_rows)
+
     # policy manifest hashes
     for key, domain, envelope_hash in (
         ("profile_manifest", D_STRICT_PROFILE, envelope["profile"]["profile_hash"]),
@@ -2055,6 +2221,7 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         ("materialization_index", "materialization_root"),
         ("residual_ledger", "residual_root"),
         ("finding_ledger", "finding_root"),
+        ("stage_accounts", "stage_accounts_root"),
     ):
         _require(artifacts[key]["root"] == roots[root_name], f"artifacts.{key}.root != roots.{root_name}")
 

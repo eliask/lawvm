@@ -619,6 +619,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_consolidated_artifacts.py",
         "test_branch_demo.py",
         "test_certificate_bundle.py",
+        "test_certificate_stage_roots.py",
         "test_fi_export_sql.py",
         "test_fi_export_transition_graph.py",
         "test_graph_export.py",

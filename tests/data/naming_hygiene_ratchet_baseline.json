@@ -193,7 +193,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 95,
+  "public_schema_count": 100,
   "public_schemas": [
     "lawvm.agreement_surface_report.v1",
     "lawvm.annotated_token_view.v1",
@@ -265,6 +265,11 @@
     "lawvm.source_unit_coverage.v0",
     "lawvm.source_unit_coverage.v1",
     "lawvm.source_witness_report.v1",
+    "lawvm.stage_account.v0",
+    "lawvm.stage_accounts.v0",
+    "lawvm.stage_coverage.v0",
+    "lawvm.stage_finding_ledger.v0",
+    "lawvm.stage_residual_ledger.v0",
     "lawvm.state_root.v0",
     "lawvm.strict_profile.v0",
     "lawvm.token_tape.v1",
