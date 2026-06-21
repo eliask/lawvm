@@ -527,7 +527,7 @@ def _normalize_historical_top_level_kohta_subsection_ops(
         emitted = sorted(emitted_labels_by_section.get(section_label, ()), key=lambda value: int(value))
         findings.append(
             Finding(
-                kind="ELAB.HISTORICAL_TOP_LEVEL_KOHTA_AS_SUBSECTION",
+                kind="ELAB.HISTORICAL_TOP_LEVEL_ITEM_AS_SUBSECTION",
                 role="observation",
                 stage="frontend_compile",
                 detail={

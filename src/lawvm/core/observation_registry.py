@@ -328,7 +328,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "warn", "frontend_compile",
                 "sparse osalta amendment lowered from source modify verb to explicit named paragraph-row repeal",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
-    FindingSpec("ELAB.HISTORICAL_TOP_LEVEL_KOHTA_AS_SUBSECTION", "frontend_compile",
+    FindingSpec("ELAB.HISTORICAL_TOP_LEVEL_ITEM_AS_SUBSECTION", "frontend_compile",
                 "recovery", "warn", "frontend_compile",
                 "historical top-level kohta wording mapped to direct subsection targets when source payload and live tree prove parenthesized subsection siblings",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
