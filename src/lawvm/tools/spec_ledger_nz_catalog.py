@@ -204,43 +204,22 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
         "The target address cannot be mapped onto the source-tree path scheme — refusal rather than invented path."
     ),
     # --- Repeal: agreement + residuals (tombstone / removed-node / oracle-side) --------
-    "nz_dry_run_repeal_tombstone_matches_oracle": (
-        "AGREES: tombstoning the target's body leaves the node marked-deleted, exactly mirroring the "
-        "oracle on-or-after (which retains the deleted marker; the body text is neither expected nor required)."
-    ),
-    "nz_dry_run_repeal_removed_node_matches_oracle": (
-        "AGREES for the definition-removal sub-case: the removed definition node is entirely absent from "
-        "the oracle on-or-after, not tombstoned."
-    ),
-    "nz_dry_run_residual_target_missing_in_oracle": (
-        "RESIDUAL: the tombstoned target node is absent from the on-or-after oracle — over-retention "
-        "candidate (the oracle may have dropped it entirely)."
-    ),
-    "nz_dry_run_residual_target_not_tombstone_in_oracle": (
-        "RESIDUAL: the target node is present in the oracle but NOT tombstoned — the repeal was not reflected; "
-        "deterministic gap unless the oracle carries it as live for a save reason."
-    ),
-    "nz_dry_run_residual_target_not_removed_in_oracle": (
-        "RESIDUAL (definition-removal sub-case): the definition node is still present in the oracle — "
-        "repeal not reflected."
-    ),
+    # The 6 dry-oracle repeal agreement/residual rule_ids and their paired believed_spec
+    # prose are OWNED by the production adapter (`lawvm.new_zealand.spec_ledger_adapter`
+    # NZRuleCatalogEntry, with a paired *confidence tier*) — single source of truth per
+    # AGENTS §2.5 (parity-tested: see `test_catalog_prose_agrees_with_production_adapter_-
+    # on_overlap`). Keys: nz_dry_run_repeal_tombstone_matches_oracle /
+    # nz_dry_run_repeal_removed_node_matches_oracle /
+    # nz_dry_run_residual_target_missing_in_oracle /
+    # nz_dry_run_residual_target_not_tombstone_in_oracle /
+    # nz_dry_run_residual_target_not_removed_in_oracle.
     # --- Text-replace (TEXT_REPLACE): agreement + residuals -----------------------------
-    "nz_dry_run_text_replace_substitution_reflected_in_oracle": (
-        "AGREES: the on-or-after oracle node carries the new_text where the candidate after-node wrote it "
-        "and no old_text occurrence remains that should have been substituted."
-    ),
-    "nz_dry_run_text_replace_residual_old_text_remains_in_oracle": (
-        "RESIDUAL: the oracle still carries the old_text the candidate after-node removed — substitution "
-        "not reflected in oracle (wrong target / wrong window / oracle-stale)."
-    ),
-    "nz_dry_run_text_replace_residual_new_text_absent_in_oracle": (
-        "RESIDUAL: neither the new_text is present nor is the old_text residue consistent — another window "
-        "change overwrote it, or target drift."
-    ),
-    "nz_dry_run_text_replace_residual_target_missing_in_oracle": (
-        "RESIDUAL: the exact target node is missing from the on-or-after oracle — the substitution's target "
-        "vanished between the before and on-or-after snapshot."
-    ),
+    # The 4 dry-oracle text-replace agreement/residual rule_ids are OWNED by the
+    # production adapter (same parity contract, §2.5). Keys:
+    # nz_dry_run_text_replace_substitution_reflected_in_oracle /
+    # nz_dry_run_text_replace_residual_old_text_remains_in_oracle /
+    # nz_dry_run_text_replace_residual_new_text_absent_in_oracle /
+    # nz_dry_run_text_replace_residual_target_missing_in_oracle.
     "nz_dry_run_refused_text_replace_missing_text_patch": (
         "Refusal: the lowering did not produce a text patch (old/new text) for a text-substitution op."
     ),
@@ -262,18 +241,11 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
         "evidence — when that witness is unavailable the candidate is blocked rather than guessed."
     ),
     # --- Structural whole-provision REPLACE: agreement + residuals --------------------
-    "nz_dry_run_structural_replace_subtree_matches_oracle": (
-        "AGREES: the on-or-after oracle's target subtree, normalized for text/structure, equals the candidate "
-        "replacement subtree extracted from the amending act."
-    ),
-    "nz_dry_run_structural_replace_residual_replacement_mismatch_in_oracle": (
-        "RESIDUAL: the oracle target subtree exists but differs from the candidate replacement — wrong "
-        "content / another window change / wrong amending payload."
-    ),
-    "nz_dry_run_structural_replace_residual_target_missing_in_oracle": (
-        "RESIDUAL: the exact target node is absent from the on-or-after oracle — the replaced provision "
-        "vanished (possible over-repeal of the parent or another window's structural change)."
-    ),
+    # The 3 dry-oracle structural-replace agreement/residual rule_ids are OWNED by the
+    # production adapter (same parity contract, §2.5). Keys:
+    # nz_dry_run_structural_replace_subtree_matches_oracle /
+    # nz_dry_run_structural_replace_residual_replacement_mismatch_in_oracle /
+    # nz_dry_run_structural_replace_residual_target_missing_in_oracle.
     "nz_dry_run_refused_structural_replace_target_address_not_candidate": (
         "Refusal: the resolved replace target is not a candidate (exact) resolved target — the kernel "
         "refuses inferred/recovered rather than explicitly-named replace scope (§1.1)."
@@ -297,24 +269,12 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
         "(no-op); the proof is not materialized."
     ),
     # --- Structural whole-provision INSERT: agreement + residuals ---------------------
-    "nz_dry_run_structural_insert_new_node_present_and_matches_oracle": (
-        "AGREES: the inserted new-node subtree is present in the on-or-after oracle at its derived anchor's "
-        "neighbourhood with matching normalized content AND its derived position is confirmed (the "
-        "oracle-adjacent same-kind sibling is the derived anchor or a co-inserted block member)."
-    ),
-    "nz_dry_run_structural_insert_residual_new_node_not_present_in_oracle": (
-        "RESIDUAL: the inserted node is absent from the oracle — the insertion was not reflected in the "
-        "on-or-after snapshot."
-    ),
-    "nz_dry_run_structural_insert_residual_new_node_content_mismatch_in_oracle": (
-        "RESIDUAL: the inserted node is present in the oracle but its content differs from the candidate "
-        "new-node payload — wrong payload, never agreement."
-    ),
-    "nz_dry_run_structural_insert_residual_new_node_position_mismatch_in_oracle": (
-        "RESIDUAL: the inserted node is present with matching content but its immediately-preceding same-kind "
-        "oracle sibling is NEITHER the derived anchor NOR a co-inserted block member — the derived position is "
-        "wrong, never laundered into agreement."
-    ),
+    # The 4 dry-oracle structural-insert agreement/residual rule_ids are OWNED by the
+    # production adapter (same parity contract, §2.5). Keys:
+    # nz_dry_run_structural_insert_new_node_present_and_matches_oracle /
+    # nz_dry_run_structural_insert_residual_new_node_not_present_in_oracle /
+    # nz_dry_run_structural_insert_residual_new_node_content_mismatch_in_oracle /
+    # nz_dry_run_structural_insert_residual_new_node_position_mismatch_in_oracle.
     "nz_dry_run_refused_structural_insert_target_address_not_candidate": (
         "Refusal: the resolved insert target (the inserted node's own address) is not an exact-resolved "
         "candidate; inferred scope is refused."
