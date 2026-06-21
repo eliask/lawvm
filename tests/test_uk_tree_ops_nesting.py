@@ -209,6 +209,62 @@ def test_uk_subsection_allows_schedule_entry() -> None:
     assert _count_violations(tree, families=("unexpected_child_kind",)) == 0
 
 
+def test_uk_subparagraph_allows_schedule_entry() -> None:
+    """UK body-paragraph ``<UnorderedList><ListItem>`` list entries are lowered
+    as ``schedule_entry`` children of their hosting ``subparagraph`` (e.g. the
+    ``asp/2003/13`` s.290(2)(f)(iii) list of patient-relative roles introduced
+    by ``asp/2015/9`` s.32(3)(b)).  Core ``_NESTING_ORDER`` must admit
+    ``schedule_entry`` under ``subparagraph`` so this case is not flagged as an
+    ``unexpected_child_kind``.
+    """
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="PART XVIII",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.P1GROUP,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SECTION,
+                                label="290",
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.SUBSECTION,
+                                        label="2",
+                                        children=(
+                                            IRNode(
+                                                kind=IRNodeKind.PARAGRAPH,
+                                                label="f",
+                                                children=(
+                                                    IRNode(
+                                                        kind=IRNodeKind.SUBPARAGRAPH,
+                                                        label="iii",
+                                                        children=(
+                                                            IRNode(
+                                                                kind=IRNodeKind.SCHEDULE_ENTRY,
+                                                                label="1",
+                                                                children=(),
+                                                            ),
+                                                        ),
+                                                    ),
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    assert _count_violations(tree, families=("unexpected_child_kind",)) == 0
+
+
 def test_uk_illegal_subsection_under_part_is_unexpected_child() -> None:
     tree = _uk_part_with_illegal_subsection_child()
     violations = [

@@ -1364,7 +1364,7 @@ _NESTING_ORDER = {
         "omission",
         "hcontainer",
     },
-    "subparagraph": {"subparagraph", "item", "sentence", "heading", "num", "content", "pgroup", "intro", "wrapUp", "omission", "hcontainer"},
+    "subparagraph": {"subparagraph", "item", "schedule_entry", "sentence", "heading", "num", "content", "pgroup", "intro", "wrapUp", "omission", "hcontainer"},
     "item": {"item", "subparagraph", "sentence", "content", "intro", "wrapUp", "omission", "hcontainer"},
     "sentence": {"content"},
     "p1group": {"paragraph", "section", "article", "rule", "regulation", "heading", "num"},
