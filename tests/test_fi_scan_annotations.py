@@ -332,6 +332,60 @@ class TestJolloiSectionRenumber:
         codes = [op.code() for op in parse_clause(text).parsed_ops]
         assert codes == ["S P L:15 2 3", "L P L:15 2 3", "L P L:17 2 2"]
 
+    def test_jolloin_span_stops_before_trailing_chapter_heading_target(self) -> None:
+        """A following ``N luvun otsikko`` is a target, not jolloin prose."""
+        text = (
+            "muutetaan 5 luvun otsikko, 63 §, 69 §, jolloin 69 § siirtyy "
+            "5 lukuun, 6 luvun otsikko, 70 § ja 71 §"
+        )
+
+        filtered_tokens, pair_map = apply_annotations_with_jolloin_pairs(tokenize(text))
+        filtered_shapes = [(tok.cat, tok.text) for tok in filtered_tokens]
+
+        assert pair_map == {}
+        assert filtered_shapes == [
+            ("VERB", "muutetaan"),
+            ("NUM", "5"),
+            ("LUKU", "luvun"),
+            ("OTSIKKO", "otsikko"),
+            ("COMMA", ","),
+            ("NUM", "63"),
+            ("PYKALA", "§"),
+            ("COMMA", ","),
+            ("NUM", "69"),
+            ("PYKALA", "§"),
+            ("COMMA", ","),
+            ("JOLLOIN_MOVE", "jolloin-move"),
+            ("COMMA", ","),
+            ("NUM", "6"),
+            ("LUKU", "luvun"),
+            ("OTSIKKO", "otsikko"),
+            ("COMMA", ","),
+            ("NUM", "70"),
+            ("PYKALA", "§"),
+            ("CONJ", "ja"),
+            ("NUM", "71"),
+            ("PYKALA", "§"),
+        ]
+
+    def test_parse_clause_keeps_chapter_heading_after_jolloin_clause(self) -> None:
+        from lawvm.finland.johtolause.compat import parse_clause
+
+        text = (
+            "muutetaan 5 luvun otsikko, 63 §, 69 §, jolloin 69 § siirtyy "
+            "5 lukuun, 6 luvun otsikko, 70 § ja 71 §"
+        )
+
+        codes = [op.code() for op in parse_clause(text).parsed_ops]
+        assert codes == [
+            "M L 5 o",
+            "M P L:5 63",
+            "M P L:5 69",
+            "M L 6 o",
+            "M P L:6 70",
+            "M P L:6 71",
+        ]
+
     def test_stamp_default_witness_uses_typed_renumber_dest(self) -> None:
         from lawvm.finland.johtolause.surface_model import SurfaceNode, SurfaceTargetRef, TargetKind
         from lawvm.finland.johtolause.surface_parse import _stamp_default_witness

@@ -1290,6 +1290,12 @@ def annotate_jolloin(tokens: list[Token]) -> list[Annotation]:
                 tk_text = (tk.text or "").lower()
                 if tk.cat == "PYKALA" or "§" in tk_text:
                     return True
+                if (
+                    tk.cat == "LUKU"
+                    and k + 1 < n
+                    and tokens[k + 1].cat == "OTSIKKO"
+                ):
+                    return True
                 if (tk.cat == "LUKU" and tk.case == "ILL") or tk_text.startswith(("luku", "luvu")) and tk_text.endswith("ksi"):
                     return True
                 if (tk.cat == "MOMENTTI" and tk.case == "ILL") or tk_text.startswith("moment") and tk_text.endswith("ksi"):
