@@ -33,6 +33,19 @@ def test_bench_comparison_text_prefers_materialized_pit_ir() -> None:
     assert bench._comparison_text(master) == "live"
 
 
+def test_bench_levenshtein_text_preserves_replay_serializer_surface() -> None:
+    fold_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CONTENT, text="fold"),))
+    materialized_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CONTENT, text="live"),))
+    master = SimpleNamespace(
+        ir=fold_ir,
+        materialized_state=SimpleNamespace(ir=materialized_ir),
+        serialize_text=lambda: "historical replay text",
+    )
+
+    assert bench._comparison_text(master) == "live"
+    assert bench._levenshtein_comparison_text(master) == "historical replay text"
+
+
 def test_bench_comparison_text_prunes_timeline_inactive_sections() -> None:
     expired_section = IRNode(
         kind=IRNodeKind.SECTION,

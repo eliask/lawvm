@@ -414,6 +414,24 @@ def _comparison_text(master: Any) -> str:
     return _serialize_ir_text(_comparison_ir(master))
 
 
+def _levenshtein_comparison_text(master: Any) -> str:
+    """Return the historical full replay text used by FI Levenshtein scoring.
+
+    Structural scoring uses ``_comparison_ir`` so inactive PIT sections do not
+    count as live legal structure.  The secondary full-text Levenshtein metric is
+    a broad replay/oracle sanity check and historically compared the replay
+    serializer against the consolidated oracle text.  Keep that surface stable:
+    materialized/PIT projection can intentionally omit inactive context that the
+    consolidated oracle text still carries, which makes the secondary metric
+    measure projection policy rather than text replay agreement.
+    """
+
+    serialize_text = getattr(master, "serialize_text", None)
+    if callable(serialize_text):
+        return str(serialize_text())
+    return _comparison_text(master)
+
+
 def _levenshtein_ratio(left: str, right: str) -> float:
     """Return the same normalized indel similarity as ``python-Levenshtein.ratio``."""
 
@@ -427,7 +445,7 @@ def _lev_sim_fast(sid: str, master: Any) -> float:
     Returns -1.0 on any error.
     """
     try:
-        c_res = _clean(_comparison_text(master))
+        c_res = _clean(_levenshtein_comparison_text(master))
         c_truth = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -693,7 +711,7 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
 
     raw_lev = -1.0
     if text_scores:
-        raw_replay_text = _clean(_comparison_text(master))
+        raw_replay_text = _clean(_levenshtein_comparison_text(master))
         raw_oracle_text = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -1104,7 +1122,7 @@ def _section_score(
         )
 
         # Full-text similarity (existing metric)
-        c_res = _clean(_comparison_text(master))
+        c_res = _clean(_levenshtein_comparison_text(master))
         c_truth = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -1183,7 +1201,7 @@ def _section_score_with_warning_summary(
             },
         )
 
-        c_res = _clean(_comparison_text(master))
+        c_res = _clean(_levenshtein_comparison_text(master))
         c_truth = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
