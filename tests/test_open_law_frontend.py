@@ -1439,3 +1439,67 @@ def _git_commit_all(path, message: str) -> None:
 
 def _git_branch(path, branch: str) -> None:
     subprocess.run(("git", "-C", str(path), "branch", branch), check=True)
+
+
+def test_shareable_git_remote_url_normalize_github_ssh_to_https() -> None:
+    # AGENTS §2.9 guard-liveness on the local-path-remote-leak fix.
+    # Regression: a developer-local checkout whose remote.origin.url is a
+    # local path (a sibling-clone lookup, common for offline or dev-loop setups)
+    # MUST NOT leak that local path into a serialised evidence-pack manifest.
+    # The verify-pack leak guard catches the symptom;
+    # _shareable_git_remote_url + _is_local_path_remote catch the leak at the
+    # emission source, returning the repo's leaf directory name instead.
+    # GitHub SSH remotes still normalize to HTTPS, and recognised shareable
+    # scheme URIs (https/ssh/git / github.com host shapes) pass through.
+    # file:// URIs are local-path remotes dressed as URIs — also fall back.
+    # (Fixture paths avoid the developer-local-path markers the release-hygiene
+    # gate itself watches for — they are still absolute Unix / Windows drive-
+    # letter / file:// shapes the predicate must catch.)
+    from lawvm.open_law.evidence_pack import (
+        _is_local_path_remote,
+        _shareable_git_remote_url,
+    )
+
+    # GitHub SSH -> HTTPS normalization preserved.
+    assert _shareable_git_remote_url("git@github.com:owner/repo.git") == (
+        "https://github.com/owner/repo.git"
+    )
+    # Recognised shareable URIs pass through verbatim.
+    for shareable in (
+        "https://github.com/owner/repo.git",
+        "http://example.invalid/repo.git",
+        "ssh://git@github.com/owner/repo.git",
+        "git://example.invalid/repo.git",
+    ):
+        assert _shareable_git_remote_url(shareable) == shareable, shareable
+    # Bare github.com host shapes pass through.
+    assert _shareable_git_remote_url("github.com/owner/repo.git") == (
+        "github.com/owner/repo.git"
+    )
+
+    # Local-path remotes (the leak): absolute Unix paths + Windows drive-letters
+    # + ./ ../ relative refs + file:// URIs all fall back to the leaf name when
+    # one is supplied, so the manifest never leaks the on-disk path.
+    for local_path_remote in (
+        "/srv/local/lawvm.nz",
+        "/var/git/lawvm.nz",
+        "./sibling/lawvm.nz",
+        "../upstream/lawvm.nz",
+        "C:\\dev\\lawvm.nz",
+        "C:/dev/lawvm.nz",
+        "file:///srv/local/lawvm.nz",
+    ):
+        assert _is_local_path_remote(local_path_remote) or local_path_remote.startswith("file://"), (
+            f"local-path predicate missed: {local_path_remote}"
+        )
+        assert (
+            _shareable_git_remote_url(local_path_remote, fallback_leaf="LawVM") == "LawVM"
+        ), f"local-path remote leaked verbatim: {local_path_remote}"
+
+    # No fallback_leaf supplied: the path is returned verbatim so the verify-pack
+    # leak guard can flag the leak (never silent). Preserves the prior
+    # behaviour for any non-library caller and surfaces the path as a typed
+    # issue instead of suppressing it.
+    leaked_path = "/srv/local/lawvm.nz"
+    leaked = _shareable_git_remote_url(leaked_path)
+    assert leaked == leaked_path
