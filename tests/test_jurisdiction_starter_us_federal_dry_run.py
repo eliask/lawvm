@@ -43,6 +43,7 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID,
     US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
     US_DRY_RUN_RESIDUAL_SOURCE_TREE_PARSE_AMBIGUOUS_RULE_ID,
+    US_DRY_RUN_RESIDUAL_TARGET_ANCESTOR_ABSENT_IN_SOURCE_TREE_RULE_ID,
     US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID,
     US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
     US_DRY_RUN_SECTION_AGREES_RULE_ID,
@@ -722,7 +723,7 @@ def _title11_after_with_new_section_12() -> bytes:
         '<!-- expcite:TITLE 11!@!CHAPTER 1!@!Sec. 12 -->'
         '<!-- field-start:head --><h3 class="section-head">&sect;12. New section</h3>'
         '<!-- field-end:head --><!-- field-start:statute -->'
-        '<p class="statutory-body">&ldquo; (a) New body.</p>'
+        '<p class="statutory-body">(a) New body.</p>'
         '<!-- field-end:statute --></div></body></html>'
     ).encode("utf-8")
 
@@ -1755,8 +1756,11 @@ def test_quoted_block_insert_residual_is_typed_oracle_suspect_not_lawvm_wrong(
     assert row.status == "residual"
     assert row.disposition == DISPOSITION_ORACLE_SUSPECT
     assert row.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
-    # The materialized text keeps the enacted quotes (never repaired to the oracle).
-    assert "“(1) first" in row.materialized_text
+    # The leading USLM wrapper quote is stripped (serialization artifact, not
+    # enacted statutory text); the internal paragraph-delimiter quote remains,
+    # so the residual is still editorial (F1), not repaired to the oracle.
+    assert "“(2) second" in row.materialized_text
+    assert "“(1)" not in row.materialized_text
 
 
 # ---------------------------------------------------------------------------
@@ -2171,6 +2175,82 @@ def test_target_level_absent_not_fired_when_level_is_present_but_label_missing()
         ),
         payload=IRNode(
             kind=IRNodeKind.SUBSECTION,
+            label="99",
+            text="(99) Replacement paragraph.",
+        ),
+    )
+    outcome = _materialize_one(
+        op, section.statutory_text, before_section=section
+    )
+    assert not isinstance(outcome, USDryRunRefusal)
+    _materialized, rule_id, disposition = outcome
+    assert rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+    assert disposition == DISPOSITION_LAWVM_WRONG
+
+
+def test_target_ancestor_absent_when_deeper_level_exists_but_parent_missing() -> None:
+    """A section may expose clause-level markers but not the subsection/paragraph
+    ancestors that own them. The target level (clause) exists, so the old
+    `target_level_absent` rule does not fit; the new `target_ancestor_absent` rule
+    owns the gap.
+    """
+    section = synthetic_usc_section(
+        title=47,
+        section="227",
+        text="(A) The term. (i) first clause. (ii) second clause.",
+    )
+    op = LegalOperation(
+        op_id="replace-clause-b-1-A-iii",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(
+            path=(
+                ("title", "47"),
+                ("section", "227"),
+                ("subsection", "b"),
+                ("paragraph", "1"),
+                ("subparagraph", "A"),
+                ("clause", "iii"),
+            )
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.SUBPARAGRAPH,
+            label="iii",
+            text="(iii) Replacement clause.",
+        ),
+    )
+    outcome = _materialize_one(
+        op, section.statutory_text, before_section=section
+    )
+    assert not isinstance(outcome, USDryRunRefusal)
+    _materialized, rule_id, disposition = outcome
+    assert rule_id == US_DRY_RUN_RESIDUAL_TARGET_ANCESTOR_ABSENT_IN_SOURCE_TREE_RULE_ID
+    assert disposition == DISPOSITION_MISSING_SOURCE
+
+
+def test_target_ancestor_absent_does_not_hide_parse_ambiguity_on_clean_tree() -> None:
+    """When the ancestor exists and only the target label is missing, the section
+    tree is clean and we stay with the generic node-not-located residual.
+    """
+    section = synthetic_usc_section(
+        title=11,
+        section="77",
+        text="(a) First subsection. (b) Second subsection. (1) First paragraph.",
+    )
+    op = LegalOperation(
+        op_id="replace-para-b-99",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(
+            path=(
+                ("title", "11"),
+                ("section", "77"),
+                ("subsection", "b"),
+                ("paragraph", "99"),
+            )
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.PARAGRAPH,
             label="99",
             text="(99) Replacement paragraph.",
         ),

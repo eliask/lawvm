@@ -71,6 +71,10 @@ US_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
         "us_federal",
         "us_federal_plaw_inventory",
         "us_amendatory",
+        # Provenance tag for a target whose title was supplied from the Act section's
+        # govinfo/OLRC classification refs (including sidenote refs). It is not a
+        # separate witness rule id.
+        "us_amend_target_title_from_section_classification",
         "us_dry_run_section_changed_set",
         "us_dry_run_section_text",
         "us_dry_run_changed_section_set_matches_oracle",
@@ -128,6 +132,23 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_amend_insert_after_anchor": (
         "An 'insert <new> after <anchor>' instruction places the new text immediately "
         "after the quoted anchor text in the target section."
+    ),
+    "us_amend_insert_before_anchor": (
+        "An 'insert <new> before <anchor>' instruction places the new text immediately "
+        "before the quoted anchor text in the target section."
+    ),
+    "us_amend_target_title_from_plaw_metadata": (
+        "A bare 'Section N(...)' amendatory target whose title was supplied by the "
+        "Public Law's own short-title preamble (the dc:title metadata) because the "
+        "instruction text and sidenote classification omitted the title. Used only "
+        "when the preamble names exactly one USC title and no explicit title was present."
+    ),
+    "us_amend_plaw_metadata_scope_conflict": (
+        "A Public Law's short-title preamble named exactly one USC title, but other "
+        "amendatory references in the same law explicitly name a different title. "
+        "The preamble is therefore an unsafe fallback for bare 'Section N(...)' targets "
+        "in that law, so metadata title inference is withheld and those targets stay "
+        "unresolved rather than risk cross-title target hijacking."
     ),
     "us_amend_add_at_end": (
         "An 'add at the end' instruction appends the quoted payload (a block or a "
@@ -272,6 +293,14 @@ _US_RULE_SPECS: Dict[str, str] = {
         "ambiguous between levels). A specific target node cannot be safely located, "
         "so the residual is classified as a source-footing gap rather than a lowering bug."
     ),
+    "us_dry_run_residual_target_ancestor_absent_in_source_tree": (
+        "Contradiction: the USC annual-edition source tree exposes the target's deepest "
+        "structural level somewhere in the section, but an ancestor level named in the "
+        "address is missing (e.g. an amendment targets paragraph (1) of subsection (b), "
+        "but subsection (b) itself is not rendered in the source edition). The specific "
+        "anchor cannot be safely located, so the residual is classified as a source-footing "
+        "gap rather than a lawvm_wrong lowering bug."
+    ),
     "us_dry_run_residual_source_truncated_payload": (
         "Contradiction: a structural redesignation payload the source XML truncated "
         "(e.g., a clause introduced only as '(i) any member') was materialized faithfully, "
@@ -344,6 +373,12 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_plaw_import_existing_content_skipped": (
         "An imported PL member's content already exists in the archive — skipped as "
         "idempotent rather than re-written."
+    ),
+    "us_plaw_import_unreadable_zip_member": (
+        "A PLAW bulkdata zip member could not be read (truncated, CRC-failed, or "
+        "otherwise corrupt) — skipped with a typed finding carrying the entry name "
+        "and underlying exception, never dropped silently. The member is absent from "
+        "the archive as a visible acquisition gap, not a missing-law hole."
     ),
     # --- Statutes-at-Large import hygiene (older public laws) -------------------------
     "us_statute_import_volume_unreachable": (
@@ -465,6 +500,9 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_strike_insert_tail": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_after_anchor": US_CONFIDENCE_HEURISTIC,
+    "us_amend_insert_before_anchor": US_CONFIDENCE_HEURISTIC,
+    "us_amend_target_title_from_plaw_metadata": US_CONFIDENCE_HEURISTIC,
+    "us_amend_plaw_metadata_scope_conflict": US_CONFIDENCE_HEURISTIC,
     "us_amend_add_at_end": US_CONFIDENCE_HEURISTIC,
     "us_amend_add_at_end_new_sections": US_CONFIDENCE_HEURISTIC,
     "us_amend_to_read": US_CONFIDENCE_HEURISTIC,

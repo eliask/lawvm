@@ -631,6 +631,57 @@ def test_split_deep_roman_ladder_descends_not_reopen_shallow_subsection() -> Non
     assert subsec_i.text.startswith("(i) Additional expansion")
 
 
+_DASH_RUNIN_ROMAN_AMBIGUOUS_HTM = b"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head>
+<!-- AUTHORITIES-USC-TITLE-ENUM:38 -->
+ </head>
+ <body>
+  <div>
+<!-- expcite:TITLE 38-VETERANS!@!CHAPTER 73!@!Sec. 7309 -->
+<h3 class="section-head">&sect;7309. Chiefs and assistant chiefs</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">(a) In general. The Secretary may appoint chiefs.</p>
+<p class="statutory-body">(b) Chief Officer.&mdash;(1) There is in the Veterans Health Administration the position of Chief Officer.</p>
+<p class="statutory-body">(2) The Chief Officer is the principal adviser.</p>
+<p class="statutory-body">(c) Structure.&mdash;(1) The Service is organized in directorates.</p>
+<p class="statutory-body">(2) The Service provides counseling.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 95&ndash;598.)</p>
+<!-- field-end:sourcecredit -->
+  </div>
+ </body>
+</html>
+"""
+
+
+def test_split_dash_runin_handles_ambiguous_letter_parent() -> None:
+    """A dash-separated run-in child after an ambiguous lowercase letter (``c`` is
+    both the 3rd subsection and the roman clause 100) must still be split when the
+    letter resolves as a subsection in context.  Both unambiguous ``(b)`` and
+    roman-ambiguous ``(c)`` expose ``paragraph:1``; the following ``(2)``
+    paragraphs are siblings under that paragraph."""
+    doc = parse_usc_title_document(_DASH_RUNIN_ROMAN_AMBIGUOUS_HTM, title=38, year="2014")
+    section = doc.section_by_number("7309")
+    assert section is not None
+    nodes, findings = split_statutory_subsections(section)
+    segs = {n.address.path[2:] for n in nodes}
+    assert findings == []
+    assert (("subsection", "b"),) in segs
+    assert (("subsection", "b"), ("paragraph", "1")) in segs
+    assert (("subsection", "c"),) in segs
+    assert (("subsection", "c"), ("paragraph", "1")) in segs
+    assert (("subsection", "c"), ("paragraph", "2")) in segs
+    # The dash child shares the same source span as its parent.
+    assert any(
+        n.address.path[2:] == (("subsection", "c"), ("paragraph", "1"))
+        and "(c) Structure" in n.text
+        for n in nodes
+    )
+
+
 def test_split_genuinely_ambiguous_marker_stays_flagged_never_guessed() -> None:
     """A bare ``(i)`` opening with NO disambiguating ancestor stack (no open ``(A)``
     to make it a clause, no ``(h)`` to make it the 9th subsection) is genuinely

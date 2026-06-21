@@ -53,7 +53,7 @@ from lawvm.core.agreement_residual import (
     agreement_surface_from_residuals,
 )
 from lawvm.core.comparison_normalization import normalize_inline_comparison_text
-from lawvm.core.authority import PENDING_CONDITION_STATUS
+from lawvm.core.branch_authority import PENDING_CONDITION_STATUS
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import TreePath, tree_path_from_legal_address
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
@@ -156,6 +156,14 @@ US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID = (
 # classified as a source-footing gap rather than a lawvm_wrong lowering bug.
 US_DRY_RUN_RESIDUAL_SOURCE_TREE_PARSE_AMBIGUOUS_RULE_ID = (
     "us_dry_run_residual_source_tree_parse_ambiguous"
+)
+# The USC annual edition's source tree exposes the target's structural level
+# deeper in the section, but an ancestor level named in the address is missing.
+# An amendment targeting subsection (b)/paragraph (1) cannot be located when
+# subsection (b) itself is not rendered in the source edition.  Like
+# target_level_absent, this is a source-footing gap, not a lawvm_wrong bug.
+US_DRY_RUN_RESIDUAL_TARGET_ANCESTOR_ABSENT_IN_SOURCE_TREE_RULE_ID = (
+    "us_dry_run_residual_target_ancestor_absent_in_source_tree"
 )
 
 # Typed refusals (no materialization attempted / not representable at section level).
@@ -306,27 +314,43 @@ def _subsection_segments(address: LegalAddress) -> tuple[tuple[str, str], ...]:
 
 def _source_tree_resolution_state(
     section: UscSection, address: LegalAddress
-) -> tuple[bool, bool]:
-    """Returns ``(target_level_absent, parse_ambiguous)`` for ``address`` in ``section``.
+) -> tuple[bool, bool, bool]:
+    """Returns ``(target_level_absent, target_ancestor_absent, parse_ambiguous)``.
 
     ``target_level_absent`` is true when the section exposes no node at the
-    target's structural level at all.  ``parse_ambiguous`` is true when nodes at
-    the target level exist, but the source-tree split emitted ambiguity findings
-    for the section, so locating a *specific* target node is unsafe.
+    target's deepest structural level at all.  ``target_ancestor_absent`` is
+    true when the target level occurs somewhere in the section, but no node has
+    the target's ancestor sequence (e.g. an amendment targets ``paragraph:1`` of
+    a ``subsection:b`` that is not rendered).  ``parse_ambiguous`` is true when
+    the section's source-tree split emitted ambiguity findings, so locating a
+    specific target node is unsafe even if the levels look present.
     """
     target_segments = _subsection_segments(address)
     if not target_segments:
-        return False, False
+        return False, False, False
     target_level = target_segments[-1][0]
     nodes, findings = split_statutory_subsections(section)
+    node_segment_sets = {_subsection_segments(node.address) for node in nodes}
     has_target_level = any(
         _subsection_segments(node.address)[-1][0] == target_level
         for node in nodes
     )
+    # A missing ancestor prefix is diagnosed before a missing node: even if the
+    # target level exists elsewhere, the specific address anchor is absent.
+    target_ancestor_absent = False
+    for i in range(1, len(target_segments)):
+        prefix = target_segments[:i]
+        if prefix not in node_segment_sets:
+            target_ancestor_absent = True
+            break
     parse_ambiguous = any(
         f.get("rule_id") == _SUBSECTION_PARSE_AMBIGUOUS for f in findings
     )
-    return not has_target_level, parse_ambiguous
+    return (
+        not has_target_level,
+        target_ancestor_absent,
+        parse_ambiguous,
+    )
 
 
 def _source_tree_gap_rule_for_address(
@@ -335,9 +359,13 @@ def _source_tree_gap_rule_for_address(
     """Return a dedicated source-footing-gap rule id if the section's source tree
     cannot cleanly locate ``address``, otherwise ``None``.
     """
-    level_absent, parse_ambiguous = _source_tree_resolution_state(section, address)
+    level_absent, ancestor_absent, parse_ambiguous = _source_tree_resolution_state(
+        section, address
+    )
     if level_absent:
         return US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID
+    if ancestor_absent:
+        return US_DRY_RUN_RESIDUAL_TARGET_ANCESTOR_ABSENT_IN_SOURCE_TREE_RULE_ID
     if parse_ambiguous:
         return US_DRY_RUN_RESIDUAL_SOURCE_TREE_PARSE_AMBIGUOUS_RULE_ID
     return None
@@ -1682,9 +1710,10 @@ def _materialize_one(
             payload_text = operation.payload.text
             section_number = _section_target_number(operation.target)
             # A whole-new-section insert payload carries its own catchline. Project it
-            # off (and drop the USLM leading quote) only when the payload genuinely
-            # opens with that catchline, so subsection/paragraph block inserts keep the
-            # enacted quotes the oracle strips.
+            # off the body-only oracle surface. First strip the leading wrapper
+            # smart-quote (the USLM converter precedes "§ <num>." with ""); then
+            # strip_replacement_section_catchline returns the body text starting AT
+            # the body-marker "" (the USLM nested-quote opener the OLRC strips).
             if section_number is not None:
                 candidate = payload_text
                 if candidate and candidate[0] in "\"“":
@@ -1696,6 +1725,15 @@ def _materialize_one(
                 )
                 if stripped is not None:
                     payload_text = stripped
+            # After catchline strip (or for non-catchline inserts), strip the leading
+            # wrapper/body-marker smart-quote (U+201C) the converter attaches to
+            # quotedContent. The published USC never carries it; keeping it as
+            # materialized text would mismatch the oracle without a substantive
+            # statutory difference. The trailing U+201D is likewise stripped.
+            if payload_text and payload_text[0] == "“":
+                payload_text = payload_text[1:].lstrip()
+            if payload_text and payload_text[-1] == "”":
+                payload_text = payload_text[:-1].rstrip()
             materialized = f"{before_text} {payload_text}".strip()
             if node_overrides is not None and payload_text.lstrip().startswith("("):
                 # Index the appended block's top-level units so later sub-section ops on

@@ -42,7 +42,7 @@ from lawvm.core.ir import (
     TextSelector,
 )
 from lawvm.core.parse_witness import ParseWitness
-from lawvm.core.authority import COMMENCED_STATUS, PENDING_CONDITION_STATUS
+from lawvm.core.branch_authority import COMMENCED_STATUS, PENDING_CONDITION_STATUS
 from lawvm.core.provenance import OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 
@@ -56,6 +56,7 @@ _NS = {"u": USLM_NS}
 RULE_STRIKE_INSERT = "us_amend_strike_insert"
 RULE_STRIKE = "us_amend_strike"
 RULE_INSERT_AFTER = "us_amend_insert_after_anchor"
+RULE_INSERT_BEFORE = "us_amend_insert_before_anchor"
 RULE_ADD_AT_END = "us_amend_add_at_end"
 RULE_ADD_AT_END_NEW_SECTIONS = "us_amend_add_at_end_new_sections"
 RULE_AMEND_TO_READ = "us_amend_to_read"
@@ -115,18 +116,31 @@ THROUGH_TAIL_STRIKE_FINDING_RULE_ID = "us_amendatory_through_tail_strike_not_sec
 # for any after-edition before the effective date. The temporal layer owns them.
 DEFERRED_AMEND_TO_READ_FINDING_RULE_ID = "us_amendatory_deferred_amend_to_read"
 
-# Future-effective prefix forms lower their content to *candidate* operations but
-# stamp ``OperationSource.effective`` so the materialization layer can decide
+# A target whose title was inferred from the Act section's govinfo/OLRC classification
+# refs (including sidenote refs) when the amendatory head omits "of title N". The
+# section number is named in the head; the title comes from the publisher's own
+# USC classification of that section. This is recorded, not guessed.
+TARGET_TITLE_FROM_SECTION_CLASSIFICATION = "us_amend_target_title_from_section_classification"
+# A target whose title was inferred from the Public Law's own short-title preamble
+# (the dc:title metadata) when the instruction text names a section but omits the
+# title. This is used only when the preamble names a SINGLE USC title and the unit
+# otherwise has no resolved title; it is never allowed to override an explicit
+# "of title N" reference or an inherited title.
+TARGET_TITLE_FROM_PLAW_METADATA = "us_amend_target_title_from_plaw_metadata"
+# Scope-conflict guard: when the PLAW preamble names one title but explicit refs in
+# the act name a different title, the metadata fallback is withheld for the whole
+# Public Law to avoid cross-title target hijacking.
+PLAW_METADATA_SCOPE_CONFLICT_RULE_ID = "us_amend_plaw_metadata_scope_conflict"
 # whether the instruction is in force for the requested point-in-time.
 _EFFECTIVE_AFTER_ENACTMENT_RE = re.compile(
     r"effective\s+(?:on\s+)?(?:the\s+date\s+that\s+is\s+)?"
     r"(?P<n>\d+)\s+(?P<unit>year|month|day)s?\s+after\s+"
-    r"(?:the\s+date\s+of\s+enactment\s+of\s+this\s+Act|\b(?P<base_month>[A-Z][a-z]+)\s+"
+    r"(?:the\s+date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act|\b(?P<base_month>[A-Z][a-z]+)\s+"
     r"(?P<base_day>\d{1,2}),?\s+(?P<base_year>\d{4}))",
     re.IGNORECASE,
 )
 _EFFECTIVE_ON_ENACTMENT_RE = re.compile(
-    r"effective\s+(?:on\s+)?(?:the\s+)?date\s+of\s+enactment\s+of\s+this\s+Act",
+    r"effective\s+(?:on\s+)?(?:the\s+)?date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act",
     re.IGNORECASE,
 )
 # Some effective-date paragraphs use the verb "take effect" rather than
@@ -134,12 +148,12 @@ _EFFECTIVE_ON_ENACTMENT_RE = re.compile(
 _TAKE_EFFECT_AFTER_ENACTMENT_RE = re.compile(
     r"take\s+effect\s+(?:on\s+)?(?:the\s+date\s+that\s+is\s+)?"
     r"(?P<n>\d+)\s+(?P<unit>year|month|day)s?\s+after\s+"
-    r"(?:the\s+date\s+of\s+enactment\s+of\s+this\s+Act|\b(?P<base_month>[A-Z][a-z]+)\s+"
+    r"(?:the\s+date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act|\b(?P<base_month>[A-Z][a-z]+)\s+"
     r"(?P<base_day>\d{1,2}),?\s+(?P<base_year>\d{4}))",
     re.IGNORECASE,
 )
 _TAKE_EFFECT_ON_ENACTMENT_RE = re.compile(
-    r"take\s+effect\s+(?:on\s+)?(?:the\s+)?date\s+of\s+enactment\s+of\s+this\s+Act",
+    r"take\s+effect\s+(?:on\s+)?(?:the\s+)?date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act",
     re.IGNORECASE,
 )
 _EFFECTIVE_ABSOLUTE_RE = re.compile(
@@ -154,7 +168,7 @@ _EFFECTIVE_ABSOLUTE_RE = re.compile(
 _SUNSET_AFTER_ENACTMENT_RE = re.compile(
     r"effective\s+on\s+(?:the\s+date\s+that\s+is\s+)?"
     r"(?P<n>\d+)\s+(?P<unit>year|month|day)s?\s+after\s+"
-    r"(?:the\s+date\s+of\s+enactment\s+of\s+this\s+Act)",
+    r"(?:the\s+date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act)",
     re.IGNORECASE,
 )
 _SUNSET_ABSOLUTE_RE = re.compile(
@@ -197,6 +211,81 @@ def _add_calendar_delta(start: date, n: int, unit: str) -> date:
     return start
 
 
+def _build_date_or_none(year: int, month: int, day: int) -> date | None:
+    """Build a ``date`` from year/month/day components or return ``None`` when invalid.
+
+    Three effective/sunset parsers build a date from regex-captured year/month/day
+    components that may over-match (Feb 30, day 0, month 13). Returning ``None`` is
+    the parsers' "regex-over-matched, no real date" signal that callers translate
+    into ``""`` themselves; this helper owns that single recovery shape instead of
+    triplicating the ``try/except`` (AGENTS.md §2.6).
+    """
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _parse_iso_date_or_none(enacted: str) -> date | None:
+    """Parse ``YYYY-MM-DD`` to ``date`` or return ``None`` when malformed.
+
+    Same rule-of-three collapse as :func:`_build_date_or_none` for the enacted-
+    date-anchored effective/sunset parsers (AGENTS.md §2.6).
+    """
+    try:
+        return datetime.strptime(enacted, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# PLAW short-title metadata scope
+# ---------------------------------------------------------------------------
+
+# "To amend title 11, United States Code, ...", "to amend titles 11, 13, and 15 ..."
+_PLAW_TITLE_SCOPE_RE = re.compile(
+    r"\btitles?\s+(?P<items>\d+(?:[,\s]+(?:and\s+)?\d+)*)\b"
+    r"(?:\s*,?\s+United\s+States\s+Code)?",
+    re.IGNORECASE,
+)
+
+
+def _plaw_usc_title_scope(root: ET.Element) -> str:
+    """Return a single USC title number named in the PLAW's dc:title preamble.
+
+    The enacted short-title preamble is an authoritative source lane: "To amend
+    title 38, United States Code, ...".  When it names exactly one title, that title
+    can complete a bare "Section N(...)" amendatory target that lacks an explicit
+    "of title N" or sidenote classification ref.  Multiple titles or no title makes
+    the scope ambiguous and returns "", refusing the fallback.
+
+    Accepts the already-parsed PLAW root (``lower_plaw_amendatory`` parses the data
+    once via ``ET.fromstring`` before this helper is reached).  Re-parsing ``data``
+    here would re-raise the same ``ET.ParseError`` and mask it behind a silent ``""``
+    return — an invariant-masking broad catch (AGENTS.md §1.10).  By taking the
+    parsed root we never reach the catch path: malformed XML fails loudly at the
+    caller's parse, propagating the typed ``ET.ParseError`` instead of silently
+    disabling the metadata-title fallback behind an empty string.
+    """
+    ns = {"dc": "http://purl.org/dc/elements/1.1/"}
+    title_text = root.findtext(".//dc:title", namespaces=ns) or ""
+    seen: set[int] = set()
+    for m in _PLAW_TITLE_SCOPE_RE.finditer(title_text):
+        items = re.split(r"[,\s]+(?:and\s+)?", m.group("items"))
+        for token in items:
+            token = token.strip()
+            if token.isdigit():
+                seen.add(int(token))
+    if len(seen) == 1:
+        return str(seen.pop())
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Effective-date extraction
+# ---------------------------------------------------------------------------
+
+
 def _has_effective_date_phrase(text: str) -> bool:
     """True when ``text`` contains a recognizable effective-date drafting phrase."""
     lowered = text.lower()
@@ -219,20 +308,16 @@ def _parse_after_enactment_match(m: re.Match[str], enacted: str) -> str:
         month = _MONTHS.get(m.group("base_month").lower())
         if month is None:
             return ""
-        try:
-            base_date = date(
-                int(m.group("base_year")),
-                month,
-                int(m.group("base_day")),
-            )
-        except ValueError:
+        base_date = _build_date_or_none(
+            int(m.group("base_year")), month, int(m.group("base_day"))
+        )
+        if base_date is None:
             return ""
         return _add_calendar_delta(base_date, n, unit).isoformat()
     if not enacted:
         return ""
-    try:
-        base_date = datetime.strptime(enacted, "%Y-%m-%d").date()
-    except ValueError:
+    base_date = _parse_iso_date_or_none(enacted)
+    if base_date is None:
         return ""
     return _add_calendar_delta(base_date, n, unit).isoformat()
 
@@ -258,21 +343,17 @@ def _parse_effective_date(text: str, enacted: str) -> str:
         if pattern.search(text) is not None:
             if not enacted:
                 return ""
-            try:
-                return datetime.strptime(enacted, "%Y-%m-%d").date().isoformat()
-            except ValueError:
-                return ""
+            parsed = _parse_iso_date_or_none(enacted)
+            return parsed.isoformat() if parsed else ""
     m = _EFFECTIVE_ABSOLUTE_RE.search(text)
     if m is not None:
         month = _MONTHS.get(m.group("month").lower())
         if month is None:
             return ""
-        try:
-            return date(
-                int(m.group("year")), month, int(m.group("day"))
-            ).isoformat()
-        except ValueError:
-            return ""
+        parsed = _build_date_or_none(
+            int(m.group("year")), month, int(m.group("day"))
+        )
+        return parsed.isoformat() if parsed else ""
     return ""
 
 
@@ -318,9 +399,8 @@ def _parse_sunset_expiry(text: str, enacted: str) -> str:
         unit = m.group("unit").lower()
         if not enacted:
             return ""
-        try:
-            base_date = datetime.strptime(enacted, "%Y-%m-%d").date()
-        except ValueError:
+        base_date = _parse_iso_date_or_none(enacted)
+        if base_date is None:
             return ""
         return _add_calendar_delta(base_date, n, unit).isoformat()
     m = _SUNSET_ABSOLUTE_RE.search(text)
@@ -328,12 +408,10 @@ def _parse_sunset_expiry(text: str, enacted: str) -> str:
         month = _MONTHS.get(m.group("month").lower())
         if month is None:
             return ""
-        try:
-            return date(
-                int(m.group("year")), month, int(m.group("day"))
-            ).isoformat()
-        except ValueError:
-            return ""
+        parsed = _build_date_or_none(
+            int(m.group("year")), month, int(m.group("day"))
+        )
+        return parsed.isoformat() if parsed else ""
     return ""
 
 
@@ -396,6 +474,12 @@ def _collect_sibling_sunset_scopes(
     for sibling in section.iter():
         if _localname(sibling.tag) not in unit_tags:
             continue
+        # Skip statutory text being inserted via <quotedContent>/<quotedText>:
+        # those are the new law's text, not a PLAW provision (effective date,
+        # sunset, application). Their use of "this section" / "effective date"
+        # is statutory, not a temporal scope of the amending instruction.
+        if _is_inside_quoted_content(sibling, xml_parent_of):
+            continue
         shallow = _shallow_text(sibling, exclude=_amendatory_unit_children(sibling))
         if not _has_sunset_expiry_phrase(shallow):
             continue
@@ -435,6 +519,42 @@ def _collect_sibling_sunset_scopes(
     return scopes
 
 
+# Section-level effective-date scope ("The amendments made by this section ...") applies
+# to every amendatory unit in the same PLAW section, even when no named kind/range is
+# given. "This Act" scopes are treated the same way when the paragraph is a sibling of
+# the amendatory leaves within one section.
+_SECTION_EFFECTIVE_SCOPE_RE = re.compile(
+    r"\bthis\s+(?:section|Act)\b",
+    re.IGNORECASE,
+)
+
+# USLM tags that wrap statutory text being inserted/amended by an amendatory
+# instruction.  A ``<subsection>`` inside one of these is the new law's text,
+# not a PLAW-section provision (effective date, sunset, etc.); collecting it as
+# an effective/sunset scope would mis-attribute the statutory text's "this
+# section" / "effective date" phrases to the amendment instruction.
+_QUOTED_TEXT_TAGS = frozenset({"quotedContent", "quotedText"})
+
+
+def _is_inside_quoted_content(
+    elem: ET.Element,
+    xml_parent_of: dict[ET.Element, ET.Element | None],
+) -> bool:
+    """True when ``elem`` is a descendant of a ``quotedContent``/``quotedText`` element.
+
+    Such elements contain the statutory text the amendment inserts — not the
+    PLAW's own provisions (effective date, sunset, application). Their text may
+    use "this section" and "effective date" in the *statutory* sense, which
+    must not be read as the PLAW's temporal scope.
+    """
+    ancestor = xml_parent_of.get(elem)
+    while ancestor is not None:
+        if _localname(ancestor.tag) in _QUOTED_TEXT_TAGS:
+            return True
+        ancestor = xml_parent_of.get(ancestor)
+    return False
+
+
 def _collect_sibling_effective_scopes(
     section: ET.Element,
     parent_of: dict[ET.Element, ET.Element | None],
@@ -453,6 +573,10 @@ def _collect_sibling_effective_scopes(
     names "subsections (a) through (e)" covers subsection siblings of the nearest
     subsection ancestor rather than every container labelled "a" elsewhere in
     the section (#83).
+
+    Falls back to section-level scopes: an "Effective Date" paragraph that says
+    "The amendments made by this section ..." (or "... this Act ...") without a
+    named range covers all amendatory leaf units in the same section.
     """
     scopes: dict[ET.Element, str] = {}
     unit_tags = {"subsection", "paragraph", "subparagraph", "clause"}
@@ -465,6 +589,12 @@ def _collect_sibling_effective_scopes(
     for sibling in section.iter():
         if _localname(sibling.tag) not in unit_tags:
             continue
+        # Skip statutory text being inserted via <quotedContent>/<quotedText>:
+        # those are the new law's text, not a PLAW provision (effective date,
+        # sunset, application). Their use of "this section" / "effective date"
+        # is statutory, not a temporal scope of the amending instruction.
+        if _is_inside_quoted_content(sibling, xml_parent_of):
+            continue
         shallow = _shallow_text(sibling, exclude=_amendatory_unit_children(sibling))
         lowered = shallow.lower()
         if "effective date" not in lowered:
@@ -474,33 +604,42 @@ def _collect_sibling_effective_scopes(
         if any(_localname(a.tag) == "amendingAction" for a in sibling.iter()):
             continue
         range_match = kind_re.search(shallow)
-        if range_match is None:
-            continue
-        kind = range_match.group("kind").rstrip("s").lower()
-        start_label = range_match.group("start")
-        end_label = range_match.group("end") or start_label
-        start_key = _label_key(start_label)
-        end_key = _label_key(end_label)
-        ancestor = _ancestor_of_kind(sibling, kind, xml_parent_of)
-        if ancestor is None:
-            continue
-        scope_parent = xml_parent_of.get(ancestor)
+        if range_match is not None:
+            kind = range_match.group("kind").rstrip("s").lower()
+            start_label = range_match.group("start")
+            end_label = range_match.group("end") or start_label
+            start_key = _label_key(start_label)
+            end_key = _label_key(end_label)
+            ancestor = _ancestor_of_kind(sibling, kind, xml_parent_of)
+            if ancestor is None:
+                continue
+            scope_parent = xml_parent_of.get(ancestor)
 
-        for leaf, _ in list(parent_of.items()):
-            leaf_ancestor = _ancestor_of_kind(leaf, kind, xml_parent_of)
-            if leaf_ancestor is None or leaf_ancestor is ancestor:
-                continue
-            if xml_parent_of.get(leaf_ancestor) != scope_parent:
-                continue
-            label = _paragraph_label(leaf_ancestor)
-            if label is None:
-                continue
-            clean = _label_token(label)
-            if not clean:
-                continue
-            key = _label_key(clean)
-            if start_key <= key <= end_key:
-                scopes[leaf] = shallow
+            for leaf, _ in list(parent_of.items()):
+                if leaf in scopes:
+                    continue
+                leaf_ancestor = _ancestor_of_kind(leaf, kind, xml_parent_of)
+                if leaf_ancestor is None or leaf_ancestor is ancestor:
+                    continue
+                if xml_parent_of.get(leaf_ancestor) != scope_parent:
+                    continue
+                label = _paragraph_label(leaf_ancestor)
+                if label is None:
+                    continue
+                clean = _label_token(label)
+                if not clean:
+                    continue
+                key = _label_key(clean)
+                if start_key <= key <= end_key:
+                    scopes[leaf] = shallow
+            continue
+
+        # Section-level fallback: "amendments made by this section" or
+        # "amendments made by this Act" covers every amendatory unit in this section.
+        if _SECTION_EFFECTIVE_SCOPE_RE.search(shallow) is not None:
+            for leaf, _ in list(parent_of.items()):
+                if leaf not in scopes:
+                    scopes[leaf] = shallow
     return scopes
 
 
@@ -838,6 +977,9 @@ _RELATIVE_PROSE_TARGET_RE = re.compile(
 # sub-unit, not the whole inherited node. Anchored at the unit head so a mid-prose
 # cross-reference ("in paragraph (1) of section 1322") is not mistaken for the
 # edit's own scope. Only the first such anchor is consumed.
+#
+# Case-insensitive because USLM chapeaux after an enumerator can be title-case
+# ("(2) In subsection (b)—"); the captured kind is normalised to lowercase.
 _LEADING_SUBUNIT_ANCHOR_RE = re.compile(
     r"^\s*(?:\([0-9A-Za-z]+\)\s*)?"
     r"in\s+(?P<kind>subsection|paragraph|subparagraph|clause|subclause)\s+"
@@ -850,7 +992,8 @@ _LEADING_SUBUNIT_ANCHOR_RE = re.compile(
     # accumulated, not dropped. A trailing terminator (not just "of …") still
     # prevents a mid-prose cross-reference ("in paragraph (1) of section 1322") from
     # being mistaken for the edit's own scope.
-    r"\s*(?:,|[—–-])"
+    r"\s*(?:,|[—–-])",
+    re.IGNORECASE,
 )
 
 
@@ -864,7 +1007,8 @@ _ANY_SUBUNIT_ANCHOR_RE = re.compile(
     r"in\s+(?P<kind>subsection|paragraph|subparagraph|clause|subclause)\s+"
     r"\((?P<label>[0-9A-Za-z]+)\)"
     r"(?P<more>(?:\s*\([0-9A-Za-z]+\))*)"
-    r"\s*(?:,|[—–-])"
+    r"\s*(?:,|[—–-])",
+    re.IGNORECASE,
 )
 
 
@@ -884,8 +1028,8 @@ _MATTER_FOLLOWING_ANCHOR_RE = re.compile(
 def _apply_subunit_anchor_match(
     address: LegalAddress, match: re.Match[str]
 ) -> LegalAddress:
-    """Apply a parsed ``in <kind> (label)[(more)]`` anchor to ``address``."""
-    head_kind = match.group("kind")
+    """Apply a parsed ``in <kind> (label)[(Y)...]`` anchor to ``address``."""
+    head_kind = match.group("kind").lower()
     head_label = match.group("label")
     # If the inherited address already terminates at this exact node, the anchor
     # is a restatement, not a descent. Skip it so the edit targets the right node.
@@ -1088,7 +1232,14 @@ def _localname(tag: str) -> str:
 # title 10..." before "..."`` is an edit to a *free-standing Act* whose inserted
 # literal merely cites title-10 §2313 — lowering it as a title-10 §2313 edit is a
 # misextraction. Target scanning must skip these subtrees.
-_NON_TARGET_REF_CONTAINER_TAGS = frozenset({"quotedText", "quotedContent"})
+_NON_TARGET_REF_CONTAINER_TAGS = frozenset({"quotedText", "quotedContent", "sidenote"})
+
+# Parenthetical sidenote refs (e.g. "<sidenote><p><ref href="/us/usc/t38/s117">38 USC
+# 117</ref>.</p></sidenote>") are publisher cross-references, not amendatory targets.
+# Treating them as the unit's own USC target would hijack "Section 117(c) is amended"
+# onto the bare section 117 and drop the subsection/paragraph scope named in the text.
+# They are excluded from ``_first_usc_ref`` but remain available to
+# ``_section_classification_pairs`` for title inference.
 
 
 def _text_of(elem: ET.Element) -> str:
@@ -1184,9 +1335,17 @@ def _reconstitute_target_label(
 # Characters that BEGIN a fresh token when they open an inserted phrase. Inserting
 # a phrase "after" a word splices it into the running prose, so a new token must be
 # whitespace-separated from the anchor word: a letter, digit, or an opening bracket
-# all start a new word/clause. Closing/attaching punctuation (",", ".", ";", ":",
-# ")", …) instead binds to the preceding word and takes NO separating space.
+# all start a new word/clause.
 _INSERT_TOKEN_START = "([{"
+# Characters that END a fresh token at the boundary when the inserted phrase is
+# placed BEFORE an anchor word. A closing parenthesis/bracket/brace (as in a label
+# like "(i)") separates from the following word just as a word character does.
+_INSERT_TOKEN_END = ")]}"
+# Terminal punctuation on the LEFT side of an "insert X after Y" boundary also
+# ends a fresh element: e.g. "...Service," followed by "Members..." materializes as
+# "...Service, Members..." because the comma terminates the anchor clause and the
+# inserted clause begins a new element.
+_INSERT_TOKEN_TERMINAL = ",.;:!?)]}"
 
 
 def _join_insert_after(anchor: str, insert: str) -> str:
@@ -1214,7 +1373,9 @@ def _join_insert_after(anchor: str, insert: str) -> str:
     a, b = anchor[-1], insert[0]
     if a.isspace() or b.isspace():
         return anchor + insert
-    if a.isalnum() and (b.isalnum() or b in _INSERT_TOKEN_START):
+    left_ends_token = a.isalnum() or a in _INSERT_TOKEN_TERMINAL
+    right_starts_token = b.isalnum() or b in _INSERT_TOKEN_START
+    if left_ends_token and right_starts_token:
         return anchor + " " + insert
     return anchor + insert
 
@@ -1224,6 +1385,42 @@ _PUNCTUATION_WORD_MAP: dict[str, str] = {
     "comma": ",",
     "period": ".",
 }
+
+
+_INSERT_WORD_ANCHOR_DIRECTION_RE = re.compile(
+    r"inserting\s+["
+    "\"\u201c\u201d"
+    r"][^\"\u201d]{0,400}[\"\u201d]\s+"
+    r"(?P<where>before|after)\s+"
+    r"[\"\u201c][^\"\u201d]{0,400}[\"\u201d]",
+    re.IGNORECASE,
+)
+
+
+def _insert_word_anchor_direction(raw_text: str) -> str:
+    """Return ``before`` or ``after`` for an "inserting 'X' before/after 'Y'" formula."""
+    m = _INSERT_WORD_ANCHOR_DIRECTION_RE.search(raw_text)
+    if m is None:
+        return "after"
+    return m.group("where").lower().strip()
+
+
+def _join_insert_before(anchor: str, insert: str) -> str:
+    """Assemble the "insert ``insert`` before ``anchor``" replacement faithfully.
+
+    Legislative "inserting 'X' before 'Y'" places X immediately before the anchor word
+    Y.  The boundary between X and Y needs a separating space when the inserted phrase
+    ends in a word/label token and the anchor begins a fresh token; attaching
+    punctuation and pre-supplied edge whitespace take none.
+    """
+    if not anchor or not insert:
+        return insert + anchor
+    a, b = insert[-1], anchor[0]
+    if a.isspace() or b.isspace():
+        return insert + anchor
+    if (a.isalnum() or a in _INSERT_TOKEN_END) and (b.isalnum() or b in _INSERT_TOKEN_START):
+        return insert + " " + anchor
+    return insert + anchor
 
 
 def _punctuation_word_to_char(word: str | None) -> str | None:
@@ -1246,8 +1443,10 @@ def _quoted_texts(elem: ET.Element) -> list[str]:
         if _localname(q.tag) == "quotedText":
             # Significant leading/trailing whitespace and punctuation INSIDE the
             # <quotedText> literal must survive (F1 leading space, F4 terminal
-            # period). Collapse only internal formatting whitespace.
-            out.append(_collapse_inner_ws("".join(q.itertext())))
+            # period). Editorial page-break/sidenote stamps embedded inside the
+            # quoted literal are not enacted text and are pruned.
+            text = _itertext_excluding_sidenotes(q)
+            out.append(_collapse_inner_ws(text))
     return out
 
 
@@ -1360,6 +1559,7 @@ def _resolve_target(
     *,
     raw_text: str = "",
     inherited_address: LegalAddress | None = None,
+    plaw_title_scope: str = "",
 ) -> tuple[LegalAddress | None, str]:
     """Resolve the instruction target; prose is canonical, href corroborates.
 
@@ -1390,9 +1590,13 @@ def _resolve_target(
        names its USC section in prose but inherits the title from a parent unit.
     3. The inherited target itself ("(1) by striking ..." with no ref of its own
        inherits the parent unit's resolved section address verbatim).
+    4. The PLAW's own short-title preamble (the ``dc:title`` metadata) when it
+       names exactly one USC title and the instruction names a section but no
+       title.
 
-    The relative/inherited steps NEVER invent a title; they only carry one that an
-    enclosing instruction already resolved (no silent target hijack).
+    The relative/inherited/metadata steps NEVER invent a title; they only carry
+    one that an enclosing instruction or the enacted preamble already resolved
+    (no silent target hijack).
     """
     # Local import: ``nonpositive`` imports lowering primitives from this module at
     # its top level, so a module-level import here would be circular. The resolver
@@ -1438,15 +1642,21 @@ def _resolve_target(
     if container_addr is not None:
         return container_addr, "container"
 
+    # Strip the quoted amendment operands before inferring a target from the prose;
+    # a USC cross-reference inside the text being struck or inserted is part of the
+    # payload, not the target address. The unquoted prefix still carries "Section X",
+    # "in section X", and "in subsection (X)" target/anchor cues.
+    raw_prefix = re.split(r'["“]', raw_text, maxsplit=1)[0] if raw_text else ""
+
     # (2) Relative prose under the inherited title. The leaf names a different
     # section than the inherited address (a conforming amendment to a sibling
     # section), so the section comes from the leaf's prose, the title from the
     # inherited address.
     inherited_title = _address_title(inherited_address)
-    if raw_text and inherited_title:
-        rel = parse_relative_usc_target(raw_text, inherited_title=inherited_title)
+    if raw_prefix and inherited_title:
+        rel = parse_relative_usc_target(raw_prefix, inherited_title=inherited_title)
         if rel is not None:
-            return _refine_with_leading_subunit_anchor(rel, raw_text), "relative_prose"
+            return _refine_with_leading_subunit_anchor(rel, raw_prefix), "relative_prose"
 
     # (3) Pure inheritance: the leaf carries no section of its own; it amends the
     # same node the enclosing instruction resolved — refined by any leading
@@ -1454,9 +1664,36 @@ def _resolve_target(
     # same address (and double-apply at the section-text surface).
     if inherited_address is not None:
         return (
-            _refine_with_leading_subunit_anchor(inherited_address, raw_text),
+            _refine_with_leading_subunit_anchor(inherited_address, raw_prefix),
             "inherited",
         )
+
+    # (3.5) Plain-prose target stated in the instruction text when no <ref>/phrase
+    # was extracted (converter-flattened sections may still carry "Section X of title N"
+    # as ordinary text). Non-positive titles are routed through the act-section
+    # resolver rather than treated as direct USC addresses.
+    if raw_prefix:
+        direct_from_raw = parse_usc_target_phrase(raw_prefix)
+        if direct_from_raw is not None:
+            raw_title = _address_title(direct_from_raw)
+            if raw_title and not nonpositive.is_positive_law_title(int(raw_title)):
+                witness = nonpositive.resolve_nonpositive_target(
+                    target_phrase=raw_prefix,
+                    target_href="",
+                )
+                if witness.address is not None:
+                    return witness.address, f"nonpositive_{witness.status}"
+                return None, "unresolved"
+            return _refine_with_leading_subunit_anchor(direct_from_raw, raw_prefix), "prose"
+
+    # (4) PLAW short-title metadata scope: the enacted preamble names exactly one
+    # USC title, and the instruction itself names a section but no title. This is an
+    # authoritative source lane, used only when no explicit title or inherited title
+    # was available.
+    if plaw_title_scope and raw_prefix:
+        meta_addr = parse_relative_usc_target(raw_prefix, inherited_title=plaw_title_scope)
+        if meta_addr is not None:
+            return _refine_with_leading_subunit_anchor(meta_addr, raw_prefix), "metadata_title"
 
     return None, "unresolved"
 
@@ -1930,6 +2167,8 @@ def _lower_instruction(
     actions: list[str],
     payload_node: IRNode | None,
     inherited_address: LegalAddress | None = None,
+    inherited_via_classification: bool = False,
+    plaw_title_scope: str = "",
 ) -> USAmendmentInstruction:
     effective = _parse_effective_date(effective_text or raw_text, enacted)
     expires = _parse_sunset_expiry(expires_text or raw_text, enacted)
@@ -1955,6 +2194,7 @@ def _lower_instruction(
         target_href,
         raw_text=raw_text,
         inherited_address=inherited_address,
+        plaw_title_scope=plaw_title_scope,
     )
     family = _classify_action(actions, raw_text)
 
@@ -2001,6 +2241,13 @@ def _lower_instruction(
     status = "unsupported"
     finding: USAmendatoryFinding | None = None
 
+    # Tagged provenance suffix for target resolutions that used a non-local source
+    # lane (currently the PLAW metadata title fallback). Appended to all operations
+    # built by this instruction so the title-supply mechanism is visible.
+    _metadata_provenance = (
+        (TARGET_TITLE_FROM_PLAW_METADATA,) if resolution_status == "metadata_title" else ()
+    )
+
     def _make_op(
         action: StructuralAction,
         *,
@@ -2012,6 +2259,14 @@ def _lower_instruction(
         target: LegalAddress | None = None,
         extra_provenance_tags: tuple[str, ...] = (),
     ) -> LegalOperation:
+        provenance: list[str] = [
+            "us_amendatory",
+            f"target_resolution:{resolution_status}",
+        ]
+        if inherited_via_classification:
+            provenance.append(TARGET_TITLE_FROM_SECTION_CLASSIFICATION)
+        if resolution_status == "metadata_title":
+            provenance.append(TARGET_TITLE_FROM_PLAW_METADATA)
         return LegalOperation(
             op_id=instruction_id,
             sequence=sequence,
@@ -2023,11 +2278,7 @@ def _lower_instruction(
             source=source,
             text_patch=text_patch,
             witness_rule_id=rule_id,
-            provenance_tags=(
-                "us_amendatory",
-                f"target_resolution:{resolution_status}",
-                *extra_provenance_tags,
-            ),
+            provenance_tags=(*provenance, *extra_provenance_tags),
         )
 
     # A PRECISE-text strike (a quoted match_text, not a whole-node operand) is
@@ -2326,7 +2577,7 @@ def _lower_instruction(
                         target=struck,
                         source=source,
                         witness_rule_id=RULE_STRIKE_UNIT,
-                        provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}"),
+                        provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}", *_metadata_provenance),
                     )
                     address = struck
                     witness_rule_id = RULE_STRIKE_UNIT
@@ -2343,7 +2594,7 @@ def _lower_instruction(
                             target=struck_addr,
                             source=source,
                             witness_rule_id=RULE_STRIKE_UNIT_LIST,
-                            provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}"),
+                            provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}", *_metadata_provenance),
                         )
                         if op is None:
                             op = node_op
@@ -2360,16 +2611,22 @@ def _lower_instruction(
         node_anchor = _INSERT_NODE_AFTER_RE.search(raw_text)
         if len(quoted) >= 2 and node_anchor is None:
             new_text, anchor_text = quoted[0], quoted[1]
+            if _insert_word_anchor_direction(raw_text) == "before":
+                replacement = _join_insert_before(anchor_text, new_text)
+                rule_id = RULE_INSERT_BEFORE
+            else:
+                replacement = _join_insert_after(anchor_text, new_text)
+                rule_id = RULE_INSERT_AFTER
             op = _make_op(
                 StructuralAction.TEXT_REPLACE,
-                rule_id=RULE_INSERT_AFTER,
+                rule_id=rule_id,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
                     selector=TextSelector(match_text=anchor_text),
-                    replacement=_join_insert_after(anchor_text, new_text),
+                    replacement=replacement,
                 ),
             )
-            witness_rule_id = RULE_INSERT_AFTER
+            witness_rule_id = rule_id
         elif node_anchor is not None and payload_node is not None:
             # "inserting after paragraph/section (N) the following: <block>" — splice
             # the quoted block as a NEW node positioned AFTER the named anchor unit.
@@ -2518,7 +2775,7 @@ def _lower_instruction(
                 destination=to_addr,
                 source=source,
                 witness_rule_id=RULE_REDESIGNATE,
-                provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}"),
+                provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}", *_metadata_provenance),
             )
             witness_rule_id = RULE_REDESIGNATE
         elif range_pairs:
@@ -2533,7 +2790,7 @@ def _lower_instruction(
                     destination=to_addr,
                     source=source,
                     witness_rule_id=RULE_REDESIGNATE_RANGE,
-                    provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}"),
+                    provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}", *_metadata_provenance),
                 )
                 if op is None:
                     op = node_op
@@ -2552,7 +2809,7 @@ def _lower_instruction(
                     destination=to_addr,
                     source=source,
                     witness_rule_id=RULE_REDESIGNATE_PAIRS,
-                    provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}"),
+                    provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}", *_metadata_provenance),
                 )
                 if op is None:
                     op = node_op
@@ -2571,15 +2828,24 @@ def _lower_instruction(
         )
 
     if op is not None:
+        if resolution_status == "metadata_title":
+            finding = _finding(
+                TARGET_TITLE_FROM_PLAW_METADATA,
+                "target title supplied from PLAW short-title preamble "
+                f"({plaw_title_scope}); section had no explicit 'of title N' or sidenote ref",
+            )
         status = "accepted" if on_title_11 else "needs_review"
         if not on_title_11:
-            finding = _finding(
+            non_title_finding = _finding(
                 NON_TITLE_TARGET_RULE_ID,
                 f"resolved target is outside Title 11 ({address.path[0] if address.path else ()}); "
                 "candidate withheld from Title 11 scope",
             )
+            # The metadata-title observation is a coverage explanation, not a strict
+            # barrier. Keep the non-title-scope finding dominant but do not erase it.
+            finding = non_title_finding
 
-    return USAmendmentInstruction(
+    return USAmendmentInstruction(  # noqa: B035
         instruction_id=instruction_id,
         status=status,
         witness_rule_id=witness_rule_id,
@@ -2896,8 +3162,8 @@ def _inherited_title_from_section_classification(section: ET.Element, raw_text: 
 
 def _iter_instruction_units(
     section: ET.Element,
-) -> Iterable[tuple[str, ET.Element, LegalAddress | None, str, str]]:
-    """Yield ``(unit_id, element, inherited_address, effective_text, expires_text)`` for each amendatory unit.
+) -> Iterable[tuple[str, ET.Element, LegalAddress | None, str, str, bool]]:
+    """Yield ``(unit_id, element, inherited_address, effective_text, expires_text, inherited_via_classification)`` for each amendatory unit.
 
     A unit is either the section's own direct ``<content>`` (flat instruction) or
     each nested ``<paragraph>/<subparagraph>`` that carries its own amendingAction
@@ -3061,12 +3327,41 @@ def _iter_instruction_units(
                 title_only_scope = scope_title
                 inherited = LegalAddress(path=(("title", title_only_scope),))
                 inherited_is_bare_title = True
+            inherited_via_classification = False
+            if inherited is None:
+                # Last resort: the leaf unit itself names the target section without a
+                # title ("Section 117(c) is amended ..."), and the section's publisher
+                # classification refs pin that section to exactly one title. Use the
+                # leaf's own head as the relative head and the classified title as the
+                # inherited title. This is recorded in operation provenance; it is not a
+                # guess because the title comes from the same act's USC classification.
+                leaf_head_text = _shallow_text(
+                    elem, exclude=_amendatory_unit_children(elem)
+                )
+                title = _inherited_title_from_section_classification(
+                    section, leaf_head_text
+                )
+                if title:
+                    inherited = parse_relative_usc_target(
+                        leaf_head_text, inherited_title=title
+                    )
+                    inherited_via_classification = True
+            title_only_scope = scope_title
+            inherited_is_bare_title = False
+            if inherited is None and scope_title:
+                # Title-only enclosing scope: a parent chapeau amends a WHOLE title
+                # ("(a) Title 11.—") with no section, so no inherited ADDRESS resolves.
+                # Thread the bare TITLE so a leaf that names its own section in relative
+                # prose ("(A) in section 1583(a), by striking …") resolves under it.
+                title_only_scope = scope_title
+                inherited = LegalAddress(path=(("title", title_only_scope),))
+                inherited_is_bare_title = True
             if inherited is not None and intermediate_anchors and not inherited_is_bare_title:
                 # Apply outermost intermediate anchor first (it is the shallowest
                 # scope); each refinement descends from the prior frontier.
                 for anchor_text in reversed(intermediate_anchors):
                     inherited = _refine_with_leading_subunit_anchor(inherited, anchor_text)
-            yield uid, elem, inherited, effective_text, expires_text
+            yield uid, elem, inherited, effective_text, expires_text, inherited_via_classification
         return
     # Flat instruction: the section's own content blocks. A flat head "Section X(...)
     # is amended" with no "of title" inherits the title from the section's own OLRC
@@ -3088,6 +3383,7 @@ def _iter_instruction_units(
         flat_inherited,
         flat_effective,
         "",
+        False,
     )
 
 
@@ -3111,10 +3407,31 @@ def lower_plaw_amendatory(data: bytes, *, statute_id: str = "", enacted: str = "
     if main is None:
         return USAmendatoryReport(statute_id=statute_id, enacted=enacted, title_targets=(), instructions=())
 
+    plaw_title_scope = _plaw_usc_title_scope(root)
+
+    # First pass: collect all amendatory units and any explicit title references.
+    # If the PLAW's preamble names one title but the body also contains explicit
+    # references to a *different* title, the preamble is not a safe fallback for
+    # bare "Section N(...)" targets — using it would silently hijack cross-title
+    # instructions onto the preamble's title. In that case the metadata scope is
+    # discarded for the whole PLAW and those bare targets remain unresolved
+    # (typed residual) instead of guessed.
+    explicit_titles: set[str] = set()
+    unit_records: list[
+        tuple[
+            str,
+            ET.Element,
+            LegalAddress | None,
+            str,
+            str,
+            bool,
+            str,
+            str,
+        ]
+    ] = []
     for section in main.iter():
         if _localname(section.tag) != "section":
             continue
-        # Section-level target ref (carried into sub-units without their own ref).
         section_content = section.find("u:content", _NS)
         sec_phrase, sec_href = ("", "")
         if section_content is not None:
@@ -3123,9 +3440,14 @@ def lower_plaw_amendatory(data: bytes, *, statute_id: str = "", enacted: str = "
         if not any(_localname(a.tag) == "amendingAction" for a in section.iter()):
             continue
 
-        for unit_id, unit, inherited_address, effective_text, expires_text in _iter_instruction_units(
-            section
-        ):
+        for (
+            unit_id,
+            unit,
+            inherited_address,
+            effective_text,
+            expires_text,
+            inherited_via_classification,
+        ) in _iter_instruction_units(section):
             actions = _amending_actions(unit)
             if not actions:
                 continue
@@ -3135,30 +3457,82 @@ def lower_plaw_amendatory(data: bytes, *, statute_id: str = "", enacted: str = "
             # The inherited ancestor address threads the title for relative prose.
             target_phrase = unit_phrase or sec_phrase
             target_href = unit_href or sec_href
-            raw_text = _text_of(unit)
-            quoted = _quoted_texts(unit)
-            payload_node = _quoted_content_node(unit)
-            sequence += 1
-            instr = _lower_instruction(
-                statute_id=statute_id,
-                enacted=enacted,
-                instruction_id=unit_id or f"{statute_id}#instr{sequence}",
-                sequence=sequence,
-                target_phrase=target_phrase,
-                target_href=target_href,
-                raw_text=raw_text,
-                effective_text=effective_text,
-                expires_text=expires_text,
-                quoted=quoted,
-                actions=actions,
-                payload_node=payload_node,
-                inherited_address=inherited_address,
+            explicit_title = _direct_target_title(target_phrase, target_href) or _address_title(
+                inherited_address
             )
-            instructions.append(instr)
-            if instr.finding is not None:
-                findings.append(instr.finding)
-            if instr.target_address is not None and instr.target_address.path:
-                title_targets.add(f"title {instr.target_address.path[0][1]}")
+            # Plain-prose targets (converter-flattened refs) may not surface in
+            # target_phrase; an explicit "Section X of title N" in the unquoted prose
+            # is still an explicit title that prevents preamble fallback.
+            if not explicit_title:
+                raw_prefix = re.split(r'["“]', _text_of(unit), maxsplit=1)[0]
+                if raw_prefix:
+                    raw_addr = parse_usc_target_phrase(raw_prefix)
+                    explicit_title = _address_title(raw_addr)
+            if explicit_title:
+                explicit_titles.add(explicit_title)
+            unit_records.append(
+                (
+                    unit_id,
+                    unit,
+                    inherited_address,
+                    effective_text,
+                    expires_text,
+                    inherited_via_classification,
+                    sec_phrase,
+                    sec_href,
+                )
+            )
+
+    if plaw_title_scope and explicit_titles and any(
+        t != plaw_title_scope for t in explicit_titles
+    ):
+        findings.append(
+            USAmendatoryFinding(
+                rule_id=PLAW_METADATA_SCOPE_CONFLICT_RULE_ID,
+                message=(
+                    f"PLAW preamble names title {plaw_title_scope} but explicit references "
+                    f"name {sorted(explicit_titles)}; metadata title fallback withheld to avoid "
+                    "cross-title target hijacking."
+                ),
+                statute_id=statute_id,
+            )
+        )
+        plaw_title_scope = ""
+
+    for unit_id, unit, inherited_address, effective_text, expires_text, inherited_via_classification, sec_phrase, sec_href in unit_records:
+        actions = _amending_actions(unit)
+        unit_phrase, unit_href = _first_usc_ref(unit)
+        # The leaf's OWN ref/prose is canonical; the section-level ref is only a
+        # last resort (it would mis-target a leaf that amends a sibling section).
+        # The inherited ancestor address threads the title for relative prose.
+        target_phrase = unit_phrase or sec_phrase
+        target_href = unit_href or sec_href
+        raw_text = _text_of(unit)
+        quoted = _quoted_texts(unit)
+        payload_node = _quoted_content_node(unit)
+        sequence += 1
+        instr = _lower_instruction(
+            statute_id=statute_id,
+            enacted=enacted,
+            instruction_id=unit_id or (statute_id + "#instr" + str(sequence)),
+            sequence=sequence,
+            target_phrase=target_phrase,
+            target_href=target_href,
+            raw_text=raw_text,
+            effective_text=effective_text,
+            expires_text=expires_text,
+            quoted=quoted,
+            actions=actions,
+            payload_node=payload_node,
+            inherited_address=inherited_address,
+            inherited_via_classification=inherited_via_classification,
+            plaw_title_scope=plaw_title_scope,
+        )
+        instructions.append(instr)
+        if instr.finding is not None:
+            findings.append(instr.finding)
+        if instr.target_address is not None and instr.target_address.path:
+            title_targets.add(f"title {instr.target_address.path[0][1]}")
 
     return USAmendatoryReport(
         statute_id=statute_id,

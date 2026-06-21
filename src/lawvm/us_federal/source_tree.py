@@ -74,7 +74,14 @@ _SECTION_HEAD_RE = re.compile(
 # one line (``(b)(1) If the trustee ...`` is subsection (b) AND its paragraph (1)
 # on a single ``statutory-body`` line). So a paragraph's leading text can carry a
 # run of markers, each opening one level deeper than the last.
+#
+# The OLRC also separates the parent marker from a run-in child by a catchline
+# and an em/en-dash: ``(c) Structure.—(1) The Service ...``.  A second regex
+# finds that child so it is treated as a structural opener, not body prose.
 _MARKER_RE = re.compile(r"^\((?P<token>[0-9A-Za-z]+)\)")
+_MARKER_AFTER_DASH_RE = re.compile(
+    r"^\s*[A-Za-z][A-Za-z\s,.&;]*?[—–—-]\s*\((?P<token>[0-9A-Za-z]+)\)"
+)
 
 # The pinned USC enumeration ladder. Level == index. The OLRC's CSS indent class
 # is NOT a reliable level signal (run-in nesting flattens children to depth 0, so
@@ -219,21 +226,19 @@ def _marker_interpretations(token: str) -> tuple[tuple[int, int], ...]:
     return tuple(out)
 
 
-def _resolve_marker_level(
+def _resolve_marker_level_with_score(
     token: str,
     stack: list[tuple[int, int]],
     *,
     run_in_child: bool,
-) -> tuple[int, int] | None:
-    """Resolve an enumerator token to one ``(level, ordinal)`` against the open stack.
+) -> tuple[int, int, int] | None:
+    """Resolve an enumerator token to ``(score, level, ordinal)``.
 
-    ``stack`` is the list of ``(level, ordinal)`` open ancestors, shallow→deep.
-    ``run_in_child`` is True when this token follows another marker on the SAME
-    line (``(b)(1)``): it must open a child of the marker before it.
-
-    Returns the chosen ``(level, ordinal)``, or ``None`` when the token is not a
-    recognised enumerator OR is genuinely ambiguous between two levels that score
-    equally (the caller flags it and never guesses).
+    Lower score is a better structural fit against ``stack``.  Returns ``None``
+    when the token is unrecognised or when two different levels tie for the best
+    score.  The score is exposed so callers (e.g. dash-separated run-in detection)
+    can require a clean fit before treating an ambiguous parent letter as a
+    structural container.
     """
     interps = _marker_interpretations(token)
     if not interps:
@@ -280,7 +285,29 @@ def _resolve_marker_level(
     best_levels = {lvl for sc, lvl, _o in scored if sc == best_score}
     if len(best_levels) > 1:
         return None  # ambiguous: two different levels fit equally well
-    return scored[0][1], scored[0][2]
+    return scored[0]
+
+
+def _resolve_marker_level(
+    token: str,
+    stack: list[tuple[int, int]],
+    *,
+    run_in_child: bool,
+) -> tuple[int, int] | None:
+    """Resolve an enumerator token to one ``(level, ordinal)`` against the open stack.
+
+    ``stack`` is the list of ``(level, ordinal)`` open ancestors, shallow→deep.
+    ``run_in_child`` is True when this token follows another marker on the SAME
+    line (``(b)(1)``): it must open a child of the marker before it.
+
+    Returns the chosen ``(level, ordinal)``, or ``None`` when the token is not a
+    recognised enumerator OR is genuinely ambiguous between two levels that score
+    equally (the caller flags it and never guesses).
+    """
+    scored = _resolve_marker_level_with_score(token, stack, run_in_child=run_in_child)
+    if scored is None:
+        return None
+    return scored[1], scored[2]
 
 
 def _localname(el: Any) -> str:
@@ -955,6 +982,34 @@ def split_statutory_subsections(
             # abutment is exactly what distinguishes a run-in head from ordinary
             # body text that merely contains parenthesised cross-references.
             m = _MARKER_RE.match(rest)
+
+        # The OLRC also renders the parent and child markers separated by a short
+        # catchline and an em/en-dash: ``(c) Structure.—(1) The Service ...``.  When
+        # the first marker is followed by such a dash + marker, treat the second as
+        # a run-in child structural opener so amendments targeting ``paragraph:(1)``
+        # can be located.  Conservatively require the parent marker to resolve as
+        # a clean structural container: either it is unambiguous about its level,
+        # or it is the natural next sibling/first-child of the deepest open level.
+        # Ambiguous letters that only fit as a shallower reopen (e.g. the trailing
+        # ``(i)`` in a deep ladder) keep their dash child as prose.
+        if run_tokens and not rest.lstrip().startswith("("):
+            dash_m = _MARKER_AFTER_DASH_RE.match(rest)
+            if dash_m is not None:
+                child_token = dash_m.group("token")
+                # Only treat as structural when the candidate child's token level
+                # cleanly follows the parent marker's level (e.g. (a)->(1) or
+                # (1)->(A)).  Otherwise it is likely cross-reference prose.
+                parent_token = run_tokens[-1]
+                child_interps = _marker_interpretations(child_token)
+                if len(child_interps) == 1:
+                    parent_resolved = _resolve_marker_level(
+                        parent_token, stack, run_in_child=False
+                    )
+                    if parent_resolved is not None:
+                        parent_level, _parent_ordinal = parent_resolved
+                        child_level = child_interps[0][0]
+                        if child_level > parent_level:
+                            run_tokens.append(child_token)
 
         if not run_tokens:
             # A flush, unindented block paragraph (e.g. ``Paragraph (4) shall not

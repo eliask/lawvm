@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from lawvm.core.ir import LegalAddress
-from lawvm.core.authority import PENDING_CONDITION_STATUS
+from lawvm.core.branch_authority import PENDING_CONDITION_STATUS
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.us_federal.amendatory import (
     COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
@@ -27,6 +27,7 @@ from lawvm.us_federal.amendatory import (
     RULE_ADD_AT_END,
     RULE_ADD_AT_END_NEW_SECTIONS,
     RULE_INSERT_AFTER,
+    RULE_INSERT_BEFORE,
     RULE_INSERT_END_PUNCT,
     RULE_INSERT_NODE_AFTER,
     RULE_REDESIGNATE_PAIRS,
@@ -43,15 +44,31 @@ from lawvm.us_federal.amendatory import (
     UNLOWERED_FINDING_RULE_ID,
     _first_usc_ref,
     _join_insert_after,
+    _join_insert_before,
     _payload_opens_new_section,
     _resolve_target,
     lower_plaw_amendatory,
     parse_relative_usc_target,
     parse_usc_target_href,
     parse_usc_target_phrase,
+    TARGET_TITLE_FROM_SECTION_CLASSIFICATION,
+    TARGET_TITLE_FROM_PLAW_METADATA,
+    PLAW_METADATA_SCOPE_CONFLICT_RULE_ID,
 )
 
 _USLM_NS = "http://schemas.gpo.gov/xml/uslm"
+
+
+def _synthetic_plaw_with_title(title_text: str, section_body: str) -> bytes:
+    """Wrap a section body with a dc:title naming a USC title."""
+    dc_ns = "http://purl.org/dc/elements/1.1/"
+    return (
+        f'<lawDoc xmlns="{_USLM_NS}" xmlns:dc="{dc_ns}">'
+        "<meta><congress>116</congress><docNumber>900</docNumber>"
+        "<approvedDate>2020-01-01</approvedDate>"
+        f"<dc:title>{title_text}</dc:title></meta>"
+        f"<main>{section_body}</main></lawDoc>"
+    ).encode("utf-8")
 
 
 def _synthetic_plaw(section_body: str) -> bytes:
@@ -428,6 +445,92 @@ def test_ancestor_target_carrier_without_subunit_anchor_leaves_section_scope_to_
     assert instr.target_address == expected
 
 
+def test_ancestor_anchor_is_case_insensitive_for_title_case_chapeau():
+    # Regression for PL 118-159 §557. USLM paragraph chapeaux use title-case "In"
+    # after the enumerator: "(2) In subsection (b)—". The intermediate ancestor anchor
+    # must thread onto the inherited section so a leaf "(A) in paragraph (1)" lands
+    # at /subsection:b/paragraph:1, not a phantom /paragraph:1 under the section.
+    body = (
+        '<section identifier="/us/pl/118/159/dA/tV/stF/s557">'
+        "<num value=\"557\">SEC. 557. </num>"
+        "<heading>ALTERNATIVE SERVICE.</heading>"
+        '<subsection identifier="/us/pl/118/159/dA/tV/stF/s557/a" role="instruction">'
+        '<num value="a">(a) </num>'
+        "<heading>United States Military Academy.—</heading>"
+        '<chapeau><ref href="/us/usc/t10/s7448">Section 7448 of title 10, '
+        "United States Code</ref>, "
+        '<amendingAction type="amend">is amended</amendingAction> as follows:'
+        "</chapeau>"
+        '<paragraph identifier="/us/pl/118/159/dA/tV/stF/s557/a/2">'
+        '<num value="2">(2) </num>'
+        "<chapeau>In subsection (b)—</chapeau>"
+        '<subparagraph identifier="/us/pl/118/159/dA/tV/stF/s557/a/2/A">'
+        '<num value="A">(A) </num>'
+        '<content>in paragraph (1), by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '"<quotedText>X</quotedText>";'
+        "</content>"
+        "</subparagraph>"
+        "</paragraph>"
+        "</subsection>"
+        "</section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    assert len(report.instructions) == 1
+    instr = report.instructions[0]
+    expected = LegalAddress(
+        path=(
+            ("title", "10"),
+            ("section", "7448"),
+            ("subsection", "b"),
+            ("paragraph", "1"),
+        )
+    )
+    assert instr.target_address == expected
+
+
+def test_leaf_anchor_is_case_insensitive_for_title_case_chapeau():
+    # A leaf whose own scope anchor is title-case "In paragraph (1)" (rather than
+    # lowercase "in paragraph") still refines the inherited address.
+    body = (
+        '<section identifier="/us/pl/118/159/dA/tV/stF/s557">'
+        "<num value=\"557\">SEC. 557. </num>"
+        "<heading>ALTERNATIVE SERVICE.</heading>"
+        '<subsection identifier="/us/pl/118/159/dA/tV/stF/s557/a" role="instruction">'
+        '<num value="a">(a) </num>'
+        "<heading>United States Military Academy.—</heading>"
+        '<chapeau><ref href="/us/usc/t10/s7448">Section 7448 of title 10, '
+        "United States Code</ref>, "
+        '<amendingAction type="amend">is amended</amendingAction> as follows:'
+        "</chapeau>"
+        '<paragraph identifier="/us/pl/118/159/dA/tV/stF/s557/a/2">'
+        '<num value="2">(2) </num>'
+        "<chapeau>In subsection (b)—</chapeau>"
+        '<subparagraph identifier="/us/pl/118/159/dA/tV/stF/s557/a/2/A">'
+        '<num value="A">(A) </num>'
+        '<content>In paragraph (1), by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '"<quotedText>X</quotedText>";'
+        "</content>"
+        "</subparagraph>"
+        "</paragraph>"
+        "</subsection>"
+        "</section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    assert len(report.instructions) == 1
+    instr = report.instructions[0]
+    expected = LegalAddress(
+        path=(
+            ("title", "10"),
+            ("section", "7448"),
+            ("subsection", "b"),
+            ("paragraph", "1"),
+        )
+    )
+    assert instr.target_address == expected
+
+
 def test_plaw_117_177_strike_insert_off_title_11_is_needs_review_with_finding():
     # Targets title 18, not 11: resolvable, but withheld from Title-11 scope.
     report = lower_plaw_amendatory(_read("PLAW-117publ177.xml"))
@@ -537,6 +640,106 @@ def test_join_insert_after_boundary_rule_is_data_backed():
     assert _join_insert_after("clause", " (i)") == "clause (i)"  # insert already spaced
     assert _join_insert_after("(", "subsection") == "(subsection"  # anchor opens bracket → no space
     assert _join_insert_after("word", "") == "word"
+    # Terminal punctuation on the anchor side ends a token; the next clause still
+    # needs a separating space (38:4303: "Public Health Service," + "System members").
+    assert _join_insert_after("Public Health Service,", "System members") == "Public Health Service, System members"
+    assert _join_insert_after("Service;", "and a period") == "Service; and a period"
+    assert _join_insert_after("Service.", "And next") == "Service. And next"
+
+def test_quoted_text_prunes_inline_page_stamps():
+    # govinfo injects <page> stamps inside <quotedText>; the page number is editorial
+    # pagination, not enacted text, and must not leak into the materialized clause.
+    body = (
+        '<section identifier="/us/pl/114/326/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t38/s4303">Section 4303</ref> is amended by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText><page identifier=\"/us/stat/130/1973\">130 STAT. 1973</page>"
+        "inserted clause.</quotedText>” after “<quotedText>anchor</quotedText>”.</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    op = report.instructions[0].operation
+    assert op is not None and op.text_patch is not None
+    assert "130 STAT" not in (op.text_patch.replacement or "")
+    assert "inserted clause" in (op.text_patch.replacement or "")
+
+def test_insert_before_word_anchor_places_payload_before_anchor():
+    # 38:7309 (PL 114-58 §601(22)): "inserting 'the' before 'Veterans Health
+    # Administration'" must yield "the Veterans Health Administration", not the
+    # after-anchor order "Veterans Health Administration the".
+    body = (
+        '<section identifier="/us/pl/114/58/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t38/s7309/c/1">Section 7309(c)(1) of title 38, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText>the</quotedText>” before "
+        "“<quotedText>Veterans Health Administration</quotedText>”.</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "insert_after"
+    assert instr.witness_rule_id == RULE_INSERT_BEFORE
+    op = instr.operation
+    assert op is not None and op.text_patch is not None
+    assert op.text_patch.selector.match_text == "Veterans Health Administration"
+    assert op.text_patch.replacement == "the Veterans Health Administration"
+
+
+def test_join_insert_before_uses_insert_lead_boundary():
+    # The boundary rule applies to (inserted text) + (anchor text), so attaching
+    # punctuation on the inserted side stays attached and wordword still gets one
+    # separating space.
+    assert _join_insert_before("the Secretary", ", and") == ", and the Secretary"
+    assert _join_insert_before("the Secretary", "or") == "or the Secretary"
+    assert _join_insert_before("subsection", "(i)") == "(i) subsection"
+
+
+def test_sidenote_ref_is_not_treated_as_amendatory_target():
+    # 38:117 (PL 114-315 §601(a)): the target is named in the prose as
+    # "Section 117(c)" without "of title N"; the title comes from the publisher
+    # sidenote ref. The sidenote ref must NOT hijack the target onto the bare
+    # section (it would drop the "(c)" scope and insert the new paragraph at
+    # section level). The operation must target subsection (c), and section
+    # classification must be recorded in provenance.
+    body = (
+        '<section identifier="/us/pl/114/315/s601"><num value="601">SEC. 601. </num>'
+        '<sidenote><p><ref href="/us/usc/t38/s117">38 USC 117</ref>.</p></sidenote>'
+        '<subsection identifier="/us/pl/114/315/s601/a"><num value="a">(a) </num>'
+        '<heading>In General.</heading>'
+        '<content>Section 117(c) <amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="add">adding</amendingAction> at the end the following new paragraph:'
+        '<quotedContent><paragraph><num value="7">“(7) </num>'
+        '<content>Veterans Health Administration, Medical Community Care.</content></paragraph>'
+        '</quotedContent>.</content></subsection></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "add_at_end"
+    assert instr.witness_rule_id == RULE_ADD_AT_END
+    op = instr.operation
+    assert op is not None
+    assert op.target.path == (("title", "38"), ("section", "117"), ("subsection", "c"))
+    assert op.payload is not None
+    assert "(7) Veterans Health Administration, Medical Community Care" in (op.payload.text or "")
+    assert TARGET_TITLE_FROM_SECTION_CLASSIFICATION in op.provenance_tags
+
+
+def test_insert_before_parsing_does_not_disturb_after_direction():
+    # Ensure the parser still detects "after" direction and emits the existing rule id.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText>, based on reasonable due diligence,</quotedText>” "
+        "after “<quotedText>may</quotedText>”.</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.witness_rule_id == RULE_INSERT_AFTER
+    op = instr.operation
+    assert op is not None and op.text_patch is not None
+    assert op.text_patch.replacement == "may, based on reasonable due diligence,"
+
 
 
 def test_compound_strike_insert_with_block_node_is_held_out_not_corrupted():
@@ -1670,6 +1873,206 @@ def test_effective_date_scope_does_not_leak_across_subsections_at_different_leve
     assert len(accepted) == 1, report
     instr = accepted[0]
     assert instr.target_address == LegalAddress(path=(("title", "11"), ("section", "322"), ("subsection", "a")))
+
+
+def test_section_level_effective_date_scope_handles_date_of_the_enactment():
+    # A sibling "Effective Date" paragraph that names the whole section (`"this
+    # section"`) rather than a subsection/paragraph range still attaches a concrete
+    # future effective date to every amendatory leaf.  The drafting phrase "the date
+    # of the enactment" has an optional extra "the" before "enactment".
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        "<heading>Amendment.</heading>"
+        '<subsection identifier="/us/pl/116/900/s1/a" role="instruction">'
+        '<num value="a">(a)</num>'
+        '<content><ref href="/us/usc/t11/s503">Section 503 of title 11</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>old</quotedText>”.</content></subsection>'
+        '<subsection identifier="/us/pl/116/900/s1/b" role="instruction">'
+        '<num value="b">(b)</num><heading>Effective Date.</heading>'
+        '<content>The amendments made by this section shall take effect on the date '
+        'that is 1 year after the date of the enactment of this Act.</content>'
+        "</subsection></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    ops = report.operations()
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.source is not None
+    assert op.source.effective == "2021-01-01"
+    assert op.source.legal_status is not PENDING_CONDITION_STATUS
+
+
+def test_section_level_effective_date_scope_does_not_cross_sections():
+    # An "Effective Date" paragraph inside one PLAW section must not attach a future
+    # effective date to amendatory leaves in a different section of the same law.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        "<heading>Immediate.</heading>"
+        '<subsection identifier="/us/pl/116/900/s1/a" role="instruction">'
+        '<num value="a">(a)</num>'
+        '<content><ref href="/us/usc/t11/s503">Section 503 of title 11</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>now</quotedText>”.</content></subsection></section>'
+        '<section identifier="/us/pl/116/900/s2"><num value="2">SEC. 2. </num>'
+        "<heading>Deferred.</heading>"
+        '<subsection identifier="/us/pl/116/900/s2/a" role="instruction">'
+        '<num value="a">(a)</num>'
+        '<content><ref href="/us/usc/t11/s506">Section 506 of title 11</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>later</quotedText>”.</content></subsection>'
+        '<subsection identifier="/us/pl/116/900/s2/b" role="instruction">'
+        '<num value="b">(b)</num><heading>Effective Date.</heading>'
+        '<content>The amendments made by this section shall take effect on the date '
+        'that is 1 year after the date of the enactment of this Act.</content>'
+        "</subsection></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    ops = report.operations()
+    assert len(ops) == 2
+    by_section = {op.target.path[1][1]: op for op in ops}
+    assert by_section["503"].source is not None
+    assert by_section["503"].source.effective == ""
+    assert by_section["506"].source is not None
+    assert by_section["506"].source.effective == "2021-01-01"
+
+
+def test_plaw_metadata_title_fallback_resolves_bare_section_target():
+    # When the converter omits the sidenote classification ref and the instruction text
+    # names only "Section 315(b)" (no "of title N"), the PLAW's own short-title
+    # preamble supplies the title if it names exactly one USC title.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        "<heading>Extension.</heading>"
+        '<content>Section 315(b) <amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>September 30, 2016</quotedText>” and '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>September 30, 2017</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(
+        _synthetic_plaw_with_title("To amend title 38, United States Code, ...", body)
+    )
+    ops = report.operations()
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.target.path == (
+        ("title", "38"),
+        ("section", "315"),
+        ("subsection", "b"),
+    )
+    assert op.source is not None
+    assert op.source.effective == ""
+    assert TARGET_TITLE_FROM_PLAW_METADATA in op.provenance_tags
+
+
+def test_plaw_metadata_title_fallback_ignored_when_preamble_names_multiple_titles():
+    # A PLAW that amends more than one title cannot safely supply a unique title.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        "<heading>Amendment.</heading>"
+        '<content>Section 315(b) <amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>old</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(
+        _synthetic_plaw_with_title(
+            "To amend titles 11, 38, and 42, United States Code, ...", body
+        )
+    )
+    assert report.operations() == ()
+    assert any(
+        instr.finding is not None
+        and instr.finding.rule_id == TARGET_UNRESOLVED_FINDING_RULE_ID
+        for instr in report.instructions
+    )
+
+
+def test_plaw_metadata_title_fallback_does_not_override_explicit_title():
+    # An explicit "of title 11" must win over a PLAW preamble that names title 38.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        "<heading>Amendment.</heading>"
+        '<content>Section 503(b) of title 11 <amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>old</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(
+        _synthetic_plaw_with_title("To amend title 38, United States Code, ...", body)
+    )
+    ops = report.operations()
+    assert len(ops) == 1
+    assert ops[0].target.path[:2] == (("title", "11"), ("section", "503"))
+    assert TARGET_TITLE_FROM_PLAW_METADATA not in ops[0].provenance_tags
+
+
+def test_lower_plaw_amendatory_propagates_xml_parse_error_not_silent_title_scope_fallback():
+    # AGENTS.md §1.10 guard-liveness: a Public Law whose USLM body is malformed XML
+    # MUST surface the parse failure loudly, not silently default the
+    # metadata-title fallback to "" and proceed with a bogus OP set.
+    # _plaw_usc_title_scope previously trapped ET.ParseError and returned "",
+    # dead code (lower_plaw_amendatory's own ET.fromstring already raised before
+    # the helper was reached).  The refactor passes the already-parsed root so the
+    # catch path is gone; this test drives a known-violating input through the
+    # FULL production entry point and asserts the ParseError propagates rather
+    # than be swallowed into a silent "" metadata scope.
+    malformed = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<uslm xmlns="http://schemas.gpo.gov/xml/uslm"><meta>'
+        b"<congress>116</congress><docNumber>999</docNumber>"
+        b"<approvedDate>2024-01-01</approvedDate></meta>"
+        b'<main><section identifier="/us/pl/116/999/s1"><num value="1">SEC. 1. </num>'
+        b'<content>Section 315(b) '
+        b'<amendingAction type="amend">is amended</amendingAction> by '
+        b'<amendingAction type="delete">striking</amendingAction> '
+        # Unterminated quotedText + missing </content></section></main></uslm>:
+        # ET.fromstring raises ParseError; lower_plaw_amendatory must NOT have a
+        # silent fallback that yields an empty metadata-title scope and proceeds.
+        b'"old".'
+    )
+    with pytest.raises(ET.ParseError):
+        lower_plaw_amendatory(malformed, statute_id="PL 116-999", enacted="2024-01-01")
+
+
+
+
+def test_plaw_metadata_title_fallback_withheld_when_law_names_another_title():
+    # A PLAW that amends more than one title is unsafe for preamble-based title
+    # inference. The explicit "of title 5" reference here means the bare
+    # "Section 315(b)" in the same law must NOT be silently hijacked onto the
+    # preamble's title 38; it stays unresolved and the law-level conflict is
+    # recorded.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content>Section 7703(d)(2) of title 5 <amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>old</quotedText>”.</content></section>'
+        '<section identifier="/us/pl/116/900/s2"><num value="2">SEC. 2. </num>'
+        '<content>Section 315(b) <amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>old</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(
+        _synthetic_plaw_with_title("To amend title 38, United States Code, ...", body)
+    )
+    # The explicit title-5 instruction resolves; the bare section target does not.
+    assert any(
+        instr.target_address is not None
+        and instr.target_address.path[0] == ("title", "5")
+        for instr in report.instructions
+    )
+    bare = next(
+        instr
+        for instr in report.instructions
+        if "Section 315(b)" in instr.raw_text
+    )
+    assert bare.target_address is None
+    assert any(
+        f.rule_id == PLAW_METADATA_SCOPE_CONFLICT_RULE_ID for f in report.findings
+    )
 
 
 def test_sibling_anchors_do_not_leak_into_ancestor_target_resolution():
