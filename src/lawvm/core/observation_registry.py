@@ -510,7 +510,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "strict_fail", "frontend_observations",
                 "move/renumber clause collapsed to plain duplicate REPLACE ops",
                 ("preservation",), role="observation"),
-    FindingSpec("PARSE.PEG_SKIP_SEC1_REPEAL_LIST", "frontend_compile",
+    FindingSpec("PARSE.GRAMMAR_SKIP_PREAMBLE_REPEAL_LIST", "frontend_compile",
                 "recovery", "warn", "frontend_compile",
                 "PEG extraction was intentionally skipped for a sec1 repeal-list fallback pattern",
                 ("parse_witness",), role="observation"),

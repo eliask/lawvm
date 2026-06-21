@@ -4088,7 +4088,7 @@ def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
     peg_skip = [
         finding
         for finding in phase2.findings()
-        if finding.kind == "PARSE.PEG_SKIP_SEC1_REPEAL_LIST"
+        if finding.kind == "PARSE.GRAMMAR_SKIP_PREAMBLE_REPEAL_LIST"
     ]
     assert peg_skip
     assert peg_skip[0].detail.get("used_sec1_fallback") is True
@@ -4138,7 +4138,7 @@ def test_normalize_and_compile_ops_keeps_sec1_keeper_act_repeal_list_on_peg_path
     assert [
         finding
         for finding in phase2.findings()
-        if finding.kind == "PARSE.PEG_SKIP_SEC1_REPEAL_LIST"
+        if finding.kind == "PARSE.GRAMMAR_SKIP_PREAMBLE_REPEAL_LIST"
     ] == []
 
 

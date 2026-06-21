@@ -3682,7 +3682,7 @@ def normalize_and_compile_ops(
     if peg_skip_for_sec1_repeal_list:
         frontend_findings_out.append(
             Finding(
-                kind="PARSE.PEG_SKIP_SEC1_REPEAL_LIST",
+                kind="PARSE.GRAMMAR_SKIP_PREAMBLE_REPEAL_LIST",
                 role="observation",
                 stage="frontend_compile",
                 detail={
