@@ -15,7 +15,13 @@ from lawvm.core.timeline import ingest_consolidated, verify_consistency
 from lawvm.core.timeline_consistency import ConsistencyDivergence
 from lawvm.norway.sources import ingest_no_public_archives
 from lawvm.norway.verify import (
+    NO_VERIFY_COMPARE_CONTINGENT_OTHER_LAWS_PLACEHOLDER_SUPPRESSED,
+    NO_VERIFY_COMPARE_DEFINITION_SUBSECTION_PAIRS_COLLAPSED,
+    NO_VERIFY_COMPARE_NESTED_ITEM_TAIL_SUPPRESSED,
     NO_VERIFY_COMPARE_OTHER_LAWS_CONTEXT_SUPPRESSED,
+    NO_VERIFY_COMPARE_REPEALED_SHELL_BLANKED,
+    NO_VERIFY_COMPARE_SELF_SECTION_SHELL_BLANKED,
+    NO_VERIFY_COMPARE_SENTENCE_CHILDREN_COLLAPSED,
     _infer_no_source_signal,
     _no_compare_child_path,
     _no_kind_value,
@@ -730,6 +736,148 @@ def test_normalize_no_compare_tree_does_not_record_projection_for_plain_section(
     _normalize_no_compare_tree(section, projections_out=projections, surface="current", path=(("section", "1"),))
 
     assert projections == []
+
+
+def test_normalize_no_compare_tree_records_repealed_shell_blank_projection() -> None:
+    # §2.9 finding-assertion: a repealed-shell section body that normalizes to
+    # empty emits the no_verify.compare_repealed_shell_blanked projection, with
+    # before/after evidence. The pure-effect test
+    # (test_normalize_no_compare_tree_blanks_repealed_shell_text) pins the
+    # cosmetic outcome; this one pins the *rule_id* emission so a regression
+    # that silently drops the projection (or fires a different one) is caught.
+    section = IRNode(kind=IRNodeKind.SECTION, label="2-6", text="§ 2-6. (Opphevet)")
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(section, projections_out=projections, surface="current", path=(("section", "2-6"),))
+
+    assert [p.rule_id for p in projections] == [NO_VERIFY_COMPARE_REPEALED_SHELL_BLANKED]
+    assert projections[0].surface == "current"
+    assert projections[0].before_text == "§ 2-6. (Opphevet)"
+    assert projections[0].after_text == ""
+
+
+def test_normalize_no_compare_tree_records_sentence_children_collapse_projection() -> None:
+    # §2.9 finding-assertion: a subsection whose only children are sentence
+    # nodes emits no_verify.compare_sentence_children_collapsed when those
+    # children are folded into the parent's text.
+    subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.SENTENCE, label="a", text="Første punktum."),
+            IRNode(kind=IRNodeKind.SENTENCE, label="b", text="Andre punktum."),
+        ),
+    )
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(subsection, projections_out=projections, surface="replay", path=(("section", "1"), ("subsection", "1")))
+
+    assert [p.rule_id for p in projections] == [NO_VERIFY_COMPARE_SENTENCE_CHILDREN_COLLAPSED]
+    assert projections[0].after_child_count == 0
+    assert "Første punktum." in projections[0].after_text
+    assert "Andre punktum." in projections[0].after_text
+
+
+def test_normalize_no_compare_tree_records_nested_item_tail_suppression_projection() -> None:
+    # §2.9 finding-assertion: an item whose text duplicates the prefix of a
+    # nested item child emits no_verify.compare_nested_item_tail_suppressed.
+    # Mirrors the trigger shape in
+    # test_normalize_no_compare_tree_trims_inline_nested_item_duplication;
+    # here we pin the *rule_id* emission rather than the cosmetic text trim.
+    item = IRNode(
+        kind=IRNodeKind.ITEM,
+        label="b",
+        text=(
+            "eieren er en fysisk person som er skattemessig bosatt i samme jurisdiksjon som "
+            "det øverste morselskapet, og har en direkte eierinteresse som gir rett til "
+            "maksimalt 5 prosent av fortjenesten og eiendelene til det øverste morselskapet, eller"
+        ),
+        children=(
+            IRNode(
+                kind=IRNodeKind.ITEM,
+                label="1",
+                text="er skattemessig bosatt i samme jurisdiksjon som det øverste morselskapet, og",
+            ),
+        ),
+    )
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(item, projections_out=projections, surface="current", path=(("section", "1"), ("item", "b")))
+
+    rule_ids = [p.rule_id for p in projections]
+    assert NO_VERIFY_COMPARE_NESTED_ITEM_TAIL_SUPPRESSED in rule_ids
+    projection = next(p for p in projections if p.rule_id == NO_VERIFY_COMPARE_NESTED_ITEM_TAIL_SUPPRESSED)
+    assert projection.before_text.startswith("eieren er en fysisk person som")
+    assert projection.after_text == "eieren er en fysisk person som"
+
+
+def test_normalize_no_compare_tree_records_self_section_shell_blank_projection() -> None:
+    # §2.9 finding-assertion: a section whose text is an "I § N nr. M ..."
+    # self-section lead shell emits no_verify.compare_self_section_shell_blanked
+    # along with the structural blanking.
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="42",
+        text="I § 42 nr. 44 om endringer i skattebetalingsloven skal nye endringer lyde:",
+    )
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(section, projections_out=projections, surface="current", path=(("section", "42"),))
+
+    assert [p.rule_id for p in projections] == [NO_VERIFY_COMPARE_SELF_SECTION_SHELL_BLANKED]
+    assert projections[0].after_text == ""
+
+
+def test_normalize_no_compare_tree_records_contingent_other_laws_placeholder_projection() -> None:
+    # §2.9 finding-assertion: a section whose only substantive content is the
+    # "Fra tid Kongen bestemmer, gjøres følgende endringer i andre lover"
+    # contingent placeholder emits
+    # no_verify.compare_contingent_other_laws_placeholder_suppressed.
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="42",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Endringer i andre lover"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                text="Fra den tid Kongen fastsetter, gjøres følgende endringer i andre lover:",
+            ),
+        ),
+    )
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(section, projections_out=projections, surface="current", path=(("section", "42"),))
+
+    assert [p.rule_id for p in projections] == [NO_VERIFY_COMPARE_CONTINGENT_OTHER_LAWS_PLACEHOLDER_SUPPRESSED]
+    assert projections[0].after_text == ""
+    assert projections[0].after_child_count == 0
+
+
+def test_normalize_no_compare_tree_records_definition_subsection_pairs_collapse_projection() -> None:
+    # §2.9 finding-assertion: a section where the first subsection ends with
+    # "forstås med:" and the remaining subsections are term/value pairs that
+    # chain into a single definition list collapses them under
+    # no_verify.compare_definition_subsection_pairs_collapsed.
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="3",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Med binær option forstås med:"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="kjøpsavtale:"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="kjøp av finansielt instrument til fast pris"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="4", text="salgsavtale:"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="5", text="salg av finansielt instrument til fast pris"),
+        ),
+    )
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(section, projections_out=projections, surface="replay", path=(("section", "3"),))
+
+    rule_ids = [p.rule_id for p in projections]
+    assert NO_VERIFY_COMPARE_DEFINITION_SUBSECTION_PAIRS_COLLAPSED in rule_ids
+    projection = next(p for p in projections if p.rule_id == NO_VERIFY_COMPARE_DEFINITION_SUBSECTION_PAIRS_COLLAPSED)
+    assert projection.after_child_count == 1
 
 
 def test_normalize_no_compare_tree_collapses_other_laws_detail_section_without_heading() -> None:
