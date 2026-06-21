@@ -5748,7 +5748,9 @@ def test_normalize_group_payload_keeps_explicit_heading_and_subsection_replace_s
         "REPLACE 3 luku 8 § 1 mom",
     ]
     assert got.rejected_ops == ()
-    assert _pathologies(got) == ()
+    # The whole-section shell over a plain-subsection-targeted replace is kept, and
+    # that keep decision is now witnessed (previously a silent source-plane keep).
+    assert [p.code for p in _pathologies(got)] == ["SUBSECTION_SHELL_REPLACE_KEPT"]
     assert got.subsec_map is not None
     mapped = got.subsec_map.for_op(subsection_op)
     assert mapped is not None
