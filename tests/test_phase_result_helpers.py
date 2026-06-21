@@ -117,13 +117,13 @@ def test_effect_lifecycle_side_channels_preserve_order_after_merge() -> None:
         relation_id="relation:a",
         kind="modifies_effect",
         source_provision=witness,
-        target_effect=target_effect,
+        target_instrument=instrument,
     )
     relation_b = EffectRelation(
         relation_id="relation:b",
         kind="extends_effect_expiry",
         source_provision=witness,
-        target_effect=target_effect,
+        target_instrument=instrument,
     )
     event_a = EffectLifecycleEvent(
         lifecycle_event_id="lifecycle:a",
@@ -182,6 +182,86 @@ def test_phase_result_rejects_untyped_effect_side_channel_values() -> None:
         )
 
 
+def test_phase_result_rejects_untyped_temporal_and_migration_side_channel_values() -> None:
+    with pytest.raises(TypeError, match="temporal_events"):
+        PhaseResult(output=None, temporal_events=cast(Any, ("temporal:a",)))
+    with pytest.raises(TypeError, match="migration_events"):
+        PhaseResult(output=None, migration_events=cast(Any, ("migration:a",)))
+
+
+def test_phase_result_rejects_duplicate_effect_graph_ids() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect_a = EffectRef(effect_id="effect:a", source_instrument=instrument)
+    effect_b = EffectRef(effect_id="effect:a", source_instrument=instrument)
+    target_effect = EffectRef(effect_id="effect:target", source_instrument=instrument)
+    relation_a = EffectRelation(
+        relation_id="relation:a",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    relation_b = EffectRelation(
+        relation_id="relation:a",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    lifecycle_a = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:a",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        executable=False,
+    )
+    lifecycle_b = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:a",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        executable=False,
+    )
+
+    with pytest.raises(ValueError, match="duplicate effect_id"):
+        PhaseResult(output=None, source_effects=(effect_a, effect_b))
+    with pytest.raises(ValueError, match="duplicate relation_id"):
+        PhaseResult(output=None, effect_relations=(relation_a, relation_b))
+    with pytest.raises(ValueError, match="duplicate lifecycle_event_id"):
+        PhaseResult(output=None, effect_lifecycle_events=(lifecycle_a, lifecycle_b))
+
+
+def test_phase_result_merge_dedupes_identical_effect_graph_ids() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    effect_a = EffectRef(effect_id="effect:a", source_instrument=instrument)
+    effect_b = EffectRef(effect_id="effect:a", source_instrument=instrument)
+    pr_a = PhaseResult(output="a", source_effects=(effect_a,))
+    pr_b = PhaseResult(output="b", source_effects=(effect_b,))
+
+    merged = pr_a.merge(pr_b)
+
+    assert merged.output == "b"
+    assert merged.source_effects == (effect_a,)
+
+
+def test_phase_result_merge_rejects_conflicting_effect_graph_ids() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    effect_a = EffectRef(
+        effect_id="effect:a",
+        source_instrument=instrument,
+        target_statute="1991/1",
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    effect_b = EffectRef(
+        effect_id="effect:a",
+        source_instrument=instrument,
+        target_statute="1991/1",
+        target_address=LegalAddress(path=(("section", "2"),)),
+    )
+    pr_a = PhaseResult(output="a", source_effects=(effect_a,))
+    pr_b = PhaseResult(output="b", source_effects=(effect_b,))
+
+    with pytest.raises(ValueError, match="conflicting duplicate effect_id"):
+        pr_a.merge(pr_b)
+
+
 def test_phase_builder_rejects_untyped_effect_side_channel_values() -> None:
     builder: PhaseBuilder[None] = PhaseBuilder()
 
@@ -191,6 +271,19 @@ def test_phase_builder_rejects_untyped_effect_side_channel_values() -> None:
         builder.add_effect_relation(cast(Any, "relation:a"))
     with pytest.raises(TypeError, match="EffectLifecycleEvent"):
         builder.add_effect_lifecycle_event(cast(Any, "lifecycle:a"))
+
+
+def test_phase_builder_rejects_untyped_temporal_and_migration_side_channel_values() -> None:
+    builder: PhaseBuilder[None] = PhaseBuilder()
+
+    with pytest.raises(TypeError, match="TemporalEvent"):
+        builder.add_temporal_event(cast(Any, "temporal:a"))
+    with pytest.raises(TypeError, match="TemporalEvent"):
+        builder.add_temporal_events(cast(Any, ("temporal:a",)))
+    with pytest.raises(TypeError, match="MigrationEvent"):
+        builder.add_migration_event(cast(Any, "migration:a"))
+    with pytest.raises(TypeError, match="MigrationEvent"):
+        builder.add_migration_events(cast(Any, ("migration:a",)))
 
 
 def test_phase_result_summary_accessors_project_derived_kinds() -> None:

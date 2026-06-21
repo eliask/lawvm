@@ -57,6 +57,8 @@ def test_eu_replay_tool_prints_summary(monkeypatch, capsys) -> None:
                     message="missed",
                     source_statute="2026/1",
                     op_id="op-1",
+                    blocking=True,
+                    phase="replay",
                     detail={"action": "replace", "target": "section:9"},
                 ),
                 SimpleNamespace(
@@ -64,6 +66,8 @@ def test_eu_replay_tool_prints_summary(monkeypatch, capsys) -> None:
                     message="dup",
                     source_statute="32016R0679",
                     op_id="",
+                    blocking=False,
+                    phase="replay_fold",
                     detail={"phase": "replay_fold"},
                 ),
             ],
@@ -110,6 +114,8 @@ def test_eu_replay_tool_supports_json(monkeypatch, capsys) -> None:
                     message="dup",
                     source_statute="32016R0679",
                     op_id="op-dup",
+                    blocking=False,
+                    phase="materialized",
                     detail={
                         "phase": "materialized",
                         "blocking": False,
@@ -246,6 +252,8 @@ def test_eu_replay_tool_supports_markdown_format(monkeypatch, capsys) -> None:
                     message="missing",
                     source_statute="2026/2",
                     op_id="op-1",
+                    blocking=True,
+                    phase="replay",
                     detail={"action": "replace"},
                 )
             ],
@@ -287,6 +295,8 @@ def test_eu_replay_tool_json_wins_over_text_or_markdown_format(monkeypatch, caps
                     message="missing",
                     source_statute="2026/2",
                     op_id="op-1",
+                    blocking=True,
+                    phase="replay",
                     detail={"action": "replace"},
                 )
             ],
@@ -340,6 +350,8 @@ def test_serialize_adjudication_tolerates_non_dict_detail() -> None:
             message="m",
             source_statute="s",
             op_id="o",
+            blocking=True,
+            phase="compile",
             detail=["unexpected", "shape"],
         )
     )

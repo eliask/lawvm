@@ -1,6 +1,7 @@
 """Tests for the Finland SourceSurfaceBundle builder (Pro r5 Phase 1)."""
 from __future__ import annotations
 
+from lawvm.core.legal_surface_lens import source_bytes_of
 from lawvm.finland.legal_surface.bundle import (
     build_surface_bundle,
     decode_body_text,
@@ -49,7 +50,11 @@ def test_build_surface_bundle_shape() -> None:
     unit = bundle.units[0]
     assert unit.source_unit_id == "123/2020#body"
     assert unit.work_id == "123/2020"
-    assert unit.metadata["xml_bytes"] == _XML
+    # The raw AKN XML is a TYPED unit field (read via ``source_bytes_of``), not a
+    # free-form ``metadata["xml_bytes"]`` dict key.
+    assert unit.source_bytes == _XML
+    assert source_bytes_of(unit) == _XML
+    assert "xml_bytes" not in unit.metadata
     # the body source_ref spans the whole raw_text
     assert unit.source_ref.char_start == 0
     assert unit.source_ref.char_end == len(unit.raw_text)

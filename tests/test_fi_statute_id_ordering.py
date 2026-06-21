@@ -110,7 +110,7 @@ def _engine_keyed_amendment_resolver():
         }
     ]
 
-    def resolve(sid: str, mode: str, corpus=None):
+    def resolve(sid: str, mode: str, corpus=None, residuals_out=None):
         # The real index is keyed ONLY in engine 'year/num' form: a wrong-form
         # id would get an empty set here. The plan must hand us the engine id.
         return (records if sid == _ENGINE else [], None, "")
@@ -169,7 +169,7 @@ def test_unresolvable_id_raises_named_diagnostic_not_base() -> None:
 def test_genuinely_unamended_statute_builds_base_plan_without_error() -> None:
     # Do NOT over-correct: a statute that legitimately has zero amendments must
     # still build a valid base plan without raising.
-    def resolve_empty(sid: str, mode: str, corpus=None):
+    def resolve_empty(sid: str, mode: str, corpus=None, residuals_out=None):
         return ([], None, "")
 
     plan = _build_plan(_ENGINE, resolver=resolve_empty)

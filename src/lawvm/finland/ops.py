@@ -19,6 +19,7 @@ import datetime as dt
 import logging
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
+from enum import StrEnum
 from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Tuple, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource, TextPatchSpec
@@ -66,21 +67,37 @@ _TARGET_GUESSING_PROVENANCE_TAGS = frozenset(
     }
 )
 
-ScopeResolutionConfidence = Literal["explicit", "inferred", "rewritten"]
-ScopeResolutionSource = Literal[
-    "preamble",
-    "explicit_chunk",
-    "carry_forward",
-    "grouped_part",
-    "grouped_chapter",
-    "explicit_scope_rewrite",
-    "live_stem_host",
-]
-SectionPathResolutionReason = Literal[
-    "live_unique_global_fallback",
-    "live_unique_substantive_over_placeholder",
-    "follow_same_wave_migration",
-]
+class ScopeResolutionConfidence(StrEnum):
+    """Confidence rail for a Finland chapter-scope resolution witness.
+
+    A ``StrEnum`` (not a bare ``Literal``) so confidence comparisons are
+    member-vs-member and survive renames as a type error rather than a silent
+    string mismatch.
+    """
+
+    EXPLICIT = "explicit"
+    INFERRED = "inferred"
+    REWRITTEN = "rewritten"
+
+
+class ScopeResolutionSource(StrEnum):
+    """Source rail for a Finland chapter-scope resolution witness."""
+
+    PREAMBLE = "preamble"
+    EXPLICIT_CHUNK = "explicit_chunk"
+    CARRY_FORWARD = "carry_forward"
+    GROUPED_PART = "grouped_part"
+    GROUPED_CHAPTER = "grouped_chapter"
+    EXPLICIT_SCOPE_REWRITE = "explicit_scope_rewrite"
+    LIVE_STEM_HOST = "live_stem_host"
+
+
+class SectionPathResolutionReason(StrEnum):
+    """Reason rail for a Finland late apply-time section-path fallback."""
+
+    LIVE_UNIQUE_GLOBAL_FALLBACK = "live_unique_global_fallback"
+    LIVE_UNIQUE_SUBSTANTIVE_OVER_PLACEHOLDER = "live_unique_substantive_over_placeholder"
+    FOLLOW_SAME_WAVE_MIGRATION = "follow_same_wave_migration"
 
 
 @dataclass(frozen=True)
@@ -95,11 +112,11 @@ class ScopeConfidence:
 
     @property
     def is_explicit(self) -> bool:
-        return self.confidence == "explicit"
+        return self.confidence is ScopeResolutionConfidence.EXPLICIT
 
     @property
     def is_rewritten(self) -> bool:
-        return self.confidence == "rewritten"
+        return self.confidence is ScopeResolutionConfidence.REWRITTEN
 
 
 @dataclass(frozen=True)
@@ -132,8 +149,8 @@ class SectionPathResolution:
     @property
     def used_live_unique_global_fallback(self) -> bool:
         return self.reason_code in {
-            "live_unique_global_fallback",
-            "live_unique_substantive_over_placeholder",
+            SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK,
+            SectionPathResolutionReason.LIVE_UNIQUE_SUBSTANTIVE_OVER_PLACEHOLDER,
         }
 
 
@@ -174,43 +191,43 @@ def scope_confidence_from_tags(
         }:
             return ScopeConfidence(
                 tag=tag,
-                source="explicit_scope_rewrite",
-                confidence="rewritten",
+                source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                confidence=ScopeResolutionConfidence.REWRITTEN,
                 resolved_chapter=resolved_chapter,
             )
     if "chapter_scope_from_explicit_chunk" in normalized:
         return ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter=resolved_chapter,
         )
     if "chapter_scope_carry_forward" in normalized:
         return ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=resolved_chapter,
         )
     if "chapter_scope_from_preamble" in normalized:
         return ScopeConfidence(
             tag="chapter_scope_from_preamble",
-            source="preamble",
-            confidence="inferred",
+            source=ScopeResolutionSource.PREAMBLE,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=resolved_chapter,
         )
     if "grouped_part_scope" in normalized:
         return ScopeConfidence(
             tag="grouped_part_scope",
-            source="grouped_part",
-            confidence="inferred",
+            source=ScopeResolutionSource.GROUPED_PART,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=resolved_chapter,
         )
     if "grouped_chapter_scope" in normalized:
         return ScopeConfidence(
             tag="grouped_chapter_scope",
-            source="grouped_chapter",
-            confidence="inferred",
+            source=ScopeResolutionSource.GROUPED_CHAPTER,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=resolved_chapter,
         )
     return None
@@ -714,8 +731,25 @@ class AmendmentOp:
                 "AmendmentOp direct construction requires explicit target_unit_kind "
                 "unless lo or TargetKind target_kind seed is provided"
             )
+        elif target_unit_kind is None and lo is not None:
+            lo_fields = _lo_target_fields(lo)
+            target_unit_kind = cast(TargetUnitKind, lo_fields["target_unit_kind"])
+            if not target_section:
+                target_section = str(lo_fields["target_section"])
+            if target_chapter is None:
+                target_chapter = cast(Optional[str], lo_fields["target_chapter"])
+            if target_part is None:
+                target_part = cast(Optional[str], lo_fields["target_part"])
+            if target_paragraph is None:
+                target_paragraph = cast(Optional[int], lo_fields["target_paragraph"])
+            if target_item is None:
+                target_item = cast(Optional[str], lo_fields["target_item"])
+            if target_special is None:
+                target_special = cast(Optional[str], lo_fields["target_special"])
 
-        resolved_target_unit_kind: TargetUnitKind = target_unit_kind or "section"
+        if target_unit_kind is None:
+            raise ValueError("AmendmentOp target_unit_kind could not be resolved")
+        resolved_target_unit_kind: TargetUnitKind = target_unit_kind
 
         self.op_id = op_id
         self.op_type = op_type
@@ -1549,6 +1583,18 @@ class ResolvedOp:
             and self.effective_target_special is None
         )
 
+def _op_target_subsection_label(op: "AmendmentOp") -> Optional[str]:
+    """Return the AmendmentOp subsection coordinate as a bare structural label.
+
+    ``AmendmentOp`` carries the subsection as an int paragraph; FailedOp stores
+    the subsection as a bare label so governance consumers can match it against
+    structural path labels without re-parsing the rendered description.
+    """
+    if op.target_paragraph is None:
+        return None
+    return str(op.target_paragraph)
+
+
 @dataclass
 class FailedOp:
     """A structured record of an operation that could not be applied."""
@@ -1560,6 +1606,12 @@ class FailedOp:
     target_unit_kind: TargetUnitKind
     target_chapter: Optional[str] = None
     target_part: Optional[str] = None
+    # Descendant coordinates of the failed target, carried as typed scope so
+    # governance consumers never re-parse the rendered description. Both are
+    # bare labels (e.g. subsection "2", item "3 a"), matching the structural
+    # path labels rather than the human "N mom / M kohta" rendering.
+    target_subsection: Optional[str] = None
+    target_item: Optional[str] = None
     reason_code: str = ""
     target_statute_id: Optional[str] = None
 
@@ -1577,6 +1629,8 @@ class FailedOp:
             "target_section": self.target_section,
             "target_chapter": self.target_chapter,
             "target_part": self.target_part,
+            "target_subsection": self.target_subsection,
+            "target_item": self.target_item,
         }
 
     def as_detail(self) -> dict[str, object]:
@@ -1601,6 +1655,8 @@ class FailedOp:
         target_unit_kind: TargetUnitKind,
         target_chapter: Optional[str] = None,
         target_part: Optional[str] = None,
+        target_subsection: Optional[str] = None,
+        target_item: Optional[str] = None,
     ) -> "FailedOp":
         """Build a failed-op record from neutral structural scope."""
         return cls(
@@ -1611,6 +1667,8 @@ class FailedOp:
             target_section=target_section,
             target_chapter=target_chapter,
             target_part=target_part,
+            target_subsection=target_subsection,
+            target_item=target_item,
             target_unit_kind=target_unit_kind,
         )
 

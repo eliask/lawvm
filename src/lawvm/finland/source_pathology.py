@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.payload_surface import TargetUnitKind
+from lawvm.core.recovery_kind import RecoveryKind
 
 
 def _target_label(target_section: str, target_chapter: str = "") -> str:
@@ -78,6 +79,37 @@ def build_malformed_broad_replace_body_pathology(
     )
 
 
+def build_body_section_label_mismatch_payload_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    observed_section: str,
+    target_chapter: str = "",
+    source_unit_id: str = "",
+) -> SourcePathology:
+    """Build a typed source-pathology record for one-section payload label drift."""
+    return SourcePathology.from_scope(
+        code="BODY_SECTION_LABEL_MISMATCH_PAYLOAD",
+        message=(
+            "The operative formula explicitly targeted one section, but the only "
+            "source-body section payload carried a conflicting label; the payload "
+            "was bound to the explicit formula target and the label drift was "
+            "recorded as source pathology."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "observed_section": observed_section,
+            "source_unit_id": source_unit_id,
+            "diagnostic_reason": "single_body_section_label_mismatch",
+        },
+    )
+
+
 def build_empty_operative_body_pathology(
     *,
     source_statute: str,
@@ -123,7 +155,7 @@ def build_section_replace_bootstrap_parent_missing_pathology(
             "target_part": target_part,
             "target_chapter": target_chapter,
             "target_section": target_section,
-            "recovery_kind": "section_replace_bootstrap_parent_missing",
+            "recovery_kind": RecoveryKind.SECTION_REPLACE_BOOTSTRAP_PARENT_MISSING,
             "strict_disposition": "block",
             "quirks_disposition": "record",
         },
@@ -157,7 +189,7 @@ def build_same_effective_container_repeal_shadowed_pathology(
         detail={
             "prior_source_statute": prior_source_statute,
             "effective": effective,
-            "recovery_kind": "same_effective_container_repeal_shadowed",
+            "recovery_kind": RecoveryKind.SAME_EFFECTIVE_CONTAINER_REPEAL_SHADOWED,
             "strict_disposition": "record",
             "quirks_disposition": "record",
         },
@@ -166,6 +198,10 @@ def build_same_effective_container_repeal_shadowed_pathology(
 
 __all__ = [
     "build_container_replace_target_absent_pathology",
+    "build_container_op_target_absent_pathology",
+    "build_container_otsikko_payload_absent_pathology",
+    "build_section_insert_scoped_parent_absent_pathology",
+    "build_unhandled_structure_op_pathology",
     "build_container_membership_mismatch_pathology",
     "build_recodification_source_chain_gap_pathology",
     "build_recodification_omission_only_section_shell_pathology",
@@ -174,6 +210,7 @@ __all__ = [
     "build_item_target_structure_absent_pathology",
     "build_item_target_slot_occupied_pathology",
     "build_item_target_anchor_absent_pathology",
+    "build_item_target_positional_rebind_pathology",
     "build_subsection_target_rebound_pathology",
     "build_subsection_target_absent_pathology",
     "build_temporary_section_rebase_pathology",
@@ -256,7 +293,7 @@ def build_recodification_omission_only_section_shell_pathology(
             "target_chapter": target_chapter,
             "target_part": target_part,
             "source_surface": "sparse_omission_shell",
-            "recovery_kind": "recodification_omission_only_section_shell",
+            "recovery_kind": RecoveryKind.RECODIFICATION_OMISSION_ONLY_SECTION_SHELL,
             "strict_disposition": "block",
             "quirks_disposition": "record",
         },
@@ -296,8 +333,23 @@ def build_item_target_structure_absent_pathology(
     target_item: str,
     live_has_paragraphs: bool,
     amend_has_paragraphs: bool,
+    target_special: str = "",
+    diagnostic_reason: str = "",
 ) -> SourcePathology:
-    """Build a typed source-pathology record for opaque item-target material."""
+    """Build a typed source-pathology record for opaque item-target material.
+
+    Also covers special-target (otsikko/johd) repeals whose target structure is
+    already absent from the live unit: the authored op is a structurally no-op
+    decline, so it must be witnessed on the source-pathology ledger rather than
+    returned as silent state. ``target_special`` + ``diagnostic_reason`` carry the
+    op identity and the decline reason so each declined site stays distinguishable
+    on the public trust surface. (LAWVM_PIPELINE_CONTRACT §1.1 no-silent-drop.)
+    """
+    special_label = (
+        f"{target_section} § {target_paragraph} mom {target_special}".strip()
+        if target_special
+        else f"{target_section} § {target_paragraph} mom {target_item} kohta"
+    )
     return SourcePathology.from_scope(
         code="ITEM_TARGET_STRUCTURE_ABSENT",
         message=(
@@ -307,13 +359,15 @@ def build_item_target_structure_absent_pathology(
         ),
         source_statute=source_statute,
         target_unit_kind="section",
-        target_label=f"{target_section} § {target_paragraph} mom {target_item} kohta",
+        target_label=special_label,
         detail={
             "target_section": target_section,
             "target_paragraph": target_paragraph,
             "target_item": target_item,
             "live_has_paragraphs": live_has_paragraphs,
             "amend_has_paragraphs": amend_has_paragraphs,
+            "target_special": target_special,
+            "diagnostic_reason": diagnostic_reason,
         },
     )
 
@@ -380,6 +434,48 @@ def build_item_target_anchor_absent_pathology(
     )
 
 
+def build_item_target_positional_rebind_pathology(
+    *,
+    source_statute: str,
+    target_section: str,
+    target_paragraph: str,
+    source_item_label: str,
+    assigned_item_label: str,
+    ordinal: int,
+    live_item_count: int = 0,
+) -> SourcePathology:
+    """Build a typed record for a letter→digit kohta rebind by ordinal position.
+
+    Some amendments author a kohta target with a *letter* scheme (``a``/``e``)
+    while the live consolidation numbers the same items with *digits*. Replay
+    resolves the letter to its ordinal digit slot when the live list is uniformly
+    digit-labelled. That is a positional-identity assignment (no intrinsic label
+    match), so it must be witnessed on a public surface rather than left to a
+    console ``logger.debug``. (LAWVM_PIPELINE_CONTRACT §1 no-silent-guess, §8
+    no-positional-identity.)
+    """
+    return SourcePathology.from_scope(
+        code="ITEM_TARGET_POSITIONAL_REBIND",
+        message=(
+            "Item-level target was rebound from a letter scheme to a live digit "
+            "slot by ordinal position because no intrinsic label match existed; "
+            "identity was assigned positionally rather than by label."
+        ),
+        source_statute=source_statute,
+        target_unit_kind="section",
+        target_label=f"{target_section} § {target_paragraph} mom {source_item_label} kohta",
+        detail={
+            "target_section": target_section,
+            "target_paragraph": target_paragraph,
+            "source_item_label": source_item_label,
+            "assigned_item_label": assigned_item_label,
+            "ordinal": ordinal,
+            "live_item_count": live_item_count,
+            "identity_basis": "ordinal_position",
+        },
+    )
+
+
 def build_subsection_target_absent_pathology(
     *,
     source_statute: str,
@@ -416,7 +512,7 @@ def build_subsection_target_rebound_pathology(
     source_statute: str,
     target_section: str,
     target_paragraph: str | int,
-    rebound_kind: str,
+    rebound_kind: RecoveryKind,
     stale_fragment_idx: int = -1,
     live_has_paragraphs: bool = False,
     amend_has_paragraphs: bool = False,
@@ -500,12 +596,164 @@ def build_container_replace_target_absent_pathology(
     )
 
 
+def build_container_op_target_absent_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    op_type: str,
+    target_chapter: str = "",
+    target_paragraph: str | int = "",
+    target_item: str = "",
+    target_special: str = "",
+) -> SourcePathology:
+    """Build a typed record for a non-INSERT/REPLACE container op whose target is absent.
+
+    A container (chapter/part) REPEAL/RENUMBER (any op that is neither INSERT nor
+    REPLACE) named an explicit live target that could not be resolved in the live
+    state. The authored op therefore applies nothing. Rather than vanish as a
+    silent ``return state`` no-op (which leaves the dropped op unaccounted-for on
+    every production surface), the absent-target condition is witnessed: a repeal
+    or renumber of a container that is not present is a dropped edit, not a
+    satisfied no-op. (LAWVM_PIPELINE_CONTRACT §1.1 no silent drop.) This is the
+    REPEAL/RENUMBER sibling of ``CONTAINER_REPLACE_TARGET_ABSENT``.
+    """
+    return SourcePathology.from_scope(
+        code="CONTAINER_OP_TARGET_ABSENT",
+        message=(
+            "Container operation could not be applied because the targeted live "
+            "chapter/part was absent."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "target_paragraph": target_paragraph,
+            "target_item": target_item,
+            "target_special": target_special,
+            "op_type": op_type,
+        },
+    )
+
+
+def build_container_otsikko_payload_absent_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    target_chapter: str = "",
+    op_type: str = "",
+    payload_child_kinds: list[str] | None = None,
+) -> SourcePathology:
+    """Build a typed record for a container heading op carrying no usable heading.
+
+    A container (chapter/part) ``otsikko`` REPLACE/other op resolved its target
+    but the amendment payload exposed no ``heading`` (nor ``crossHeading``) node to
+    install, so the authored heading edit applies nothing. Rather than vanish as a
+    silent ``return state`` NO_APPLY_PASS, the missing-payload-heading condition is
+    witnessed: a heading REPLACE with no heading in the body is a dropped/under-
+    determined edit, not a satisfied no-op. (LAWVM_PIPELINE_CONTRACT §1.1 no
+    silent drop.)
+    """
+    return SourcePathology.from_scope(
+        code="CONTAINER_OTSIKKO_PAYLOAD_ABSENT",
+        message=(
+            "Container heading operation resolved its live target but the amendment "
+            "payload exposed no heading node to install, so the authored heading "
+            "edit applied nothing."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "op_type": op_type,
+            "payload_child_kinds": list(payload_child_kinds or []),
+        },
+    )
+
+
+def build_section_insert_scoped_parent_absent_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    target_chapter: str = "",
+    target_part: str = "",
+) -> SourcePathology:
+    """Build a typed record for a scoped section INSERT refused for a missing parent.
+
+    A section INSERT named an explicit scoped parent (part/chapter) that is absent
+    from the live state, and no proven scaffold could be seeded for it. Replay
+    refuses to insert at an unproven parent (mirroring the whole-section bootstrap
+    refusal) rather than guess a destination, but the refusal must be witnessed:
+    the authored insert applies nothing. (LAWVM_PIPELINE_CONTRACT §1.1 no silent
+    drop.)
+    """
+    return SourcePathology.from_scope(
+        code="SECTION_INSERT_SCOPED_PARENT_ABSENT",
+        message=(
+            "Scoped section INSERT could not be applied because its explicit scoped "
+            "parent container was absent and no proven scaffold could be seeded; "
+            "replay refused to insert at an unproven parent."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_part": target_part,
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+        },
+    )
+
+
+def build_unhandled_structure_op_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    target_chapter: str = "",
+    op_type: str = "",
+    target_special: str = "",
+    helper: str = "",
+) -> SourcePathology:
+    """Build a typed record for a structure op that matched no apply arm.
+
+    A resolved structural op reached the terminal fall-through of an apply helper
+    without any arm executing it (an unhandled op-type / target-shape combination).
+    Rather than vanish as a silent ``return state``, the unhandled op is witnessed
+    so the unbounded fall-through cannot drop an authored op unaccounted-for.
+    (LAWVM_PIPELINE_CONTRACT §1.1 no silent drop, §1.2 no silent guess.)
+    """
+    return SourcePathology.from_scope(
+        code="UNHANDLED_STRUCTURE_OP",
+        message=(
+            "Structural operation matched no apply arm and reached the helper "
+            "fall-through; the authored op applied nothing."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "op_type": op_type,
+            "target_special": target_special,
+            "helper": helper,
+        },
+    )
+
+
 def build_destructive_shape_loss_risk_pathology(
     *,
     source_statute: str,
     target_unit_kind: TargetUnitKind,
     target_label: str,
-    recovery_kind: str,
+    recovery_kind: RecoveryKind,
     live_sibling_count: int = 0,
     payload_sibling_count: int = 0,
 ) -> SourcePathology:
@@ -532,7 +780,7 @@ def build_sparse_merge_invariant_skip_pathology(
     source_statute: str,
     target_unit_kind: TargetUnitKind,
     target_label: str,
-    recovery_kind: str,
+    recovery_kind: RecoveryKind,
     live_sibling_count: int = 0,
     payload_sibling_count: int = 0,
 ) -> SourcePathology:
@@ -559,7 +807,7 @@ def build_unique_payload_insert_under_live_duplicates_pathology(
     source_statute: str,
     target_unit_kind: TargetUnitKind,
     target_label: str,
-    recovery_kind: str,
+    recovery_kind: RecoveryKind,
     live_sibling_count: int = 0,
     payload_sibling_count: int = 0,
 ) -> SourcePathology:

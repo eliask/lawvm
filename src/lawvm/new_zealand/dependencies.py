@@ -255,7 +255,7 @@ def _latest_xml_locator_candidate_diagnostic(
                 SourceLaneAttempt(
                     lane="nz_api_v0_version_detail",
                     locator=version_locator,
-                    status=reason_code,
+                    lane_attempt_status=reason_code,
                     detail={
                         "work_id": work_id,
                         "version_id": version_id,

@@ -134,7 +134,7 @@ def finland_periodic_table_cells() -> tuple[PeriodicTableCell, ...]:
             axis="evidence",
             status="filled",
             module="lawvm.finland.sparse_slot_certificate_projector",
-            symbol="sparse_slot_candidate_set_certificate_rows",
+            symbol="sparse_slot_candidate_set_coverage_rows",
             notes="Sparse-slot elaboration candidate-set certificates.",
         ),
         PeriodicTableCell(
@@ -166,7 +166,7 @@ def finland_periodic_table_cells() -> tuple[PeriodicTableCell, ...]:
             axis="evidence",
             status="filled",
             module="lawvm.finland.strict_report_proof_projector",
-            symbol="finland_strict_report_candidate_set_certificates",
+            symbol="finland_strict_report_candidate_set_coverages",
             notes="Candidate-set certs, ownership closure, potential ops, execution authorizations.",
         ),
         PeriodicTableCell(

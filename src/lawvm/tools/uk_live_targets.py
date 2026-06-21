@@ -144,9 +144,9 @@ def target_index_row_from_bytes(
     from lawvm.uk_legislation.uk_grafter import parse_uk_statute_ir_bytes
 
     source_state = classify_uk_statute_xml_content(xml_bytes)
-    row["source_status"] = source_state.status.value
+    row["source_status"] = source_state.xml_content_status.value
     row["source_size"] = len(xml_bytes)
-    if source_state.status.value != "available":
+    if source_state.xml_content_status.value != "available":
         return row
     statute = parse_uk_statute_ir_bytes(xml_bytes, statute_id=statute_id)
     row["target_paths"] = list(target_paths_from_ir(statute))

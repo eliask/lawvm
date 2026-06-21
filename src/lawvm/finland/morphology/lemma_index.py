@@ -32,6 +32,7 @@ Determinism: the index is a pure function of (lemma set, M1 generation).  No
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
@@ -74,6 +75,31 @@ class LemmaIndex:
         closed vocabulary (honest unknown, not a guess).
         """
         return self._map.get(_normalize(surface), ())
+
+    def fingerprint(self) -> str:
+        """A stable hex digest identifying this index's closed vocabulary.
+
+        The digest is taken over the FULL inversion behaviour --- every
+        ``normalized_surface -> sorted lemmas`` entry --- not just the lemma
+        list, so it changes iff the actual analyzer behaviour changes (a lemma
+        added/removed, or M1 generation altered such that the paradigm shifts).
+
+        This is the absence-of-annotation anchor: a consumer that records this
+        fingerprint alongside an overlay can detect that it is reading an
+        ABSENT annotation against a DIFFERENT (e.g. extended) vocabulary than
+        the one it expected, so "token analyzed, no lemma" never silently
+        becomes a stale negative fact. Deterministic: a pure function of the
+        sorted map contents.
+        """
+        h = hashlib.sha256()
+        for surface in sorted(self._map):
+            h.update(surface.encode("utf-8"))
+            h.update(b"\x00")
+            for lemma in self._map[surface]:
+                h.update(lemma.encode("utf-8"))
+                h.update(b"\x00")
+            h.update(b"\x01")
+        return h.hexdigest()
 
     def lemma_of(self, surface: str) -> str | None:
         """Return the single lemma for ``surface`` when unambiguous, else None.

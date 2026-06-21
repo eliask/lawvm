@@ -80,6 +80,43 @@ _KUMOTTU_STUBS_RE = re.compile(
 )
 _KUMOTTU_STUB_SURFACE_RE = re.compile(r"\b(?:on|ovat)\s+kumottu\b|:ll[äa]\b", re.IGNORECASE)
 
+_OLD_CODE_REFERENCE_MARKER_RE = re.compile(
+    r"^\s*(?:\d+\s*[a-zäöå]?\s*§\s+)?\d+\s*[a-zäöå]?\s*§:n\s+sijasta\s+ks\.\s+\S",
+    re.IGNORECASE,
+)
+_DASH_PLACEHOLDER_RE = re.compile(r"^\s*(?:[-–—]\s*){3,}$")
+
+
+def is_old_code_reference_marker(text: str) -> bool:
+    """Return True for Finlex old-code substitution-reference notices.
+
+    Historical codes sometimes render an obsolete provision as editorial text
+    like ``5 §:n sijasta ks. L ...`` instead of source wording. That marker is a
+    comparison/adjudication surface, not replayed legal text.
+    """
+    return _OLD_CODE_REFERENCE_MARKER_RE.match(text.strip()) is not None
+
+
+def _is_replay_obsolete_placeholder_or_bracketed_text(text: str) -> bool:
+    stripped = text.strip()
+    if _DASH_PLACEHOLDER_RE.match(stripped) is not None:
+        return True
+    return stripped.startswith("[") and stripped.endswith("]") and len(stripped) > 2
+
+
+def _is_old_code_reference_marker_diff(events: list[dict[str, Any]]) -> bool:
+    if len(events) != 1:
+        return False
+    event = events[0]
+    if event.get("kind") != "wording_text_changed":
+        return False
+    left_text = str(event.get("left_text") or "")
+    right_text = str(event.get("right_text") or "")
+    return (
+        _is_replay_obsolete_placeholder_or_bracketed_text(left_text)
+        and is_old_code_reference_marker(right_text)
+    )
+
 _EMBEDDED_FIVE_AS_I_OCR_RE = re.compile(
     r"(?<=[A-Za-zÄÖÅäöå]{2})5(?=[A-Za-zÄÖÅäöå]{2})"
 )
@@ -273,6 +310,88 @@ def strip_editorial_annotations(text: str) -> str:
 
 def strip_kumottu_attribution(text: str) -> str:
     return _KUMOTTU_ATTRIBUTION_RE.sub('on kumottu.', text)
+
+
+_LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE = re.compile(
+    r"^(\s*\d+\s*[a-zäöå]?\s*§\s*)"
+    r"(?:[IVXLCDM]{1,8}\.\s+[A-ZÅÄÖ][^.]{1,120}\.\s+)",
+    re.IGNORECASE,
+)
+_LEGACY_NUMBERED_SECTION_HEADING_PREFIX_RE = re.compile(
+    r"^(\s*\d+\s*[a-zäöå]?\s*§\s*)"
+    r"(?:\d{1,2}\.\s+[A-ZÅÄÖ][^.]{1,120}\.\s+)",
+)
+_PROMULGATION_CLOSURE_TAILS = (
+    "Tätä kaikki asianomaiset noudattakoot.",
+    "Tätä kaikki asianomaiset noudattakoot",
+)
+_STANDALONE_SUBSECTION_ORDINAL_RE = re.compile(
+    r"(?:(?<=\s)|^)(?:[1-9]\d?)\.\s+(?=[A-ZÅÄÖ])"
+)
+
+
+def strip_legacy_roman_division_heading_prefix(text: str) -> str:
+    """Drop old FI division headings accidentally attached to section text.
+
+    Some early source witnesses encode a Roman-numbered division heading such as
+    ``I. Yleisiä säännöksiä.`` as the heading/text prefix of the following
+    section. Consolidated Finlex comparison surfaces often omit that division
+    heading from the section text. This helper is comparison-only; callers must
+    self-validate by comparing the stripped text against the oracle.
+    """
+    if "." not in text:
+        return text
+    return _LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE.sub(r"\1", text, count=1)
+
+
+def strip_legacy_numbered_section_heading_prefix(text: str) -> str:
+    """Drop old FI numbered presentation headings attached to section text.
+
+    Some early sources project numbered subdivision labels such as
+    ``2. Vekselinjäljennökset.`` into the following section heading. Finlex's
+    consolidated section text may omit the label. This is comparison-only and
+    callers must self-validate against the oracle.
+    """
+    if "." not in text:
+        return text
+    return _LEGACY_NUMBERED_SECTION_HEADING_PREFIX_RE.sub(r"\1", text, count=1)
+
+
+def strip_promulgation_closure_tail(text: str) -> str:
+    """Drop old FI promulgation closure formula from comparison text.
+
+    The source formula ``Tätä kaikki asianomaiset noudattakoot.`` is a
+    promulgation closure, not a provision body sentence. We only expose this as
+    a comparison helper; replay/source state remains unchanged.
+    """
+    stripped = text.rstrip()
+    for tail in _PROMULGATION_CLOSURE_TAILS:
+        if stripped.endswith(tail):
+            return stripped[: -len(tail)].rstrip()
+    return text
+
+
+def strip_standalone_subsection_ordinals(text: str) -> str:
+    """Drop Finlex-rendered subsection ordinal prefixes for comparison.
+
+    AKN structure already carries subsection identity. Some Finlex consolidated
+    text projections additionally include prose prefixes such as ``1.`` before
+    each subsection body, while replay renders the same subsection text without
+    that display ordinal. Callers must self-validate the stripped text against
+    replay before treating the difference as editorial.
+    """
+    if "." not in text:
+        return text
+    return _STANDALONE_SUBSECTION_ORDINAL_RE.sub("", text)
+
+
+def strip_non_substantive_source_projection_residue(text: str) -> str:
+    """Remove FI source-side presentation/promulgation residue for comparison."""
+    return strip_promulgation_closure_tail(
+        strip_legacy_numbered_section_heading_prefix(
+            strip_legacy_roman_division_heading_prefix(text)
+        )
+    )
 
 
 # A figure-legend entry: a bare ordinal (1–2 digits) naming one numbered marking
@@ -510,6 +629,122 @@ def _is_wrapup_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     return right_norm == left_norm + tail_norm
 
 
+def _is_wrapup_shifted_subsection_projection_diff(events: list[dict[str, Any]]) -> bool:
+    """Detect wrapUp ownership that shifts the following subsection ordinal.
+
+    Provenance: 2021/487 § 10.  The source XML carries a post-list penalty tail
+    as a separate subsection, while the consolidated oracle projects the same
+    text as an unnumbered wrapUp paragraph under the preceding list subsection
+    and shifts the following subsection up by one.  This is comparison-only and
+    requires exact normalized text conservation for both moved texts.
+    """
+
+    if len(events) != 3:
+        return False
+    facet_events = [event for event in events if _event_is_wrapup_facet_delta(event)]
+    wording_events = [event for event in events if event.get("kind") == "wording_text_changed"]
+    missing_events = [
+        event
+        for event in events
+        if event.get("kind") in {"unit_missing_left", "unit_missing_right"}
+        and event.get("unit_kind") == "subsection"
+    ]
+    if len(facet_events) != 1 or len(wording_events) != 1 or len(missing_events) != 1:
+        return False
+
+    facet_event = facet_events[0]
+    wording_event = wording_events[0]
+    missing_event = missing_events[0]
+    facet_left = _normalize_for_pres_text((facet_event.get("left_text") or "").strip())
+    facet_right = _normalize_for_pres_text((facet_event.get("right_text") or "").strip())
+    wording_left = _normalize_for_pres_text((wording_event.get("left_text") or "").strip())
+    wording_right = _normalize_for_pres_text((wording_event.get("right_text") or "").strip())
+    missing_left = _normalize_for_pres_text((missing_event.get("left_text") or "").strip())
+    missing_right = _normalize_for_pres_text((missing_event.get("right_text") or "").strip())
+    if not wording_left or not wording_right or wording_left == wording_right:
+        return False
+
+    if facet_right and not facet_left and missing_left and not missing_right:
+        return facet_right == wording_left and missing_left == wording_right
+    if facet_left and not facet_right and missing_right and not missing_left:
+        return facet_left == wording_right and missing_right == wording_left
+    return False
+
+
+def _semantic_path(event: dict[str, Any]) -> list[str]:
+    path = event.get("semantic_path")
+    if not isinstance(path, list):
+        return []
+    return [str(part) for part in path]
+
+
+def _is_wrapup_subitem_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
+    """Detect wrapUp text projected as a subitem under the final item.
+
+    Provenance: 2014/387 § 46 at the 2022/16 bench-comparable snapshot.  Replay
+    owns the final penalty sentence as the subsection ``wrapUp``.  The selected
+    Finlex XML projects the same sentence as ``item:8/subitem:1`` and projects
+    replay's item wording as ``item:8`` intro.  This is comparison-only and
+    requires exact normalized text conservation for both moved texts.
+    """
+
+    if len(events) != 4:
+        return False
+    facet_events = [event for event in events if _event_is_wrapup_facet_delta(event)]
+    intro_events = [event for event in events if _event_is_intro_facet_delta(event)]
+    wording_events = [event for event in events if event.get("kind") == "wording_text_changed"]
+    subitem_events = [
+        event
+        for event in events
+        if event.get("kind") in {"unit_missing_left", "unit_missing_right"}
+        and event.get("unit_kind") == "subitem"
+    ]
+    if (
+        len(facet_events) != 1
+        or len(intro_events) != 1
+        or len(wording_events) != 1
+        or len(subitem_events) != 1
+    ):
+        return False
+
+    wrap_event = facet_events[0]
+    intro_event = intro_events[0]
+    wording_event = wording_events[0]
+    subitem_event = subitem_events[0]
+
+    wrap_left = _normalize_for_pres_text(str(wrap_event.get("left_text") or "").strip())
+    wrap_right = _normalize_for_pres_text(str(wrap_event.get("right_text") or "").strip())
+    intro_left = _normalize_for_pres_text(str(intro_event.get("left_text") or "").strip())
+    intro_right = _normalize_for_pres_text(str(intro_event.get("right_text") or "").strip())
+    wording_left = _normalize_for_pres_text(str(wording_event.get("left_text") or "").strip())
+    wording_right = _normalize_for_pres_text(str(wording_event.get("right_text") or "").strip())
+    subitem_left = _normalize_for_pres_text(str(subitem_event.get("left_text") or "").strip())
+    subitem_right = _normalize_for_pres_text(str(subitem_event.get("right_text") or "").strip())
+
+    if bool(wrap_left) == bool(wrap_right) or bool(intro_left) == bool(intro_right):
+        return False
+    if wrap_left:
+        if not subitem_right or subitem_left or wrap_left != subitem_right:
+            return False
+    elif not subitem_left or subitem_right or wrap_right != subitem_left:
+        return False
+
+    if intro_left:
+        if not wording_right or wording_left or intro_left != wording_right:
+            return False
+    elif not wording_left or wording_right or intro_right != wording_left:
+        return False
+
+    wording_path = _semantic_path(wording_event)
+    intro_path = _semantic_path(intro_event)
+    subitem_path = _semantic_path(subitem_event)
+    if wording_path and intro_path and intro_path[:-1] != wording_path:
+        return False
+    if wording_path and subitem_path and subitem_path[:-1] != wording_path:
+        return False
+    return True
+
+
 def _is_intro_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     """Detect same-text wording-vs-intro owner projection differences."""
 
@@ -524,6 +759,95 @@ def _is_intro_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     if not intro_text or not wording_text:
         return False
     return _normalize_for_pres_text(intro_text) == _normalize_for_pres_text(wording_text)
+
+
+def _event_unit_label(event: dict[str, Any]) -> str:
+    label = str(event.get("unit_label") or "").strip().casefold()
+    if label:
+        return label
+    path_parts = event.get("semantic_path_parts")
+    if not isinstance(path_parts, list):
+        return ""
+    for part in reversed(path_parts):
+        if not isinstance(part, dict):
+            continue
+        part_any: Any = part
+        if str(part_any.get("kind") or "") == str(event.get("unit_kind") or ""):
+            return str(part_any.get("label") or "").strip().casefold()
+    return ""
+
+
+def _one_sided_units_by_label(
+    events: list[dict[str, Any]],
+    *,
+    kind: str,
+    unit_kind: str,
+    text_field: str,
+) -> dict[str, str] | None:
+    units: dict[str, str] = {}
+    for event in events:
+        if event.get("kind") != kind or event.get("unit_kind") != unit_kind:
+            continue
+        label = _event_unit_label(event)
+        text = _normalize_for_pres_text(str(event.get(text_field) or "").strip())
+        if not label or not text or label in units:
+            return None
+        units[label] = text
+    return units
+
+
+def _is_lettered_subitem_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
+    """Detect source-backed lettered subitems projected as flat oracle items.
+
+    Provenance: 1993/91 § 4.  The enacted source nests ``a``-``c`` subitems
+    under numbered item 3, while the selected Finlex consolidated XML projects
+    the same rows as sibling ``a``-``c`` items.  This is comparison-only and
+    requires exact text conservation for the item intro and every lettered row.
+    """
+
+    allowed_kinds = {"facet_added", "facet_removed", "wording_text_changed", "unit_missing_left", "unit_missing_right"}
+    if not events or not all(event.get("kind") in allowed_kinds for event in events):
+        return False
+
+    intro_events = [event for event in events if _event_is_intro_facet_delta(event)]
+    wording_events = [event for event in events if event.get("kind") == "wording_text_changed"]
+    if len(intro_events) != 1 or len(wording_events) != 1:
+        return False
+    intro_text = _one_sided_event_text(intro_events[0])
+    wording_text = _one_sided_event_text(wording_events[0])
+    if not intro_text or not wording_text:
+        return False
+    if _normalize_for_pres_text(intro_text) != _normalize_for_pres_text(wording_text):
+        return False
+
+    left_subitems = _one_sided_units_by_label(
+        events,
+        kind="unit_missing_right",
+        unit_kind="subitem",
+        text_field="left_text",
+    )
+    right_items = _one_sided_units_by_label(
+        events,
+        kind="unit_missing_left",
+        unit_kind="item",
+        text_field="right_text",
+    )
+    if left_subitems and right_items and left_subitems == right_items:
+        return True
+
+    right_subitems = _one_sided_units_by_label(
+        events,
+        kind="unit_missing_left",
+        unit_kind="subitem",
+        text_field="right_text",
+    )
+    left_items = _one_sided_units_by_label(
+        events,
+        kind="unit_missing_right",
+        unit_kind="item",
+        text_field="left_text",
+    )
+    return bool(right_subitems and left_items and right_subitems == left_items)
 
 
 def _one_sided_event_text(event: dict[str, Any]) -> str:
@@ -610,7 +934,15 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
 
     if _is_wrapup_owner_projection_diff(events):
         return True
+    if _is_wrapup_shifted_subsection_projection_diff(events):
+        return True
+    if _is_wrapup_subitem_owner_projection_diff(events):
+        return True
+    if _is_old_code_reference_marker_diff(events):
+        return True
     if _is_intro_owner_projection_diff(events):
+        return True
+    if _is_lettered_subitem_owner_projection_diff(events):
         return True
     if _is_value_table_owner_projection_diff(events):
         return True

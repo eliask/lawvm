@@ -123,7 +123,7 @@ def test_build_effect_candidate_surface_emits_repeal_legal_operation_candidate_o
     evidence_rows = report.operation_evidence_rows()
     assert len(evidence_rows) == 1
     assert validate_corpus_operation_evidence_row(evidence_rows[0].to_dict()) == ()
-    assert evidence_rows[0].to_dict()["status"] == "accepted"
+    assert evidence_rows[0].to_dict()["evidence_status"] == "accepted"
     assert evidence_rows[0].to_dict()["source_locator"] == row.source_xml_path
     assert evidence_rows[0].to_dict()["canonical_family"] == "repeal"
     assert evidence_rows[0].to_dict()["detail"]["source_xml_path"] == row.source_xml_path
@@ -162,7 +162,7 @@ def test_effect_candidate_summary_separates_emitted_rows_from_executable_operati
     assert summary["candidate_operations"] == 0
     assert summary["candidate_witness_rule_counts"] == {"__missing_operation__": 1}
     evidence_row = report.operation_evidence_rows()[0].to_dict()
-    assert evidence_row["status"] == "unsupported"
+    assert evidence_row["evidence_status"] == "unsupported"
     assert evidence_row["blocking"] is True
     assert evidence_row["detail"]["reason"] == "nz_effect_candidate_emitted_operation_missing"
     assert evidence_row["detail"]["candidate_operation_missing"] is True
@@ -302,7 +302,7 @@ def test_build_effect_candidate_surface_blocks_direct_repeal_payload_target_mism
     assert row.repeal_payload_cited_targets == ("25", "26", "27")
     assert report.summary()["candidate_status_counts"] == {"blocked": 1}
     assert report.summary()["candidate_blocking_rule_counts"] == {"nz_repeal_payload_target_mismatch": 1}
-    assert evidence_row["status"] == "unsupported"
+    assert evidence_row["evidence_status"] == "unsupported"
     assert evidence_row["blocking"] is True
     assert evidence_row["detail"]["repeal_payload_corroboration_rule_id"] == "nz_repeal_payload_target_mismatch"
 
@@ -462,7 +462,7 @@ def test_build_effect_candidate_surface_emits_text_replace_candidate_from_owned_
         "replacement": "new words",
     }
     evidence_row = report.operation_evidence_rows()[0].to_dict()
-    assert evidence_row["status"] == "accepted"
+    assert evidence_row["evidence_status"] == "accepted"
     assert evidence_row["canonical_family"] == "text_replace"
     assert evidence_row["detail"]["instruction_subfamily"] == "direct_single_text_substitution"
     assert evidence_row["detail"]["latest_oracle_text_status"] == "oracle_new_text_only"
@@ -961,7 +961,7 @@ def test_build_effect_candidate_surface_emits_text_replace_from_archived_source_
     assert row.operation.text_patch.selector.match_text == "old words"
     assert row.operation.text_patch.replacement == "new words"
     evidence_row = report.operation_evidence_rows()[0].to_dict()
-    assert evidence_row["status"] == "accepted"
+    assert evidence_row["evidence_status"] == "accepted"
     assert evidence_row["detail"]["candidate_witness_rule_id"] == (
         "nz_text_replace_candidate_from_archived_source_change_witness"
     )
@@ -1238,7 +1238,7 @@ def test_build_effect_candidate_surface_keeps_non_repeal_rows_blocked() -> None:
         == "nz_instruction_structural_subfamily_direct_amend_payload_blocked"
     )
     evidence_row = report.operation_evidence_rows()[0].to_dict()
-    assert evidence_row["status"] == "unsupported"
+    assert evidence_row["evidence_status"] == "unsupported"
     assert evidence_row["blocking"] is True
     assert evidence_row["detail"]["payload_match_headings"] == ("Amend",)
     assert evidence_row["detail"]["payload_semantics_status"] == "amending_provision_witness_not_enacted_payload"
@@ -1351,7 +1351,7 @@ def test_write_effect_candidate_evidence_jsonl_is_report_query_compatible(tmp_pa
     assert count == 1
     assert len(records) == 1
     assert records[0].validation_issues == ()
-    assert records[0].evidence_row["status"] == "accepted"
+    assert records[0].evidence_row["evidence_status"] == "accepted"
 
 
 def test_nz_effect_candidates_text_cli_prints_filtered_context(monkeypatch, capsys) -> None:

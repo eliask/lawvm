@@ -276,7 +276,7 @@ def test_ingest_no_public_archives_reports_duplicate_logical_locators(tmp_path) 
     assert entry["source_lane_selection"]["selected_source_lane"] == "existing_farchive_locator"
     assert entry["source_lane_selection"]["selected_source_locator"] == "no://lovtid/2025-02-02-5/amendment.xml"
     assert {
-        attempt["status"]
+        attempt["lane_attempt_status"]
         for attempt in entry["source_lane_selection"]["source_lane_attempts"]
     } == {"selected_existing_conflict", "blocked_conflicting_duplicate"}
 

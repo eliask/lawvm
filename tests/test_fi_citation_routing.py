@@ -28,6 +28,7 @@ from lawvm.finland.citation_routing import (
     OP_KEYWORDS,
     extract_pending_amendment_target_id,
     johtolause_cited_target_ids,
+    title_targets_pending_amendment_title,
 )
 from lawvm.finland.johtolause.affected_statute import (
     instrument_from_text,
@@ -635,6 +636,16 @@ class TestRouteAmendmentCitationMismatchSkip:
             "Laki yleisestä asumistuesta annetun lain muuttamisesta annetun lain 29 ja 41 §:n muuttamisesta",
             "Laki yleisestä asumistuesta",
         ) == "2016/1533"
+
+    def test_pending_amendment_title_match_handles_renamed_base_statute(self) -> None:
+        assert title_targets_pending_amendment_title(
+            "Laki ydinvastuulain muuttamisesta annetun lain muuttamisesta",
+            "Laki ydinvastuulain muuttamisesta",
+        )
+        assert not title_targets_pending_amendment_title(
+            "Laki ydinvastuulain muuttamisesta annetun lain muuttamisesta",
+            "Atomivastuulaki",
+        )
 
 
 class TestRouteAmendmentSec1Fallback:

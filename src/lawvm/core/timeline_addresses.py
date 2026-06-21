@@ -17,6 +17,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.roman import roman_to_arabic
 
 _LETTER_SUFFIX_LABEL_RE = _re.compile(r"^(\d+)([a-z]+)$", _re.IGNORECASE)
+STRUCTURAL_RENUMBER_SNAPSHOT_ATTR = "lawvm_structural_renumber_snapshot"
 
 
 def _sort_label_key(label: Optional[str]) -> Tuple[Tuple[int, int, str], ...]:

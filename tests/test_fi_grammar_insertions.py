@@ -147,6 +147,17 @@ def test_non_terminal_anaphoric_heading_still_declines() -> None:
         parse_text_with(text, new_parser.parse)
 
 
+def test_anaphoric_heading_between_doc_level_inserts_keeps_later_insert() -> None:
+    text = (
+        "lisätään asetukseen uusi 9 b § ja sen edelle uusi 2 a luvun otsikko "
+        "sekä asetukseen uusi 118 b § seuraavasti:"
+    )
+    model = parse_text_with(text, new_parser.parse)
+    (vg,) = model.verb_groups
+    labels = [node.label for node in vg.nodes if isinstance(node, SurfaceInsertion)]
+    assert labels == ["9b", "118b"]
+
+
 def test_whole_section_insert_carries_section_witness() -> None:
     model = parse_text_with("lisätään lakiin uusi 5 a § seuraavasti:", new_parser.parse)
     (vg,) = model.verb_groups

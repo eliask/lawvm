@@ -1,4 +1,4 @@
-"""Tests for the TokenPartitionCertificate + coverage-certifier (Pro ruling D2).
+"""Tests for the TokenPartitionCoverage + coverage-certifier (Pro ruling D2).
 
 Two layers:
 
@@ -31,11 +31,11 @@ from lawvm.finland.legal_surface.source_syntax_graph import (
     SyntaxCoverage,
     SyntaxNode,
 )
-from lawvm.finland.legal_surface.token_partition_certificate import (
+from lawvm.finland.legal_surface.token_partition_coverage import (
     PARTITION_CLASSES,
     CoverageCertificate,
-    TokenPartitionCertificate,
-    build_token_partition_certificate,
+    TokenPartitionCoverage,
+    build_token_partition_coverage,
     certificate_to_dict,
     certify_graph_coverage,
     coverage_certificate_to_dict,
@@ -203,7 +203,7 @@ def test_certificate_counts_and_partition() -> None:
         owned_spans=((0, 10),),
         violation_spans=((50, 58, "modal_cue", "velvoitettu"),),
     )
-    cert = build_token_partition_certificate(forest, statute_id="1/2024")
+    cert = build_token_partition_coverage(forest, statute_id="1/2024")
     assert cert.class_counts() == {
         "owned": 15,
         "benign_uninterpreted": 3,
@@ -224,7 +224,7 @@ def test_certificate_clean_when_no_violation() -> None:
         residual_tokens=0,
         silent_tokens=0,
     )
-    cert = build_token_partition_certificate(_forest(coverage=cov))
+    cert = build_token_partition_coverage(_forest(coverage=cov))
     assert cert.is_clean
     assert cert.unowned_violation == 0
     assert not cert.violations
@@ -245,7 +245,7 @@ def test_certificate_violations_are_self_evidencing() -> None:
             (40, 48, "deadline", "viipymättä"),
         ),
     )
-    cert = build_token_partition_certificate(forest)
+    cert = build_token_partition_coverage(forest)
     # each surfaced violation carries verbatim offending text + its span
     assert [(v.shape, v.text) for v in cert.violations] == [
         ("modal_cue", "velvoitettu"),
@@ -352,7 +352,7 @@ def test_render_certificate_text_golden() -> None:
         coverage=cov,
         violation_spans=((5, 16, "modal_cue", "velvoitettu"),),
     )
-    cert = build_token_partition_certificate(forest, statute_id="1/2024")
+    cert = build_token_partition_coverage(forest, statute_id="1/2024")
     text = render_certificate(cert)
     assert "TOKEN PARTITION CERTIFICATE — 1/2024" in text
     assert "owned                 : 8  (80.00%)" in text
@@ -367,7 +367,7 @@ def test_certificate_to_dict_golden() -> None:
         total_tokens=10, owned_tokens=9, benign_tokens=1,
         residual_tokens=0, silent_tokens=0,
     )
-    cert = build_token_partition_certificate(
+    cert = build_token_partition_coverage(
         _forest(graph_id="gid", coverage=cov), statute_id="1/2024"
     )
     d = certificate_to_dict(cert)
@@ -463,8 +463,8 @@ def test_corpus_certificate_and_coverage_smoke(statute_id: str) -> None:
     # per-unit token-partition certificates compose without re-parsing
     total_violation = 0
     for unit_id, forest in forests.items():
-        cert = build_token_partition_certificate(forest, statute_id=unit_id)
-        assert isinstance(cert, TokenPartitionCertificate)
+        cert = build_token_partition_coverage(forest, statute_id=unit_id)
+        assert isinstance(cert, TokenPartitionCoverage)
         assert cert.is_partition()
         total_violation += cert.unowned_violation
     print(

@@ -673,3 +673,133 @@ def test_leading_prior_entry_connector_is_stripped() -> None:
     tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
     assert any(b.term == "tavaralla" for b in tk)
     assert not any(b.term.startswith("sekä") for b in tk)
+
+
+# ---------------------------------------------------------------------------
+# Enumerated-block structural list-end terminator (F1 precision)
+# ---------------------------------------------------------------------------
+#
+# A definitions block is a CONTIGUOUS run of ';'-items under its header. It has no
+# explicit closing marker, so a fixed byte window swept in UNRELATED operative
+# ';'-lists later in the same section (an operative "… on esitettävä:\n<item>;"
+# list whose items open with an adessive-headed phrase). The block must END at the
+# first operative-prose provision sentence: a later operative list is not minted.
+
+
+def test_operative_list_after_block_is_not_minted_as_definition() -> None:
+    # The genuine block has two items, then an operative provision sentence, then an
+    # operative ':'-list whose items carry adessive heads. The operative-list items
+    # must NOT be minted as definitions (the F1 over-capture). Mirrors 2014/527:
+    # "Tässä luvussa tarkoitetaan: … . <operative sentence>. Perustilaselvityksessä
+    # on esitettävä:\n tiedot … selvityksen laatimishetkellä …;".
+    text = (
+        "Tässä luvussa tarkoitetaan: "
+        "vertailuasiakirjalla teollisuuden päästöistä annettua asiakirjaa; "
+        "päästötasoilla päästöjen vaihteluväliä tietyissä vertailuolosuhteissa.\n"
+        "Sen lisäksi, mitä 6 luvussa säädetään, direktiivilaitoksen "
+        "ympäristölupa-asiaa käsiteltäessä sovelletaan tätä lukua.\n"
+        "Perustilaselvityksessä on esitettävä:\n"
+        "tiedot toiminnan sijaintipaikan käytöstä selvityksen laatimishetkellä "
+        "ja sitä aikaisemmin;\n"
+        "riittävät tiedot mittauksista, jotka kuvastavat maaperän tilaa;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    # Genuine definitions are captured.
+    assert "vertailuasiakirjalla" in terms
+    assert "päästötasoilla" in terms
+    # The operative-list items are NOT minted as phantom definitions.
+    assert not any("selvityksen laatimishetkellä" in t for t in terms)
+    assert not any("toiminnan sijaintipaikan" in t for t in terms)
+    assert not any("mittauksista" in t for t in terms)
+
+
+def test_full_definition_list_still_captured_when_no_operative_prose() -> None:
+    # A genuine long ';'-item definition list with NO intervening operative prose
+    # must be captured in FULL — the terminator never truncates a real list.
+    items = [
+        "ilma-aluksella laitetta, jota voidaan kannatella ilmakehässä",
+        "kelpuutuksella ilma-aluksen ohjaamiseen oikeuttavaa merkintää",
+        "huollolla ilma-aluksen kunnossapitoa",
+        "lentopaikalla aluetta lentoonlähtöä ja laskua varten",
+        "lentoasemalla lentopaikkaa miehitettyine rakennuksineen",
+        "asematasolla aluetta matkustajien lastaamista varten",
+    ]
+    text = "Tässä laissa tarkoitetaan: " + "; ".join(items) + "."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    for expected in (
+        "ilma-aluksella",
+        "kelpuutuksella",
+        "huollolla",
+        "lentopaikalla",
+        "lentoasemalla",
+        "asematasolla",
+    ):
+        assert expected in terms, f"genuine definiendum {expected!r} dropped"
+
+
+def test_definiens_with_embedded_sublist_does_not_end_the_block() -> None:
+    # A genuine definition item whose definiens contains an embedded
+    # colon-introduced sub-list (formula parts each ending in ';') stays within the
+    # definitions block; the FOLLOWING genuine definiendum must still bind — the
+    # embedded sub-list (short ';'-parts, never a free-standing operative provision
+    # sentence) does not trip the operative-prose terminator. Mirrors 1988/161
+    # "efektiivisellä kilogrammalla … kertomalla tämä:\n plutoniumin … luvulla 1;\n
+    # …;\n alkuperämaarajoituksella …".
+    text = (
+        "Tässä laissa tarkoitetaan: "
+        "köyhdytetyllä uraanilla uraania, jonka rikastusaste on pieni;\n"
+        "efektiivisellä kilogrammalla mittayksikköä, joka saadaan kertomalla "
+        "tämä:\n"
+        "plutoniumin osalta luvulla 1;\n"
+        "uraanin osalta rikastusasteen neliöllä;\n"
+        "alkuperämaarajoituksella sellaista rajoitusta, joka koskee alkuperää;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    assert "köyhdytetyllä uraanilla" in terms
+    assert "efektiivisellä kilogrammalla" in terms
+    # The genuine definiendum AFTER the embedded sub-list is still captured (the
+    # ';'-terminated sub-list parts do not end the block).
+    assert "alkuperämaarajoituksella" in terms
+
+
+# ---------------------------------------------------------------------------
+# jäljempänä verb-idiom false-mint guard (F2 precision)
+# ---------------------------------------------------------------------------
+
+
+def test_jaljempana_verb_idiom_is_not_minted_as_alias() -> None:
+    # "…, jollei jäljempänä toisin säädetä" is the ADVERBIAL idiom ("as hereinafter
+    # otherwise provided"), NOT an alias. An act cite in the 90-char look-back
+    # ("(688/2001) säädetään, jollei jäljempänä toisin säädetä") would otherwise
+    # satisfy the act-cite guard and bind the verb phrase "toisin säädetä" to the
+    # unrelated act (2002/1021 false mint). It must NOT bind.
+    text = (
+        "Asiasta säädetään valtioneuvoston asetuksella (688/2001) "
+        "säädetään, jollei jäljempänä toisin säädetä."
+    )
+    ja = _by_kind(recognize_defined_term_bindings(text), BINDING_JALJEMPANA)
+    assert not any("säädetä" in b.term for b in ja)
+    assert not any(b.term == "toisin säädetä" for b in ja)
+
+
+def test_jaljempana_saadetaan_clause_is_not_minted_as_alias() -> None:
+    # The bare adverbial "jäljempänä säädetään" / "jäljempänä tässä luvussa
+    # säädetään" clause is referential, never an alias, even with a cite in the
+    # look-back window.
+    text = "Tästä asetuksesta (527/2014) poiketen jäljempänä tässä luvussa säädetään."
+    ja = _by_kind(recognize_defined_term_bindings(text), BINDING_JALJEMPANA)
+    assert not any("säädetään" in b.term for b in ja)
+
+
+def test_jaljempana_genuine_multiword_noun_alias_still_binds() -> None:
+    # A genuine multi-word NOUN-PHRASE alias (head is a noun) must still bind — the
+    # verb-idiom guard rejects only adverb/verb clause fragments, never an NP.
+    text = (
+        "Euroopan parlamentin ja neuvoston asetuksessa (EU) 2016/679 "
+        "(jäljempänä yleinen tietosuoja-asetus) säädetään tarkemmin."
+    )
+    ja = _by_kind(recognize_defined_term_bindings(text), BINDING_JALJEMPANA)
+    assert any(b.term == "yleinen tietosuoja-asetus" for b in ja)

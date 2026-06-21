@@ -49,7 +49,7 @@ from lawvm.finland.helpers import (
     _section_sort_key,
     _previous_item_token,
 )
-from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile, ResolvedOp
+from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile, ResolvedOp, _op_target_subsection_label
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.source_pathology import (
     build_malformed_broad_replace_body_pathology,
@@ -2389,6 +2389,8 @@ def _drop_suspicious_partial_whole_section_replaces(
                     target_section=op.target_section or target_norm,
                     target_unit_kind=op.target_unit_kind,
                     target_chapter=op.target_chapter or target_chapter,
+                    target_subsection=_op_target_subsection_label(op),
+                    target_item=op.target_item,
                 )
             )
             diag_reason = str(diag.get("reason") or "")
@@ -2493,6 +2495,8 @@ def _drop_suspicious_partial_subsection_shell_replaces(
                 target_section=op.target_section or target_norm,
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=op.target_chapter or target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
         )
         pathologies.append(

@@ -14,7 +14,7 @@ from lawvm.core.target_resolution import (
     TARGET_AMBIGUOUS,
     TARGET_RECOVERED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name, _addr_container, _addr_leaf_kind, _addr_leaf_label, _uk_kind_value
@@ -352,7 +352,7 @@ class UKReplayTargetLookupMixin:
                                         else "",
                                         family="target_resolution_recovery",
                                         quirks_disposition="apply",
-                                        target_resolution=TargetResolutionCertificate(
+                                        target_resolution=TargetResolutionCoverage(
                                             rule_id=(
                                                 UK_REPLAY_SCHEDULE_PARTITION_TRANSPARENT_PARAGRAPH_RESOLVED_RULE_ID
                                             ),
@@ -360,7 +360,7 @@ class UKReplayTargetLookupMixin:
                                             reason=(
                                                 "explicit_schedule_paragraph_resolved_through_partition_wrappers"
                                             ),
-                                            status=TARGET_RECOVERED,
+                                            resolution_status=TARGET_RECOVERED,
                                             source_target=str(target),
                                             candidate_count=1,
                                             candidates=(
@@ -427,7 +427,7 @@ class UKReplayTargetLookupMixin:
                                                 wrapper_kind="p1group",
                                                 family="target_resolution_recovery",
                                                 quirks_disposition="apply",
-                                                target_resolution=TargetResolutionCertificate(
+                                                target_resolution=TargetResolutionCoverage(
                                                     rule_id=(
                                                         _UK_REPLAY_SCHEDULE_P1GROUP_PARAGRAPH_WRAPPER_RESOLVED_RULE_ID
                                                     ),
@@ -435,7 +435,7 @@ class UKReplayTargetLookupMixin:
                                                     reason=(
                                                         "explicit_schedule_paragraph_resolved_through_unlabeled_wrapper"
                                                     ),
-                                                    status=TARGET_RECOVERED,
+                                                    resolution_status=TARGET_RECOVERED,
                                                     source_target=str(target),
                                                     candidate_count=1,
                                                     candidates=(
@@ -524,11 +524,11 @@ class UKReplayTargetLookupMixin:
                                             recovered_path_step_kind=str(p_kind),
                                             recovered_path_step_label=str(p_label),
                                             recovered_target=recovered_target,
-                                            target_resolution=TargetResolutionCertificate(
+                                            target_resolution=TargetResolutionCoverage(
                                                 rule_id=UK_REPLAY_TARGET_RESOLVED_BY_RECURSIVE_DESCENT_RULE_ID,
                                                 phase="replay",
                                                 reason="unique_recursive_descendant_matched_failed_target_step",
-                                                status=TARGET_RECOVERED,
+                                                resolution_status=TARGET_RECOVERED,
                                                 source_target=str(target),
                                                 candidate_count=1,
                                                 candidates=(
@@ -622,11 +622,11 @@ class UKReplayTargetLookupMixin:
                                             recovered_path_step_label=str(p_label),
                                             candidate_count=len(all_recursive),
                                             candidate_paths=candidate_paths,
-                                            target_resolution=TargetResolutionCertificate(
+                                            target_resolution=TargetResolutionCoverage(
                                                 rule_id=UK_REPLAY_TARGET_AMBIGUOUS_RECURSIVE_DESCENT_RULE_ID,
                                                 phase="replay",
                                                 reason="multiple_recursive_descendants_matched_failed_target_step",
-                                                status=TARGET_AMBIGUOUS,
+                                                resolution_status=TARGET_AMBIGUOUS,
                                                 source_target=str(target),
                                                 candidate_count=len(all_recursive),
                                                 candidates=target_resolution_candidates,

@@ -64,6 +64,13 @@ _MOVE_SECTION_TO_CHAPTER_RE = re.compile(
     r"(?:lakiin\s+)?(\d{1,4}+\s{0,3}+[a-z]?)\s+lukuun",
     re.I,
 )
+# Bounded anaphor anchor for ``uusi 6 a luku, johon ... siirretään 25, 26 ja
+# 27 §``. The section list itself is parsed by ``scan_legal_addresses`` below;
+# this regex only ties the list to the single declared new chapter antecedent.
+_ANAPHORIC_NEW_CHAPTER_MOVE_TAIL_RE = re.compile(
+    r"\bjohon\b[^§\n]{0,80}?\bsiirretään\b(?P<section_tail>[^§\n]{0,240}§)",
+    re.I,
+)
 _MUUTETAAN_RE = re.compile(r"\bmuutetaan\b", re.I)
 _LUKU_RE = re.compile(r"\bluku\b", re.I)
 _CHAPTER_NUMBER_RE = re.compile(
@@ -98,6 +105,29 @@ class NumberedTableTarget:
 
     section_label: str
     table_label: str
+
+
+def _append_moved_section_destination(
+    moved_section_destinations: list[MovedSectionDestination],
+    seen: set[tuple[str, str]],
+    *,
+    section_label: str,
+    destination_chapter_label: str,
+) -> None:
+    section = _norm_num_token(section_label)
+    destination = _norm_num_token(destination_chapter_label).removesuffix("luku")
+    if not section or not destination:
+        return
+    key = (section, destination)
+    if key in seen:
+        return
+    seen.add(key)
+    moved_section_destinations.append(
+        MovedSectionDestination(
+            section_label=section,
+            destination_chapter_label=destination,
+        )
+    )
 
 
 @functools.lru_cache(maxsize=8192)
@@ -246,6 +276,7 @@ def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMe
     replaced_chapter_labels: set[str] = set()
     moved_destination_chapter_labels: set[str] = set()
     moved_section_destinations: list[MovedSectionDestination] = []
+    seen_moved_destinations: set[tuple[str, str]] = set()
 
     for match in _NEW_CHAPTER_RE.finditer(johto_text):
         start_label = _norm_num_token(match.group(1)).removesuffix("luku")
@@ -266,12 +297,31 @@ def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMe
         source_label = _norm_num_token(match.group(1))
         dest_chapter = _norm_num_token(match.group(2)).removesuffix("luku")
         if source_label and dest_chapter:
-            moved_section_destinations.append(
-                MovedSectionDestination(
-                    section_label=source_label,
-                    destination_chapter_label=dest_chapter,
-                )
+            _append_moved_section_destination(
+                moved_section_destinations,
+                seen_moved_destinations,
+                section_label=source_label,
+                destination_chapter_label=dest_chapter,
             )
+
+    if len(new_chapter_labels) == 1:
+        (new_chapter_label,) = tuple(new_chapter_labels)
+        for match in _ANAPHORIC_NEW_CHAPTER_MOVE_TAIL_RE.finditer(johto_text):
+            for addr in scan_legal_addresses(match.group("section_tail")):
+                if (
+                    not addr.section
+                    or addr.subsection is not None
+                    or addr.item is not None
+                    or addr.subitem is not None
+                    or addr.special
+                ):
+                    continue
+                _append_moved_section_destination(
+                    moved_section_destinations,
+                    seen_moved_destinations,
+                    section_label=addr.section,
+                    destination_chapter_label=new_chapter_label,
+                )
 
     if _MUUTETAAN_RE.search(johto_text):
         for luku_match in _LUKU_RE.finditer(johto_text):

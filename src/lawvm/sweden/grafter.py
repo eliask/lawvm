@@ -2222,6 +2222,8 @@ def _append_se_official_lowering_adjudication(
             kind="se_official_effect_lowering_skipped",
             message=message,
             source_statute=plan.sfs_id,
+            blocking=True,
+            phase="lowering",
             detail=diagnostic_detail(
                 rule_id=reason_code,
                 phase="lowering",
@@ -2256,6 +2258,8 @@ def _append_se_official_plan_adjudication(
             kind=kind,
             message=message,
             source_statute=source_id or plan.sfs_id,
+            blocking=blocking,
+            phase=phase,
             detail=diagnostic_detail(
                 rule_id=rule_id,
                 phase=phase,
@@ -2286,6 +2290,8 @@ def _append_se_official_payload_row_adjudications(
                 kind="se_official_act_payload_row_skipped",
                 message=str(diagnostic.get("reason") or "Sweden official act payload row was skipped."),
                 source_statute=source_id or str(diagnostic.get("sfs_id") or ""),
+                blocking=True,
+                phase="lowering",
                 detail=dict(diagnostic),
             )
         )
@@ -2305,6 +2311,8 @@ def _append_se_official_clause_diagnostic_adjudications(
                 kind="se_official_clause_surface_skipped",
                 message=str(diagnostic.get("reason") or "Sweden official act clause surface was skipped."),
                 source_statute=source_id or str(diagnostic.get("sfs_id") or ""),
+                blocking=True,
+                phase="lowering",
                 detail=dict(diagnostic),
             )
         )
@@ -2362,6 +2370,8 @@ def _append_se_official_unclaimed_payload_adjudications(
                 kind="se_official_unclaimed_payload_skipped",
                 message="Sweden official-act payload surface was not claimed by any planned effect.",
                 source_statute=plan.sfs_id,
+                blocking=True,
+                phase="lowering",
                 detail=diagnostic_detail(
                     rule_id="se_official_effect_plan_unclaimed_payload",
                     phase="lowering",
@@ -3242,6 +3252,8 @@ def _append_se_replay_adjudication(
             message=message,
             source_statute=op.source.statute_id if op.source else "",
             op_id=op.op_id,
+            blocking=True,
+            phase="replay",
             detail=normalized_detail,
         )
     )

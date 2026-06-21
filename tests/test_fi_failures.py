@@ -283,6 +283,8 @@ def test_replay_one_for_failures_serializes_reason_code(monkeypatch) -> None:
             "target_section": "3",
             "target_chapter": None,
             "target_part": "II",
+            "target_subsection": None,
+            "target_item": None,
             "target_unit_kind": "section",
         }
     ]

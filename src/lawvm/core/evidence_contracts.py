@@ -28,7 +28,7 @@ class EvidenceSummary:
     jurisdiction: str
     base_id: str
     primary_tier: str = ""
-    status: str = "ok"
+    evidence_status: str = "ok"
     error: str | None = None
     claim_count: int = 0
     divergence_count: int = 0
@@ -97,7 +97,7 @@ class CorpusOperationEvidenceRow:
     canonical_family: str = ""
     original_target: str = ""
     resolved_target: str = ""
-    status: CorpusRowStatus = CorpusRowStatus.ACCEPTED
+    evidence_status: CorpusRowStatus = CorpusRowStatus.ACCEPTED
     blocking: bool = False
     strict_disposition: str = ""
     quirks_disposition: str = ""
@@ -105,8 +105,8 @@ class CorpusOperationEvidenceRow:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.status, CorpusRowStatus):
-            raise ValueError("CorpusOperationEvidenceRow.status must be a CorpusRowStatus")
+        if not isinstance(self.evidence_status, CorpusRowStatus):
+            raise ValueError("CorpusOperationEvidenceRow.evidence_status must be a CorpusRowStatus")
         if not isinstance(self.detail, Mapping):
             raise ValueError("CorpusOperationEvidenceRow.detail must be a mapping")
         object.__setattr__(self, "finding_ids", tuple(str(value) for value in self.finding_ids))
@@ -118,7 +118,7 @@ class CorpusOperationEvidenceRow:
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        data["status"] = self.status.value
+        data["evidence_status"] = self.evidence_status.value
         data["detail"] = dict(self.detail)
         return data
 
@@ -178,12 +178,12 @@ def validate_corpus_operation_evidence_row(row: Mapping[str, Any]) -> tuple[str,
     _require_non_empty_string(row, "source_artifact_id", issues)
     _require_non_empty_string(row, "strict_disposition", issues)
     _require_non_empty_string(row, "quirks_disposition", issues)
-    status = row.get("status")
+    status = row.get("evidence_status")
     valid_statuses = {status.value for status in CorpusRowStatus}
     if not isinstance(status, str) or not status:
-        issues.append("status is required")
+        issues.append("evidence_status is required")
     elif status not in valid_statuses:
-        issues.append(f"status has unsupported value: {status}")
+        issues.append(f"evidence_status has unsupported value: {status}")
     finding_ids = row.get("finding_ids", ())
     if finding_ids is None:
         finding_ids = ()

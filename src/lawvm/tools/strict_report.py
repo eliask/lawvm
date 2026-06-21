@@ -43,13 +43,13 @@ from lawvm.finland.pathology_failed_op_projector import (
 )
 from lawvm.finland.agreement_residual_proof_projector import source_adjudication_agreement_residual_rows
 from lawvm.finland.source_witness_proof_projector import source_adjudication_lineage_source_witness_rows
-from lawvm.finland.sparse_slot_certificate_projector import sparse_slot_candidate_set_certificate_rows
+from lawvm.finland.sparse_slot_certificate_projector import sparse_slot_candidate_set_coverage_rows
 from lawvm.finland.strict_report_evidence_projector import finland_strict_report_evidence_surface
 from lawvm.finland.strict_report_proof_projector import (
-    finland_strict_report_candidate_set_certificates,
+    finland_strict_report_candidate_set_coverages,
     finland_strict_report_candidate_set_execution_authorizations,
     finland_strict_report_candidate_set_frontier_work_items,
-    finland_strict_report_ownership_closure_certificate,
+    finland_strict_report_ownership_closure_coverage,
     finland_strict_report_ownership_closure_report,
     finland_strict_report_potential_operation_rows,
     finland_strict_report_source_unit_coverage_rows,
@@ -339,7 +339,7 @@ def _mapping_rows(value: Any) -> list[dict[str, Any]]:
 def _proof_gate_summary(payload: dict[str, Any]) -> dict[str, Any]:
     """Summarize open proof gates from already-typed strict-report surfaces."""
 
-    ownership = payload.get("ownership_closure_certificate")
+    ownership = payload.get("ownership_closure_coverage")
     ownership = ownership if isinstance(ownership, dict) else {}
     evidence = payload.get("evidence_surface_report")
     evidence_summary = (
@@ -365,7 +365,7 @@ def _proof_gate_summary(payload: dict[str, Any]) -> dict[str, Any]:
             *failed_operation_frontiers,
         ],
         coverage_frontier_work_items=candidate_set_frontiers,
-        candidate_set_certificates=payload.get("strict_report_candidate_set_certificates"),
+        candidate_set_coverages=payload.get("strict_report_candidate_set_coverages"),
         evidence_summary=evidence_summary,
         manual_claim_kind_prefixes=("fi.v1.",),
     ).to_dict()
@@ -495,8 +495,8 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
         lines.append("")
 
     proof_payload = _to_json(cr)
-    ownership_closure = proof_payload["ownership_closure_certificate"]
-    candidate_sets = list(proof_payload["strict_report_candidate_set_certificates"])
+    ownership_closure = proof_payload["ownership_closure_coverage"]
+    candidate_sets = list(proof_payload["strict_report_candidate_set_coverages"])
     candidate_set_authorizations = list(
         proof_payload["strict_report_candidate_set_execution_authorizations"]
     )
@@ -695,7 +695,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
         tuple(source_pathologies),
         statute_id=str(_field(cr, "statute_id", "") or ""),
     )
-    sparse_slot_candidate_certificates = sparse_slot_candidate_set_certificate_rows(
+    sparse_slot_candidate_certificates = sparse_slot_candidate_set_coverage_rows(
         tuple(row for row in projection_rows if isinstance(row, dict)),
         statute_id=str(_field(cr, "statute_id", "") or ""),
     )
@@ -750,7 +750,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
             _field(cr, "regex_recognition_coverage", []) or []
         ),
         **source_pathology_proof_rows,
-        "sparse_slot_candidate_set_certificates": sparse_slot_candidate_certificates,
+        "sparse_slot_candidate_set_coverages": sparse_slot_candidate_certificates,
         "source_lineage_source_witnesses": source_lineage_witnesses,
         "agreement_residuals": agreement_residuals,
         "mutation_boundary_proofs": mutation_boundary_proofs,
@@ -769,8 +769,8 @@ def _to_json(cr: Any) -> dict[str, Any]:
     }
     payload["potential_operations"] = finland_strict_report_potential_operation_rows(payload)
     payload["source_unit_coverages"] = finland_strict_report_source_unit_coverage_rows(payload)
-    payload["strict_report_candidate_set_certificates"] = (
-        finland_strict_report_candidate_set_certificates(payload)
+    payload["strict_report_candidate_set_coverages"] = (
+        finland_strict_report_candidate_set_coverages(payload)
     )
     payload["strict_report_candidate_set_execution_authorizations"] = (
         finland_strict_report_candidate_set_execution_authorizations(payload)
@@ -778,8 +778,8 @@ def _to_json(cr: Any) -> dict[str, Any]:
     payload["strict_report_candidate_set_frontier_work_items"] = (
         finland_strict_report_candidate_set_frontier_work_items(payload)
     )
-    closure_certificate = finland_strict_report_ownership_closure_certificate(payload)
-    payload["ownership_closure_certificate"] = closure_certificate
+    closure_certificate = finland_strict_report_ownership_closure_coverage(payload)
+    payload["ownership_closure_coverage"] = closure_certificate
     payload["ownership_closure_report"] = finland_strict_report_ownership_closure_report(
         closure_certificate
     )
@@ -1007,9 +1007,9 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
                 "source_adjudication": source_adjudication,
             }
         )
-        ownership_closure = proof_payload["ownership_closure_certificate"]
+        ownership_closure = proof_payload["ownership_closure_coverage"]
         proof_gate_summary = proof_payload["proof_gate_summary"]
-        candidate_sets = list(proof_payload["strict_report_candidate_set_certificates"])
+        candidate_sets = list(proof_payload["strict_report_candidate_set_coverages"])
         candidate_set_statuses = [
             f"{row.get('candidate_set_kind')}:{row.get('completeness_status')}"
             for row in candidate_sets

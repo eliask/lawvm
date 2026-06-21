@@ -19,6 +19,11 @@ from lawvm.core.invariant_surface_matrix import (
 )
 from lawvm.core.mutation_accounting import MutationAccountingResult
 from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.effect_lifecycle import (
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_refs,
+    append_unique_effect_relations,
+)
 from lawvm.finland.acquisition import amendment_lacks_operative_structure as _amendment_lacks_operative_structure
 from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
 from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
@@ -173,6 +178,7 @@ def process_muutoslaki_resolved(
     regex_recognition_coverage_out = process_call.regex_recognition_coverage_out
     mutation_events_out = process_call.mutation_events_out
     write_audits_out = process_call.write_audits_out
+    write_receipts_out = process_call.write_receipts_out
     migration_events_out = process_call.migration_events_out
     runtime = build_process_runtime(process_call)
     amendment_temporal_events = runtime.amendment_temporal_events
@@ -249,7 +255,7 @@ def process_muutoslaki_resolved(
         johto = acquired.johto
         source_title = acquired.source_title
         acquisition = acquired.acquisition
-        used_sec1_fallback = acquired.used_sec1_fallback
+        used_preamble_body_fallback = acquired.used_preamble_body_fallback
 
         should_apply = acquisition.decision.should_apply
         route_reason = acquisition.decision.route_reason
@@ -389,7 +395,7 @@ def process_muutoslaki_resolved(
                     base_ir=ctx.base_ir,
                     amendment_id=amendment_id,
                     source_title=source_title,
-                    used_sec1_fallback=used_sec1_fallback,
+                    used_preamble_body_fallback=used_preamble_body_fallback,
                     parent_id=parent_id,
                     strict_profile=strict_profile,
                     regex_recognition_coverage_out=regex_recognition_coverage_out,
@@ -402,8 +408,21 @@ def process_muutoslaki_resolved(
             )
             ops = list(phase2_result.ops)
             amendment_temporal_events.extend(phase2_result.temporal_events)
-            runtime.source_effects.extend(phase2_result.source_effects)
-            runtime.effect_lifecycle_events.extend(phase2_result.effect_lifecycle_events)
+            append_unique_effect_refs(
+                runtime.source_effects,
+                phase2_result.source_effects,
+                subject="process frontend normalization",
+            )
+            append_unique_effect_relations(
+                runtime.effect_relations,
+                phase2_result.effect_relations,
+                subject="process frontend normalization",
+            )
+            append_unique_effect_lifecycle_events(
+                runtime.effect_lifecycle_events,
+                phase2_result.effect_lifecycle_events,
+                subject="process frontend normalization",
+            )
             compat_elaboration_observations.extend(phase2_result.elaboration_observations)
             process_findings.extend(phase2_result.process_findings)
 
@@ -509,7 +528,14 @@ def process_muutoslaki_resolved(
                 observations_out=compat_elaboration_observations,
                 findings_out=process_findings,
                 observed_touch_results_out=observed_touch_results,
-                write_audits_out=write_audits_out,
+                # write_audits_out / write_receipts_out are NON-Optional on
+                # ApplyOpsSinks; pass the caller's concrete list when present,
+                # else a fresh one (the fold always accounts every landed
+                # write). Threading write_receipts_out up carries the landed
+                # WriteReceipts into ReplayResult so the certificate stage can
+                # cross-check covering-state transitions against them.
+                write_audits_out=write_audits_out if write_audits_out is not None else [],
+                write_receipts_out=write_receipts_out if write_receipts_out is not None else [],
             ),
         )
         amendment_lo_ops = tuple((lo_ops_out or [])[lo_ops_start:])
@@ -518,12 +544,11 @@ def process_muutoslaki_resolved(
             canonical_ops=amendment_lo_ops,
             temporal_events=(),
         )
-        existing_source_effect_ids = {effect.effect_id for effect in runtime.source_effects}
-        for effect in source_effects:
-            if effect.effect_id in existing_source_effect_ids:
-                continue
-            existing_source_effect_ids.add(effect.effect_id)
-            runtime.source_effects.append(effect)
+        append_unique_effect_refs(
+            runtime.source_effects,
+            source_effects,
+            subject="process canonical operation projection",
+        )
         project_transition_detector_findings(
             before_ir=before_apply_ir,
             operations=amendment_lo_ops,

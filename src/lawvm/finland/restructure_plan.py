@@ -1091,6 +1091,7 @@ class ExecutedOp:
     reason_code: str = ""
     witness_rule_id: str = ""
     applied_path: tuple[tuple[str, str], ...] | None = None
+    snapshot_payload: IRNode | None = None
 
 
 def _record_pending_source_chain_relabel_lineage(
@@ -1801,12 +1802,14 @@ def _execute_same_parent_relabel_group(
                 )
             relabel_op = op_by_source[source_key]
             applied_path = None
+            snapshot_payload = None
             if source_key[0] == "section":
                 found_path = found_paths[relabel_op]
                 applied_path = _strip_hcontainer_from_path(
                     found_path[:-1]
                     + (("section", dest_by_source[source_key]),)
                 )
+                snapshot_payload = relabeled_child
             executed.append(
                 ExecutedOp(
                     op=relabel_op,
@@ -1820,6 +1823,7 @@ def _execute_same_parent_relabel_group(
                         else ""
                     ),
                     applied_path=applied_path,
+                    snapshot_payload=snapshot_payload,
                 )
             )
         else:
@@ -2201,6 +2205,7 @@ def _execute_relabel(
         if applied_to[-1][0] == "section"
         else None
     )
+    snapshot_payload = relabeled if applied_to[-1][0] == "section" else None
     return tree, ExecutedOp(
         op=op,
         success=True,
@@ -2213,6 +2218,7 @@ def _execute_relabel(
             else ""
         ),
         applied_path=applied_path,
+        snapshot_payload=snapshot_payload,
     )
 
 

@@ -30,10 +30,11 @@ def _extraction_summary(cap: AmendmentCapture) -> str:
     path = cap.extraction_path or "unknown"
     # Normalise display name
     display = {
-        "peg": "PEG",
+        "grammar": "grammar",
+        "grammar_error": "grammar-error",
         "fallback_heuristic": "fallback/heuristic",
         "title_fallback": "title-fallback",
-        "sec1": "sec1-fallback",
+        "preamble_body": "preamble-body-fallback",
     }.get(path, path)
     n = len(cap.peg_ops)
     return f"{display} \u2192 {n} op{'s' if n != 1 else ''}"

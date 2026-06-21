@@ -20,6 +20,12 @@ from lawvm.core.compile_views import (
     projection_rows_from_findings,
     source_pathology_rows_from_findings,
 )
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    SourceInstrumentRef,
+)
 from lawvm.core.ir import (
     IRNode,
     LegalAddress,
@@ -43,6 +49,7 @@ from lawvm.core.observation_registry import (
 )
 from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
 from lawvm.finland.ops import AmendmentOp, FailedOp, classify_legal_operation_conversion_skip
+from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
@@ -111,6 +118,34 @@ def test_legal_operation_descendant_only_target_is_not_coerced_to_section() -> N
     assert skip is not None
     assert skip.reason_code == "ELAB.UNSUPPORTED_DESCENDANT_ONLY_TARGET"
     assert AmendmentOp.from_lo(lo, 0) == []
+
+
+def test_amendment_op_with_lo_derives_target_unit_without_section_default() -> None:
+    lo = LegalOperation(
+        op_id="part-scoped-section",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("part", "II"), ("chapter", "2"), ("section", "5"))),
+    )
+
+    op = AmendmentOp(op_id="part-scoped-section", op_type="RENUMBER", lo=lo)
+
+    assert op.target_unit_kind == "section"
+    assert op.target_part == "II"
+    assert op.target_chapter == "2"
+    assert op.target_section == "5"
+
+
+def test_amendment_op_with_unsupported_lo_target_does_not_default_to_section() -> None:
+    lo = LegalOperation(
+        op_id="descendant-only",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("subsection", "1"),)),
+    )
+
+    with pytest.raises(ValueError, match="no Finland-supported primary unit"):
+        AmendmentOp(op_id="descendant-only", op_type="REPEAL", lo=lo)
 
 
 def get_johtolause(*args: Any, **kwargs: Any) -> Any:
@@ -200,6 +235,9 @@ def _replay_result_stub(
     migration_events: tuple[object, ...] = (),
     findings: tuple[Finding, ...] = (),
     source_adjudication: Any = None,
+    source_effects: tuple[EffectRef, ...] = (),
+    effect_relations: tuple[EffectRelation, ...] = (),
+    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...] = (),
 ) -> ReplayResult:
     body = IRNode(kind=IRNodeKind.BODY)
     ctx = StatuteContext(
@@ -215,6 +253,9 @@ def _replay_result_stub(
         temporal_events=temporal_events,
         migration_events=cast(tuple[Any, ...], migration_events),
         source_adjudication=source_adjudication,
+        source_effects=source_effects,
+        effect_relations=effect_relations,
+        effect_lifecycle_events=effect_lifecycle_events,
     )
     return ReplayResult(
         ctx=ctx,
@@ -826,7 +867,7 @@ def test_2020_1256_compile_keeps_vi_part_scope_for_chapter_26_28_renumbers() -> 
         quiet=True,
         build_full_products=False,
     )
-    _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
+    _muutos_tree, johto, used_preamble_body_fallback, should_apply, _route_reason = _working_johtolause(
         statute_id,
         before_master.title,
         source_id,
@@ -841,7 +882,7 @@ def test_2020_1256_compile_keeps_vi_part_scope_for_chapter_26_28_renumbers() -> 
         before_master.replay_fold_state,
         source_id,
         source_title="",
-        used_sec1_fallback=used_sec1_fallback,
+        used_preamble_body_fallback=used_preamble_body_fallback,
         parent_id=statute_id,
         strict_profile=None,
     )
@@ -1037,7 +1078,7 @@ def test_compile_fi_facade_returns_path_aware_dossier(facade_2009_953_legal_pit_
     assert isinstance(facade_2009_953_legal_pit_quirks.bundle.structural_ops, tuple)
     assert isinstance(_projection_rows(facade_2009_953_legal_pit_quirks), tuple)
     assert isinstance(_source_pathology_rows(facade_2009_953_legal_pit_quirks), tuple)
-    assert isinstance(tuple(facade_2009_953_legal_pit_quirks.to_wire_artifact().status.blockers or ()), tuple)
+    assert isinstance(tuple(facade_2009_953_legal_pit_quirks.to_wire_artifact().processing_status.blockers or ()), tuple)
 
 
 def test_compile_fi_facade_strict_mode_passes_strict_temporal_authority(monkeypatch) -> None:
@@ -1119,6 +1160,180 @@ def test_compile_fi_facade_from_replay_matches_compile_contract(monkeypatch) -> 
     assert not hasattr(facade, "source_completeness_flags")
     assert not hasattr(facade, "strict_fail_reasons")
     assert not hasattr(facade, "source_completeness")
+
+
+def test_compile_fi_facade_rejects_conflicting_duplicate_effect_ids(monkeypatch) -> None:
+    def fake_compile_artifacts_from_replay(*_args, **_kwargs):
+        return SimpleNamespace(
+            compiled_ops=[],
+            canonical_ops=[],
+            compile_failures=[],
+            findings=[],
+            strict_fail_reasons=[],
+            source_adjudication=None,
+            replay_meta={},
+            verdict=compute_verdict_from_registry(default_finland_strict_profile(), [], has_internal_failure=False),
+        )
+
+    monkeypatch.setattr(
+        "lawvm.finland._compile._compile_artifacts_from_replay",
+        fake_compile_artifacts_from_replay,
+    )
+    canonical_op = LegalOperation(
+        op_id="op-1",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "4 a"),)),
+        source=OperationSource(statute_id="2020/1"),
+    )
+    conflicting_product_effect = EffectRef(
+        effect_id="fi-effect:2020/1:op-1",
+        source_instrument=SourceInstrumentRef(instrument_id="2020/1"),
+        target_statute="not-the-parent",
+        target_address=LegalAddress(path=(("section", "4 a"),)),
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate effect_id"):
+        compile_fi_facade_from_replay(
+            parent_id="2009/953",
+            replay_result=_replay_result_stub(source_effects=(conflicting_product_effect,)),
+            replay_mode="legal_pit",
+            compiled_ops=[],
+            replay_meta={},
+            canonical_ops=[canonical_op],
+            failed_ops=[],
+        )
+
+
+def test_compile_fi_facade_rejects_conflicting_duplicate_lifecycle_events(monkeypatch) -> None:
+    def fake_compile_artifacts_from_replay(*_args, **_kwargs):
+        return SimpleNamespace(
+            compiled_ops=[],
+            canonical_ops=[],
+            compile_failures=[],
+            findings=[],
+            strict_fail_reasons=[],
+            source_adjudication=None,
+            replay_meta={},
+            verdict=compute_verdict_from_registry(default_finland_strict_profile(), [], has_internal_failure=False),
+        )
+
+    monkeypatch.setattr(
+        "lawvm.finland._compile._compile_artifacts_from_replay",
+        fake_compile_artifacts_from_replay,
+    )
+    temporal = TemporalEvent(
+        event_id="event:expiry",
+        kind="expire",
+        scope=TemporalScope(
+            target_statute="2009/953",
+            exact_addresses=(LegalAddress(path=(("section", "4 a"),)),),
+        ),
+        expires="2025-01-01",
+        source=OperationSource(statute_id="2020/1", expires="2025-01-01"),
+        group_id="g:2020/1:expiry",
+    )
+    source_effects, _relations, derived_lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="2009/953",
+        canonical_ops=(),
+        temporal_events=(temporal,),
+    )
+    derived_lifecycle = derived_lifecycle_events[0]
+    conflicting_lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id=derived_lifecycle.lifecycle_event_id,
+        kind=derived_lifecycle.kind,
+        source_provision=derived_lifecycle.source_provision,
+        effect=derived_lifecycle.effect,
+        expires=derived_lifecycle.expires,
+        temporal_event=temporal,
+        executable=True,
+        detail={"projection": "product_conflict"},
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate lifecycle_event_id"):
+        compile_fi_facade_from_replay(
+            parent_id="2009/953",
+            replay_result=_replay_result_stub(
+                temporal_events=(temporal,),
+                source_effects=source_effects,
+                effect_lifecycle_events=(conflicting_lifecycle,),
+            ),
+            replay_mode="legal_pit",
+            compiled_ops=[],
+            replay_meta={},
+            canonical_ops=[],
+            failed_ops=[],
+        )
+
+
+def test_compile_fi_facade_reuses_product_source_effects_for_temporal_lifecycle(
+    monkeypatch,
+) -> None:
+    def fake_compile_artifacts_from_replay(*_args, **_kwargs):
+        return SimpleNamespace(
+            compiled_ops=[],
+            canonical_ops=[],
+            compile_failures=[],
+            findings=[],
+            strict_fail_reasons=[],
+            source_adjudication=None,
+            replay_meta={},
+            verdict=compute_verdict_from_registry(default_finland_strict_profile(), [], has_internal_failure=False),
+        )
+
+    monkeypatch.setattr(
+        "lawvm.finland._compile._compile_artifacts_from_replay",
+        fake_compile_artifacts_from_replay,
+    )
+    address = LegalAddress(path=(("section", "4a"),))
+    op_effects, _relations, _events = build_finland_effect_lifecycle(
+        target_statute="1995/903",
+        canonical_ops=(
+            LegalOperation(
+                op_id="op_0",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=address,
+                source=OperationSource(statute_id="2021/538", effective="2021-07-01"),
+                group_id="2021/538",
+            ),
+        ),
+        temporal_events=(),
+    )
+    temporal = TemporalEvent(
+        event_id="fi-temporary:2021/538:op_0:expire",
+        kind="expire",
+        scope=TemporalScope(
+            target_statute="1995/903",
+            exact_addresses=(address,),
+        ),
+        expires="2025-01-01",
+        source=OperationSource(statute_id="2021/538", expires="2025-01-01"),
+        group_id="2021/538",
+    )
+    _source_effects, _relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1995/903",
+        canonical_ops=(),
+        temporal_events=(temporal,),
+        known_source_effects=op_effects,
+    )
+
+    facade = compile_fi_facade_from_replay(
+        parent_id="1995/903",
+        replay_result=_replay_result_stub(
+            temporal_events=(temporal,),
+            source_effects=op_effects,
+            effect_lifecycle_events=lifecycle_events,
+        ),
+        replay_mode="legal_pit",
+        compiled_ops=[],
+        replay_meta={},
+        canonical_ops=[],
+        failed_ops=[],
+    )
+
+    assert facade.bundle.effect_lifecycle_events == lifecycle_events
+    assert facade.bundle.effect_lifecycle_events[0].effect == op_effects[0]
 
 
 def test_compile_fi_facade_projects_rows_from_stored_findings_only() -> None:
@@ -1389,7 +1604,7 @@ def test_compile_fi_facade_returns_native_dossier(facade_2009_953_legal_pit_quir
     assert facade_2009_953_legal_pit_quirks.strict_profile_name == "finland_ingestion_v1"
     assert isinstance(facade_2009_953_legal_pit_quirks.bundle.structural_ops, tuple)
     assert isinstance(_projection_rows(facade_2009_953_legal_pit_quirks), tuple)
-    assert isinstance(tuple(facade_2009_953_legal_pit_quirks.to_wire_artifact().status.blockers or ()), tuple)
+    assert isinstance(tuple(facade_2009_953_legal_pit_quirks.to_wire_artifact().processing_status.blockers or ()), tuple)
 
 
 def test_compile_fi_facade_returns_native_finland_facade(monkeypatch) -> None:
@@ -1858,7 +2073,7 @@ def test_compile_fi_surfaces_apply_legacy_dispatch_fallback_as_projection_row(
     assert fallback_projection_rows[0]["source"] == "1993/805"
     assert cast(dict[str, Any], fallback_projection_rows[0]["detail"])["reason_tag"] == "missing_canonical_intent"
     assert cast(dict[str, Any], fallback_projection_rows[0]["detail"])["reason_code"] == "missing_canonical_intent"
-    assert "APPLY.LEGACY_DISPATCH_FALLBACK" in tuple(facade.to_wire_artifact().status.blockers or ())
+    assert "APPLY.LEGACY_DISPATCH_FALLBACK" in tuple(facade.to_wire_artifact().processing_status.blockers or ())
 
 
 def test_compile_fi_surfaces_legacy_dispatch_reason_code_from_fallback_tags_when_missing(
@@ -1954,7 +2169,7 @@ def test_compile_fi_facade_carries_legacy_dispatch_fallback_in_finding_ledger(
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
     assert "APPLY.LEGACY_DISPATCH_FALLBACK" in {finding.kind for finding in facade.finding_ledger}
-    assert "APPLY.LEGACY_DISPATCH_FALLBACK" in tuple(facade.to_wire_artifact().status.blockers or ())
+    assert "APPLY.LEGACY_DISPATCH_FALLBACK" in tuple(facade.to_wire_artifact().processing_status.blockers or ())
 
 
 def test_compile_fi_surfaces_relabel_skipped_as_projection_row(
@@ -2011,7 +2226,7 @@ def test_compile_fi_surfaces_relabel_skipped_as_projection_row(
     assert relabel_rows[0]["source"] == "1993/805"
     assert cast(dict[str, Any], relabel_rows[0]["detail"])["reason_tag"] == "source_section_missing"
     assert cast(dict[str, Any], relabel_rows[0]["detail"])["reason_code"] == "source_section_missing"
-    assert "APPLY.RELABEL_SKIPPED" in tuple(facade.to_wire_artifact().status.blockers or ())
+    assert "APPLY.RELABEL_SKIPPED" in tuple(facade.to_wire_artifact().processing_status.blockers or ())
 
 
 def test_compile_fi_surfaces_registered_provenance_projection_kinds(
@@ -2332,12 +2547,15 @@ def test_replay_xml_exposes_replay_time_projection_rows_without_explicit_sink() 
         for event in replay.products.effect_lifecycle_events
         if event.kind == "change_effect_expiry"
         and event.relation is not None
-        and event.relation.relation_id
-        == "fi-effect-relation:2006/1322:extends_effect_expiry:2006/1322:section:4"
+        and event.relation.kind == "extends_effect_expiry"
+        and event.effect is not None
+        and event.effect.source_instrument.instrument_id == "2006/1322"
+        and event.effect.target_address is not None
+        and ("section", "4") in event.effect.target_address.path
     ]
-    assert len(override_lifecycle) == 1
-    assert override_lifecycle[0].expires == "2009-12-31"
-    assert override_lifecycle[0].executable is False
+    assert override_lifecycle
+    assert {event.expires for event in override_lifecycle} == {"2009-12-31"}
+    assert {event.executable for event in override_lifecycle} == {True}
 
 
 def test_replay_xml_1970_258_folds_base_item_subsection_run_before_renumber_insert() -> None:
@@ -2530,6 +2748,10 @@ def test_replay_xml_1993_1709_preserves_list_prefix_when_replacing_later_list() 
     assert text.index("Psykotrooppisia aineita koskevan yleissopimuksen luettelo I") < text.index(
         "Dietyylitryptamiini (DET)"
     )
+    assert text.index("Difenoksylaatti") < text.index("Dihydroetorfiini")
+    assert text.index("Dihydroetorfiini") < text.index("Dihydromorfiini")
+    assert text.index("Rasemorfaani") < text.index("Remifentaniili")
+    assert text.index("Remifentaniili") < text.index("Sufentaniili")
     assert "Dietyylitryptamiini (DET)" in text
     assert "Tetrahydrokannabinoli" in text
     subsection1 = next(
@@ -2583,7 +2805,7 @@ def test_normalize_and_compile_ops_2021_1289_rehomes_reinstatement_list_to_prior
         base_ir=before.ctx.base_ir,
         amendment_id="2024/420",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2021/1289",
         strict_profile=None,
     )
@@ -2623,7 +2845,7 @@ def test_normalize_and_compile_ops_1734_4_keeps_chapter_scoped_reinstatement_in_
         base_ir=before.ctx.base_ir,
         amendment_id="2025/142",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1734/4-000",
         strict_profile=None,
     )
@@ -2653,7 +2875,7 @@ def test_normalize_and_compile_ops_1993_1054_keeps_lisataan_chapter_scoped_reins
         base_ir=before.ctx.base_ir,
         amendment_id="2021/200",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1993/1054",
         strict_profile=None,
     )
@@ -2683,7 +2905,7 @@ def test_normalize_and_compile_ops_2016_1227_scopes_flat_79_replace_from_sibling
         base_ir=before.ctx.base_ir,
         amendment_id="2022/1149",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2016/1227",
         strict_profile=None,
     )
@@ -2721,7 +2943,7 @@ def test_normalize_and_compile_ops_2004_485_scopes_flat_20a_replace_from_sibling
         base_ir=before.ctx.base_ir,
         amendment_id="2018/955",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2004/485",
         strict_profile=None,
     )
@@ -2797,7 +3019,7 @@ def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_loc
         base_ir=before.ctx.base_ir,
         amendment_id="1997/611",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1979/1062",
         strict_profile=None,
     )
@@ -2845,7 +3067,7 @@ def test_compile_amendment_ops_2004_1287_keeps_live_stem_inserts_in_chapter_2() 
         base_ir=before.ctx.base_ir,
         amendment_id="2018/1359",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2004/1287",
         strict_profile=None,
         source_model=source_model,
@@ -3024,7 +3246,7 @@ def test_compile_amendment_ops_leaves_1977_18_sparse_payload_unrepaired_before_l
         master=before.state,
         mid="1977/18",
         source_title="Laki luopumiseläkelain muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1974/16",
         strict_profile=None,
     )
@@ -3071,7 +3293,7 @@ def test_1986_508_1996_755_body_only_fallback_binds_wrapper_orphan_subsections()
         master=before.state,
         mid="1996/755",
         source_title="Asetus nuorten työntekijäin suojelusta annetun asetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1986/508",
         strict_profile=None,
     )
@@ -3194,7 +3416,7 @@ def test_act_wide_body_section_replace_formula_uses_body_section_witness(
         )
     )
 
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -3212,7 +3434,7 @@ def test_act_wide_body_section_replace_formula_uses_body_section_witness(
         master=master,
         amendment_id="2026/1",
         source_title="Asetus testiasetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2020/1",
         strict_profile=None,
     )
@@ -3238,7 +3460,7 @@ def test_act_wide_body_section_replace_formula_uses_body_section_witness(
         master=master,
         amendment_id="2026/1",
         source_title="Asetus testiasetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2020/1",
         strict_profile=default_finland_strict_profile(),
     )
@@ -3277,7 +3499,7 @@ def test_2023_608_2026_159_act_wide_body_section_replace_regression() -> None:
             "hyväksyttävistä yksikkökustannuksista annetun maa- ja "
             "metsätalousministeriön asetuksen muuttamisesta"
         ),
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2023/608",
         strict_profile=None,
     )
@@ -3308,7 +3530,7 @@ def test_normalize_and_compile_ops_parses_1980_1037_spaced_pykala_genitive_as_mo
         master=before.state,
         mid="1980/1037",
         source_title="Laki luopumiseläkelain muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1974/16",
         strict_profile=None,
     )
@@ -3332,7 +3554,7 @@ def test_normalize_and_compile_ops_parses_1979_1032_reinstated_subsection_insert
         master=before.state,
         mid="1979/1032",
         source_title="Laki luopumiseläkelain muuttamisesta.",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1974/16",
         strict_profile=None,
     )
@@ -3359,7 +3581,7 @@ def test_normalize_and_compile_ops_2017_571_keeps_doc_ill_subsection_insert_targ
         master=before.state,
         mid="2017/571",
         source_title="Valtioneuvoston asetus ajoneuvojen hyväksynnästä annetun valtioneuvoston asetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2002/1244",
         strict_profile=None,
     )
@@ -3383,7 +3605,7 @@ def test_normalize_and_compile_ops_2018_1330_keeps_late_grouped_insert_targets()
         master=before.state,
         mid="2018/1330",
         source_title="Laki asunto-osakeyhtiölain muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2009/1599",
         strict_profile=None,
     )
@@ -3453,7 +3675,7 @@ def test_compile_fi_respects_more_permissive_strict_profile(
     # The wire artifact still carries unrelated blocking replay findings, so
     # the relaxed profile is only expected to suppress the profile-gated
     # strict verdict reasons.
-    wire_status = facade.to_wire_artifact().status
+    wire_status = facade.to_wire_artifact().processing_status
     assert wire_status.kind == "partial"
     assert "APPLY.SOURCE_INCOMPLETE" in tuple(wire_status.blockers or ())
 
@@ -3499,7 +3721,7 @@ def test_normalize_and_compile_ops_strictly_rejects_late_fallback_chains(
 
     # normalize_and_compile_ops calls extract_johtolause_legal_ops_from_parse_result
     # (the result-based variant), not the older string-based extract_johtolause_legal_ops.
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -3530,7 +3752,7 @@ def test_normalize_and_compile_ops_strictly_rejects_late_fallback_chains(
         master=master,
         amendment_id="2020/1",
         source_title="Test title",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2019/1",
         strict_profile=strict_profile,
     )
@@ -3559,7 +3781,7 @@ def test_normalize_and_compile_ops_forwards_fallback_regex_coverage(
 ) -> None:
     import lawvm.finland.frontend_compile as frontend_compile
 
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     muutos_tree = etree.fromstring("<root/>")
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
     coverage_rows: list[Any] = []
@@ -3570,7 +3792,7 @@ def test_normalize_and_compile_ops_forwards_fallback_regex_coverage(
         master=master,
         amendment_id="2020/1",
         source_title="Test title",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2019/1",
         strict_profile=None,
         parse_result=cast(Any, SimpleNamespace(findings=())),
@@ -3667,7 +3889,7 @@ def test_normalize_and_compile_ops_1996_627_does_not_leak_parent_title_chapter_s
         master=before.state,
         amendment_id="2023/674",
         source_title="Valtioneuvoston asetus rikoslain 1 luvun 7 §:n soveltamisesta annetun asetuksen 1 §:n muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1996/627",
         strict_profile=None,
     )
@@ -3702,7 +3924,7 @@ def test_normalize_and_compile_ops_1968_360_2019_308_does_not_leak_heading_chapt
         master=before.state,
         amendment_id="2019/308",
         source_title="Laki elinkeinotulon verottamisesta annetun lain muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1968/360",
         strict_profile=None,
     )
@@ -3760,7 +3982,7 @@ def test_normalize_and_compile_ops_2014_120_2017_601_keeps_minus_range_subsectio
         master=master,
         amendment_id="2017/601",
         source_title="Valtioneuvoston asetus julkisen talouden suunnitelmasta annetun valtioneuvoston asetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2014/120",
         strict_profile=None,
     )
@@ -3804,7 +4026,7 @@ def test_normalize_and_compile_ops_1734_3_1973_390_keeps_chapter_reinsert_sectio
         master=master,
         amendment_id="1973/390",
         source_title="Laki kauppakaaren muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1734/3-000",
         strict_profile=None,
     )
@@ -3844,7 +4066,7 @@ def test_normalize_and_compile_ops_2011_516_2011_582_keeps_short_operative_pream
             "Oikeusministeriön asetus ulosottoperustetta koskevan tuomioistuimen "
             "ilmoitusvelvollisuuden alkamisesta annetun asetuksen muuttamisesta"
         ),
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2011/516",
         strict_profile=None,
     )
@@ -3866,7 +4088,7 @@ def test_normalize_and_compile_ops_records_empty_extraction_observation(
     muutos_tree = etree.fromstring("<root/>")
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
 
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -3889,7 +4111,7 @@ def test_normalize_and_compile_ops_records_empty_extraction_observation(
         master=master,
         amendment_id="2020/1",
         source_title="Test title",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2019/1",
         strict_profile=None,
     )
@@ -3926,7 +4148,7 @@ def test_normalize_and_compile_ops_records_unowned_enacting_formula_body_section
         )
     )
 
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -3944,7 +4166,7 @@ def test_normalize_and_compile_ops_records_unowned_enacting_formula_body_section
         master=master,
         amendment_id="2020/3",
         source_title="Test title",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2019/1",
         strict_profile=None,
     )
@@ -3986,7 +4208,7 @@ def test_normalize_and_compile_ops_does_not_record_unowned_body_section_for_full
     )
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
 
-    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [])
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -4004,7 +4226,7 @@ def test_normalize_and_compile_ops_does_not_record_unowned_body_section_for_full
         master=master,
         amendment_id="2020/4",
         source_title="Test title",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2019/1",
         strict_profile=None,
     )
@@ -4048,7 +4270,7 @@ def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
         master=master,
         amendment_id="2020/2",
         source_title="Test title",
-        used_sec1_fallback=True,
+        used_preamble_body_fallback=True,
         parent_id="2019/1",
         strict_profile=None,
     )
@@ -4057,10 +4279,10 @@ def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
     peg_skip = [
         finding
         for finding in phase2.findings()
-        if finding.kind == "PARSE.PEG_SKIP_SEC1_REPEAL_LIST"
+        if finding.kind == "PARSE.GRAMMAR_SKIP_PREAMBLE_REPEAL_LIST"
     ]
     assert peg_skip
-    assert peg_skip[0].detail.get("used_sec1_fallback") is True
+    assert peg_skip[0].detail.get("used_preamble_body_fallback") is True
 
 
 def test_normalize_and_compile_ops_keeps_sec1_keeper_act_repeal_list_on_peg_path() -> None:
@@ -4081,7 +4303,7 @@ def test_normalize_and_compile_ops_keeps_sec1_keeper_act_repeal_list_on_peg_path
         master=master,
         amendment_id="2015/521",
         source_title="Laki kumotun eläintautilain voimaan jätettyjen säännösten kumoamisesta",
-        used_sec1_fallback=True,
+        used_preamble_body_fallback=True,
         parent_id="1980/55",
         strict_profile=None,
     )
@@ -4107,7 +4329,7 @@ def test_normalize_and_compile_ops_keeps_sec1_keeper_act_repeal_list_on_peg_path
     assert [
         finding
         for finding in phase2.findings()
-        if finding.kind == "PARSE.PEG_SKIP_SEC1_REPEAL_LIST"
+        if finding.kind == "PARSE.GRAMMAR_SKIP_PREAMBLE_REPEAL_LIST"
     ] == []
 
 
@@ -4514,7 +4736,7 @@ def test_strict_fail_reasons_from_finding_ledger_detect_known_recovery() -> None
             source_statute="2001/1529",
         ),
         Finding(
-            kind="ELAB.SEC1_PRE_ROUTING_FALLBACK",
+            kind="FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK",
             role="obligation",
             stage="process_muutoslaki",
             detail={
@@ -4538,7 +4760,7 @@ def test_strict_fail_reasons_from_finding_ledger_detect_known_recovery() -> None
     assert "APPLY.UNCOVERED_BODY_RECOVERY" in reasons
     assert "APPLY.FALLBACK_WHOLE_SECTION_REPLACE" in reasons
     assert "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION" in reasons
-    assert "ELAB.SEC1_PRE_ROUTING_FALLBACK" in reasons
+    assert "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK" in reasons
 
 
 def test_strict_fail_reasons_from_finding_ledger_accept_structured_scope_confidence() -> None:
@@ -4705,6 +4927,142 @@ def test_strict_fail_reasons_from_finding_ledger_accept_semantic_collapse_move_r
     assert "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER" in reasons
 
 
+def test_group_surface_uses_single_mislabeled_body_section_for_explicit_replace() -> None:
+    from lawvm.finland.compile_group_surface import BuildGroupSurfaceRequest, build_group_surface
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="urn:test">
+          <body>
+            <hcontainer name="statuteProvisionsWrapper">
+              <section>
+                <num>57§</num>
+                <subsection>
+                  <content>
+                    <p>Tässä laissa tarkoitetaan pankilla Suomen Pankkia.</p>
+                  </content>
+                </subsection>
+              </section>
+            </hcontainer>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="explicit-54",
+        op_type="REPLACE",
+        target_section="54",
+        target_chapter="11",
+        target_unit_kind="section",
+        source_statute="1971/304",
+        witness_rule_id="fi.section_ref",
+    )
+
+    result = build_group_surface(
+        BuildGroupSurfaceRequest(
+            group_ops=[op],
+            target_unit_kind="section",
+            target_norm="54",
+            target_chapter="11",
+            target_part=None,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree, source_ref="1971/304"),
+        )
+    )
+
+    assert result.output.body_ir is not None
+    text = irnode_to_text(result.output.body_ir)
+    assert text.startswith("54 §")
+    assert "Tässä laissa tarkoitetaan pankilla Suomen Pankkia" in text
+    pathology = next(f for f in result.findings() if f.kind == "ELAB.SOURCE_PATHOLOGY")
+    assert pathology.detail["code"] == "BODY_SECTION_LABEL_MISMATCH_PAYLOAD"
+    assert pathology.detail["target_section"] == "54"
+    assert pathology.detail["observed_section"] == "57"
+
+
+def test_group_surface_does_not_reuse_payload_claimed_by_another_section_op() -> None:
+    from lawvm.finland.compile_group_surface import BuildGroupSurfaceRequest, build_group_surface
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="urn:test">
+          <body>
+            <hcontainer name="statuteProvisionsWrapper">
+              <section>
+                <num>6 §</num>
+                <heading>Viitemäärä</heading>
+                <subsection>
+                  <content>
+                    <p>Keskimääräisen maitotuotoksen laskennassa käytetään viitemäärää.</p>
+                  </content>
+                </subsection>
+              </section>
+            </hcontainer>
+          </body>
+        </act>
+        """
+    )
+    current = AmendmentOp(
+        op_id="explicit-2",
+        op_type="REPLACE",
+        target_section="2",
+        target_unit_kind="section",
+        source_statute="2000/464",
+        witness_rule_id="fi.section_ref",
+    )
+    claimed = AmendmentOp(
+        op_id="explicit-6",
+        op_type="REPLACE",
+        target_section="6",
+        target_unit_kind="section",
+        source_statute="2000/464",
+        witness_rule_id="fi.section_ref",
+    )
+
+    result = build_group_surface(
+        BuildGroupSurfaceRequest(
+            group_ops=[current],
+            amendment_group_ops=(current, claimed),
+            target_unit_kind="section",
+            target_norm="2",
+            target_chapter=None,
+            target_part=None,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree, source_ref="2000/464"),
+        )
+    )
+
+    assert result.output.body_ir is None
+    assert not any(
+        f.kind == "ELAB.SOURCE_PATHOLOGY"
+        and f.detail.get("code") == "BODY_SECTION_LABEL_MISMATCH_PAYLOAD"
+        for f in result.findings()
+    )
+
+
+def test_replay_xml_1932_244_updates_section_54_after_1971_304_label_mismatch() -> None:
+    from tests.corpus_pin_helpers import replay_xml_for_test
+
+    replay = replay_xml_for_test(
+        "1932/244",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sec = replay.materialized_state.find_section("54", "11")
+
+    assert sec is not None
+    text = irnode_to_text(sec)
+    assert "Tässä laissa tarkoitetaan pankilla Suomen Pankkia" in text
+    assert "Pankkina pidetään tämän lain mukaan" not in text
+    assert any(
+        finding.kind == "ELAB.SOURCE_PATHOLOGY"
+        and finding.detail.get("code") == "BODY_SECTION_LABEL_MISMATCH_PAYLOAD"
+        and finding.source_statute == "1971/304"
+        for finding in replay.findings
+    )
+
+
 def test_strict_fail_reasons_from_finding_ledger_detect_source_pathology_again() -> None:
     profile = default_finland_strict_profile()
     reasons = strict_fail_reasons_from_finding_ledger(
@@ -4797,7 +5155,7 @@ def test_strict_fail_reasons_from_finding_ledger_respects_profile_gates() -> Non
                 source_statute="2001/1529",
             ),
             Finding(
-                kind="ELAB.SEC1_PRE_ROUTING_FALLBACK",
+                kind="FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK",
                 role="obligation",
                 stage="process_muutoslaki",
                 detail={
@@ -4814,7 +5172,7 @@ def test_strict_fail_reasons_from_finding_ledger_respects_profile_gates() -> Non
     assert "APPLY.UNCOVERED_BODY_RECOVERY" not in new
     assert "APPLY.FALLBACK_WHOLE_SECTION_REPLACE" not in new
     assert "PARSE.TARGET_GUESSING" not in new
-    assert "ELAB.SEC1_PRE_ROUTING_FALLBACK" not in new
+    assert "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK" not in new
     assert "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION" not in new
     assert "APPLY.WORD_SUBSTITUTION" not in new
 

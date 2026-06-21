@@ -3,6 +3,8 @@
 Status: normative, implementation-near, and allowed to lead the code.
 Purpose: define what LawVM is, which boundaries are hard, what the semantic authority is, what kinds of recovery are allowed, and what the system may honestly claim.
 
+> Vocabulary follows `LAWVM_PIPELINE_CONTRACT.md` (the normative term owner); this document supplies the high-level model and defers to the contract on term definitions. The two-plane and three-waist models below are the constitutional view; their operational refinements (six planes, ten waists, the authority firewall) live in the contract and are pointed to inline. `LAWVM_ARCHITECTURE_INDEX.md` holds the crosswalk.
+
 **LawVM is a compiler for hostile, underspecified legal delta sources.**
 
 Not mainly a parser, not mainly a replay engine, not mainly an oracle diff tool.
@@ -32,9 +34,9 @@ Those may be built on top. They are not part of the core constitutional contract
 
 ## 2. Two planes
 
-LawVM computes two interleaved planes.
+LawVM computes two interleaved constitutional planes. They refine into the six operational planes (source, surface, legal-state, evidence, projection, overlay) of `LAWVM_PIPELINE_CONTRACT.md` §3.
 
-### Semantic plane
+### State/value plane (historically: semantic plane)
 
 Legal meaning at the text-state level and legal state over time.
 
@@ -44,13 +46,13 @@ SourceBundle
   -> PayloadSurface
   -> ElaboratedIntent
   -> CanonicalEffects / CanonicalExecution
-  -> Timeline / TemporalGraph
+  -> Timeline (the temporal graph, informally)
   -> PIT Materialization
 ```
 
-### Epistemic plane
+### Proof/accounting plane (historically: epistemic plane)
 
-Why the system believes the semantic result.
+Why the system believes the state/value result.
 
 ```text
 ParseWitnesses
@@ -61,7 +63,7 @@ ParseWitnesses
   -> EvidenceBundle
 ```
 
-Every semantic stage emits epistemic artifacts via `PhaseResult` or an equivalent typed result surface.
+Every state/value stage emits proof/accounting artifacts via `PhaseResult` or an equivalent typed result.
 The two planes are interleaved, not sequential.
 
 ---
@@ -69,6 +71,8 @@ The two planes are interleaved, not sequential.
 ## 3. Three hard waists
 
 These are the stable contracts. Code above a waist may change freely without forcing changes below it, and vice versa.
+
+> These three hard waists are the **replay-core subset** of the ten full-pipeline waists enumerated in `LAWVM_PIPELINE_CONTRACT.md` §2. They are not replaced by the ten; they are the load-bearing core the rest refine around.
 
 ### Waist 1: Clause surface
 
@@ -149,6 +153,8 @@ The constitutional direction is that they converge toward one canonical, witness
 - Finlex-style editorial displays are presentation projections.
 
 No lower layer may silently reinterpret or overwrite the meaning already established above it.
+
+This non-reinterpretation rule is enforced in types by the **authority firewall** of `LAWVM_PIPELINE_CONTRACT.md` §7: surface/evidence/projection/overlay objects default to `surface_only=True, replay_authorized=False`, and only an explicit `ExecutionAuthorization` (or satisfied replay gate) may confer legal-state authority.
 
 ### One compiler, two outputs
 

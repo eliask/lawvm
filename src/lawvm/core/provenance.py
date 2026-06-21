@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, FrozenSet, Literal, Tuple
 
-from lawvm.core.authority import AuthorityLayer, BranchContext, COMMENCED_STATUS, ENACTED_AUTHORITY, LegalStatus
+from lawvm.core.branch_authority import AuthorityLayer, BranchContext, COMMENCED_STATUS, ENACTED_AUTHORITY, LegalStatus
 
 if TYPE_CHECKING:
     from lawvm.core.ir import LegalAddress

@@ -57,7 +57,7 @@ def test_no_commencement_candidates_uses_loaded_index_data_dir(monkeypatch, tmp_
     }
 
 
-def test_no_commencement_candidates_prefers_exact_source_id_with_commencement_marker(monkeypatch) -> None:
+def test_no_commencement_candidates_prefers_exact_source_id_with_commencement_marker(monkeypatch, tmp_path) -> None:
     class FakeArtifact(SimpleNamespace):
         pass
 
@@ -105,7 +105,7 @@ def test_no_commencement_candidates_prefers_exact_source_id_with_commencement_ma
     report = build_no_commencement_candidate_report(
         source_id="no/lovtid/2025-06-20-96",
         data_dir=None,
-        index_path=__import__("pathlib").Path(".tmp/no_index_farchive.json"),
+        index_path=tmp_path / "no_index_farchive.json",
         limit=10,
     )
 
@@ -117,7 +117,7 @@ def test_no_commencement_candidates_prefers_exact_source_id_with_commencement_ma
     assert any(match["kind"] == "source_short_id" for match in top["matches"])
 
 
-def test_no_commencement_candidates_skips_earlier_sources(monkeypatch) -> None:
+def test_no_commencement_candidates_skips_earlier_sources(monkeypatch, tmp_path) -> None:
     class FakeArtifact(SimpleNamespace):
         pass
 
@@ -163,7 +163,7 @@ def test_no_commencement_candidates_skips_earlier_sources(monkeypatch) -> None:
     report = build_no_commencement_candidate_report(
         source_id="no/lovtid/2025-04-25-12",
         data_dir=None,
-        index_path=__import__("pathlib").Path(".tmp/no_index_farchive.json"),
+        index_path=tmp_path / "no_index_farchive.json",
         limit=10,
     )
 
@@ -171,7 +171,7 @@ def test_no_commencement_candidates_skips_earlier_sources(monkeypatch) -> None:
     assert report["candidates"][0]["source_id"] == "no/lovtid/2025-04-26-13"
 
 
-def test_no_commencement_candidates_direct_only_filters_indirect_base_overlap(monkeypatch) -> None:
+def test_no_commencement_candidates_direct_only_filters_indirect_base_overlap(monkeypatch, tmp_path) -> None:
     class FakeArtifact(SimpleNamespace):
         pass
 
@@ -210,7 +210,7 @@ def test_no_commencement_candidates_direct_only_filters_indirect_base_overlap(mo
     report = build_no_commencement_candidate_report(
         source_id="no/lovtid/2025-06-20-96",
         data_dir=None,
-        index_path=__import__("pathlib").Path(".tmp/no_index_farchive.json"),
+        index_path=tmp_path / "no_index_farchive.json",
         limit=10,
         direct_only=True,
     )
@@ -219,7 +219,7 @@ def test_no_commencement_candidates_direct_only_filters_indirect_base_overlap(mo
     assert report["candidate_count"] == 0
 
 
-def test_no_commencement_candidates_includes_statsrad_evidence(monkeypatch) -> None:
+def test_no_commencement_candidates_includes_statsrad_evidence(monkeypatch, tmp_path) -> None:
     fake_index = SimpleNamespace(
         entries=[
             SimpleNamespace(
@@ -259,7 +259,7 @@ def test_no_commencement_candidates_includes_statsrad_evidence(monkeypatch) -> N
     report = build_no_commencement_candidate_report(
         source_id="no/lovtid/2025-06-20-96",
         data_dir=None,
-        index_path=__import__("pathlib").Path(".tmp/no_index_farchive.json"),
+        index_path=tmp_path / "no_index_farchive.json",
         limit=10,
         direct_only=True,
     )

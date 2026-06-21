@@ -48,6 +48,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from lawvm.corpus_store import CorpusStore, oracle_url
+from lawvm.core.source_witness import SourceWitness
+from lawvm.finland.source_model import content_digest_witness
 from lawvm.finland.corpus import (
     list_cached_consolidated_locators,
     list_cached_consolidated_pit_locators,
@@ -555,6 +557,47 @@ class TransparentCorpusStore(CorpusStore):
     @override
     def read_locator(self, locator: str) -> bytes | None:
         return self._archive.get(locator)
+
+    # ------------------------------------------------------------------
+    # Content-addressed read witnesses
+    # ------------------------------------------------------------------
+
+    def read_source_witness(self, sid: str) -> tuple[bytes, SourceWitness] | None:
+        """Return source XML bytes paired with a content-addressed witness.
+
+        The witness carries a sha256 ``DigestWitness`` computed from the actual
+        artifact bytes (never from ``sid``), so callers that need to prove source
+        identity get a content hash rather than reconstructing it from a name.
+        Returns None when the read is absent (same as ``read_source``).
+        """
+        return self._read_with_witness(self.read_source(sid), sid, "amendment_source_xml")
+
+    def read_amendment_witness(self, sid: str) -> tuple[bytes, SourceWitness] | None:
+        """Return amendment XML bytes paired with a content-addressed witness."""
+        return self._read_with_witness(
+            self.read_amendment(sid), sid, "amendment_source_xml"
+        )
+
+    def read_oracle_witness(self, sid: str) -> tuple[bytes, SourceWitness] | None:
+        """Return oracle XML bytes paired with a content-addressed witness."""
+        return self._read_with_witness(
+            self.read_oracle(sid), sid, "consolidated_oracle_xml"
+        )
+
+    @staticmethod
+    def _read_with_witness(
+        data: bytes | None,
+        sid: str,
+        source_role: str,
+    ) -> tuple[bytes, SourceWitness] | None:
+        if data is None:
+            return None
+        witness = SourceWitness(
+            source_role=source_role,
+            artifact_id=sid,
+            digest=content_digest_witness(data),
+        )
+        return data, witness
 
     @override
     def read_media(self, sid: str, filename: str) -> bytes | None:

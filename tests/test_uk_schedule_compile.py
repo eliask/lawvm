@@ -70291,7 +70291,7 @@ def test_existing_insert_target_under_wrapped_parent_records_conflict_gap() -> N
     assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
-def test_body_root_fallback_insert_records_target_resolution_certificate() -> None:
+def test_body_root_fallback_insert_records_target_resolution_coverage() -> None:
     statute = IRStatute(
         statute_id="ukpga/2025/1",
         title="Test Act",

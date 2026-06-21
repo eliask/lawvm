@@ -336,6 +336,32 @@ def test_fi_renest_flat_digit_item_subsections_fires():
     assert paras[1].label == "2"
 
 
+def test_fi_renest_flat_digit_item_subsections_preserves_table_host():
+    """Numeric table-note wrappers must not erase a table-bearing subsection."""
+    table = _table([
+        _row(["Aine", "Raja-arvo", "Ajankohta"]),
+        _row(["Hiukkaset (PM 10)", "50 1)", "1.1.2005"]),
+    ])
+    host = _subsection(
+        label="1",
+        children=(
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="Raja-arvot ovat seuraavat:",
+                children=(table,),
+            ),
+        ),
+    )
+    note1 = _subsection(label="2", children=(_content("1) Tulokset ilmaistaan ulkoilman lämpötilassa."),))
+    note2 = _subsection(label="3", children=(_content("2) Vuorokauden korkein arvo valitaan."),))
+    children = [host, note1, note2]
+
+    result = _apply_fi_renest_flat_digit_item_subsections(children)
+
+    assert result == children
+    assert result[0].children[0].children == (table,)
+
+
 def test_fi_merge_split_intro_item_subsections_absorbs_lowercase_content_row():
     intro_sub = _subsection(children=(_content("Tutkinto sisältää seuraavat oppiaineet:"),))
     row_sub = _subsection(children=(_content("tilintarkastus, kirjanpito ja sisäinen tarkastus."),))

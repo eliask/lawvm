@@ -21,6 +21,50 @@ if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState
 
 
+FI_RECOVERY_PURE_KUMOTAAN_REPEAL_RULE_ID = "fi.recovery.pure_kumotaan_repeal"
+FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID = (
+    "fi.recovery.pure_kumotaan_subsection_repeal"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class PureKumotaanInjectedRepeal:
+    """Witness for one REPEAL op reconstructed from a raw kumotaan johtolause.
+
+    Emitted when the typed pipeline produced no op for a kumotaan target and the
+    repeal was reconstructed from raw source text. Carries the witness rule id
+    and enough address evidence for the driver to emit a structured finding.
+    """
+
+    rule_id: str
+    op_id: str
+    target_unit_kind: str
+    target_norm: str
+    target_chapter: str = ""
+
+    def finding_detail(self) -> dict[str, object]:
+        detail: dict[str, object] = {
+            "rule_id": self.rule_id,
+            "op_id": self.op_id,
+            "target_unit_kind": self.target_unit_kind,
+            "target_norm": self.target_norm,
+        }
+        if self.target_chapter:
+            detail["target_chapter"] = self.target_chapter
+        return detail
+
+
+@dataclass(frozen=True, slots=True)
+class PureKumotaanInjectionResult:
+    """Typed result for pure-kumotaan whole-section/container repeal injection."""
+
+    injected: tuple[PureKumotaanInjectedRepeal, ...] = ()
+
+    @property
+    def injected_count(self) -> int:
+        return len(self.injected)
+
+
 @dataclass(frozen=True, slots=True)
 class PureKumotaanSubsectionSkippedTarget:
     """Visible witness for a pure-kumotaan subsection injection that did not run."""
@@ -47,6 +91,7 @@ class PureKumotaanSubsectionInjectionResult:
 
     injected_count: int
     skipped_targets: tuple[PureKumotaanSubsectionSkippedTarget, ...] = ()
+    injected: tuple[PureKumotaanInjectedRepeal, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,7 +274,7 @@ def _inject_pure_kumotaan_repeal_ops(
     amendment_effective_date: dt.date,
     state: ReplayState,
     source_raw_text: str,
-) -> int:
+) -> PureKumotaanInjectionResult:
     """Inject REPEAL lo_ops for pure-kumotaan sections that have no existing lo_ops.
 
     When an amendment repeals a section purely via the kumotaan clause (no body
@@ -246,10 +291,11 @@ def _inject_pure_kumotaan_repeal_ops(
     an op for section "9" in chapter "10" does NOT cover a kumotaan for section
     "9" in chapter "5".
 
-    Returns the number of ops injected.
+    Returns the typed witness records for every injected REPEAL op so the
+    driver can emit a structured finding per reconstructed repeal.
     """
     if not kumotaan_labels:
-        return 0
+        return PureKumotaanInjectionResult()
 
     # Build chapter-aware coverage: set of (chapter_lower_or_None, section_lower)
     # pairs for which this amendment already has a REPEAL op.
@@ -286,7 +332,7 @@ def _inject_pure_kumotaan_repeal_ops(
         raw_text=source_raw_text.strip(),
     )
 
-    injected = 0
+    injected: list[PureKumotaanInjectedRepeal] = []
     for label in kumotaan_labels:
         label_lower = label.lower()
 
@@ -348,11 +394,20 @@ def _inject_pure_kumotaan_repeal_ops(
                     target=LegalAddress(path=target_path),
                     source=repeal_src,
                     group_id=f"finland-johto:{amendment_id}",
+                    witness_rule_id=FI_RECOVERY_PURE_KUMOTAAN_REPEAL_RULE_ID,
                 )
             )
-            injected += 1
+            injected.append(
+                PureKumotaanInjectedRepeal(
+                    rule_id=FI_RECOVERY_PURE_KUMOTAAN_REPEAL_RULE_ID,
+                    op_id=op_id,
+                    target_unit_kind="section",
+                    target_norm=label_lower,
+                    target_chapter=(chap.lower() if chap is not None else ""),
+                )
+            )
 
-    return injected
+    return PureKumotaanInjectionResult(injected=tuple(injected))
 
 
 def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
@@ -659,6 +714,7 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
         raw_text=source_raw_text.strip(),
     )
     injected = 0
+    injected_records: list[PureKumotaanInjectedRepeal] = []
     skipped: list[PureKumotaanSubsectionSkippedTarget] = []
     for sec_label, sub_labels in kumotaan_subsection_map.items():
         resolved, skip = _resolve_pure_kumotaan_subsection_section(
@@ -706,11 +762,26 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
                     payload=sub_placeholder,
                     source=repeal_src,
                     group_id=f"finland-johto:{amendment_id}",
+                    witness_rule_id=FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID,
                 )
             )
             injected += 1
+            chapter_label = next(
+                (label for kind, label in reversed(resolved.section_path) if kind == "chapter"),
+                "",
+            )
+            injected_records.append(
+                PureKumotaanInjectedRepeal(
+                    rule_id=FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID,
+                    op_id=op_id,
+                    target_unit_kind="subsection",
+                    target_norm=f"{sec_label}:{sub_label}",
+                    target_chapter=(chapter_label or "").lower(),
+                )
+            )
 
     return PureKumotaanSubsectionInjectionResult(
         injected_count=injected,
         skipped_targets=tuple(skipped),
+        injected=tuple(injected_records),
     )

@@ -55,10 +55,13 @@ replay.
 """
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from lawvm.core.legal_surface_lens import (
     SourceSurfaceBundle,
+    SourceSurfaceUnit,
     SurfaceNodeSeed,
 )
 from lawvm.finland.legal_surface.source_syntax_graph import (
@@ -321,8 +324,11 @@ def project_forest_temporal_seeds(
     spans (the recognizer is span-local and segment boundaries are sentence-aligned,
     so a fixed-term-expiry never straddles a segment boundary). Gate-then-reparse
     therefore reproduces the scan's fixed-term-expiry node set node-identically,
-    proven 0-delta corpus-wide (``.tmp/temporal_flip_diff``). Surface-only; reads
-    the forest + the body; authorises no replay.
+    proven 0-delta corpus-wide by
+    :func:`classify_forest_temporal_gate_coverage` (asserted in
+    ``tests/test_fi_temporal_projection`` —
+    ``test_corpus_forest_gate_reproduces_only_shared_expiry_slice``). Surface-only;
+    reads the forest + the body; authorises no replay.
     """
     # Lazy import: the lens imports this module, so a module-top import would
     # cycle. This keeps the seed-minting authority shared without a cycle.
@@ -346,6 +352,152 @@ def project_forest_temporal_seeds(
                         mint_temporal_expr_seed(unit, expr, base=seg.char_start)
                     )
     return seeds
+
+
+class _TemporalSeedFingerprint(NamedTuple):
+    """A node-identity fingerprint (kind / span / surface) for one temporal expr.
+
+    The comparison key both gate and golden sides reduce to: same raw_text-absolute
+    span + kind + surface ⇒ identical fingerprint (the 0-delta node identity).
+    """
+
+    source_unit_id: str
+    kind: str
+    surface_text: str
+    rule_id: str
+    char_start: int
+    char_end: int
+
+
+def _gate_temporal_seed_fingerprints(
+    bundle: SourceSurfaceBundle,
+) -> set[_TemporalSeedFingerprint]:
+    """Node fingerprints the forest TEMPORAL GATE reproduces over ALL kinds.
+
+    The forest gate re-runs the H3 recognizer (:func:`recognize_temporal_exprs`)
+    on EVERY temporal-family-gated structural segment — NOT filtered to the shared
+    slice — and fingerprints each expr at its raw_text-absolute span. This is the
+    FULL gate-reachable temporal node set: the population the "flip every temporal
+    kind to the forest" hypothesis would route through the forest. It is the LEFT
+    side of :func:`classify_forest_temporal_gate_coverage`.
+    """
+    fps: set[_TemporalSeedFingerprint] = set()
+    for unit in bundle.units:
+        forest = assemble_source_syntax_graph_for_unit(
+            subject=bundle.subject,
+            unit=unit,
+        )
+        for seg_id in _gated_temporal_segment_ids(forest):
+            seg = forest.syntax_nodes[seg_id]
+            seg_text = unit.raw_text[seg.char_start : seg.char_end]
+            for expr in recognize_temporal_exprs(seg_text):
+                fps.add(_temporal_seed_fingerprint(unit, expr, base=seg.char_start))
+    return fps
+
+
+def _golden_temporal_seed_fingerprints(
+    bundle: SourceSurfaceBundle,
+) -> set[_TemporalSeedFingerprint]:
+    """Node fingerprints the whole-unit GOLDEN scan produces over ALL kinds.
+
+    The RIGHT side of :func:`classify_forest_temporal_gate_coverage`: the
+    independent whole-unit ``recognize_temporal_exprs`` scan (the golden reference
+    the production lens preserves), every kind, fingerprinted the same way.
+    """
+    fps: set[_TemporalSeedFingerprint] = set()
+    for unit in bundle.units:
+        for expr in recognize_temporal_exprs(unit.raw_text):
+            fps.add(_temporal_seed_fingerprint(unit, expr, base=0))
+    return fps
+
+
+def _temporal_seed_fingerprint(
+    unit: SourceSurfaceUnit, expr: TemporalExpr, *, base: int
+) -> _TemporalSeedFingerprint:
+    """A node-identity fingerprint for one expr at its raw_text-absolute span.
+
+    Built from the SAME raw_text-absolute span the production seed carries
+    (``base`` is the gated segment's ``char_start`` for the gate side, ``0`` for
+    the whole-unit golden scan), so a gate-projected expr and a whole-unit-scanned
+    expr that name the SAME temporal fact at the SAME raw_text span fingerprint
+    IDENTICALLY (the 0-delta identity). Kept local (no seed minting) so this
+    characterisation mirrors :func:`…lenses.temporal.mint_temporal_expr_seed`'s
+    span math without importing the lens (avoids the module cycle).
+    """
+    start = base + expr.source_span.byte_offset
+    end = start + expr.source_span.byte_len
+    return _TemporalSeedFingerprint(
+        source_unit_id=unit.source_unit_id,
+        kind=expr.kind.value,
+        surface_text=expr.surface_text,
+        rule_id=expr.rule_id,
+        char_start=start,
+        char_end=end,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class TemporalGateCoverage:
+    """Per-kind coverage of the whole-unit golden scan BY the forest temporal gate.
+
+    The empirical, committed boundary of WHICH temporal node kinds the forest
+    temporal-family gate can reproduce 0-delta (so the boundary is a typed gate,
+    not a docstring claim). For each :class:`TemporalKind` value:
+
+    Attributes:
+        reproduced: kinds whose golden seeds the gate reproduces EXACTLY (no
+            golden seed missed, no extra) — the 0-delta-flippable population.
+        missed: ``{kind: count}`` of golden seeds the gate does NOT reach (they
+            sit in segments the temporal family does not gate — e.g. a bare
+            ``fixed_date`` in a non-temporal segment). Flipping these kinds to the
+            gate would SILENTLY DROP these nodes ⇒ NOT 0-delta ⇒ must stay
+            lens-produced.
+        extra: ``{kind: count}`` of gate seeds with no golden counterpart (the
+            gate over-produces). Expected EMPTY: the gate is span-local re-scan of
+            a strict subset of the body, so it cannot out-produce the whole-unit
+            scan.
+    """
+
+    reproduced: frozenset[str]
+    missed: dict[str, int]
+    extra: dict[str, int]
+
+
+def classify_forest_temporal_gate_coverage(
+    bundle: SourceSurfaceBundle,
+) -> TemporalGateCoverage:
+    """Classify which temporal kinds the forest gate reproduces 0-delta vs misses.
+
+    The GO/NO-GO characterisation for the "flip the non-shared temporal kinds to
+    the forest" hypothesis (standing task #27 Lane T): compares the FULL
+    gate-reachable temporal node set (:func:`_gate_temporal_seed_fingerprints`,
+    every kind) against the whole-unit golden scan
+    (:func:`_golden_temporal_seed_fingerprints`). A kind is ``reproduced`` only
+    when the gate reaches EVERY golden seed of that kind with no extra. Any kind
+    with a non-zero ``missed`` count is NOT flippable to the gate (the flip would
+    silently drop the missed nodes — the forest gate keys on temporal-family
+    OWNERSHIP, and the missed kinds occur in segments that carry no temporal cue).
+    Surface-only; reads the forest + the body; authorises no replay.
+    """
+    gate_fps = _gate_temporal_seed_fingerprints(bundle)
+    golden_fps = _golden_temporal_seed_fingerprints(bundle)
+
+    missed_counter: Counter[str] = Counter()
+    extra_counter: Counter[str] = Counter()
+    golden_kinds: set[str] = {fp.kind for fp in golden_fps}
+    for fp in golden_fps - gate_fps:
+        missed_counter[fp.kind] += 1
+    for fp in gate_fps - golden_fps:
+        extra_counter[fp.kind] += 1
+
+    reproduced = frozenset(
+        k for k in golden_kinds if missed_counter[k] == 0 and extra_counter[k] == 0
+    )
+    return TemporalGateCoverage(
+        reproduced=reproduced,
+        missed=dict(missed_counter),
+        extra=dict(extra_counter),
+    )
 
 
 def forest_temporal_keys(

@@ -47,12 +47,34 @@ class AmendmentSelectionCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class AmendmentSourcePathology:
+    """A candidate amendment dropped from the replay plan for a source reason.
+
+    Conservation record (AGENTS.md §1.8): the candidate-reading loop must not
+    silently shorten the replay plan. When ``corpus.read_source`` returns no
+    bytes for a child amendment the candidate cannot be ordered into the plan,
+    but the drop is recorded here rather than via a bare ``continue`` — mirroring
+    ``amendment_index``'s ``fi_amendment_index_source_vts_artifact_missing`` for
+    the identical condition.
+    """
+
+    rule_id: str
+    family: str
+    phase: str
+    reason: str
+    amendment_id: str
+    blocking: bool = False
+    strict_disposition: str = "record"
+
+
+@dataclass(frozen=True, slots=True)
 class ApplicableAmendmentSelection:
     """Resolved amendment set plus the oracle/cutoff witness used to select it."""
 
     records: tuple[dict[str, object], ...]
     cutoff_date: dt.date | None
     oracle_version_amendment_id: str | None
+    residuals: tuple[AmendmentSourcePathology, ...] = ()
 
 
 @lru_cache(maxsize=1)
@@ -88,7 +110,7 @@ def select_applicable_amendments(
         parent_id,
         selector=selector or ConsolidatedArtifactSelector.latest_cached_editorial(),
     )
-    candidates = _read_amendment_candidates(parent_id, corpus)
+    candidates, residuals = _read_amendment_candidates(parent_id, corpus)
     applicable, cutoff_date, selection_basis_by_amendment = _filter_candidates(
         parent_id=parent_id,
         mode=mode,
@@ -118,6 +140,7 @@ def select_applicable_amendments(
         ),
         cutoff_date=cutoff_date,
         oracle_version_amendment_id=oracle_version_amendment_id,
+        residuals=residuals,
     )
 
 
@@ -126,8 +149,18 @@ def resolve_applicable_amendment_records(
     mode: ReplaySelectionMode,
     corpus: CorpusStore | None = None,
     selector: ConsolidatedArtifactSelector | None = None,
+    *,
+    residuals_out: list[AmendmentSourcePathology] | None = None,
 ) -> tuple[list[dict[str, object]], dt.date | None, str | None]:
-    """Backward-shaped tuple adapter for replay-plan callers."""
+    """Backward-shaped tuple adapter for replay-plan callers.
+
+    Conservation (AGENTS.md §1.8): the tuple shape is preserved for the many
+    inspection/debug callers, but the source-pathology residuals computed by
+    ``select_applicable_amendments`` would otherwise be discarded here — turning
+    a missing amendment source into a silently shorter replay plan on the live
+    path. When ``residuals_out`` is supplied the residuals are threaded onto it
+    so the replay pipeline can surface them on the production residual ledger.
+    """
 
     selection = select_applicable_amendments(
         parent_id,
@@ -135,17 +168,35 @@ def resolve_applicable_amendment_records(
         corpus=corpus,
         selector=selector,
     )
+    if residuals_out is not None:
+        residuals_out.extend(selection.residuals)
     return list(selection.records), selection.cutoff_date, selection.oracle_version_amendment_id
 
 
 def _read_amendment_candidates(
     parent_id: str,
     corpus: CorpusStore,
-) -> tuple[AmendmentSelectionCandidate, ...]:
+) -> tuple[tuple[AmendmentSelectionCandidate, ...], tuple[AmendmentSourcePathology, ...]]:
     candidates: list[AmendmentSelectionCandidate] = []
+    residuals: list[AmendmentSourcePathology] = []
     for amendment_id in amendment_children_by_parent().get(parent_id, ()):
         xml_bytes = corpus.read_source(amendment_id)
         if xml_bytes is None:
+            # Conservation (AGENTS.md §1.8): a missing source artifact would
+            # otherwise silently shorten the replay plan. Record the drop the
+            # same way amendment_index does for the identical condition.
+            residuals.append(
+                AmendmentSourcePathology(
+                    rule_id="fi_amendment_selection_source_artifact_missing",
+                    family="source_pathology",
+                    phase="acquisition",
+                    reason=(
+                        "Finland amendment selection skipped a candidate "
+                        "amendment because its source XML bytes were missing."
+                    ),
+                    amendment_id=amendment_id,
+                )
+            )
             continue
         amendment_tree = etree.fromstring(xml_bytes)
         title_el = amendment_tree.find(".//{*}docTitle")
@@ -158,7 +209,7 @@ def _read_amendment_candidates(
                 title=title,
             )
         )
-    return tuple(candidates)
+    return tuple(candidates), tuple(residuals)
 
 
 def _filter_candidates(

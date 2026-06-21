@@ -33,8 +33,8 @@ _VALID_COMPLETENESS_STATUSES = frozenset(
     }
 )
 _CANDIDATE_SET_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
-    "candidate_set_certificate_as_replay_authorization",
-    "candidate_set_certificate_as_source_cue_exhaustiveness_proof_without_declared_scope",
+    "candidate_set_coverage_as_replay_authorization",
+    "candidate_set_coverage_as_source_cue_exhaustiveness_proof_without_declared_scope",
     "candidate_set_completeness_as_target_uniqueness_proof",
 )
 _RESERVED_DETAIL_KEYS = frozenset(
@@ -58,7 +58,7 @@ _RESERVED_DETAIL_KEYS = frozenset(
 
 
 @dataclass(frozen=True, slots=True)
-class CandidateSetCertificate:
+class CandidateSetCoverage:
     """Evidence envelope for a bounded candidate set.
 
     The certificate describes completeness for a declared scope. It does not
@@ -90,7 +90,7 @@ class CandidateSetCertificate:
         status = _required_string("completeness_status", self.completeness_status)
         if status not in _VALID_COMPLETENESS_STATUSES:
             raise ValueError(
-                "CandidateSetCertificate.completeness_status must be one of "
+                "CandidateSetCoverage.completeness_status must be one of "
                 f"{sorted(_VALID_COMPLETENESS_STATUSES)}"
             )
         object.__setattr__(self, "scope_id", scope_id)
@@ -102,24 +102,24 @@ class CandidateSetCertificate:
         _require_nonnegative_int("candidate_count", self.candidate_count)
         _require_nonnegative_int("missing_candidate_count", self.missing_candidate_count)
         if not isinstance(self.next_promotion_allowed, bool):
-            raise ValueError("CandidateSetCertificate.next_promotion_allowed must be boolean")
+            raise ValueError("CandidateSetCoverage.next_promotion_allowed must be boolean")
         candidate_ids = _string_tuple("candidate_ids", self.candidate_ids)
         selected_ids = _string_tuple("selected_candidate_ids", self.selected_candidate_ids)
         blocker_families = _string_tuple("blocker_families", self.blocker_families)
         next_requires = _string_tuple("next_promotion_requires", self.next_promotion_requires)
         if self.candidate_count < len(candidate_ids):
-            raise ValueError("CandidateSetCertificate.candidate_count must cover candidate_ids")
+            raise ValueError("CandidateSetCoverage.candidate_count must cover candidate_ids")
         if candidate_ids and not set(selected_ids).issubset(set(candidate_ids)):
             raise ValueError(
-                "CandidateSetCertificate.selected_candidate_ids must be a subset of candidate_ids"
+                "CandidateSetCoverage.selected_candidate_ids must be a subset of candidate_ids"
             )
         if status == CANDIDATE_SET_COMPLETE and self.missing_candidate_count != 0:
             raise ValueError(
-                "CandidateSetCertificate(status='complete') requires missing_candidate_count=0"
+                "CandidateSetCoverage(status='complete') requires missing_candidate_count=0"
             )
         if self.next_promotion_allowed and status != CANDIDATE_SET_COMPLETE:
             raise ValueError(
-                "CandidateSetCertificate.next_promotion_allowed requires complete status"
+                "CandidateSetCoverage.next_promotion_allowed requires complete status"
             )
         blocker_counts = _int_mapping("blocker_counts", self.blocker_counts)
         _reject_reserved_detail_keys(self.detail)
@@ -153,13 +153,13 @@ class CandidateSetCertificate:
 
 def candidate_set_evidence_report(
     certificates: (
-        CandidateSetCertificate
+        CandidateSetCoverage
         | Mapping[str, Any]
-        | tuple[CandidateSetCertificate | Mapping[str, Any], ...]
+        | tuple[CandidateSetCoverage | Mapping[str, Any], ...]
     ),
     *,
     jurisdiction: str,
-    report_kind: str = "candidate_set_certificate",
+    report_kind: str = "candidate_set_coverage",
 ) -> EvidenceSurfaceReport:
     """Project candidate-set certificates into a shared passive report."""
 
@@ -174,7 +174,7 @@ def candidate_set_evidence_report(
         for family in _sequence(row.get("blocker_families"))
     )
     summary = {
-        "candidate_set_certificate_count": len(rows),
+        "candidate_set_coverage_count": len(rows),
         "candidate_set_status_counts": status_counts,
         "candidate_set_kind_counts": kind_counts,
         "phase_counts": phase_counts,
@@ -214,28 +214,28 @@ def candidate_set_evidence_report(
         detail={
             "safe_default": "treat_candidate_sets_as_completeness_evidence_not_replay_authority",
             "forbidden_shortcuts": _CANDIDATE_SET_REPORT_FORBIDDEN_SHORTCUTS,
-            "included_surfaces": ("candidate_set_certificate",),
+            "included_surfaces": ("candidate_set_coverage",),
         },
     )
 
 
 def _candidate_set_sequence(
     value: (
-        CandidateSetCertificate
+        CandidateSetCoverage
         | Mapping[str, Any]
-        | tuple[CandidateSetCertificate | Mapping[str, Any], ...]
+        | tuple[CandidateSetCoverage | Mapping[str, Any], ...]
     ),
-) -> tuple[CandidateSetCertificate | Mapping[str, Any], ...]:
-    if isinstance(value, CandidateSetCertificate) or isinstance(value, Mapping):
-        return (cast(CandidateSetCertificate | Mapping[str, Any], value),)
+) -> tuple[CandidateSetCoverage | Mapping[str, Any], ...]:
+    if isinstance(value, CandidateSetCoverage) or isinstance(value, Mapping):
+        return (cast(CandidateSetCoverage | Mapping[str, Any], value),)
     return tuple(value)
 
 
-def _candidate_set_mapping(value: CandidateSetCertificate | Mapping[str, Any]) -> Mapping[str, Any]:
-    if isinstance(value, CandidateSetCertificate):
+def _candidate_set_mapping(value: CandidateSetCoverage | Mapping[str, Any]) -> Mapping[str, Any]:
+    if isinstance(value, CandidateSetCoverage):
         return value.to_dict()
     # Rehydrate through the dataclass so mapping rows get the same validation.
-    return CandidateSetCertificate(
+    return CandidateSetCoverage(
         scope_id=str(value.get("scope_id") or ""),
         candidate_set_kind=str(value.get("candidate_set_kind") or ""),
         phase=str(value.get("phase") or ""),
@@ -264,7 +264,7 @@ def _candidate_set_mapping(value: CandidateSetCertificate | Mapping[str, Any]) -
 def _candidate_set_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         **dict(row),
-        "surface": "candidate_set_certificate",
+        "surface": "candidate_set_coverage",
         "row_id": str(row.get("scope_id") or ""),
         "subject_id": str(row.get("scope_id") or ""),
         "status": str(row.get("completeness_status") or ""),
@@ -276,32 +276,32 @@ def _candidate_set_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
 def _required_string(field_name: str, value: Any) -> str:
     text = str(value or "").strip()
     if not text:
-        raise ValueError(f"CandidateSetCertificate.{field_name} is required")
+        raise ValueError(f"CandidateSetCoverage.{field_name} is required")
     return text
 
 
 def _require_nonnegative_int(field_name: str, value: Any) -> None:
     if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError(f"CandidateSetCertificate.{field_name} must be an integer")
+        raise ValueError(f"CandidateSetCoverage.{field_name} must be an integer")
     if value < 0:
-        raise ValueError(f"CandidateSetCertificate.{field_name} must be non-negative")
+        raise ValueError(f"CandidateSetCoverage.{field_name} must be non-negative")
 
 
 def _string_tuple(field_name: str, values: Any) -> tuple[str, ...]:
     if isinstance(values, str) or not isinstance(values, tuple):
-        raise ValueError(f"CandidateSetCertificate.{field_name} must be a tuple")
+        raise ValueError(f"CandidateSetCoverage.{field_name} must be a tuple")
     return tuple(str(value) for value in values if str(value))
 
 
 def _int_mapping(field_name: str, value: Any) -> Mapping[str, int]:
     if not isinstance(value, Mapping):
-        raise ValueError(f"CandidateSetCertificate.{field_name} must be a mapping")
+        raise ValueError(f"CandidateSetCoverage.{field_name} must be a mapping")
     normalized: dict[str, int] = {}
     for key, count in value.items():
         if not isinstance(count, int) or isinstance(count, bool):
-            raise ValueError(f"CandidateSetCertificate.{field_name} values must be integers")
+            raise ValueError(f"CandidateSetCoverage.{field_name} values must be integers")
         if count < 0:
-            raise ValueError(f"CandidateSetCertificate.{field_name} values must be non-negative")
+            raise ValueError(f"CandidateSetCoverage.{field_name} values must be non-negative")
         normalized[str(key)] = count
     return freeze_mapping(normalized)
 
@@ -325,9 +325,9 @@ def _mapping_detail_without_certificate_keys(value: Mapping[str, Any]) -> Mappin
 
 def _required_nonnegative_int_value(field_name: str, value: Any) -> int:
     if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError(f"CandidateSetCertificate.{field_name} must be an integer")
+        raise ValueError(f"CandidateSetCoverage.{field_name} must be an integer")
     if value < 0:
-        raise ValueError(f"CandidateSetCertificate.{field_name} must be non-negative")
+        raise ValueError(f"CandidateSetCoverage.{field_name} must be non-negative")
     return value
 
 
@@ -349,7 +349,7 @@ def _counts(values: Any) -> dict[str, int]:
 
 def _reject_reserved_detail_keys(values: Mapping[str, Any]) -> None:
     if not isinstance(values, Mapping):
-        raise ValueError("CandidateSetCertificate.detail must be a mapping")
+        raise ValueError("CandidateSetCoverage.detail must be a mapping")
     overlaps = sorted(_RESERVED_DETAIL_KEYS.intersection(values.keys()))
     if overlaps:
         joined = ", ".join(overlaps)

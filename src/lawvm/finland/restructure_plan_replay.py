@@ -39,6 +39,7 @@ FI_RESTRUCTURE_RENUMBER_TIMELINE_RULE_ID = "fi.restructure.renumber_timeline"
 FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_RULE_ID = (
     "fi.restructure.relabel_section_snapshot"
 )
+FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_ATTR = "lawvm_restructure_relabel_section_snapshot"
 FI_RESTRUCTURE_CHAPTER_PART_MOVE_TIMELINE_RULE_ID = (
     "fi.restructure.chapter_part_move_timeline"
 )
@@ -48,6 +49,21 @@ FI_RESTRUCTURE_CHAPTER_PART_MOVE_LABEL_REUSE_GUARD_RULE_ID = (
 CHAPTER_PART_MOVE_LABEL_REUSE_SKIP_REASON = (
     "chapter_label_reuse_old_part_still_hosts_chapter"
 )
+
+
+def _mark_restructure_relabel_section_snapshot(payload: IRNode) -> IRNode:
+    """Mark section snapshots emitted only to bridge restructure relabel lineage."""
+    if payload.kind is not IRNodeKind.SECTION:
+        return payload
+    attrs = dict(payload.attrs)
+    attrs[FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_ATTR] = "1"
+    return IRNode(
+        kind=payload.kind,
+        label=payload.label,
+        text=payload.text,
+        attrs=attrs,
+        children=payload.children,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,7 +310,9 @@ def emit_restructure_plan_section_snapshot_legal_operations(
         op_id = f"snapshot_section_{section_label}_restructure_{amendment_id}"
         if op_id in existing_op_ids:
             continue
-        payload = _resolve_section_node_at_live_path(state_ir, live_path)
+        payload = exec_op.snapshot_payload
+        if payload is None:
+            payload = _resolve_section_node_at_live_path(state_ir, live_path)
         if payload is None or payload.kind is not IRNodeKind.SECTION:
             continue
         lo_ops_out.append(
@@ -303,7 +321,11 @@ def emit_restructure_plan_section_snapshot_legal_operations(
                 sequence=0,
                 action=StructuralAction.INSERT,
                 target=address,
-                payload=_stamp_exact_section_snapshot_payload(copy.deepcopy(payload)),
+                payload=_stamp_exact_section_snapshot_payload(
+                    _mark_restructure_relabel_section_snapshot(
+                        copy.deepcopy(payload)
+                    )
+                ),
                 source=source,
                 group_id=f"finland-restructure:{amendment_id}",
                 witness_rule_id=FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_RULE_ID,

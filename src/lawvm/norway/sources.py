@@ -598,7 +598,7 @@ def _no_ingest_duplicate_locator_source_lane_evidence(
             SourceLaneAttempt(
                 lane="existing_farchive_locator",
                 locator=artifact.locator,
-                status="selected_existing_identical" if identical_payloads else "selected_existing_conflict",
+                lane_attempt_status="selected_existing_identical" if identical_payloads else "selected_existing_conflict",
                 detail={
                     "logical_id": artifact.logical_id,
                     "payload_digest": hashlib.sha256(existing_payload).hexdigest(),
@@ -607,7 +607,7 @@ def _no_ingest_duplicate_locator_source_lane_evidence(
             SourceLaneAttempt(
                 lane="incoming_archive_member",
                 locator=_no_archive_member_locator(artifact),
-                status="duplicate_identical_not_stored" if identical_payloads else "blocked_conflicting_duplicate",
+                lane_attempt_status="duplicate_identical_not_stored" if identical_payloads else "blocked_conflicting_duplicate",
                 detail={
                     "logical_id": artifact.logical_id,
                     "logical_locator": artifact.locator,

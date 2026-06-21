@@ -86,6 +86,61 @@ def test_diagnose_treats_trailing_figure_legend_as_editorial_convention() -> Non
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_unblamed_high_overlap_truncation_as_source_pathology() -> None:
+    # Real shape: 1989/573 §14. Both surfaces carry the same base provision and
+    # no amendment touches it, but the consolidated witness drops/mangles a
+    # phrase. This must not be reported as replay emitting an extra unit.
+    replay = (
+        "14 § Uudistaminen ja kumoaminen Ennen tämän lain voimaantuloa annetut "
+        "määräykset ja ohjeet on saatettava 4§:n sekä tämän lain nojalla "
+        "annettujen määräysten mukaisiksi 31 päivään joulukuuta 1990 mennessä. "
+        "Ennen tämän lain voimaantuloa annetut määräykset on julkaistava ja "
+        "rekisteröitävä viimeistään 31 päivänä joulukuuta 1990 tai kumottava "
+        "vuoden 1991 alusta lukien. Samasta ajankohdasta lukien on niin ikään "
+        "kumottava ohjeet, joita ei ole rekisteröity viimeistään 31 päivänä "
+        "joulukuuta 1990."
+    )
+    oracle = (
+        "14 § Uudistaminen ja kumoaminen Ennen tämän lain voimaantuloa annetut "
+        "määräykset ja ohjeet on annettujen määräysten mukaisiksi 31 päivään "
+        "joulukuuta 1990 mennessä. Ennen tämän lain voimaantuloa annetut "
+        "määräykset on julkaistava ja rekisteröitävä viimeistään 31 päivänä "
+        "joulukuuta1lukien. Samasta ajankohdasta lukien on niin ikään kumottava "
+        "ohjeet, joita ei ole rekisteröity viimeistään 31 päivänä joulukuuta 1990."
+    )
+
+    assert _diagnose(replay, oracle, None) == "SOURCE_PATHOLOGY"
+
+
+def test_diagnose_treats_unblamed_tiny_base_text_corruption_as_source_pathology() -> None:
+    # Real shape: 1966/232 chapter 4 section 14. The base XML witness has two
+    # tiny OCR/source corruptions ("12 a 13", "toiston") while the oracle has
+    # the coherent legal text ("12 ja 13", "toisten"). No amendment touches
+    # the section, so this is source pathology, not replay mutation drift.
+    replay = (
+        "Tiedoksianto muulle julkisoikeudelliselle yhdyskunnalle kuin 12 a 13 "
+        "§:ssä mainitulle on toimitettava sen hallinnon puheenjohtajalle tai "
+        "sille, jolla on oikeus edustaa yhdyskuntaa. Tiedoksianto yhtiölle, "
+        "osuuskunnalle, yhdistykselle tai muulle yhtymälle taikka laitokselle "
+        "tai säätiölle toimitetaan henkilölle, jolla yksin tai yhdessä toiston "
+        "kanssa on oikeus sitä edustaa, taikka, jos edustajaa ei ole, "
+        "yleistiedoksiannolla. Tiedoksianto kuolinpesälle voidaan toimittaa "
+        "myös toimitsijalle, jonka hallussa pesä on."
+    )
+    oracle = (
+        "Tiedoksianto muulle julkisoikeudelliselle yhdyskunnalle kuin 12 ja 13 "
+        "§:ssä mainitulle on toimitettava sen hallinnon puheenjohtajalle tai "
+        "sille, jolla on oikeus edustaa yhdyskuntaa. Tiedoksianto yhtiölle, "
+        "osuuskunnalle, yhdistykselle tai muulle yhtymälle taikka laitokselle "
+        "tai säätiölle toimitetaan henkilölle, jolla yksin tai yhdessä toisten "
+        "kanssa on oikeus sitä edustaa, taikka, jos edustajaa ei ole, "
+        "yleistiedoksiannolla. Tiedoksianto kuolinpesälle voidaan toimittaa "
+        "myös toimitsijalle, jonka hallussa pesä on."
+    )
+
+    assert _diagnose(replay, oracle, None) == "SOURCE_PATHOLOGY"
+
+
 def test_diagnose_keeps_replay_missing_when_drop_exceeds_figure_legend() -> None:
     # A genuine mid-text drop beyond the trailing legend must stay flagged: the
     # self-validating gate only reclassifies when replay matches oracle minus
@@ -113,6 +168,166 @@ def test_diagnose_treats_bare_oracle_stub_as_editorial_convention() -> None:
     oracle = "5 a §"
 
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_treats_legacy_roman_division_heading_as_editorial_convention() -> None:
+    # Real shape: 1922/148 §1. The source witness projects the division title
+    # "I. Yleisiä säännöksiä." into the following section; Finlex's consolidated
+    # section text omits that presentation heading.
+    replay = (
+        "1 § I. Yleisiä säännöksiä. Tuomioistuimissa ja muissa valtion "
+        "viranomaisissa on käytettävä maan kansalliskieltä."
+    )
+    oracle = (
+        "1 § Tuomioistuimissa ja muissa valtion viranomaisissa on käytettävä "
+        "maan kansalliskieltä."
+    )
+
+    assert _diagnose(replay, oracle, {"action": "INSERT", "source_statute": "1991/517"}) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_treats_legacy_numbered_section_heading_as_editorial_convention() -> None:
+    # Real shape: 1932/242 §67. The source witness projects the numbered
+    # subdivision title "2. Vekselinjäljennökset." into the section; Finlex's
+    # consolidated section text omits that presentation heading.
+    replay = (
+        "67 § 2. Vekselinjäljennökset. Jokaisella vekselin haltijalla on "
+        "oikeus ottaa siitä jäljennöksiä."
+    )
+    oracle = "67 § Jokaisella vekselin haltijalla on oikeus ottaa siitä jäljennöksiä."
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_treats_oracle_subsection_ordinals_as_editorial_convention() -> None:
+    # Real shape: 1992/1702 §5. Finlex projects subsection ordinals ("1.",
+    # "2.", "3.") into the paragraph text; LawVM carries subsection identity as
+    # structure and renders the same body without those display prefixes.
+    replay = (
+        "5 § Ajoneuvon, järjestelmän, osan tai teknisen yksikön valmistaja ja valmistajan edustaja "
+        "Ajoneuvon valmistajalla tarkoitetaan valmistajaa. "
+        "Ajoneuvovalmistajan edustajalla tarkoitetaan edustajaa. "
+        "Piensarjatyyppikatsastuksessa valmistajaksi rinnastetaan muuttaja."
+    )
+    oracle = (
+        "5 § Ajoneuvon, järjestelmän, osan tai teknisen yksikön valmistaja ja valmistajan edustaja "
+        "1. Ajoneuvon valmistajalla tarkoitetaan valmistajaa. "
+        "2. Ajoneuvovalmistajan edustajalla tarkoitetaan edustajaa. "
+        "3. Piensarjatyyppikatsastuksessa valmistajaksi rinnastetaan muuttaja."
+    )
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_treats_blame_owned_extra_insert_as_oracle_stale() -> None:
+    # Real shape: 1974/1086 §12b. Replay carries text inserted by 1981/935 that
+    # the selected oracle omits; this is an oracle/source mismatch, not an
+    # unowned replay extra.
+    replay = (
+        "12 b § Tavarankuljetustukea voidaan myöntää. "
+        "Asetuksella annetaan tarkempia säännöksiä ehdoista."
+    )
+    oracle = "12 b § Tavarankuljetustukea voidaan myöntää."
+
+    assert (
+        _diagnose(replay, oracle, {"action": "insert", "source_statute": "1981/935"})
+        == "ORACLE_STALE"
+    )
+
+
+def test_diagnose_treats_promulgation_closure_as_editorial_convention() -> None:
+    # Real shape: 1922/148 §26. The final promulgation closure is source-side
+    # formula text, not consolidated provision body text.
+    replay = (
+        "26 § Tämä laki tulee voimaan 1 päivänä tammikuuta 1923. "
+        "Tätä kaikki asianomaiset noudattakoot."
+    )
+    oracle = "26 § Tämä laki tulee voimaan 1 päivänä tammikuuta 1923."
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_source_pathology_demotes_absent_subsection_target_without_failed_op() -> None:
+    # Real family: 1922/148 §7. Base XML collapsed the historical second moment
+    # into subsection 1; 1975/10 explicitly repeals 7 §:n 2 momentti, so replay
+    # has source-pathology ownership even when no coarse failed-op row is present.
+    master = SimpleNamespace(
+        findings=(),
+        source_pathology_rows=lambda: [
+            {
+                "source_statute": "1975/10",
+                "code": "SUBSECTION_TARGET_ABSENT",
+                "target_label": "7 § 2 mom",
+                "detail": {"target_section": "7", "target_paragraph": "2"},
+            }
+        ],
+    )
+    blame_op = {
+        "source_statute": "1975/10",
+        "target_norm": "7",
+        "target_paragraph": "2",
+    }
+
+    assert _source_pathology_diagnosis_for_blame(master, blame_op) == "SOURCE_PATHOLOGY"
+
+
+def test_source_pathology_demotes_section_level_destructive_shape_loss() -> None:
+    # Real family: 1993/1709 §1 / 2000/882. The sparse schedule merge records a
+    # section-level DESTRUCTIVE_SHAPE_LOSS_RISK row with target_label="1"; the
+    # divergence blame row points at the same source and section.
+    master = SimpleNamespace(
+        findings=(),
+        source_pathology_rows=lambda: [
+            {
+                "source_statute": "2000/882",
+                "code": "DESTRUCTIVE_SHAPE_LOSS_RISK",
+                "target_unit_kind": "section",
+                "target_label": "1",
+                "detail": {},
+            }
+        ],
+    )
+    blame_op = {
+        "source_statute": "2000/882",
+        "target_norm": "1",
+        "target_unit_kind": "section",
+    }
+
+    assert _source_pathology_diagnosis_for_blame(master, blame_op) == "SOURCE_PATHOLOGY"
+
+
+def test_diagnose_treats_old_code_reference_marker_as_editorial() -> None:
+    replay = "5 § - - - - - - - - - - - - - -"
+    oracle = "5 § 5 §:n sijasta ks. L velkojien maksunsaantijärjestyksestä 1578/1992."
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_old_code_reference_marker_structural_diff_is_presentation_only() -> None:
+    events = [
+        {
+            "kind": "wording_text_changed",
+            "left_text": (
+                "[Jos jollakulla on sellainen piilukirja, kuin Merilaissa on "
+                "selitetty, olkoon hänellä etuoikeus laivaan ja tavaraan.]"
+            ),
+            "right_text": "7 §:n sijasta ks. MeriL 674/1994 4 luku 4 §.",
+        }
+    ]
+
+    assert is_presentation_structural_diff({"label": 0}, events) is True
+
+
+def test_old_code_reference_marker_requires_obsolete_replay_shape() -> None:
+    events = [
+        {
+            "kind": "wording_text_changed",
+            "left_text": "Pantinhaltija saa myydä pantin ja ottaa saatavansa kauppahinnasta.",
+            "right_text": "2 §:n sijasta ks. L velkojien maksunsaantijärjestyksestä 1578/1992.",
+        }
+    ]
+
+    assert is_presentation_structural_diff({"label": 0}, events) is False
 
 
 def test_diagnose_treats_multiline_aiempi_change_note_as_editorial() -> None:
@@ -167,6 +382,39 @@ def test_classify_statute_1988_451_subsection_repeal_not_extra() -> None:
     row = next(item for item in result.section_results if item["section"] == "section:17")
     assert row["diagnosis"] != "REPLAY_EXTRA"
     assert row["diagnosis"] == "EDITORIAL_CONVENTION"
+
+
+def test_classify_statute_1989_573_unblamed_text_corruption_is_not_replay_extra() -> None:
+    result = _classify_statute("1989/573", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+    assert by_section["section:11"]["diagnosis"] == "SOURCE_PATHOLOGY"
+    assert by_section["section:14"]["diagnosis"] == "SOURCE_PATHOLOGY"
+
+
+def test_classify_statute_1988_852_unblamed_base_text_corruption_is_source_pathology() -> None:
+    result = _classify_statute("1988/852", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+    assert by_section["section:2"]["diagnosis"] == "SOURCE_PATHOLOGY"
+
+
+def test_classify_statute_1979_130_unblamed_base_text_gap_is_source_pathology() -> None:
+    result = _classify_statute("1979/130", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+    assert by_section["section:6"]["diagnosis"] == "SOURCE_PATHOLOGY"
+
+
+def test_classify_statute_1966_232_unblamed_base_text_typo_is_source_pathology() -> None:
+    result = _classify_statute("1966/232", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+    assert by_section["chapter:4/section:14"]["diagnosis"] == "SOURCE_PATHOLOGY"
 
 
 def test_source_pathology_diagnosis_maps_recodification_omission_shell_to_source_incomplete() -> None:
@@ -371,6 +619,25 @@ def test_classify_statute_1990_1295_abridged_chapter_missing_is_source_incomplet
         "chapter:11/section:60",
     ):
         assert by_section[label]["diagnosis"] == "MISSING"
+
+
+def test_classify_statute_1982_182_implicit_abridged_chapter_gap_is_source_incomplete() -> None:
+    # 1982/182 base XML silently jumps from chapter 3 to chapter 8. Amendment
+    # bodies later restate chapters inside that gap, proving the base witness is
+    # abridged, but no amendment body carries chapter 4. Sections the oracle
+    # still places under chapter 4 cannot be reconstructed from replay inputs.
+    result = _classify_statute("1982/182", "official_consolidation")
+
+    assert result is not None
+
+    by_section = {item["section"]: item for item in result.section_results}
+    for label in (
+        "chapter:4/section:24",
+        "chapter:4/section:25",
+        "chapter:4/section:29",
+        "chapter:4/section:30",
+    ):
+        assert by_section[label]["diagnosis"] == "SOURCE_INCOMPLETE"
 
 
 def test_classify_statute_1994_1466_repealed_sections_are_editorial_not_missing() -> None:
@@ -949,6 +1216,32 @@ def test_diagnose_treats_temporary_stub_over_substantive_replay_as_editorial() -
     oracle = "13 a § 13 a § oli väliaikaisesti voimassa 1.1.2005-31.12.2022 L:lla 1429/2004."
 
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_treats_blamed_tiny_source_text_corruption_as_source_pathology() -> None:
+    # Real shape: 1983/683 section 7 carries source XML typos ("siitä>" and
+    # "päilidehuolto") while the oracle silently corrects them and adds an
+    # amendment-date heading annotation.
+    replay = (
+        "7 § Palvelujen kehittäminen ja kasvatuksen tukeminen "
+        "Kunnan on sosiaali- ja terveydenhuoltoa, koulutointa sekä muita "
+        "lapsille, nuorille ja lapsiperheille tarkoitettuja palveluja "
+        "kehittäessään pidettävä huolta myös siitä> että näiden palvelujen "
+        "avulla tuetaan huoltajia lasten kasvatuksessa. Kun aikuiselle "
+        "annetaan sosiaali- ja terveydenhuollon, kuten päilidehuolto- ja "
+        "mielenterveyspalveluja, on otettava huomioon myös lapsen tuen tarve."
+    )
+    oracle = (
+        "7 § Palvelujen kehittäminen ja kasvatuksen tukeminen (9.2.1990/139) "
+        "Kunnan on sosiaali- ja terveydenhuoltoa, koulutointa sekä muita "
+        "lapsille, nuorille ja lapsiperheille tarkoitettuja palveluja "
+        "kehittäessään pidettävä huolta myös siitä, että näiden palvelujen "
+        "avulla tuetaan huoltajia lasten kasvatuksessa. Kun aikuiselle "
+        "annetaan sosiaali- ja terveydenhuollon, kuten päihdehuolto- ja "
+        "mielenterveyspalveluja, on otettava huomioon myös lapsen tuen tarve."
+    )
+
+    assert _diagnose(replay, oracle, {"action": "insert", "source_statute": "1990/139"}) == "SOURCE_PATHOLOGY"
 
 
 def test_strip_editorial_annotations_strips_temporary_residue_without_case_suffix() -> None:
@@ -3136,6 +3429,120 @@ def test_is_presentation_structural_diff_item_suffix_vs_wrapup_owner_projection(
     assert is_presentation_structural_diff(sd, changed_events) is False
 
 
+def test_is_presentation_structural_diff_wrapup_shifted_subsection_projection() -> None:
+    # 2021/487 § 10 style: source/replay owns a post-list penalty tail as the
+    # next subsection, while Finlex projects it as wrapUp under the list
+    # subsection and shifts the following subsection ordinal up.
+    sd = {"label": ""}
+    tail = (
+        "on tuomittava, jollei teosta muualla laissa säädetä ankarampaa "
+        "rangaistusta, luonnontuotteita keräävien ulkomaalaisten "
+        "oikeudellisesta asemasta annetun lain rikkomuksesta sakkoon."
+    )
+    following = (
+        "Rangaistusvastuun kohdentumiseen luonnontuotekeruualan toimijan ja "
+        "tämän edustajan kesken sovelletaan, mitä rikoslain 47 luvun 7 §:ssä "
+        "säädetään."
+    )
+    events = [
+        {
+            "kind": "facet_added",
+            "unit_kind": "wrapUp",
+            "semantic_path": ["section:10", "subsection:1", "wrapUp"],
+            "left_text": None,
+            "right_text": tail,
+            "right_badge": "loppukappale",
+        },
+        {
+            "kind": "wording_text_changed",
+            "unit_kind": "subsection",
+            "unit_label": "2",
+            "semantic_path": ["section:10", "subsection:2"],
+            "left_text": tail,
+            "right_text": following,
+        },
+        {
+            "kind": "unit_missing_right",
+            "unit_kind": "subsection",
+            "unit_label": "3",
+            "semantic_path": ["section:10", "subsection:3"],
+            "left_text": following,
+            "right_text": None,
+        },
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_events = [
+        events[0],
+        events[1],
+        {
+            **events[2],
+            "left_text": following.replace("rikoslain", "muun lain"),
+        },
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
+def test_is_presentation_structural_diff_wrapup_projected_as_last_item_subitem() -> None:
+    # 2014/387 § 46 at the 2022/16 snapshot: replay owns the final penalty
+    # sentence as subsection wrapUp, while Finlex projects it as item 8's first
+    # subitem and item 8's text as an intro.  This is comparison-only and must
+    # require exact conservation of both texts.
+    sd = {"label": ""}
+    item_text = "laiminlyö 38 §:n mukaisen avunantovelvollisuutensa,"
+    penalty = (
+        "on tuomittava, jollei teosta muualla laissa säädetä ankarampaa "
+        "rangaistusta, eläinten lääkitsemisrikkomuksesta sakkoon."
+    )
+    events = [
+        {
+            "kind": "facet_removed",
+            "unit_kind": "wrapUp",
+            "facet_kind": "wrapUp",
+            "semantic_path": ["section:46", "subsection:1", "wrapUp"],
+            "left_text": penalty,
+            "left_badge": "loppukappale",
+        },
+        {
+            "kind": "facet_added",
+            "unit_kind": "intro",
+            "facet_kind": "intro",
+            "semantic_path": ["section:46", "subsection:1", "item:8", "intro"],
+            "right_text": item_text,
+            "right_badge": "johdanto",
+        },
+        {
+            "kind": "wording_text_changed",
+            "unit_kind": "item",
+            "unit_label": "8",
+            "semantic_path": ["section:46", "subsection:1", "item:8"],
+            "left_text": item_text,
+            "left_badge": "8 kohta",
+            "right_badge": "8 kohta",
+        },
+        {
+            "kind": "unit_missing_left",
+            "unit_kind": "subitem",
+            "unit_label": "1",
+            "semantic_path": ["section:46", "subsection:1", "item:8", "subitem:1"],
+            "right_text": penalty,
+            "right_badge": "1 alakohta",
+        },
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_events = [
+        *events[:-1],
+        {
+            **events[-1],
+            "right_text": penalty.replace("sakkoon", "vankeuteen"),
+        },
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
 def test_is_presentation_structural_diff_value_table_subsections_vs_items() -> None:
     # 2020/82 § 4 style: source/replay owns two unlabeled table blocks as
     # subsection siblings, while Finlex projects the same blocks as list items.
@@ -3213,6 +3620,90 @@ def test_is_presentation_structural_diff_intro_vs_wording_owner_projection() -> 
     changed_events = [
         events[0],
         {**events[1], "right_text": text.replace("lunastustoimituksissa", "verotuksessa")},
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
+def test_is_presentation_structural_diff_lettered_subitems_flattened_to_items() -> None:
+    # 1993/91 § 4 style: source/replay nests lettered subitems under item 3,
+    # while Finlex projects the same rows as sibling lettered items.
+    sd = {"label": ""}
+    intro = (
+        "muuta omaisuusvahingon, varallisuusvahingon tai "
+        "vahingonkorvausvastuun varalle otettua vakuutusta, jos "
+        "vakuutuksenottaja täyttää ainakin kaksi seuraavasta kolmesta "
+        "tunnusmerkistä:"
+    )
+    row_a = "vakuutuksenottajan taseen loppusumma on yli 37,2 miljoonaa markkaa;"
+    row_b = "vakuutuksenottajan liikevaihto on yli 76,8 miljoonaa markkaa;"
+    events = [
+        {
+            "kind": "facet_removed",
+            "facet_kind": "intro",
+            "unit_kind": "intro",
+            "semantic_path": ["section:4", "subsection:1", "item:3", "intro"],
+            "left_text": intro,
+            "right_text": None,
+        },
+        {
+            "kind": "wording_text_changed",
+            "unit_kind": "item",
+            "unit_label": "3",
+            "semantic_path": ["section:4", "subsection:1", "item:3"],
+            "left_text": None,
+            "right_text": intro,
+        },
+        {
+            "kind": "unit_missing_right",
+            "unit_kind": "subitem",
+            "unit_label": "a",
+            "left_text": row_a,
+            "right_text": None,
+        },
+        {
+            "kind": "unit_missing_right",
+            "unit_kind": "subitem",
+            "unit_label": "b",
+            "left_text": row_b,
+            "right_text": None,
+        },
+        {
+            "kind": "unit_missing_left",
+            "unit_kind": "item",
+            "unit_label": "a",
+            "left_text": None,
+            "right_text": row_a,
+        },
+        {
+            "kind": "unit_missing_left",
+            "unit_kind": "item",
+            "unit_label": "b",
+            "left_text": None,
+            "right_text": row_b,
+        },
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_row_a = "alkuperäinen oikeudellinen vaatimus on täytettävä;"
+    changed_row_b = "muutettu oikeudellinen vaatimus on täytettävä;"
+    changed_events = [
+        {
+            **events[0],
+            "left_text": "seuraavien tunnusmerkkien perusteella:",
+        },
+        {
+            **events[1],
+            "right_text": "seuraavien tunnusmerkkien perusteella:",
+        },
+        {
+            **events[2],
+            "left_text": changed_row_a,
+        },
+        {
+            **events[4],
+            "right_text": changed_row_b,
+        },
     ]
     assert is_presentation_structural_diff(sd, changed_events) is False
 

@@ -1543,11 +1543,11 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
     assert report["dry_run_claims"] is False
     assert report["agreement_claims"] is False
     assert report["candidate_claim_scope"] == "frontier_triage_only"
-    assert report["candidate_set_certificate"]["completeness_status"] == "complete"
-    assert report["candidate_set_certificate"]["candidate_count"] == 5
-    assert report["candidate_set_certificate"]["missing_candidate_count"] == 0
-    assert report["candidate_set_certificate"]["next_promotion_allowed"] is False
-    assert report["candidate_set_certificate"]["next_promotion_requires"] == [
+    assert report["candidate_set_coverage"]["completeness_status"] == "complete"
+    assert report["candidate_set_coverage"]["candidate_count"] == 5
+    assert report["candidate_set_coverage"]["missing_candidate_count"] == 0
+    assert report["candidate_set_coverage"]["next_promotion_allowed"] is False
+    assert report["candidate_set_coverage"]["next_promotion_requires"] == [
         "candidate_set_completeness",
         "execution_authorization",
     ]
@@ -1811,8 +1811,8 @@ def test_candidates_report_jsonable_can_omit_rows_for_summary_only() -> None:
     assert report["candidate_effect_claims"] is True
     assert report["replay_claims"] is False
     assert report["agreement_claims"] is False
-    assert report["candidate_set_certificate"]["summary_only_projection"] is True
-    assert report["candidate_set_certificate"]["completeness_status"] == "complete"
+    assert report["candidate_set_coverage"]["summary_only_projection"] is True
+    assert report["candidate_set_coverage"]["completeness_status"] == "complete"
 
 
 def test_candidates_report_jsonable_can_limit_summary_count_maps() -> None:
@@ -2297,8 +2297,8 @@ def test_uk_candidates_top_zero_json_summary_preserves_matched_frontier(monkeypa
     assert payload["rows_truncated"] is True
     assert payload["candidate_effect_claims"] is True
     assert payload["replay_claims"] is False
-    assert payload["candidate_set_certificate"]["completeness_status"] == "truncated"
-    assert payload["candidate_set_certificate"]["missing_candidate_count"] == 2
+    assert payload["candidate_set_coverage"]["completeness_status"] == "truncated"
+    assert payload["candidate_set_coverage"]["missing_candidate_count"] == 2
 
 
 def test_uk_candidates_top_zero_summary_aggregates_saved_bench_counts_without_diagnostics(
@@ -3219,11 +3219,11 @@ def test_uk_candidates_full_mode_exports_manual_compile_evidence_jsonl(
     assert rows[0]["claim_status"] == "unresolved_work_item"
     assert rows[0]["validator_status"] == "not_validated"
     assert rows[0]["work_item_id"].startswith("uk-manual-frontier-")
-    assert rows[0]["candidate_set_certificate"]["completeness_status"] == "complete"
-    assert rows[0]["candidate_set_certificate"]["candidate_ids"] == ["s. 1"]
-    assert rows[0]["candidate_set_certificate"]["next_promotion_allowed"] is False
-    assert rows[0]["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
-        rows[0]["candidate_set_certificate"]
+    assert rows[0]["candidate_set_coverage"]["completeness_status"] == "complete"
+    assert rows[0]["candidate_set_coverage"]["candidate_ids"] == ["s. 1"]
+    assert rows[0]["candidate_set_coverage"]["next_promotion_allowed"] is False
+    assert rows[0]["frontier_work_item"]["detail"]["candidate_set_coverage"] == (
+        rows[0]["candidate_set_coverage"]
     )
     assert rows[0]["affected_uri"] == "/id/ukpga/2000/1"
     assert rows[0]["affecting_uri"] == "/id/ukpga/2025/1"
@@ -3442,9 +3442,9 @@ def test_uk_candidates_manual_compile_evidence_jsonl_can_export_frontend_candida
     assert rows[0]["manual_compile_rule_id"] == (
         "uk_manual_frontier_structural_sibling_insert_candidate"
     )
-    assert rows[0]["candidate_set_certificate"]["completeness_status"] == "complete"
-    assert rows[0]["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
-        rows[0]["candidate_set_certificate"]
+    assert rows[0]["candidate_set_coverage"]["completeness_status"] == "complete"
+    assert rows[0]["frontier_work_item"]["detail"]["candidate_set_coverage"] == (
+        rows[0]["candidate_set_coverage"]
     )
     assert rows[0]["source_pathology"] == "structural_sibling_insert_unsupported"
     assert rows[0]["lowering_rejections"] == [
@@ -4773,6 +4773,8 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
                     "message": "Replay output contains a suspicious duplicated text tract.",
                     "source_statute": "ukpga/2000/1",
                     "op_id": "",
+                    "blocking": False,
+                    "phase": "replay_fold",
                     "detail": {
                         "blocking": False,
                         "kind": "duplicate_suffix_text",
@@ -4788,6 +4790,8 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
                     "message": "target not found",
                     "source_statute": "ukpga/2001/2",
                     "op_id": "op-1",
+                    "blocking": True,
+                    "phase": "replay",
                     "detail": {"blocking": True, "target": "section:99"},
                 },
             ),
@@ -5046,13 +5050,13 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
         "residual_claim_as_replay_authority"
         in evidence_rows[0]["execution_authorization"]["forbidden_shortcuts"]
     )
-    assert evidence_rows[0]["candidate_set_certificate"]["completeness_status"] == (
+    assert evidence_rows[0]["candidate_set_coverage"]["completeness_status"] == (
         "unavailable"
     )
-    assert evidence_rows[0]["candidate_set_certificate"]["blocker_counts"] == {
+    assert evidence_rows[0]["candidate_set_coverage"]["blocker_counts"] == {
         "candidate_analysis_unavailable": 1,
     }
-    assert evidence_rows[0]["candidate_set_certificate"][
+    assert evidence_rows[0]["candidate_set_coverage"][
         "next_promotion_allowed"
     ] is False
     agreement_residual = evidence_rows[0]["agreement_residual"]
@@ -5061,7 +5065,7 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
         "candidate_residual_claim_vs_current_oracle"
     )
     assert agreement_residual["family"] == "target_recovery_mismatch"
-    assert agreement_residual["status"] == "frontier"
+    assert agreement_residual["agreement_residual_status"] == "frontier"
     assert agreement_residual["owner_phase"] == "compare_oracle_classification"
     assert agreement_residual["replay_count"] == 53
     assert agreement_residual["oracle_count"] == 1
@@ -5079,8 +5083,8 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
     assert work_item["owner_phase"] == "compare_oracle_classification"
     assert work_item["source_witness"]["source_role"] == "uk_residual_claim_evidence"
     assert work_item["source_witness"]["digest"]
-    assert work_item["detail"]["candidate_set_certificate"] == (
-        evidence_rows[0]["candidate_set_certificate"]
+    assert work_item["detail"]["candidate_set_coverage"] == (
+        evidence_rows[0]["candidate_set_coverage"]
     )
     assert work_item["detail"]["agreement_residual"] == (
         evidence_rows[0]["agreement_residual"]
@@ -5202,24 +5206,24 @@ def test_uk_residual_claim_evidence_rows_preserve_analyzed_root_samples() -> Non
     )
 
     assert len(rows) == 1
-    assert rows[0]["candidate_set_certificate"]["completeness_status"] == "truncated"
-    assert rows[0]["candidate_set_certificate"]["candidate_count"] == 1
-    assert rows[0]["candidate_set_certificate"]["candidate_ids"] == ["key-demo"]
-    assert rows[0]["candidate_set_certificate"]["missing_candidate_count"] == 3
-    assert rows[0]["candidate_set_certificate"]["blocker_counts"] == {
+    assert rows[0]["candidate_set_coverage"]["completeness_status"] == "truncated"
+    assert rows[0]["candidate_set_coverage"]["candidate_count"] == 1
+    assert rows[0]["candidate_set_coverage"]["candidate_ids"] == ["key-demo"]
+    assert rows[0]["candidate_set_coverage"]["missing_candidate_count"] == 3
+    assert rows[0]["candidate_set_coverage"]["blocker_counts"] == {
         "candidate_samples_omitted": 3,
     }
     assert rows[0]["frontier_work_item"]["candidate_targets"] == [
         "part-1",
         "schedule-1",
     ]
-    assert rows[0]["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
-        rows[0]["candidate_set_certificate"]
+    assert rows[0]["frontier_work_item"]["detail"]["candidate_set_coverage"] == (
+        rows[0]["candidate_set_coverage"]
     )
     assert rows[0]["agreement_residual"]["family"] == (
         "accepted_non_executable_frontier"
     )
-    assert rows[0]["agreement_residual"]["status"] == "frontier"
+    assert rows[0]["agreement_residual"]["agreement_residual_status"] == "frontier"
     assert rows[0]["agreement_residual"]["missing_proofs"] == (
         rows[0]["execution_authorization"]["required_proofs"]
     )

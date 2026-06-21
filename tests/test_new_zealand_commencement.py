@@ -143,7 +143,7 @@ def test_commencement_agreement_surface_never_claims_text_agreement() -> None:
     # No row claims a text-slice agreement: a recorded commencement is a typed
     # temporal-state record on a non-text axis, and frontier residue is a typed
     # accepted frontier. Neither is an ``agrees`` text comparison.
-    statuses = {residual.status for residual in residuals}
+    statuses = {residual.agreement_residual_status for residual in residuals}
     assert "agrees" not in statuses
     assert statuses == {"frontier"}
     families = {residual.family for residual in residuals}

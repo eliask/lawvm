@@ -5,7 +5,7 @@ import pytest
 
 from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
 
-from lawvm.core.authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
+from lawvm.core.branch_authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
 from lawvm.core.graph import CorpusGraph
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind

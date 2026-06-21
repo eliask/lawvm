@@ -131,7 +131,7 @@ def _operation_row(report: USDryRunReport, row: USDryRunSectionRow) -> CorpusOpe
         canonical_family=row.disposition or "agreement",
         original_target=row.target_address,
         resolved_target=row.section_key,
-        status=status,
+        evidence_status=status,
         blocking=False,
         strict_disposition=_STRICT_WARN,
         quirks_disposition=_QUIRKS_RECORD,

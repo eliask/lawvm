@@ -116,7 +116,7 @@ class FrontendPhaseRow:
     """One frontend compiler phase and its report-facing artifact role."""
 
     phase: str
-    status: str
+    phase_status: str
     artifact_kind: str
     authority_role: str
     produced: bool
@@ -127,7 +127,7 @@ class FrontendPhaseRow:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "phase", _required_string("FrontendPhaseRow.phase", self.phase))
-        object.__setattr__(self, "status", _required_string("FrontendPhaseRow.status", self.status))
+        object.__setattr__(self, "phase_status", _required_string("FrontendPhaseRow.phase_status", self.phase_status))
         object.__setattr__(
             self,
             "artifact_kind",
@@ -162,7 +162,7 @@ class FrontendPhaseRow:
     def to_dict(self) -> dict[str, Any]:
         return {
             "phase": self.phase,
-            "status": self.status,
+            "phase_status": self.phase_status,
             "artifact_kind": self.artifact_kind,
             "authority_role": self.authority_role,
             "produced": self.produced,
@@ -394,7 +394,7 @@ def _phase_row_report_row(row: Mapping[str, Any], *, data: Mapping[str, Any]) ->
     phase = str(row.get("phase") or "")
     return {
         "surface": "frontend_phase_row",
-        "status": str(row.get("status") or "reported"),
+        "phase_status": str(row.get("phase_status") or "reported"),
         "subject_id": _phase_subject_id(data, phase),
         "source_ref": str(data.get("source_hash") or ""),
         "frontend": str(data.get("frontend") or ""),

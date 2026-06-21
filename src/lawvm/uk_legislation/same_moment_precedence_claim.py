@@ -117,7 +117,7 @@ class SameMomentPrecedenceClaim:
       territorial-extent split, express-saving, explicit precedence provision).
     - ``basis_note``: bounded free-form provenance note for the basis (not used
       for any inference).
-    - ``claimant`` / ``status``: provenance and lifecycle.
+    - ``claimant`` / ``claim_status``: provenance and lifecycle.
     """
 
     claim_id: str
@@ -131,7 +131,7 @@ class SameMomentPrecedenceClaim:
     winner_effect_id: str = ""
     basis_note: str = ""
     claimant: str = ""
-    status: str = "proposed"
+    claim_status: str = "proposed"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -146,7 +146,7 @@ class SameMomentPrecedenceClaim:
             "basis": self.basis,
             "basis_note": self.basis_note,
             "claimant": self.claimant,
-            "status": self.status,
+            "claim_status": self.claim_status,
         }
 
 
@@ -223,7 +223,7 @@ def claim_from_dict(row: Any) -> SameMomentPrecedenceClaim:
         basis=str(get("basis") or ""),
         basis_note=str(get("basis_note") or ""),
         claimant=str(get("claimant") or ""),
-        status=str(get("status") or "proposed"),
+        claim_status=str(get("claim_status") or "proposed"),
     )
 
 

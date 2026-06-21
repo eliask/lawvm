@@ -489,7 +489,80 @@ def _adessive_phrase_from_run(words: list[str]) -> Optional[list[str]]:
     return words[: last_head_idx + 1]
 # How far past a header an enumerated block may extend before we stop scanning
 # items (a definitions block is long but bounded; this caps the scan window).
+#
+# This is a SAFETY CAP, not the list terminator: the real end of the definitions
+# block is the first OPERATIVE-PROSE boundary (``_gap_has_operative_prose`` below),
+# reached well before this cap in every observed block. The cap only bounds the
+# regex scan on pathological input (AGENTS.md §1.11).
 _ENUM_BLOCK_WINDOW = 12000
+
+# ---------------------------------------------------------------------------
+# Structural end-of-list terminator for an enumerated definitions block
+# ---------------------------------------------------------------------------
+#
+# An enumerated definitions block is a CONTIGUOUS run of ``;``-terminated items
+# directly under its ``Tässä <unit> tarkoitetaan:`` header. The block has NO
+# explicit closing marker, so a fixed byte window (the prior 12 KB span) swept in
+# UNRELATED operative ``;``-lists that appear later in the same section — an
+# operative ``… on esitettävä:\n<item>;\n…`` / ``… edellytyksenä on, että:\n…;``
+# list whose items happen to open with an adessive-headed phrase was minted as a
+# phantom definition (the F1 over-capture).
+#
+# The structural list-end is the first OPERATIVE-PROSE paragraph: the definitions
+# list is item-after-item (each ``<definiendum-adessive> <definiens>;``), with the
+# only intervening text being a new definiendum line or an item's own definiens.
+# An OPERATIVE PROVISION is a free-standing full sentence — a substantial run of
+# words ending in a sentence period — that is neither a list item nor a definiendum
+# line. Once such a provision sentence appears BETWEEN two candidate items, the
+# contiguous definition list has ended and every later ``;``-item belongs to an
+# operative list, not the definitions block.
+#
+# decode_body_text joins each ``<p>`` element by '\n', so a '\n' is a paragraph
+# (``<p>``) boundary; a genuine definiens may itself contain internal '. ' (a
+# two-sentence definiens) but stays within ONE ``;``-terminated item, so the test
+# is applied to the GAP BETWEEN accepted items (the text from the previous item's
+# end to the next candidate's start), not to an item's own body. Embedded
+# colon-introduced sub-lists inside a single definiens (e.g. a formula with
+# ``…; …;`` parts) are kept because the sub-list items end in ';' / are short, not
+# in a substantial sentence period.
+
+#: An operative provision sentence: a run of letters/spaces/commas of at least
+#: this many chars ending in a sentence period. Tuned so a genuine short definiens
+#: fragment / formula line / sub-list item never trips it, but a real provision
+#: sentence ("Sen lisäksi, mitä 6 luvussa säädetään, …", "Tuen myöntämisen
+#: edellytyksenä on, että:") does.
+_OPERATIVE_SENTENCE_MIN_CHARS = 45
+_OPERATIVE_SENTENCE_MIN_WORDS = 6
+
+# A segment delimiter splitting a between-items gap into its candidate sentences:
+# the ';' item terminator and the '\n' paragraph (``<p>``) boundary.
+_GAP_SEGMENT_SPLIT = re.compile(r"[;\n]")
+
+
+def _gap_has_operative_prose(gap_text: str) -> bool:
+    """True iff the text BETWEEN two enumerated items contains an operative
+    provision sentence — i.e. the contiguous definitions list has ended.
+
+    The gap between two genuine consecutive definition items is only list
+    structure (whitespace, a new definiendum line, the prior item's ';'). An
+    OPERATIVE PROVISION that intervenes is a free-standing full sentence: a
+    substantial word run ending in a sentence period. Split the gap on the ';'
+    item terminator and '\\n' paragraph boundary and look for any such sentence.
+
+    Conservative by construction: a short definiens fragment, a formula line, or a
+    ';'-terminated sub-list item is below the length/word floor and never trips
+    this, so a genuine multi-item list (including one with an embedded sub-list in
+    a definiens) is never truncated.
+    """
+    for seg in _GAP_SEGMENT_SPLIT.split(gap_text):
+        s = seg.strip()
+        if not s or s[-1] != ".":
+            continue
+        if len(s) >= _OPERATIVE_SENTENCE_MIN_CHARS and (
+            len(s.split()) >= _OPERATIVE_SENTENCE_MIN_WORDS
+        ):
+            return True
+    return False
 
 
 def _scope_cue_before(text: str, pos: int) -> str:
@@ -907,6 +980,56 @@ def _trim_to_definiendum_np(words: list[str]) -> Optional[list[str]]:
 # ---------------------------------------------------------------------------
 
 
+#: Manner-adverb / conjunction leaders of the ``jäljempänä`` ADVERBIAL idiom
+#: ("…, jollei jäljempänä TOISIN säädetä" = "as hereinafter otherwise provided").
+#: A genuine alias is a NOUN PHRASE; these open a clause, never an alias. Closed
+#: set, matched by exact lowercase equality.
+_JALJEMPANA_IDIOM_LEADERS: frozenset[str] = frozenset(
+    {"toisin", "muuten", "muutoin", "erikseen", "toisaalla"}
+)
+
+#: Finite/infinitive verb surfaces seen as the HEAD (last word) or the LEADING
+#: word of the ``jäljempänä`` adverbial idiom ("jäljempänä toisin SÄÄDETÄ",
+#: "jäljempänä SÄÄDETÄÄN", "jäljempänä SANOTAAN … :ksi", "jäljempänä tässä luvussa
+#: SÄÄDETÄÄN"). A genuine alias surface is a noun phrase whose head is a noun, so a
+#: verb at either edge marks the clause idiom, not a binding. Closed set, exact
+#: lowercase equality (the productive Finnish verb morphology is NOT generated —
+#: this is the observed idiom vocabulary, not a paradigm).
+_JALJEMPANA_VERB_TOKENS: frozenset[str] = frozenset(
+    {
+        "säädetä", "säädetään", "säädetty", "säädettyä",
+        "määrätä", "määrätään", "määrätty",
+        "poiketa", "poiketen",
+        "tarkoitetaan", "sanotaan", "todetaan", "mainitaan",
+        "luetellut", "lueteltu", "tarkoitettu", "tarkoitettua",
+    }
+)
+
+
+def _is_jaljempana_verb_idiom(term: str) -> bool:
+    """True iff a ``jäljempänä`` term is the ADVERBIAL/clause idiom, not an alias.
+
+    A genuine ``jäljempänä`` alias is a NOUN PHRASE (single noun or a final-head
+    compound / modifier+noun whose head is a noun): ``ympäristönsuojelulaki``,
+    ``yleinen tietosuoja-asetus``, ``Schengenin rajasäännöstö``. The false mint is
+    the adverbial idiom ``jäljempänä toisin säädetä`` ("as hereinafter otherwise
+    provided") / ``jäljempänä säädetään`` / ``jäljempänä sanotaan … :ksi``, whose
+    captured surface is an adverb/verb clause fragment, NOT an NP. We reject when
+    the LEADING word is a manner-adverb idiom leader or a finite verb, or when the
+    HEAD (last word) is a verb form. Both are closed-set / exact-surface tests
+    (tag-don't-guess: no productive verb-morphology inference).
+    """
+    words = term.split()
+    if not words:
+        return False
+    lead = words[0].lower()
+    if lead in _JALJEMPANA_IDIOM_LEADERS or lead in _JALJEMPANA_VERB_TOKENS:
+        return True
+    if words[-1].lower() in _JALJEMPANA_VERB_TOKENS:
+        return True
+    return False
+
+
 def _recognize_jaljempana(text: str, source_file: str) -> list[DefinedTermBinding]:
     out: list[DefinedTermBinding] = []
     for m in _JALJEMPANA.finditer(text):
@@ -918,6 +1041,15 @@ def _recognize_jaljempana(text: str, source_file: str) -> list[DefinedTermBindin
         # A CELEX number ("32020L0284") is the machine id of the cited act, not a
         # Finnish alias surface — never mint a binding for it.
         if _CELEX.match(raw_term):
+            continue
+        # The ADVERBIAL idiom ``jäljempänä toisin säädetä`` / ``jäljempänä
+        # säädetään`` / ``jäljempänä sanotaan … :ksi`` is a clause, not an alias:
+        # its captured surface is an adverb/verb fragment, not a noun phrase. An act
+        # cite that happens to sit in the 90-char look-back (e.g. "… (688/2001)
+        # säädetään, jollei jäljempänä toisin säädetä") would otherwise satisfy the
+        # act-cite guard and bind the verb phrase to the unrelated act (F2). Decline
+        # it (no fabrication) — never bind a verb-idiom fragment as a term.
+        if _is_jaljempana_verb_idiom(raw_term):
             continue
         # The act this alias refers to is the act cite preceding the cue inside a
         # bounded look-back window (typ. same parenthetical group).
@@ -1071,7 +1203,9 @@ def _recognize_enumerated_definitions(
     the header's scope (statute / chapter / section / subsection).  CONSERVATIVE:
     only items whose definiendum is a genuine adessive definiendum
     (``_is_definitional_definiendum``) bind; the scan is bounded to a window after
-    the header and stops at the next header / window end.
+    the header and STOPS at the structural list-end — the first operative-prose
+    boundary (``_gap_has_operative_prose``) — so an unrelated operative ``;``-list
+    later in the section is not minted as a phantom definition (F1).
     """
     out: list[DefinedTermBinding] = []
     headers = list(_ENUM_HEADER.finditer(text))
@@ -1085,6 +1219,13 @@ def _recognize_enumerated_definitions(
         if i + 1 < len(headers):
             block_end = min(block_end, headers[i + 1].start())
         block = text[block_start:block_end]
+        # Walk the items in source order; the contiguous definitions list ENDS at
+        # the first accepted item whose preceding gap contains an operative-prose
+        # provision sentence — everything from there on is a later operative list,
+        # not the definitions block (F1 terminator). The gap is measured from the
+        # previous ACCEPTED item's end (or the header ':') so a declined non-item
+        # never resets the contiguity check.
+        prev_item_end = 0
         for it in _ENUM_ITEM.finditer(block):
             run = it.group("run").strip()
             rest = it.group("rest").strip()
@@ -1099,6 +1240,12 @@ def _recognize_enumerated_definitions(
             entry = enumerated_entry_from_item(run, rest, scope=scope)
             if entry is None:
                 continue
+            # STRUCTURAL LIST-END: if operative prose intervenes between the
+            # previous accepted item and this candidate, the definitions list has
+            # ended; stop the block here (no later operative-list item is minted).
+            if _gap_has_operative_prose(block[prev_item_end : it.start()]):
+                break
+            prev_item_end = it.end()
             act_id = entry.target_ref
             # The definiendum surface is an INFLECTED (adessive) form; M1 is
             # generation-only and cannot reverse it to a nominative, so the term

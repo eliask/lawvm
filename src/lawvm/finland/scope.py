@@ -20,8 +20,11 @@ from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.johto_scope_mentions import collect_johto_chapter_scope_mentions
 from lawvm.finland.ops import (
     ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
     _lo_path_dict,
     _lo_with_path_update,
     lo_with_added_scope_tag,
@@ -221,6 +224,16 @@ def _fi_statute_citation_re(parent_id: str) -> "re.Pattern[str] | None":
     )
 
 
+def fi_statute_citation_spans(text: str, parent_id: str) -> tuple[tuple[int, int], ...]:
+    """Return character spans for lexical citations to ``parent_id`` in ``text``."""
+    if not text or not parent_id:
+        return ()
+    ref_re = _fi_statute_citation_re(parent_id)
+    if ref_re is None:
+        return ()
+    return tuple((match.start(), match.end()) for match in ref_re.finditer(text))
+
+
 def duplicate_section_labels_across_chapters(master_ir: IRNode) -> Set[str]:
     counts: dict[str, set[str]] = {}
 
@@ -241,6 +254,10 @@ def _same_label_move_sections_for_chapter(johto: str, chapter: str) -> Set[str]:
     cleaned = re.sub(r"\s+", " ", johto or "").lower()
     wanted_chapter = _norm_num_token(str(chapter)).removesuffix("luku")
     matches: Set[str] = set()
+    mentions = collect_johto_chapter_scope_mentions(johto or "")
+    for moved in mentions.moved_section_destinations:
+        if _norm_num_token(moved.destination_chapter_label).removesuffix("luku") == wanted_chapter:
+            matches.add(_norm_num_token(moved.section_label))
     for labels_text, dest_chapter in _SAME_LABEL_MOVE_CLAUSE_RE.findall(cleaned):
         if _norm_num_token(dest_chapter).removesuffix("luku") != wanted_chapter:
             continue
@@ -1266,8 +1283,8 @@ def assign_chapter_scope_from_johtolause(
                     ),
                     ScopeConfidence(
                         tag="chapter_scope_from_letter_suffix_stem_host",
-                        source="live_stem_host",
-                        confidence="inferred",
+                        source=ScopeResolutionSource.LIVE_STEM_HOST,
+                        confidence=ScopeResolutionConfidence.INFERRED,
                         resolved_chapter=stem_host_chapter,
                     ),
                 )
@@ -1330,14 +1347,14 @@ def assign_chapter_scope_from_johtolause(
                         ScopeConfidence(
                             tag=note,
                             source=(
-                                "preamble"
+                                ScopeResolutionSource.PREAMBLE
                                 if note == "chapter_scope_from_preamble"
-                                else "explicit_chunk"
+                                else ScopeResolutionSource.EXPLICIT_CHUNK
                             ),
                             confidence=(
-                                "inferred"
+                                ScopeResolutionConfidence.INFERRED
                                 if note == "chapter_scope_from_preamble"
-                                else "explicit"
+                                else ScopeResolutionConfidence.EXPLICIT
                             ),
                             resolved_chapter=chapter_label,
                         ),
@@ -1471,11 +1488,11 @@ def assign_scope_from_renumber_destinations(
                             else "chapter_scope_carry_forward"
                         ),
                         source=(
-                            "grouped_part"
+                            ScopeResolutionSource.GROUPED_PART
                             if "part" in updates
-                            else "carry_forward"
+                            else ScopeResolutionSource.CARRY_FORWARD
                         ),
-                        confidence="inferred",
+                        confidence=ScopeResolutionConfidence.INFERRED,
                         resolved_chapter=updates.get("chapter", chapter),
                     )
                     result[i] = lo_with_scope_confidence(
@@ -1575,5 +1592,6 @@ __all__ = [
     "strip_unjustified_chapter_scope_from_unique_sections",
     "assign_chapter_scope_from_johtolause",
     "assign_scope_from_renumber_destinations",
+    "fi_statute_citation_spans",
     "restrict_sec1_fallback_to_parent",
 ]

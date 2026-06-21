@@ -3,15 +3,125 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, cast
 
 import icontract
 import lxml.etree as etree
 
 from lawvm.core.frozen_values import FrozenDict
-from lawvm.core.ir_helpers import irnode_to_text, kind_for_tag as _kind_for_tag
+from lawvm.core.ir_helpers import (
+    irnode_to_text,
+    kind_for_tag as _kind_for_tag,
+    kind_for_tag_or_diagnostic as _kind_for_tag_or_diagnostic,
+)
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.ir import IRNode, IRStatute
+
+
+# ---------------------------------------------------------------------------
+# Ingest observation + coverage carriers (token_structure plane)
+# ---------------------------------------------------------------------------
+#
+# The XML→IR ingest boundary previously dropped unknown childless source
+# elements and re-parented/merged/labelled tree shape with no witness. These
+# carriers turn each such silent drop/guess into a witnessed one: a typed
+# IngestObservation (registry code) reachable from a public surface
+# (IRStatute.metadata["xml_ingest_observations"]) plus a TokenPartitionCoverage
+# account whose is_partition() makes a dropped source unit visible against the
+# total of source child elements seen.
+
+# Registry codes (see core/observation_registry.py SCAN.XML_INGEST_* block).
+INGEST_DROPPED_CHILD = "SCAN.XML_INGEST_DROPPED_CHILD"
+INGEST_UNKNOWN_TAG = "SCAN.XML_INGEST_UNKNOWN_TAG"
+INGEST_POSITIONAL_LABEL = "SCAN.XML_INGEST_POSITIONAL_LABEL"
+INGEST_STRUCTURAL_REPAIR = "SCAN.XML_INGEST_STRUCTURAL_REPAIR"
+
+
+@dataclass(frozen=True, slots=True)
+class IngestObservation:
+    """One witnessed event at the XML→IR ingest boundary.
+
+    ``code`` is a governed registry code; ``family`` mirrors the registry
+    family for consumers that bucket by family without a registry lookup.
+    ``detail`` carries the witness fields (tag, snippet, assigned label, repair
+    rule). A diagnostic about source text MUST embed the offending snippet
+    (truncated) so triage never requires re-running ingest.
+    """
+
+    code: str
+    family: str
+    detail: FrozenDict = field(default_factory=FrozenDict)
+
+    def as_dict(self) -> dict[str, Any]:
+        envelope = {"kind": self.code, "family": self.family, "phase": "ingest"}
+        collisions = sorted(k for k in self.detail if k in envelope)
+        if collisions:
+            raise ValueError(
+                f"IngestObservation.detail keys {collisions} collide with reserved "
+                f"envelope keys for code {self.code!r}; rename the detail field "
+                f"(e.g. 'kind' -> 'node_kind')"
+            )
+        out: dict[str, Any] = dict(envelope)
+        out.update(dict(self.detail))
+        return out
+
+
+@dataclass(slots=True)
+class TokenPartitionCoverage:
+    """Totality account over source child elements seen during ingest.
+
+    Every source child element examined in a structural node's child loop is
+    classified into exactly one bucket: ``owned`` (became an IR child),
+    ``benign`` (text-empty unknown element intentionally not carried — none
+    today; reserved), or ``dropped`` (unknown childless element silently lost
+    before this fix — now witnessed). ``is_partition()`` checks the buckets sum
+    to the total, the checkable totality form: a dropped source unit can no
+    longer vanish from the account.
+    """
+
+    total: int = 0
+    owned: int = 0
+    benign: int = 0
+    dropped: int = 0
+
+    def record_owned(self) -> None:
+        self.total += 1
+        self.owned += 1
+
+    def record_dropped(self) -> None:
+        self.total += 1
+        self.dropped += 1
+
+    def is_partition(self) -> bool:
+        return self.total == self.owned + self.benign + self.dropped
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "total": self.total,
+            "owned": self.owned,
+            "benign": self.benign,
+            "dropped": self.dropped,
+        }
+
+
+@dataclass(slots=True)
+class _IngestSink:
+    """Mutable collector threaded through the recursive ingest.
+
+    Kept internal: ``xml_to_ir_node`` accepts an optional sink so observations
+    and the coverage account can be surfaced by the top-level entry
+    (``xml_body_to_ir``) without changing the public bare-IRNode return type
+    that the many recursive/external callers depend on.
+    """
+
+    observations: List[IngestObservation] = field(default_factory=list)
+    coverage: TokenPartitionCoverage = field(default_factory=TokenPartitionCoverage)
+
+    def emit(self, code: str, family: str, **detail: Any) -> None:
+        self.observations.append(
+            IngestObservation(code=code, family=family, detail=FrozenDict(detail))
+        )
 
 
 _TEXT_LEAF_TAGS = {
@@ -174,7 +284,10 @@ def _paragraph_first_text(node: IRNode) -> str:
     return node.text.strip() if node.text else ""
 
 
-def _merge_split_numbered_paragraph_continuations(children: List[IRNode]) -> List[IRNode]:
+def _merge_split_numbered_paragraph_continuations(
+    children: List[IRNode],
+    sink: Optional["_IngestSink"] = None,
+) -> List[IRNode]:
     merged: List[IRNode] = []
     for child in children:
         if (
@@ -191,6 +304,14 @@ def _merge_split_numbered_paragraph_continuations(children: List[IRNode]) -> Lis
             and not _paragraph_ends_with_terminal_punctuation(merged[-1])
         ):
             prev = merged[-1]
+            if sink is not None:
+                sink.emit(
+                    INGEST_STRUCTURAL_REPAIR,
+                    "recovery",
+                    repair="merge_split_numbered_paragraph_continuation",
+                    into_label=prev.label,
+                    merged_snippet=_paragraph_first_text(child)[:400],
+                )
             merged[-1] = IRNode(
                 kind=prev.kind,
                 label=prev.label,
@@ -203,7 +324,10 @@ def _merge_split_numbered_paragraph_continuations(children: List[IRNode]) -> Lis
     return merged
 
 
-def _rehome_orphaned_letter_paragraphs(children: List[IRNode]) -> List[IRNode]:
+def _rehome_orphaned_letter_paragraphs(
+    children: List[IRNode],
+    sink: Optional["_IngestSink"] = None,
+) -> List[IRNode]:
     """Heal Finlex source encoding errors where lettered subparagraph items are
     mis-encoded as paragraph siblings of the containing numbered paragraph.
 
@@ -233,6 +357,15 @@ def _rehome_orphaned_letter_paragraphs(children: List[IRNode]) -> List[IRNode]:
                     and last_label.isalpha()
                     and ord(child.label) == ord(last_label) + 1
                 ):
+                    if sink is not None:
+                        sink.emit(
+                            INGEST_STRUCTURAL_REPAIR,
+                            "recovery",
+                            repair="rehome_orphaned_letter_paragraph",
+                            rehomed_label=child.label,
+                            after_subparagraph=last_label,
+                            into_paragraph=prev.label,
+                        )
                     new_subpara = IRNode(
                         kind=IRNodeKind.SUBPARAGRAPH,
                         label=child.label,
@@ -254,6 +387,7 @@ def _rehome_orphaned_letter_paragraphs(children: List[IRNode]) -> List[IRNode]:
 
 def _absorb_orphaned_subsections_into_preceding_section(
     children: List[IRNode],
+    sink: Optional["_IngestSink"] = None,
 ) -> List[IRNode]:
     """Absorb orphaned subsection nodes into their preceding sibling section.
 
@@ -274,14 +408,25 @@ def _absorb_orphaned_subsections_into_preceding_section(
         ):
             prev = result[-1]
             absorbed = child
+            assigned_label: Optional[str] = None
             if absorbed.label is None:
                 existing = sum(1 for c in prev.children if c.kind == IRNodeKind.SUBSECTION)
+                assigned_label = str(existing + 1)
                 absorbed = IRNode(
                     kind=absorbed.kind,
-                    label=str(existing + 1),
+                    label=assigned_label,
                     text=absorbed.text,
                     attrs=absorbed.attrs,
                     children=absorbed.children,
+                )
+            if sink is not None:
+                sink.emit(
+                    INGEST_STRUCTURAL_REPAIR,
+                    "recovery",
+                    repair="absorb_orphaned_subsection_into_preceding_section",
+                    into_section=prev.label,
+                    positional_label=assigned_label,
+                    absorbed_snippet=irnode_to_text(absorbed)[:400],
                 )
             result[-1] = IRNode(
                 kind=prev.kind,
@@ -378,6 +523,7 @@ def _xml_table_to_ir(el: etree._Element) -> IRNode:
 def xml_to_ir_node(
     el: etree._Element,
     label_postprocessor: Optional[Callable[[str, str], str]] = None,
+    sink: Optional["_IngestSink"] = None,
 ) -> IRNode:
     tag_str = _tag(el)
     tag = IRNodeKind(tag_str)
@@ -416,35 +562,71 @@ def xml_to_ir_node(
     children: list[IRNode] = []
     for child in el:
         child_tag = _tag(child)
-        child_kind = _kind_for_tag(child_tag)
+        child_kind, unknown_tag = _kind_for_tag_or_diagnostic(child_tag)
         if child_kind == IRNodeKind.TABLE:
             children.append(_xml_table_to_ir(child))
+            if sink is not None:
+                sink.coverage.record_owned()
         elif child_kind in _STRUCTURAL_TAGS or child_kind in _TEXT_LEAF_TAGS:
-            children.append(xml_to_ir_node(child, label_postprocessor))
+            children.append(xml_to_ir_node(child, label_postprocessor, sink))
+            if sink is not None:
+                sink.coverage.record_owned()
         else:
             text = _collapse_text(child)
             if text:
                 children.append(IRNode(kind=cast(IRNodeKind, child_kind or child_tag), text=text))
+                if sink is not None:
+                    sink.coverage.record_owned()
+            elif sink is not None:
+                # Rank-7 site: an unknown childless element whose text collapsed to
+                # '' was previously dropped with no record. Witness it as a dropped
+                # source unit (and the unknown tag, if mapping is missing) so the
+                # coverage account stops silently understating the source.
+                sink.coverage.record_dropped()
+                if unknown_tag is not None:
+                    sink.emit(
+                        INGEST_UNKNOWN_TAG,
+                        "source_pathology",
+                        tag=child_tag,
+                        message=unknown_tag.message,
+                    )
+                sink.emit(
+                    INGEST_DROPPED_CHILD,
+                    "source_pathology",
+                    tag=child_tag,
+                    parent_tag=tag_str,
+                    snippet=_collapse_text(child)[:400],
+                )
 
     if tag in _STRUCTURAL_TAGS:
         if tag in (IRNodeKind.BODY, IRNodeKind.CHAPTER, IRNodeKind.PART, IRNodeKind.HCONTAINER):
-            children = _absorb_orphaned_subsections_into_preceding_section(children)
+            children = _absorb_orphaned_subsections_into_preceding_section(children, sink)
         if tag == IRNodeKind.SECTION:
             children = _split_trailing_content_only_paragraphs_into_subsections(children)
         counters: Dict[IRNodeKind, int] = {}
         for i, child in enumerate(children):
             if child.label is None and child.kind in _POSITIONAL_LABEL_KINDS:
                 counters[child.kind] = counters.get(child.kind, 0) + 1
+                assigned = str(counters[child.kind])
+                if sink is not None:
+                    sink.emit(
+                        INGEST_POSITIONAL_LABEL,
+                        "recovery",
+                        node_kind=child.kind.value,
+                        assigned_label=assigned,
+                        parent_tag=tag_str,
+                        snippet=irnode_to_text(child)[:400],
+                    )
                 children[i] = IRNode(
                     kind=child.kind,
-                    label=str(counters[child.kind]),
+                    label=assigned,
                     text=child.text,
                     attrs=child.attrs,
                     children=child.children,
                 )
         if tag == IRNodeKind.SUBSECTION:
-            children = _merge_split_numbered_paragraph_continuations(children)
-            children = _rehome_orphaned_letter_paragraphs(children)
+            children = _merge_split_numbered_paragraph_continuations(children, sink)
+            children = _rehome_orphaned_letter_paragraphs(children, sink)
 
     return IRNode(
         kind=tag,
@@ -466,6 +648,7 @@ def xml_body_to_ir(
     title = _collapse_text(title_el) if title_el is not None else "Unknown"
     supplements: list[IRNode] = []
     ingest_observations: list[dict[str, Any]] = []
+    sink = _IngestSink()
     if body_el is not None and body_el is not tree:
         for child in tree:
             child_tag = _tag(child)
@@ -473,7 +656,7 @@ def xml_body_to_ir(
                 continue
             child_kind = _known_ir_kind(child_tag)
             if child_kind in _SUPPORTED_TOP_LEVEL_SUPPLEMENT_KINDS:
-                supplements.append(xml_to_ir_node(child, label_postprocessor))
+                supplements.append(xml_to_ir_node(child, label_postprocessor, sink))
                 continue
             ingest_observations.append(
                 {
@@ -485,10 +668,23 @@ def xml_body_to_ir(
                 }
             )
     if body_el is None:
-        body_node = xml_to_ir_node(tree, label_postprocessor)
+        body_node = xml_to_ir_node(tree, label_postprocessor, sink)
     else:
-        body_node = xml_to_ir_node(body_el, label_postprocessor)
+        body_node = xml_to_ir_node(body_el, label_postprocessor, sink)
+    # Fold the witnessed ingest observations (dropped children, unknown tags,
+    # positional labels, structural repairs) gathered during recursion into the
+    # same metadata channel the supplement observations already use, so every
+    # silent drop/guess is reachable from a public surface.
+    ingest_observations.extend(obs.as_dict() for obs in sink.observations)
     metadata: dict[str, Any] = {}
     if ingest_observations:
-        metadata["xml_ingest_observations"] = ingest_observations
+        metadata["xml_ingest_observations"] = tuple(ingest_observations)
+    # The structure-side totality account: buckets sum to total of source child
+    # elements seen, so a dropped source unit is visible (is_partition()). Only
+    # surfaced when something was actually dropped — a clean partition
+    # (dropped==0) is the benign default and would otherwise add metadata to
+    # every statute. The account is always computed; it is published when it
+    # carries a drop the consumer must see.
+    if sink.coverage.dropped:
+        metadata["xml_ingest_coverage"] = sink.coverage.as_dict()
     return IRStatute(statute_id=statute_id, title=title, body=body_node, supplements=tuple(supplements), metadata=metadata)

@@ -70,6 +70,8 @@ class _FailureContext:
     target_chapter: Optional[str]
     target_part: Optional[str]
     target_unit_kind: TargetUnitKind
+    target_subsection: Optional[str] = None
+    target_item: Optional[str] = None
 
 
 def _failure_context(dispatch_op: AmendmentOp, rop: ResolvedOp | None, rop_description: str | None) -> _FailureContext:
@@ -81,6 +83,8 @@ def _failure_context(dispatch_op: AmendmentOp, rop: ResolvedOp | None, rop_descr
             target_chapter=rop.resolved_target_scope_chapter_label,
             target_part=rop.resolved_target_scope_part_label,
             target_unit_kind=rop.target_unit_kind,
+            target_subsection=rop.resolved_target_subsection_label,
+            target_item=rop.resolved_target_item_label,
         )
     return _FailureContext(
         amendment_id=dispatch_op.source_statute or "",
@@ -89,6 +93,12 @@ def _failure_context(dispatch_op: AmendmentOp, rop: ResolvedOp | None, rop_descr
         target_chapter=dispatch_op.target_chapter,
         target_part=dispatch_op.target_part,
         target_unit_kind=dispatch_op.target_unit_kind,
+        target_subsection=(
+            str(dispatch_op.target_paragraph)
+            if dispatch_op.target_paragraph is not None
+            else None
+        ),
+        target_item=dispatch_op.target_item,
     )
 
 
@@ -202,6 +212,8 @@ def _apply_legacy_dispatch(
                     target_section=failure_context.target_section,
                     target_chapter=failure_context.target_chapter,
                     target_part=failure_context.target_part,
+                    target_subsection=failure_context.target_subsection,
+                    target_item=failure_context.target_item,
                     target_unit_kind=failure_context.target_unit_kind,
                 )
             )

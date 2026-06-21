@@ -24,7 +24,7 @@ def test_proof_surface_rows_project_to_graph_observations_without_authority() ->
                 row_id="row-1",
                 subject_id="fi:123/2024",
                 row_kind="recovery_authorization",
-                status="blocked",
+                proof_status="blocked",
                 source_refs=("source-a",),
                 authorization_ref="auth-1",
                 detail={"owner_phase": "typed_elaboration"},

@@ -807,7 +807,8 @@ def test_specimen_blame_1997_1412_section_11_attributes_later_child_op(capsys) -
     assert row["address"] == "chapter:2/section:11"
     assert row["status"] == "modified_by_op"
     assert row["last_op"]["source_statute"] == "2026/26"
-    assert row["last_op"]["sequence"] == 217
+    assert row["last_op"]["action"] == "replace"
+    assert row["last_op"]["op_id"] == "op_8"
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")

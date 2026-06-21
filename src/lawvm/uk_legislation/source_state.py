@@ -16,7 +16,7 @@ from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidenc
 from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
     TARGET_RECOVERED,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 
 MIN_UK_XML_SOURCE_BYTES = 100
@@ -98,19 +98,19 @@ class UKStatuteXmlContentStatus(StrEnum):
 
 @dataclass(frozen=True)
 class UKSourceState:
-    status: UKSourceStatus
+    source_state_status: UKSourceStatus
     size: int
 
     @property
     def available(self) -> bool:
-        return self.status is UKSourceStatus.AVAILABLE
+        return self.source_state_status is UKSourceStatus.AVAILABLE
 
     @property
     def missing(self) -> bool:
         return not self.available
 
     def as_legacy_tuple(self) -> tuple[str, int]:
-        return self.status.value, self.size
+        return self.source_state_status.value, self.size
 
 
 @dataclass(frozen=True)
@@ -124,7 +124,7 @@ class UKMultipleChoiceCandidate:
 
 @dataclass(frozen=True)
 class UKStatuteXmlContentState:
-    status: UKStatuteXmlContentStatus
+    xml_content_status: UKStatuteXmlContentStatus
     size: int
     number_of_provisions: str
     has_body: bool
@@ -134,11 +134,11 @@ class UKStatuteXmlContentState:
 
     @property
     def usable_as_replay_base(self) -> bool:
-        return self.status is UKStatuteXmlContentStatus.AVAILABLE
+        return self.xml_content_status is UKStatuteXmlContentStatus.AVAILABLE
 
     def to_dict(self) -> dict[str, Any]:
         row: dict[str, Any] = {
-            "status": self.status.value,
+            "xml_content_status": self.xml_content_status.value,
             "size": self.size,
             "number_of_provisions": self.number_of_provisions,
             "has_body": self.has_body,
@@ -156,13 +156,13 @@ class UKStatuteXmlContentState:
 
 def classify_uk_source_blob(blob: bytes | None) -> UKSourceState:
     if blob is None:
-        return UKSourceState(status=UKSourceStatus.ABSENT, size=0)
+        return UKSourceState(source_state_status=UKSourceStatus.ABSENT, size=0)
     size = len(blob)
     if _is_uk_multiple_choices_blob(blob):
-        return UKSourceState(status=UKSourceStatus.MULTIPLE_CHOICES, size=size)
+        return UKSourceState(source_state_status=UKSourceStatus.MULTIPLE_CHOICES, size=size)
     if size < MIN_UK_XML_SOURCE_BYTES:
-        return UKSourceState(status=UKSourceStatus.TOO_SMALL, size=size)
-    return UKSourceState(status=UKSourceStatus.AVAILABLE, size=size)
+        return UKSourceState(source_state_status=UKSourceStatus.TOO_SMALL, size=size)
+    return UKSourceState(source_state_status=UKSourceStatus.AVAILABLE, size=size)
 
 
 def uk_source_state_wire_tuple(blob: bytes | None) -> tuple[str, int]:
@@ -182,25 +182,25 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
     empty enacted base is source evidence, not a deterministic replay failure.
     """
     source_state = classify_uk_source_blob(blob)
-    if source_state.status is UKSourceStatus.ABSENT:
+    if source_state.source_state_status is UKSourceStatus.ABSENT:
         return UKStatuteXmlContentState(
-            status=UKStatuteXmlContentStatus.ABSENT,
+            xml_content_status=UKStatuteXmlContentStatus.ABSENT,
             size=source_state.size,
             number_of_provisions="",
             has_body=False,
             has_schedules=False,
         )
-    if source_state.status is UKSourceStatus.TOO_SMALL:
+    if source_state.source_state_status is UKSourceStatus.TOO_SMALL:
         return UKStatuteXmlContentState(
-            status=UKStatuteXmlContentStatus.TOO_SMALL,
+            xml_content_status=UKStatuteXmlContentStatus.TOO_SMALL,
             size=source_state.size,
             number_of_provisions="",
             has_body=False,
             has_schedules=False,
         )
-    if source_state.status is UKSourceStatus.MULTIPLE_CHOICES:
+    if source_state.source_state_status is UKSourceStatus.MULTIPLE_CHOICES:
         return UKStatuteXmlContentState(
-            status=UKStatuteXmlContentStatus.MULTIPLE_CHOICES,
+            xml_content_status=UKStatuteXmlContentStatus.MULTIPLE_CHOICES,
             size=source_state.size,
             number_of_provisions="",
             has_body=False,
@@ -212,7 +212,7 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
         root = ET.fromstring(blob)
     except ET.ParseError as exc:
         return UKStatuteXmlContentState(
-            status=UKStatuteXmlContentStatus.PARSE_ERROR,
+            xml_content_status=UKStatuteXmlContentStatus.PARSE_ERROR,
             size=source_state.size,
             number_of_provisions="",
             has_body=False,
@@ -230,7 +230,7 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
     else:
         status = UKStatuteXmlContentStatus.AVAILABLE
     return UKStatuteXmlContentState(
-        status=status,
+        xml_content_status=status,
         size=source_state.size,
         number_of_provisions=number_of_provisions,
         has_body=has_body,
@@ -591,13 +591,13 @@ def uk_affecting_act_current_shell_enacted_source_selected(
             SourceLaneAttempt(
                 lane="current_xml",
                 locator=current_locator,
-                status="rejected_non_substantive_shell",
+                lane_attempt_status="rejected_non_substantive_shell",
                 detail={"source_size": int(current_source_size), "text_preview": current_text_preview},
             ),
             SourceLaneAttempt(
                 lane="enacted_xml",
                 locator=enacted_locator,
-                status="selected",
+                lane_attempt_status="selected",
                 detail={"source_size": int(enacted_source_size), "text_preview": enacted_text_preview},
             ),
         ),
@@ -642,13 +642,13 @@ def uk_affecting_act_current_editorial_gap_enacted_source_selected(
             SourceLaneAttempt(
                 lane="current_xml",
                 locator=current_locator,
-                status="rejected_editorial_omission_gap",
+                lane_attempt_status="rejected_editorial_omission_gap",
                 detail={"source_size": int(current_source_size), "text_preview": current_text_preview},
             ),
             SourceLaneAttempt(
                 lane="enacted_xml",
                 locator=enacted_locator,
-                status="selected",
+                lane_attempt_status="selected",
                 detail={"source_size": int(enacted_source_size), "text_preview": enacted_text_preview},
             ),
         ),
@@ -692,13 +692,13 @@ def uk_affecting_act_missing_current_enacted_source_selected(
             SourceLaneAttempt(
                 lane="current_xml",
                 locator=current_locator,
-                status="missing_same_provision_source",
+                lane_attempt_status="missing_same_provision_source",
                 detail={"source_size": int(current_source_size)},
             ),
             SourceLaneAttempt(
                 lane="enacted_xml",
                 locator=enacted_locator,
-                status="selected",
+                lane_attempt_status="selected",
                 detail={"source_size": int(enacted_source_size), "text_preview": enacted_text_preview},
             ),
         ),
@@ -744,12 +744,12 @@ def uk_affecting_act_single_amendment_child_source_selected(
             SourceLaneAttempt(
                 lane="source_container_context",
                 locator=f"{locator}#{source_container_id}",
-                status="context_selected_not_payload",
+                lane_attempt_status="context_selected_not_payload",
             ),
             SourceLaneAttempt(
                 lane="single_amendment_child_payload",
                 locator=f"{locator}#{selected_child_id}",
-                status="selected",
+                lane_attempt_status="selected",
                 detail={
                     "selected_child_label": selected_child_label,
                     "selected_child_text_preview": selected_child_text_preview,
@@ -800,14 +800,14 @@ def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
         authority_layer=authority_layer,
         requested_part_label=requested_part_label,
         extracted_element_id=extracted_element_id,
-        target_resolution=TargetResolutionCertificate(
+        target_resolution=TargetResolutionCoverage(
             rule_id="uk_affecting_act_nonaddressable_schedule_part_context_ignored",
             phase="extraction",
             reason=(
                 "UK effects metadata named a schedule Part context represented as "
                 "an ancestor in the affecting-source XML."
             ),
-            status=TARGET_RECOVERED,
+            resolution_status=TARGET_RECOVERED,
             source_target=affecting_provisions,
             selected_target=normalized_affecting_provisions,
             candidate_count=1,
@@ -855,14 +855,14 @@ def uk_affecting_act_single_unnumbered_schedule_context_ignored(
         schedule_element_id=schedule_element_id,
         source_instruction_id=source_instruction_id,
         extracted_element_id=extracted_element_id,
-        target_resolution=TargetResolutionCertificate(
+        target_resolution=TargetResolutionCoverage(
             rule_id="uk_affecting_act_single_unnumbered_schedule_context_ignored",
             phase="extraction",
             reason=(
                 "UK effects metadata named Schedule 1 while the affecting-source XML "
                 "exposes a single unnumbered Schedule context."
             ),
-            status=TARGET_RECOVERED,
+            resolution_status=TARGET_RECOVERED,
             source_target=affecting_provisions,
             selected_target=normalized_affecting_provisions,
             candidate_count=1,
@@ -907,13 +907,13 @@ def uk_affecting_act_article_schedule_payload_source_extracted(
             SourceLaneAttempt(
                 lane="article_source_context",
                 locator=f"{locator}#{article_element_id}",
-                status="context_selected_not_payload",
+                lane_attempt_status="context_selected_not_payload",
                 detail={"article_ref": article_ref, "article_text_preview": article_text_preview},
             ),
             SourceLaneAttempt(
                 lane="attached_schedule_payload",
                 locator=f"{locator}#{schedule_element_id}",
-                status="selected",
+                lane_attempt_status="selected",
                 detail={"schedule_element_id": schedule_element_id},
             ),
         ),
@@ -959,14 +959,14 @@ def uk_affecting_act_implicit_first_subparagraph_context_ignored(
         locator=locator,
         authority_layer=authority_layer,
         extracted_element_id=extracted_element_id,
-        target_resolution=TargetResolutionCertificate(
+        target_resolution=TargetResolutionCoverage(
             rule_id="uk_affecting_act_implicit_first_subparagraph_context_ignored",
             phase="extraction",
             reason=(
                 "UK effects metadata included an implicit first-subparagraph source "
                 "context while the affecting-source XML exposes the child directly."
             ),
-            status=TARGET_RECOVERED,
+            resolution_status=TARGET_RECOVERED,
             source_target=affecting_provisions,
             selected_target=normalized_affecting_provisions,
             candidate_count=1,
@@ -1047,7 +1047,7 @@ def uk_affecting_act_enacted_schedule_table_row_source_extracted(
             SourceLaneAttempt(
                 lane="enacted_schedule_table_row_payload",
                 locator=selected_locator,
-                status="selected",
+                lane_attempt_status="selected",
                 detail={
                     "schedule_label": schedule_label,
                     "part_label": part_label,
@@ -1101,13 +1101,13 @@ def uk_affecting_act_compound_payload_only_block_amendment_selected(
             SourceLaneAttempt(
                 lane="numbered_source_row_context",
                 locator=f"{locator}#{source_row_id}",
-                status="context_selected_not_payload",
+                lane_attempt_status="context_selected_not_payload",
                 detail={"source_row_tag": source_row_tag, "source_row_label": source_row_label},
             ),
             SourceLaneAttempt(
                 lane="block_amendment_payload_container",
                 locator=f"{locator}#{source_row_id}/payload",
-                status="selected",
+                lane_attempt_status="selected",
                 detail={
                     "payload_container_tag": payload_container_tag,
                     "payload_text_preview": payload_text_preview,

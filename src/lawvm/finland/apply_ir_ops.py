@@ -13,6 +13,7 @@ import re
 from typing import List, Optional
 
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
@@ -27,6 +28,7 @@ _STANDALONE_SUBSECTION_ITEM_PREFIX_RE = re.compile(
     r"^\s{0,40}\d+[a-z]?\s{0,20}[\).]\s{1,80}([\s\S]{0,20000})$",
     flags=re.I | re.DOTALL,
 )
+_PRESERVE_IMPLICIT_PARAGRAPH_NUMBER_ATTR = "lawvm_preserve_implicit_paragraph_numbering"
 
 
 def _kumottu_attribution(source_id: str, issue_date: Optional[dt.date] = None, source_title: str = "") -> str:
@@ -149,7 +151,12 @@ def _relabel_section_ir(section: IRNode, new_label: str) -> IRNode:
     )
 
 
-def _relabel_paragraph_ir(paragraph: IRNode, new_label: str) -> IRNode:
+def _relabel_paragraph_ir(
+    paragraph: IRNode,
+    new_label: str,
+    *,
+    preserve_implicit_numbering: bool = False,
+) -> IRNode:
     """Return paragraph with updated label and visible number marker."""
     display_label = re.sub(r"^(\d+)([a-z])$", r"\1 \2", new_label, flags=re.I)
     new_children: List[IRNode] = []
@@ -179,7 +186,7 @@ def _relabel_paragraph_ir(paragraph: IRNode, new_label: str) -> IRNode:
             num_updated = True
         else:
             new_children.append(child)
-    if not num_updated:
+    if not num_updated and not preserve_implicit_numbering:
         new_children = [IRNode(kind=IRNodeKind.NUM, text=f"{display_label})")] + new_children
     return IRNode(
         kind=paragraph.kind,
@@ -380,7 +387,7 @@ def _insert_subsection_with_renumber_ir(
                 source_statute="",
                 target_unit_kind="section",
                 target_label=f"{target_paragraph} mom",
-                recovery_kind="subsection_insert_renumber",
+                recovery_kind=RecoveryKind.SUBSECTION_INSERT_RENUMBER,
                 live_sibling_count=len(subsecs),
                 payload_sibling_count=renumbered_count,
             )
@@ -403,7 +410,19 @@ def _insert_item_with_suffix_renumber_ir(
     end so that the conclusion floats to after any newly inserted items.
     """
     insert_label = item_norm
-    inserted_para = _relabel_paragraph_ir(amend_para, insert_label)
+    preserve_implicit_numbering = (
+        amend_para.attrs.get(_PRESERVE_IMPLICIT_PARAGRAPH_NUMBER_ATTR) == "1"
+        and not any(
+            child.kind is IRNodeKind.PARAGRAPH
+            and any(grandchild.kind is IRNodeKind.NUM for grandchild in child.children)
+            for child in sub.children
+        )
+    )
+    inserted_para = _relabel_paragraph_ir(
+        amend_para,
+        insert_label,
+        preserve_implicit_numbering=preserve_implicit_numbering,
+    )
     paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
     if anchor_idx is not None:
         insert_at = anchor_idx + 1
@@ -475,7 +494,11 @@ def _insert_item_with_suffix_renumber_ir(
             if norm.isdigit():
                 current_num = int(norm)
                 if current_num < next_num:
-                    child = _relabel_paragraph_ir(child, str(next_num))
+                    child = _relabel_paragraph_ir(
+                        child,
+                        str(next_num),
+                        preserve_implicit_numbering=preserve_implicit_numbering,
+                    )
                     current_num = next_num
                     renumbered_count += 1
                 next_num = current_num + 1
@@ -500,7 +523,7 @@ def _insert_item_with_suffix_renumber_ir(
                         source_statute=source_statute,
                         target_unit_kind="section",
                         target_label=item_norm,
-                        recovery_kind="item_insert_tail_wrapup_absorb",
+                        recovery_kind=RecoveryKind.ITEM_INSERT_TAIL_WRAPUP_ABSORB,
                         live_sibling_count=1,
                         payload_sibling_count=1,
                     )
@@ -513,7 +536,7 @@ def _insert_item_with_suffix_renumber_ir(
                 source_statute=source_statute,
                 target_unit_kind="section",
                 target_label=item_norm,
-                recovery_kind="item_insert_suffix_renumber",
+                recovery_kind=RecoveryKind.ITEM_INSERT_SUFFIX_RENUMBER,
                 live_sibling_count=len(paras),
                 payload_sibling_count=renumbered_count,
             )

@@ -18,7 +18,7 @@ from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource,
 from lawvm.core.target_resolution import (
     TARGET_REJECTED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.replay_adjudication import CompileAdjudication
 
@@ -99,6 +99,8 @@ def _record_ee_parse_rejection(
             kind=kind,
             message=message,
             source_statute=source_id,
+            blocking=True,
+            phase="parse",
             detail=diagnostic_detail(
                 rule_id=rule_id,
                 phase="parse",
@@ -109,11 +111,11 @@ def _record_ee_parse_rejection(
                 quirks_disposition="record",
                 target_title=target_title,
                 statute_fragment=statute_fragment,
-                target_resolution=TargetResolutionCertificate(
+                target_resolution=TargetResolutionCoverage(
                     rule_id=rule_id,
                     phase="parse",
                     reason=reason,
-                    status=TARGET_REJECTED,
+                    resolution_status=TARGET_REJECTED,
                     source_target=target_title or statute_fragment or source_id,
                     candidate_count=len(candidates),
                     candidates=candidates,
@@ -150,6 +152,8 @@ def _record_ee_old_format_unparsed_meta_rejection(
             ),
             source_statute=source_id,
             op_id=op.op_id,
+            blocking=True,
+            phase="parse",
             detail=diagnostic_detail(
                 rule_id=_EE_OLD_FORMAT_UNPARSED_META_REJECTED_RULE,
                 phase="parse",

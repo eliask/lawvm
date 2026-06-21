@@ -112,11 +112,11 @@ _TRIGGER_COVERAGE_STATUSES = frozenset({
 
 
 @dataclass(frozen=True)
-class TriggerCoverageCertificate:
+class TriggerCoverage:
     """Epistemic coverage record for contingent trigger source searches."""
 
     certificate_id: str
-    status: TriggerCoverageStatus
+    certificate_status: TriggerCoverageStatus
     as_of: str = ""
     activation_rule_ref: str = ""
     source_scope: tuple[str, ...] = ()
@@ -130,34 +130,34 @@ class TriggerCoverageCertificate:
         object.__setattr__(self, "missing_sources", tuple(self.missing_sources))
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
         if not self.certificate_id:
-            raise ValueError("TriggerCoverageCertificate.certificate_id must be non-empty")
-        if self.status not in _TRIGGER_COVERAGE_STATUSES:
-            raise ValueError(f"unsupported trigger coverage status: {self.status!r}")
-        if self.status in {
+            raise ValueError("TriggerCoverage.certificate_id must be non-empty")
+        if self.certificate_status not in _TRIGGER_COVERAGE_STATUSES:
+            raise ValueError(f"unsupported trigger coverage status: {self.certificate_status!r}")
+        if self.certificate_status in {
             TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
             TRIGGER_COVERAGE_COMPLETE_WITH_RESOLUTION,
         }:
             if not self.as_of:
                 raise ValueError(
-                    f"TriggerCoverageCertificate(status={self.status!r}) requires as_of"
+                    f"TriggerCoverage(status={self.certificate_status!r}) requires as_of"
                 )
             if not self.checked_sources:
                 raise ValueError(
-                    f"TriggerCoverageCertificate(status={self.status!r}) requires checked_sources"
+                    f"TriggerCoverage(status={self.certificate_status!r}) requires checked_sources"
                 )
-        if self.status == TRIGGER_COVERAGE_INCOMPLETE and not self.missing_sources:
+        if self.certificate_status == TRIGGER_COVERAGE_INCOMPLETE and not self.missing_sources:
             raise ValueError(
-                "TriggerCoverageCertificate(status='incomplete') requires missing_sources"
+                "TriggerCoverage(status='incomplete') requires missing_sources"
             )
 
     @property
     def certifies_untriggered(self) -> bool:
-        return self.status == TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION
+        return self.certificate_status == TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "certificate_id": self.certificate_id,
-            "status": self.status,
+            "certificate_status": self.certificate_status,
             "as_of": self.as_of,
             "activation_rule_ref": self.activation_rule_ref,
             "source_scope": self.source_scope,
@@ -429,7 +429,7 @@ __all__ = [
     "PENDING_DECREE_KIND",
     "PENDING_CONDITION_KIND",
     "TriggerCoverageStatus",
-    "TriggerCoverageCertificate",
+    "TriggerCoverage",
     "TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION",
     "TRIGGER_COVERAGE_COMPLETE_WITH_RESOLUTION",
     "TRIGGER_COVERAGE_INCOMPLETE",

@@ -10,12 +10,20 @@ from lawvm.core.effect_lifecycle import (
     EffectRef,
     EffectRelation,
     EffectRelationKind,
+    EffectRelationTargetResolution,
     SourceInstrumentRef,
     SourceProvisionRef,
+    append_unique_effect_lifecycle_event,
+    append_unique_effect_ref,
+    append_unique_effect_relation,
+    merge_unique_effect_lifecycle_events,
+    merge_unique_effect_refs,
+    merge_unique_effect_relations,
 )
 from lawvm.core.ir import LegalOperation
 from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
+from lawvm.finland.helpers import _norm_num_token
 
 
 def _typed_override_rows(
@@ -36,6 +44,39 @@ def _typed_relation_signals(
     for row in relation_signals:
         if not isinstance(row, EffectRelationSignal):
             raise TypeError("relation_signals must contain EffectRelationSignal rows")
+        rows.append(row)
+    return tuple(rows)
+
+
+def _typed_legal_operations(
+    canonical_ops: Sequence[LegalOperation],
+) -> tuple[LegalOperation, ...]:
+    rows: list[LegalOperation] = []
+    for row in canonical_ops:
+        if not isinstance(row, LegalOperation):
+            raise TypeError("canonical_ops must contain LegalOperation rows")
+        rows.append(row)
+    return tuple(rows)
+
+
+def _typed_temporal_events(
+    temporal_events: Sequence[TemporalEvent],
+) -> tuple[TemporalEvent, ...]:
+    rows: list[TemporalEvent] = []
+    for row in temporal_events:
+        if not isinstance(row, TemporalEvent):
+            raise TypeError("temporal_events must contain TemporalEvent rows")
+        rows.append(row)
+    return tuple(rows)
+
+
+def _typed_source_effects(
+    source_effects: Sequence[EffectRef],
+) -> tuple[EffectRef, ...]:
+    rows: list[EffectRef] = []
+    for row in source_effects:
+        if not isinstance(row, EffectRef):
+            raise TypeError("known_source_effects must contain EffectRef rows")
         rows.append(row)
     return tuple(rows)
 
@@ -78,10 +119,15 @@ def _effect_ref_for_temporal_event(
     event: TemporalEvent,
     *,
     target_statute: str,
+    source_effects: Sequence[EffectRef] = (),
+    effect_id: str | None = None,
 ) -> EffectRef | None:
     source = event.source
     if source is None or not source.statute_id:
         return None
+    matched = _matching_operation_effect_for_temporal_event(event, source_effects)
+    if matched is not None:
+        return matched
     instrument = SourceInstrumentRef.from_operation_source(source)
     witness = SourceProvisionRef(
         instrument=instrument,
@@ -91,7 +137,7 @@ def _effect_ref_for_temporal_event(
         rule_id="fi.temporal_event.lifecycle_projection",
     )
     return EffectRef(
-        effect_id=f"fi-effect:{source.statute_id}:{event.group_id or event.event_id}",
+        effect_id=effect_id or f"fi-effect:{source.statute_id}:{event.group_id or event.event_id}",
         source_instrument=instrument,
         target_statute=event.scope.target_statute or target_statute,
         target_address=event.scope.exact_addresses[0] if len(event.scope.exact_addresses) == 1 else None,
@@ -104,6 +150,7 @@ def _effect_ref_for_legal_operation(
     op: LegalOperation,
     *,
     target_statute: str,
+    effect_id: str | None = None,
 ) -> EffectRef | None:
     source = op.source
     if source is None or not source.statute_id:
@@ -117,7 +164,7 @@ def _effect_ref_for_legal_operation(
         rule_id=op.witness_rule_id or "fi.legal_operation.effect_declaration",
     )
     return EffectRef(
-        effect_id=f"fi-effect:{source.statute_id}:{op.op_id or op.sequence}",
+        effect_id=effect_id or f"fi-effect:{source.statute_id}:{op.op_id or op.sequence}",
         source_instrument=instrument,
         target_statute=target_statute,
         target_address=op.target,
@@ -126,28 +173,197 @@ def _effect_ref_for_legal_operation(
     )
 
 
+def _matching_operation_effect_for_temporal_event(
+    event: TemporalEvent,
+    source_effects: Sequence[EffectRef],
+) -> EffectRef | None:
+    source = event.source
+    if source is None or not source.statute_id:
+        return None
+    span_matches = tuple(
+        effect
+        for effect in source_effects
+        if effect.source_instrument.instrument_id == source.statute_id
+        and effect.source_provision is not None
+        and effect.source_provision.rule_id == "fi.temporal_event.lifecycle_projection"
+        and effect.source_provision.span_id == event.event_id
+    )
+    if len(span_matches) == 1:
+        return span_matches[0]
+    if not event.group_id:
+        return None
+    if len(event.scope.exact_addresses) != 1:
+        return None
+    target_address = event.scope.exact_addresses[0]
+    matches = tuple(
+        effect
+        for effect in source_effects
+        if effect.source_instrument.instrument_id == source.statute_id
+        and effect.projection_group_id == event.group_id
+        and effect.target_address == target_address
+    )
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _legal_operation_effect_id(op: LegalOperation, *, duplicated_op_key: bool) -> str:
+    source = op.source
+    if source is None:
+        raise ValueError("operation effect identity requires source")
+    base_id = str(op.op_id or op.sequence)
+    if not duplicated_op_key:
+        return f"fi-effect:{source.statute_id}:{base_id}"
+    target_key = str(op.target).replace(" ", "_")
+    return f"fi-effect:{source.statute_id}:{base_id}:seq-{op.sequence}:target-{target_key}"
+
+
+def _duplicated_operation_effect_keys(
+    canonical_ops: Sequence[LegalOperation],
+) -> frozenset[tuple[str, str]]:
+    counts: dict[tuple[str, str], int] = {}
+    for op in canonical_ops:
+        source = op.source
+        if source is None or not source.statute_id:
+            continue
+        key = (source.statute_id, str(op.op_id or op.sequence))
+        counts[key] = counts.get(key, 0) + 1
+    return frozenset(key for key, count in counts.items() if count > 1)
+
+
+def _temporal_event_effect_id(event: TemporalEvent, *, duplicated_event_key: bool) -> str:
+    source = event.source
+    if source is None:
+        raise ValueError("temporal effect identity requires source")
+    base_id = str(event.group_id or event.event_id)
+    if not duplicated_event_key:
+        return f"fi-effect:{source.statute_id}:{base_id}"
+    if len(event.scope.exact_addresses) == 1:
+        target_key = str(event.scope.exact_addresses[0]).replace(" ", "_")
+    else:
+        target_key = f"scope-{event.scope.target_statute or '-'}"
+    return f"fi-effect:{source.statute_id}:{base_id}:event-{event.event_id}:target-{target_key}"
+
+
+def _duplicated_temporal_effect_keys(
+    temporal_events: Sequence[TemporalEvent],
+) -> frozenset[tuple[str, str]]:
+    counts: dict[tuple[str, str], int] = {}
+    for event in temporal_events:
+        source = event.source
+        if source is None or not source.statute_id:
+            continue
+        key = (source.statute_id, str(event.group_id or event.event_id))
+        counts[key] = counts.get(key, 0) + 1
+    return frozenset(key for key, count in counts.items() if count > 1)
+
+
+def _disambiguate_colliding_effect_ids(ids: Sequence[str | None]) -> tuple[str | None, ...]:
+    counts: dict[str, int] = {}
+    for effect_id in ids:
+        if effect_id is None:
+            continue
+        counts[effect_id] = counts.get(effect_id, 0) + 1
+    ordinals: dict[str, int] = {}
+    resolved: list[str | None] = []
+    for effect_id in ids:
+        if effect_id is None or counts.get(effect_id, 0) == 1:
+            resolved.append(effect_id)
+            continue
+        ordinal = ordinals.get(effect_id, 0) + 1
+        ordinals[effect_id] = ordinal
+        resolved.append(f"{effect_id}:occ-{ordinal}")
+    return tuple(resolved)
+
+
 def _source_effects_from_ops_and_temporal_events(
     *,
     target_statute: str,
     canonical_ops: Sequence[LegalOperation],
     temporal_events: Sequence[TemporalEvent],
+    known_source_effects: Sequence[EffectRef] = (),
 ) -> tuple[EffectRef, ...]:
-    effects_by_id: dict[str, EffectRef] = {}
-    for op in canonical_ops:
-        effect = _effect_ref_for_legal_operation(op, target_statute=target_statute)
+    effects: list[EffectRef] = []
+    known_effects = tuple(known_source_effects)
+    duplicated_op_keys = _duplicated_operation_effect_keys(canonical_ops)
+    duplicated_temporal_keys = _duplicated_temporal_effect_keys(temporal_events)
+    operation_effect_ids = _disambiguate_colliding_effect_ids(
+        tuple(
+            _legal_operation_effect_id(
+                op,
+                duplicated_op_key=(
+                    source is not None
+                    and bool(source.statute_id)
+                    and (source.statute_id, str(op.op_id or op.sequence)) in duplicated_op_keys
+                ),
+            )
+            if (source := op.source) is not None and source.statute_id
+            else None
+            for op in canonical_ops
+        )
+    )
+    temporal_effect_ids = _disambiguate_colliding_effect_ids(
+        tuple(
+            _temporal_event_effect_id(
+                event,
+                duplicated_event_key=(
+                    source is not None
+                    and bool(source.statute_id)
+                    and (source.statute_id, str(event.group_id or event.event_id))
+                    in duplicated_temporal_keys
+                ),
+            )
+            if (source := event.source) is not None and source.statute_id
+            else None
+            for event in temporal_events
+        )
+    )
+    for op, effect_id in zip(canonical_ops, operation_effect_ids, strict=True):
+        source = op.source
+        effect = _effect_ref_for_legal_operation(
+            op,
+            target_statute=target_statute,
+            effect_id=effect_id if source is not None and source.statute_id else None,
+        )
         if effect is not None:
-            effects_by_id.setdefault(effect.effect_id, effect)
-    for event in temporal_events:
-        effect = _effect_ref_for_temporal_event(event, target_statute=target_statute)
+            append_unique_effect_ref(
+                effects,
+                effect,
+                subject="operation-derived source effects",
+            )
+    for event, effect_id in zip(temporal_events, temporal_effect_ids, strict=True):
+        source = event.source
+        effect = _effect_ref_for_temporal_event(
+            event,
+            target_statute=target_statute,
+            source_effects=(*known_effects, *effects),
+            effect_id=effect_id if source is not None and source.statute_id else None,
+        )
         if effect is not None:
-            effects_by_id.setdefault(effect.effect_id, effect)
-    return tuple(effects_by_id.values())
+            if effect in known_effects:
+                continue
+            append_unique_effect_ref(
+                effects,
+                effect,
+                subject="temporal-derived source effects",
+            )
+    return tuple(effects)
+
+
+def _merge_unique_source_effect_context(
+    *lanes: Sequence[EffectRef],
+) -> tuple[EffectRef, ...]:
+    return merge_unique_effect_refs(
+        *lanes,
+        subject="Finland effect lifecycle source context",
+    )
 
 
 def _lifecycle_from_temporal_events(
     temporal_events: Sequence[TemporalEvent],
     *,
     target_statute: str,
+    source_effects: Sequence[EffectRef] = (),
 ) -> tuple[EffectLifecycleEvent, ...]:
     lifecycle_events: list[EffectLifecycleEvent] = []
     kind_map: dict[str, EffectLifecycleEventKind] = {
@@ -160,7 +376,11 @@ def _lifecycle_from_temporal_events(
         lifecycle_kind = kind_map.get(event.kind)
         if lifecycle_kind is None:
             continue
-        effect = _effect_ref_for_temporal_event(event, target_statute=target_statute)
+        effect = _effect_ref_for_temporal_event(
+            event,
+            target_statute=target_statute,
+            source_effects=source_effects,
+        )
         if effect is None or effect.source_provision is None:
             continue
         lifecycle_events.append(
@@ -194,7 +414,7 @@ def _effect_matches_override_scope(effect: EffectRef, row: EffectLifecycleOverri
     if row.scope.kind == "section":
         section_labels = set(row.scope.labels)
         return any(
-            kind == "section" and label in section_labels
+            kind == "section" and _norm_num_token(label) in section_labels
             for kind, label in effect.target_address.path
         )
     if row.scope.kind == "mixed":
@@ -202,7 +422,7 @@ def _effect_matches_override_scope(effect: EffectRef, row: EffectLifecycleOverri
             return True
         section_labels = set(row.scope.labels)
         return any(
-            kind == "section" and label in section_labels
+            kind == "section" and _norm_num_token(label) in section_labels
             for kind, label in effect.target_address.path
         )
     return False
@@ -264,7 +484,6 @@ def _relations_from_lifecycle_overrides(
                     target_instrument=target_instrument,
                     detail={
                         **row.to_meta_row(),
-                        "resolved": False,
                         "unresolved_reason": "no matching source effect in current projection context",
                     },
                 )
@@ -281,10 +500,7 @@ def _relations_from_lifecycle_overrides(
                     kind=kind,
                     source_provision=witness,
                     target_effect=target_effect,
-                    detail={
-                        **row.to_meta_row(),
-                        "resolved": True,
-                    },
+                    detail=row.to_meta_row(),
                 )
             )
     return tuple(relations)
@@ -314,10 +530,10 @@ def _lifecycle_event_from_unmatched_override_relation(
         source_provision=relation.source_provision,
         relation=relation,
         executable=False,
+        intended_lifecycle_kind=lifecycle_kind,
         detail={
             "projection": "source_lifecycle_override",
             "executable_projection": False,
-            "intended_lifecycle_kind": lifecycle_kind,
             "non_executable_reason": "override row did not match a source-backed target effect",
             **row.to_meta_row(),
         },
@@ -335,14 +551,17 @@ def _lifecycle_event_from_override_relation(
         lifecycle_kind: EffectLifecycleEventKind = "change_effect_commencement"
         effective = row.effective
         expires = ""
+        expiry_convention = "exclusive_cutoff"
     elif relation.kind == "repeals_effect":
         lifecycle_kind = "repeal_effect"
         effective = row.effective or row.expiry
         expires = row.expiry or row.effective
+        expiry_convention = "exclusive_cutoff"
     elif relation.kind == "extends_effect_expiry":
         lifecycle_kind = "change_effect_expiry"
         effective = ""
         expires = row.expiry
+        expiry_convention = "inclusive_valid_until"
     else:
         return None
     return EffectLifecycleEvent(
@@ -353,6 +572,7 @@ def _lifecycle_event_from_override_relation(
         relation=relation,
         effective=effective,
         expires=expires,
+        expiry_convention=expiry_convention,
         executable=True,
         detail={
             "projection": "source_lifecycle_override",
@@ -369,7 +589,6 @@ def _lifecycle_events_from_lifecycle_overrides(
     source_effects: Sequence[EffectRef] = (),
 ) -> tuple[EffectLifecycleEvent, ...]:
     events: list[EffectLifecycleEvent] = []
-    seen: set[str] = set()
     for row in _typed_override_rows(lifecycle_overrides):
         relations = _relations_from_lifecycle_overrides(
             (row,),
@@ -384,10 +603,13 @@ def _lifecycle_events_from_lifecycle_overrides(
                 )
             else:
                 event = _lifecycle_event_from_override_relation(row=row, relation=relation)
-            if event is None or event.lifecycle_event_id in seen:
+            if event is None:
                 continue
-            seen.add(event.lifecycle_event_id)
-            events.append(event)
+            append_unique_effect_lifecycle_event(
+                events,
+                event,
+                subject="Finland lifecycle override projection",
+            )
     return tuple(events)
 
 
@@ -395,7 +617,7 @@ def _effects_matching_relation_signal(
     signal: EffectRelationSignal,
     source_effects: Sequence[EffectRef],
 ) -> tuple[EffectRef, ...]:
-    if not signal.resolved or not signal.target_statute:
+    if signal.target_resolution != "target_instrument_resolved" or not signal.target_statute:
         return ()
     matches: list[EffectRef] = []
     seen: set[str] = set()
@@ -413,6 +635,8 @@ def _relation_from_signal(
     signal: EffectRelationSignal,
     *,
     target_effect: EffectRef | None = None,
+    target_resolution: EffectRelationTargetResolution | None = None,
+    detail: dict[str, object] | None = None,
 ) -> EffectRelation | None:
     witness = _source_witness(
         source_statute=signal.source_statute,
@@ -432,10 +656,8 @@ def _relation_from_signal(
             kind=signal.relation_kind,
             source_provision=witness,
             target_effect=target_effect,
-            detail={
-                **signal.to_meta_row(),
-                "target_effect_id": target_effect.effect_id,
-            },
+            target_resolution=target_resolution,
+            detail={**signal.to_meta_row(), **(detail or {})},
         )
     target_instrument = (
         SourceInstrumentRef(instrument_id=signal.target_statute, title=signal.target_title)
@@ -449,7 +671,8 @@ def _relation_from_signal(
         kind=signal.relation_kind,
         source_provision=witness,
         target_instrument=target_instrument,
-        detail=signal.to_meta_row(),
+        target_resolution=target_resolution,
+        detail={**signal.to_meta_row(), **(detail or {})},
     )
 
 
@@ -459,22 +682,42 @@ def _relations_from_signals(
     source_effects: Sequence[EffectRef] = (),
 ) -> tuple[EffectRelation, ...]:
     relations: list[EffectRelation] = []
-    seen: set[str] = set()
     for signal in _typed_relation_signals(relation_signals):
         matched_effects = _effects_matching_relation_signal(signal, source_effects)
-        relation_candidates = tuple(
-            relation
-            for effect in matched_effects
-            if (relation := _relation_from_signal(signal, target_effect=effect)) is not None
-        )
+        if len(matched_effects) > 1:
+            relation = _relation_from_signal(
+                signal,
+                target_resolution=EffectRelationTargetResolution(
+                    kind="ambiguous_multiple_effects",
+                    matched_effect_count=len(matched_effects),
+                    non_executable_reason=(
+                        "effect relation signal names an instrument but not "
+                        "a unique source-backed effect"
+                    ),
+                ),
+                detail={
+                    "non_executable_reason": (
+                        "effect relation signal names an instrument but not "
+                        "a unique source-backed effect"
+                    ),
+                },
+            )
+            relation_candidates = (relation,) if relation is not None else ()
+        else:
+            relation_candidates = tuple(
+                relation
+                for effect in matched_effects
+                if (relation := _relation_from_signal(signal, target_effect=effect)) is not None
+            )
         if not relation_candidates:
             relation = _relation_from_signal(signal)
             relation_candidates = (relation,) if relation is not None else ()
         for relation in relation_candidates:
-            if relation.relation_id in seen:
-                continue
-            seen.add(relation.relation_id)
-            relations.append(relation)
+            append_unique_effect_relation(
+                relations,
+                relation,
+                subject="Finland effect relation signal projection",
+            )
     return tuple(relations)
 
 
@@ -482,9 +725,8 @@ def _unresolved_lifecycle_from_relation_signals(
     relation_signals: Sequence[EffectRelationSignal],
 ) -> tuple[EffectLifecycleEvent, ...]:
     events: list[EffectLifecycleEvent] = []
-    seen: set[str] = set()
     for signal in _typed_relation_signals(relation_signals):
-        if signal.resolved:
+        if signal.target_statute:
             continue
         relation = _relation_from_signal(signal)
         witness = (
@@ -504,22 +746,95 @@ def _unresolved_lifecycle_from_relation_signals(
         if witness is None:
             continue
         lifecycle_id = _lifecycle_id(signal.source_statute, signal.signal_kind, "unresolved")
-        if lifecycle_id in seen:
-            continue
-        seen.add(lifecycle_id)
-        events.append(
+        append_unique_effect_lifecycle_event(
+            events,
             EffectLifecycleEvent(
                 lifecycle_event_id=lifecycle_id,
                 kind="unresolved_effect_target",
                 source_provision=witness,
                 relation=relation,
                 executable=False,
+                intended_relation_kind=signal.relation_kind,
                 detail={
                     "projection": "effect_relation_signal",
-                    "intended_relation_kind": signal.relation_kind,
                     **signal.to_meta_row(),
                 },
+            ),
+            subject="Finland unresolved relation signal projection",
+        )
+    return tuple(events)
+
+
+def _lifecycle_events_from_resolved_signal_relations(
+    relations: Sequence[EffectRelation],
+) -> tuple[EffectLifecycleEvent, ...]:
+    events: list[EffectLifecycleEvent] = []
+    for relation in relations:
+        if relation.source_provision.rule_id != "fi.meta_repeal_effect_relation":
+            continue
+        if relation.kind != "repeals_effect" or relation.target_effect is None:
+            continue
+        lifecycle_id = _lifecycle_id(relation.relation_id, "repeal_effect")
+        append_unique_effect_lifecycle_event(
+            events,
+            EffectLifecycleEvent(
+                lifecycle_event_id=lifecycle_id,
+                kind="repeal_effect",
+                source_provision=relation.source_provision,
+                effect=relation.target_effect,
+                relation=relation,
+                executable=False,
+                detail={
+                    "projection": "effect_relation_signal",
+                    "executable_projection": False,
+                    "non_executable_reason": "meta-repeal signal did not carry a deterministic repeal date",
+                    **relation.detail,
+                },
+            ),
+            subject="Finland resolved relation signal lifecycle projection",
+        )
+    return tuple(events)
+
+
+def _lifecycle_events_from_unresolved_signal_relations(
+    relations: Sequence[EffectRelation],
+) -> tuple[EffectLifecycleEvent, ...]:
+    events: list[EffectLifecycleEvent] = []
+    signal_rule_ids = {
+        "fi.pending_amendment_of_parent_effect_relation",
+        "fi.meta_repeal_effect_relation",
+    }
+    for relation in relations:
+        if relation.source_provision.rule_id not in signal_rule_ids:
+            continue
+        if relation.target_effect is not None:
+            continue
+        detail: dict[str, object] = dict(relation.detail)
+        source_finding = str(detail.get("source_finding") or "").strip()
+        if source_finding:
+            detail["relation_source_finding"] = source_finding
+            detail.pop("source_finding", None)
+        if "non_executable_reason" not in detail:
+            detail["non_executable_reason"] = (
+                "effect relation signal did not bind a unique source-backed target effect"
             )
+        lifecycle_id = _lifecycle_id(relation.relation_id, "unresolved")
+        append_unique_effect_lifecycle_event(
+            events,
+            EffectLifecycleEvent(
+                lifecycle_event_id=lifecycle_id,
+                kind="unresolved_effect_target",
+                source_provision=relation.source_provision,
+                relation=relation,
+                executable=False,
+                intended_relation_kind=relation.kind,
+                detail={
+                    "projection": "effect_relation_signal",
+                    "executable_projection": False,
+                    **detail,
+                },
+            ),
+            subject="Finland unresolved relation signal lifecycle projection",
         )
     return tuple(events)
 
@@ -540,31 +855,39 @@ def build_finland_effect_lifecycle(
     ``temporal_events``, which are already the replay-owned projection of those
     operations.
     """
+    canonical_ops = _typed_legal_operations(canonical_ops)
+    temporal_events = _typed_temporal_events(temporal_events)
+    known_source_effects = _typed_source_effects(known_source_effects)
     source_effects = _source_effects_from_ops_and_temporal_events(
         target_statute=target_statute,
         canonical_ops=canonical_ops,
         temporal_events=temporal_events,
+        known_source_effects=known_source_effects,
     )
-    source_effects_by_id = {
-        effect.effect_id: effect
-        for effect in tuple(known_source_effects) + tuple(source_effects)
-    }
-    source_effect_context = tuple(source_effects_by_id.values())
-    relations = (
+    source_effect_context = _merge_unique_source_effect_context(known_source_effects, source_effects)
+    relations = merge_unique_effect_relations(
         _relations_from_lifecycle_overrides(
             lifecycle_overrides,
             target_statute=target_statute,
             source_effects=source_effect_context,
-        )
-        + _relations_from_signals(relation_signals, source_effects=source_effect_context)
+        ),
+        _relations_from_signals(relation_signals, source_effects=source_effect_context),
+        subject="Finland effect lifecycle relations",
     )
-    lifecycle_events = (
-        _lifecycle_from_temporal_events(temporal_events, target_statute=target_statute)
-        + _lifecycle_events_from_lifecycle_overrides(
+    lifecycle_events = merge_unique_effect_lifecycle_events(
+        _lifecycle_from_temporal_events(
+            temporal_events,
+            target_statute=target_statute,
+            source_effects=source_effect_context,
+        ),
+        _lifecycle_events_from_lifecycle_overrides(
             lifecycle_overrides,
             target_statute=target_statute,
             source_effects=source_effect_context,
-        )
-        + _unresolved_lifecycle_from_relation_signals(relation_signals)
+        ),
+        _lifecycle_events_from_resolved_signal_relations(relations),
+        _lifecycle_events_from_unresolved_signal_relations(relations),
+        _unresolved_lifecycle_from_relation_signals(relation_signals),
+        subject="Finland effect lifecycle events",
     )
     return source_effects, relations, lifecycle_events

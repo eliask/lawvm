@@ -29,7 +29,7 @@ from lawvm.core.ir import (
     ProvisionTimeline,
     ProvisionVersion,
 )
-from lawvm.core.authority import (
+from lawvm.core.branch_authority import (
     BranchContext,
     DEFAULT_ENACTED_CONTEXT,
     branch_context_from_operation,
@@ -44,6 +44,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.statute_facets import is_statute_title_address, statute_title_address
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.timeline_addresses import (
+    STRUCTURAL_RENUMBER_SNAPSHOT_ATTR,
     _address_prefix_matches,
     _iter_nodes_with_address,
     _iter_statute_nodes_with_address,
@@ -73,7 +74,7 @@ from lawvm.core.timeline_materialization import (
     top_level_supplement_active as _top_level_supplement_active,
 )
 from lawvm.core.timeline_results import (
-    MaterializationCertificate,
+    MaterializationCoverage,
     MaterializationLineagePlan,
     MaterializationResult,
     MaterializationStatus,
@@ -867,6 +868,16 @@ def compile_timelines(
                 else list(source_active.applicability)
             )
             migrated_content = _retarget_root_node(source_active.content, destination)
+            migrated_content = IRNode(
+                kind=migrated_content.kind,
+                label=migrated_content.label,
+                text=migrated_content.text,
+                attrs={
+                    **dict(migrated_content.attrs),
+                    STRUCTURAL_RENUMBER_SNAPSHOT_ATTR: "1",
+                },
+                children=migrated_content.children,
+            )
             _append_version(
                 timelines[destination],
                 ProvisionVersion(
@@ -1068,7 +1079,7 @@ def materialize_pit(
         migration_events=migration_events,
         lineage_plan=lineage_plan,
     )
-    if result.status == "degraded_missing_scope":
+    if result.materialization_status == "degraded_missing_scope":
         raise ValueError(
             "materialize_pit requires explicit scope when PIT selection is degraded by "
             f"missing {result.required_dimensions!r}; use materialize_pit_ex() for an "
@@ -1264,6 +1275,8 @@ def materialize_pit_ex(
         parent_addr: LegalAddress,
         child_addr: LegalAddress,
     ) -> bool:
+        if content.attrs.get(STRUCTURAL_RENUMBER_SNAPSHOT_ATTR) == "1":
+            return False
         parent_leaf = parent_addr.leaf_kind()
         if parent_leaf not in {"chapter", "part", "section"}:
             return True
@@ -1536,12 +1549,12 @@ def materialize_pit_ex(
         metadata=metadata,
     )
     return MaterializationResult(
-        status=status,
+        materialization_status=status,
         statute=statute,
         required_dimensions=tuple(sorted(degraded_dimensions)),
         ambiguous_addresses=tuple(sorted(ambiguous_addresses, key=lambda addr: addr.path)),
         issues=tuple(issues),
-        certificate=MaterializationCertificate(
+        certificate=MaterializationCoverage(
             as_of=as_of,
             query_type=query_type,
             territory=territory,

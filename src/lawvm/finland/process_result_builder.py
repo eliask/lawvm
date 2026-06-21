@@ -11,7 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List, Optional, Sequence
 
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_relations,
+)
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import LegalOperation
 from lawvm.core.mutation_accounting import MutationInvariantReport as ApplyMutationInvariantReport
@@ -21,6 +27,7 @@ from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.core.temporal import TemporalEvent
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     build_apply_mutation_invariant_reports,
@@ -116,6 +123,7 @@ class ProcessAmendmentSinks:
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None
     mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]] = None
     write_audits_out: Optional[List[ObservedWriteAudit]] = None
+    write_receipts_out: Optional[List[WriteReceipt]] = None
     migration_events_out: Optional[List[MigrationEvent]] = None
     restructure_plans_out: Optional[List[StructuralTransformPlan]] = None
 
@@ -228,21 +236,16 @@ class ProcessResultBuilder:
             relation_signals=tuple(self.buffers.effect_relation_signals),
             known_source_effects=tuple(self.buffers.source_effects),
         )
-        existing_relations = {relation.relation_id for relation in self.buffers.effect_relations}
-        for relation in relations:
-            if relation.relation_id in existing_relations:
-                continue
-            existing_relations.add(relation.relation_id)
-            self.buffers.effect_relations.append(relation)
-
-        existing_events = {
-            event.lifecycle_event_id for event in self.buffers.effect_lifecycle_events
-        }
-        for event in lifecycle_events:
-            if event.lifecycle_event_id in existing_events:
-                continue
-            existing_events.add(event.lifecycle_event_id)
-            self.buffers.effect_lifecycle_events.append(event)
+        append_unique_effect_relations(
+            self.buffers.effect_relations,
+            relations,
+            subject="process effect lifecycle projection",
+        )
+        append_unique_effect_lifecycle_events(
+            self.buffers.effect_lifecycle_events,
+            lifecycle_events,
+            subject="process effect lifecycle projection",
+        )
 
     def project_compat_sinks(self) -> None:
         if self.sinks.failed_ops_out is not None:

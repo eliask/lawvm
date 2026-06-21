@@ -1102,7 +1102,7 @@ def test_open_law_explain_text_includes_evidence_dispositions(tmp_path, capsys) 
         "unexplained_path_count": 0,
         "snapshot_matches_replay": False,
         "evidence_row": {
-            "status": "unsupported",
+            "evidence_status": "unsupported",
             "canonical_family": "",
             "strict_disposition": "block",
             "quirks_disposition": "record_unsupported",

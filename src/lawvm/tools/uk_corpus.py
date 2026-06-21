@@ -261,7 +261,7 @@ def _store_if_new(archive: Farchive, url: str, data: bytes, sc: str = "xml") -> 
 
 
 def _source_xml_status(data: bytes | None) -> UKSourceStatus:
-    return classify_uk_source_blob(data).status
+    return classify_uk_source_blob(data).source_state_status
 
 
 def _cached_source_xml_status(archive: Farchive, url: str) -> UKSourceStatus:

@@ -1,4 +1,4 @@
-"""The ``TokenPartitionCertificate`` + coverage-certifier (Pro ruling D2).
+"""The ``TokenPartitionCoverage`` + coverage-certifier (Pro ruling D2).
 
 This module makes the per-provision construction parse FOREST
 (:class:`~lawvm.finland.legal_surface.source_syntax_graph.SourceSyntaxGraph`) the
@@ -116,7 +116,7 @@ class UnownedViolationToken:
 
 
 @dataclass(frozen=True, slots=True)
-class TokenPartitionCertificate:
+class TokenPartitionCoverage:
     """A typed certificate over ONE provision's forest token-coverage partition.
 
     A pure projection of an already-assembled forest's
@@ -180,12 +180,12 @@ class TokenPartitionCertificate:
         }
 
 
-def build_token_partition_certificate(
+def build_token_partition_coverage(
     forest: SourceSyntaxGraph,
     *,
     statute_id: str = "",
-) -> TokenPartitionCertificate:
-    """Project an already-assembled forest into a :class:`TokenPartitionCertificate`.
+) -> TokenPartitionCoverage:
+    """Project an already-assembled forest into a :class:`TokenPartitionCoverage`.
 
     Pure: reads ONLY ``forest.coverage`` (the L0 census carried on the forest) and
     the forest's ``residual_span`` nodes (the self-evidencing
@@ -218,7 +218,7 @@ def build_token_partition_certificate(
                 context=node.residual_text,
             )
         )
-    return TokenPartitionCertificate(
+    return TokenPartitionCoverage(
         graph_id=forest.graph_id,
         statute_id=statute_id,
         total_tokens=cov.total_tokens,
@@ -395,8 +395,8 @@ def certify_graph_coverage(
 # ---------------------------------------------------------------------------
 
 
-def certificate_to_dict(cert: TokenPartitionCertificate) -> dict[str, object]:
-    """Machine-readable projection of a :class:`TokenPartitionCertificate`."""
+def certificate_to_dict(cert: TokenPartitionCoverage) -> dict[str, object]:
+    """Machine-readable projection of a :class:`TokenPartitionCoverage`."""
     return {
         "graph_id": cert.graph_id,
         "statute_id": cert.statute_id,
@@ -419,8 +419,8 @@ def certificate_to_dict(cert: TokenPartitionCertificate) -> dict[str, object]:
     }
 
 
-def render_certificate(cert: TokenPartitionCertificate) -> str:
-    """Human-readable rendering of a :class:`TokenPartitionCertificate`."""
+def render_certificate(cert: TokenPartitionCoverage) -> str:
+    """Human-readable rendering of a :class:`TokenPartitionCoverage`."""
     total = max(1, cert.total_tokens)
     lines: list[str] = []
     sid = cert.statute_id or cert.graph_id

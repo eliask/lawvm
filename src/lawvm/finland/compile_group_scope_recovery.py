@@ -13,6 +13,7 @@ from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.johto_scope_mentions import collect_johto_chapter_scope_mentions
 from lawvm.finland.lowering_scope_recovery import (
     allow_unscoped_live_section_retarget,
     group_has_scope_source,
@@ -21,9 +22,12 @@ from lawvm.finland.ops import (
     AmendmentOp,
     FailedOp,
     ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
     normalize_scope_confidence,
     projection_scope_confidence,
     _lo_with_path_update,
+    _op_target_subsection_label,
 )
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
@@ -33,6 +37,7 @@ _REJECTED_OPERATION_MESSAGE = "operation rejected before apply"
 _STAGE = "_compile_group"
 _BODY_CHAPTER_INSERT_SCOPE_RULE_ID = "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
 _BODY_CHAPTER_MOVE_RULE_ID = "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE"
+_BODY_CHAPTER_DECLARED_MOVE_RULE_ID = "LOWER.BODY_CHAPTER_DECLARED_MOVE_REPLACE"
 _LIVE_SECTION_RETARGET_RULE_ID = "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET"
 _FI_LABEL_TOKEN = r"\d{1,4}\s{0,3}[a-z]?"
 _FI_RANGE_DASH = r"[\-\u2010-\u2015]"
@@ -58,6 +63,7 @@ class CompileGroupScopeRecoveryRequest:
     inserted_chapter_labels: set[str]
     source_model: AmendmentSourceModel
     strict_profile: Optional[StrictProfile]
+    johto: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,6 +333,55 @@ def _replace_to_insert_ops(
     return rewritten
 
 
+def _replace_to_declared_move_ops(
+    group_ops: list[AmendmentOp],
+    *,
+    target_norm: str,
+    target_chapter: str,
+    replacement_chapter: str,
+) -> list[AmendmentOp]:
+    rewritten: list[AmendmentOp] = []
+    for op in group_ops:
+        if not (
+            op.target_unit_kind == "section"
+            and _norm_num_token(op.target_section or "") == target_norm
+            and op.target_chapter == target_chapter
+            and op.op_type == "REPLACE"
+        ):
+            rewritten.append(op)
+            continue
+        rewritten_lo = None
+        if op.lo is not None:
+            moved_lo = _lo_with_path_update(op.lo, chapter=replacement_chapter)
+            rewritten_lo = dc_replace(
+                moved_lo,
+                action=StructuralAction.REPLACE,
+                target=dc_replace(moved_lo.target, special=None),
+                move_clause_target_unit_kind="chapter",
+                provenance_tags=tuple(moved_lo.provenance_tags)
+                + ("body_chapter_declared_move_replace",),
+            )
+        rewritten.append(
+            dc_replace(
+                op,
+                target_chapter=replacement_chapter,
+                move_clause_target_unit_kind="chapter",
+                body_chapter_move_from=target_chapter,
+                target_special=None,
+                scope_confidence=normalize_scope_confidence(
+                    projection_scope_confidence(
+                        scope_confidence=op.scope_confidence,
+                        scope_provenance_tags=op.scope_provenance_tags,
+                        resolved_chapter=replacement_chapter,
+                    ),
+                    resolved_chapter=replacement_chapter,
+                ),
+                lo=rewritten_lo,
+            )
+        )
+    return rewritten
+
+
 def _retargeted_live_section_ops(
     group_ops: list[AmendmentOp],
     *,
@@ -354,8 +409,8 @@ def _retargeted_live_section_ops(
                 scope_confidence=(
                     ScopeConfidence(
                         tag="body_container_membership_rewrite",
-                        source="explicit_scope_rewrite",
-                        confidence="rewritten",
+                        source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                        confidence=ScopeResolutionConfidence.REWRITTEN,
                         resolved_chapter=live_chapter,
                     )
                     if retarget_scope_source == "explicit_chunk"
@@ -666,6 +721,23 @@ def _replacement_ops(
     ]
 
 
+def _johto_declares_move_destination(
+    *,
+    johto: str,
+    section_label: str,
+    destination_chapter: str,
+) -> bool:
+    destination_norm = _norm_num_token(destination_chapter).removesuffix("luku")
+    section_norm = _norm_num_token(section_label)
+    mentions = collect_johto_chapter_scope_mentions(johto)
+    return any(
+        _norm_num_token(moved.section_label) == section_norm
+        and _norm_num_token(moved.destination_chapter_label).removesuffix("luku")
+        == destination_norm
+        for moved in mentions.moved_section_destinations
+    )
+
+
 def _maybe_apply_replace_to_insert_move(
     request: CompileGroupScopeRecoveryRequest,
     result: CompileGroupScopeRecoveryResult,
@@ -713,6 +785,47 @@ def _maybe_apply_replace_to_insert_move(
     )
     if not replacement_ops:
         return PhaseResult(output=result)
+    if _johto_declares_move_destination(
+        johto=request.johto,
+        section_label=request.target_norm,
+        destination_chapter=body_chapter,
+    ):
+        finding = Finding(
+            kind=_BODY_CHAPTER_DECLARED_MOVE_RULE_ID,
+            role="observation",
+            stage=_STAGE,
+            detail={
+                "rule_id": _BODY_CHAPTER_DECLARED_MOVE_RULE_ID,
+                "phase": "lowering",
+                "family": "action_family_recovery",
+                "reason": "johtolause_declares_same_label_section_move_destination",
+                "original_action": "REPLACE",
+                "lowered_action": "REPLACE",
+                "target_unit_kind": request.target_unit_kind,
+                "target_norm": request.target_norm,
+                "target_chapter": request.target_chapter,
+                "target_part": request.target_part or "",
+                "body_chapter": body_chapter,
+                "trigger_evidence": trigger_evidence,
+                "op_ids": tuple(str(op.op_id or "") for op in replacement_ops),
+                "strict_disposition": "allow",
+                "quirks_disposition": "record",
+            },
+            source_statute=_source_statute(replacement_ops),
+            blocking=False,
+        )
+        recovered = dc_replace(
+            result,
+            effective_target_chapter=body_chapter,
+            surface_target_chapter=body_chapter,
+            group_ops=_replace_to_declared_move_ops(
+                result.group_ops,
+                target_norm=request.target_norm,
+                target_chapter=request.target_chapter,
+                replacement_chapter=body_chapter,
+            ),
+        )
+        return PhaseResult(output=recovered, findings=(finding,))
     finding = Finding(
         kind=_BODY_CHAPTER_MOVE_RULE_ID,
         role="observation",
@@ -755,6 +868,8 @@ def _maybe_apply_replace_to_insert_move(
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=request.target_chapter,
                 target_part=request.target_part,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
             for op in replacement_ops
         ]
@@ -935,6 +1050,8 @@ def _maybe_retarget_live_section(
                 target_section=op.target_section or request.target_norm,
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=request.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
             for op in result.group_ops
             if (

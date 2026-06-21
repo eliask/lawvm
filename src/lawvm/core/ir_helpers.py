@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 import icontract
@@ -20,6 +21,46 @@ def kind_for_tag(tag: str) -> IRNodeKind | None:
         return IRNodeKind(tag)
     except ValueError:
         return None
+
+
+@dataclass(frozen=True, slots=True)
+class UnknownTagDiagnostic:
+    """Distinct named diagnostic for an XML tag with no mapped IRNodeKind.
+
+    ``kind_for_tag`` returns ``None`` for an unknown tag, which a caller can
+    silently coalesce into a guess. This carrier makes the unknown-tag case a
+    first-class, distinguishable object (the registry code is
+    ``SCAN.XML_INGEST_UNKNOWN_TAG``) so an ingest caller can witness it rather
+    than drop it. ``finding_code`` is stated here so the carrier is
+    self-describing without importing the registry (avoids a cycle).
+    """
+
+    tag: str
+    finding_code: str = "SCAN.XML_INGEST_UNKNOWN_TAG"
+
+    @property
+    def message(self) -> str:
+        return (
+            f"XML tag {self.tag!r} has no mapped IRNodeKind; "
+            f"add a tag→kind mapping or classify it as benign at the ingest boundary"
+        )
+
+
+def kind_for_tag_or_diagnostic(
+    tag: str,
+) -> tuple[IRNodeKind | None, UnknownTagDiagnostic | None]:
+    """Return ``(kind, None)`` for a known tag, or ``(None, diagnostic)``.
+
+    The diagnostic-emitting twin of ``kind_for_tag``: instead of collapsing an
+    unknown tag to a bare ``None`` that reads like every other missing-kind
+    case, it returns a distinct named ``UnknownTagDiagnostic`` so the caller can
+    emit a typed observation. ``kind_for_tag`` is preserved for callers that
+    legitimately treat an unknown tag as benign.
+    """
+    kind = kind_for_tag(tag)
+    if kind is None:
+        return None, UnknownTagDiagnostic(tag=tag)
+    return kind, None
 
 
 @functools.lru_cache(maxsize=256)

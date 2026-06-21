@@ -35,13 +35,18 @@ from lxml import etree
 from lawvm.core.semantic_types import IRNodeKind
 
 from lawvm.finland.oracle_comparison import (
+    is_old_code_reference_marker,
     strip_editorial_annotations,
     strip_figure_legend_paragraphs,
     strip_kumottu_attribution,
+    strip_non_substantive_source_projection_residue,
+    strip_standalone_subsection_ordinals,
     strip_temporary_residue_annotations,
 )
 from lawvm.tools.divergence_heuristics import blame_title_indicates_temporary_amendment
 from lawvm.tools.divergence_heuristics import blame_source_postdates_oracle_version
+from lawvm.tools.divergence_heuristics import high_overlap_text_corruption
+from lawvm.tools.divergence_heuristics import high_overlap_unblamed_text_corruption
 from lawvm.tools.divergence_heuristics import is_probable_repeal_stale_oracle
 from lawvm.tools.divergence_heuristics import oracle_has_future_repeal_overlay
 from lawvm.tools.divergence_heuristics import oracle_has_repeal_banner_with_prior_wording
@@ -178,6 +183,14 @@ def _source_pathology_diagnosis_for_blame(
             matched_codes.add(code)
             continue
         row_target_label = str(row.get("target_label") or "")
+        row_target_unit_kind = str(row.get("target_unit_kind") or "")
+        if (
+            target_section
+            and row_target_unit_kind == "section"
+            and norm_section_label(row_target_label) == target_section
+        ):
+            matched_codes.add(code)
+            continue
         if target_section and row_target_label.endswith(f" {target_section} §"):
             matched_codes.add(code)
             continue
@@ -197,6 +210,10 @@ def _source_pathology_diagnosis_for_blame(
         "RECODIFICATION_SOURCE_CHAIN_GAP",
     }:
         return "SOURCE_INCOMPLETE"
+    if "SUBSECTION_TARGET_ABSENT" in matched_codes:
+        return "SOURCE_PATHOLOGY"
+    if "DESTRUCTIVE_SHAPE_LOSS_RISK" in matched_codes:
+        return "SOURCE_PATHOLOGY"
 
     findings = tuple(getattr(master, "findings", ()) or ())
     has_degraded_coverage = any(
@@ -825,6 +842,19 @@ def _diagnose(
     if Levenshtein.ratio(_clean(r_stripped), _clean(o_stripped)) >= 0.999:
         return "EDITORIAL_CONVENTION"
 
+    if is_old_code_reference_marker(o_text):
+        replay_marker = re.sub(
+            r"^\s*\d+\s*[a-zäöå]?\s*§\s*",
+            "",
+            r_text.strip(),
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        if re.fullmatch(r"(?:[-–—]\s*){3,}", replay_marker) or (
+            replay_marker.startswith("[") and replay_marker.endswith("]")
+        ):
+            return "EDITORIAL_CONVENTION"
+
     # Kumottu attribution: replay says "X § on kumottu." oracle says
     # "X § on kumottu L:lla DD.MM.YYYY/NNN." — strip attribution and compare
     if 'kumottu' in r_text and 'kumottu' in o_text:
@@ -832,6 +862,9 @@ def _diagnose(
         o_k = strip_kumottu_attribution(o_text)
         if Levenshtein.ratio(_clean(r_k), _clean(o_k)) >= 0.95:
             return "EDITORIAL_CONVENTION"
+
+    if high_overlap_text_corruption(r_stripped, o_stripped):
+        return "SOURCE_PATHOLOGY"
 
     # Compare cleaned (alphanumeric-only) versions for accurate length/similarity
     c_r = _clean(r_text)
@@ -861,8 +894,26 @@ def _diagnose(
         if c_r and c_o_legend and Levenshtein.ratio(c_r, c_o_legend) >= 0.95:
             return "EDITORIAL_CONVENTION"
 
+    r_source_residue_stripped = strip_non_substantive_source_projection_residue(r_text)
+    if r_source_residue_stripped != r_text:
+        c_r_residue = _clean(strip_editorial_annotations(r_source_residue_stripped))
+        if c_r_residue and c_o and Levenshtein.ratio(c_r_residue, c_o) >= 0.999:
+            return "EDITORIAL_CONVENTION"
+
+    o_without_subsection_ordinals = strip_standalone_subsection_ordinals(o_text)
+    if o_without_subsection_ordinals != o_text:
+        c_o_ordinals = _clean(strip_editorial_annotations(o_without_subsection_ordinals))
+        if c_r and c_o_ordinals and Levenshtein.ratio(c_r, c_o_ordinals) >= 0.999:
+            return "EDITORIAL_CONVENTION"
+
+    if not blame_op and high_overlap_unblamed_text_corruption(r_text, o_text):
+        return "SOURCE_PATHOLOGY"
+
     c_diff = len(c_r) - len(c_o)
     if c_diff > 40:
+        action = str(blame_op.get("action", "") if blame_op else "").upper()
+        if blame_op and action in {"REPLACE", "INSERT"}:
+            return "ORACLE_STALE"
         return "REPLAY_EXTRA"
     if c_diff < -40:
         return "REPLAY_MISSING"
@@ -1553,16 +1604,20 @@ def _classify_statute(
         #     empty seed, so the section exists but its text is a fragment of the
         #     oracle's full body.  The length/similarity divergence is intrinsic to
         #     the abridged source, not a replay fault, so reclassify it too.
-        # ORACLE_STALE / EDITORIAL_CONVENTION verdicts from the prior passes already
-        # explain those sections and are left untouched.  This runs after the
-        # oracle-staleness / source-pathology passes; divergences outside the
-        # abridged span (genuine drops) are untouched.
+        # ORACLE_STALE verdicts from the prior passes already explain those
+        # sections and are left untouched. EDITORIAL_CONVENTION rows inside the
+        # abridged span are still source-limited: the matching editorial shape is
+        # only a rendering of a fragment that replay could not reconstruct from
+        # the omitted base. This runs after the oracle-staleness /
+        # source-pathology passes; divergences outside the abridged span
+        # (genuine drops) are untouched.
         if abridged_unreconstructable_chapters:
             _abridged_reclassifiable = {
                 "MISSING",
                 "REPLAY_MISSING",
                 "REPLAY_EXTRA",
                 "UNKNOWN",
+                "EDITORIAL_CONVENTION",
             }
             for sec in section_results:
                 if sec["diagnosis"] not in _abridged_reclassifiable:

@@ -27,7 +27,7 @@ def main(args: "argparse.Namespace") -> None:
         sys.exit(1)
 
     if args.reverse:
-        edges = extract_asetus_authority(xml_bytes, sid)
+        edges = list(extract_asetus_authority(xml_bytes, sid).accepted_items)
         if not edges:
             print(f"{sid}: no nojalla authority references found.")
             return
@@ -38,9 +38,19 @@ def main(args: "argparse.Namespace") -> None:
             if args.verbose:
                 print(f"    {e.quote.strip()!r}")
     else:
-        edges = extract_delegations(xml_bytes, sid)
+        result = extract_delegations(xml_bytes, sid)
+        edges = list(result.accepted_items)
+        rejected = result.rejected_items
         if not edges:
             print(f"{sid}: no delegation clauses found.")
+            if rejected:
+                print(
+                    f"  ({len(rejected)} regex candidate(s) rejected by "
+                    f"negative filters; pass --verbose to list)"
+                )
+                if args.verbose:
+                    for r in rejected:
+                        print(f"    rejected [{r.reason_code}]: {r.item.match_text}")
             return
 
         wanted = _parse_type_filter(args.type)

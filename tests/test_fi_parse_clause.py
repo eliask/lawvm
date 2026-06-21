@@ -51,6 +51,60 @@ def test_parse_clause_clause_ast_non_empty():
     assert result.clause_ast.verb_groups, "ClauseAST should have at least one VerbGroup for a valid johtolause"
 
 
+def test_parse_clause_doc_insert_range_after_heading_residue_does_not_crash():
+    """Regression for 1996/473: heading residues between insert ranges are not cursors."""
+    text = (
+        "lisätään 1 §:ään uusi 2 momentti, asetukseen uusi 37 a §, asetuksen "
+        "7 lukuun uusi 52 a §, 53 §:n edelle uusi luvun otsikko, asetukseen "
+        "uusi 53 a―53 d §, 54 §:n edelle uusi luvun otsikko, asetukseen uusi "
+        "54 a―54 f § seuraavasti:"
+    )
+    result = parse_clause(text)
+    assert isinstance(result, ClauseParseResult)
+
+
+def test_parse_clause_alakohta_replace_preserves_later_chapter_scoped_targets():
+    """Regression for 2019/518: alakohta precision must not truncate later targets."""
+    text = (
+        "muutetaan vakuutusyhtiölain ( 521/2008 ) 1 luvun 11 b §:n 6 kohdan "
+        "a alakohta, 3 luvun 20 §:n 1 momentti, 4 luvun 5 §:n 3 momentti, "
+        "5 luvun 2 §:n otsikko, 7 §:n 2 momentti ja 18 §, 6 luvun 1 § ja "
+        "5 §:n 1 momentti, 16 luvun 6 §:n 4 momentti ja 11 §:n 2 momentti "
+        "sekä 28 luvun 2 §:n 3 momentti ja 3 §:n 2 momentti, lisätään "
+        "1 lukuun uusi 24 a-24 c §, 5 luvun 2 §:ään, sellaisena kuin se "
+        "on laissa 587/2009, uusi 2 momentti ja lukuun uusi 6 a ja 18 a §, "
+        "6 lukuun uusi 2 a ja 4 a § ja luvun 7 §:ään uusi 2 momentti sekä "
+        "lukuun uusi 20 d ja 20 e § sekä niiden edelle uusi väliotsikko "
+        "seuraavasti:"
+    )
+    result = parse_clause(text)
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P L:1 11b 1 6a",
+        "M P L:3 20 1",
+        "M P L:4 5 3",
+        "M P L:5 2 o",
+        "M P L:5 7 2",
+        "M P L:5 18",
+        "M P L:6 1",
+        "M P L:6 5 1",
+        "M P L:16 6 4",
+        "M P L:16 11 2",
+        "M P L:28 2 3",
+        "M P L:28 3 2",
+        "L P L:1 24a",
+        "L P L:1 24b",
+        "L P L:1 24c",
+        "L P L:5 2 2",
+        "L P L:5 6a",
+        "L P L:5 18a",
+        "L P L:6 2a",
+        "L P L:6 4a",
+        "L P L:6 7 2",
+        "L P L:6 20d",
+        "L P L:6 20e",
+    ]
+
+
 def test_parse_clause_parsed_ops_populated():
     """parsed_ops must be populated for a valid johtolause."""
     text = "muutetaan 5 §"
@@ -963,6 +1017,91 @@ def test_insertion_alakohta_into_existing_item_uses_compound_item_label() -> Non
     assert [op.code() for op in ops] == ["L P 1 1 1c"]
     assert ops[0].witness is not None
     assert ops[0].witness.rule_id == "fi.insertion_alakohta_into_item"
+
+
+def test_replace_alakohta_under_existing_item_uses_compound_item_label() -> None:
+    """``K kohdan c alakohta`` replaces subitem c under existing item K."""
+
+    text = "muutetaan 1 §:n 2 kohdan h alakohta seuraavasti:"
+    codes = [op.code() for op in parse_clause(text).parsed_ops]
+
+    assert codes == ["M P 1 1 2h"]
+
+
+def test_2002_276_replace_alakohta_then_insert_sibling_alakohta_targets_are_distinct() -> None:
+    """Regression for 2000/1106 <- 2002/276: replace 2h, then insert 2i."""
+
+    text = (
+        "muutetaan 15 päivänä joulukuuta 2000 vakuutusyritysryhmän mukautetusta "
+        "vakavaraisuuslaskelmasta annetun sosiaali- ja terveysministeriön asetuksen "
+        "(1106/2000) 1 §:n 2 kohdan h alakohta, 3 §:n 1 momentin 1 kohdan a "
+        "alakohta sekä 2 kohdan a ja d alakohta sekä lisätään 1 §:n 2 kohtaan "
+        "uusi i alakohta seuraavasti:"
+    )
+    codes = [op.code() for op in parse_clause(text, statute_id="2000/1106").parsed_ops]
+
+    assert codes == [
+        "M P 1 1 2h",
+        "M P 3 1 1a",
+        "M P 3 1 2a",
+        "M P 3 1 2d",
+        "L P 1 1 2i",
+    ]
+
+
+def test_insert_coordinated_alakohta_under_existing_item_uses_compound_item_labels() -> None:
+    """``K kohtaan uusi e ja f alakohta`` inserts both subitems under item K."""
+
+    text = "lisätään 4 §:n 1 momentin 1 kohtaan uusi e ja f alakohta seuraavasti:"
+    codes = [op.code() for op in parse_clause(text).parsed_ops]
+
+    assert codes == ["L P 4 1 1e", "L P 4 1 1f"]
+
+
+def test_2024_539_replace_and_insert_alakohta_lists_survive_cross_verb_clause() -> None:
+    """Regression for 2022/1394 <- 2024/539: insert tail must not truncate replace targets."""
+
+    text = (
+        "muutetaan valtionavustustoiminnan tietovarantoon tallennettavista "
+        "vähimmäistiedoista sekä valtionavustustietojen julkaisemisen ja käytön "
+        "palvelussa julkaistavasta tietoaineistosta annetun valtioneuvoston "
+        "asetuksen (1394/2022) 1 §:n 1 momentin 1 kohta, 2 §:n 1 momentin "
+        "1 kohta, 4 kohdan a ja b alakohta ja 5 kohdan d ja e alakohta, "
+        "3 §:n johdantokappale ja 4 ja 6 kohta, 4 §:n 1 momentin 1 kohdan "
+        "a alakohta, 2 kohdan c, d, f ja g alakohta sekä 8 §:n 1 momentti, "
+        "lisätään asetuksen 1 §:n 1 momenttiin uusi 10 kohta, 2 §:n 1 momentin "
+        "3 kohtaan uusi d alakohta, 3 §:ään uusi 7 kohta, 4 §:n 1 momentin "
+        "1 kohtaan uusi e ja f alakohta ja 2 kohtaan uusi h ja i alakohta "
+        "seuraavasti:"
+    )
+    result = parse_clause(text, statute_id="2022/1394")
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert result.parser_lane == "grammar_owned"
+    assert codes == [
+        "M P 1 1 1",
+        "M P 2 1 1",
+        "M P 2 1 4a",
+        "M P 2 1 4b",
+        "M P 2 1 5d",
+        "M P 2 1 5e",
+        "M P 3 j",
+        "M P 3 1 4",
+        "M P 3 1 6",
+        "M P 4 1 1a",
+        "M P 4 1 2c",
+        "M P 4 1 2d",
+        "M P 4 1 2f",
+        "M P 4 1 2g",
+        "M P 8 1",
+        "L P 1 1 10",
+        "L P 2 1 3d",
+        "L P 3 1 7",
+        "L P 4 1 1e",
+        "L P 4 1 1f",
+        "L P 4 1 2h",
+        "L P 4 1 2i",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -2286,13 +2425,13 @@ def test_parse_clause_multi_target_heading_arm_does_not_truncate_enumeration() -
     ), [op.witness.rule_id if op.witness else None for op in ops]
 
 
-def test_parse_clause_stripped_alakohta_tail_does_not_block_later_section_targets() -> None:
-    """Qualifier stripping must not leave ``ja sekä`` residue that truncates the list.
+def test_parse_clause_alakohta_continuation_does_not_block_later_section_targets() -> None:
+    """Same-item ``i alakohta`` continuation must not truncate the target list.
 
-    Regression for 2017/444 <- 2023/444: after stripping ``i alakohta`` from
-    ``11 kohdan johdantokappale ja i alakohta sekä 19 kohta``, the parser used
-    to stop at ``11 kohdan johdantokappale`` and drop the later ``19 kohta``,
-    ``3 luvun 10 §:n 1 momentti`` and ``13 §:n 3 ja 4 momentti`` targets.
+    Regression for 2017/444 <- 2023/444: ``11 kohdan johdantokappale ja
+    i alakohta sekä 19 kohta`` must parse ``i alakohta`` under the same
+    11 kohta and still keep the later ``19 kohta``, ``3 luvun 10 §:n
+    1 momentti`` and ``13 §:n 3 ja 4 momentti`` targets.
     """
     text = (
         "muutetaan 1 luvun 2 §:n 1 momentin 11 kohta, "
@@ -2305,6 +2444,7 @@ def test_parse_clause_stripped_alakohta_tail_does_not_block_later_section_target
 
     codes = [op.code() for op in parse_clause(text).parsed_ops]
 
+    assert "M P L:1 4 1 11i" in codes
     assert "M P L:1 4 1 19" in codes
     assert "M P L:3 10 1" in codes
     assert "M P L:3 13 3" in codes

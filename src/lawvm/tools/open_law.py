@@ -276,7 +276,7 @@ def _print_explain(args: Namespace) -> None:
         if isinstance(evidence_row, dict):
             print(
                 "  evidence: "
-                f"status={evidence_row.get('status', '')} "
+                f"status={evidence_row.get('evidence_status', '')} "
                 f"canonical={evidence_row.get('canonical_family', '') or '-'} "
                 f"strict={evidence_row.get('strict_disposition', '')} "
                 f"quirks={evidence_row.get('quirks_disposition', '')}"

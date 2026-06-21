@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Dict, Literal, cast
 
 from lxml import etree
@@ -10,10 +9,8 @@ from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.source_normalize import normalize_source_ir
 from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
 from lawvm.finland.acquisition import (
-    should_use_sec1_fallback_post_routing,
-    should_use_sec1_fallback_pre_routing,
+    build_amendment_acquisition_result,
 )
-from lawvm.finland.citation_routing import route_amendment
 from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.constraints import _FilterCtx, _filter_ops_by_constraints
 from lawvm.finland.corpus import get_corpus
@@ -26,15 +23,16 @@ from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.citation_routing import extract_pending_amendment_target_id
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
 from lawvm.finland.helpers import _norm_row_anchor_text
-from lawvm.finland.metadata import _normalize_johtolause_verbs, get_johtolause
+from lawvm.finland.metadata import get_johtolause
 from lawvm.finland.ops import (
+    AmendmentOp,
     get_replay_profile,
     legacy_target_kind_for_unit_kind,
     scope_authority_parity_for_op,
 )
-from lawvm.finland.scope import restrict_sec1_fallback_to_parent as _restrict_sec1_fallback_to_parent
 from lawvm.finland.scope import find_body_section_chapter as _find_body_section_chapter
 from lawvm.finland.source_model import AmendmentSourceModel
+from lawvm.finland.statute import ReplayState
 from lawvm.finland.standalone_targets import (
     group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
     group_shadow_pruning_section_targets as _group_shadow_pruning_section_targets,
@@ -247,44 +245,49 @@ def _working_johtolause(
     xml_bytes: bytes,
     source_title: str,
 ) -> tuple[etree._Element, str, bool, bool, str]:
-    johto = get_johtolause(xml_bytes)
-    citation_guard_johto = _normalize_johtolause_verbs(johto or "")
-    citation_guard_sec1 = ""
     muutos_tree = etree.fromstring(xml_bytes)
-
-    used_sec1_fallback = False
-    sec1_text = ""
-    sec1_el = muutos_tree.find(".//{*}section[@eId='sec_1']")
-    if sec1_el is not None:
-        sec1_text = etree.tostring(sec1_el, method="text", encoding="unicode").strip()
-        sec1_text = re.sub(r"^\d+\s*[a-zäöå]?\s*§\s*", "", sec1_text).strip()
-        sec1_text = _restrict_sec1_fallback_to_parent(sec1_text, parent_id)
-
-    if should_use_sec1_fallback_pre_routing(johto):
-        if sec1_text:
-            johto = sec1_text
-            used_sec1_fallback = True
-    elif sec1_text:
-        citation_guard_sec1 = _normalize_johtolause_verbs(sec1_text)
-
-    johto = _normalize_johtolause_verbs(johto)
-    should_apply, route_reason = route_amendment(
-        citation_guard_johto=citation_guard_johto,
-        citation_guard_sec1=citation_guard_sec1,
-        johto=johto,
+    acquisition = build_amendment_acquisition_result(
+        xml_bytes=xml_bytes,
+        muutos_tree=muutos_tree,
         parent_id=parent_id,
         amendment_id=source_id,
         source_title=source_title,
         parent_title=parent_title,
     )
-    if (
-        should_apply
-        and sec1_text
-        and should_use_sec1_fallback_post_routing(johto, _normalize_johtolause_verbs(sec1_text))
-    ):
-        johto = _normalize_johtolause_verbs(sec1_text)
-        used_sec1_fallback = True
-    return muutos_tree, johto, used_sec1_fallback, should_apply, route_reason
+    used_preamble_body_fallback = acquisition.decision.selected_lane.startswith("sec1_fallback")
+    return (
+        muutos_tree,
+        acquisition.decision.chosen_normalized_text,
+        used_preamble_body_fallback,
+        acquisition.decision.should_apply,
+        acquisition.decision.route_reason,
+    )
+
+
+def _has_unresolved_named_row_targets(
+    original_ops: list[AmendmentOp],
+    normalized_ops: tuple[AmendmentOp, ...],
+) -> bool:
+    has_named_rows = any(op.named_row_targets for op in original_ops)
+    if not has_named_rows:
+        return False
+    return not any(op.named_row_targets and op.target_item for op in normalized_ops)
+
+
+def _named_row_debug_ops(ops: list[AmendmentOp]) -> list[AmendmentOp]:
+    item_ops = [op for op in ops if op.named_row_targets and op.target_item]
+    if not item_ops:
+        return []
+    replace_ops = [op for op in item_ops if op.op_type == "REPLACE"]
+    repeal_ops = [op for op in item_ops if op.op_type == "REPEAL"]
+    if len(replace_ops) == 1 and repeal_ops:
+        return replace_ops
+
+    def sort_key(op: AmendmentOp) -> tuple[int, str, str]:
+        item = op.target_item or ""
+        return (int(item) if item.isdigit() else 10**9, item, op.op_type)
+
+    return sorted(item_ops, key=sort_key)
 
 
 def build_amendment_bundle(
@@ -312,7 +315,7 @@ def build_amendment_bundle(
 
     muutos_tree = etree.fromstring(xml_bytes)
     source_title = _tree_title(muutos_tree)
-    muutos_tree, johto, used_sec1_fallback, should_apply, route_reason = _working_johtolause(
+    muutos_tree, johto, used_preamble_body_fallback, should_apply, route_reason = _working_johtolause(
         statute_id,
         before_master.title,
         source_id,
@@ -342,7 +345,7 @@ def build_amendment_bundle(
         "mode": mode,
         "source_title": source_title,
         "preamble": johto,
-        "used_sec1_fallback": used_sec1_fallback,
+        "used_preamble_body_fallback": used_preamble_body_fallback,
         "route": {
             "should_apply": should_apply,
             "reason": route_reason,
@@ -373,7 +376,7 @@ def build_amendment_bundle(
             before_master.replay_fold_state,
             source_id,
             source_title=source_title,
-            used_sec1_fallback=used_sec1_fallback,
+            used_preamble_body_fallback=used_preamble_body_fallback,
             parent_id=statute_id,
             strict_profile=None,
         )
@@ -482,6 +485,52 @@ def build_amendment_bundle(
                 standalone_section_targets,
                 foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
             )
+            if _has_unresolved_named_row_targets(filtered_pre, payload_norm.group_ops):
+                # Diagnostic-only recovery for amendment inspection: replay may
+                # correctly elaborate against the current live tree, while the
+                # human-facing bundle still needs to show historical named-row
+                # claims from the base table. This does not feed compiled replay
+                # products or authorize any mutation.
+                base_state = ReplayState(ir=before_master.ctx.base_ir)
+                base_lookups = snapshot_replay_lookups(base_state)
+                base_target_ctx = snapshot_target_context(
+                    base_state,
+                    target_unit_kind_value,
+                    target_norm,
+                    target_chapter,
+                    base_lookups,
+                    target_part=target_part,
+                )
+                if base_target_ctx.live_node is not None:
+                    base_payload_ctx = build_payload_elaboration_context(
+                        base_target_ctx,
+                        base_lookups,
+                        row_anchor_normalizer=_norm_row_anchor_text,
+                    )
+                    base_standalone_section_targets = _group_shadow_pruning_section_targets(
+                        ops,
+                        target_unit_kind=target_unit_kind_value,
+                        target_norm=target_norm,
+                        target_part=target_part,
+                        duplicate_section_labels=frozenset(base_state.duplicate_section_labels),
+                    )
+                    base_foreign_scoped_standalone_section_targets = _group_shadow_pruning_foreign_scoped_section_targets(
+                        ops,
+                        target_unit_kind=target_unit_kind_value,
+                        target_norm=target_norm,
+                        target_part=target_part,
+                        duplicate_section_labels=frozenset(base_state.duplicate_section_labels),
+                    )
+                    base_payload_norm = elaborate_payload_against_live(
+                        base_payload_ctx,
+                        filtered_pre,
+                        prepared,
+                        base_standalone_section_targets,
+                        foreign_scoped_standalone_section_targets=base_foreign_scoped_standalone_section_targets,
+                    )
+                    if not _has_unresolved_named_row_targets(filtered_pre, base_payload_norm.group_ops):
+                        payload_ctx = base_payload_ctx
+                        payload_norm = base_payload_norm
             slot_assignment = payload_norm.slot_assignment
             fctx.slot_assignment = slot_assignment
             rejected_post = []
@@ -490,6 +539,7 @@ def build_amendment_bundle(
                 fctx,
                 rejected_ops_out=rejected_post,
             )
+            named_row_debug_ops = _named_row_debug_ops(filtered_post)
             _final_op_descriptions = [
                 _format_compiled_op_row(row)
                 for row in _compiled_group_rows.get(
@@ -501,7 +551,9 @@ def build_amendment_bundle(
                     ),
                     [],
                 )
-            ] or [op.description() for op in filtered_post]
+            ] if not named_row_debug_ops else [op.description() for op in named_row_debug_ops]
+            if not _final_op_descriptions:
+                _final_op_descriptions = [op.description() for op in filtered_post]
             group_bundle = {
                 **_scope_bundle(
                     target_unit_kind=target_unit_kind_value,
@@ -571,7 +623,7 @@ def _format_text(bundle: Dict[str, Any]) -> str:
         f"Mode         : {bundle['mode']}",
         f"Title        : {bundle.get('source_title', '')}",
         f"Route        : {'apply' if bundle['route']['should_apply'] else 'skip'} ({bundle['route']['reason']})",
-        f"Sec1 fallback: {'yes' if bundle.get('used_sec1_fallback') else 'no'}",
+        f"Sec1 fallback: {'yes' if bundle.get('used_preamble_body_fallback') else 'no'}",
         "",
     ]
     route_target_amendment_id = str(bundle.get("route", {}).get("target_amendment_id") or "")

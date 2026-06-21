@@ -11,9 +11,15 @@ from lawvm.finland.delegation import (
 def test_extract_delegations_records_xml_parse_failure_when_diagnostics_requested() -> None:
     diagnostics: list[DelegationDiagnostic] = []
 
-    edges = extract_delegations(b"<akomaNtoso>", "2000/1", diagnostics_out=diagnostics)
+    result = extract_delegations(b"<akomaNtoso>", "2000/1", diagnostics_out=diagnostics)
 
-    assert edges == []
+    assert result.accepted_items == ()
+    # Conservation: the parse failure is also carried structurally in the result
+    # so a caller cannot receive (empty) edges without the reject ledger.
+    assert [r.reason_code for r in result.rejected_items] == [
+        "fi_delegation_extraction_xml_parse_failed"
+    ]
+    assert result.rejected_items[0].blocking is True
     assert [diagnostic.rule_id for diagnostic in diagnostics] == [
         "fi_delegation_extraction_xml_parse_failed"
     ]
@@ -25,9 +31,13 @@ def test_extract_delegations_records_xml_parse_failure_when_diagnostics_requeste
 def test_extract_asetus_authority_records_xml_parse_failure_when_diagnostics_requested() -> None:
     diagnostics: list[DelegationDiagnostic] = []
 
-    edges = extract_asetus_authority(b"<akomaNtoso>", "2000/2", diagnostics_out=diagnostics)
+    result = extract_asetus_authority(b"<akomaNtoso>", "2000/2", diagnostics_out=diagnostics)
 
-    assert edges == []
+    assert result.accepted_items == ()
+    assert [r.reason_code for r in result.rejected_items] == [
+        "fi_authority_extraction_xml_parse_failed"
+    ]
+    assert result.rejected_items[0].blocking is True
     assert [diagnostic.rule_id for diagnostic in diagnostics] == [
         "fi_authority_extraction_xml_parse_failed"
     ]
@@ -57,9 +67,20 @@ def test_extract_delegations_records_named_negative_filter() -> None:
     """
     diagnostics: list[DelegationDiagnostic] = []
 
-    edges = extract_delegations(xml, "2000/1", diagnostics_out=diagnostics)
+    result = extract_delegations(xml, "2000/1", diagnostics_out=diagnostics)
 
-    assert edges == []
+    assert result.accepted_items == ()
+    # Conservation fire-drill: the rejected regex candidate is carried in the
+    # result's reject ledger (not silently discarded behind diagnostics_out).
+    assert [r.reason_code for r in result.rejected_items] == [
+        "fi_delegation_commencement_reference_filtered"
+    ]
+    assert result.rejected_items[0].item.section == "1"
+    assert result.rejected_items[0].item.eid == "sec_1__subsec_1"
+    assert result.rejected_items[0].blocking is False
+    assert result.rejected_reason_counts() == {
+        "Finnish delegation extractor rejected a regex candidate using a named negative filter.": 1
+    }
     assert [diagnostic.rule_id for diagnostic in diagnostics] == [
         "fi_delegation_commencement_reference_filtered"
     ]
@@ -91,11 +112,13 @@ def test_extract_delegations_negative_filter_does_not_block_valid_delegation() -
     """
     diagnostics: list[DelegationDiagnostic] = []
 
-    edges = extract_delegations(xml, "2000/1", diagnostics_out=diagnostics)
+    result = extract_delegations(xml, "2000/1", diagnostics_out=diagnostics)
 
-    assert [(edge.section, edge.eid, edge.delegation_type) for edge in edges] == [
-        ("1", "sec_1__subsec_1", "VN_ASETUS")
-    ]
+    assert [
+        (edge.section, edge.eid, edge.delegation_type)
+        for edge in result.accepted_items
+    ] == [("1", "sec_1__subsec_1", "VN_ASETUS")]
+    assert result.rejected_items == ()
     assert diagnostics == []
 
 
@@ -116,7 +139,7 @@ def test_extract_asetus_authority_single_nojalla_basis_typed_act() -> None:
         "annetun lain (1048/2016) 37 §:n nojalla:".encode("utf-8")
     )
 
-    edges = extract_asetus_authority(xml, "2018/1158")
+    edges = extract_asetus_authority(xml, "2018/1158").accepted_items
 
     assert [
         (e.parent_statute_id, e.parent_section, e.parent_moment, e.parent_kind)
@@ -135,7 +158,7 @@ def test_extract_asetus_authority_distributes_over_coordinated_conjuncts() -> No
         "laissa 348/1994:".encode("utf-8")
     )
 
-    edges = extract_asetus_authority(xml, "2010/908")
+    edges = extract_asetus_authority(xml, "2010/908").accepted_items
 
     triples = {
         (e.parent_statute_id, e.parent_section, e.parent_moment, e.parent_kind)
@@ -155,7 +178,7 @@ def test_extract_asetus_authority_preserves_section_letter_suffix() -> None:
         "eräiden lain (1301/2014) 60 a §:n nojalla:".encode("utf-8")
     )
 
-    edges = extract_asetus_authority(xml, "2024/348")
+    edges = extract_asetus_authority(xml, "2024/348").accepted_items
 
     assert [
         (e.parent_statute_id, e.parent_section, e.parent_kind) for e in edges
@@ -169,7 +192,7 @@ def test_extract_asetus_authority_decree_basis_kind_not_act() -> None:
         "Säädetään esimerkkiasetuksen (1248/2005) 3 §:n nojalla:".encode("utf-8")
     )
 
-    edges = extract_asetus_authority(xml, "2099/1")
+    edges = extract_asetus_authority(xml, "2099/1").accepted_items
 
     assert [
         (e.parent_statute_id, e.parent_section, e.parent_kind) for e in edges
@@ -198,8 +221,46 @@ def test_extract_asetus_authority_two_digit_year_bounded_to_citing_decree() -> N
         "Säädetään maanmittauslain (82/16) 3 §:n nojalla:".encode("utf-8")
     )
 
-    edges = extract_asetus_authority(xml, "1952/407")
+    edges = extract_asetus_authority(xml, "1952/407").accepted_items
 
     assert [
         (e.parent_statute_id, e.parent_section) for e in edges
     ] == [("1916/82", "3")]
+
+
+def test_census_oracle_path_conserves_rejected_false_positive() -> None:
+    # Rank-14 fire-drill: a known false-positive (a commencement reference the
+    # negative filter rejects) driven through the SAME production extractor the
+    # delegation census oracle path (``_build_delegation_oracle``) consumes.
+    # The census reads ``.accepted_items`` (so the rejected candidate is NOT
+    # bucketed as a grant — no phantom oracle edge), while the conservation
+    # contract carries that rejection in the reject ledger rather than dropping
+    # it silently behind an omitted ``diagnostics_out``.
+    xml = b"""
+    <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <act>
+        <body>
+          <section eId="sec_1">
+            <num>1 \xc2\xa7</num>
+            <subsection eId="sec_1__subsec_1">
+              <content>
+                <p>
+                  Tarkemmat s\xc3\xa4\xc3\xa4nn\xc3\xb6kset voimaantulosta
+                  s\xc3\xa4\xc3\xa4det\xc3\xa4\xc3\xa4n valtioneuvoston asetuksella.
+                </p>
+              </content>
+            </subsection>
+          </section>
+        </body>
+      </act>
+    </akomaNtoso>
+    """
+
+    result = extract_delegations(xml, "2000/9")
+
+    # Production census consumes only accepted edges → no phantom grant.
+    assert list(result.accepted_items) == []
+    # ...but the false-positive rejection is conserved, not silently discarded.
+    assert [r.reason_code for r in result.rejected_items] == [
+        "fi_delegation_commencement_reference_filtered"
+    ]

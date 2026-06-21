@@ -68,7 +68,7 @@ from lawvm.core.timeline import (
     select_active_version_ex,
 )
 from lawvm.core.timeline_materialization import materialize_body
-from lawvm.core.timeline_addresses import _address_prefix_matches
+from lawvm.core.timeline_addresses import STRUCTURAL_RENUMBER_SNAPSHOT_ATTR, _address_prefix_matches
 from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.timeline_lineage import (
     classify_materialization_lineage_bridge,
@@ -979,7 +979,7 @@ def test_materialize_pit_records_same_source_equal_rank_selection_conflict() -> 
 
     result = materialize_pit_ex(timelines, "2021-01-01", base=base)
 
-    assert result.status == "degraded_timeline_issues"
+    assert result.materialization_status == "degraded_timeline_issues"
     assert result.statute.body.children[0].text == "Second text"
     assert result.statute.metadata["materialization_status"] == "degraded_timeline_issues"
     issues = [
@@ -2545,6 +2545,48 @@ def test_materialize_pit_projects_selected_versions_onto_migrated_addresses() ->
     materialized = _find_node_by_label(pit.body, IRNodeKind.SECTION, "1a")
     assert materialized is not None
     assert materialized.text == "migrated"
+
+
+def test_materialize_pit_structural_renumber_snapshot_does_not_mask_child_timeline() -> None:
+    chapter_addr = LegalAddress(path=(("chapter", "2"),))
+    section_addr = LegalAddress(path=(("chapter", "2"), ("section", "8")))
+    timelines = {
+        chapter_addr: ProvisionTimeline(
+            address=chapter_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2021-01-01",
+                    enacted="2020-12-01",
+                    content=IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="2",
+                        attrs={STRUCTURAL_RENUMBER_SNAPSHOT_ATTR: "1"},
+                        children=(
+                            IRNode(kind=IRNodeKind.SECTION, label="8", text="stale carried text"),
+                        ),
+                    ),
+                    source=OperationSource(statute_id="2020/1", effective="2021-01-01"),
+                )
+            ],
+        ),
+        section_addr: ProvisionTimeline(
+            address=section_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2019-01-01",
+                    enacted="2019-01-01",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="8", text="child timeline text"),
+                    source=OperationSource(statute_id="2019/1", effective="2019-01-01"),
+                )
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2025-01-01")
+
+    materialized = _find_node_by_label(pit.body, IRNodeKind.SECTION, "8")
+    assert materialized is not None
+    assert materialized.text == "child timeline text"
 
 
 def test_materialize_pit_prefers_newer_migrated_prefix_lineage_over_older_native_destination() -> None:
@@ -5809,7 +5851,7 @@ def test_materialize_pit_ex_marks_degraded_missing_scope() -> None:
 
     result = materialize_pit_ex(timelines, "2012-01-01", base=base)
 
-    assert result.status == "degraded_missing_scope"
+    assert result.materialization_status == "degraded_missing_scope"
     assert result.required_dimensions == ("territory",)
     assert result.ambiguous_addresses == (addr,)
     assert result.certificate is not None

@@ -71,7 +71,7 @@ def _claim(**overrides: Any) -> ApplicationOverlayClaim:
         temporal_window="",
         deictic_applying_provision="",
         claimant="reviewer",
-        status="proposed",
+        claim_status="proposed",
     )
     return replace(base, **overrides)
 
@@ -108,7 +108,7 @@ def test_claim_from_dict_defaults() -> None:
     assert claim.scope_predicate == ""
     assert claim.temporal_window == ""
     assert claim.deictic_applying_provision == ""
-    assert claim.status == "proposed"
+    assert claim.claim_status == "proposed"
 
 
 # ── validator: accept each overlay kind ──────────────────────────────────────

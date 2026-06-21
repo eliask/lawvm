@@ -99,7 +99,7 @@ def test_applied_effect_review_detects_current_expected_phrase(
     assert rows[0].review_status == "current_xml_has_expected_marker"
     assert rows[0].expected_phrase_role == "postimage"
     assert rows[0].current_xml_has_expected_phrase is True
-    assert rows[0].agreement_residual["status"] == "frontier"
+    assert rows[0].agreement_residual["agreement_residual_status"] == "frontier"
     assert rows[0].agreement_residual["forbidden_shortcuts"] == [
         "applied_effect_as_official_error",
         "source_fragment_as_payload_authority",
@@ -132,7 +132,7 @@ def test_applied_effect_review_surfaces_no_marker_public_review_candidate(
 
     assert rows[0].review_status == "needs_public_review_no_obvious_current_marker"
     assert rows[0].expected_phrase_role == "postimage"
-    assert rows[0].agreement_residual["status"] == "residual"
+    assert rows[0].agreement_residual["agreement_residual_status"] == "residual"
     assert rows[0].agreement_residual["missing_proofs"] == [
         "public_page_review",
         "page_declared_current_timeline_xml",
@@ -198,7 +198,7 @@ def test_omitted_phrase_absence_is_not_public_review_candidate(monkeypatch) -> N
     assert rows[0].expected_phrase == "removed phrase"
     assert rows[0].expected_phrase_role == "removed_preimage"
     assert rows[0].review_status == "current_xml_lacks_removed_phrase"
-    assert rows[0].agreement_residual["status"] == "frontier"
+    assert rows[0].agreement_residual["agreement_residual_status"] == "frontier"
 
 
 def test_omitted_phrase_outside_affected_provision_does_not_create_candidate(
@@ -253,7 +253,7 @@ def test_omitted_phrase_still_present_is_public_review_candidate(monkeypatch) ->
     )
 
     assert rows[0].review_status == "needs_public_review_removed_phrase_still_present"
-    assert rows[0].agreement_residual["status"] == "residual"
+    assert rows[0].agreement_residual["agreement_residual_status"] == "residual"
 
 
 def test_removed_phrase_candidate_records_archive_review_gates(monkeypatch) -> None:
@@ -652,7 +652,7 @@ def test_applied_effect_review_keeps_missing_current_xml_as_frontier(
 
     assert rows[0].review_status == "current_xml_unavailable_frontier"
     assert rows[0].agreement_residual["family"] == "source_footing_gap"
-    assert rows[0].agreement_residual["status"] == "frontier"
+    assert rows[0].agreement_residual["agreement_residual_status"] == "frontier"
 
 
 def test_filter_rows_limits_after_status_selection(monkeypatch) -> None:

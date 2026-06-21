@@ -9,6 +9,7 @@ from typing import Dict, Optional, cast
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_elaboration import PayloadCompletenessWitness
+from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.body_pairing import should_use_body_section
 from lawvm.finland.helpers import _norm_num_token
@@ -144,6 +145,7 @@ class UncoveredRopDraft:
     target_part: Optional[str]
     muutos_ir: IRNode
     op_id: str
+    move_clause_target_unit_kind: TargetUnitKind | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +186,7 @@ def build_uncovered_rop(
         target_chapter=draft.target_chapter,
         target_part=draft.target_part,
         source_statute=amendment_id,
+        move_clause_target_unit_kind=draft.move_clause_target_unit_kind,
         uncovered_body_recovery=True,
         witness_rule_id=FI_RECOVERY_UNCOVERED_BODY_RULE_ID,
     )
@@ -213,6 +216,8 @@ def uncovered_disposition_for_op_id(op_id: str) -> tuple[str, str]:
     """Map a recovered op_id to its (disposition, reason) audit pair."""
     if op_id.startswith("uncov_chapter_adopt_"):
         return "ADOPT", "chapter_payload_adopt"
+    if op_id.startswith("uncovered_move_replace_"):
+        return "REPLACE", "declared_move_destination_replace"
     if op_id.startswith("uncovered_replace_"):
         return "REPLACE", "replace_existing"
     if op_id.startswith("uncovered_merge_"):

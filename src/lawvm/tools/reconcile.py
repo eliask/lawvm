@@ -289,7 +289,7 @@ def reconcile_provision(
         include_ir=False,
         status_stream=sys.stderr,
     )
-    replay_status = payload.get("status", "")
+    replay_status = payload.get("provision_status", "")
     text_block = payload.get("text") or {}
     replay_text = text_block.get("rendered", "") if replay_status == "selected" else ""
     replay_available = bool(text_block.get("available")) and replay_status == "selected"

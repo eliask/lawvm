@@ -241,7 +241,7 @@ class TestFromPhaseResult:
             relation_id="relation:1",
             kind="modifies_effect",
             source_provision=witness,
-            target_effect=target_effect,
+            target_instrument=instrument,
         )
         event = EffectLifecycleEvent(
             lifecycle_event_id="lifecycle:1",
@@ -285,7 +285,7 @@ class TestFromPhaseResult:
             relation_id="relation:1",
             kind="modifies_effect",
             source_provision=witness,
-            target_effect=target_effect,
+            target_instrument=instrument,
         )
         event = EffectLifecycleEvent(
             lifecycle_event_id="lifecycle:1",
@@ -306,7 +306,10 @@ class TestFromPhaseResult:
         with pytest.raises(TypeError, match="canonical bundle owns effect relations"):
             CompileFacade.from_phase_result(
                 PhaseResult(
-                    output=CanonicalBundle(effect_relations=(relation,)),
+                    output=CanonicalBundle(
+                        source_effects=(target_effect,),
+                        effect_relations=(relation,),
+                    ),
                     effect_relations=(relation,),
                 ),
                 replay_mode="legal_pit",
@@ -314,7 +317,11 @@ class TestFromPhaseResult:
         with pytest.raises(TypeError, match="canonical bundle owns effect lifecycle events"):
             CompileFacade.from_phase_result(
                 PhaseResult(
-                    output=CanonicalBundle(effect_lifecycle_events=(event,)),
+                    output=CanonicalBundle(
+                        source_effects=(target_effect,),
+                        effect_relations=(relation,),
+                        effect_lifecycle_events=(event,),
+                    ),
                     effect_lifecycle_events=(event,),
                 ),
                 replay_mode="legal_pit",
@@ -429,7 +436,7 @@ class TestFromPhaseResult:
         artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
         payload = cast(Any, artifact.payload)
         assert artifact.schema == "lawvm.timeline_compilation_result"
-        assert artifact.status == ProcessingStatus(
+        assert artifact.processing_status == ProcessingStatus(
             kind="partial",
             blockers=("timeline.missing_replace_target",),
         )
@@ -941,7 +948,7 @@ class TestFromPhaseResult:
         assert result.issues == ()
         artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
         payload = cast(Any, artifact.payload)
-        assert artifact.status == ProcessingStatus(kind="complete")
+        assert artifact.processing_status == ProcessingStatus(kind="complete")
         assert payload["issues"] == ()
 
         active_2007 = select_active_version(timelines[target], "2007-01-01")
@@ -1002,7 +1009,7 @@ class TestFromPhaseResult:
         )
 
         degraded = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-        assert degraded.status == "degraded_missing_scope"
+        assert degraded.materialization_status == "degraded_missing_scope"
         assert degraded.required_dimensions == ("territory",)
 
         selected = facade.materialize_pit_ex(
@@ -1011,7 +1018,7 @@ class TestFromPhaseResult:
             base_date="2000-01-01",
             territory="AX",
         )
-        assert selected.status == "materialized"
+        assert selected.materialization_status == "materialized"
 
     def test_materialize_pit_ex_preserves_timeline_issues_from_facade_compile(self):
         base = IRStatute(
@@ -1048,7 +1055,7 @@ class TestFromPhaseResult:
 
         result = facade.materialize_pit_ex(base, "2021-01-01", base_date="2000-01-01")
 
-        assert result.status == "degraded_timeline_issues"
+        assert result.materialization_status == "degraded_timeline_issues"
         assert any(issue.kind == "missing_insert_payload" for issue in result.issues)
         assert result.statute.body.children == ()
 
@@ -1090,14 +1097,14 @@ class TestFromPhaseResult:
 
         result = facade.materialize_pit_ex(base, "2021-01-01", base_date="2000-01-01")
 
-        assert result.status == "degraded_timeline_issues"
+        assert result.materialization_status == "degraded_timeline_issues"
         assert any(issue.kind == "missing_replace_payload" for issue in result.issues)
         assert result.statute.body.children[0].text == "Base text"
         artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
         payload = cast(Any, artifact.payload)
         assert artifact.schema == "lawvm.materialization_result"
-        assert payload["status"] == "degraded_timeline_issues"
-        assert artifact.status == ProcessingStatus(
+        assert payload["materialization_status"] == "degraded_timeline_issues"
+        assert artifact.processing_status == ProcessingStatus(
             kind="partial",
             blockers=("timeline.missing_replace_payload",),
         )
@@ -1146,11 +1153,11 @@ class TestFromPhaseResult:
 
         result = facade.materialize_pit_ex(base, "2021-01-01", base_date="2000-01-01")
 
-        assert result.status == "degraded_timeline_issues"
+        assert result.materialization_status == "degraded_timeline_issues"
         assert any(issue.kind == "skipped_contingent_unresolved" for issue in result.issues)
         assert result.statute.body.children[0].text == "Base text"
         artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
-        assert artifact.status == ProcessingStatus(
+        assert artifact.processing_status == ProcessingStatus(
             kind="partial",
             blockers=("timeline.skipped_contingent_unresolved",),
         )
@@ -1451,7 +1458,7 @@ class TestFindingProjection:
         pr = _pr(output=None, obligations=[obl])
         facade = CompileFacade.from_phase_result(pr, replay_mode="legal_pit")
 
-        assert tuple(facade.to_wire_artifact().status.blockers or ()) == (
+        assert tuple(facade.to_wire_artifact().processing_status.blockers or ()) == (
             "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
         )
 
@@ -1469,7 +1476,7 @@ class TestFindingProjection:
             verdict=verdict,
         )
 
-        assert tuple(facade.to_wire_artifact().status.blockers or ()) == (
+        assert tuple(facade.to_wire_artifact().processing_status.blockers or ()) == (
             "strict_blocked_by_recovery",
         )
 
@@ -1493,7 +1500,7 @@ class TestFindingProjection:
             verdict=verdict,
         )
 
-        assert tuple(facade.to_wire_artifact().status.blockers or ()) == (
+        assert tuple(facade.to_wire_artifact().processing_status.blockers or ()) == (
             "RUNTIME.VIOLATION",
         )
 
@@ -1614,7 +1621,7 @@ class TestOptionalDossierFields:
         )
 
         assert len(facade.finding_ledger) == 3
-        assert tuple(facade.to_wire_artifact().status.blockers or ()) == (
+        assert tuple(facade.to_wire_artifact().processing_status.blockers or ()) == (
             "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
             "RUNTIME.VIOLATION",
         )
@@ -1678,13 +1685,15 @@ class TestWireArtifact:
         assert "strict_pass" not in payload
         assert payload["bundle"]["structural_ops_count"] == 0
         assert payload["bundle"]["temporal_events_count"] == 1
+        assert payload["bundle"]["direct_temporal_events_count"] == 1
+        assert payload["bundle"]["lifecycle_projected_temporal_events_count"] == 0
         assert payload["bundle"]["temporal_event_kinds"] == ("commence",)
         assert payload["bundle"]["temporal_events_with_activation_rules"] == 1
         assert payload["bundle"]["temporal_events_with_source"] == 1
         assert payload["bundle"]["temporal_event_activation_rule_kinds"] == ("fixed_date",)
         assert payload["bundle"]["migration_events_count"] == 1
         assert payload["bundle"]["migration_event_kinds"] == ("renumber",)
-        assert tuple(artifact.status.blockers or ()) == (
+        assert tuple(artifact.processing_status.blockers or ()) == (
             "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
             "RUNTIME.VIOLATION",
         )
@@ -1693,6 +1702,165 @@ class TestWireArtifact:
             "observation",
             "violation",
         )
+
+    def test_to_wire_artifact_exposes_effect_lifecycle_graph_summary(self):
+        instrument = SourceInstrumentRef(
+            instrument_id="2024/1",
+            title="Amending Act",
+            enacted="2024-01-01",
+            effective="2024-02-01",
+        )
+        witness = SourceProvisionRef(
+            instrument=instrument,
+            path=("1",),
+            text_excerpt="Effect witness",
+            rule_id="test.effect_graph_wire",
+        )
+        target_effect = EffectRef(
+            effect_id="effect:2024/1:op-1",
+            source_instrument=instrument,
+            target_statute="1991/1",
+            target_address=LegalAddress(path=(("section", "4 a"),)),
+            projection_group_id="g:2024/1:op-1",
+            source_provision=witness,
+        )
+        relation = EffectRelation(
+            relation_id="relation:2024/1:op-1",
+            kind="repeals_effect",
+            source_provision=witness,
+            target_effect=target_effect,
+            detail={"source_finding": "APPLY.META_REPEAL_EFFECT_RECORDED"},
+        )
+        lifecycle_event = EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:2024/1:op-1:repeal",
+            kind="repeal_effect",
+            source_provision=witness,
+            effect=target_effect,
+            relation=relation,
+            executable=False,
+            detail={"projection": "effect_relation_signal"},
+        )
+        facade = CompileFacade(
+            bundle=CanonicalBundle(
+                source_effects=(target_effect,),
+                effect_relations=(relation,),
+                effect_lifecycle_events=(lifecycle_event,),
+            ),
+            finding_ledger=(),
+            replay_mode="legal_pit",
+        )
+
+        artifact = facade.to_wire_artifact()
+        payload = cast(Any, artifact.payload)
+
+        assert payload["bundle"]["source_effects_count"] == 1
+        assert payload["bundle"]["source_effect_ids"] == ("effect:2024/1:op-1",)
+        assert payload["bundle"]["effect_relations_count"] == 1
+        assert payload["bundle"]["effect_relation_ids"] == ("relation:2024/1:op-1",)
+        assert payload["bundle"]["effect_relation_kinds"] == ("repeals_effect",)
+        assert payload["bundle"]["effect_lifecycle_events_count"] == 1
+        assert payload["bundle"]["effect_lifecycle_event_ids"] == (
+            "lifecycle:2024/1:op-1:repeal",
+        )
+        assert payload["bundle"]["effect_lifecycle_event_kinds"] == ("repeal_effect",)
+        assert payload["bundle"]["source_effects"] == (
+            {
+                "effect_id": "effect:2024/1:op-1",
+                "source_instrument": {
+                    "instrument_id": "2024/1",
+                    "title": "Amending Act",
+                    "enacted": "2024-01-01",
+                    "effective": "2024-02-01",
+                    "expires": "",
+                },
+                "target_statute": "1991/1",
+                "target_address": {
+                    "path": ({"kind": "section", "label": "4 a"},),
+                },
+                "projection_group_id": "g:2024/1:op-1",
+                "source_provision": {
+                    "instrument": {
+                        "instrument_id": "2024/1",
+                        "title": "Amending Act",
+                        "enacted": "2024-01-01",
+                        "effective": "2024-02-01",
+                        "expires": "",
+                    },
+                    "path": ("1",),
+                    "span_id": "",
+                    "text_excerpt": "Effect witness",
+                    "rule_id": "test.effect_graph_wire",
+                    "witness_id": "2024/1:1",
+                },
+            },
+        )
+        assert payload["bundle"]["effect_relations"] == (
+            {
+                "relation_id": "relation:2024/1:op-1",
+                "kind": "repeals_effect",
+                "source_provision": payload["bundle"]["source_effects"][0]["source_provision"],
+                "target_effect_id": "effect:2024/1:op-1",
+                "target_instrument": None,
+                "source_effect_id": "",
+                "target_resolution": {
+                    "kind": "target_effect_resolved",
+                    "matched_effect_count": 1,
+                    "non_executable_reason": "",
+                },
+                "detail": {"source_finding": "APPLY.META_REPEAL_EFFECT_RECORDED"},
+            },
+        )
+        assert payload["bundle"]["effect_lifecycle_events"] == (
+            {
+                "lifecycle_event_id": "lifecycle:2024/1:op-1:repeal",
+                "kind": "repeal_effect",
+                "source_provision": payload["bundle"]["source_effects"][0]["source_provision"],
+                "effect_id": "effect:2024/1:op-1",
+                "relation_id": "relation:2024/1:op-1",
+                "effective": "",
+                "expires": "",
+                "expiry_convention": "exclusive_cutoff",
+                "temporal_event": None,
+                "executable": False,
+                "intended_lifecycle_kind": "",
+                "intended_relation_kind": "",
+                "detail": {"projection": "effect_relation_signal"},
+            },
+        )
+
+    def test_to_wire_artifact_counts_lifecycle_projected_temporal_events_as_executable(self):
+        instrument = SourceInstrumentRef(instrument_id="2024/1")
+        witness = SourceProvisionRef(instrument=instrument, path=("1",))
+        effect = EffectRef(
+            effect_id="effect:2024/1:op-1",
+            source_instrument=instrument,
+            target_statute="1991/1",
+            target_address=LegalAddress(path=(("section", "1"),)),
+            source_provision=witness,
+        )
+        lifecycle_event = EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:2024/1:op-1:commence",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2024-01-01",
+        )
+        facade = CompileFacade(
+            bundle=CanonicalBundle(
+                source_effects=(effect,),
+                effect_lifecycle_events=(lifecycle_event,),
+            ),
+            finding_ledger=(),
+            replay_mode="legal_pit",
+        )
+
+        artifact = facade.to_wire_artifact()
+        payload = cast(Any, artifact.payload)
+
+        assert payload["bundle"]["temporal_events_count"] == 1
+        assert payload["bundle"]["direct_temporal_events_count"] == 0
+        assert payload["bundle"]["lifecycle_projected_temporal_events_count"] == 1
+        assert payload["bundle"]["temporal_event_kinds"] == ("commence",)
 
     def test_to_wire_artifact_wraps_projection_with_versioned_status(self):
         obl = _obl("ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY", blocking=True)
@@ -1708,7 +1876,7 @@ class TestWireArtifact:
         assert artifact.schema == "lawvm.compile_facade"
         assert artifact.producer == "tests.compile_facade"
         assert artifact.version == "wire-1"
-        assert artifact.status == ProcessingStatus(
+        assert artifact.processing_status == ProcessingStatus(
             kind="partial",
             blockers=("ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",),
         )

@@ -202,7 +202,7 @@ def _rewrite_lo_op_source_effective_for_address_suffixes(
         src = lo.source
         if src is None or src.statute_id != target_source_statute:
             continue
-        if not any(_address_has_suffix(lo.target, suffix) for suffix in address_suffixes):
+        if not any(_address_matches_commencement_suffix(lo.target, suffix) for suffix in address_suffixes):
             continue
         lo_ops_out[i] = dc_replace(
             lo,
@@ -232,7 +232,7 @@ def _rewrite_compiled_op_activation_rule_effective_for_address_suffixes(
         target_address = _compiled_op_address_suffix(op)
         if target_address is None:
             continue
-        if not any(_address_has_suffix(target_address, suffix) for suffix in address_suffixes):
+        if not any(_address_matches_commencement_suffix(target_address, suffix) for suffix in address_suffixes):
             continue
         op["activation_rule"] = {
             "kind": "fixed_date",
@@ -262,6 +262,49 @@ def _address_has_suffix(address: LegalAddress, suffix: LegalAddress) -> bool:
     if len(suffix.path) > len(address.path):
         return False
     return address.path[-len(suffix.path):] == suffix.path
+
+
+def _address_matches_commencement_suffix(address: LegalAddress, suffix: LegalAddress) -> bool:
+    if suffix.special is not None and address.special != suffix.special:
+        return False
+    if _address_has_suffix(address, suffix):
+        return True
+    sparse = _sparse_item_suffix(suffix)
+    if sparse is None:
+        return False
+    section, item, subitem = sparse
+    address_section = next((value for kind, value in address.path if kind == "section"), "")
+    if address_section != section:
+        return False
+    address_item = next(
+        (value for kind, value in address.path if kind in {"item", "paragraph"}),
+        "",
+    )
+    if address_item != item:
+        return False
+    if subitem is None:
+        return True
+    address_subitem = next((value for kind, value in address.path if kind == "subitem"), "")
+    return address_subitem == subitem
+
+
+def _sparse_item_suffix(suffix: LegalAddress) -> tuple[str, str, str | None] | None:
+    section = ""
+    subsection_seen = False
+    item = ""
+    subitem: str | None = None
+    for kind, value in suffix.path:
+        if kind == "section":
+            section = value
+        elif kind == "subsection":
+            subsection_seen = True
+        elif kind in {"item", "paragraph"}:
+            item = value
+        elif kind == "subitem":
+            subitem = value
+    if not section or not item or subsection_seen:
+        return None
+    return section, item, subitem
 
 
 def _rewrite_compiled_op_activation_rule_effective(

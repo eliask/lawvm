@@ -12,6 +12,7 @@ from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 from lawvm.core.mutation_accounting import MutationAccountingResult
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.phase_result import Finding
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.finland.amendment_chapter_precreate import (
@@ -104,6 +105,7 @@ class ApplySupplementalRecoverySinks:
     findings_out: Optional[List[Finding]] = None
     observed_touch_results_out: Optional[List[MutationAccountingResult]] = None
     write_audits_out: Optional[List[ObservedWriteAudit]] = None
+    write_receipts_out: Optional[List[WriteReceipt]] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,13 +330,22 @@ def run_apply_supplemental_recovery(
                     force_apply_pass=True,
                 ),
                 ApplyResolvedOpSinks(
+                    write_receipts_out=(
+                        sinks.write_receipts_out
+                        if sinks.write_receipts_out is not None
+                        else []
+                    ),
+                    write_audits_out=(
+                        sinks.write_audits_out
+                        if sinks.write_audits_out is not None
+                        else []
+                    ),
                     lo_ops_out=lo_ops_out,
                     failed_ops_out=sinks.failed_ops_out,
                     source_pathologies_out=sinks.source_pathologies_out,
                     mutation_events_out=sinks.mutation_events_out,
                     findings_out=sinks.findings_out,
                     observed_touch_results_out=sinks.observed_touch_results_out,
-                    write_audits_out=sinks.write_audits_out,
                 ),
             )
             state = apply_result.state

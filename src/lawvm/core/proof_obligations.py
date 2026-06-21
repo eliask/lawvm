@@ -38,7 +38,7 @@ _RESERVED_DETAIL_KEYS = frozenset(
 
 
 @dataclass(frozen=True, slots=True)
-class ProofObligationCertificate:
+class ProofObligationCoverage:
     """Evidence envelope for a bounded promotion proof boundary.
 
     The certificate separates proofs already discharged from proofs still
@@ -65,12 +65,12 @@ class ProofObligationCertificate:
         status = _required_string("proof_status", self.proof_status)
         if status not in _VALID_STATUSES:
             raise ValueError(
-                "ProofObligationCertificate.proof_status must be one of "
+                "ProofObligationCoverage.proof_status must be one of "
                 f"{sorted(_VALID_STATUSES)}"
             )
         if not isinstance(self.next_promotion_allowed, bool):
             raise ValueError(
-                "ProofObligationCertificate.next_promotion_allowed must be boolean"
+                "ProofObligationCoverage.next_promotion_allowed must be boolean"
             )
         proved = _string_tuple("proved_proofs", self.proved_proofs)
         missing = _string_tuple("missing_proofs", self.missing_proofs)
@@ -80,11 +80,11 @@ class ProofObligationCertificate:
         )
         if status == PROOF_OBLIGATION_COMPLETE and missing:
             raise ValueError(
-                "ProofObligationCertificate(status='complete') requires no missing_proofs"
+                "ProofObligationCoverage(status='complete') requires no missing_proofs"
             )
         if self.next_promotion_allowed and status != PROOF_OBLIGATION_COMPLETE:
             raise ValueError(
-                "ProofObligationCertificate.next_promotion_allowed requires complete status"
+                "ProofObligationCoverage.next_promotion_allowed requires complete status"
             )
         blockers = _int_mapping("blocker_counts", self.blocker_counts)
         _reject_reserved_detail_keys(self.detail)
@@ -119,28 +119,28 @@ class ProofObligationCertificate:
 def _required_string(field_name: str, value: Any) -> str:
     text = str(value or "").strip()
     if not text:
-        raise ValueError(f"ProofObligationCertificate.{field_name} is required")
+        raise ValueError(f"ProofObligationCoverage.{field_name} is required")
     return text
 
 
 def _string_tuple(field_name: str, values: Any) -> tuple[str, ...]:
     if isinstance(values, str) or not isinstance(values, tuple):
-        raise ValueError(f"ProofObligationCertificate.{field_name} must be a tuple")
+        raise ValueError(f"ProofObligationCoverage.{field_name} must be a tuple")
     return tuple(str(value) for value in values if str(value))
 
 
 def _int_mapping(field_name: str, value: Any) -> Mapping[str, int]:
     if not isinstance(value, Mapping):
-        raise ValueError(f"ProofObligationCertificate.{field_name} must be a mapping")
+        raise ValueError(f"ProofObligationCoverage.{field_name} must be a mapping")
     normalized: dict[str, int] = {}
     for key, count in value.items():
         if not isinstance(count, int) or isinstance(count, bool):
             raise ValueError(
-                f"ProofObligationCertificate.{field_name} values must be integers"
+                f"ProofObligationCoverage.{field_name} values must be integers"
             )
         if count < 0:
             raise ValueError(
-                f"ProofObligationCertificate.{field_name} values must be non-negative"
+                f"ProofObligationCoverage.{field_name} values must be non-negative"
             )
         normalized[str(key)] = count
     return freeze_mapping(normalized)
@@ -148,7 +148,7 @@ def _int_mapping(field_name: str, value: Any) -> Mapping[str, int]:
 
 def _reject_reserved_detail_keys(values: Mapping[str, Any]) -> None:
     if not isinstance(values, Mapping):
-        raise ValueError("ProofObligationCertificate.detail must be a mapping")
+        raise ValueError("ProofObligationCoverage.detail must be a mapping")
     overlaps = sorted(_RESERVED_DETAIL_KEYS.intersection(values.keys()))
     if overlaps:
         joined = ", ".join(overlaps)

@@ -7,9 +7,11 @@ from lawvm.core.invariant_profiles import core_replay_strict_profile
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalAddress, OperationSource, ProvisionTimeline, ProvisionVersion
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.timeline_addresses import STRUCTURAL_RENUMBER_SNAPSHOT_ATTR
 from lawvm.core.timeline_invariants import check_all_timeline_invariants_typed
 from lawvm.finland.timeline_version_dedupe import (
     FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID,
+    FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID,
     FI_TIMELINE_SAME_SOURCE_SEMANTIC_DEDUPE_RULE_ID,
     dedupe_finland_timelines,
 )
@@ -63,6 +65,86 @@ def test_absent_content_shadow_collapse_removes_competing_none_row() -> None:
     assert deduped[address].versions[0].content is not None
     assert len(records) == 1
     assert records[0].witness_rule_id == FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID
+
+
+def test_restructure_relabel_snapshot_shadow_collapse_prefers_payload_authority() -> None:
+    address = LegalAddress(path=(("part", "2"), ("chapter", "2"), ("section", "8")))
+    source = OperationSource(statute_id="2019/371", enacted="2019-03-29")
+    restructure_snapshot = ProvisionVersion(
+        effective="2019-04-01",
+        enacted="2019-03-29",
+        variant_kind="permanent",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="8",
+            text="stale relabel snapshot",
+            attrs={"lawvm_restructure_relabel_section_snapshot": "1"},
+        ),
+        source=source,
+    )
+    ordinary_payload = ProvisionVersion(
+        effective="2019-04-01",
+        enacted="2019-03-29",
+        variant_kind="permanent",
+        content=IRNode(kind=IRNodeKind.SECTION, label="8", text="ordinary payload"),
+        source=source,
+    )
+    timelines = {
+        address: ProvisionTimeline(
+            address=address,
+            versions=[restructure_snapshot, ordinary_payload],
+        )
+    }
+
+    deduped, records = dedupe_finland_timelines(timelines)
+
+    remaining_versions = deduped[address].versions
+    assert len(remaining_versions) == 1
+    remaining_content = remaining_versions[0].content
+    assert remaining_content is not None
+    assert timeline_version_dedupe.irnode_to_text(remaining_content) == "ordinary payload"
+    assert len(records) == 1
+    assert records[0].witness_rule_id == FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID
+
+
+def test_restructure_relabel_snapshot_is_not_shadowed_by_structural_renumber_snapshot() -> None:
+    address = LegalAddress(path=(("chapter", "6"), ("section", "24f")))
+    source = OperationSource(statute_id="1998/658", enacted="1998-08-21")
+    structural_renumber_snapshot = ProvisionVersion(
+        effective="1998-08-21",
+        enacted="1998-08-21",
+        variant_kind="permanent",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="24f",
+            text="24f section text",
+            attrs={STRUCTURAL_RENUMBER_SNAPSHOT_ATTR: "1"},
+        ),
+        source=source,
+    )
+    restructure_snapshot = ProvisionVersion(
+        effective="1998-08-21",
+        enacted="1998-08-21",
+        variant_kind="permanent",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="24f",
+            text="24f § text",
+            attrs={"lawvm_restructure_relabel_section_snapshot": "1"},
+        ),
+        source=source,
+    )
+    timelines = {
+        address: ProvisionTimeline(
+            address=address,
+            versions=[structural_renumber_snapshot, restructure_snapshot],
+        )
+    }
+
+    deduped, records = dedupe_finland_timelines(timelines)
+
+    assert deduped[address].versions == [structural_renumber_snapshot, restructure_snapshot]
+    assert records == ()
 
 
 def test_semantic_text_cache_reuses_content_hash(monkeypatch) -> None:

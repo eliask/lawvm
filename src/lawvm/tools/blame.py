@@ -271,7 +271,7 @@ def _classify_status(
 
 def _fmt_source(op: dict[str, Any]) -> str:
     src = op.get("source_statute", "?")
-    title = op.get("source_title", "")[:40]
+    title = str(op.get("source_title") or "")[:40]
     seq = op.get("sequence", "?")
     action = op.get("action", "?").upper()
     return f"{src}  [{seq:>3}] {action:<7}  {title}"

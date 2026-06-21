@@ -185,12 +185,14 @@ class SurfaceSubRef:
     Represents the sub-part of a section being targeted:
     - momentti=2 -> "2 momentti" (subsection 2)
     - item="a" -> "a kohta" (item a)
+    - item="2", subitem="h" -> "2 kohdan h alakohta"
     - facet=FacetKind.HEADING -> heading of the section
     - facet=FacetKind.INTRO -> johdantokappale (introductory paragraph)
     """
 
     momentti: int = 0  # 0 = whole section
     item: str = ""  # kohta identifier
+    subitem: str = ""  # alakohta identifier, encoded with item for legacy replay
     facet: Optional[FacetKind] = None  # FacetKind.HEADING, INTRO, or NONE
     special: str = ""  # Legacy: "otsikko", "johd" for backward compatibility
 

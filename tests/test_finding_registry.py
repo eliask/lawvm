@@ -221,7 +221,7 @@ def test_unowned_body_section_registry_code_is_strict_runtime_observation() -> N
 
 
 def test_kumotaan_recycle_guard_registry_code_is_runtime_observation() -> None:
-    spec = get_finding_spec("PARSE.KUMOTAAN_RECYCLE_GUARD")
+    spec = get_finding_spec("PARSE.REPEAL_RECYCLE_GUARD")
     assert spec is not None
     assert spec.role == "observation"
     assert spec.default_enforcement == "info"
@@ -355,6 +355,22 @@ def test_base_intro_list_tail_moment_split_registry_code_is_observation() -> Non
 
 def test_base_dotted_paragraph_subsection_promotion_registry_code_is_observation() -> None:
     spec = get_finding_spec("BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
+def test_base_table_continuation_subsection_merge_registry_code_is_observation() -> None:
+    spec = get_finding_spec("BASE_TABLE_CONTINUATION_SUBSECTION_MERGE")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
+def test_base_table_continuation_header_repair_registry_code_is_observation() -> None:
+    spec = get_finding_spec("BASE_TABLE_CONTINUATION_HEADER_REPAIR")
     assert spec is not None
     assert spec.role == "observation"
     assert spec.is_barrier is False

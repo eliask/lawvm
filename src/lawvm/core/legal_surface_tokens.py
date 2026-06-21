@@ -788,28 +788,113 @@ class MorphAnnotation:
             )
 
 
+#: Three honest states a token can be in w.r.t. a :class:`MorphOverlay`. A
+#: consumer reading the overlay distinguishes them via
+#: :meth:`MorphOverlay.token_status` — NEVER by annotation-absence alone, which
+#: conflates "analyzed, no lemma" with "never analyzed".
+#:
+#:   * ``"annotated"``     — the token was analyzed AND maps to >= 1 lemma; the
+#:                           :class:`MorphAnnotation` is present.
+#:   * ``"analyzed_empty"`` — the token WAS run through the analyzer but its
+#:                           surface is outside the closed vocabulary (a genuine
+#:                           "no known lemma" negative fact, not an absence).
+#:   * ``"not_analyzed"``  — the token was NEVER offered to the analyzer (e.g. a
+#:                           non-word token, or a token outside the analyzed set);
+#:                           the overlay says NOTHING about its lemma.
+TOKEN_MORPH_STATUSES: frozenset[str] = frozenset(
+    {"annotated", "analyzed_empty", "not_analyzed"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class MorphCoverage:
+    """The analyzed-vs-annotated census of a :class:`MorphOverlay`.
+
+    The honest-by-accounting report that lets a consumer reason about
+    annotation ABSENCE: ``analyzed_tokens`` is how many tokens were offered to
+    the analyzer, of which ``annotated_tokens`` mapped to a lemma; the
+    remainder (``analyzed_tokens - annotated_tokens``) are genuine "analyzed,
+    no known lemma" negatives — distinct from the tokens never analyzed at all.
+
+    Attributes:
+        total_tokens:     Total tokens on the tape the overlay views.
+        analyzed_tokens:  Tokens run through the analyzer (the analyzed set).
+        annotated_tokens: Analyzed tokens that mapped to >= 1 lemma.
+        vocab_fingerprint: Digest of the closed vocabulary absence was judged
+                          against (so a stale/different vocabulary is detectable).
+    """
+
+    total_tokens: int
+    analyzed_tokens: int
+    annotated_tokens: int
+    vocab_fingerprint: str
+
+    @property
+    def annotated_fraction(self) -> float:
+        """Fraction of ANALYZED tokens that were annotated (0.0 if none analyzed)."""
+        if self.analyzed_tokens == 0:
+            return 0.0
+        return self.annotated_tokens / self.analyzed_tokens
+
+
 @dataclass(frozen=True, slots=True)
 class MorphOverlay:
     """A SPARSE per-token reverse-morphology view over one :class:`TokenTape`.
 
     Maps ``token_index -> MorphAnnotation`` for the tokens whose surface inverts
-    to a known lemma. The overlay is deliberately sparse: a token that is NOT
-    present has no annotation, which a consumer MUST read as "unknown / outside
-    the analyzed vocabulary" — never as "no lemma exists". The overlay is not a
-    general lemmatizer; it covers only the closed vocabulary the analyzer knows.
+    to a known lemma. The overlay is deliberately sparse, but it is honest BY
+    ACCOUNTING, not merely by emptiness: alongside the annotations it records
+    the SET OF TOKENS THAT WERE ANALYZED (``analyzed_token_indices``) and a
+    fingerprint of the closed vocabulary (``vocab_fingerprint``). A consumer can
+    therefore split annotation-absence into two genuinely different facts:
+
+      * a token IN ``analyzed_token_indices`` but with no annotation was
+        analyzed and has NO KNOWN LEMMA (a negative fact about the closed
+        vocabulary);
+      * a token NOT in ``analyzed_token_indices`` was NEVER analyzed — the
+        overlay says nothing about it.
+
+    Reading absence as "no lemma exists" without consulting the analyzed set is
+    the bug this account closes. Use :meth:`token_status` / :meth:`coverage`
+    rather than ``token_index not in annotations``.
+
+    The overlay is not a general lemmatizer; the analyzed set is only the tokens
+    the jurisdiction analyzer offered to its closed vocabulary (e.g. Finnish
+    ``word``-category tokens), and the vocabulary itself is closed.
 
     Attributes:
         source_unit_id: The unit whose tape this overlay annotates (drift anchor).
         text_hash:      The tape's ``text_hash`` the overlay was built over.
+        total_tokens:   ``len(tape.tokens)`` — the full token count the analyzed
+                        set is a subset of (lets ``not_analyzed`` be total, not
+                        just "absent from the analyzed set we happened to record").
+        analyzed_token_indices: The token indices that WERE offered to the
+                        analyzer. A superset of ``annotations`` keys: an analyzed
+                        token with no annotation is a genuine "no known lemma".
+        vocab_fingerprint: Stable digest of the closed vocabulary the analyzer
+                        used (e.g. ``LemmaIndex.fingerprint()``). The
+                        absence-of-annotation anchor: a consumer can detect it is
+                        reading absence against a DIFFERENT vocabulary.
         annotations:    ``token_index -> MorphAnnotation`` for annotated tokens
                         ONLY (sparse). Every value's ``token_index`` equals its key.
     """
 
     source_unit_id: str
     text_hash: str
+    total_tokens: int
+    analyzed_token_indices: frozenset[int]
+    vocab_fingerprint: str
     annotations: Mapping[int, MorphAnnotation]
 
     def __post_init__(self) -> None:
+        if self.total_tokens < 0:
+            raise ValueError("MorphOverlay.total_tokens must be >= 0")
+        for index in self.analyzed_token_indices:
+            if not 0 <= index < self.total_tokens:
+                raise ValueError(
+                    "MorphOverlay.analyzed_token_indices entry out of range: "
+                    f"{index} not in [0, {self.total_tokens})"
+                )
         for index, ann in self.annotations.items():
             if index < 0:
                 raise ValueError(
@@ -820,3 +905,42 @@ class MorphOverlay:
                     "MorphOverlay key must equal its annotation's token_index: "
                     f"key={index} but annotation.token_index={ann.token_index}"
                 )
+            if index not in self.analyzed_token_indices:
+                raise ValueError(
+                    "MorphOverlay annotation for an UN-analyzed token "
+                    f"(key={index}): every annotated token must be in "
+                    "analyzed_token_indices (you cannot annotate a token you "
+                    "never analyzed)"
+                )
+
+    def token_status(self, token_index: int) -> str:
+        """The honest morph status of ``token_index`` (a :data:`TOKEN_MORPH_STATUSES`).
+
+        Distinguishes ``"annotated"`` / ``"analyzed_empty"`` / ``"not_analyzed"``
+        — the whole point of the coverage account. A consumer MUST use this (or
+        the explicit predicates below) instead of ``token_index in annotations``
+        when it cares whether absence means "no known lemma" or "never looked".
+        """
+        if token_index in self.annotations:
+            return "annotated"
+        if token_index in self.analyzed_token_indices:
+            return "analyzed_empty"
+        return "not_analyzed"
+
+    def was_analyzed(self, token_index: int) -> bool:
+        """True iff ``token_index`` was offered to the analyzer.
+
+        An absent annotation on a ``was_analyzed`` token is a genuine "no known
+        lemma"; an absent annotation on a token that was NOT analyzed carries no
+        information about its lemma.
+        """
+        return token_index in self.analyzed_token_indices
+
+    def coverage(self) -> "MorphCoverage":
+        """Analyzed-vs-annotated census (the honest-by-accounting report)."""
+        return MorphCoverage(
+            total_tokens=self.total_tokens,
+            analyzed_tokens=len(self.analyzed_token_indices),
+            annotated_tokens=len(self.annotations),
+            vocab_fingerprint=self.vocab_fingerprint,
+        )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, TypeAlias, cast
+from typing import Iterable, TypeAlias
 
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.helpers import _norm_num_token
@@ -25,45 +25,28 @@ class StandaloneSectionTarget:
     chapter: str | None
     label: str
 
+    def __post_init__(self) -> None:
+        raw_label = str(self.label).strip()
+        if not raw_label:
+            raise ValueError("StandaloneSectionTarget.label must be non-empty")
+        part = _norm_num_token(str(self.part)) if self.part not in (None, "") else None
+        chapter = _norm_num_token(str(self.chapter)) if self.chapter not in (None, "") else None
+        object.__setattr__(self, "part", part)
+        object.__setattr__(self, "chapter", chapter)
+        object.__setattr__(self, "label", _norm_num_token(raw_label))
 
-LegacyStandaloneSectionTarget: TypeAlias = (
-    tuple[str | None, str] | tuple[str | None, str | None, str]
-)
-StandaloneSectionTargetInput: TypeAlias = (
-    StandaloneSectionTarget | LegacyStandaloneSectionTarget
-)
-StandaloneSectionTargetsInput: TypeAlias = Iterable[StandaloneSectionTargetInput] | None
+
+StandaloneSectionTargetInput: TypeAlias = StandaloneSectionTarget
+StandaloneSectionTargetsInput: TypeAlias = Iterable[StandaloneSectionTarget] | None
 
 
 def normalize_standalone_section_target(
     raw_target: StandaloneSectionTargetInput,
 ) -> StandaloneSectionTarget | None:
-    """Normalize typed or legacy standalone-section target input.
-
-    Legacy compatibility accepts the historical ``(chapter, section)`` and
-    ``(part, chapter, section)`` tuple shapes at the apply boundary.
-    """
-    if isinstance(raw_target, StandaloneSectionTarget):
-        raw_part = raw_target.part
-        raw_chapter = raw_target.chapter
-        raw_label = raw_target.label
-    elif len(raw_target) == 2:
-        raw_part = None
-        raw_chapter, raw_label = cast(tuple[str | None, str | None], raw_target)
-    elif len(raw_target) == 3:
-        raw_part, raw_chapter, raw_label = cast(
-            tuple[str | None, str | None, str | None],
-            raw_target,
-        )
-    else:
-        return None
-    if raw_label is None:
-        return None
-    return StandaloneSectionTarget(
-        part=_norm_num_token(str(raw_part)) if raw_part not in (None, "") else None,
-        chapter=_norm_num_token(str(raw_chapter)) if raw_chapter not in (None, "") else None,
-        label=_norm_num_token(str(raw_label)),
-    )
+    """Normalize a typed standalone-section target at the apply boundary."""
+    if not isinstance(raw_target, StandaloneSectionTarget):
+        raise TypeError("standalone_section_targets must contain StandaloneSectionTarget rows")
+    return raw_target
 
 
 def normalize_standalone_section_targets(

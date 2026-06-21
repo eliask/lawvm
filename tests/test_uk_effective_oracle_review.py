@@ -72,7 +72,7 @@ def test_dotted_dated_current_xml_refutes_raw_oracle_divergence(tmp_path) -> Non
     assert row.no_known_outstanding_effects_count == 1
     assert row.simplest_public_check[0].startswith("Open current provision page:")
     assert row.agreement_residual["family"] == "oracle_editorial_pathology"
-    assert row.agreement_residual["status"] == "frontier"
+    assert row.agreement_residual["agreement_residual_status"] == "frontier"
     assert row.agreement_residual["agreement_surface"] == (
         "whole_act_current_xml_vs_page_declared_current_timeline_xml"
     )
@@ -118,7 +118,7 @@ def test_no_dated_current_xml_marker_survives_as_plausible_divergence(tmp_path) 
 
     assert rows[0].review_status == "plausible_true_divergence"
     assert rows[0].dated_current_xml_no_marker_count == 1
-    assert rows[0].agreement_residual["status"] == "residual"
+    assert rows[0].agreement_residual["agreement_residual_status"] == "residual"
     assert rows[0].agreement_residual["missing_proofs"] == [
         "savings_extent_or_revival_review",
         "editorial_policy_review",

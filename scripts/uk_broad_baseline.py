@@ -576,7 +576,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 locator=enacted_locator,
                 source_lane="enacted_xml",
                 data=enacted,
-                source_status=base_source.status.value,
+                source_status=base_source.xml_content_status.value,
             )
         )
         result.update(
@@ -586,13 +586,13 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 locator=current_locator,
                 source_lane="current_xml",
                 data=current,
-                source_status=current_source.status.value,
+                source_status=current_source.xml_content_status.value,
             )
         )
-        if base_source.status.value == "metadata_only":
+        if base_source.xml_content_status.value == "metadata_only":
             source_frontier_reason = (
                 "base_and_oracle_metadata_only"
-                if current_source.status.value == "metadata_only"
+                if current_source.xml_content_status.value == "metadata_only"
                 else "base_metadata_only"
             )
             return {
@@ -600,13 +600,13 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 "score_status": "source_frontier",
                 "source_frontier_reason": source_frontier_reason,
             }
-        if base_source.status.value in {"too_small", "multiple_choices", "parse_error"}:
+        if base_source.xml_content_status.value in {"too_small", "multiple_choices", "parse_error"}:
             return {
                 **result,
                 "score_status": "source_frontier",
-                "source_frontier_reason": f"base_{base_source.status.value}",
+                "source_frontier_reason": f"base_{base_source.xml_content_status.value}",
             }
-        if current_source.status.value in {
+        if current_source.xml_content_status.value in {
             "too_small",
             "multiple_choices",
             "parse_error",
@@ -615,7 +615,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
             return {
                 **result,
                 "score_status": "source_frontier",
-                "source_frontier_reason": f"oracle_{current_source.status.value}",
+                "source_frontier_reason": f"oracle_{current_source.xml_content_status.value}",
             }
 
         oracle_data = extract_eid_map_bytes(current)
@@ -778,8 +778,8 @@ def score_one(statute_id: str) -> dict[str, Any]:
             "frontier_work_item_validation_issues",
         )
         result[
-            "manual_frontier_work_item_packet_target_resolution_certificate_counts"
-        ] = _manual_frontier_work_item_packet_target_resolution_certificate_counts(
+            "manual_frontier_work_item_packet_target_resolution_coverage_counts"
+        ] = _manual_frontier_work_item_packet_target_resolution_coverage_counts(
             manual_frontier_records
         )
         result["manual_frontier_work_item_target_resolution_status_counts"] = (
@@ -1169,7 +1169,7 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     (
         manual_frontier_work_item_packet_ready_counts,
         manual_frontier_work_item_packet_missing_field_counts,
-        manual_frontier_work_item_packet_target_resolution_certificate_counts,
+        manual_frontier_work_item_packet_target_resolution_coverage_counts,
         manual_frontier_work_item_packet_execution_authorization_validation_issue_counts,
         manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts,
     ) = _aggregate_manual_frontier_work_item_packet_counts(results)
@@ -1412,7 +1412,7 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "agreement_residual_status_counts": _agreement_residual_field_counts(
             agreement_residuals,
-            "status",
+            "agreement_residual_status",
         ),
         "agreement_residual_owner_phase_counts": _agreement_residual_field_counts(
             agreement_residuals,
@@ -1456,8 +1456,8 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts": (
             manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts
         ),
-        "manual_frontier_work_item_packet_target_resolution_certificate_counts": (
-            manual_frontier_work_item_packet_target_resolution_certificate_counts
+        "manual_frontier_work_item_packet_target_resolution_coverage_counts": (
+            manual_frontier_work_item_packet_target_resolution_coverage_counts
         ),
         "manual_frontier_work_item_target_resolution_status_counts": (
             manual_frontier_work_item_target_resolution_status_counts
@@ -1912,7 +1912,7 @@ def _agreement_residual_for_row(row: dict[str, Any]) -> AgreementResidual:
         jurisdiction="uk",
         agreement_surface="replay_eid_set_vs_current_oracle_eid_set",
         family=family,
-        status=status,
+        agreement_residual_status=status,
         owner_phase=_agreement_residual_owner_phase(bucket),
         rule_id=f"uk_broad_{bucket}",
         source_artifact_id=str(row.get("statute_id") or ""),
@@ -2734,7 +2734,7 @@ def _manual_frontier_work_item_packet_validation_issue_counts(
     return dict(sorted(counts.items()))
 
 
-def _manual_frontier_work_item_packet_target_resolution_certificate_counts(
+def _manual_frontier_work_item_packet_target_resolution_coverage_counts(
     rows: list[dict[str, Any]],
 ) -> dict[str, int]:
     counts: Counter[str] = Counter()
@@ -2745,7 +2745,7 @@ def _manual_frontier_work_item_packet_target_resolution_certificate_counts(
         if not packet:
             counts["missing_packet_completeness"] += 1
             continue
-        has_certificate = packet.get("has_target_resolution_certificate")
+        has_certificate = packet.get("has_target_resolution_coverage")
         if has_certificate is True:
             counts["present"] += 1
         elif has_certificate is False:
@@ -2770,7 +2770,7 @@ def _manual_frontier_work_item_target_resolution_status_counts(
         if not isinstance(detail, dict):
             counts["missing_detail"] += 1
             continue
-        certificate = detail.get("target_resolution_certificate")
+        certificate = detail.get("target_resolution_coverage")
         if not isinstance(certificate, dict):
             counts["missing_certificate"] += 1
             continue
@@ -2821,7 +2821,7 @@ def _target_resolution_status_for_work_item(work_item: Mapping[str, Any]) -> str
     detail = work_item.get("detail")
     if not isinstance(detail, Mapping):
         return "missing_detail"
-    certificate = detail.get("target_resolution_certificate")
+    certificate = detail.get("target_resolution_coverage")
     if not isinstance(certificate, Mapping):
         return "missing_certificate"
     return str(certificate.get("target_resolution_status") or "unproven")
@@ -2866,7 +2866,7 @@ def _aggregate_manual_frontier_work_item_packet_counts(
         row_target_resolution_counts = Counter(
             _count_mapping(
                 row.get(
-                    "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+                    "manual_frontier_work_item_packet_target_resolution_coverage_counts"
                 ),
             )
         )
@@ -2897,7 +2897,7 @@ def _aggregate_manual_frontier_work_item_packet_counts(
                 if row_ready_counts["ready"] <= 0:
                     del row_ready_counts["ready"]
                 row_ready_counts["not_ready"] += ready_count
-            row_missing_field_counts["target_resolution_certificate"] += packet_count
+            row_missing_field_counts["target_resolution_coverage"] += packet_count
             row_target_resolution_counts["unproven"] += packet_count
         ready_counts.update(row_ready_counts)
         missing_field_counts.update(row_missing_field_counts)
@@ -2937,7 +2937,7 @@ def _aggregate_manual_frontier_work_item_target_resolution_status_counts(
 
 def _target_resolution_packet_count_without_status(row: Mapping[str, Any]) -> int:
     certificate_counts = _count_mapping(
-        row.get("manual_frontier_work_item_packet_target_resolution_certificate_counts")
+        row.get("manual_frontier_work_item_packet_target_resolution_coverage_counts")
     )
     if certificate_counts:
         return sum(
@@ -2988,7 +2988,7 @@ def _manual_frontier_work_item_candidate_set_status_counts(
         detail = work_item.get("detail")
         if not isinstance(detail, dict):
             continue
-        certificate = detail.get("candidate_set_certificate")
+        certificate = detail.get("candidate_set_coverage")
         if not isinstance(certificate, dict):
             continue
         status = str(certificate.get("completeness_status") or "")
@@ -3039,7 +3039,7 @@ def _candidate_set_status_for_work_item(work_item: Mapping[str, Any]) -> str:
     detail = work_item.get("detail")
     if not isinstance(detail, Mapping):
         return "missing_detail"
-    certificate = detail.get("candidate_set_certificate")
+    certificate = detail.get("candidate_set_coverage")
     if not isinstance(certificate, Mapping):
         return "missing_certificate"
     return str(certificate.get("completeness_status") or "unproven")
@@ -3136,7 +3136,7 @@ def _manual_frontier_work_item_proof_obligation_status_counts(
     for row in rows:
         if row.get("replay_authorized") is True:
             continue
-        certificate = _proof_obligation_certificate_for_row(row)
+        certificate = _proof_obligation_coverage_for_row(row)
         if not certificate:
             continue
         status = str(certificate.get("proof_status") or "")
@@ -3151,7 +3151,7 @@ def _manual_frontier_work_item_proof_obligation_proved_counts(
     for row in rows:
         if row.get("replay_authorized") is True:
             continue
-        certificate = _proof_obligation_certificate_for_row(row)
+        certificate = _proof_obligation_coverage_for_row(row)
         if not certificate:
             continue
         counts.update(str(proof) for proof in certificate.get("proved_proofs") or ())
@@ -3165,14 +3165,14 @@ def _manual_frontier_work_item_proof_obligation_blocker_counts(
     for row in rows:
         if row.get("replay_authorized") is True:
             continue
-        certificate = _proof_obligation_certificate_for_row(row)
+        certificate = _proof_obligation_coverage_for_row(row)
         if not certificate:
             continue
         counts.update(_count_mapping(certificate.get("blocker_counts")))
     return dict(sorted(counts.items()))
 
 
-def _proof_obligation_certificate_for_row(
+def _proof_obligation_coverage_for_row(
     row: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     work_item = row.get("frontier_work_item")
@@ -3181,7 +3181,7 @@ def _proof_obligation_certificate_for_row(
     detail = work_item.get("detail")
     if not isinstance(detail, Mapping):
         return {}
-    certificate = detail.get("proof_obligation_certificate")
+    certificate = detail.get("proof_obligation_coverage")
     return certificate if isinstance(certificate, Mapping) else {}
 
 
@@ -3458,7 +3458,7 @@ def _owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
 
 def _source_state_fields(prefix: str, state: Any) -> dict[str, Any]:
     fields: dict[str, Any] = {
-        f"{prefix}_source_status": state.status.value,
+        f"{prefix}_source_status": state.xml_content_status.value,
         f"{prefix}_source_number_of_provisions": state.number_of_provisions,
         f"{prefix}_source_has_body": state.has_body,
         f"{prefix}_source_has_schedules": state.has_schedules,
@@ -3552,7 +3552,7 @@ def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str
         for loc in archive.locators(f"{_LEG_BASE}/%/enacted/data.xml"):
             sid = loc[len(_LEG_BASE) + 1 : -len(suffix_enacted)]
             if _is_sampleable_uk_statute_id(sid) and (
-                classify_uk_source_blob(archive.get(loc)).status
+                classify_uk_source_blob(archive.get(loc)).source_state_status
                 is UKSourceStatus.AVAILABLE
             ):
                 enacted.add(sid)
@@ -3564,7 +3564,7 @@ def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str
                 _is_sampleable_uk_statute_id(sid)
                 and "/changes/" not in loc
                 and "/affecting/" not in loc
-                and classify_uk_source_blob(archive.get(loc)).status
+                and classify_uk_source_blob(archive.get(loc)).source_state_status
                 is UKSourceStatus.AVAILABLE
             ):
                 current.add(sid)
@@ -4311,15 +4311,15 @@ def run_driver(
             "  manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts: "
             f"{counts}"
         )
-    if summary["manual_frontier_work_item_packet_target_resolution_certificate_counts"]:
+    if summary["manual_frontier_work_item_packet_target_resolution_coverage_counts"]:
         counts = ", ".join(
             f"{status}={count}"
             for status, count in summary[
-                "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+                "manual_frontier_work_item_packet_target_resolution_coverage_counts"
             ].items()
         )
         print(
-            "  manual_frontier_work_item_packet_target_resolution_certificate_counts: "
+            "  manual_frontier_work_item_packet_target_resolution_coverage_counts: "
             f"{counts}"
         )
     if summary["manual_frontier_work_item_target_resolution_status_counts"]:
@@ -4838,7 +4838,7 @@ def main(argv: list[str] | None = None) -> int:
         "--fail-on-frontier-candidate-set-gaps",
         action="store_true",
         help=(
-            "Exit nonzero when manual-frontier CandidateSetCertificate "
+            "Exit nonzero when manual-frontier CandidateSetCoverage "
             "status counters contain any non-complete status"
         ),
     )
@@ -4846,7 +4846,7 @@ def main(argv: list[str] | None = None) -> int:
         "--fail-on-frontier-target-resolution-gaps",
         action="store_true",
         help=(
-            "Exit nonzero when manual-frontier TargetResolutionCertificate "
+            "Exit nonzero when manual-frontier TargetResolutionCoverage "
             "status counters contain unresolved, missing, or unproven status"
         ),
     )

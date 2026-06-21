@@ -58,7 +58,10 @@ from lawvm.finland.delegation import (
     _record_parse_failure,
     _section_num,
 )
-from lawvm.finland.legal_surface.delegation_canonical import parse_delegation_grants
+from lawvm.finland.legal_surface.delegation_canonical import (
+    DelegationGrantScan,
+    parse_delegation_grants,
+)
 
 
 def _scan_units(
@@ -146,4 +149,62 @@ def extract_delegations_canonical(
                     quote=unit_text[:500],
                 )
             )
+        # No-silent-drop carry-through: the canonical parser's typed residuals
+        # (grant-SHAPED clauses it SEES but declines to emit — self-/cross-
+        # references, postposition complements, anaphors, AGENCY false-positive
+        # shapes, …) hold totality INSIDE the parser but are invisible at this
+        # production boundary unless lifted out. When a diagnostics sink is
+        # provided, record each residual as a typed ``graph_edge_filter``
+        # diagnostic carrying the verbatim offending clause text (self-evidencing,
+        # mirroring the legacy regex extractor's declined-candidate diagnostics)
+        # so the residual is observable/countable, never silently discarded. The
+        # residual is NOT lowered to an edge — it remains a residual.
+        _record_residuals(
+            diagnostics_out,
+            scan=scan,
+            statute_id=statute_id,
+            section=sec_num,
+            eid=unit_eid,
+            unit_text=unit_text,
+        )
     return edges
+
+
+def _record_residuals(
+    diagnostics_out: Optional[list[DelegationDiagnostic]],
+    *,
+    scan: DelegationGrantScan,
+    statute_id: str,
+    section: str,
+    eid: str,
+    unit_text: str,
+) -> None:
+    """Surface canonical typed residuals as observable typed diagnostics.
+
+    Each :class:`GrantResidual` becomes a non-blocking ``graph_edge_filter``
+    :class:`DelegationDiagnostic` whose ``rule_id`` carries the closed residual
+    class and whose ``match_text`` embeds the verbatim declined clause text. No
+    edge is fabricated — the residual stays a residual, merely made countable.
+    """
+    if diagnostics_out is None:
+        return
+    for residual in scan.residuals:
+        diagnostics_out.append(
+            DelegationDiagnostic(
+                rule_id=f"fi_delegation_canonical_residual_{residual.kind}",
+                family="graph_edge_filter",
+                phase="delegation_extraction",
+                source_statute_id=statute_id,
+                reason=(
+                    "Canonical forward-grant parser declined a grant-shaped clause "
+                    f"as typed residue ({residual.kind})."
+                ),
+                section=section,
+                eid=eid,
+                match_text=residual.surface_text,
+                quote=unit_text[:500],
+                blocking=False,
+                strict_disposition="record",
+                quirks_disposition="record",
+            )
+        )

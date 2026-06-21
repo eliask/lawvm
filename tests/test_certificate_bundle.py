@@ -19,8 +19,10 @@ from typing import Any
 
 import pytest
 
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.tools.certificate_bundle import (
     PROFILE_ID,
+    RECEIPT_TRANSITION_DIVERGENCE_CODE,
     SEAM_HASH_EXCLUDED_MEMBERS,
     SOURCE_ANCHOR_UNAVAILABLE_CODE,
     BundleSelfCheckError,
@@ -29,6 +31,7 @@ from lawvm.tools.certificate_bundle import (
     canonical_json_bytes,
     certification_status_for_row,
     compute_certificate_status,
+    cross_check_transitions_against_receipts,
     leaf_hash,
     list_root,
     projection_hash_view,
@@ -91,7 +94,7 @@ def test_duplicate_leaves_forbidden() -> None:
 def _seam_payloadish(engine: JsonObj) -> JsonObj:
     return {
         "schema": "lawvm.provision_state.v1",
-        "status": "selected",
+        "provision_status": "selected",
         "statute_id": "482/2024",
         "hashes": {"derived_state_hash": "abc", "content_hash": "def"},
         "engine": engine,
@@ -114,7 +117,7 @@ def test_projection_hash_invariant_to_engine_provenance() -> None:
 
 def test_projection_hash_sensitive_to_semantic_members() -> None:
     payload = _seam_payloadish({"git_commit": "a" * 40})
-    changed = dict(payload, status="expired")
+    changed = dict(payload, provision_status="expired")
     assert projection_payload_hash(payload, SEAM_HASH_EXCLUDED_MEMBERS) != projection_payload_hash(
         changed, SEAM_HASH_EXCLUDED_MEMBERS
     )
@@ -495,7 +498,7 @@ def test_482_certificate_status_computed_and_blocked(bundle_482: Path) -> None:
         for line in (bundle_482 / "projections/seam_rows.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    expired_rows = [w for w in wrappers if w["projection_payload"]["status"] == "expired"]
+    expired_rows = [w for w in wrappers if w["projection_payload"]["provision_status"] == "expired"]
     assert expired_rows
     assert all(w["certification_status"] == "confirmed" for w in expired_rows)
     assert all(w["projection_payload"]["version"] is None for w in expired_rows)
@@ -617,3 +620,125 @@ def test_bundle_emission_registers_taint_checkable_build(bundle_482: Path) -> No
     # Cert-root cycle guard: the consumption record is an emission sidecar,
     # never inside the bundle (else certificate_root <-> graph cycle).
     assert not list(bundle_482.rglob("*consumed_by_build*"))
+
+
+# ---------------------------------------------------------------------------
+# Receipt consistency cross-check (diff-vs-receipt divergence detector)
+# ---------------------------------------------------------------------------
+
+
+def _receipt(op_id: str, *body_relative_addrs: str) -> WriteReceipt:
+    """A WriteReceipt whose declared footprint touches the given covering units.
+
+    Footprint TreePaths begin at the addressable body root (rendered
+    ``hcontainer:/`` under the receipt address grammar), matching real replay
+    receipts; the remaining segments are the body-relative covering address the
+    cross-check compares against certificate transition target addresses.
+    """
+    def _seg(token: str) -> tuple[str, str]:
+        kind, _, label = token.partition(":")
+        return (kind, label)
+
+    replaced: tuple[tuple[tuple[str, str], ...], ...] = tuple(
+        (("hcontainer", ""), *(_seg(token) for token in addr.split("/")))
+        for addr in body_relative_addrs
+    )
+    return WriteReceipt(
+        op_id=op_id,
+        helper="test",
+        action="replace",
+        bound_target_path=None,
+        landed_primary_path=None,
+        replaced_paths=replaced,
+    )
+
+
+def _transition(transition_id: str, target_address: str) -> dict[str, Any]:
+    return {
+        "transition_id": transition_id,
+        "target_address": target_address,
+        "effective_date": "2010-01-01",
+    }
+
+
+def test_receipt_divergence_code_is_a_non_blocking_observation() -> None:
+    rows = build_diagnostic_registry_rows({})
+    (row,) = [r for r in rows if r["code"] == RECEIPT_TRANSITION_DIVERGENCE_CODE]
+    assert row["role"] == "observation"
+    assert row["allowed_residual_kinds"] == []
+    # observation -> profile permits -> never blocks or qualifies the certificate.
+    assert row["profile_disposition"][PROFILE_ID] == "permits"
+
+
+def test_cross_check_quiet_on_consistent_replay() -> None:
+    # Transition target explained by an attributed op's receipt footprint.
+    transitions = [_transition("t1", "chapter:1/section:4/subsection:3")]
+    op_transitions = {"op_a": ["t1"]}
+    receipts = [_receipt("op_a", "chapter:1/section:4/subsection:3")]
+
+    divergences, notes = cross_check_transitions_against_receipts(
+        transition_rows=transitions,
+        op_transitions=op_transitions,
+        write_receipts=receipts,
+    )
+    assert divergences == []
+    assert notes and "0 diff-vs-receipt divergence" in notes[0]
+
+
+def test_cross_check_explains_via_ancestor_and_descendant_footprints() -> None:
+    # A whole-section receipt explains a subsection transition (ancestor leg);
+    # a subsection receipt explains the section transition it tiles (descendant).
+    transitions = [
+        _transition("t_sub", "chapter:1/section:4/subsection:2"),
+        _transition("t_sec", "chapter:2/section:9"),
+    ]
+    op_transitions = {"op_sec": ["t_sub"], "op_subleg": ["t_sec"]}
+    receipts = [
+        _receipt("op_sec", "chapter:1/section:4"),
+        _receipt("op_subleg", "chapter:2/section:9/subsection:1"),
+    ]
+    divergences, _ = cross_check_transitions_against_receipts(
+        transition_rows=transitions,
+        op_transitions=op_transitions,
+        write_receipts=receipts,
+    )
+    assert divergences == []
+
+
+def test_cross_check_fires_on_diff_vs_receipt_divergence() -> None:
+    # Transition attributes to an op whose receipt footprint touches an
+    # unrelated address: genuine divergence, one NON-BLOCKING finding.
+    transitions = [_transition("t1", "chapter:1/section:4/subsection:3")]
+    op_transitions = {"op_a": ["t1"]}
+    receipts = [_receipt("op_a", "chapter:7/section:99")]
+
+    divergences, notes = cross_check_transitions_against_receipts(
+        transition_rows=transitions,
+        op_transitions=op_transitions,
+        write_receipts=receipts,
+    )
+    assert len(divergences) == 1
+    div = divergences[0]
+    assert div["transition_id"] == "t1"
+    assert div["target_address"] == "chapter:1/section:4/subsection:3"
+    assert div["attributed_op_ids"] == ["op_a"]
+    assert div["attributed_ops_with_receipts"] == 1
+    assert "1 diff-vs-receipt divergence" in notes[0]
+
+
+def test_cross_check_quiet_on_legitimate_zero_receipt_transition() -> None:
+    # Temporary-act lapse restoration / enacted-base first materialization:
+    # the covering-state transition has NO attributed op, so no receipt is
+    # expected. It is accounted as zero-receipt, never flagged.
+    transitions = [_transition("t_expiry", "chapter:5/section:50/subsection:1")]
+    op_transitions: dict[str, list[str]] = {}  # no op attributes to t_expiry
+    receipts: list[WriteReceipt] = []
+
+    divergences, notes = cross_check_transitions_against_receipts(
+        transition_rows=transitions,
+        op_transitions=op_transitions,
+        write_receipts=receipts,
+    )
+    assert divergences == []
+    assert "1 legitimate zero-receipt" in notes[0]
+    assert "0 diff-vs-receipt divergence" in notes[0]

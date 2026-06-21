@@ -231,6 +231,109 @@ def drill_source_pathology_detected_verdict_barrier() -> None:
     assert "APPLY.SOURCE_PATHOLOGY_DETECTED" in barrier_codes
 
 
+def drill_effect_lifecycle_target_unresolved_verdict_barrier() -> None:
+    """APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED reaches strict barrier codes.
+
+    Production lane: unresolved effect-lifecycle target findings flow through
+    ``strict_fail_reasons_from_finding_ledger`` -> ``compute_verdict_from_registry``
+    and surface in ``CompileVerdict.barrier_codes``. This exercises the strict
+    verdict mapping for lifecycle-target composition failures.
+    """
+    finding = Finding(
+        kind="APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED",
+        role="obligation",
+        stage="apply",
+        detail={
+            "target_statute": "2010/100",
+            "target_title": "Target amendment",
+        },
+        source_statute="2011/200",
+        blocking=True,
+    )
+    barrier_codes = _verdict_barrier_codes_from_findings(findings=[finding])
+    assert "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED" in barrier_codes
+
+
+def _route_rejection_findings(
+    *,
+    route_reason: str,
+    route_target_amendment_id: str = "",
+    johto: str = "",
+) -> list[Finding]:
+    """Drive Finland's production route-rejection handler and collect findings."""
+    from lxml import etree
+
+    from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
+
+    findings: list[Finding] = []
+
+    def record_finding(**kwargs: Any) -> Finding:
+        finding = Finding(
+            kind=kwargs["kind"],
+            role=kwargs["role"],
+            stage="process_muutoslaki.route_rejection",
+            detail=kwargs.get("detail") or {},
+            source_statute=kwargs["source_statute"],
+            blocking=bool(kwargs.get("blocking", kwargs["role"] == "obligation")),
+        )
+        findings.append(finding)
+        return finding
+
+    ctx = ProcessRouteRejectionContext(
+        amendment_id="2020/100",
+        parent_id="2021/100",
+        parent_title="Guard Liveness Parent",
+        source_title="Guard Liveness Amendment",
+        johto=johto,
+        source_model=AmendmentSourceModel.from_tree(etree.Element("Laki")),
+        route_reason=route_reason,
+        route_target_amendment_id=route_target_amendment_id,
+        strict_profile=None,
+        replay_mode="legal_pit",
+        lo_ops_out=None,
+        vts_skipped_targets=[],
+        commencement_expiry_override_notes=[],
+        effect_relation_signals=[],
+        record_finding=record_finding,
+        replay_print=lambda _message: None,
+    )
+    ctx.handle()
+    return findings
+
+
+def drill_pending_amendment_effect_unresolved_route_rejection_barrier() -> None:
+    """APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED fires from route rejection.
+
+    Production lane: ``ProcessRouteRejectionContext.handle`` classifies a
+    pending amendment-of-amendment skip, emits the typed effect-relation signal
+    and blocking finding, then the real strict verdict mapping exposes the code
+    in ``CompileVerdict.barrier_codes``.
+    """
+    findings = _route_rejection_findings(
+        route_reason="pending_amendment_of_parent_skip",
+        route_target_amendment_id="2019/50",
+    )
+    assert any(f.kind == "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED" for f in findings)
+    barrier_codes = _verdict_barrier_codes_from_findings(findings=findings)
+    assert "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED" in barrier_codes
+
+
+def drill_meta_repeal_effect_unresolved_route_rejection_barrier() -> None:
+    """APPLY.META_REPEAL_EFFECT_UNRESOLVED fires from route rejection.
+
+    Production lane: a meta-repeal-shaped route rejection with malformed target
+    citation reaches the unresolved meta-repeal branch, records the blocking
+    effect-lifecycle finding, and the real strict verdict mapping exposes it.
+    """
+    findings = _route_rejection_findings(
+        route_reason="citation_mismatch_skip",
+        johto="kumotaan eräiden lakien muuttamisesta annetun lain ( 123/ ) 3 §",
+    )
+    assert any(f.kind == "APPLY.META_REPEAL_EFFECT_UNRESOLVED" for f in findings)
+    barrier_codes = _verdict_barrier_codes_from_findings(findings=findings)
+    assert "APPLY.META_REPEAL_EFFECT_UNRESOLVED" in barrier_codes
+
+
 def drill_frontend_internal_error_parse_surface() -> None:
     """PARSE.FRONTEND_INTERNAL_ERROR reaches the parse-layer findings surface.
 
@@ -509,6 +612,213 @@ def drill_replay_undeclared_tree_touch_apply_lane() -> None:
     assert result.out_of_scope_paths == ((("chapter", "7"),),)
 
 
+def _run_mutation_boundary_drill(
+    perturb: Callable[[Dict[str, Any]], None],
+) -> list[Finding]:
+    """Drive the production apply + replay-evidence projection lanes for a drill.
+
+    Runs the production ``apply_op`` over a real RENUMBER ResolvedOp so a genuine
+    ``ApplyMutationEvent`` with a real landed footprint is produced, then patches
+    the production stamping helper ``_emit_apply_mutation_event_from_receipt`` to
+    perturb only the outcome / declared paths (the rest of the event is built by
+    the real production receipt-derivation). The resulting events are then fed to
+    the production ``project_replay_evidence`` projector, which runs the real
+    mutation-accounting guard (``check_mutation_accounting``) and projects any
+    violation onto ``request.replay_findings``. The returned ledger is the
+    consumer-visible replay finding surface.
+    """
+    from unittest.mock import patch as _patch
+
+    import lawvm.finland.apply_typed_dispatch as apply_typed_dispatch
+    from lawvm.finland.apply import apply_op
+    from lawvm.finland.apply_events import (
+        ApplyMutationEvent,
+        _emit_apply_mutation_event_for_rop as _real_for_rop,
+    )
+    from lawvm.finland.replay_evidence_projection import (
+        ReplayEvidenceProjectionRequest,
+        project_replay_evidence,
+    )
+
+    state, ctx, _op, rop = _drill_renumber_rop()
+    events: list[ApplyMutationEvent] = []
+
+    def _perturbing_receipt_emit(
+        mutation_events_out: list[ApplyMutationEvent] | None,
+        *,
+        receipt: Any,
+        outcome: str,
+        rop: Any = None,
+        op: Any = None,
+        used_fallback_tags: tuple[str, ...] = (),
+    ) -> None:
+        # Rebuild exactly what the real receipt-derivation would pass, then let
+        # the drill perturb only the fields under test (outcome / paths).
+        assert rop is not None
+        landed = receipt.landed_primary_path
+        fields: Dict[str, Any] = dict(
+            rop=rop,
+            helper=receipt.helper,
+            outcome=outcome,
+            resolved_target_path=landed,
+            parent_path=(landed[:-1] if landed else None),
+            consumed_paths=receipt.consumed_paths,
+            created_paths=receipt.created_paths,
+            removed_paths=receipt.removed_paths,
+            replaced_paths=receipt.replaced_paths,
+            renumbered_paths=receipt.renumbered_paths,
+            placeholder_created_paths=receipt.placeholder_created_paths,
+            placeholder_consumed_paths=receipt.placeholder_consumed_paths,
+            used_fallback_tags=used_fallback_tags,
+        )
+        perturb(fields)
+        _real_for_rop(mutation_events_out, **fields)
+
+    with _patch.object(
+        apply_typed_dispatch,
+        "_emit_apply_mutation_event_from_receipt",
+        _perturbing_receipt_emit,
+    ):
+        apply_op(
+            state,
+            None,
+            ctx,
+            None,
+            rop=rop,
+            replay_mode="legal_pit",
+            mutation_events_out=events,
+        )
+
+    assert events, "production apply did not emit a mutation event"
+    findings: list[Finding] = []
+    project_replay_evidence(
+        ReplayEvidenceProjectionRequest(
+            parent_id="1994/318",
+            replay_findings=findings,
+            source_pathologies=[],
+            elaboration_observations=[],
+            sparse_slot_bindings=[],
+            sparse_leftovers=[],
+            regex_recognition_coverages=[],
+            commencement_expiry_overrides=[],
+            write_audits=[],
+            mutation_events=events,
+            restructure_plans=[],
+            source_pathologies_out=None,
+            replay_meta_out=None,
+            strict_profile=None,
+            replay_print=lambda _message: None,
+        )
+    )
+    return findings
+
+
+def _assert_blocking_replay_finding(findings: list[Finding], code: str) -> None:
+    hits = [f for f in findings if f.kind == code]
+    assert hits, (
+        f"production apply mutation-boundary guard did not surface {code} on the "
+        f"replay finding ledger; saw {sorted({f.kind for f in findings})}"
+    )
+    finding = hits[0]
+    assert finding.role == "violation", f"{code} reached the ledger non-blocking (role={finding.role})"
+    assert finding.blocking is True, f"{code} reached the ledger with blocking=False"
+
+
+def drill_replay_skipped_op_mutated_tree_apply_lane() -> None:
+    """REPLAY_SKIPPED_OP_MUTATED_TREE reaches the replay finding ledger as blocking.
+
+    Production lane: ``apply_op`` performs a real RENUMBER (a genuine renumbered
+    footprint), but the production stamping is perturbed to record the outcome as
+    ``skipped`` while still carrying the touched paths. A skipped op that mutated
+    the tree is a mutation-boundary violation; the production
+    ``check_mutation_accounting`` guard inside ``project_replay_evidence`` must
+    project it onto ``replay_findings`` as blocking.
+    """
+
+    def _perturb(fields: Dict[str, Any]) -> None:
+        fields["outcome"] = "skipped"
+
+    findings = _run_mutation_boundary_drill(_perturb)
+    _assert_blocking_replay_finding(findings, "REPLAY_SKIPPED_OP_MUTATED_TREE")
+
+
+def drill_replay_failed_op_mutated_tree_apply_lane() -> None:
+    """REPLAY_FAILED_OP_MUTATED_TREE reaches the replay finding ledger as blocking.
+
+    Production lane: a real RENUMBER apply whose production stamping is perturbed
+    to record the outcome as ``failed`` while still carrying the touched paths. A
+    failed op that nonetheless mutated the tree is a mutation-boundary violation
+    the production guard must surface as blocking.
+    """
+
+    def _perturb(fields: Dict[str, Any]) -> None:
+        fields["outcome"] = "failed"
+
+    findings = _run_mutation_boundary_drill(_perturb)
+    _assert_blocking_replay_finding(findings, "REPLAY_FAILED_OP_MUTATED_TREE")
+
+
+def drill_replay_missing_primary_target_consumption_apply_lane() -> None:
+    """REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION reaches the ledger as blocking.
+
+    Production lane: a real RENUMBER apply whose production stamping is perturbed
+    to record an ``applied`` outcome that declares no touched paths at all. An
+    applied op that consumed none of its primary target is a mutation-boundary
+    violation the production guard must surface as blocking.
+    """
+
+    def _perturb(fields: Dict[str, Any]) -> None:
+        fields["outcome"] = "applied"
+        fields["renumbered_paths"] = ()
+        fields["consumed_paths"] = ()
+        fields["created_paths"] = ()
+        fields["removed_paths"] = ()
+        fields["replaced_paths"] = ()
+        fields["placeholder_created_paths"] = ()
+        fields["placeholder_consumed_paths"] = ()
+
+    findings = _run_mutation_boundary_drill(_perturb)
+    _assert_blocking_replay_finding(findings, "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION")
+
+
+def drill_replay_apply_boundary_unresolved_apply_lane() -> None:
+    """REPLAY_APPLY_BOUNDARY_UNRESOLVED reaches the replay finding ledger as blocking.
+
+    Production lane: a real RENUMBER apply that genuinely touched the tree, but
+    whose production stamping is perturbed to declare neither a resolved target
+    path nor a parent path. With no allowed effect region the apply boundary is
+    unresolvable, so the production guard cannot account for the observed change
+    and must surface the violation as blocking.
+    """
+
+    def _perturb(fields: Dict[str, Any]) -> None:
+        fields["outcome"] = "applied"
+        fields["resolved_target_path"] = None
+        fields["parent_path"] = None
+
+    findings = _run_mutation_boundary_drill(_perturb)
+    _assert_blocking_replay_finding(findings, "REPLAY_APPLY_BOUNDARY_UNRESOLVED")
+
+
+def drill_replay_apply_boundary_touch_outside_target_apply_lane() -> None:
+    """REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET reaches the ledger as blocking.
+
+    Production lane: a real RENUMBER apply that touched chapter 7, but whose
+    production stamping is perturbed to declare an unrelated target/parent
+    (chapter 99). The genuine touched paths then fall outside the declared
+    allowed region, so the production boundary guard must surface the
+    out-of-target touch as a blocking violation.
+    """
+
+    def _perturb(fields: Dict[str, Any]) -> None:
+        fields["outcome"] = "applied"
+        fields["resolved_target_path"] = (("chapter", "99"), ("section", "1"))
+        fields["parent_path"] = (("chapter", "99"),)
+
+    findings = _run_mutation_boundary_drill(_perturb)
+    _assert_blocking_replay_finding(findings, "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET")
+
+
 # ---------------------------------------------------------------------------
 # xfail drills: verified structurally-unsatisfiable guards (liveness debt)
 # ---------------------------------------------------------------------------
@@ -774,7 +1084,7 @@ def drill_frontend_internal_error_finland_ingress() -> None:
             master=master,
             amendment_id="2010/100",
             source_title="Laki muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         )
 
@@ -799,10 +1109,18 @@ def drill_frontend_internal_error_finland_ingress() -> None:
 # state and asserts the finding reaches its consumer-visible surface.
 FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.TREE_INVARIANT_VIOLATION": drill_tree_invariant_violation_duplicate_label,
+    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": drill_effect_lifecycle_target_unresolved_verdict_barrier,
     "APPLY.FAILED_OPERATION": drill_failed_operation_verdict_barrier,
+    "APPLY.META_REPEAL_EFFECT_UNRESOLVED": drill_meta_repeal_effect_unresolved_route_rejection_barrier,
+    "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED": drill_pending_amendment_effect_unresolved_route_rejection_barrier,
     "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_verdict_barrier,
     "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_parse_surface,
     "REPLAY_UNKNOWN_MUTATION_OUTCOME": drill_replay_unknown_mutation_outcome_apply_lane,
+    "REPLAY_SKIPPED_OP_MUTATED_TREE": drill_replay_skipped_op_mutated_tree_apply_lane,
+    "REPLAY_FAILED_OP_MUTATED_TREE": drill_replay_failed_op_mutated_tree_apply_lane,
+    "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION": drill_replay_missing_primary_target_consumption_apply_lane,
+    "REPLAY_APPLY_BOUNDARY_UNRESOLVED": drill_replay_apply_boundary_unresolved_apply_lane,
+    "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET": drill_replay_apply_boundary_touch_outside_target_apply_lane,
 }
 
 # A second, distinct surface for an already-covered code. Tracked separately so
@@ -865,124 +1183,126 @@ def _is_blocking_code(spec: FindingSpec) -> bool:
 # they cannot be added to the registry and silently skip liveness coverage.
 # Pruning entries from this allowlist (by writing a fire-drill) is the intended
 # direction of travel.
-NO_FIRE_DRILL_YET: frozenset[str] = frozenset({
+#
+# This is a debt registry, not a bare set: each entry carries a
+# (reason_or_ticket, last_reviewed_date) so the debt is consciously maintained
+# and cannot be silently parked. ``NO_FIRE_DRILL_CEILING`` is a committed
+# monotone-decreasing ceiling: the allowlist may shrink (pay down debt) but may
+# never grow past the ceiling, and the ceiling itself only ratchets down. To add
+# a new entry you must first lower the ceiling somewhere else (drill an existing
+# entry); the allowlist can never silently grow.
+NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     # Fixed-term expiry blocking diagnostics surface at the provision-state
     # seam (flag-gated; exercised in test_fi_temporal_fixed_term_expiry.py), not
     # through the replay PhaseResult lanes this harness drills. Drill when the
     # semantics flag goes default-on.
-    "TEMPORAL.FIXED_TERM_EXPIRY_AMBIGUOUS",
-    "TEMPORAL.FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS",
-    "TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE",
+    "TEMPORAL.FIXED_TERM_EXPIRY_AMBIGUOUS": ("fixed-term seam; flag-gated, drill when default-on", "2026-06-20"),
+    "TEMPORAL.FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS": ("fixed-term seam; flag-gated, drill when default-on", "2026-06-20"),
+    "TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE": ("fixed-term seam; flag-gated, drill when default-on", "2026-06-20"),
     # Typed residue subclasses of the same seam-surfaced blocking family
     # (governing_unparseable); exercised in test_fi_temporal_fixed_term_expiry.py.
-    "TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING",
-    "TEMPORAL.DURATION_COMMENCEMENT_UNRESOLVED",
-    "TEMPORAL.EVENT_BOUND_RESOLVER_MISSING",
-    "TEMPORAL.EVENT_BOUND_OUT_OF_DOCTRINE",
-    "TEMPORAL.SOURCE_IMPOSSIBLE_DATE",
-    "APPLY.FALLBACK_WHOLE_SECTION_REPLACE",
-    "APPLY.LEGACY_DISPATCH_FALLBACK",
-    # Effect-lifecycle unresolved target blockers currently have synthetic
-    # projection coverage in test_fi_effect_lifecycle_projection.py; add
-    # production fire-drills when amendment-of-amendment fixtures are small
-    # enough for this harness.
-    "APPLY.META_REPEAL_EFFECT_UNRESOLVED",
-    "APPLY.METADATA_ATTRIBUTION_CORRECTED_BY_ATTESTATION",
-    "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
-    "APPLY.REF_TARGET_CORRECTED_BY_ATTESTATION",
-    "APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION",  # also in XFAIL (cross-act case)
-    "APPLY.RELABEL_SKIPPED",
-    "APPLY.SOURCE_CORRECTED_BY_PATCH",
-    "APPLY.SOURCE_INCOMPLETE",
-    "APPLY.STRICT_REJECTED_CORRIGENDUM_PATCH",
-    "APPLY.STRICT_REJECTED_UNCOVERED_BODY",
-    "APPLY.UNCOVERED_BODY_RECOVERY",
+    "TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING": ("fixed-term residue; seam-surfaced", "2026-06-20"),
+    "TEMPORAL.DURATION_COMMENCEMENT_UNRESOLVED": ("fixed-term residue; seam-surfaced", "2026-06-20"),
+    "TEMPORAL.EVENT_BOUND_RESOLVER_MISSING": ("fixed-term residue; seam-surfaced", "2026-06-20"),
+    "TEMPORAL.EVENT_BOUND_OUT_OF_DOCTRINE": ("fixed-term residue; seam-surfaced", "2026-06-20"),
+    "TEMPORAL.SOURCE_IMPOSSIBLE_DATE": ("fixed-term residue; seam-surfaced", "2026-06-20"),
+    "APPLY.FALLBACK_WHOLE_SECTION_REPLACE": ("strict barrier; needs a stable fallback fixture", "2026-06-20"),
+    "APPLY.LEGACY_DISPATCH_FALLBACK": ("fallback-tag finding; needs a legacy-dispatch fixture", "2026-06-20"),
+    "APPLY.METADATA_ATTRIBUTION_CORRECTED_BY_ATTESTATION": ("attestation-resolved; needs attestation fixture", "2026-06-20"),
+    "APPLY.REF_TARGET_CORRECTED_BY_ATTESTATION": ("attestation-resolved; needs attestation fixture", "2026-06-20"),
+    "APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION": ("also in XFAIL (cross-act case)", "2026-06-20"),
+    "APPLY.RELABEL_SKIPPED": ("governed relabel-skip; needs fixture", "2026-06-20"),
+    "APPLY.SOURCE_CORRECTED_BY_PATCH": ("corrigendum-patch barrier; needs fixture", "2026-06-20"),
+    "APPLY.SOURCE_INCOMPLETE": ("source-incomplete barrier; needs fixture", "2026-06-20"),
+    "APPLY.STRICT_REJECTED_CORRIGENDUM_PATCH": ("strict-mode barrier; needs fixture", "2026-06-20"),
+    "APPLY.STRICT_REJECTED_UNCOVERED_BODY": ("strict-mode barrier; needs fixture", "2026-06-20"),
+    "APPLY.UNCOVERED_BODY_RECOVERY": ("recovery barrier; needs fixture", "2026-06-20"),
     # Payload-normalization strict barrier; add a dedicated production-lane
     # drill when flattened insert-subsection tail splitting gets a small
     # stable fixture in this harness.
-    "ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL",
-    "APPLY.WORD_SUBSTITUTION",
-    "COMPARE.UNADJUDICATED_ORACLE_DIVERGENCE.RESOLVED_BY_ATTESTATION",
-    "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",
-    "COVERAGE.UNRESOLVED_BODY_GAP",
-    "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
-    "ELAB.AMBIGUOUS_BINDING",
-    "ELAB.CHAPTER_SEED_REPAIR",
-    "ELAB.CHAPTER_SEED_SOURCE_PATHOLOGY",
-    "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST",
-    "ELAB.CONTAINER_PRUNED_SHADOWED",
-    "ELAB.DROP_ITEM_REPLACES_MISSING",
-    "ELAB.DROP_REDUNDANT_ITEM_OPS_IN_SPARSE_SLOT",
-    "ELAB.DUPLICATE_TABLE_NOTE_BLOCK_PRUNED",
-    "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD",
-    "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT",
-    "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE",
-    "ELAB.LOCAL_DENSE_SUBSECTION_NUMBERING",
-    "ELAB.MISSING_PAYLOAD_SURFACE",
-    "ELAB.MIXED_SPARSE_SLOT_CROSS_PARAGRAPH",
-    "ELAB.NORMALIZE_ITEM_LIKE_TARGET",
-    "ELAB.NUMBERED_TABLE_TARGET_MERGE",
-    "ELAB.OMISSION_EXPANSION",
-    "ELAB.PRUNE_CARRIED_SUBSECTIONS_OUTSIDE_TARGET_MOMENT",
-    "ELAB.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE",
-    "ELAB.REBASE_ITEM_TARGET_TO_SPARSE_SLOT_LABEL",
-    "ELAB.REBASE_SPARSE_STALE_PREDECESSOR",
-    "ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE",
-    "ELAB.RENUMBER_DESTINATION_PAYLOAD_SLOT",
-    "ELAB.SEC1_PRE_ROUTING_FALLBACK",
-    "ELAB.SPARSE_PAYLOAD_LEFTOVER",
-    "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
-    "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
-    "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL",
-    "ELAB.STRICT_REJECTED_OPERATION",
-    "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",  # consumer code APPLY.SOURCE_PATHOLOGY_DETECTED has a drill
-    "ELAB.TARGET_AMBIGUITY_UNCLASSIFIED.RESOLVED_BY_ATTESTATION",
-    "ELAB.TARGET_SELECTION_REQUIRED.RESOLVED_BY_ATTESTATION",
-    "ELAB.TEXT_TABLE_ROW_CONTINUATION",
-    "ELAB.TRAILING_SPARSE_INSERT_BINDING",
-    "ELAB.UNCLASSIFIED_MODAL_SURFACE.RESOLVED_BY_ATTESTATION",
-    "ELAB.UNLABELED_ADJACENT_SECTION_CONTINUATION",
-    "ELAB.UNLOCATED_SOURCE_LABELED_PURPOSE.RESOLVED_BY_ATTESTATION",
-    "ELAB.UNRESOLVED_COMMITTEE_REPORT_REFERENCE.RESOLVED_BY_ATTESTATION",
-    "ELAB.UNRESOLVED_EU_ACT_REFERENCE.RESOLVED_BY_ATTESTATION",
-    "ELAB.UNRESOLVED_INLINE_STATUTE_CITATION.RESOLVED_BY_ATTESTATION",
-    "ELAB.UNRESOLVED_POOL_ADDRESS.RESOLVED_BY_ATTESTATION",
-    "ELAB.WRAPPER_ORPHAN_SUBSECTION_CONTINUATION",
-    "LINEAGE.UNCLASSIFIED_PROVISION_MIGRATION.RESOLVED_BY_ATTESTATION",
-    "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE",
-    "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET",
-    "LOWER.CONTEXT_DEPENDENT_ANCHOR",
-    "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION",
-    "LOWER.EXPLICIT_CHUNK_SCOPE",
-    "LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED",
-    "LOWER.EXPLICIT_SCOPE_REWRITE",
-    "LOWER.EXPLICIT_SCOPE_REWRITE_REQUIRED",
-    "LOWER.SCOPE_CARRY_FORWARD",
-    "PARSE.EXTRACTION_FALLBACK",
-    "PARSE.FRONTEND_BLOCKING_DIAGNOSTIC",
-    "PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA",
-    "PARSE.JOHTOLAUSE_FAILED.RESOLVED_BY_ATTESTATION",
-    "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER",
-    "PARSE.STRICT_REJECTED_TARGET_GUESSING",
-    "PARSE.TARGET_GUESSING",
-    "PARSE.UNOWNED_BODY_SECTION",
-    "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
-    "REPLAY_APPLY_BOUNDARY_UNRESOLVED",
-    "REPLAY_FAILED_OP_MUTATED_TREE",
-    "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION",
-    "REPLAY_SKIPPED_OP_MUTATED_TREE",
-    "RUNTIME.VIOLATION",
-    "TIME.CONTENT_DRIFT",
-    "TIME.CONTINGENT_EFFECTIVE_DATE",
-    "TIME.ESTIMATED_EFFECTIVE_DATE",
-    "TIME.MISSING_EFFECTIVE_DATE",
-    "TIME.SECTION_NO_TIMELINE",
-    "TIME.TIMELINE_EXECUTION_ISSUE",
-    "TIME.TIMELINE_NO_SECTION",
-    "TIME.TRIGGER_COVERAGE_INCOMPLETE",
-    "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER",
-    "uk_replay_text_patch_preimage_drift",
-})
+    "ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL": ("payload-normalize barrier; needs stable fixture", "2026-06-20"),
+    "APPLY.WORD_SUBSTITUTION": ("word-substitution barrier; needs fixture", "2026-06-20"),
+    "COMPARE.UNADJUDICATED_ORACLE_DIVERGENCE.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED": ("coverage barrier; needs fixture", "2026-06-20"),
+    "COVERAGE.UNRESOLVED_BODY_GAP": ("coverage barrier; needs fixture", "2026-06-20"),
+    "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
+    "ELAB.AMBIGUOUS_BINDING": ("sparse-elaboration ambiguity; needs fixture", "2026-06-20"),
+    "ELAB.CHAPTER_SEED_REPAIR": ("chapter-seed recovery; needs fixture", "2026-06-20"),
+    "ELAB.CHAPTER_SEED_SOURCE_PATHOLOGY": ("chapter-seed pathology; needs fixture", "2026-06-20"),
+    "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.CONTAINER_PRUNED_SHADOWED": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.DROP_ITEM_REPLACES_MISSING": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
+    "ELAB.DROP_REDUNDANT_ITEM_OPS_IN_SPARSE_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
+    "ELAB.DUPLICATE_TABLE_NOTE_BLOCK_PRUNED": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
+    "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE": ("merge recovery; needs fixture", "2026-06-20"),
+    "ELAB.LOCAL_DENSE_SUBSECTION_NUMBERING": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
+    "ELAB.MISSING_PAYLOAD_SURFACE": ("grafter recovery; needs fixture", "2026-06-20"),
+    "ELAB.MIXED_SPARSE_SLOT_CROSS_PARAGRAPH": ("payload-normalize ambiguity; needs fixture", "2026-06-20"),
+    "ELAB.NORMALIZE_ITEM_LIKE_TARGET": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.NUMBERED_TABLE_TARGET_MERGE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.OMISSION_EXPANSION": ("omission-expansion barrier; needs fixture", "2026-06-20"),
+    "ELAB.PRUNE_CARRIED_SUBSECTIONS_OUTSIDE_TARGET_MOMENT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
+    "ELAB.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
+    "ELAB.REBASE_ITEM_TARGET_TO_SPARSE_SLOT_LABEL": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.REBASE_SPARSE_STALE_PREDECESSOR": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
+    "ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE": ("grafter recovery; needs fixture", "2026-06-20"),
+    "ELAB.RENUMBER_DESTINATION_PAYLOAD_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
+    "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK": ("grafter recovery; needs fixture", "2026-06-20"),
+    "ELAB.SPARSE_PAYLOAD_LEFTOVER": ("grafter recovery; needs fixture", "2026-06-20"),
+    "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.STRICT_REJECTED_OPERATION": ("strict-mode barrier; needs fixture", "2026-06-20"),
+    "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY": ("consumer APPLY.SOURCE_PATHOLOGY_DETECTED has a drill", "2026-06-20"),
+    "ELAB.TARGET_AMBIGUITY_UNCLASSIFIED.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "ELAB.TARGET_SELECTION_REQUIRED.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "ELAB.TEXT_TABLE_ROW_CONTINUATION": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.TRAILING_SPARSE_INSERT_BINDING": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
+    "ELAB.UNCLASSIFIED_MODAL_SURFACE.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "ELAB.UNLABELED_ADJACENT_SECTION_CONTINUATION": ("payload-lookup recovery; needs fixture", "2026-06-20"),
+    "ELAB.UNLOCATED_SOURCE_LABELED_PURPOSE.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "ELAB.UNRESOLVED_COMMITTEE_REPORT_REFERENCE.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "ELAB.UNRESOLVED_EU_ACT_REFERENCE.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "ELAB.UNRESOLVED_INLINE_STATUTE_CITATION.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "ELAB.UNRESOLVED_POOL_ADDRESS.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "ELAB.WRAPPER_ORPHAN_SUBSECTION_CONTINUATION": ("payload-lookup recovery; needs fixture", "2026-06-20"),
+    "LINEAGE.UNCLASSIFIED_PROVISION_MIGRATION.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE": ("scope recovery; needs fixture", "2026-06-20"),
+    "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET": ("scope recovery; needs fixture", "2026-06-20"),
+    "LOWER.CONTEXT_DEPENDENT_ANCHOR": ("scope recovery; needs fixture", "2026-06-20"),
+    "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION": ("scope barrier; needs fixture", "2026-06-20"),
+    "LOWER.EXPLICIT_CHUNK_SCOPE": ("scope recovery; needs fixture", "2026-06-20"),
+    "LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED": ("scope barrier; needs fixture", "2026-06-20"),
+    "LOWER.EXPLICIT_SCOPE_REWRITE": ("scope recovery; needs fixture", "2026-06-20"),
+    "LOWER.EXPLICIT_SCOPE_REWRITE_REQUIRED": ("scope barrier; needs fixture", "2026-06-20"),
+    "LOWER.SCOPE_CARRY_FORWARD": ("scope recovery; needs fixture", "2026-06-20"),
+    "PARSE.EXTRACTION_FALLBACK": ("parse barrier; needs fixture", "2026-06-20"),
+    "PARSE.FRONTEND_BLOCKING_DIAGNOSTIC": ("frontend phase barrier; needs fixture", "2026-06-20"),
+    "PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA": ("frontend recovery; needs fixture", "2026-06-20"),
+    "PARSE.PREAMBLE_CLAUSE_FAILED.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER": ("frontend recovery; needs fixture", "2026-06-20"),
+    "PARSE.STRICT_REJECTED_TARGET_GUESSING": ("strict-mode barrier; needs fixture", "2026-06-20"),
+    "PARSE.TARGET_GUESSING": ("parse barrier; needs fixture", "2026-06-20"),
+    "PARSE.UNOWNED_BODY_SECTION": ("frontend recovery; needs fixture", "2026-06-20"),
+    "RUNTIME.VIOLATION": ("generic runtime violation; needs fixture", "2026-06-20"),
+    "TIME.CONTINGENT_EFFECTIVE_DATE": ("timeline barrier; needs fixture", "2026-06-20"),
+    "TIME.ESTIMATED_EFFECTIVE_DATE": ("timeline barrier; needs fixture", "2026-06-20"),
+    "TIME.MISSING_EFFECTIVE_DATE": ("timeline barrier; needs fixture", "2026-06-20"),
+    "TIME.TIMELINE_EXECUTION_ISSUE": ("timeline barrier; needs fixture", "2026-06-20"),
+    "TIME.TRIGGER_COVERAGE_INCOMPLETE": ("timeline barrier; needs fixture", "2026-06-20"),
+    "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER": ("timeline barrier; needs fixture", "2026-06-20"),
+    "uk_replay_text_patch_preimage_drift": ("UK replay text-patch drift; needs UK fixture", "2026-06-20"),
+}
+
+# Committed monotone-decreasing debt ceiling for NO_FIRE_DRILL_YET. The allowlist
+# may never contain more than this many entries, and the ceiling itself may only
+# be edited downward. Lowering it (by drilling an entry) is the intended
+# direction of travel; raising it requires a deliberate, reviewed exception (and
+# the gate below makes silently raising it a test failure as long as the constant
+# is committed at its current value).
+NO_FIRE_DRILL_CEILING: int = len(NO_FIRE_DRILL_YET)
 
 
 def _blocking_codes() -> set[str]:
@@ -1081,11 +1401,30 @@ def test_blocking_code_inventory_is_fully_partitioned() -> None:
     """
     blocking = _blocking_codes()
     covered = set(FIRE_DRILLS)
-    uncovered = blocking - covered - NO_FIRE_DRILL_YET
+    uncovered = blocking - covered - set(NO_FIRE_DRILL_YET)
     assert not uncovered, (
         "blocking finding codes lack both a fire-drill and a NO_FIRE_DRILL_YET "
         f"entry: {sorted(uncovered)}. Add a fire-drill to FIRE_DRILLS or, if it is "
         "not yet drillable, add it to NO_FIRE_DRILL_YET (consciously)."
+    )
+
+
+def test_blocking_set_equals_fire_drills_union_allowlist() -> None:
+    """Ratchet (Gate 1b): BLOCKING == set(FIRE_DRILLS) | NO_FIRE_DRILL_YET.
+
+    The blocking-code set must be exactly partitioned into the drilled codes and
+    the consciously-maintained debt allowlist — neither side may carry a code the
+    other does not account for. This is the equality form of the inventory
+    ratchet: a new blocking code cannot land without consciously joining one
+    bucket, and a drilled/allowlisted code cannot linger after it stops being a
+    blocking registry code.
+    """
+    blocking = _blocking_codes()
+    accounted = set(FIRE_DRILLS) | set(NO_FIRE_DRILL_YET)
+    assert blocking == accounted, (
+        "BLOCKING != set(FIRE_DRILLS) | NO_FIRE_DRILL_YET.\n"
+        f"  blocking-but-unaccounted: {sorted(blocking - accounted)}\n"
+        f"  accounted-but-not-blocking: {sorted(accounted - blocking)}"
     )
 
 
@@ -1104,4 +1443,296 @@ def test_no_fire_drill_allowlist_has_no_stale_entries() -> None:
         assert code not in drilled, (
             f"NO_FIRE_DRILL_YET lists {code!r} but it already has a fire-drill; "
             "remove it from the allowlist"
+        )
+
+
+def test_no_fire_drill_allowlist_entries_are_well_formed_debt() -> None:
+    """Gate 1c (shape): each allowlist entry carries a (reason, ISO date) pair.
+
+    The allowlist is a debt registry, not a bare set: every entry must record a
+    non-empty reason/ticket and an ISO-8601 ``YYYY-MM-DD`` last-reviewed date, so
+    the debt is consciously maintained rather than silently parked.
+    """
+    from datetime import date
+
+    for code in sorted(NO_FIRE_DRILL_YET):
+        entry = NO_FIRE_DRILL_YET[code]
+        assert isinstance(entry, tuple) and len(entry) == 2, (
+            f"NO_FIRE_DRILL_YET[{code!r}] must be a (reason, last_reviewed) tuple"
+        )
+        reason, last_reviewed = entry
+        assert isinstance(reason, str) and reason.strip(), (
+            f"NO_FIRE_DRILL_YET[{code!r}] has an empty reason/ticket"
+        )
+        assert isinstance(last_reviewed, str), (
+            f"NO_FIRE_DRILL_YET[{code!r}] last_reviewed must be an ISO date string"
+        )
+        # Raises ValueError (test failure) on a malformed date.
+        date.fromisoformat(last_reviewed)
+
+
+def test_no_fire_drill_allowlist_within_monotone_ceiling() -> None:
+    """Gate 1c (ratchet): the allowlist size never exceeds the committed ceiling.
+
+    ``NO_FIRE_DRILL_CEILING`` is a committed constant that may only ratchet
+    downward. The allowlist may shrink (drill an entry, then lower the ceiling)
+    but may never grow past the ceiling, so the debt set cannot silently
+    accumulate new entries. To add an entry you must first pay one down.
+    """
+    count = len(NO_FIRE_DRILL_YET)
+    assert count <= NO_FIRE_DRILL_CEILING, (
+        f"NO_FIRE_DRILL_YET grew to {count} entries, above the committed ceiling "
+        f"{NO_FIRE_DRILL_CEILING}. Drill an existing entry instead of adding debt; "
+        "the ceiling may only ratchet down."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Gate 1d: every primary fire-drill drives a PRODUCTION builder
+# ---------------------------------------------------------------------------
+
+# Production builder entrypoints (functions / classes in lawvm.finland.* /
+# lawvm.core.*) a PRIMARY fire-drill must drive into the guarded state. A drill
+# satisfies the gate when its body — or a shared harness helper it calls —
+# invokes one of these. The verdict-mapping helper
+# ``_verdict_barrier_codes_from_findings`` is deliberately NOT in this set: a
+# drill whose only production touch is the verdict mapping is a SECONDARY /
+# verdict-mapping drill (see ``_VERDICT_SURFACE_PRIMARY_DRILLS``).
+_PRODUCTION_BUILDER_CALLS = (
+    "execute_replay_plan",
+    "apply_op",
+    "apply_ops_executor._apply_ops_to_tree_typed",
+    "_apply_ops_to_tree_typed",
+    "project_replay_evidence",
+    "check_apply_mutation_accounting",
+    "ProcessRouteRejectionContext",
+    "normalize_and_compile_ops",
+    "api.parse_clause",
+    "parse_clause(",
+    "_check_occupancy_policy",
+)
+
+# Codes whose ONLY honest production surface is the strict verdict mapping (a
+# runtime-finding -> strict-barrier-code projection through
+# ``compute_verdict_from_registry``). These primary drills legitimately drive the
+# production verdict builder rather than a deeper apply/replay builder; they are
+# the verdict-surface primary lane. Every OTHER primary drill must drive a
+# builder from ``_PRODUCTION_BUILDER_CALLS``.
+_VERDICT_SURFACE_PRIMARY_DRILLS = frozenset({
+    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED",
+    "APPLY.FAILED_OPERATION",
+    "APPLY.SOURCE_PATHOLOGY_DETECTED",
+})
+
+
+def _drill_effective_source(drill: Callable[[], None]) -> str:
+    """Return the drill body plus the bodies of module-level harness helpers it calls.
+
+    A primary drill often drives production through a shared harness helper
+    (``_run_replay_fold``, ``_run_mutation_boundary_drill``,
+    ``_route_rejection_findings``), so the production builder call lives in the
+    helper, not the drill. Inline-expand one level of such helpers so the
+    production-builder check sees the real driving call.
+    """
+    import inspect
+
+    source = inspect.getsource(drill)
+    module = inspect.getmodule(drill)
+    for name, obj in vars(module).items():
+        if not callable(obj) or not name.startswith("_"):
+            continue
+        if f"{name}(" in source and obj is not drill:
+            try:
+                source += "\n" + inspect.getsource(obj)
+            except (OSError, TypeError):
+                continue
+    return source
+
+
+def test_every_primary_fire_drill_drives_a_production_builder() -> None:
+    """Gate 1d: each FIRE_DRILLS entry drives a production builder.
+
+    A primary fire-drill must drive a real ``lawvm.finland.*`` / ``lawvm.core.*``
+    production builder into the guarded state — not merely construct a Finding and
+    push it through the verdict mapping. Drills whose only production surface is
+    the verdict mapping are the explicit, small ``_VERDICT_SURFACE_PRIMARY_DRILLS``
+    lane; every other primary drill must call a builder from
+    ``_PRODUCTION_BUILDER_CALLS`` (directly or via a shared harness helper). This
+    is what makes the primary set a genuine end-to-end guard-liveness proof
+    rather than a registry-shaped tautology.
+    """
+    # Keep the verdict-helper symbols live (they are the SECONDARY surface).
+    _ = (_verdict_barrier_codes_from_findings, compute_verdict_from_registry)
+
+    offenders: list[str] = []
+    for code in sorted(FIRE_DRILLS):
+        if code in _VERDICT_SURFACE_PRIMARY_DRILLS:
+            continue
+        source = _drill_effective_source(FIRE_DRILLS[code])
+        drives_builder = any(call in source for call in _PRODUCTION_BUILDER_CALLS)
+        if not drives_builder:
+            offenders.append(code)
+    assert not offenders, (
+        "primary fire-drills that do not drive a production builder (no call into "
+        f"{_PRODUCTION_BUILDER_CALLS} directly or via a harness helper): "
+        f"{offenders}. Give the code a drill that drives a production builder, or "
+        "(if the verdict mapping is genuinely its only surface) add it to "
+        "_VERDICT_SURFACE_PRIMARY_DRILLS."
+    )
+
+
+def test_verdict_surface_primary_drills_are_blocking_codes() -> None:
+    """The verdict-surface primary lane must name real, blocking, drilled codes."""
+    blocking = _blocking_codes()
+    for code in sorted(_VERDICT_SURFACE_PRIMARY_DRILLS):
+        assert code in FIRE_DRILLS, (
+            f"{code} is marked verdict-surface but is not in FIRE_DRILLS"
+        )
+        assert code in blocking, f"{code} is not a blocking registry code"
+
+
+# ---------------------------------------------------------------------------
+# Gate 1e: every blocking code has a real production emit site
+# ---------------------------------------------------------------------------
+
+# Codes whose production emit lives outside src/lawvm/{core,finland} (other
+# jurisdiction frontends). They still must have a production emit site, just in a
+# different package; the grep widens to the whole src tree for these.
+_NON_FI_CORE_EMIT_PREFIXES = ("uk_", "TIME.")
+
+# Known pre-existing registry/producer mismatches: blocking-registered codes that
+# currently have NO production emit site anywhere in src/lawvm (only the registry
+# declares them). These are the same structural class as the TIME consistency
+# codes (rank 18) but are out of scope for this gate's first reconciliation pass;
+# they are listed here so the producer-consistency gate lands green while still
+# failing on any NEW mismatch. Each should eventually be reconciled (downgrade or
+# wire a producer) and removed from this allowlist.
+_KNOWN_NO_PRODUCTION_EMIT: Dict[str, str] = {
+    "PARSE.STRICT_REJECTED_TARGET_GUESSING": (
+        "strict barrier with no emit site; reconcile separately"
+    ),
+    "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER": (
+        "timeline barrier with no emit site; reconcile separately"
+    ),
+}
+
+
+def _production_emit_grep(code: str, roots: tuple[str, ...]) -> list[str]:
+    """Return non-test production files under *roots* that mention *code*.
+
+    The match is the literal code constant in a non-test ``.py`` file. This is
+    the producer side of the registry/producer-consistency check: a
+    blocking-registered code must have at least one place in production that emits
+    it.
+    """
+    import pathlib
+
+    here = pathlib.Path(__file__).resolve().parent.parent
+    hits: list[str] = []
+    needle = f'"{code}"'
+    alt_needle = f"'{code}'"
+    for root in roots:
+        base = here / root
+        if not base.exists():
+            continue
+        for path in base.rglob("*.py"):
+            spath = str(path)
+            if "/test" in spath or spath.endswith("_test.py"):
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if needle in text or alt_needle in text:
+                hits.append(spath)
+    return hits
+
+
+def test_every_blocking_code_has_a_production_emit_site() -> None:
+    """Gate 1e: each blocking code is emitted from at least one production site.
+
+    For every blocking-registered code there must be at least one non-test
+    production file that mentions the code constant (its emit site). This catches
+    the registry/producer-mismatch class (the downgraded TIME.* codes): a code
+    registered blocking whose only producer emits it non-blocking / off-pipeline
+    is structurally unsatisfiable and must be reconciled in the registry, not
+    left as a dead blocking guard.
+
+    A bare registry entry (``observation_registry.py`` only) does not count as an
+    emit site — the registry declares the code, it does not emit it.
+    """
+    blocking = _blocking_codes()
+    missing: list[str] = []
+    for code in sorted(blocking):
+        roots: tuple[str, ...] = ("src/lawvm/core", "src/lawvm/finland")
+        if code.startswith(_NON_FI_CORE_EMIT_PREFIXES):
+            roots = ("src/lawvm",)
+        emit_sites = [
+            site
+            for site in _production_emit_grep(code, roots)
+            if not site.endswith("observation_registry.py")
+        ]
+        if not emit_sites and code not in _KNOWN_NO_PRODUCTION_EMIT:
+            missing.append(code)
+    assert not missing, (
+        "blocking-registered codes with no production emit site (registry/producer "
+        f"mismatch — reconcile in the registry or wire a producer): {missing}. "
+        "If this is a known pre-existing mismatch out of scope, add it to "
+        "_KNOWN_NO_PRODUCTION_EMIT consciously."
+    )
+
+
+def test_known_no_production_emit_allowlist_is_honest() -> None:
+    """The pre-existing-mismatch allowlist must be real, blocking, and still emit-less.
+
+    Keeps ``_KNOWN_NO_PRODUCTION_EMIT`` from rotting: every listed code must be a
+    registered blocking code that genuinely still has no production emit site. The
+    moment a producer is wired (or the code is downgraded), the entry becomes
+    stale and must be removed — this test fails until it is.
+    """
+    blocking = _blocking_codes()
+    for code, reason in sorted(_KNOWN_NO_PRODUCTION_EMIT.items()):
+        assert reason.strip(), f"_KNOWN_NO_PRODUCTION_EMIT[{code!r}] has an empty reason"
+        spec = FINDING_REGISTRY.get(code)
+        assert spec is not None, f"_KNOWN_NO_PRODUCTION_EMIT lists unregistered code: {code}"
+        assert code in blocking, (
+            f"_KNOWN_NO_PRODUCTION_EMIT lists non-blocking code {code!r}; remove it"
+        )
+        roots: tuple[str, ...] = ("src/lawvm/core", "src/lawvm/finland")
+        if code.startswith(_NON_FI_CORE_EMIT_PREFIXES):
+            roots = ("src/lawvm",)
+        emit_sites = [
+            site
+            for site in _production_emit_grep(code, roots)
+            if not site.endswith("observation_registry.py")
+        ]
+        assert not emit_sites, (
+            f"_KNOWN_NO_PRODUCTION_EMIT lists {code!r} but it now has a production "
+            f"emit site ({emit_sites}); remove the stale allowlist entry"
+        )
+
+
+def test_downgraded_consistency_codes_match_their_only_producer() -> None:
+    """Gate 1e (rank-18 reconciliation): the TIME consistency codes are non-blocking.
+
+    TIME.SECTION_NO_TIMELINE / TIME.TIMELINE_NO_SECTION / TIME.CONTENT_DRIFT have
+    exactly one producer (tools/consistency.py:ConsistencyResult.to_phase_result)
+    which emits them role=observation/blocking=False and is not wired into the
+    compile/replay pipeline. They were registered hard_fail (blocking) and so
+    were structurally unsatisfiable as guards. This pins the reconciliation:
+    their registry enforcement is downgraded to a non-blocking observation that
+    matches the only real producer, so the producer-consistency gate above holds.
+    """
+    blocking = _blocking_codes()
+    for code in (
+        "TIME.SECTION_NO_TIMELINE",
+        "TIME.TIMELINE_NO_SECTION",
+        "TIME.CONTENT_DRIFT",
+    ):
+        spec = FINDING_REGISTRY.get(code)
+        assert spec is not None, f"{code} missing from FINDING_REGISTRY"
+        assert spec.role == "observation", f"{code} must reconcile to role=observation"
+        assert spec.default_enforcement == "warn", (
+            f"{code} must reconcile to non-blocking enforcement matching its producer"
+        )
+        assert code not in blocking, (
+            f"{code} is still classified blocking; the rank-18 reconciliation did "
+            "not take effect"
         )

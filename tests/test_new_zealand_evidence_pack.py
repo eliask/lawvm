@@ -165,14 +165,14 @@ def test_nz_evidence_pack_bundles_existing_rows_without_replay_claim(tmp_path) -
     filtered_payload = report.to_jsonable(
         row_limit=10,
         row_kind="operation",
-        status="unsupported",
+        evidence_pack_status="unsupported",
         rule_id="nz_effect_readiness_amendment_semantics_not_extracted",
         blocking=True,
     )
     assert filtered_payload["summary"]["total_evidence_rows"] == 9
     assert filtered_payload["filters"] == {
         "row_kind": "operation",
-        "status": "unsupported",
+        "evidence_pack_status": "unsupported",
         "rule_id": "nz_effect_readiness_amendment_semantics_not_extracted",
         "blocking": True,
     }
@@ -209,7 +209,7 @@ def test_nz_evidence_pack_bundles_existing_rows_without_replay_claim(tmp_path) -
         filtered_path,
         surface="effect-candidates",
         row_kind="operation",
-        status="accepted",
+        evidence_pack_status="accepted",
     )
     filtered_records = load_report_query_records((filtered_path,), validate=True)
 
@@ -218,10 +218,10 @@ def test_nz_evidence_pack_bundles_existing_rows_without_replay_claim(tmp_path) -
     assert {record.evidence_row["row_id"] for record in filtered_records} == {
         "nz-effect-candidate-1",
     }
-    preflight_payload = report.to_jsonable(surface="candidate-preflight", status="accepted")
+    preflight_payload = report.to_jsonable(surface="candidate-preflight", evidence_pack_status="accepted")
     assert preflight_payload["filters"] == {
         "surface": "candidate-preflight",
-        "status": "accepted",
+        "evidence_pack_status": "accepted",
     }
     assert preflight_payload["filtered_summary"]["total_evidence_rows"] == 1
     assert preflight_payload["filtered_evidence_rows"] == 1
