@@ -905,6 +905,14 @@ def _apply_fi_renest_flat_digit_item_subsections(children: List[IRNode]) -> List
 
 def _apply_fi_renest_flat_dash_item_subsections(children: List[IRNode]) -> List[IRNode]:
     """Re-nest flat dash-item subsections as paragraph children of an intro subsection."""
+
+    def _is_dash_list_intro(text: str) -> bool:
+        cleaned = " ".join(text.split()).strip()
+        if cleaned.endswith(":"):
+            return True
+        lowered = cleaned.lower()
+        return lowered.endswith(("edellyttäen, että", "silloin, kun"))
+
     rewritten: List[IRNode] = []
     i = 0
     while i < len(children):
@@ -914,7 +922,7 @@ def _apply_fi_renest_flat_dash_item_subsections(children: List[IRNode]) -> List[
             i += 1
             continue
         intro_text = _subsection_leaf_text(child)
-        if not intro_text or not intro_text.rstrip().endswith(":"):
+        if not intro_text or not _is_dash_list_intro(intro_text):
             rewritten.append(child)
             i += 1
             continue
@@ -940,11 +948,12 @@ def _apply_fi_renest_flat_dash_item_subsections(children: List[IRNode]) -> List[
             i += 1
             continue
         new_children: List[IRNode] = [IRNode(kind=IRNodeKind.INTRO, text=intro_text.strip())]
-        for item_sub in dash_items:
+        for item_index, item_sub in enumerate(dash_items, start=1):
             item_text = _subsection_leaf_text(item_sub) or ""
             new_children.append(
                 IRNode(
                     kind=IRNodeKind.PARAGRAPH,
+                    label=str(item_index),
                     children=(IRNode(kind=IRNodeKind.CONTENT, text=item_text),),
                 )
             )

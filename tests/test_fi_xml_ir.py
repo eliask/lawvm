@@ -1403,6 +1403,52 @@ def test_fi_xml_to_ir_node_renests_flat_digit_item_subsections() -> None:
     assert check_invariants(section) == []
 
 
+def test_fi_xml_to_ir_node_renests_flat_dash_items_after_finnish_list_carriers() -> None:
+    xml = etree.fromstring(
+        """
+        <section>
+          <num>8 §</num>
+          <heading>Pakkaamattomista elintarvikkeista annettavien tietojen ilmoittamistapa</heading>
+          <subsection>
+            <content><p>Edellä 6, 7 ja 7 a §:ssä tarkoitetut tiedot on ilmoitettava kirjallisesti.</p></content>
+          </subsection>
+          <subsection>
+            <content><p>Edellä 6 ja 7 §:ssä tarkoitetut tiedot voidaan antaa suullisesti edellyttäen, että</p></content>
+          </subsection>
+          <subsection>
+            <content><p>– tiedot ovat saatavissa pyydettäessä henkilökunnalta; ja</p></content>
+          </subsection>
+          <subsection>
+            <content><p>– tiedot ovat kirjallisessa tai elektronisessa muodossa saatavilla.</p></content>
+          </subsection>
+          <subsection>
+            <content><p>Edellä 7 a §:ssä tarkoitettuja tietoja ei vaadita silloin, kun</p></content>
+          </subsection>
+          <subsection>
+            <content><p>– elintarvikkeet luovutetaan kuluttajalle kohdennetusti; tai</p></content>
+          </subsection>
+          <subsection>
+            <content><p>– elintarvikkeita luovutetaan valvotun toiminnan yhteydessä.</p></content>
+          </subsection>
+        </section>
+        """
+    )
+
+    section = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    subsections = [ch for ch in section.children if ch.kind == IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in subsections] == ["1", "2", "3"]
+    second_intro = next(ch for ch in subsections[1].children if ch.kind == IRNodeKind.INTRO)
+    assert "edellyttäen, että" in (second_intro.text or "")
+    second_items = [ch for ch in subsections[1].children if ch.kind == IRNodeKind.PARAGRAPH]
+    assert [item.label for item in second_items] == ["1", "2"]
+    third_intro = next(ch for ch in subsections[2].children if ch.kind == IRNodeKind.INTRO)
+    assert "silloin, kun" in (third_intro.text or "")
+    third_items = [ch for ch in subsections[2].children if ch.kind == IRNodeKind.PARAGRAPH]
+    assert [item.label for item in third_items] == ["1", "2"]
+    assert check_invariants(section) == []
+
+
 def test_normalize_source_ir_folds_content_item_subsection_run_with_relabelling() -> None:
     """Content-only sibling subsections starting ``1)``/``2)`` can be one moment's kohdat.
 
