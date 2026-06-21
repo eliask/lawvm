@@ -644,6 +644,90 @@ class TestTagReclassify:
         assert "kenttien korkeus 4" in section_text
         assert any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
 
+    def test_folds_intro_only_subsection_followed_by_paragraph_item_wrapper(self) -> None:
+        """Intro-only first moment plus sibling 1..N paragraph wrapper is one momentti."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="4",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="4 §"),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="Rahoitustuen edellytyksenä on,"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="ensimmäinen kohta,"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="2)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="toinen kohta."),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="Todellinen toinen momentti."),),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "intro-item-wrapper-fixture")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2"]
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2"]
+        assert "Rahoitustuen edellytyksenä on" in irnode_to_text(subsections[0])
+        assert "Todellinen toinen momentti" in irnode_to_text(subsections[1])
+        assert check_invariants(normalized) == []
+
+        fold_facts = [fact for fact in facts if fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD]
+        assert len(fold_facts) == 1
+        assert "intro-only subsection" in fold_facts[0].before
+        assert "3->2" in fold_facts[0].after
+
+    def test_real_1974_1086_section_4_folds_intro_and_item_wrapper(self) -> None:
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("1974/1086")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        section = next(
+            candidate
+            for candidate in root.findall(".//{*}section")
+            if _norm_num_token("".join(candidate.findtext("{*}num") or "")) == "4"
+        )
+        raw = fi_xml_to_ir_node(section, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1974/1086")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2"]
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3"]
+        assert "Rahoitus tuen myöntämisen edellytyksenä on" in irnode_to_text(subsections[0])
+        assert "Asetuksella annetaan tarkempia säännöksiä" in irnode_to_text(subsections[1])
+        assert any(
+            fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD
+            and "intro-only subsection" in fact.before
+            for fact in facts
+        )
+
     def test_folds_unlabelled_paragraph_list_wrapper_into_comma_ended_subsection(self) -> None:
         section = IRNode(
             kind=IRNodeKind.SECTION,

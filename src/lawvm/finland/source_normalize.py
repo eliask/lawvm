@@ -1517,6 +1517,122 @@ def _paragraph_labels_are_consecutive(paragraphs: list[IRNode]) -> bool:
     return values == list(range(1, len(values) + 1))
 
 
+def _subsection_is_intro_only_open_list_host(subsection: IRNode, parent_path: Tuple[str, ...]) -> bool:
+    if subsection.kind != IRNodeKind.SUBSECTION:
+        return False
+    if _is_item_style_subsection(subsection):
+        return False
+    if any(child.kind == IRNodeKind.PARAGRAPH for child in subsection.children):
+        return False
+    if _node_has_descendant_kind(subsection, IRNodeKind.TABLE):
+        return False
+    parent_has_container_numbering = any(
+        segment.startswith(("part:", "chapter:")) for segment in parent_path
+    )
+    if parent_has_container_numbering:
+        return False
+    text = irnode_to_text(subsection).strip()
+    return bool(text) and not text.endswith((".", "!", "?", ":"))
+
+
+def _subsection_paragraph_item_run(subsection: IRNode) -> list[IRNode]:
+    if subsection.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(subsection):
+        return []
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    if not paragraphs:
+        return []
+    if any(child.kind not in {IRNodeKind.NUM, IRNodeKind.PARAGRAPH} for child in subsection.children):
+        return []
+    return paragraphs if _paragraph_labels_are_consecutive(paragraphs) else []
+
+
+def _fold_intro_only_subsection_item_list_wrapper(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold an intro-only moment plus sibling 1..N paragraph wrapper."""
+    if len(children) < 3:
+        return children
+
+    rewritten: List[IRNode] = []
+    changed = False
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if not _subsection_is_intro_only_open_list_host(child, parent_path):
+            rewritten.append(child)
+            i += 1
+            continue
+        if i + 1 >= len(children):
+            rewritten.append(child)
+            i += 1
+            continue
+        folded_paragraphs = _subsection_paragraph_item_run(children[i + 1])
+        if not folded_paragraphs:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(child.children) + tuple(folded_paragraphs),
+            )
+        )
+
+        next_label = (_numeric_label_value(child.label) or 0) + 1
+        relabelled: list[str] = []
+        for rest in children[i + 2:]:
+            if rest.kind == IRNodeKind.SUBSECTION and _numeric_label_value(rest.label) is not None:
+                old_label = str(rest.label)
+                new_label = str(next_label)
+                relabelled.append(f"{old_label}->{new_label}")
+                rest = IRNode(
+                    kind=rest.kind,
+                    label=new_label,
+                    text=rest.text,
+                    attrs=rest.attrs,
+                    children=rest.children,
+                )
+                next_label += 1
+            rewritten.append(rest)
+
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_SECTION_ITEM_SUBSECTION_FOLD,
+                basis=SourceNormalizationBasis.IMPOSSIBLE_NUMBERING,
+                before=(
+                    f"intro-only subsection {_node_path_label(child)} followed by "
+                    f"paragraph item wrapper {_node_path_label(children[i + 1])}"
+                ),
+                after=(
+                    f"folded into {_node_path_label(child)} as paragraphs "
+                    f"{[p.label for p in folded_paragraphs]!r}; relabelled true "
+                    f"subsections {relabelled!r}"
+                ),
+                explanation=(
+                    "The source encoded one moment's lead sentence and numbered "
+                    "kohdat as sibling subsection elements. Because the first "
+                    "subsection is an open list lead and the next wrapper carries "
+                    "a complete consecutive 1..N paragraph sequence, the wrapper "
+                    "is transport shape rather than a peer momentti."
+                ),
+                path=parent_path + (_node_path_label(child),),
+                confidence=0.95,
+            )
+        )
+        changed = True
+        i = len(children)
+
+    return rewritten if changed else children
+
+
 def _fold_section_item_subsection_run(
     children: List[IRNode],
     statute_id: str,
@@ -3606,6 +3722,9 @@ def normalize_source_ir(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_content_item_subsection_run(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_intro_only_subsection_item_list_wrapper(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_item_subsection_run(

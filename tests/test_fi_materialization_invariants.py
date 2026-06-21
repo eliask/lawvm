@@ -367,6 +367,30 @@ def test_1966_612_section_item_subsection_fold_preserves_first_moment_items() ->
     assert "Valtiovarainministeri oi erityisistä" not in section_text
 
 
+def test_1974_1086_intro_item_wrapper_fold_prevents_section_4_duplicate_list() -> None:
+    """Base §4 item-list wrapper belongs to 1 momentti, not a peer momentti."""
+
+    replay = pinned_replay(
+        "1974/1086",
+        oracle_version="19900806",
+        quiet=True,
+        build_full_products=False,
+    )
+    section_node = replay.find_section("4", None, None)
+    assert section_node is not None
+    subsections = [
+        child
+        for child in section_node.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label
+    ]
+    assert [child.label for child in subsections] == ["1", "2"]
+
+    section_text = " ".join(irnode_to_text(section_node).split())
+    assert section_text.count("1) että tuki katsotaan tarpeelliseksi") == 1
+    assert "korkotukea tai investointiavustusta haetaan" in section_text
+    assert "rahoitustukea haetaan, arvioidaan olevan toimintaedellytyksiä" not in section_text
+
+
 def test_1990_1207_dotted_paragraph_rows_materialize_as_peer_moments() -> None:
     """Base §4 dotted paragraph rows are momentit, not items under 1 momentti."""
 
