@@ -880,6 +880,140 @@ def test_normalize_no_compare_tree_records_definition_subsection_pairs_collapse_
     assert projection.after_child_count == 1
 
 
+# --- §2.9 negative tests for the no_verify.compare_* projection family -----
+#
+# Each test asserts the rule_id DOES NOT fire on a nearby valid shape that
+# lacks the rule's specific trigger condition. A regression that lowers the
+# trigger threshold (and silently misclassifies valid operative text as an
+# editorial projection) would now be caught.
+
+
+def test_normalize_no_compare_tree_does_not_blank_operative_section_text() -> None:
+    # Negative for no_verify.compare_repealed_shell_blanked: a section whose
+    # text normalizes to non-empty operative prose (not a "(Opphevet)"
+    # repealed shell) must not be blanked or emit the projection.
+    section = IRNode(kind=IRNodeKind.SECTION, label="2-6", text="§ 2-6. Helsedeleningstjenester skal gis av regionen.")
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(section, projections_out=projections, surface="current", path=(("section", "2-6"),))
+
+    rule_ids = [p.rule_id for p in projections]
+    assert NO_VERIFY_COMPARE_REPEALED_SHELL_BLANKED not in rule_ids
+
+
+def test_normalize_no_compare_tree_does_not_collapse_subsection_without_sentence_children() -> None:
+    # Negative for no_verify.compare_sentence_children_collapsed: a
+    # subsection with no SENTENCE children has nothing to collapse into the
+    # parent text — the projection must not fire.
+    subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="Loven gjelder omraadet.",
+        children=(
+            IRNode(kind=IRNodeKind.ITEM, label="a", text="Forste punkt."),
+            IRNode(kind=IRNodeKind.ITEM, label="b", text="Andre punkt."),
+        ),
+    )
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(subsection, projections_out=projections, surface="current", path=(("section", "1"), ("subsection", "1")))
+
+    rule_ids = [p.rule_id for p in projections]
+    assert NO_VERIFY_COMPARE_SENTENCE_CHILDREN_COLLAPSED not in rule_ids
+
+
+def test_normalize_no_compare_tree_does_not_suppress_nested_item_tail_when_text_is_disjoint() -> None:
+    # Negative for no_verify.compare_nested_item_tail_suppressed: an ITEM
+    # with nested item children, but whose parent text does NOT contain any
+    # child's text as a substring, has no duplication to suppress.
+    item = IRNode(
+        kind=IRNodeKind.ITEM,
+        label="b",
+        text="Heimel for vedtak om prising av statleg teneste.",
+        children=(
+            IRNode(kind=IRNodeKind.ITEM, label="1", text="Prisfast-setting skjer kvart ar."),
+            IRNode(kind=IRNodeKind.ITEM, label="2", text="Klage vert handsama av departementet."),
+        ),
+    )
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(item, projections_out=projections, surface="current", path=(("section", "1"), ("item", "b")))
+
+    rule_ids = [p.rule_id for p in projections]
+    assert NO_VERIFY_COMPARE_NESTED_ITEM_TAIL_SUPPRESSED not in rule_ids
+
+
+def test_normalize_no_compare_tree_does_not_blank_non_shell_section_lead() -> None:
+    # Negative for no_verify.compare_self_section_shell_blanked: a section
+    # whose text begins with "I lov …" (the citation form) rather than "I § N
+    # nr. M …" (the self-section shell form) must NOT fire the shell-blanking
+    # projection. The two forms share the "I " lead prefix but only the
+    # section-shell regex anchored on § matches the rule's trigger.
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        text="I lov 17. juni 2005 nr. 62 om arbeidsmiljøloven gjøres følgende endringer:",
+    )
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(section, projections_out=projections, surface="current", path=(("section", "1"),))
+
+    rule_ids = [p.rule_id for p in projections]
+    assert NO_VERIFY_COMPARE_SELF_SECTION_SHELL_BLANKED not in rule_ids
+
+
+def test_normalize_no_compare_tree_does_not_suppress_non_contingent_other_laws_lead() -> None:
+    # Negative for no_verify.compare_contingent_other_laws_placeholder_
+    # suppressed: a section with the "Endringer i andre lover" heading and
+    # a subsection whose wording matches the dated-commencement shape — NOT
+    # the "Kongen bestemmer / Kongen fastsetter" contingent shape — must
+    # not fire the contingent suppression. The contingent regex requires
+    # both the "Fra|Frå|Med virkning fra den tid" lead AND a "Kongen
+    # bestemmer|Kongen fastsetter" royal-decree phrase.
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="42",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Endringer i andre lover"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                text="Fra den tid loven trer i kraft, gjøres følgende endringer i andre lover:",
+            ),
+        ),
+    )
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(section, projections_out=projections, surface="current", path=(("section", "42"),))
+
+    rule_ids = [p.rule_id for p in projections]
+    assert NO_VERIFY_COMPARE_CONTINGENT_OTHER_LAWS_PLACEHOLDER_SUPPRESSED not in rule_ids
+
+
+def test_normalize_no_compare_tree_does_not_collapse_pairs_when_intro_does_not_end_in_definition_marker() -> None:
+    # Negative for no_verify.compare_definition_subsection_pairs_collapsed:
+    # a section with the SAME term/value-pair structure (2 subsections after
+    # intro), but whose first subsection does NOT end in "forstås med:" — so
+    # it is not a definition-introduction shape — must not fire the collapse.
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="3",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Seksjonen omhandlar folgende to omgrep:"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="krav:"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="dokumentert rapportering"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="4", text="ansvar:"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="5", text="eigedomsskatt"),
+        ),
+    )
+    projections: list[Any] = []
+
+    _normalize_no_compare_tree(section, projections_out=projections, surface="current", path=(("section", "3"),))
+
+    rule_ids = [p.rule_id for p in projections]
+    assert NO_VERIFY_COMPARE_DEFINITION_SUBSECTION_PAIRS_COLLAPSED not in rule_ids
+
+
 def test_normalize_no_compare_tree_collapses_other_laws_detail_section_without_heading() -> None:
     section = IRNode(
         kind=IRNodeKind.SECTION,
