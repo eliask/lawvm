@@ -869,6 +869,7 @@ def compile_fi_facade_from_replay(
         target_statute=parent_id,
         canonical_ops=tuple(canonical_ops),
         temporal_events=resolved_temporal_events,
+        known_source_effects=replay_result.products.source_effects,
     )
     source_effects = merge_unique_effect_refs(
         replay_result.products.source_effects,

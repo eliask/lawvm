@@ -1266,6 +1266,76 @@ def test_compile_fi_facade_rejects_conflicting_duplicate_lifecycle_events(monkey
         )
 
 
+def test_compile_fi_facade_reuses_product_source_effects_for_temporal_lifecycle(
+    monkeypatch,
+) -> None:
+    def fake_compile_artifacts_from_replay(*_args, **_kwargs):
+        return SimpleNamespace(
+            compiled_ops=[],
+            canonical_ops=[],
+            compile_failures=[],
+            findings=[],
+            strict_fail_reasons=[],
+            source_adjudication=None,
+            replay_meta={},
+            verdict=compute_verdict_from_registry(default_finland_strict_profile(), [], has_internal_failure=False),
+        )
+
+    monkeypatch.setattr(
+        "lawvm.finland._compile._compile_artifacts_from_replay",
+        fake_compile_artifacts_from_replay,
+    )
+    address = LegalAddress(path=(("section", "4a"),))
+    op_effects, _relations, _events = build_finland_effect_lifecycle(
+        target_statute="1995/903",
+        canonical_ops=(
+            LegalOperation(
+                op_id="op_0",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=address,
+                source=OperationSource(statute_id="2021/538", effective="2021-07-01"),
+                group_id="2021/538",
+            ),
+        ),
+        temporal_events=(),
+    )
+    temporal = TemporalEvent(
+        event_id="fi-temporary:2021/538:op_0:expire",
+        kind="expire",
+        scope=TemporalScope(
+            target_statute="1995/903",
+            exact_addresses=(address,),
+        ),
+        expires="2025-01-01",
+        source=OperationSource(statute_id="2021/538", expires="2025-01-01"),
+        group_id="2021/538",
+    )
+    _source_effects, _relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1995/903",
+        canonical_ops=(),
+        temporal_events=(temporal,),
+        known_source_effects=op_effects,
+    )
+
+    facade = compile_fi_facade_from_replay(
+        parent_id="1995/903",
+        replay_result=_replay_result_stub(
+            temporal_events=(temporal,),
+            source_effects=op_effects,
+            effect_lifecycle_events=lifecycle_events,
+        ),
+        replay_mode="legal_pit",
+        compiled_ops=[],
+        replay_meta={},
+        canonical_ops=[],
+        failed_ops=[],
+    )
+
+    assert facade.bundle.effect_lifecycle_events == lifecycle_events
+    assert facade.bundle.effect_lifecycle_events[0].effect == op_effects[0]
+
+
 def test_compile_fi_facade_projects_rows_from_stored_findings_only() -> None:
     facade = compile_fi_facade_from_replay(
         parent_id="2009/953",
