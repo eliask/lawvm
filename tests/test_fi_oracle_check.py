@@ -186,6 +186,19 @@ def test_diagnose_treats_legacy_roman_division_heading_as_editorial_convention()
     assert _diagnose(replay, oracle, {"action": "INSERT", "source_statute": "1991/517"}) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_legacy_numbered_section_heading_as_editorial_convention() -> None:
+    # Real shape: 1932/242 §67. The source witness projects the numbered
+    # subdivision title "2. Vekselinjäljennökset." into the section; Finlex's
+    # consolidated section text omits that presentation heading.
+    replay = (
+        "67 § 2. Vekselinjäljennökset. Jokaisella vekselin haltijalla on "
+        "oikeus ottaa siitä jäljennöksiä."
+    )
+    oracle = "67 § Jokaisella vekselin haltijalla on oikeus ottaa siitä jäljennöksiä."
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
 def test_diagnose_treats_promulgation_closure_as_editorial_convention() -> None:
     # Real shape: 1922/148 §26. The final promulgation closure is source-side
     # formula text, not consolidated provision body text.

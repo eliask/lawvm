@@ -317,6 +317,10 @@ _LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE = re.compile(
     r"(?:[IVXLCDM]{1,8}\.\s+[A-ZÅÄÖ][^.]{1,120}\.\s+)",
     re.IGNORECASE,
 )
+_LEGACY_NUMBERED_SECTION_HEADING_PREFIX_RE = re.compile(
+    r"^(\s*\d+\s*[a-zäöå]?\s*§\s*)"
+    r"(?:\d{1,2}\.\s+[A-ZÅÄÖ][^.]{1,120}\.\s+)",
+)
 _PROMULGATION_CLOSURE_TAILS = (
     "Tätä kaikki asianomaiset noudattakoot.",
     "Tätä kaikki asianomaiset noudattakoot",
@@ -337,6 +341,19 @@ def strip_legacy_roman_division_heading_prefix(text: str) -> str:
     return _LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE.sub(r"\1", text, count=1)
 
 
+def strip_legacy_numbered_section_heading_prefix(text: str) -> str:
+    """Drop old FI numbered presentation headings attached to section text.
+
+    Some early sources project numbered subdivision labels such as
+    ``2. Vekselinjäljennökset.`` into the following section heading. Finlex's
+    consolidated section text may omit the label. This is comparison-only and
+    callers must self-validate against the oracle.
+    """
+    if "." not in text:
+        return text
+    return _LEGACY_NUMBERED_SECTION_HEADING_PREFIX_RE.sub(r"\1", text, count=1)
+
+
 def strip_promulgation_closure_tail(text: str) -> str:
     """Drop old FI promulgation closure formula from comparison text.
 
@@ -354,7 +371,9 @@ def strip_promulgation_closure_tail(text: str) -> str:
 def strip_non_substantive_source_projection_residue(text: str) -> str:
     """Remove FI source-side presentation/promulgation residue for comparison."""
     return strip_promulgation_closure_tail(
-        strip_legacy_roman_division_heading_prefix(text)
+        strip_legacy_numbered_section_heading_prefix(
+            strip_legacy_roman_division_heading_prefix(text)
+        )
     )
 
 

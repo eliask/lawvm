@@ -605,6 +605,19 @@ def test_explain_diagnose_treats_source_projection_residue_as_editorial() -> Non
     assert "source heading/promulgation residue" in explanation
 
 
+def test_explain_diagnose_treats_numbered_source_heading_residue_as_editorial() -> None:
+    replay = (
+        "67 § 2. Vekselinjäljennökset. Jokaisella vekselin haltijalla on "
+        "oikeus ottaa siitä jäljennöksiä."
+    )
+    oracle = "67 § Jokaisella vekselin haltijalla on oikeus ottaa siitä jäljennöksiä."
+
+    diagnosis, explanation = _diagnose(replay, oracle, None)
+
+    assert diagnosis == "EDITORIAL_CONVENTION"
+    assert "source heading/promulgation residue" in explanation
+
+
 def test_explain_source_pathology_demotes_absent_subsection_target() -> None:
     master = SimpleNamespace(
         findings=(),
@@ -623,7 +636,9 @@ def test_explain_source_pathology_demotes_absent_subsection_target() -> None:
         "target_paragraph": "2",
     }
 
-    diagnosis, explanation = _source_pathology_diagnosis_for_blame(master, blame_op)
+    result = _source_pathology_diagnosis_for_blame(master, blame_op)
+    assert result is not None
+    diagnosis, explanation = result
 
     assert diagnosis == "SOURCE_PATHOLOGY"
     assert "SUBSECTION_TARGET_ABSENT" in explanation
