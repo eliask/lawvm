@@ -1104,7 +1104,7 @@ def test_frontend_normalization_preserves_phase_effect_relation_lane(monkeypatch
         base_ir=None,
         amendment_id="2024/1",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1990/1",
         strict_profile=None,
         regex_recognition_coverage_out=None,
