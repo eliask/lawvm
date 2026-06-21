@@ -290,9 +290,17 @@ def _mark_old_format_out_of_body_clause(op: LegalOperation, source_text: str) ->
     if op.target.path:
         return op
     tags = tuple((*op.provenance_tags, _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE))
+    # The META relabel moves a body op into the out-of-body evidence lane.
+    # Body-replay-only fields (text_patch/anchor/destination) are forbidden on
+    # META by LegalOperation.__post_init__, so they must be cleared here. The
+    # source-text witness is preserved on the META payload (spec rule 78).
     return replace(
         op,
         action=StructuralAction.META,
+        target=LegalAddress(path=()),
+        anchor=None,
+        destination=None,
+        text_patch=None,
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
             text=source_text,
@@ -820,18 +828,32 @@ def _has_embedded_open_quote_payload_section_header(html_block: str) -> bool:
 
 
 def _has_unclosed_payload_quote_after_formula(text: str) -> bool:
-    marker_matches = list(
-        re.finditer(
-            r"(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        )
-    )
-    if marker_matches:
-        tail = text[marker_matches[-1].end():].lstrip()
-        if tail.startswith(("„", '"', "“", "«", "ˮ")):
-            return not bool(re.search(r'[“”"»ˮ]\s*[.;:]?\s*$', tail))
-    return text.count("„") > text.count("“") + text.count("”")
+    """True iff ``text`` carries a quoted payload whose opening quote has not
+    been closed yet.
+
+    The embedded-section-header idiom ``järgmises sõnastuses:
+    „... § N ...”`` keeps ``„`` and ``”`` balanced across
+    paragraphs of the same quoted payload, so a balanced quote count is the
+    correct check. An open ``„`` that has no matching close in ``text``
+    means the next ``§ N.`` wrapper paragraph is still inside that
+    payload and a split there would drop the inserted section/body fragment.
+
+    Pre-fix this used a "tail-ends-with-close-quote" heuristic on the last
+    ``järgmises sõnastuses`` marker: a marker whose quote closes
+    mid-tail (followed by more non-quoted amendment items) was treated as
+    still-open, absorbing the next ``§ N.`` wrapper section into the
+    first block and silently dropping that wrapper's ops (corpus witness:
+    ``128062014035`` §2-§4 against ``Kinnipidamiskeskuse
+    sisekorraeeskirja kehtestamine``).
+    """
+    # EE quoted payloads use ``„ ... ”`` (German-mirrored) or
+    # ``« ... »`` (guillemets). Rare MS-Word autocorrect variants
+    # ``“`` close ``”`` also appear in source. ASCII ``"`` is not
+    # counted because it appears inside EE measurement / quoted-quoted forms
+    # and would skew the balance.
+    open_quote = text.count('„') + text.count('«')
+    close_quote = text.count('”') + text.count('“') + text.count('»')
+    return open_quote > close_quote
 
 
 def _item_has_embedded_open_quote_payload_section_header(item_text: str) -> bool:
@@ -1766,16 +1788,7 @@ def split_old_format_wrapper_blocks(section_html: str) -> list[str]:
 
     def _current_has_unclosed_payload_quote() -> bool:
         text = "\n".join(strip_old_format_html_text(para) for para in current)
-        marker_matches = list(re.finditer(
-            r"(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        ))
-        if marker_matches:
-            tail = text[marker_matches[-1].end():].lstrip()
-            if tail.startswith(("„", '"', "“", "«", "ˮ")):
-                return not bool(re.search(r'[“”"»ˮ]\s*[.;:]?\s*$', tail))
-        return text.count("„") > text.count("“")
+        return _has_unclosed_payload_quote_after_formula(text)
 
     blocks: list[str] = []
     current: list[str] = []
@@ -2231,7 +2244,7 @@ def old_format_extract_op_texts(content_block: str, block_header_text: str) -> l
 
 def old_format_extract_section_header_text(section_html: str) -> str:
     """Extract and normalize the first section header text from an old-format section block."""
-    sect_p = r"(?:§|&sect;)"
+    sect_p = r"(?:§|&sect;)(?:&nbsp;)*"
     bold_open_p = r"<(?:b|strong)\b[^>]*>"
     bold_close_p = r"</(?:b|strong)>"
 
@@ -2325,7 +2338,7 @@ def old_format_split_sections(full_html: str) -> list[str]:
     header that explicitly names a law/code, and finally to paragraph-based
     statute-section splitting.
     """
-    sect_p = r"(?:§|&sect;)"
+    sect_p = r"(?:§|&sect;)(?:&nbsp;)*"
     rt_ref_p = r"\(RT\s+[IV]+[\s,]"
     bold_open_p = r"<(?:b|strong)\b[^>]*>"
     bold_close_p = r"</(?:b|strong)>"
