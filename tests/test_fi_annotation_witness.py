@@ -128,7 +128,7 @@ def test_witness_lens_blocks_on_missing_xml_bytes() -> None:
         raw_text="",
         source_hash="h",
         source_ref=sref,
-        metadata={},  # no xml_bytes
+        metadata={},  # no source_bytes view
     )
     subject = SurfaceGraphSubject(
         jurisdiction="fi",
@@ -144,6 +144,75 @@ def test_witness_lens_blocks_on_missing_xml_bytes() -> None:
     # A blocked unit becomes a typed residual, never a silent skip.
     assert any(
         r.residual_kind == "missing_xml_bytes" for r in result.residuals
+    )
+
+
+def test_witness_lens_reads_typed_source_bytes_not_metadata() -> None:
+    """The lens reads the typed ``source_bytes`` view, NOT ``metadata``.
+
+    A unit carrying the raw XML ONLY via the legacy ``metadata["xml_bytes"]``
+    key (and no typed ``source_bytes``) must be treated as a blocked unit — the
+    lens no longer reaches back into the free-form metadata channel.
+    """
+    from lawvm.core.legal_surface_graph import SourceSpanRef
+    from lawvm.core.legal_surface_lens import (
+        SourceSurfaceBundle,
+        SourceSurfaceUnit,
+        SurfaceAnalysisContext,
+    )
+
+    xml = (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<act><body><section><content><p>"
+        '<ref href="/akn/fi/act/2019/9">9/2019</ref>'
+        "</p></content></section></body></act></akomaNtoso>"
+    ).encode("utf-8")
+    sref = SourceSpanRef(
+        source_unit_id="u#body",
+        source_hash="h",
+        work_id="2020/1",
+        address=None,
+        char_start=0,
+        char_end=0,
+        text_hash="t",
+    )
+    # Raw XML present ONLY in the legacy metadata channel; no typed view.
+    unit = SourceSurfaceUnit(
+        source_unit_id="u#body",
+        work_id="2020/1",
+        address=None,
+        raw_text="9/2019",
+        source_hash="h",
+        source_ref=sref,
+        metadata={"xml_bytes": xml},
+    )
+    subject = SurfaceGraphSubject(
+        jurisdiction="fi",
+        work_id="2020/1",
+        scope={},
+        surface_time=None,
+        source_bundle_hash="h",
+        language="fi",
+    )
+    bundle = SourceSurfaceBundle(jurisdiction="fi", subject=subject, units=(unit,))
+    result = AnnotationWitnessLens().analyze(bundle, context=SurfaceAnalysisContext())
+    # No witness minted from the metadata channel; the unit is blocked.
+    assert result.node_seeds == ()
+    assert any(r.residual_kind == "missing_xml_bytes" for r in result.residuals)
+
+    # When the SAME bytes ride the typed field, the lens mints the witness.
+    import dataclasses
+
+    typed_unit = dataclasses.replace(unit, source_bytes=xml)
+    typed_bundle = SourceSurfaceBundle(
+        jurisdiction="fi", subject=subject, units=(typed_unit,)
+    )
+    typed_result = AnnotationWitnessLens().analyze(
+        typed_bundle, context=SurfaceAnalysisContext()
+    )
+    assert len(typed_result.node_seeds) == 1
+    assert not any(
+        r.residual_kind == "missing_xml_bytes" for r in typed_result.residuals
     )
 
 
