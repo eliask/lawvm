@@ -3202,11 +3202,11 @@ def _apply_materialization(
                     heading_placed = False
                     for child in existing_node.children:
                         if child.kind is IRNodeKind.HEADING:
-                            if not heading_placed:
-                                new_children.append(amend_heading)
-                                heading_placed = True
-                        else:
-                            new_children.append(child)
+                            continue
+                        new_children.append(child)
+                        if not heading_placed and child.kind is IRNodeKind.NUM:
+                            new_children.append(amend_heading)
+                            heading_placed = True
                     if not heading_placed:
                         insert_at = next(
                             (idx for idx, child in enumerate(new_children) if child.kind is not IRNodeKind.NUM),

@@ -62,6 +62,7 @@ from lawvm.finland.apply_ir_ops import (
     _strip_standalone_subsection_item_prefixes_ir,
 )
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.post_process import _canonicalize_section_shell_order
 from lawvm.finland.tree_invariant_allowances import (
     is_terminal_fi_commencement_section_violation,
 )
@@ -2018,7 +2019,7 @@ def build_replay_products(
     # the same reason the replay fold can — amendment ops insert at arbitrary
     # positions and materialize_pit preserves that order.
     materialized_state = materialized_state.with_ir(
-        _resort_children(materialized_state.ir)
+        _canonicalize_section_shell_order(_resort_children(materialized_state.ir))
     )
     if synthesize_repeal_placeholders and repeal_placeholder_normalizer is not None:
         materialized_state = materialized_state.with_ir(

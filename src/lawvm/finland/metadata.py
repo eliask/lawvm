@@ -1050,6 +1050,7 @@ def _separate_commencement_witnesses_from_tree(
                     source_text=match.group(0).strip(),
                 )
 
+        # lawvm-regex: witness_only bounded commencement witness extractor over one source section
         for inline in _SEPARATE_COMMENCEMENT_INLINE_LIST_RE.finditer(section_text):
             effective = _date_from_fi_day_month_year_match(inline)
             if effective is None:
@@ -1398,6 +1399,7 @@ def _temporary_provision_expiry_overrides(
         if tail_end == -1:
             tail_end = len(text)
         sentence_tail = text[tail_start:tail_end]
+        # lawvm-regex: owning_parser bounded same-sentence temporary-provision expiry tail
         for chained in _TEMPORARY_CHAINED_PROVISION_EXPIRY_TAIL_RE.finditer(sentence_tail):
             chained_iso_expiry = _extract_expiry_date_from_text(chained.group("datetail"))
             if not chained_iso_expiry:
@@ -1444,6 +1446,7 @@ def _source_section_direct_subsection_labels(
             num_text = _normalize_fi_parse_text(
                 etree.tostring(num_el, method="text", encoding="unicode")
             )
+            # lawvm-regex: witness_only lexical subsection-number extraction from a single num element
             num_match = re.search(r"\d+", num_text)
             if num_match is not None:
                 labels.add(int(num_match.group(0)))
@@ -1517,6 +1520,7 @@ def _temporary_section_expiry_overrides(
                 labels |= _parse_section_list_labels(m.group(2))
             _append_override(target_mid_from_cited, labels, expiry)
 
+        # lawvm-regex: owning_parser bounded temporary added-section expiry recognizer
         for m_added in _TEMPORARY_ADDED_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
             expiry = parse_fi_day_month_year(
                 m_added.group(2),
@@ -1822,6 +1826,7 @@ def _commencement_subject_exact_address_suffixes(subject_text: str) -> tuple[Leg
 def _commencement_heading_sections(consumed_text: str) -> frozenset[str]:
     labels = {
         _WHITESPACE_RE.sub("", match.group("section")).lower()
+        # lawvm-regex: owning_parser delayed-commencement heading facet reference recognizer
         for match in _COMMENCEMENT_HEADING_REF_RE.finditer(consumed_text)
     }
     labels.discard("")

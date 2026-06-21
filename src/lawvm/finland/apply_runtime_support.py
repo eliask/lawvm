@@ -1669,9 +1669,17 @@ def _emit_section_snapshot(
         dropped_expired_temporary_children = 0
         for child in latest_payload.children:
             if heading_overlay is not None and child.kind is IRNodeKind.HEADING:
+                changed = True
+                continue
+            if (
+                heading_overlay is not None
+                and not heading_placed
+                and child.kind is IRNodeKind.NUM
+            ):
+                new_children.append(child)
                 new_children.append(heading_overlay)
                 heading_placed = True
-                changed = changed or heading_overlay != child
+                changed = True
                 continue
             if child.kind is IRNodeKind.SUBSECTION and child.label:
                 child_norm = _norm_num_token(child.label)
