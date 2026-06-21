@@ -11,9 +11,11 @@ from lawvm.finland.oracle_comparison import (
     strip_figure_legend_paragraphs,
     strip_kumottu_attribution,
     strip_non_substantive_source_projection_residue,
+    strip_standalone_subsection_ordinals,
     strip_temporary_residue_annotations,
 )
 from lawvm.tools.divergence_heuristics import (
+    high_overlap_text_corruption,
     oracle_text_has_removable_duplicate_sentence,
     oracle_text_reduces_to_bare_section_stub,
 )
@@ -144,6 +146,13 @@ def diagnose_section_divergence(
                 include_explanation,
             )
 
+    if high_overlap_text_corruption(replay_stripped, oracle_stripped):
+        return _finish(
+            "SOURCE_PATHOLOGY",
+            "same-section source/oracle text mostly overlaps but one witness is corrupted",
+            include_explanation,
+        )
+
     replay_source_residue_stripped = strip_non_substantive_source_projection_residue(replay_text)
     if replay_source_residue_stripped != replay_text:
         residue_clean = clean_comparison_text(strip_editorial_annotations(replay_source_residue_stripped))
@@ -151,6 +160,16 @@ def diagnose_section_divergence(
             return _finish(
                 "EDITORIAL_CONVENTION",
                 "replay carries non-substantive source heading/promulgation residue absent from oracle",
+                include_explanation,
+            )
+
+    oracle_without_subsection_ordinals = strip_standalone_subsection_ordinals(oracle_text)
+    if oracle_without_subsection_ordinals != oracle_text:
+        ordinal_clean = clean_comparison_text(strip_editorial_annotations(oracle_without_subsection_ordinals))
+        if replay_clean and ordinal_clean and Levenshtein.ratio(replay_clean, ordinal_clean) >= 0.999:
+            return _finish(
+                "EDITORIAL_CONVENTION",
+                "oracle carries subsection ordinal prefixes already represented by structure",
                 include_explanation,
             )
 

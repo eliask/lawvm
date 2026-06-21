@@ -40,10 +40,12 @@ from lawvm.finland.oracle_comparison import (
     strip_figure_legend_paragraphs,
     strip_kumottu_attribution,
     strip_non_substantive_source_projection_residue,
+    strip_standalone_subsection_ordinals,
     strip_temporary_residue_annotations,
 )
 from lawvm.tools.divergence_heuristics import blame_title_indicates_temporary_amendment
 from lawvm.tools.divergence_heuristics import blame_source_postdates_oracle_version
+from lawvm.tools.divergence_heuristics import high_overlap_text_corruption
 from lawvm.tools.divergence_heuristics import high_overlap_unblamed_text_corruption
 from lawvm.tools.divergence_heuristics import is_probable_repeal_stale_oracle
 from lawvm.tools.divergence_heuristics import oracle_has_future_repeal_overlay
@@ -181,6 +183,14 @@ def _source_pathology_diagnosis_for_blame(
             matched_codes.add(code)
             continue
         row_target_label = str(row.get("target_label") or "")
+        row_target_unit_kind = str(row.get("target_unit_kind") or "")
+        if (
+            target_section
+            and row_target_unit_kind == "section"
+            and norm_section_label(row_target_label) == target_section
+        ):
+            matched_codes.add(code)
+            continue
         if target_section and row_target_label.endswith(f" {target_section} §"):
             matched_codes.add(code)
             continue
@@ -201,6 +211,8 @@ def _source_pathology_diagnosis_for_blame(
     }:
         return "SOURCE_INCOMPLETE"
     if "SUBSECTION_TARGET_ABSENT" in matched_codes:
+        return "SOURCE_PATHOLOGY"
+    if "DESTRUCTIVE_SHAPE_LOSS_RISK" in matched_codes:
         return "SOURCE_PATHOLOGY"
 
     findings = tuple(getattr(master, "findings", ()) or ())
@@ -879,10 +891,19 @@ def _diagnose(
         if c_r and c_o_legend and Levenshtein.ratio(c_r, c_o_legend) >= 0.95:
             return "EDITORIAL_CONVENTION"
 
+    if high_overlap_text_corruption(r_stripped, o_stripped):
+        return "SOURCE_PATHOLOGY"
+
     r_source_residue_stripped = strip_non_substantive_source_projection_residue(r_text)
     if r_source_residue_stripped != r_text:
         c_r_residue = _clean(strip_editorial_annotations(r_source_residue_stripped))
         if c_r_residue and c_o and Levenshtein.ratio(c_r_residue, c_o) >= 0.999:
+            return "EDITORIAL_CONVENTION"
+
+    o_without_subsection_ordinals = strip_standalone_subsection_ordinals(o_text)
+    if o_without_subsection_ordinals != o_text:
+        c_o_ordinals = _clean(strip_editorial_annotations(o_without_subsection_ordinals))
+        if c_r and c_o_ordinals and Levenshtein.ratio(c_r, c_o_ordinals) >= 0.999:
             return "EDITORIAL_CONVENTION"
 
     if not blame_op and high_overlap_unblamed_text_corruption(r_text, o_text):
@@ -890,6 +911,9 @@ def _diagnose(
 
     c_diff = len(c_r) - len(c_o)
     if c_diff > 40:
+        action = str(blame_op.get("action", "") if blame_op else "").upper()
+        if blame_op and action in {"REPLACE", "INSERT"}:
+            return "ORACLE_STALE"
         return "REPLAY_EXTRA"
     if c_diff < -40:
         return "REPLAY_MISSING"
@@ -1343,7 +1367,11 @@ def _classify_statute(
 
         candidates: dict[str, list[SectionResultRow]] = defaultdict(list)
         for sec in section_results:
-            if sec["diagnosis"] in ("REPLAY_EXTRA", "REPLAY_MISSING", "UNKNOWN", "MISSING") and sec["blame_source"]:
+            if (
+                sec["diagnosis"]
+                in ("REPLAY_EXTRA", "REPLAY_MISSING", "UNKNOWN", "MISSING", "SOURCE_PATHOLOGY")
+                and sec["blame_source"]
+            ):
                 candidates[sec["blame_source"]].append(sec)
 
         # Batch pre-blame replays: sort blame sources in amendment order,
@@ -1427,7 +1455,7 @@ def _classify_statute(
                     sec["oracle_version"] = oracle_version or ""
                     continue
                 if (
-                    sec["diagnosis"] == "REPLAY_MISSING"
+                    sec["diagnosis"] in {"REPLAY_MISSING", "SOURCE_PATHOLOGY"}
                     and blame_action in {"replace", "insert"}
                     and pre_r
                     and not any(
@@ -1484,9 +1512,15 @@ def _classify_statute(
                 "EXTRA",
                 "MISSING",
                 "EDITORIAL_CONVENTION",
+                "ORACLE_STALE",
+                "SOURCE_PATHOLOGY",
             ):
                 continue
             oracle_el = oracle_secs.get(sec["section"])
+            if sec["diagnosis"] == "ORACLE_STALE" and parse_oracle_repeal_stub(
+                str(sec.get("oracle_text") or "")
+            ):
+                continue
             if _section_points_to_empty_body_amendment(
                 oracle_el,
                 str(sec.get("oracle_text") or ""),
@@ -1580,13 +1614,11 @@ def _classify_statute(
         #     empty seed, so the section exists but its text is a fragment of the
         #     oracle's full body.  The length/similarity divergence is intrinsic to
         #     the abridged source, not a replay fault, so reclassify it too.
-        # ORACLE_STALE verdicts from the prior passes already explain those
-        # sections and are left untouched. EDITORIAL_CONVENTION rows inside the
-        # abridged span are still source-limited: the matching editorial shape is
-        # only a rendering of a fragment that replay could not reconstruct from
-        # the omitted base. This runs after the oracle-staleness /
-        # source-pathology passes; divergences outside the abridged span
-        # (genuine drops) are untouched.
+        # Early ORACLE_STALE / SOURCE_PATHOLOGY / EDITORIAL_CONVENTION labels
+        # inside the abridged span are still source-limited: those text shapes
+        # are only comparisons against fragments that replay could not
+        # reconstruct from the omitted base. Divergences outside the abridged
+        # span are untouched.
         if abridged_unreconstructable_chapters:
             _abridged_reclassifiable = {
                 "MISSING",
@@ -1594,6 +1626,8 @@ def _classify_statute(
                 "REPLAY_EXTRA",
                 "UNKNOWN",
                 "EDITORIAL_CONVENTION",
+                "ORACLE_STALE",
+                "SOURCE_PATHOLOGY",
             }
             for sec in section_results:
                 if sec["diagnosis"] not in _abridged_reclassifiable:

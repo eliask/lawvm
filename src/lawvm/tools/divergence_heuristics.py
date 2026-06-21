@@ -40,7 +40,7 @@ def oracle_text_reduces_to_bare_section_stub(text: str) -> bool:
     return looks_like_bare_section_stub(strip_editorial_annotations(text))
 
 
-def high_overlap_unblamed_text_corruption(
+def high_overlap_text_corruption(
     replay_text: str,
     oracle_text: str,
     *,
@@ -48,16 +48,18 @@ def high_overlap_unblamed_text_corruption(
     min_abs_delta: int = 25,
     small_delta_min_ratio: float = 0.97,
     small_delta_min_abs_delta: int = 8,
+    small_delta_max_distance: int = 20,
     tiny_edit_min_ratio: float = 0.995,
     tiny_edit_max_distance: int = 3,
+    localized_max_changed_blocks: int = 2,
     min_shorter_fraction: float = 0.60,
 ) -> bool:
-    """Return True for unblamed same-section text corruption/truncation.
+    """Return True for same-section text corruption/truncation.
 
     This is a classifier-only signal for cases where both surfaces contain the
-    same provision, no amendment can explain the difference, and the oracle text
-    appears to have dropped or mangled a bounded phrase while preserving most of
-    the section.  It must not be used to mutate replay output.
+    same provision and one witness appears to have dropped or mangled a bounded
+    phrase while preserving most of the section.  It must not be used to mutate
+    replay output.
     """
     replay_clean = _clean(replay_text)
     oracle_clean = _clean(oracle_text)
@@ -69,14 +71,40 @@ def high_overlap_unblamed_text_corruption(
     if shorter / longer < min_shorter_fraction:
         return False
     ratio = Levenshtein.ratio(replay_clean, oracle_clean)
+    distance = Levenshtein.distance(replay_clean, oracle_clean)
     if (
         ratio >= tiny_edit_min_ratio
-        and Levenshtein.distance(replay_clean, oracle_clean) <= tiny_edit_max_distance
+        and distance <= tiny_edit_max_distance
     ):
         return True
+    edit_blocks = [
+        opcode
+        for opcode in Levenshtein.opcodes(replay_clean, oracle_clean)
+        if opcode[0] != "equal"
+    ]
+    if len(edit_blocks) > localized_max_changed_blocks:
+        return False
     if delta >= min_abs_delta:
-        return ratio >= min_ratio
-    return delta >= small_delta_min_abs_delta and ratio >= small_delta_min_ratio
+        return ratio >= min_ratio and distance <= delta + small_delta_max_distance
+    return (
+        delta >= small_delta_min_abs_delta
+        and ratio >= small_delta_min_ratio
+        and distance <= small_delta_max_distance
+    )
+
+
+def high_overlap_unblamed_text_corruption(
+    replay_text: str,
+    oracle_text: str,
+    **kwargs: Any,
+) -> bool:
+    """Compatibility wrapper for callers that gate this predicate by blame."""
+    defaults = {
+        "small_delta_max_distance": 200,
+        "localized_max_changed_blocks": 16,
+    }
+    defaults.update(kwargs)
+    return high_overlap_text_corruption(replay_text, oracle_text, **defaults)
 
 
 # Whole-section oracle repeal stub: "<N> § on kumottu L:lla DD.MM.YYYY/NNN."

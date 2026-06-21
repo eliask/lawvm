@@ -37,6 +37,7 @@ from types import SimpleNamespace
 from typing import Any, cast, Callable, Dict, NoReturn
 
 import pytest
+from lxml import etree
 
 from lawvm.core.compile_result import (
     CompileFailure,
@@ -44,18 +45,35 @@ from lawvm.core.compile_result import (
     compute_verdict_from_registry,
     strict_fail_reasons_from_finding_ledger,
 )
+from lawvm.core.elaboration_context import PayloadElaborationContext, ReplayLookups
 from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.observation_registry import FINDING_REGISTRY, FindingSpec
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.tree_ops import check_invariants
+from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.compile_group_surface import BuildGroupSurfaceRequest, build_group_surface
+from lawvm.finland.corpus import get_corpus_store
+from lawvm.finland.frontend_compile import normalize_and_compile_ops
+from lawvm.finland.metadata import get_johtolause
+from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.payload_normalize import elaborate_payload_against_live
 from lawvm.finland.replay_pipeline import (
     ReplayPlan,
     build_tree_invariant_finding,
     execute_replay_plan,
 )
+from lawvm.finland.replay_entrypoint import replay_xml
+from lawvm.finland.replay_request import ReplayXmlRequest
 from lawvm.finland.source_model import AmendmentSourceModel
+from lawvm.finland.sparse_tail_claims import (
+    SPARSE_OMISSION_TAIL_CLAIM_RULE,
+    SPARSE_OMISSION_TAIL_PRUNE_RULE,
+    build_sparse_omission_tail_claims,
+)
 from lawvm.finland.statute import ReplayState, StatuteContext
+from lawvm.finland.target_kind import TargetKind
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +247,196 @@ def drill_source_pathology_detected_verdict_barrier() -> None:
     )
     barrier_codes = _verdict_barrier_codes_from_findings(findings=[finding])
     assert "APPLY.SOURCE_PATHOLOGY_DETECTED" in barrier_codes
+
+
+def drill_leading_subsection_heading_payload_elaboration() -> None:
+    """ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD reaches payload elaboration output.
+
+    Production lane: ``elaborate_payload_against_live`` normalizes a whole-section
+    insert payload whose first subsection is title-shaped, promotes that text to
+    a section heading, and emits the blocking elaboration observation.
+    """
+    ctx = PayloadElaborationContext(
+        target_unit_kind="section",
+        target_norm="11a",
+        target_chapter="1",
+        target_part=None,
+        live_node=None,
+        parent_node=None,
+        subsection_slots=(),
+        live_subsections=(),
+        subsection_by_label={},
+        item_index={},
+        row_anchor_index={},
+        container_member_labels=None,
+        lookups=ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset(),
+        ),
+    )
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="11a",
+        target_chapter="1",
+        source_statute="2021/278",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="11a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="11 a §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Veroilmoituksen antamisaikaa koskeva poikkeava määräys",
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Poiketen 11 §:stä ilmoitus annetaan myöhemmin."),),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    normalized = got.muutos_ir
+    assert normalized is not None
+    assert [child.kind for child in normalized.children] == [
+        IRNodeKind.NUM,
+        IRNodeKind.HEADING,
+        IRNodeKind.SUBSECTION,
+    ]
+    observations = got.elaboration_observations
+    assert observations is not None
+    assert any(
+        observation.kind == "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
+        and (observation.detail or {})["shifted_subsection_count"] == 1
+        for observation in observations
+    )
+
+
+def drill_sparse_omission_tail_claim_group_surface() -> None:
+    """ELAB.SPARSE_OMISSION_TAIL_CLAIM reaches group-surface findings.
+
+    Production lane: ``build_sparse_omission_tail_claims`` recognizes an omitted
+    carrier-section tail and ``build_group_surface`` synthesizes the missing
+    descendant payload for the actual descendant target.
+    """
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <chapter>
+                <num>2 luku</num>
+                <section>
+                  <num>29 \xc2\xa7</num>
+                  <subsection><num>1 mom.</num><content>First.</content></subsection>
+                  <subsection><num>2 mom.</num><content>Second.</content></subsection>
+                  <hcontainer name="omission"/>
+                  <subsection><num>3 mom.</num><content>Claimed tail.</content></subsection>
+                </section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2099/1")
+    carrier = AmendmentOp(
+        op_id="replace_29",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="29",
+        target_chapter="4",
+        source_statute="2099/1",
+    )
+    descendant = AmendmentOp(
+        op_id="replace_31_3",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="31",
+        target_chapter="4",
+        target_paragraph=3,
+        source_statute="2099/1",
+    )
+
+    claims = build_sparse_omission_tail_claims([carrier, descendant], model)
+    surface_result = build_group_surface(
+        BuildGroupSurfaceRequest(
+            group_ops=[descendant],
+            target_unit_kind="section",
+            target_norm="31",
+            target_chapter="4",
+            target_part=None,
+            source_model=model,
+            sparse_omission_tail_claims=claims,
+        )
+    )
+
+    assert surface_result.output.body_ir is not None
+    assert surface_result.output.body_ir.label == "31"
+    assert "Claimed tail." in irnode_to_text(surface_result.output.body_ir)
+    assert any(finding.kind == SPARSE_OMISSION_TAIL_CLAIM_RULE for finding in surface_result.findings())
+
+
+def drill_sparse_omission_tail_pruned_from_carrier_compile_surface() -> None:
+    """ELAB.SPARSE_OMISSION_TAIL_PRUNED_FROM_CARRIER reaches compile findings.
+
+    Production lane: the 1995/1084 amendment has a carrier section whose source
+    payload contains an omitted tail that belongs to a separately parsed
+    descendant target. ``compile_amendment_ops`` routes that tail to the
+    descendant payload and records the carrier-prune finding.
+    """
+    before = replay_xml(
+        request=ReplayXmlRequest(
+            parent_id="1985/336",
+            mode="official_consolidation",
+            stop_before="1995/1084",
+            quiet=True,
+            build_full_products=False,
+        )
+    )
+    xml = get_corpus_store().read_source("1995/1084")
+    assert xml is not None
+    tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+    source_model = AmendmentSourceModel.from_tree(tree, source_ref="1995/1084")
+    phase = normalize_and_compile_ops(
+        johto,
+        tree,
+        before.state,
+        "1995/1084",
+        "Asetus harjoittelukouluasetuksen muuttamisesta",
+        False,
+        parent_id="1985/336",
+        source_model=source_model,
+    )
+    ops = [op for op in phase.output if str(op.target_section) in {"29", "31"}]
+
+    result = compile_amendment_ops(
+        before.state,
+        ops,
+        source_model,
+        johto,
+        "official_consolidation",
+        source_ref="1995/1084",
+        target_statute="1985/336",
+    )
+
+    finding_kinds = {finding.kind for finding in result.findings()}
+    assert SPARSE_OMISSION_TAIL_CLAIM_RULE in finding_kinds
+    assert SPARSE_OMISSION_TAIL_PRUNE_RULE in finding_kinds
 
 
 def drill_effect_lifecycle_target_unresolved_verdict_barrier() -> None:
@@ -1114,6 +1322,9 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.META_REPEAL_EFFECT_UNRESOLVED": drill_meta_repeal_effect_unresolved_route_rejection_barrier,
     "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED": drill_pending_amendment_effect_unresolved_route_rejection_barrier,
     "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_verdict_barrier,
+    "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD": drill_leading_subsection_heading_payload_elaboration,
+    "ELAB.SPARSE_OMISSION_TAIL_CLAIM": drill_sparse_omission_tail_claim_group_surface,
+    "ELAB.SPARSE_OMISSION_TAIL_PRUNED_FROM_CARRIER": drill_sparse_omission_tail_pruned_from_carrier_compile_surface,
     "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_parse_surface,
     "REPLAY_UNKNOWN_MUTATION_OUTCOME": drill_replay_unknown_mutation_outcome_apply_lane,
     "REPLAY_SKIPPED_OP_MUTATED_TREE": drill_replay_skipped_op_mutated_tree_apply_lane,
@@ -1507,6 +1718,9 @@ _PRODUCTION_BUILDER_CALLS = (
     "check_apply_mutation_accounting",
     "ProcessRouteRejectionContext",
     "normalize_and_compile_ops",
+    "build_group_surface",
+    "compile_amendment_ops",
+    "elaborate_payload_against_live",
     "api.parse_clause",
     "parse_clause(",
     "_check_occupancy_policy",

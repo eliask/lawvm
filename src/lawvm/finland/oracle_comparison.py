@@ -81,10 +81,17 @@ _KUMOTTU_STUBS_RE = re.compile(
 _KUMOTTU_STUB_SURFACE_RE = re.compile(r"\b(?:on|ovat)\s+kumottu\b|:ll[äa]\b", re.IGNORECASE)
 
 _OLD_CODE_REFERENCE_MARKER_RE = re.compile(
-    r"^\s*(?:\d+\s*[a-zäöå]?\s*§\s+)?\d+\s*[a-zäöå]?\s*§:n\s+sijasta\s+ks\.\s+\S",
+    r"^\s{0,8}+\d{1,4}+\s{0,4}+[a-zäöå]?\s{0,4}+§:n"
+    r"\s{1,4}+sijasta\s{1,4}+ks\.\s{1,4}+\S",
     re.IGNORECASE,
 )
-_DASH_PLACEHOLDER_RE = re.compile(r"^\s*(?:[-–—]\s*){3,}$")
+_OLD_CODE_REFERENCE_MARKER_WITH_LEAD_RE = re.compile(
+    r"^\s{0,8}+\d{1,4}+\s{0,4}+[a-zäöå]?\s{0,4}+§\s{1,4}+"
+    r"\d{1,4}+\s{0,4}+[a-zäöå]?\s{0,4}+§:n"
+    r"\s{1,4}+sijasta\s{1,4}+ks\.\s{1,4}+\S",
+    re.IGNORECASE,
+)
+_DASH_PLACEHOLDER_RE = re.compile(r"^\s{0,8}+[-–—](?:\s{0,8}+[-–—]){2,}\s{0,8}+$")
 
 
 def is_old_code_reference_marker(text: str) -> bool:
@@ -94,7 +101,11 @@ def is_old_code_reference_marker(text: str) -> bool:
     like ``5 §:n sijasta ks. L ...`` instead of source wording. That marker is a
     comparison/adjudication surface, not replayed legal text.
     """
-    return _OLD_CODE_REFERENCE_MARKER_RE.match(text.strip()) is not None
+    stripped = text.strip()
+    return (
+        _OLD_CODE_REFERENCE_MARKER_RE.match(stripped) is not None
+        or _OLD_CODE_REFERENCE_MARKER_WITH_LEAD_RE.match(stripped) is not None
+    )
 
 
 def _is_replay_obsolete_placeholder_or_bracketed_text(text: str) -> bool:
@@ -313,13 +324,20 @@ def strip_kumottu_attribution(text: str) -> str:
 
 
 _LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE = re.compile(
-    r"^(\s*\d+\s*[a-zäöå]?\s*§\s*)"
-    r"(?:[IVXLCDM]{1,8}\.\s+[A-ZÅÄÖ][^.]{1,120}\.\s+)",
+    r"^(\s{0,8}+\d{1,4}+\s{0,4}+[a-zäöå]?\s{0,4}+§\s{0,8}+)"
+    r"(?:[IVXLCDM]{1,8}+\.\s{1,4}+[A-ZÅÄÖ][^.]{1,120}+\.\s{1,4}+)",
     re.IGNORECASE,
+)
+_LEGACY_NUMBERED_SECTION_HEADING_PREFIX_RE = re.compile(
+    r"^(\s{0,8}+\d{1,4}+\s{0,4}+[a-zäöå]?\s{0,4}+§\s{0,8}+)"
+    r"(?:\d{1,2}+\.\s{1,4}+[A-ZÅÄÖ][^.]{1,120}+\.\s{1,4}+)",
 )
 _PROMULGATION_CLOSURE_TAILS = (
     "Tätä kaikki asianomaiset noudattakoot.",
     "Tätä kaikki asianomaiset noudattakoot",
+)
+_STANDALONE_SUBSECTION_ORDINAL_RE = re.compile(
+    r"(?:(?<=\s)|^)(?:[1-9]\d?)\.\s+(?=[A-ZÅÄÖ])"
 )
 
 
@@ -337,6 +355,19 @@ def strip_legacy_roman_division_heading_prefix(text: str) -> str:
     return _LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE.sub(r"\1", text, count=1)
 
 
+def strip_legacy_numbered_section_heading_prefix(text: str) -> str:
+    """Drop old FI numbered presentation headings attached to section text.
+
+    Some early sources project numbered subdivision labels such as
+    ``2. Vekselinjäljennökset.`` into the following section heading. Finlex's
+    consolidated section text may omit the label. This is comparison-only and
+    callers must self-validate against the oracle.
+    """
+    if "." not in text:
+        return text
+    return _LEGACY_NUMBERED_SECTION_HEADING_PREFIX_RE.sub(r"\1", text, count=1)
+
+
 def strip_promulgation_closure_tail(text: str) -> str:
     """Drop old FI promulgation closure formula from comparison text.
 
@@ -351,10 +382,26 @@ def strip_promulgation_closure_tail(text: str) -> str:
     return text
 
 
+def strip_standalone_subsection_ordinals(text: str) -> str:
+    """Drop Finlex-rendered subsection ordinal prefixes for comparison.
+
+    AKN structure already carries subsection identity. Some Finlex consolidated
+    text projections additionally include prose prefixes such as ``1.`` before
+    each subsection body, while replay renders the same subsection text without
+    that display ordinal. Callers must self-validate the stripped text against
+    replay before treating the difference as editorial.
+    """
+    if "." not in text:
+        return text
+    return _STANDALONE_SUBSECTION_ORDINAL_RE.sub("", text)
+
+
 def strip_non_substantive_source_projection_residue(text: str) -> str:
     """Remove FI source-side presentation/promulgation residue for comparison."""
     return strip_promulgation_closure_tail(
-        strip_legacy_roman_division_heading_prefix(text)
+        strip_legacy_numbered_section_heading_prefix(
+            strip_legacy_roman_division_heading_prefix(text)
+        )
     )
 
 

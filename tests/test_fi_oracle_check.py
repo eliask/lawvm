@@ -186,6 +186,55 @@ def test_diagnose_treats_legacy_roman_division_heading_as_editorial_convention()
     assert _diagnose(replay, oracle, {"action": "INSERT", "source_statute": "1991/517"}) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_legacy_numbered_section_heading_as_editorial_convention() -> None:
+    # Real shape: 1932/242 §67. The source witness projects the numbered
+    # subdivision title "2. Vekselinjäljennökset." into the section; Finlex's
+    # consolidated section text omits that presentation heading.
+    replay = (
+        "67 § 2. Vekselinjäljennökset. Jokaisella vekselin haltijalla on "
+        "oikeus ottaa siitä jäljennöksiä."
+    )
+    oracle = "67 § Jokaisella vekselin haltijalla on oikeus ottaa siitä jäljennöksiä."
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_treats_oracle_subsection_ordinals_as_editorial_convention() -> None:
+    # Real shape: 1992/1702 §5. Finlex projects subsection ordinals ("1.",
+    # "2.", "3.") into the paragraph text; LawVM carries subsection identity as
+    # structure and renders the same body without those display prefixes.
+    replay = (
+        "5 § Ajoneuvon, järjestelmän, osan tai teknisen yksikön valmistaja ja valmistajan edustaja "
+        "Ajoneuvon valmistajalla tarkoitetaan valmistajaa. "
+        "Ajoneuvovalmistajan edustajalla tarkoitetaan edustajaa. "
+        "Piensarjatyyppikatsastuksessa valmistajaksi rinnastetaan muuttaja."
+    )
+    oracle = (
+        "5 § Ajoneuvon, järjestelmän, osan tai teknisen yksikön valmistaja ja valmistajan edustaja "
+        "1. Ajoneuvon valmistajalla tarkoitetaan valmistajaa. "
+        "2. Ajoneuvovalmistajan edustajalla tarkoitetaan edustajaa. "
+        "3. Piensarjatyyppikatsastuksessa valmistajaksi rinnastetaan muuttaja."
+    )
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_treats_blame_owned_extra_insert_as_oracle_stale() -> None:
+    # Real shape: 1974/1086 §12b. Replay carries text inserted by 1981/935 that
+    # the selected oracle omits; this is an oracle/source mismatch, not an
+    # unowned replay extra.
+    replay = (
+        "12 b § Tavarankuljetustukea voidaan myöntää. "
+        "Asetuksella annetaan tarkempia säännöksiä ehdoista."
+    )
+    oracle = "12 b § Tavarankuljetustukea voidaan myöntää."
+
+    assert (
+        _diagnose(replay, oracle, {"action": "insert", "source_statute": "1981/935"})
+        == "ORACLE_STALE"
+    )
+
+
 def test_diagnose_treats_promulgation_closure_as_editorial_convention() -> None:
     # Real shape: 1922/148 §26. The final promulgation closure is source-side
     # formula text, not consolidated provision body text.
@@ -217,6 +266,31 @@ def test_source_pathology_demotes_absent_subsection_target_without_failed_op() -
         "source_statute": "1975/10",
         "target_norm": "7",
         "target_paragraph": "2",
+    }
+
+    assert _source_pathology_diagnosis_for_blame(master, blame_op) == "SOURCE_PATHOLOGY"
+
+
+def test_source_pathology_demotes_section_level_destructive_shape_loss() -> None:
+    # Real family: 1993/1709 §1 / 2000/882. The sparse schedule merge records a
+    # section-level DESTRUCTIVE_SHAPE_LOSS_RISK row with target_label="1"; the
+    # divergence blame row points at the same source and section.
+    master = SimpleNamespace(
+        findings=(),
+        source_pathology_rows=lambda: [
+            {
+                "source_statute": "2000/882",
+                "code": "DESTRUCTIVE_SHAPE_LOSS_RISK",
+                "target_unit_kind": "section",
+                "target_label": "1",
+                "detail": {},
+            }
+        ],
+    )
+    blame_op = {
+        "source_statute": "2000/882",
+        "target_norm": "1",
+        "target_unit_kind": "section",
     }
 
     assert _source_pathology_diagnosis_for_blame(master, blame_op) == "SOURCE_PATHOLOGY"
@@ -1142,6 +1216,32 @@ def test_diagnose_treats_temporary_stub_over_substantive_replay_as_editorial() -
     oracle = "13 a § 13 a § oli väliaikaisesti voimassa 1.1.2005-31.12.2022 L:lla 1429/2004."
 
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_treats_blamed_tiny_source_text_corruption_as_source_pathology() -> None:
+    # Real shape: 1983/683 section 7 carries source XML typos ("siitä>" and
+    # "päilidehuolto") while the oracle silently corrects them and adds an
+    # amendment-date heading annotation.
+    replay = (
+        "7 § Palvelujen kehittäminen ja kasvatuksen tukeminen "
+        "Kunnan on sosiaali- ja terveydenhuoltoa, koulutointa sekä muita "
+        "lapsille, nuorille ja lapsiperheille tarkoitettuja palveluja "
+        "kehittäessään pidettävä huolta myös siitä> että näiden palvelujen "
+        "avulla tuetaan huoltajia lasten kasvatuksessa. Kun aikuiselle "
+        "annetaan sosiaali- ja terveydenhuollon, kuten päilidehuolto- ja "
+        "mielenterveyspalveluja, on otettava huomioon myös lapsen tuen tarve."
+    )
+    oracle = (
+        "7 § Palvelujen kehittäminen ja kasvatuksen tukeminen (9.2.1990/139) "
+        "Kunnan on sosiaali- ja terveydenhuoltoa, koulutointa sekä muita "
+        "lapsille, nuorille ja lapsiperheille tarkoitettuja palveluja "
+        "kehittäessään pidettävä huolta myös siitä, että näiden palvelujen "
+        "avulla tuetaan huoltajia lasten kasvatuksessa. Kun aikuiselle "
+        "annetaan sosiaali- ja terveydenhuollon, kuten päihdehuolto- ja "
+        "mielenterveyspalveluja, on otettava huomioon myös lapsen tuen tarve."
+    )
+
+    assert _diagnose(replay, oracle, {"action": "insert", "source_statute": "1990/139"}) == "SOURCE_PATHOLOGY"
 
 
 def test_strip_editorial_annotations_strips_temporary_residue_without_case_suffix() -> None:
