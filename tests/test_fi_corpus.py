@@ -648,12 +648,13 @@ def test_ground_truth_bytes_bench_selector_uses_direct_selected_artifact() -> No
     sid = "2014/1429"
     older = "finlex://sd-cons/2014/1429/fin@20240012/main.xml"
     ahead = "finlex://sd-cons/2014/1429/fin@20250001/main.xml"
+    future_effective = (dt.date.today() + dt.timedelta(days=365)).isoformat()
     archive = _FakeArchiveStore(
         {"finlex://sd-cons/2014/1429/fin@%/main.xml": [ahead, older]},
         {
             ahead: _consolidated_xml(version="20250001", date_consolidated="2024-01-15"),
             older: _consolidated_xml(version="20240012", date_consolidated="2024-01-15"),
-            corpus.statute_url("2025/1"): _source_xml(effective_date="2025-02-01"),
+            corpus.statute_url("2025/1"): _source_xml(effective_date=future_effective),
             corpus.statute_url("2024/12"): _source_xml(effective_date="2024-01-01"),
         },
     )
@@ -675,8 +676,8 @@ def test_ground_truth_bytes_bench_selector_uses_direct_selected_artifact() -> No
     )
 
     # Option Z with 180-day tolerance (T5-fix, commit a3870eea):
-    # 20250001 has effective 2025-02-01, date_consolidated 2024-01-15.
-    # Gap ~383 days > 180-day tolerance → rejected. bench_comparable falls back
+    # 20250001 has an effective date far after date_consolidated 2024-01-15.
+    # Gap > 180-day tolerance → rejected. bench_comparable falls back
     # to the older self-comparable 20240012 (effective 2024-01-01, already in
     # force by date_consolidated).
     assert data is not None

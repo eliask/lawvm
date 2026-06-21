@@ -282,7 +282,11 @@ def test_select_bench_comparable_logs_oracle_metadata_collapsed_dates(
 # version_tag 20200104 → amendment_id 2020/104
 # version_tag 20200105 → amendment_id 2020/105
 
-_BASE_DC = dt.date(2020, 1, 1)
+_BASE_DC = dt.date.today() + dt.timedelta(days=365)
+
+
+def _days_after_base(days: int) -> str:
+    return (_BASE_DC + dt.timedelta(days=days)).isoformat()
 
 
 def test_180day_tolerance_fixture_a_gap_6_accepted() -> None:
@@ -291,8 +295,8 @@ def test_180day_tolerance_fixture_a_gap_6_accepted() -> None:
     archive = _FixtureArchive(
         {
             "finlex://sd/2020/101/fin/main.xml": _amendment_xml(
-                effective_date="2020-01-07",  # 6 days after date_consolidated
-                issue_date="2020-01-01",
+                effective_date=_days_after_base(6),  # 6 days after date_consolidated
+                issue_date=_BASE_DC.isoformat(),
             )
         }
     )
@@ -302,16 +306,15 @@ def test_180day_tolerance_fixture_a_gap_6_accepted() -> None:
 def test_180day_tolerance_fixture_b_gap_179_accepted() -> None:
     """Fixture B: gap = 179 days → accepted (still within tolerance)."""
     artifact = _make_artifact("2020/102", "20200102", _BASE_DC)
-    # 2020-01-01 + 179 days = 2020-06-28 (verified: dt.date(2020,6,28) - dt.date(2020,1,1) == 179)
     archive = _FixtureArchive(
         {
             "finlex://sd/2020/102/fin/main.xml": _amendment_xml(
-                effective_date="2020-06-28",  # 179 days after date_consolidated
-                issue_date="2020-01-01",
+                effective_date=_days_after_base(179),  # 179 days after date_consolidated
+                issue_date=_BASE_DC.isoformat(),
             )
         }
     )
-    gap = (dt.date(2020, 6, 28) - _BASE_DC).days
+    gap = (dt.date.fromisoformat(_days_after_base(179)) - _BASE_DC).days
     assert gap == 179, f"Fixture setup error: expected gap=179, got {gap}"
     assert _is_self_comparable_cached_artifact(artifact, archive) is True
 
@@ -319,16 +322,15 @@ def test_180day_tolerance_fixture_b_gap_179_accepted() -> None:
 def test_180day_tolerance_fixture_c_gap_181_rejected() -> None:
     """Fixture C: gap = 181 days → REJECTED (exceeds 180-day tolerance)."""
     artifact = _make_artifact("2020/103", "20200103", _BASE_DC)
-    # 2020-01-01 + 181 days = 2020-06-30 (2020 is a leap year)
     archive = _FixtureArchive(
         {
             "finlex://sd/2020/103/fin/main.xml": _amendment_xml(
-                effective_date="2020-06-30",  # 181 days after date_consolidated
-                issue_date="2020-01-01",
+                effective_date=_days_after_base(181),  # 181 days after date_consolidated
+                issue_date=_BASE_DC.isoformat(),
             )
         }
     )
-    gap = (dt.date(2020, 6, 30) - _BASE_DC).days
+    gap = (dt.date.fromisoformat(_days_after_base(181)) - _BASE_DC).days
     assert gap == 181, f"Fixture setup error: expected gap=181, got {gap}"
     assert _is_self_comparable_cached_artifact(artifact, archive) is False
 
@@ -343,8 +345,8 @@ def test_180day_tolerance_fixture_d_gap_365_rejected() -> None:
     archive = _FixtureArchive(
         {
             "finlex://sd/2020/104/fin/main.xml": _amendment_xml(
-                effective_date="2021-01-01",  # 366 days after date_consolidated
-                issue_date="2020-01-01",
+                effective_date=_days_after_base(366),  # well after date_consolidated
+                issue_date=_BASE_DC.isoformat(),
             )
         }
     )
@@ -379,8 +381,8 @@ def test_180day_tolerance_warning_fires_on_positive_gap(caplog: Any) -> None:
     archive = _FixtureArchive(
         {
             "finlex://sd/2020/101/fin/main.xml": _amendment_xml(
-                effective_date="2020-01-07",  # gap = 6 days, accepted
-                issue_date="2020-01-01",
+                effective_date=_days_after_base(6),  # gap = 6 days, accepted
+                issue_date=_BASE_DC.isoformat(),
             )
         }
     )
@@ -402,8 +404,8 @@ def test_180day_tolerance_warning_deduplicates_repeated_artifact(caplog: Any) ->
     archive = _FixtureArchive(
         {
             "finlex://sd/2020/101/fin/main.xml": _amendment_xml(
-                effective_date="2020-01-07",
-                issue_date="2020-01-01",
+                effective_date=_days_after_base(6),
+                issue_date=_BASE_DC.isoformat(),
             )
         }
     )
@@ -455,22 +457,28 @@ def test_selection_provenance_populated_for_bench_comparable() -> None:
     report tolerance_applied=True (because that artifact's effective date is
     after date_consolidated).
     """
-    SHARED_DC = dt.date(2021, 11, 25)
+    shared_dc = _BASE_DC
     artifacts = [
-        _make_artifact("2013/331", "20150103", SHARED_DC),
-        _make_artifact("2013/331", "20160960", SHARED_DC),
-        _make_artifact("2013/331", "20180781", SHARED_DC),
-        _make_artifact("2013/331", "20211030", SHARED_DC),
+        _make_artifact("2013/331", "20150103", shared_dc),
+        _make_artifact("2013/331", "20160960", shared_dc),
+        _make_artifact("2013/331", "20180781", shared_dc),
+        _make_artifact("2013/331", "20211030", shared_dc),
     ]
     archive = _FixtureArchive(
         {
-            "finlex://sd/2015/103/fin/main.xml": _amendment_xml(effective_date="2015-02-03"),
-            "finlex://sd/2016/960/fin/main.xml": _amendment_xml(effective_date="2016-12-01"),
-            "finlex://sd/2018/781/fin/main.xml": _amendment_xml(effective_date="2018-09-06"),
+            "finlex://sd/2015/103/fin/main.xml": _amendment_xml(
+                effective_date=(_BASE_DC - dt.timedelta(days=1)).isoformat()
+            ),
+            "finlex://sd/2016/960/fin/main.xml": _amendment_xml(
+                effective_date=(_BASE_DC - dt.timedelta(days=1)).isoformat()
+            ),
+            "finlex://sd/2018/781/fin/main.xml": _amendment_xml(
+                effective_date=(_BASE_DC - dt.timedelta(days=1)).isoformat()
+            ),
             # 2021/1030: effective_date > date_consolidated → tolerance_applied
             "finlex://sd/2021/1030/fin/main.xml": _amendment_xml(
-                effective_date="2021-12-01",
-                issue_date="2021-11-25",
+                effective_date=_days_after_base(6),
+                issue_date=_BASE_DC.isoformat(),
             ),
         }
     )

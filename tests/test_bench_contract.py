@@ -314,15 +314,20 @@ def test_find_regressions_requires_both_runs() -> None:
 
 
 def test_comparator_registry_dispatch() -> None:
+    from lawvm.core import bench_comparator_registry
+
     def comparator(unit_id: str) -> BenchUnitResult:
         return _scored(unit_id, structural_err=0.0)
 
-    register_bench_comparator("testjuris", comparator)
-    assert has_bench_comparator("testjuris")
-    assert "testjuris" in registered_jurisdictions()
-    assert get_bench_comparator("testjuris") is comparator
-    result = run_bench_comparator("testjuris", "u1")
-    assert result.unit_id == "u1"
+    try:
+        register_bench_comparator("testjuris", comparator)
+        assert has_bench_comparator("testjuris")
+        assert "testjuris" in registered_jurisdictions()
+        assert get_bench_comparator("testjuris") is comparator
+        result = run_bench_comparator("testjuris", "u1")
+        assert result.unit_id == "u1"
+    finally:
+        bench_comparator_registry._COMPARATORS.pop("testjuris", None)
 
 
 def test_get_unregistered_comparator_fails_loud() -> None:
@@ -331,8 +336,13 @@ def test_get_unregistered_comparator_fails_loud() -> None:
 
 
 def test_run_comparator_validates_return_type() -> None:
+    from lawvm.core import bench_comparator_registry
+
     # Deliberately register a comparator with the wrong return type to exercise
     # run_bench_comparator's runtime type guard.
-    register_bench_comparator("badjuris", lambda: "not a result")  # ty: ignore[invalid-argument-type]
-    with pytest.raises(TypeError):
-        run_bench_comparator("badjuris")
+    try:
+        register_bench_comparator("badjuris", lambda: "not a result")  # ty: ignore[invalid-argument-type]
+        with pytest.raises(TypeError):
+            run_bench_comparator("badjuris")
+    finally:
+        bench_comparator_registry._COMPARATORS.pop("badjuris", None)
