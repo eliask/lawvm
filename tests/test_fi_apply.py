@@ -7310,6 +7310,235 @@ def test_apply_whole_section_replace_moves_unique_root_section_into_target_chapt
     assert pathologies[0].detail["recovery_kind"] == "section_move_replace_destination_rebind"
 
 
+def test_scoped_section_replace_consumes_stale_unscoped_root_duplicate() -> None:
+    wrapper = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("15", _content("old scoped text")),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(
+                    _sec("15", _content("stale unscoped text")),
+                ),
+            ),
+        ),
+    )
+    state = _make_state(_body(wrapper))
+    op = _op(
+        op_type="REPLACE",
+        target_section="15",
+        target_chapter="3",
+    )
+    op.source_statute = "1994/328"
+    ctx = _ctx(state.ir)
+    pathologies: list[SourcePathology] = []
+    mutation_events: list[ApplyMutationEvent] = []
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_chapter_3",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"),)),
+            source=OperationSource(statute_id="1994/328"),
+        )
+    ]
+
+    result = apply_op(
+        state,
+        op,
+        ctx,
+        muutos_ir=_sec("15", _content("new scoped text")),
+        replay_mode="legal_pit",
+        replay_history_ops=replay_history,
+        source_pathologies_out=pathologies,
+        mutation_events_out=mutation_events,
+    )
+
+    result_wrapper = result.ir.children[0]
+    assert result_wrapper.kind == IRNodeKind.HCONTAINER
+    stale_bucket_sections = [
+        grandchild
+        for child in result_wrapper.children
+        if child.kind is IRNodeKind.HCONTAINER
+        for grandchild in child.children
+        if grandchild.kind is IRNodeKind.SECTION and grandchild.label == "15"
+    ]
+    assert stale_bucket_sections == []
+    scoped = result.find_section("15", "3")
+    assert scoped is not None
+    assert "new scoped text" in irnode_to_text(scoped)
+    assert len(pathologies) == 1
+    assert pathologies[0].code == "UNSCOPED_ROOT_DUPLICATE_CONSUMED"
+    assert (
+        pathologies[0].detail["recovery_kind"]
+        == "section_replace_consume_unscoped_root_duplicate"
+    )
+    assert len(mutation_events) == 1
+    assert ("hcontainer", "") in mutation_events[0].removed_paths[0]
+    assert ("section", "15") in mutation_events[0].removed_paths[0]
+    assert any(
+        allowance.rule_id == "section_replace_consume_unscoped_root_duplicate"
+        for allowance in mutation_events[0].declared_allowances
+    )
+
+
+def test_scoped_section_replace_keeps_unscoped_duplicate_when_source_targets_same_label_elsewhere() -> None:
+    wrapper = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="1 luku"),
+                    _sec("15", _content("other scoped text")),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("15", _content("old scoped text")),
+                ),
+            ),
+            _sec("15", _content("ambiguous unscoped text")),
+        ),
+    )
+    state = _make_state(_body(wrapper))
+    op = _op(
+        op_type="REPLACE",
+        target_section="15",
+        target_chapter="3",
+    )
+    op.source_statute = "1998/522"
+    ctx = _ctx(state.ir)
+    pathologies: list[SourcePathology] = []
+    mutation_events: list[ApplyMutationEvent] = []
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_chapter_3",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"),)),
+            payload=IRNode(kind=IRNodeKind.CHAPTER, label="3"),
+            source=OperationSource(statute_id="1998/522"),
+        ),
+        LegalOperation(
+            op_id="snapshot_section_15",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "1"), ("section", "15"))),
+            payload=_sec("15", _content("other replacement text")),
+            source=OperationSource(statute_id="1998/522"),
+        ),
+    ]
+
+    result = apply_op(
+        state,
+        op,
+        ctx,
+        muutos_ir=_sec("15", _content("new scoped text")),
+        replay_mode="legal_pit",
+        replay_history_ops=replay_history,
+        source_pathologies_out=pathologies,
+        mutation_events_out=mutation_events,
+    )
+
+    result_wrapper = result.ir.children[0]
+    direct_sections = [
+        child
+        for child in result_wrapper.children
+        if child.kind is IRNodeKind.SECTION and child.label == "15"
+    ]
+    assert len(direct_sections) == 1
+    assert "ambiguous unscoped text" in irnode_to_text(direct_sections[0])
+    assert pathologies == []
+    assert all(
+        allowance.rule_id != "section_replace_consume_unscoped_root_duplicate"
+        for event in mutation_events
+        for allowance in event.declared_allowances
+    )
+
+
+def test_scoped_section_replace_keeps_headed_unscoped_same_label_section() -> None:
+    wrapper = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="6",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="6 luku"),
+                    _sec("4", _content("old scoped text")),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="4",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="4 §"),
+                    IRNode(kind=IRNodeKind.HEADING, text="Voimaantulo"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(_content("root text"),)),
+                ),
+            ),
+        ),
+    )
+    state = _make_state(_body(wrapper))
+    op = _op(
+        op_type="REPLACE",
+        target_section="4",
+        target_chapter="6",
+    )
+    op.source_statute = "2006/442"
+    ctx = _ctx(state.ir)
+    pathologies: list[SourcePathology] = []
+    mutation_events: list[ApplyMutationEvent] = []
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_chapter_6",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "6"),)),
+            payload=IRNode(kind=IRNodeKind.CHAPTER, label="6"),
+            source=OperationSource(statute_id="2006/442"),
+        )
+    ]
+
+    result = apply_op(
+        state,
+        op,
+        ctx,
+        muutos_ir=_sec("4", _content("new scoped text")),
+        replay_mode="legal_pit",
+        replay_history_ops=replay_history,
+        source_pathologies_out=pathologies,
+        mutation_events_out=mutation_events,
+    )
+
+    result_wrapper = result.ir.children[0]
+    direct_sections = [
+        child
+        for child in result_wrapper.children
+        if child.kind is IRNodeKind.SECTION and child.label == "4"
+    ]
+    assert len(direct_sections) == 1
+    assert "Voimaantulo" in irnode_to_text(direct_sections[0])
+    assert pathologies == []
+    assert all(
+        allowance.rule_id != "section_replace_consume_unscoped_root_duplicate"
+        for event in mutation_events
+        for allowance in event.declared_allowances
+    )
+
+
 def test_apply_whole_section_replace_materializes_inside_existing_chapter_for_missing_section() -> None:
     state = _make_state(
         _body(

@@ -61,6 +61,7 @@ from lawvm.finland.source_pathology import (
     build_section_insert_scoped_parent_absent_pathology,
     build_section_replace_bootstrap_parent_missing_pathology,
     build_unhandled_structure_op_pathology,
+    build_unscoped_root_duplicate_consumed_pathology,
     build_sparse_merge_invariant_skip_pathology,
     build_same_effective_container_repeal_shadowed_pathology,
     build_temporary_section_rebase_pathology,
@@ -767,6 +768,211 @@ def _is_unscoped_root_section_parent_in_containered_tree(
     if any(kind in {"chapter", "part"} for kind, _label in parent_path):
         return False
     return any(child.kind in {IRNodeKind.CHAPTER, IRNodeKind.PART} for child in state.ir.children)
+
+
+def _unscoped_root_section_duplicate_paths(
+    state: "ReplayState",
+    *,
+    label: str,
+    scoped_path: Path,
+) -> tuple[Path, ...]:
+    if not label:
+        return ()
+    scoped_tuple = tuple(scoped_path)
+    matches: list[Path] = []
+    for candidate in section_paths_for_label(state.provision_index, label):
+        path = _tops._as_path(candidate)
+        if path == scoped_tuple:
+            continue
+        if any(kind in {"chapter", "part"} for kind, _value in path[:-1]):
+            continue
+        parent_path = path[:-1]
+        parent_node = _tops.resolve(state.ir, parent_path) if parent_path else state.ir
+        if parent_node is None:
+            continue
+        container_parent_path = parent_path[:-1] if parent_path and parent_path[-1][0] == "hcontainer" else parent_path
+        container_parent = (
+            _tops.resolve(state.ir, container_parent_path)
+            if container_parent_path
+            else state.ir
+        )
+        if container_parent is None:
+            continue
+        if not (
+            any(child.kind in {IRNodeKind.CHAPTER, IRNodeKind.PART} for child in parent_node.children)
+            or any(child.kind in {IRNodeKind.CHAPTER, IRNodeKind.PART} for child in container_parent.children)
+        ):
+            continue
+        node = _tops.resolve(state.ir, path)
+        if (
+            node is not None
+            and node.kind is IRNodeKind.SECTION
+            and not any(
+                child.kind is IRNodeKind.HEADING and irnode_to_text(child).strip()
+                for child in node.children
+            )
+        ):
+            matches.append(path)
+    return tuple(matches)
+
+
+def _scoped_container_address_path(scoped_path: Path) -> tuple[tuple[str, str], ...]:
+    path: list[tuple[str, str]] = []
+    for kind, label in scoped_path:
+        if kind == "hcontainer":
+            continue
+        if kind in {"part", "chapter"}:
+            path.append((kind, label))
+    return tuple(path)
+
+
+def _same_source_container_replace_precedes(
+    replay_history_ops: Optional[List[_LegalOperation]],
+    *,
+    scoped_path: Path,
+    source_statute: str,
+) -> bool:
+    if replay_history_ops is None or not source_statute:
+        return False
+    container_path = _scoped_container_address_path(scoped_path)
+    if not container_path:
+        return False
+    for prior in reversed(replay_history_ops):
+        if prior.action is not StructuralAction.REPLACE:
+            continue
+        if not str(prior.op_id).startswith(("snapshot_chapter_", "snapshot_part_")):
+            continue
+        if prior.target is None or tuple(prior.target.path) != container_path:
+            continue
+        if prior.source is None or prior.source.statute_id != source_statute:
+            continue
+        return True
+    return False
+
+
+def _same_source_targets_other_scoped_section_label(
+    replay_history_ops: Optional[List[_LegalOperation]],
+    *,
+    scoped_path: Path,
+    source_statute: str,
+    target_label: str,
+) -> bool:
+    if replay_history_ops is None or not source_statute or not target_label:
+        return False
+    scoped_address = tuple(
+        (kind, label) for kind, label in scoped_path if kind != "hcontainer" and label
+    )
+    for prior in replay_history_ops:
+        if prior.action not in {StructuralAction.INSERT, StructuralAction.REPLACE}:
+            continue
+        if prior.source is None or prior.source.statute_id != source_statute:
+            continue
+        if prior.target is None:
+            continue
+        target_path = tuple(prior.target.path)
+        if target_path == scoped_address:
+            continue
+        if not target_path or target_path[-1] != ("section", target_label):
+            continue
+        if any(kind in {"chapter", "part"} for kind, _value in target_path[:-1]):
+            return True
+    return False
+
+
+def _unscoped_root_duplicate_trails_scoped_container(
+    state: "ReplayState",
+    *,
+    scoped_path: Path,
+    duplicate_path: Path,
+) -> bool:
+    container_path: Path | None = None
+    for index in range(len(scoped_path) - 1, -1, -1):
+        if scoped_path[index][0] in {"chapter", "part"}:
+            container_path = scoped_path[: index + 1]
+            break
+    if container_path is None:
+        return False
+    if duplicate_path[:-1] == container_path[:-1]:
+        duplicate_container_path = duplicate_path[:-1]
+    elif duplicate_path[:-1] and duplicate_path[-2][0] == "hcontainer":
+        duplicate_container_path = duplicate_path[:-2]
+    else:
+        return False
+    if duplicate_container_path != container_path[:-1]:
+        return False
+    parent = _tops.resolve(state.ir, duplicate_container_path) if duplicate_container_path else state.ir
+    if parent is None:
+        return False
+    container_index: int | None = None
+    duplicate_bucket_index: int | None = None
+    container_kind, container_label = container_path[-1]
+    duplicate_bucket = duplicate_path[len(duplicate_container_path)] if len(duplicate_path) > len(duplicate_container_path) else None
+    for child_index, child in enumerate(parent.children):
+        if child.kind.value == container_kind and child.label == container_label:
+            container_index = child_index
+        if (
+            duplicate_bucket is not None
+            and child.kind.value == duplicate_bucket[0]
+            and child.label == (duplicate_bucket[1] or None)
+        ):
+            duplicate_bucket_index = child_index
+        if container_index is not None and duplicate_bucket_index is not None:
+            break
+    if container_index is None or duplicate_bucket_index is None or duplicate_bucket_index <= container_index:
+        return False
+    return True
+
+
+def _consume_unscoped_root_duplicate_after_scoped_section_replace(
+    state: "ReplayState",
+    new_ir: IRNode,
+    *,
+    scoped_path: Path,
+    target_label: str,
+    source_statute: str,
+    replay_history_ops: Optional[List[_LegalOperation]],
+    source_pathologies_out: Optional[List[SourcePathology]],
+) -> IRNode:
+    if not any(kind in {"chapter", "part"} for kind, _value in scoped_path[:-1]):
+        return new_ir
+    duplicate_paths = _unscoped_root_section_duplicate_paths(
+        state,
+        label=target_label,
+        scoped_path=scoped_path,
+    )
+    if len(duplicate_paths) != 1:
+        return new_ir
+    duplicate_path = duplicate_paths[0]
+    if not (
+        _unscoped_root_duplicate_trails_scoped_container(
+            state,
+            scoped_path=scoped_path,
+            duplicate_path=duplicate_path,
+        )
+        and _same_source_container_replace_precedes(
+            replay_history_ops,
+            scoped_path=scoped_path,
+            source_statute=source_statute,
+        )
+        and not _same_source_targets_other_scoped_section_label(
+            replay_history_ops,
+            scoped_path=scoped_path,
+            source_statute=source_statute,
+            target_label=target_label,
+        )
+    ):
+        return new_ir
+    if source_pathologies_out is not None:
+        source_pathologies_out.append(
+            build_unscoped_root_duplicate_consumed_pathology(
+                source_statute=source_statute,
+                target_unit_kind="section",
+                target_label=f"{target_label} §",
+                scoped_target_path=receipt_address_string(scoped_path),
+                consumed_path=receipt_address_string(duplicate_path),
+            )
+        )
+    return _tops.remove_at(new_ir, duplicate_path)
 
 
 def _find_direct_body_part_path(ir: IRNode, target_part: str | None) -> Path | None:
@@ -2201,6 +2407,17 @@ def _apply_whole_section_op(
             sparse_merge = _apply_section_tail_policy_marker(sparse_merge, rop=rop, view=view)
             new_ir = _tops.replace_at(state.ir, sec_path, sparse_merge)
             if _same_section_label(sparse_merge):
+                cleaned_ir = _consume_unscoped_root_duplicate_after_scoped_section_replace(
+                    state,
+                    new_ir,
+                    scoped_path=sec_path,
+                    target_label=_ts,
+                    source_statute=_source_statute or "",
+                    replay_history_ops=replay_history_ops,
+                    source_pathologies_out=source_pathologies_out,
+                )
+                if cleaned_ir is not new_ir:
+                    return state.with_ir(cleaned_ir)
                 return _with_preserved_provision_index(state, new_ir)
             return state.with_ir(new_ir)
         intro_preserve = _heading_intro_replace_preserve_items_ir(live_merge_sec, muutos_ir)
@@ -2215,6 +2432,17 @@ def _apply_whole_section_op(
             intro_preserve = _apply_section_tail_policy_marker(intro_preserve, rop=rop, view=view)
             new_ir = _tops.replace_at(state.ir, sec_path, intro_preserve)
             if _same_section_label(intro_preserve):
+                cleaned_ir = _consume_unscoped_root_duplicate_after_scoped_section_replace(
+                    state,
+                    new_ir,
+                    scoped_path=sec_path,
+                    target_label=_ts,
+                    source_statute=_source_statute or "",
+                    replay_history_ops=replay_history_ops,
+                    source_pathologies_out=source_pathologies_out,
+                )
+                if cleaned_ir is not new_ir:
+                    return state.with_ir(cleaned_ir)
                 return _with_preserved_provision_index(state, new_ir)
             return state.with_ir(new_ir)
         multi_sparse_merge = _multi_subsection_sparse_item_section_replace_merge_ir(
@@ -2233,6 +2461,17 @@ def _apply_whole_section_op(
             multi_sparse_merge = _apply_section_tail_policy_marker(multi_sparse_merge, rop=rop, view=view)
             new_ir = _tops.replace_at(state.ir, sec_path, multi_sparse_merge)
             if _same_section_label(multi_sparse_merge):
+                cleaned_ir = _consume_unscoped_root_duplicate_after_scoped_section_replace(
+                    state,
+                    new_ir,
+                    scoped_path=sec_path,
+                    target_label=_ts,
+                    source_statute=_source_statute or "",
+                    replay_history_ops=replay_history_ops,
+                    source_pathologies_out=source_pathologies_out,
+                )
+                if cleaned_ir is not new_ir:
+                    return state.with_ir(cleaned_ir)
                 return _with_preserved_provision_index(state, new_ir)
             return state.with_ir(new_ir)
         mixed_intro_preserve = _mixed_sparse_intro_replace_preserve_first_subsection_items_ir(
@@ -2251,6 +2490,17 @@ def _apply_whole_section_op(
             mixed_intro_preserve = _apply_section_tail_policy_marker(mixed_intro_preserve, rop=rop, view=view)
             new_ir = _tops.replace_at(state.ir, sec_path, mixed_intro_preserve)
             if _same_section_label(mixed_intro_preserve):
+                cleaned_ir = _consume_unscoped_root_duplicate_after_scoped_section_replace(
+                    state,
+                    new_ir,
+                    scoped_path=sec_path,
+                    target_label=_ts,
+                    source_statute=_source_statute or "",
+                    replay_history_ops=replay_history_ops,
+                    source_pathologies_out=source_pathologies_out,
+                )
+                if cleaned_ir is not new_ir:
+                    return state.with_ir(cleaned_ir)
                 return _with_preserved_provision_index(state, new_ir)
             return state.with_ir(new_ir)
         live_subsections = [c for c in live_merge_sec.children if c.kind is IRNodeKind.SUBSECTION]
@@ -2304,6 +2554,17 @@ def _apply_whole_section_op(
         )
         new_ir = _tops.replace_at(state.ir, sec_path, muutos_ir)
         if _same_section_label(muutos_ir):
+            cleaned_ir = _consume_unscoped_root_duplicate_after_scoped_section_replace(
+                state,
+                new_ir,
+                scoped_path=sec_path,
+                target_label=_ts,
+                source_statute=_source_statute or "",
+                replay_history_ops=replay_history_ops,
+                source_pathologies_out=source_pathologies_out,
+            )
+            if cleaned_ir is not new_ir:
+                return state.with_ir(cleaned_ir)
             return _with_preserved_provision_index(state, new_ir)
         return state.with_ir(new_ir)
 

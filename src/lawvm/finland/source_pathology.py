@@ -775,6 +775,32 @@ def build_destructive_shape_loss_risk_pathology(
     )
 
 
+def build_unscoped_root_duplicate_consumed_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_label: str,
+    scoped_target_path: str,
+    consumed_path: str,
+) -> SourcePathology:
+    """Build a typed record for consuming a stale unscoped section duplicate."""
+    return SourcePathology.from_scope(
+        code="UNSCOPED_ROOT_DUPLICATE_CONSUMED",
+        message=(
+            "A later explicitly scoped section replacement consumed a stale direct "
+            "wrapper-level section with the same label."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=target_label,
+        detail={
+            "recovery_kind": RecoveryKind.SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE,
+            "scoped_target_path": scoped_target_path,
+            "consumed_path": consumed_path,
+        },
+    )
+
+
 def build_sparse_merge_invariant_skip_pathology(
     *,
     source_statute: str,

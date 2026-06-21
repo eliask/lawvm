@@ -306,8 +306,9 @@ def _snapshot_op_source(
 def _op_source_for_merge_base(op: AmendmentOp | ResolvedOp) -> OperationSource | None:
     if isinstance(op, ResolvedOp):
         return op.resolved_op_source
-    if op.lo is not None:
-        return op.lo.source
+    lo = getattr(op, "lo", None)
+    if lo is not None:
+        return lo.source
     return None
 
 

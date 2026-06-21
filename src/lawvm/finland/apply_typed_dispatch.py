@@ -111,6 +111,9 @@ _SPARSE_ALAKOHTA_INSERT_MERGE_RULE_ID = RecoveryKind.SPARSE_ALAKOHTA_INSERT_MERG
 _SPARSE_ALAKOHTA_REPLACE_MERGE_RULE_ID = RecoveryKind.SPARSE_ALAKOHTA_REPLACE_MERGE
 _SPARSE_ITEM_TAIL_SUBSECTION_PRUNE_RULE_ID = RecoveryKind.SPARSE_ITEM_TAIL_SUBSECTION_PRUNE
 _SUBSECTION_REPLACE_SPARSE_GAP_INSERT_RULE_ID = RecoveryKind.SUBSECTION_REPLACE_SPARSE_GAP_INSERT
+_SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE_RULE_ID = (
+    RecoveryKind.SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE
+)
 _SUBSECTION_DISPATCH_LANDED_RECOVERY_RULE_IDS: tuple[RecoveryKind, ...] = (
     _INTRO_LIST_MOMENT_SHAPE_RULE_ID,
     _MISSING_EXACT_SUBSECTION_LABEL_RULE_ID,
@@ -500,6 +503,41 @@ def _subsection_dispatch_landed_recovery_allowances(
     )
 
 
+def _whole_section_unscoped_duplicate_consumed_paths(
+    *,
+    before_state: "ReplayState",
+    after_state: "ReplayState",
+    new_pathologies: tuple[SourcePathology, ...],
+    rop: ResolvedOp,
+    sec_path: Path | None,
+) -> TreePaths:
+    if sec_path is None:
+        return ()
+    if not _new_pathologies_include_recovery_kind(
+        new_pathologies,
+        _SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE_RULE_ID,
+    ):
+        return ()
+    target_label = rop.resolved_target_label or (str(sec_path[-1][1]) if sec_path else "")
+    if not target_label:
+        return ()
+    consumed: list[TreePath] = []
+    for candidate in section_paths_for_label(before_state.provision_index, target_label):
+        path = tuple(candidate)
+        if path == tuple(sec_path):
+            continue
+        if any(kind in {"chapter", "part"} for kind, _value in path[:-1]):
+            continue
+        if _tops.resolve(before_state.ir, path) is None:
+            continue
+        if _tops.resolve(after_state.ir, path) is not None:
+            continue
+        consumed_path = _path_to_tuple(path)
+        if consumed_path is not None:
+            consumed.append(consumed_path)
+    return tuple(consumed)
+
+
 def _find_scoped_section_insert_parent_path(
     ir: IRNode,
     *,
@@ -709,6 +747,7 @@ def _apply_intent_section_level(
                     )
                 sec_path = None
 
+    whole_pathology_cursor = len(source_pathologies_out) if source_pathologies_out is not None else 0
     whole_result = None
     if not descendant_scoped_target:
         whole_result = _apply_whole_section_op(
@@ -726,6 +765,9 @@ def _apply_intent_section_level(
             migration_ledger=migration_ledger,
         )
     if whole_result is not None:
+        whole_new_pathologies: tuple[SourcePathology, ...] = ()
+        if source_pathologies_out is not None:
+            whole_new_pathologies = tuple(source_pathologies_out[whole_pathology_cursor:])
         resolved_target_path = _resolved_target_path_for_rop_event(rop, sec_path)
         if migration_rebased_target_path is not None:
             resolved_target_path = migration_rebased_target_path
@@ -747,6 +789,21 @@ def _apply_intent_section_level(
                     kind="migration_path",
                     paths=(migration_rebase_source_path,),
                     rule_id="pending_source_chain_insert_rebase",
+                ),
+            )
+        consumed_unscoped_duplicate_paths = _whole_section_unscoped_duplicate_consumed_paths(
+            before_state=state,
+            after_state=whole_result,
+            new_pathologies=whole_new_pathologies,
+            rop=rop,
+            sec_path=sec_path,
+        )
+        if consumed_unscoped_duplicate_paths:
+            declared_allowances = declared_allowances + (
+                DeclaredMutationAllowance(
+                    kind="recovery_path",
+                    paths=consumed_unscoped_duplicate_paths,
+                    rule_id=_SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE_RULE_ID,
                 ),
             )
         created_paths: TreePaths = ()
@@ -773,6 +830,10 @@ def _apply_intent_section_level(
                     removed_paths = rebind_paths
                 if migration_rebase_source_path is not None:
                     removed_paths = tuple(dict.fromkeys((*removed_paths, migration_rebase_source_path)))
+                if consumed_unscoped_duplicate_paths:
+                    removed_paths = tuple(
+                        dict.fromkeys((*removed_paths, *consumed_unscoped_duplicate_paths))
+                    )
         elif rop.resolved_action_type == "REPEAL":
             if profile.synthesize_repeal_placeholders:
                 if resolved_target_path is not None:

@@ -529,7 +529,7 @@ def temporary_signal_for_op(op: "AmendmentOp | ResolvedOp") -> bool:
     The live temporary authority is carried through the replay-side temporal
     event path; the op shell only needs the coarse `is_temporary` flag here.
     """
-    return op.is_temporary
+    return bool(getattr(op, "is_temporary", False))
 
 
 # ---------------------------------------------------------------------------
