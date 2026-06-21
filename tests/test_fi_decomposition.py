@@ -459,6 +459,33 @@ class TestPostProcessTree:
 
         assert once == twice, "post_process_tree must be idempotent"
 
+    def test_section_num_precedes_heading_after_post_process(self) -> None:
+        body = IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.HEADING, text="Osakekannan omistus"),
+                        IRNode(kind=IRNodeKind.NUM, text="3 §"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                    ),
+                ),
+            ),
+        )
+
+        once = post_process_tree(body, normalize_replay_text=False)
+        twice = post_process_tree(once, normalize_replay_text=False)
+
+        section = once.children[0]
+        assert [child.kind for child in section.children] == [
+            IRNodeKind.NUM,
+            IRNodeKind.HEADING,
+            IRNodeKind.SUBSECTION,
+        ]
+        assert once == twice
+
     def test_normalize_replay_text_false_preserves_whitespace(self) -> None:
         body = IRNode(
             kind=IRNodeKind.BODY,
