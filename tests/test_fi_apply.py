@@ -140,6 +140,7 @@ from lawvm.finland.payload_normalize import (
     SubsectionSlotAssignmentResult,
     SubsectionSlotMap,
 )
+from lawvm.finland.source_normalization_kinds import HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.statute import ReplayState, StatuteContext
 
@@ -2865,6 +2866,93 @@ def test_emit_section_snapshot_prefers_complete_source_payload_over_stale_fold()
     rendered = irnode_to_text(section_snapshot.payload)
     assert "source-owned final tail" in rendered
     assert "vuokraindeksi" not in rendered
+
+
+def test_emit_section_snapshot_skips_same_source_children_after_heading_body_split() -> None:
+    live_section = _sec(
+        "51",
+        _sub("1", _content("old first")),
+        _sub("2", _content("old second")),
+        _sub("3", _content("old third")),
+    )
+    source_section = _sec(
+        "51",
+        IRNode(kind=IRNodeKind.NUM, text="51 §"),
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            attrs={"lawvm_source_normalization_rule": HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR},
+            children=(_content("heading text rehomed as first moment"),),
+        ),
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="2",
+            attrs={
+                "lawvm_source_normalization_original_label": "1",
+                "lawvm_source_normalization_rule": HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR,
+            },
+            children=(_content("source second"),),
+        ),
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="3",
+            attrs={
+                "lawvm_source_normalization_original_label": "2",
+                "lawvm_source_normalization_rule": HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR,
+            },
+            children=(_content("source third"),),
+        ),
+    )
+    state = _make_state(_body(IRNode(kind=IRNodeKind.CHAPTER, label="8", children=(live_section,))))
+    lo_ops: list[LegalOperation] = []
+    rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="replace_8_51",
+            op_type="REPLACE",
+            target_section="51",
+            target_unit_kind="section",
+            target_chapter="8",
+            source_statute="1994/328",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=source_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="51",
+        target_chapter="8",
+        target_address=LegalAddress(path=(("chapter", "8"), ("section", "51"))),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("heading_body_split_source_section",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="51",
+        target_chapter="8",
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="1994/328",
+        source_title="Replace",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=state.ir,
+    )
+
+    assert [op.op_id for op in lo_ops] == ["snapshot_section_51"]
+    section_snapshot = lo_ops[0]
+    assert section_snapshot.payload is not None
+    subsections = [
+        child
+        for child in section_snapshot.payload.children
+        if child.kind is IRNodeKind.SUBSECTION
+    ]
+    assert [child.label for child in subsections] == ["1", "2", "3"]
+    assert "heading text rehomed" in irnode_to_text(subsections[0])
 
 
 def test_emit_section_snapshot_repeals_subsections_absent_from_complete_section_replace() -> None:

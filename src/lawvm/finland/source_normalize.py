@@ -85,6 +85,11 @@ Currently handled corrections
     numbered paragraph siblings continue that payload's item run, they are
     carried into the new peer subsection.
 
+11. **HEADING_BODY_SUBSECTION_SPLIT / PROFILE_INVALID** -- a section-local
+    ``heading`` that carries paragraph-length body text before a consecutive
+    subsection run is converted to subsection 1, and following subsections are
+    shifted by one. Real short section headings are preserved.
+
 All corrections are applied in a single recursive tree walk so that a
 statute with multiple pathological nodes produces one fact per corrected node.
 """
@@ -120,6 +125,8 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_DUPLICATE_TAIL_SPLIT,
     BASE_NUM_IN_INTRO_MISMATCH,
     BASE_NUM_IN_INTRO_RECOVERED,
+    BASE_HEADING_BODY_SUBSECTION_SPLIT,
+    HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
     BASE_TAIL_PROSE_ABSORB,
@@ -184,6 +191,110 @@ def _is_item_style_subsection(node: IRNode) -> bool:
         and _LETTER_LABEL_RE.match(c.label)
         for c in node.children
     )
+
+
+def _is_substantive_body_heading(text: str) -> bool:
+    compact = " ".join(text.split())
+    if len(compact) < 80:
+        return False
+    if not compact.endswith("."):
+        return False
+    # Section titles can be long, but they rarely contain multiple full
+    # sentences. A body-bearing heading in malformed source XML does.
+    return compact.count(".") >= 2
+
+
+def _numeric_subsection_labels_are_initial_run(subsections: list[IRNode]) -> bool:
+    labels: list[int] = []
+    for subsection in subsections:
+        label = str(subsection.label or "")
+        if not label.isdigit():
+            return False
+        labels.append(int(label))
+    return labels == list(range(1, len(labels) + 1))
+
+
+def _shift_subsection_label(subsection: IRNode) -> IRNode:
+    label = str(subsection.label or "")
+    if not label.isdigit():
+        return subsection
+    attrs = dict(subsection.attrs)
+    attrs.setdefault("lawvm_source_normalization_original_label", label)
+    attrs["lawvm_source_normalization_rule"] = HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR
+    return IRNode(
+        kind=subsection.kind,
+        label=str(int(label) + 1),
+        text=subsection.text,
+        attrs=attrs,
+        children=tuple(subsection.children),
+    )
+
+
+def _split_body_heading_into_first_subsection(
+    children: list[IRNode],
+    statute_id: str,
+    parent_path: tuple[str, ...],
+    facts: list[SourceNormalizationFact],
+) -> list[IRNode]:
+    """Convert a paragraph-length section heading into first subsection body.
+
+    Historical Finlex XML occasionally wraps the first momentti body in a
+    ``heading`` tag while the following momentit are normal ``subsection``
+    nodes. A real section heading is preserved; this only fires for long,
+    sentence-like heading text followed by a clean consecutive subsection run.
+    """
+    if not children:
+        return children
+    heading_indexes = [idx for idx, child in enumerate(children) if child.kind == IRNodeKind.HEADING]
+    if len(heading_indexes) != 1:
+        return children
+    heading_index = heading_indexes[0]
+    heading = children[heading_index]
+    heading_text = " ".join(irnode_to_text(heading).split())
+    if not _is_substantive_body_heading(heading_text):
+        return children
+
+    following = children[heading_index + 1 :]
+    if not following or any(child.kind is not IRNodeKind.SUBSECTION for child in following):
+        return children
+    subsections = list(following)
+    if not _numeric_subsection_labels_are_initial_run(subsections):
+        return children
+    if any(child.kind is IRNodeKind.SUBSECTION for child in children[:heading_index]):
+        return children
+
+    first_subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        attrs={"lawvm_source_normalization_rule": HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text=heading_text),),
+    )
+    rewritten = (
+        children[:heading_index]
+        + [first_subsection]
+        + [_shift_subsection_label(subsection) for subsection in subsections]
+    )
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=BASE_HEADING_BODY_SUBSECTION_SPLIT,
+            basis=SourceNormalizationBasis.PROFILE_INVALID,
+            before=(
+                "section heading contains paragraph-length first-moment body; "
+                f"heading excerpt={heading_text[:120]!r}; shifted_subsections={len(subsections)}"
+            ),
+            after="heading converted to subsection:1 and following subsection labels shifted by +1",
+            explanation=(
+                "The source section has no title facet; its <heading> carries substantive "
+                "body prose while the following children are a consecutive subsection run. "
+                "Treat the heading text as the missing first momentti body and preserve the "
+                "following momentit by shifting their labels."
+            ),
+            path=parent_path,
+            confidence=0.94,
+        )
+    )
+    return rewritten
 
 
 def _reclassify_item_style_subsection(
@@ -3110,6 +3221,9 @@ def normalize_source_ir(
         )
     if ir.kind == IRNodeKind.SECTION:
         initial_children = _split_intro_list_tail_moment_subsections(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _split_body_heading_into_first_subsection(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _split_intro_then_numbered_list_subsections(

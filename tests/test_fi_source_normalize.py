@@ -37,6 +37,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_INTRO_LIST_RESTART_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
+    BASE_HEADING_BODY_SUBSECTION_SPLIT,
     BASE_INTRO_LIST_TAIL_MOMENT_SPLIT,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
@@ -2084,3 +2085,63 @@ class TestDigitResetSubparagraphSplit:
         assert normalized.label == "4"
         assert [child.label for child in normalized.children if child.kind == IRNodeKind.SUBPARAGRAPH] == ["a", "b"]
         assert not any("digit-labelled subparagraph" in f.before for f in facts)
+
+
+def test_heading_body_subsection_split_rehomes_body_heading_as_first_moment() -> None:
+    raw = fi_xml_to_ir_node(
+        etree.fromstring(
+            """
+            <section>
+              <num>51 §</num>
+              <heading>Nopeuskilpailuja henkilöautoille ja moottoripyörille saa järjestää vain suljetulla tiellä. Tien sulkemiseen tarvitaan lupa, jonka myöntää kunnanhallitus tai lääninhallitus. Lääninhallituksen on kuultava tienpitäjää.</heading>
+              <subsection><content><p>Muille moottoriajoneuvoille ei nopeuskilpailuja saa järjestää.</p></content></subsection>
+              <subsection><content><p>Poliisilla on tienpitäjää kuultuaan oikeus tien tilapäiseen sulkemiseen.</p></content></subsection>
+            </section>
+            """
+        ),
+        _fi_label_postprocessor,
+    )
+
+    normalized, facts = normalize_source_ir(raw, "1994/328")
+
+    assert [child.kind for child in normalized.children] == [
+        IRNodeKind.NUM,
+        IRNodeKind.SUBSECTION,
+        IRNodeKind.SUBSECTION,
+        IRNodeKind.SUBSECTION,
+    ]
+    subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+    assert [child.label for child in subsections] == ["1", "2", "3"]
+    assert "Nopeuskilpailuja henkilöautoille" in irnode_to_text(subsections[0])
+    assert subsections[0].attrs["lawvm_source_normalization_rule"] == "fi_heading_body_subsection_split_v1"
+    assert subsections[1].attrs["lawvm_source_normalization_original_label"] == "1"
+
+    repair_facts = [fact for fact in facts if fact.kind_value == BASE_HEADING_BODY_SUBSECTION_SPLIT]
+    assert len(repair_facts) == 1
+    assert repair_facts[0].basis == SourceNormalizationBasis.PROFILE_INVALID
+    assert "heading converted to subsection:1" in repair_facts[0].after
+    assert check_invariants(normalized) == []
+
+
+def test_heading_body_subsection_split_does_not_rehome_real_section_title() -> None:
+    raw = fi_xml_to_ir_node(
+        etree.fromstring(
+            """
+            <section>
+              <num>1 §</num>
+              <heading>Pakkaamattomista elintarvikkeista annettavien tietojen ilmoittamistapa</heading>
+              <subsection><content><p>Elintarvikkeesta on ilmoitettava tarpeelliset tiedot.</p></content></subsection>
+            </section>
+            """
+        ),
+        _fi_label_postprocessor,
+    )
+
+    normalized, facts = normalize_source_ir(raw, "2020/1")
+
+    assert [child.kind for child in normalized.children] == [
+        IRNodeKind.NUM,
+        IRNodeKind.HEADING,
+        IRNodeKind.SUBSECTION,
+    ]
+    assert not any(fact.kind_value == BASE_HEADING_BODY_SUBSECTION_SPLIT for fact in facts)

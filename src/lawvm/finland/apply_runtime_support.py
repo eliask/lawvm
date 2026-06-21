@@ -34,6 +34,8 @@ from lawvm.finland.scope import _unique_section_chapter, infer_letter_suffix_sec
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
 from lawvm.finland.replay_capture import ReplayLegalOperationCaptureList
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
+from lawvm.finland.source_normalize import normalize_source_ir
+from lawvm.finland.source_normalization_kinds import HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR
 from lawvm.finland.source_pathology import (
     build_container_replace_target_absent_pathology,
     build_destructive_shape_loss_risk_pathology,
@@ -819,6 +821,16 @@ def _snapshot_payload_is_complete_owner(payload: IRNode) -> bool:
     )
 
 
+def _payload_has_heading_body_subsection_split(payload: IRNode) -> bool:
+    for child in payload.children:
+        rule = child.attrs.get("lawvm_source_normalization_rule")
+        if rule == HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR:
+            return True
+        if isinstance(rule, tuple) and HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR in rule:
+            return True
+    return False
+
+
 def _payload_contains_relative_target(payload: IRNode, relative_path: Path) -> bool:
     node = payload
     for kind_name, label in relative_path:
@@ -1353,6 +1365,11 @@ def _emit_section_snapshot(
             source_payload = rop.muutos_ir
             if source_payload is None or source_payload.kind is not IRNodeKind.SECTION:
                 continue
+            source_payload, _normalization_facts = normalize_source_ir(
+                source_payload,
+                op_source.statute_id or "",
+                allow_dotted_paragraph_subsection_promotion=False,
+            )
             if source_payload.label and _norm_num_token(source_payload.label) != normalized_target_norm:
                 continue
             completeness = rop.payload_completeness
@@ -3623,6 +3640,10 @@ def _emit_section_snapshot(
         and target_unit_kind == "section"
         and action != StructuralAction.REPEAL
         and payload.kind is IRNodeKind.SECTION
+        and not (
+            payload_from_muutos_ir
+            and _payload_has_heading_body_subsection_split(payload)
+        )
     ):
         section_path = tuple(resolved_path)
         explicitly_repealed_subsection_labels = {
