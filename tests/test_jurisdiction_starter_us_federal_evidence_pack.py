@@ -88,7 +88,7 @@ def test_pack_projects_agreement_and_missing_source_gap_without_replay_claim() -
     by_id = {row.to_dict().get("row_id") or row.to_dict().get("finding_id"): row.to_dict() for row in rows}
 
     # Agreement operation row: pinned address + offending/diff surface present.
-    agree = next(r for r in by_id.values() if r.get("status") == "matched")
+    agree = next(r for r in by_id.values() if r.get("evidence_status") == "matched")
     assert agree["frontend_id"] == "us_federal"
     # ``detail`` is frozen on the shared row, so nested lists round-trip as tuples
     # in-memory (and back to lists once JSON-serialized).
@@ -111,7 +111,7 @@ def test_lawvm_wrong_residual_row_carries_offending_text_verbatim() -> None:
     pack = build_single_window_evidence_pack(report)
     rows = [row.to_dict() for row in pack.evidence_rows()]
 
-    diverged = next(r for r in rows if r.get("status") == "diverged")
+    diverged = next(r for r in rows if r.get("evidence_status") == "diverged")
     assert diverged["detail"]["disposition"] == DISPOSITION_LAWVM_WRONG
     assert diverged["detail"]["rule_id"] == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
     # The offending materialized text is OUR op (not repaired to the oracle).

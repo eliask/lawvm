@@ -3693,7 +3693,7 @@ def test_corpus_operation_evidence_row_to_dict_preserves_unsupported_status() ->
         frontend_id="open_law_maryland",
         source_artifact_id="editorial-actions/x.xml",
         effect_family="expire",
-        status=CorpusRowStatus.UNSUPPORTED,
+        evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
         quirks_disposition="record_unsupported",
@@ -3702,7 +3702,7 @@ def test_corpus_operation_evidence_row_to_dict_preserves_unsupported_status() ->
 
     data = row.to_dict()
 
-    assert data["status"] == "unsupported"
+    assert data["evidence_status"] == "unsupported"
     assert data["finding_ids"] == ("open_law_expire_lifecycle_not_replayed",)
     assert validate_corpus_operation_evidence_row(data) == ()
 
@@ -3740,7 +3740,7 @@ def test_evidence_contracts_freeze_detail_lanes() -> None:
         row_id="row-1",
         frontend_id="starter",
         source_artifact_id="act.xml",
-        status=CorpusRowStatus.UNSUPPORTED,
+        evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
         quirks_disposition="record",
@@ -3774,7 +3774,7 @@ def test_corpus_operation_evidence_validation_rejects_unexplained_non_claim() ->
         "row_id": "row-1",
         "frontend_id": "starter",
         "source_artifact_id": "act.xml",
-        "status": "unsupported",
+        "evidence_status": "unsupported",
         "blocking": True,
         "strict_disposition": "record",
         "quirks_disposition": "record",
@@ -3792,7 +3792,7 @@ def test_corpus_operation_evidence_row_rejects_invalid_construction() -> None:
             row_id="row-1",
             frontend_id="starter",
             source_artifact_id="act.xml",
-            status=CorpusRowStatus.UNSUPPORTED,
+            evidence_status=CorpusRowStatus.UNSUPPORTED,
             blocking=True,
             strict_disposition="block",
             quirks_disposition="record",
@@ -3804,7 +3804,7 @@ def test_corpus_operation_evidence_validation_rejects_blocking_match_without_jus
         "row_id": "row-1",
         "frontend_id": "starter",
         "source_artifact_id": "act.xml",
-        "status": "matched",
+        "evidence_status": "matched",
         "blocking": True,
         "strict_disposition": "block",
         "quirks_disposition": "record",
@@ -3854,7 +3854,7 @@ def test_evidence_rule_ids_extracts_stable_detail_rule_ids() -> None:
         row_id="row-1",
         frontend_id="new_zealand",
         source_artifact_id="act_public_2020_1",
-        status=CorpusRowStatus.ACCEPTED,
+        evidence_status=CorpusRowStatus.ACCEPTED,
         strict_disposition="candidate_only",
         quirks_disposition="candidate_only",
         finding_ids=("nz_existing_finding",),
@@ -3888,7 +3888,7 @@ def test_evidence_rule_ids_allows_stable_reason_rule_ids() -> None:
         row_id="row-1",
         frontend_id="starter",
         source_artifact_id="act.xml",
-        status=CorpusRowStatus.UNSUPPORTED,
+        evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
         quirks_disposition="record",
@@ -3903,7 +3903,7 @@ def test_evidence_rule_ids_scans_detail_and_evidence_maps_when_both_exist() -> N
         "row_id": "row-1",
         "frontend_id": "starter",
         "source_artifact_id": "act.xml",
-        "status": "unsupported",
+        "evidence_status": "unsupported",
         "strict_disposition": "block",
         "quirks_disposition": "record",
         "detail": {"candidate_witness_rule_id": "starter.detail_witness"},

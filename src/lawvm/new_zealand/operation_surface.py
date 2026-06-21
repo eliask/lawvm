@@ -923,7 +923,7 @@ def _operation_evidence_row(
         canonical_family="",
         original_target=row.amended_provision,
         resolved_target="/".join(row.source_path),
-        status=CorpusRowStatus.UNSUPPORTED,
+        evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
         quirks_disposition="record_witness_only",

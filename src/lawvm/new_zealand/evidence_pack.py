@@ -359,7 +359,7 @@ def _evidence_row_matches(
         return False
     if row_kind and _row_kind(row_dict) != row_kind:
         return False
-    if status and str(row_dict.get("status", "")) != status:
+    if status and str(row_dict.get("evidence_status", "")) != status:
         return False
     if rule_id and rule_id not in _rule_ids(row_dict):
         return False
@@ -432,7 +432,7 @@ def _row_kind_counts(rows: tuple[Mapping[str, Any], ...]) -> dict[str, int]:
 
 
 def _surface_status_counts(rows: tuple[Mapping[str, Any], ...]) -> dict[str, int]:
-    counts = Counter(f"{_surface(row)}|{str(row.get('status') or _row_kind(row))}" for row in rows)
+    counts = Counter(f"{_surface(row)}|{str(row.get('evidence_status') or _row_kind(row))}" for row in rows)
     return dict(sorted(counts.items()))
 
 

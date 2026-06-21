@@ -102,7 +102,7 @@ def format_report_query_rows(records: Iterable[ReportQueryRecord]) -> str:
     for record in records:
         row = record.evidence_row
         row_id = _scalar(row.get("row_id") or row.get("finding_id"))
-        status = _scalar(row.get("status") or record.row_kind)
+        status = _scalar(row.get("evidence_status") or record.row_kind)
         source = _scalar(row.get("source_artifact_id"))
         locator = _scalar(row.get("source_locator") or _evidence_value(row, "codify_path"))
         rule_id = _scalar(row.get("rule_id"))
@@ -164,7 +164,7 @@ def main(args: Any) -> None:
 def _matches(row: Mapping[str, Any], filters: ReportQueryFilters) -> bool:
     if filters.row_id and filters.row_id not in {_scalar(row.get("row_id")), _scalar(row.get("finding_id"))}:
         return False
-    if filters.status and _scalar(row.get("status")) != filters.status:
+    if filters.status and _scalar(row.get("evidence_status")) != filters.status:
         return False
     if filters.rule_id and filters.rule_id not in _rule_ids(row):
         return False
