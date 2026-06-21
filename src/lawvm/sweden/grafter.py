@@ -76,6 +76,18 @@ _SE_CROSS_REFERENCE_STYCKET_RE = re.compile(
     r"^(?:första|andra|tredje|fjärde|femte|sjätte|sjunde|åttonde|nionde|tionde)\s+stycket\b",
     re.IGNORECASE,
 )
+# Multi-section plural-citation continuation idiom: a Swedish drafting shape in
+# which a citation to several sections shares one ``§§`` symbol and wraps
+# across lines so that the tail of the leading ``<N> §`` line starts with
+# ``§ <text>`` (one additional section symbol). The shape is
+# ``enligt 25–28, 30 och\n31 §§ socialtjänstlagen (1980:620)`` — the parser
+# would otherwise match the wrapped line as a new section start ``label='31'``
+# whose tail starts with ``§ socialtjänstlagen...`` (real corpus witness:
+# 2001:416 §11, where §31 §§ socialtjänstlagen wraps and is misfolded as a
+# separate provision, displacing the actual §11 oracle text). The signal is the
+# leading additional ``§`` in the tail — a legitimate section start would
+# never carry that, because the section marker comes before the text, not after.
+_SE_CROSS_REFERENCE_PLURAL_SECTION_RE = re.compile(r"^\s*§", re.IGNORECASE)
 _ITEM_RE = re.compile(r"^(?P<label>\d+|[a-z])[\.\)]\s{1,5}(?P<text>.{1,2000})$", re.IGNORECASE)
 _APPENDIX_RE = re.compile(r"^(Bilaga)(\s{0,5}\*\s{0,5}|\s{1,5}|)(?P<label>\d+[a-z]|\d+|[A-Z]|)\s{0,5}(?P<title>.{0,500})$", re.IGNORECASE)
 _MARKER_RE = re.compile(r"/(?P<phrase>[^/\n]{1,200}) (?P<kind>[IU]):(?P<date>\d{4}-\d{2}-\d{2})/")
@@ -1430,7 +1442,11 @@ def _is_cross_reference_continuation(tail: str) -> bool:
     section's text avoids emitting a duplicate provision under label ``N`` that
     would otherwise displace the legitimate one in the provision dict.
     """
-    return bool(_SE_CROSS_REFERENCE_STYCKET_RE.match(_normalize_space(tail)))
+    normalized_tail = _normalize_space(tail)
+    return bool(
+        _SE_CROSS_REFERENCE_STYCKET_RE.match(normalized_tail)
+        or _SE_CROSS_REFERENCE_PLURAL_SECTION_RE.match(normalized_tail)
+    )
 
 
 def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional[str] = None) -> IRStatute:
@@ -1898,6 +1914,14 @@ def _coerce_official_act(
     sfs_id = str(document.get("sfs_id") or "")
     provisions: list[SEOfficialProvisionText] = []
     seen_labels: set[str] = set()
+    # Labels absorbed as cross-reference continuation ghosts during the
+    # provisions loop and dropped silently (their text folds into the prior
+    # legitimate provision's text). The companion inserted_heading rows whose
+    # ``before_label`` matches one of these labels MUST also be dropped — the
+    # heading was a parser artifact of the same wrap (the line just before the
+    # false ``<N> §§`` section-marker match) and its ``before_label`` no longer
+    # names an extant section in the coerced act.
+    folded_ghost_labels: set[str] = set()
     for index, provision in enumerate(document.get("provisions", [])):
         if not isinstance(provision, dict):
             _record_se_official_act_payload_row_diagnostic(
@@ -1921,23 +1945,43 @@ def _coerce_official_act(
             )
             continue
         text = str(provision.get("text") or "")
-        if label in seen_labels:
+        if _is_cross_reference_continuation(text) and provisions:
             # Cached legacy payloads (built before the parser learned to fold
             # wrapped cross-reference continuations back into their host
-            # section) carry a duplicate provision whose text starts with the
-            # ``<ordinal> stycket`` idiom — the row that the live parser no
-            # longer emits. Recognize that shape here and fold the text into
-            # the most recent provision (its original host) instead of
-            # admitting a duplicate label that would otherwise displace the
-            # legitimate oracle text for ``label`` in downstream provision dicts.
-            if _is_cross_reference_continuation(text):
-                if provisions:
-                    last = provisions[-1]
-                    provisions[-1] = SEOfficialProvisionText(
-                        label=last.label,
-                        text=_join_preserving_paragraphs([last.text, text]) if text else last.text,
-                    )
-                continue
+            # section) can carry a separate "ghost" provision whose text is the
+            # tail of a wrapped cross-reference continuation — the row the live
+            # parser no longer emits. Two shapes to recognize here:
+            # (1) ``<ordinal> stycket`` continuation under a duplicate label
+            #     (e.g. 2001:606 §64: ``64 § första stycket och 67 §.`` was
+            #     cached as a separate provision under label ``64``).
+            # (2) ``§ <text>`` continuation under a NEW label (e.g. 2001:416
+            #     §11: ``31 §§ socialtjänstlagen (1980:620)`` wrapped to
+            #     ``31 §`` + ``§ socialtjänstlagen...`` was cached as a
+            #     separate provision under label ``31``).
+            # A legitimate SFS replacement-provision body would never start with
+            # the leftover section symbol ``§`` or an ``<ordinal> stycket``
+            # idiom — both are wrap-leftover shapes. Recognize them and fold
+            # the text into the prior provision's text (its original host)
+            # rather than admit a ghost provision whose label is not in the
+            # enacting clause's affected-section enumeration. This way the
+            # downstream replay-vs-oracle lookup returns the legitimate replace
+            # text instead of an artifact row.
+            last = provisions[-1]
+            provisions[-1] = SEOfficialProvisionText(
+                label=last.label,
+                text=_join_preserving_paragraphs([last.text, text]) if text else last.text,
+            )
+            # Record the absorbed label so the companion inserted_heading (whose
+            # before_label matches this ghost-provision label) is dropped below
+            # — without recording, only the ghost provision gets folded and the
+            # heading keeps its before_label as if it were a legitimate unclaimed
+            # inserted_heading the effect-plan would surface through adjudication.
+            folded_ghost_labels.add(label)
+            continue
+        if label in seen_labels:
+            # Genuinely ambiguous duplicate label that is NOT a cross-reference
+            # continuation — fold stays visible as a typed diagnostic so the
+            # adjudication lane can catch a real schema drift.
             _record_se_official_act_payload_row_diagnostic(
                 diagnostics_out,
                 rule_id="se_official_act_payload_row_duplicate_label",
@@ -1971,6 +2015,19 @@ def _coerce_official_act(
                 row_family="inserted_headings",
                 row_index=index,
             )
+            continue
+        # Ghost-heading companion to a folded cross-reference continuation: the
+        # OLD pre-fix parser emitted both a ghost heading (whose text was the
+        # preceding paragraph's final line that the parser mistook as a heading)
+        # AND a ghost provision (the wrapped cross-reference continuation). The
+        # folded cross-reference continuation can leave the heading orphaned —
+        # before_label matches a section label that no longer has a credible
+        # provision entry. Drop the orphan silently: it was bundled with the
+        # ghost provision the runtime-coercion just folded, never a legitimate
+        # heading (real witness: 2001:416 — the §11-prose line that wrapped
+        # onto a `31 §§ socialtjänstlagen` cross-reference was cached as an
+        # inserted_heading with before_label='31').
+        if before_label in folded_ghost_labels:
             continue
         inserted_headings.append(
             SEOfficialHeadingText(

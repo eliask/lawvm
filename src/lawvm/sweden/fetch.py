@@ -2727,6 +2727,33 @@ def analyze_se_official_replay_feasibility(
             first_source = (ops_json[0].get("source") or {}) if ops_json else {}
             if not str(first_source.get("effective") or "") and str(official_act.get("effective_clause") or ""):
                 return True
+        # Ghost-op staleness: a cached ops row may reference a section target
+        # that the coerced official_act's provisions do not enumerate — the
+        # classic signature of an archaeic cached ops payload built before
+        # the parser learned to fold wrapped cross-reference continuations
+        # back into their host section (real witness: 2001:416 §31 — the
+        # cached INSERT op reference an empty-payload §31 ghost that the
+        # runtime-coerced act no longer carries). Detecting this signature
+        # and forcing a fresh in-memory compile keeps the replay from
+        # applying a ghost INSERT that has no legitimate payload, and the
+        # fresh compile now (post-parser-fix) emits only the legitimate
+        # REPLACE op for the §11 target named in the enacting clause.
+        coerced_act = _coerce_official_act(official_act)
+        coerced_provision_labels = {p.label for p in coerced_act.provisions}
+        coerced_heading_labels = {h.before_label for h in coerced_act.inserted_headings}
+        coerced_appendix_labels = {a.label for a in coerced_act.appendices}
+        for cached_op in ops_json:
+            target_path = cached_op.get("target", {}).get("path", []) if isinstance(cached_op, dict) else []
+            if not target_path:
+                continue
+            leaf = target_path[-1] if isinstance(target_path, list) and target_path else None
+            if not (isinstance(leaf, list) and len(leaf) >= 1):
+                continue
+            kind, label = str(leaf[0]), str(leaf[-1])
+            if kind == "section" and label and label not in coerced_provision_labels and label not in coerced_heading_labels:
+                return True
+            if kind == "appendix" and label and label not in coerced_appendix_labels:
+                return True
         return False
 
     if _stale_cache_needs_refresh():

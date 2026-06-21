@@ -1408,6 +1408,108 @@ def test_coerce_se_official_act_folds_legacy_duplicate_label_provisions_into_hos
     ), "non-cross-reference duplicate labels MUST surface a typed diagnostic"
 
 
+def test_coerce_se_official_act_drops_companion_ghost_inserted_heading_when_provision_folds() -> None:
+    """Plural-section citation wrap-continuation ghost heading companion drop.
+
+    The pre-fix parser emitted two paired artifacts when a paragraph across lines
+    wrapped so that the leading ``<N> §`` of one line crossed a ``<N> §§ <text>``
+    plural-citation wrap:
+
+    * a ghost provided with label ``N`` whose text is the wrapped citation tail
+      ``§ socialtjänstlagen (1980:620) samt åtgärder enligt lagen (1990:52) med...
+      `` (the live parser no longer emits this — folded by the parser-side
+      ``_is_cross_reference_continuation`` guard); and
+    * a ghost ``inserted_heading`` row whose ``before_label`` is the ghost
+      label ``N`` and whose text is the preceding paragraph's final line that
+      the parser mistook for a heading (e.g. ``umgänge med barn...``).
+
+    Real-corpus witness: SFS 2001:416 §11 — the §11 list-of-authorities wraps
+    across two PDF text lines ``...enligt 25–28, 30 och\n31 §§ socialtjänstlagen
+    (1980:620)`` and the OLD parser cached it as ``provisions=[{label:'11'},
+    {label:'31', text:'§ socialtjänstlagen...'}]`` and ``inserted_headings=
+    [{before_label:'31', text:'umgänge med barn...'}]``. Without dropping the
+    companion heading the runtime coercion leaves the inserted_heading intact,
+    the lowering emits a §31 INSERT op with empty payload, replay applies a
+    ghost modification, and check_se_official_replay reports a §31
+    ``content_mismatch`` row that is not real.
+
+    Regression: the runtime coercion MUST fold the ghost provision's text into
+    the prior provision AND MUST drop the companion inserted_heading silently
+    (no diagnostic — the fold is benign cached-act reconciliation). The coerced
+    act carries one provision per affected label and zero ghost headings.
+    """
+    from lawvm.sweden.grafter import _coerce_official_act
+
+    legacy_payload = {
+        "sfs_id": "2001:416",
+        "title": "Förordning om ändring i förordningen (1999:1134) om belastningsregister",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "1999:1134",
+        "is_amending_act": True,
+        "published_date": "2001-06-07",
+        "issued_date": "2001-05-25",
+        "enacting_clause": (
+            "Regeringen föreskriver att 11 § förordningen (1999:1134) om "
+            "belastningsregister skall ha följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 1 juli 2001.",
+        "affected_section_labels": ["11"],
+        # Real §11 replacement text — truncated by the OLD parser at the wrap point.
+        "provisions": [
+            {
+                "label": "11",
+                "text": "Uppgifter ur belastningsregistret skall lämnas ut om det begärs av 1. Justitiekanslern.",
+            },
+            # Ghost §11-provision-tail row: the wrapped cross-reference
+            # continuation the OLD parser emitted under the label '31'.
+            {
+                "label": "31",
+                "text": (
+                    "§ socialtjänstlagen (1980:620) samt åtgärder enligt lagen "
+                    "(1990:52) med särskilda bestämmelser om vård av unga."
+                ),
+            },
+        ],
+        # Companion ghost inserted_heading: the OLD parser mistook the line
+        # just before the false `§ marker` line for a heading and labeled it
+        # with the ghost label as before_label.
+        "inserted_headings": [
+            {"before_label": "31", "text": "umgänge med barn, medgivande att ta emot barn m.m. enligt 25–28, 30 och"}
+        ],
+        "appendices": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+
+    diagnostics: list[dict] = []
+    coerced = _coerce_official_act(legacy_payload, diagnostics_out=diagnostics)
+
+    # Provision labels — only the legitimate §11 survives; the ghost §31
+    # folded back into its host section.
+    assert [p.label for p in coerced.provisions] == ["11"]
+    provisions_by_label = {p.label: p.text for p in coerced.provisions}
+    assert "§ socialtjänstlagen (1980:620)" in provisions_by_label["11"]
+    # And the companion inserted_heading MUST be dropped silently — the
+    # before_label matching the folded ghost label signals the heading was
+    # the OLD-parser artifact, not an independent legit heading.
+    assert coerced.inserted_headings == (), coerced.inserted_headings
+    # No diagnostic — the fold is benign cached-act reconciliation, not a
+    # schema drift worth surfacing.
+    assert diagnostics == [], diagnostics
+    # And the inserted_heading DROP is fold-companion-specific: an unclaimed
+    # heading whose before_label is NOT a folded ghost is preserved (so the
+    # effect-plan can still surface it as an unclaimed-payload adjudication).
+    legacy_payload_with_unclaimed_heading = dict(legacy_payload)
+    legacy_payload_with_unclaimed_heading["inserted_headings"] = [
+        {"before_label": "9", "text": "Rubrik utan stöd i klausul"}
+    ]
+    coerced_with_unclaimed_heading = _coerce_official_act(legacy_payload_with_unclaimed_heading)
+    assert coerced_with_unclaimed_heading.inserted_headings != (), (
+        "the unclaimed-heading case (before_label NOT a folded ghost label) "
+        "MUST be preserved so the effect-plan can surface unclaimed payloads"
+    )
+
+
 def test_compile_se_official_ops_recover_base_act_id_from_enacting_clause() -> None:
     cases = [
         (
