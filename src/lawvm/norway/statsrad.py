@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Iterable, Protocol, cast
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
+from urllib.error import URLError
 
 from lxml import etree, html
 
@@ -275,13 +276,12 @@ def _archive_fetch(
             archive.store(url, data, storage_class=storage_class)
         return data
     try:
-        import urllib.error
         import urllib.request
 
         req = urllib.request.Request(url, headers={"User-Agent": "LawVM-NO/1.0 (+https://lawvm.org)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
-    except (urllib.error.URLError, TimeoutError):
+    except (URLError, TimeoutError):
         # Network / HTTP / timeout failure on this URL. The next layer up
         # (``fetch_no_statsrad_index_page``) raises a typed RuntimeError carrying
         # the URL when the cache misses; surface that rather than swallowing
@@ -924,8 +924,8 @@ def fetch_statsrad_url(url: str, *, timeout: float = 10.0, retries: int = 10) ->
         )
         with urlopen(request, timeout=timeout) as response:
             return response.read()
-    except Exception:
-        raise
+    except URLError as exc:
+        raise RuntimeError(f"statsrad article raw bytes fetch failed for {url}") from exc
 
 
 def _extract_article_title(root: Any) -> str:
