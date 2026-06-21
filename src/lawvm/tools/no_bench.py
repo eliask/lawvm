@@ -307,7 +307,26 @@ def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentio
     # (since ``resolve_no_source_path(path=something)`` short-circuits at the
     # top of the function — passing a relative path there bypasses the
     # existence checks below).
-    data_dir = resolve_no_source_path(getattr(args, "data_dir", None))
+    #
+    # Honor ``args.db`` when present — the lawvm CLI registers ``--db PATH``
+    # as the Norway source-archive selector on every NO subcommand (replay,
+    # verify, bench); staying consistent with the rest of the NO CLI lets
+    # ``lawvm -j no bench --db /path/to/norway.farchive`` work the way the
+    # CLI surface promises.
+    data_dir_arg = getattr(args, "data_dir", None) or getattr(args, "db", None)
+    # ``resolve_no_source_path`` short-circuits at the top when ``path is not
+    # None`` and returns the value untouched (it does not call ``Path.resolve``
+    # or check existence for explicit inputs — the env-var/default chain only
+    # fires on ``None``). A relative ``--db data/norway.farchive`` from the
+    # CLI therefore must be wrapped into a Path here so downstream
+    # ``verify_no_against_current`` gets the same Path object it would get from
+    # the default fallback (which resolves via the project-root relative
+    # DEFAULT_NORWAY_DB constant). Without the wrap, every corpus row CRASHed
+    # because the relative path did not exist as a farchive database from
+    # the CLI invocation cwd.
+    if isinstance(data_dir_arg, str):
+        data_dir_arg = Path(data_dir_arg)
+    data_dir = resolve_no_source_path(data_dir_arg)
     label = getattr(args, "label", None) or "no-bench"
 
     rows = _load_corpus_rows(corpus_path)
