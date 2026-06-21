@@ -232,6 +232,71 @@ def test_replay_xml_1981_494_applies_owned_source_defects_without_overpatching()
     assert "tuen määrään vaikuttavana" in section_10
 
 
+def test_manual_base_source_patch_1982_182_corrects_section_57_source_defects() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrongs = [
+        (
+            "merkit 375 (taksiasema-alue), 571 (taajama) ja 572 (taajama päättyy) "
+            "on otettava käyttöön heti tämän asetuksen tullessa voi- maan;"
+        ),
+        (
+            "merkit 322 (polkupyörällä ja mopolla ajo kielletty), 323 (jalankulku "
+            "kielletty), 416 (pakollinen kiertosuunta), 563 (moottoriliikennetie) "
+            "ja 564 (moottoriliikennetie päättyy) on otettava käyttöön vuoden "
+            "1983 loppuun men- nessä; sekä"
+        ),
+        (
+            "merkit 312 (moottorikäyttöisellä ajoneuvolla ajo kielletty), 313 "
+            "(kuorma- ja pakettiautolla ajo kielletty), 316 (moottoripyörällä ajo "
+            "kielletty), 551 (yksisuuntainen tie), 621 ja 622 (ajokaistaopastus) "
+            "ja merkki 623 (ajokaistan päättyminen) on otettava käyttöön vuoden"
+        ),
+        (
+            "Aikaisempien määräysten mukaisia ryhmitysmerkkejä voidaan käyttää "
+            "merkkien 412-415 (pakollinen ajosuunta) sekä 40 §:n mukaisten "
+            "ajokaistanuolten asemesta vuoden 1990 loppuun saakka."
+        ),
+    ]
+    corrects = [
+        wrongs[0].replace("voi- maan", "voimaan"),
+        wrongs[1].replace("men- nessä", "mennessä"),
+        wrongs[2] + " 1990 loppuun mennessä.",
+        wrongs[3].replace("412-415", "412–415"),
+    ]
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<akomaNtoso><act><body>"
+        + "".join(f"<section><content><p>{wrong}</p></content></section>" for wrong in wrongs)
+        + "</body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "1982/182")
+
+    assert applied == [f"body_patch/1982/182/{idx}" for idx in range(4)]
+    for idx, (wrong, correct) in enumerate(zip(wrongs, corrects, strict=True)):
+        if idx == 2:
+            assert (wrong + "</p>").encode("utf-8") not in patched
+        else:
+            assert wrong.encode("utf-8") not in patched
+        assert correct.encode("utf-8") in patched
+
+
+def test_replay_xml_1982_182_applies_owned_section_57_source_defects() -> None:
+    replay = replay_xml_for_test(
+        "1982/182",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_57 = " ".join(irnode_to_text(sections["section:57"]).split())
+
+    assert "tullessa voimaan" in section_57
+    assert "1983 loppuun mennessä" in section_57
+    assert "käyttöön vuoden 1990 loppuun mennessä." in section_57
+    assert "merkkien 412–415" in section_57
+
+
 def test_patch_table_keeps_johtolauseen_jalkeen_in_body_patch_lane(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
     manual_path = tmp_path / "corrigendum_manual.yaml"
