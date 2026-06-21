@@ -51,7 +51,7 @@ class AmendmentCapture:
 
     # Step 2: op extraction
     peg_ops: list[dict[str, object]] = field(default_factory=list)  # from PEG
-    extraction_path: str = ""  # "peg" | "fallback_heuristic" | "title_fallback" | "sec1"
+    extraction_path: str = ""  # "grammar" | "fallback_heuristic" | "title_fallback" | "preamble_body"
 
     # Step 3: citation routing
     citation_match: bool = True    # did the preamble reference the parent?

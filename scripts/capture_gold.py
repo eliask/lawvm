@@ -70,9 +70,9 @@ def _capture_one(statute_id: str) -> list:
                     {"action": op.action, "target": str(op.target), "op_id": op.op_id}
                     for op in legal_ops
                 ]
-                cap.extraction_path = "peg"
+                cap.extraction_path = "grammar"
             except Exception:
-                cap.extraction_path = "peg_error"
+                cap.extraction_path = "grammar_error"
 
         if not cap.peg_ops and cap.preamble_normalized:
             # Check fallback paths
