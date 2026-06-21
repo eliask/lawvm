@@ -979,7 +979,7 @@ def test_materialize_pit_records_same_source_equal_rank_selection_conflict() -> 
 
     result = materialize_pit_ex(timelines, "2021-01-01", base=base)
 
-    assert result.status == "degraded_timeline_issues"
+    assert result.materialization_status == "degraded_timeline_issues"
     assert result.statute.body.children[0].text == "Second text"
     assert result.statute.metadata["materialization_status"] == "degraded_timeline_issues"
     issues = [
@@ -5809,7 +5809,7 @@ def test_materialize_pit_ex_marks_degraded_missing_scope() -> None:
 
     result = materialize_pit_ex(timelines, "2012-01-01", base=base)
 
-    assert result.status == "degraded_missing_scope"
+    assert result.materialization_status == "degraded_missing_scope"
     assert result.required_dimensions == ("territory",)
     assert result.ambiguous_addresses == (addr,)
     assert result.certificate is not None

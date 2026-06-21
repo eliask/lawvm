@@ -415,7 +415,7 @@ class TestPrintCompileSummary:
                 },
             ),
             source_adjudication=None,
-            strict_fail_reasons=list(facade.to_wire_artifact().status.blockers or []),
+            strict_fail_reasons=list(facade.to_wire_artifact().processing_status.blockers or []),
         )
         out = _capture_compile_summary(report_record=report_record)
 
@@ -471,7 +471,7 @@ class TestPrintCompileSummary:
                     "detail": {"diagnostic_reason": "partial_body_only"},
                 },
             ),
-            strict_fail_reasons=list(facade.to_wire_artifact().status.blockers or []),
+            strict_fail_reasons=list(facade.to_wire_artifact().processing_status.blockers or []),
         )
         out = _capture_compile_summary(report_record=report_record)
 

@@ -5652,7 +5652,7 @@ def test_lineage_plan_round_trips_core_materialize_for_destination_occupancy_col
         lineage_plan=lineage_decision.lineage_plan,
     )
 
-    assert result.status == "degraded_missing_scope"
+    assert result.materialization_status == "degraded_missing_scope"
     assert result.certificate is not None
     assert result.certificate.ambiguous_address_count == 1
 

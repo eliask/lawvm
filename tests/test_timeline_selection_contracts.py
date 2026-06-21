@@ -128,5 +128,5 @@ def test_materialize_pit_validates_selection_query_once(monkeypatch: pytest.Monk
 
     result = materialize_pit_ex(timelines, "2024-06-01", base=base)
 
-    assert result.status == "materialized"
+    assert result.materialization_status == "materialized"
     assert validate_calls == 1

@@ -94,7 +94,7 @@ def _materialization_degradation_issue(
     context: str,
 ) -> Issue | None:
     """Project PIT materialization degradation status into verify CLI issues."""
-    if materialized.status == "degraded_missing_scope":
+    if materialized.materialization_status == "degraded_missing_scope":
         return _issue(
             "timeline",
             "warning",
@@ -105,7 +105,7 @@ def _materialization_degradation_issue(
             ),
             context,
         )
-    if materialized.status == "degraded_timeline_issues":
+    if materialized.materialization_status == "degraded_timeline_issues":
         blocking_rule_ids = tuple(
             issue.rule_id for issue in materialized.issues if issue.blocking
         )

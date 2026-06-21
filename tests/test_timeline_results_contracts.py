@@ -48,12 +48,12 @@ def test_materialization_result_rejects_materialized_with_blocking_issue() -> No
     issue = TimelineIssue(kind="missing_replace_target", message="target missing")
 
     with pytest.raises(ValueError, match="blocking issues"):
-        MaterializationResult(status="materialized", statute=_statute(), issues=(issue,))
+        MaterializationResult(materialization_status="materialized", statute=_statute(), issues=(issue,))
 
 
 def test_materialization_result_rejects_missing_scope_without_dimensions() -> None:
     with pytest.raises(ValueError, match="required_dimensions"):
-        MaterializationResult(status="degraded_missing_scope", statute=_statute())
+        MaterializationResult(materialization_status="degraded_missing_scope", statute=_statute())
 
 
 def test_materialization_result_rejects_certificate_count_drift() -> None:
@@ -66,7 +66,7 @@ def test_materialization_result_rejects_certificate_count_drift() -> None:
 
     with pytest.raises(ValueError, match="ambiguous_address_count"):
         MaterializationResult(
-            status="degraded_missing_scope",
+            materialization_status="degraded_missing_scope",
             statute=_statute(),
             required_dimensions=("territory",),
             ambiguous_addresses=(_address(),),

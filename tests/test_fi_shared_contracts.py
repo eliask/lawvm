@@ -3945,7 +3945,7 @@ def test_artifact_envelope_to_wire_jsonable_serializes_schema_and_status() -> No
             "body": {"kind": "content", "text": "hello"},
             "tags": {"a", "b"},
         },
-        status=ProcessingStatus(kind="partial", blockers=("missing.source",)),
+        processing_status=ProcessingStatus(kind="partial", blockers=("missing.source",)),
     )
 
     got = to_wire_jsonable(envelope)
@@ -3955,4 +3955,4 @@ def test_artifact_envelope_to_wire_jsonable_serializes_schema_and_status() -> No
     assert got["version"] == "1"
     assert got["payload"]["body"]["text"] == "hello"
     assert sorted(got["payload"]["tags"]) == ["a", "b"]
-    assert got["status"] == {"kind": "partial", "blockers": ["missing.source"]}
+    assert got["processing_status"] == {"kind": "partial", "blockers": ["missing.source"]}

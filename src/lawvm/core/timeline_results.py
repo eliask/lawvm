@@ -246,7 +246,7 @@ def timeline_issues_to_findings(issues: tuple[TimelineIssue, ...]) -> tuple[Find
 class MaterializationResult:
     """Explicit PIT materialization result with degradation metadata."""
 
-    status: MaterializationStatus
+    materialization_status: MaterializationStatus
     statute: IRStatute
     required_dimensions: tuple[str, ...] = ()
     ambiguous_addresses: tuple[LegalAddress, ...] = ()
@@ -254,8 +254,8 @@ class MaterializationResult:
     certificate: Optional[MaterializationCoverage] = None
 
     def __post_init__(self) -> None:
-        if self.status not in _MATERIALIZATION_STATUSES:
-            raise ValueError("MaterializationResult.status is not supported")
+        if self.materialization_status not in _MATERIALIZATION_STATUSES:
+            raise ValueError("MaterializationResult.materialization_status is not supported")
         if not isinstance(self.statute, IRStatute):
             raise TypeError("MaterializationResult.statute must be IRStatute")
         object.__setattr__(self, "required_dimensions", tuple(self.required_dimensions))
@@ -273,15 +273,15 @@ class MaterializationResult:
             raise TypeError("MaterializationResult.certificate must be MaterializationCoverage or None")
 
         blocking_issues = tuple(issue for issue in self.issues if issue.blocking)
-        if self.status == "materialized" and blocking_issues:
+        if self.materialization_status == "materialized" and blocking_issues:
             raise ValueError("MaterializationResult materialized status cannot carry blocking issues")
         if (
-            self.status == "degraded_missing_scope"
+            self.materialization_status == "degraded_missing_scope"
             and not self.required_dimensions
             and not self.ambiguous_addresses
         ):
             raise ValueError("MaterializationResult degraded_missing_scope requires required_dimensions")
-        if self.status == "degraded_timeline_issues" and not blocking_issues:
+        if self.materialization_status == "degraded_timeline_issues" and not blocking_issues:
             raise ValueError("MaterializationResult degraded_timeline_issues requires blocking issues")
         if self.certificate is not None:
             if self.certificate.ambiguous_address_count != len(self.ambiguous_addresses):
@@ -297,7 +297,7 @@ class MaterializationResult:
 
     @property
     def is_degraded(self) -> bool:
-        return self.status != "materialized"
+        return self.materialization_status != "materialized"
 
     def to_wire_artifact(
         self,
@@ -323,7 +323,7 @@ class MaterializationResult:
             producer=producer,
             version=version,
             payload={
-                "status": self.status,
+                "materialization_status": self.materialization_status,
                 "statute_id": self.statute.statute_id,
                 "required_dimensions": self.required_dimensions,
                 "ambiguous_addresses": tuple(
@@ -332,7 +332,7 @@ class MaterializationResult:
                 "issues": tuple(issue.to_jsonable_dict() for issue in self.issues),
                 "certificate": certificate_payload,
             },
-            status=status,
+            processing_status=status,
         )
 
 
@@ -366,5 +366,5 @@ class TimelineCompilationResult:
                 "timelines_count": len(self.timelines),
                 "issues": tuple(issue.to_jsonable_dict() for issue in self.issues),
             },
-            status=status,
+            processing_status=status,
         )

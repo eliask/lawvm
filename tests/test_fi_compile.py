@@ -1065,7 +1065,7 @@ def test_compile_fi_facade_returns_path_aware_dossier(facade_2009_953_legal_pit_
     assert isinstance(facade_2009_953_legal_pit_quirks.bundle.structural_ops, tuple)
     assert isinstance(_projection_rows(facade_2009_953_legal_pit_quirks), tuple)
     assert isinstance(_source_pathology_rows(facade_2009_953_legal_pit_quirks), tuple)
-    assert isinstance(tuple(facade_2009_953_legal_pit_quirks.to_wire_artifact().status.blockers or ()), tuple)
+    assert isinstance(tuple(facade_2009_953_legal_pit_quirks.to_wire_artifact().processing_status.blockers or ()), tuple)
 
 
 def test_compile_fi_facade_strict_mode_passes_strict_temporal_authority(monkeypatch) -> None:
@@ -1417,7 +1417,7 @@ def test_compile_fi_facade_returns_native_dossier(facade_2009_953_legal_pit_quir
     assert facade_2009_953_legal_pit_quirks.strict_profile_name == "finland_ingestion_v1"
     assert isinstance(facade_2009_953_legal_pit_quirks.bundle.structural_ops, tuple)
     assert isinstance(_projection_rows(facade_2009_953_legal_pit_quirks), tuple)
-    assert isinstance(tuple(facade_2009_953_legal_pit_quirks.to_wire_artifact().status.blockers or ()), tuple)
+    assert isinstance(tuple(facade_2009_953_legal_pit_quirks.to_wire_artifact().processing_status.blockers or ()), tuple)
 
 
 def test_compile_fi_facade_returns_native_finland_facade(monkeypatch) -> None:
@@ -1886,7 +1886,7 @@ def test_compile_fi_surfaces_apply_legacy_dispatch_fallback_as_projection_row(
     assert fallback_projection_rows[0]["source"] == "1993/805"
     assert cast(dict[str, Any], fallback_projection_rows[0]["detail"])["reason_tag"] == "missing_canonical_intent"
     assert cast(dict[str, Any], fallback_projection_rows[0]["detail"])["reason_code"] == "missing_canonical_intent"
-    assert "APPLY.LEGACY_DISPATCH_FALLBACK" in tuple(facade.to_wire_artifact().status.blockers or ())
+    assert "APPLY.LEGACY_DISPATCH_FALLBACK" in tuple(facade.to_wire_artifact().processing_status.blockers or ())
 
 
 def test_compile_fi_surfaces_legacy_dispatch_reason_code_from_fallback_tags_when_missing(
@@ -1982,7 +1982,7 @@ def test_compile_fi_facade_carries_legacy_dispatch_fallback_in_finding_ledger(
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
     assert "APPLY.LEGACY_DISPATCH_FALLBACK" in {finding.kind for finding in facade.finding_ledger}
-    assert "APPLY.LEGACY_DISPATCH_FALLBACK" in tuple(facade.to_wire_artifact().status.blockers or ())
+    assert "APPLY.LEGACY_DISPATCH_FALLBACK" in tuple(facade.to_wire_artifact().processing_status.blockers or ())
 
 
 def test_compile_fi_surfaces_relabel_skipped_as_projection_row(
@@ -2039,7 +2039,7 @@ def test_compile_fi_surfaces_relabel_skipped_as_projection_row(
     assert relabel_rows[0]["source"] == "1993/805"
     assert cast(dict[str, Any], relabel_rows[0]["detail"])["reason_tag"] == "source_section_missing"
     assert cast(dict[str, Any], relabel_rows[0]["detail"])["reason_code"] == "source_section_missing"
-    assert "APPLY.RELABEL_SKIPPED" in tuple(facade.to_wire_artifact().status.blockers or ())
+    assert "APPLY.RELABEL_SKIPPED" in tuple(facade.to_wire_artifact().processing_status.blockers or ())
 
 
 def test_compile_fi_surfaces_registered_provenance_projection_kinds(
@@ -3484,7 +3484,7 @@ def test_compile_fi_respects_more_permissive_strict_profile(
     # The wire artifact still carries unrelated blocking replay findings, so
     # the relaxed profile is only expected to suppress the profile-gated
     # strict verdict reasons.
-    wire_status = facade.to_wire_artifact().status
+    wire_status = facade.to_wire_artifact().processing_status
     assert wire_status.kind == "partial"
     assert "APPLY.SOURCE_INCOMPLETE" in tuple(wire_status.blockers or ())
 

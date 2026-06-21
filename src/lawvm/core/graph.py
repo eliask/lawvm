@@ -588,5 +588,5 @@ class CorpusGraph:
             producer=producer,
             version=version,
             payload=self.wire_projection(),
-            status=self.processing_status,
+            processing_status=self.processing_status,
         )
