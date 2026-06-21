@@ -34,7 +34,11 @@ from lawvm.core.statute_validity import (
     StatuteValidityBound,
     expires_on_from_valid_until,
 )
-from lawvm.finland.fi_dates import fi_partitive_month_number, parse_fi_day_month_year
+from lawvm.finland.fi_dates import (
+    FiDateForm,
+    fi_partitive_month_number,
+    match_fi_date,
+)
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
 from lawvm.finland.metadata import (
     CHAPTER_SCOPED_EXPIRY_RE,
@@ -313,16 +317,26 @@ def _sentence_containing(text: str, pos: int) -> str:
 
 
 def _parse_commencement_date(sentence: str) -> Optional[dt.date]:
-    """A concrete commencement date stated in ``sentence``, or None."""
+    """A concrete commencement date stated in ``sentence``, or None.
+
+    The ``tulee/tuli/astuu/astui voimaan`` context regexes remain the owning
+    discriminator that LOCATES the commencement clause; the date-token lexing
+    inside the located span is delegated to the shared :func:`match_fi_date`
+    recognizer (essive form for the spelled-out date, dotted form for
+    ``D.M.YYYY``).
+    """
     m = _COMMENCEMENT_DATE_ESSIVE_RE.search(sentence)
     if m is not None:
-        return parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
+        essive = match_fi_date(
+            m.group(0), forms={FiDateForm.ESSIVE}, tolerate_dotted_day=True
+        )
+        if essive is not None:
+            return essive.value
     md = _COMMENCEMENT_DATE_DOTTED_RE.search(sentence)
     if md is not None:
-        try:
-            return dt.date(int(md.group(3)), int(md.group(2)), int(md.group(1)))
-        except ValueError:
-            return None
+        dotted = match_fi_date(md.group(0), forms={FiDateForm.DOTTED})
+        if dotted is not None:
+            return dotted.value
     return None
 
 

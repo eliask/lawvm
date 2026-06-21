@@ -57,15 +57,12 @@ from dataclasses import dataclass, field
 
 from lawvm.core.semantic_types import MetaClauseKind
 
-# Reuse the PRODUCTION date extractors + month map; do NOT reimplement date
-# parsing. The expiry pattern is the allative/essive ``NN päivä[äa]n/[aä]
-# Kkkuuta YYYY`` form; the commencement pattern is the essive long form.
-from lawvm.finland.temporal_lowering import (
-    _COMMENCEMENT_DATE_PATTERN,
-    _EXPIRY_DATE_PATTERN,
-    _extract_date_from_text,
-    _extract_expiry_date_from_text,
-)
+# Reuse the PRODUCTION date recognizer + month map; do NOT reimplement date
+# parsing. Commencement clauses carry the essive long form; validity (expiry)
+# clauses carry the allative/essive long form. The shared ``match_fi_date``
+# recognizer returns both the value AND its span, so it replaces the separate
+# extractor + pattern-span lookups previously imported here.
+from lawvm.finland.fi_dates import FiDateForm, match_fi_date
 
 # ---------------------------------------------------------------------------
 # Parser-lane provenance — mirrors sentence_parse / definition_parse.
@@ -309,21 +306,15 @@ def _date_span_and_value(text: str, role: str) -> tuple[str, int | None, int | N
     honestly, never fabricated.
     """
     if role == ROLE_COMMENCEMENT:
-        date = _extract_date_from_text(text)
-        if not date:
+        match = match_fi_date(text, forms={FiDateForm.ESSIVE})
+        if match is None:
             return "", None, None
-        m = _COMMENCEMENT_DATE_PATTERN.search(text)
-        if m is None:
-            return date, None, None
-        return date, m.start(), m.end()
+        return match.value.isoformat(), match.start, match.end
     if role == ROLE_VALIDITY:
-        date = _extract_expiry_date_from_text(text)
-        if not date:
+        match = match_fi_date(text, forms={FiDateForm.ALLATIVE, FiDateForm.ESSIVE})
+        if match is None:
             return "", None, None
-        m = _EXPIRY_DATE_PATTERN.search(text)
-        if m is None:
-            return date, None, None
-        return date, m.start(), m.end()
+        return match.value.isoformat(), match.start, match.end
     # application / delegation carry no production-extracted single date.
     return "", None, None
 
