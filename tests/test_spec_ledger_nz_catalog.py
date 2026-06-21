@@ -77,11 +77,41 @@ def _is_rule_literal(value: str) -> bool:
     return True
 
 
-def _discover_nz_rule_ids() -> set[str]:
-    """Every static ``nz_*`` rule-id literal across the scoping files, via AST."""
+def _discover_nz_rule_ids_in_scoping_src() -> set[str]:
+    """Every static ``nz_*`` rule-id literal across the scoping SRC files, via AST.
+
+    Sees bare f-string prefixes (``nz_X_``) only on runtime-constructed rule_ids
+    — the full concatenated id is invisible to this scan. The test-suite scan
+    ``_discover_nz_rule_ids_in_tests`` covers the runtime constructs.
+    """
     found: set[str] = set()
     for name in _SCOPED_FILES:
         path = _NZ_DIR / name
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and _is_rule_literal(node.value)
+            ):
+                found.add(node.value)
+    return found
+
+
+# Alias kept for the coverage-direction test's stable name.
+_discover_nz_rule_ids = _discover_nz_rule_ids_in_scoping_src
+
+
+def _discover_nz_rule_ids_in_tests() -> set[str]:
+    """Every static ``nz_*`` rule-id literal across the NZ test files, via AST.
+
+    Anchors the runtime f-string concatenation results (```f"nz_X_{status}"```)
+    whose full id never appears as a literal in src/ — the test suite asserts
+    against the full id, so it pins exactly which rule_ids fire at runtime.
+    """
+    tests_dir = Path(__file__).resolve().parents[1] / "tests"
+    found: set[str] = set()
+    for path in sorted(tests_dir.glob("test_new_zealand*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if (
@@ -115,12 +145,12 @@ def test_every_discovered_rule_id_is_cataloged() -> None:
 
 
 def test_no_dead_catalog_entries() -> None:
-    """Every catalog key must map to a real rule-id literal in a scoping file."""
-    discovered = _discover_nz_rule_ids()
+    """Every catalog key must map to a real rule-id literal somewhere — src OR tests."""
+    discovered = _discover_nz_rule_ids_in_scoping_src() | _discover_nz_rule_ids_in_tests()
     dead = sorted(set(_NZ_RULE_SPECS) - discovered)
     assert not dead, (
         f"{len(dead)} _NZ_RULE_SPECS key(s) do not correspond to any NZ rule-id literal "
-        f"in the scoping files (stale/dead entries): {dead}"
+        f"in the scoping src files OR the NZ test files (stale/dead entries): {dead}"
     )
 
 
@@ -196,4 +226,52 @@ def test_catalog_prose_agrees_with_production_adapter_on_overlap() -> None:
         f"_EXTRA_NZ_RULE_SPECS still contains adapter-owned rule_ids after the "
         f"runtime consolidation filter (AGENTS §2.5 single-source-per-family "
         f"regressed — these rule_ids must come only from the adapter): {overlap}"
+    )
+
+
+def test_every_nz_rule_id_used_in_nz_tests_is_cataloged_or_non_rule() -> None:
+    """Second discovery surface: every ``nz_*`` rule_id literal the NZ test suite
+    asserts against must be cataloged OR documented in ``NZ_NON_RULE_LITERALS``.
+
+    Why a SEPARATE dimension from the src-scan: many witness rule_ids are
+    constructed at runtime via f-string templates (``f"nz_X_{status}"``). The
+    AST scan on src/ can only see the bare f-string prefix, not the full
+    runtime-emitted id — but the test suite asserts against the full id, so it
+    anchors exactly which rule_ids fire at runtime. This guard catches:
+
+    * a rule_id in a test that no longer exists in src (renamed/deleted — dead
+      reference, signal loss)
+    * a runtime rule_id a future change emits without a paired believed_spec
+      hypothesis (the src-scan misses it because the f-string prefix is the only
+      literal in src; the test file would catch it as the new emission is added to
+      an asserting test).
+
+    ``NZ_NON_RULE_LITERALS`` covers the one intentional uncataloged-fixture
+    (``nz_dry_run_some_future_uncataloged_rule``, the negative-test input for the
+    legacy_unknown sentinel path — by-design MUST NOT be cataloged).
+    """
+    import ast as _ast
+    tests_dir = Path(__file__).resolve().parents[1] / "tests"
+    found: set[str] = set()
+    for path in sorted(tests_dir.glob("test_new_zealand*.py")):
+        tree = _ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in _ast.walk(tree):
+            if (
+                isinstance(node, _ast.Constant)
+                and isinstance(node.value, str)
+                and node.value.startswith("nz_")
+            ):
+                v = node.value
+                if "." in v or ":" in v:
+                    continue
+                if v in NZ_NON_RULE_LITERALS:
+                    continue
+                found.add(v)
+    uncataloged = sorted(found - set(_NZ_RULE_SPECS))
+    assert not uncataloged, (
+        f"{len(uncataloged)} nz_* rule_id literal(s) appear in NZ test files but are "
+        f"NOT in _NZ_RULE_SPECS and NOT in NZ_NON_RULE_LITERALS — these are rule "
+        f"ids the test suite asserts against (so they fire at runtime) but lack a "
+        f"paired believed_spec hypothesis. Either catalog them or document them as "
+        f"NON_RULE with a reason: {uncataloged}"
     )

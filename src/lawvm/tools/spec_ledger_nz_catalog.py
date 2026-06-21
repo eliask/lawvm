@@ -135,6 +135,14 @@ NZ_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
         "nz_api_v0_version_detail",
         "nz_api_v0_version_xml",
         "nz_corpus_run_cache",  # corpus_cache.py: cache key surface identity
+        # Intentional uncataloged-fixture: this string only appears as the
+        # negative-test input for the legacy_unknown sentinel path
+        # (tests/test_new_zealand_spec_ledger.py: asserts an uncataloged rule
+        # surfaces as legacy_unknown). It MUST NOT be cataloged — the test would
+        # otherwise never exercise the uncataloged path. Test-file anti-drift
+        # guard (test_every_nz_rule_id_used_in_nz_tests_is_cataloged_or_non_rule)
+        # excludes it via NON_RULE.
+        "nz_dry_run_some_future_uncataloged_rule",
     }
 )
 
@@ -1003,6 +1011,116 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
     "nz_instruction_semantics_blocked_multi_clause_payload": (
         "Refusal (multi-clause): the multi-clause payload could not be cleanly parsed — the lowering is "
         "blocked rather than lowering one clause and dropping the others silently."
+    ),
+    # --- Dynamic-emitted rule_ids (f-string concatenation results the test suite asserts against) ---
+    # These rule_ids are never AST-visible full literals in src/ — they are built at
+    # runtime via f-string templates (``f"nz_X_{status_value}"``) so the
+    # AST-discovery test on src/ can only see the bare prefix. The test suite
+    # asserts against the FULL concatenated id and so confirms they fire at runtime;
+    # cataloging them keeps the anti-drift guard honest about both surfaces.
+    # --- nz_target_address_hint_<status> (operation_surface.py: f"nz_target_address_hint_{target_hint.status}") ---
+    "nz_target_address_hint_missing": (
+        "Target-resolution refusal: no target hint was extracted from the witness row (the target "
+        "citation was empty) — surfaced as a typed refusal, never invented."
+    ),
+    "nz_target_address_hint_unparsed": (
+        "Target-resolution refusal: the target hint was not parseable into any known shape (no "
+        "section / schedule / part matched the citation) — refused rather than guessed (§1.11)."
+    ),
+    "nz_target_address_hint_compound_target_unparsed": (
+        "Target-resolution refusal: the target citation is compound (e.g. multi-segment like "
+        "'subsection (1)(a)(i)') and the hint parser could not reduce it — refused rather than "
+        "silently abbreviated."
+    ),
+    # --- nz_lowering_readiness_<status> (operation_surface.py: f"nz_lowering_readiness_{readiness_status}") ---
+    "nz_lowering_readiness_blocked_amending_work_resolved_unarchived": (
+        "Lowering-readiness refusal: the amending work cited by the witness row was resolved (its ID "
+        "is known) but it is NOT archived locally — the lowering-readiness lane refuses the row's "
+        "structural-payload extraction (acquisition frontier)."
+    ),
+    "nz_lowering_readiness_blocked_non_structural_facet": (
+        "Lowering-readiness refusal: the resolved target is a non-structural facet (a heading "
+        "attached to a body provision rather than a structural target) — the structural-lower lane "
+        "refuses the facet shape rather than absorbing it as a body-lower (§1.3)."
+    ),
+    "nz_lowering_readiness_blocked_operation_missing": (
+        "Lowering-readiness refusal: the witness row's amended family is missing from the survey "
+        "(no operation classifier output) — typed refusal rather than guessed family."
+    ),
+    "nz_lowering_readiness_blocked_operation_unclassified": (
+        "Lowering-readiness refusal: the witness row's amended family is unclassified (the operation "
+        "classifier saw it but did not match a canonical family) — typed refusal."
+    ),
+    "nz_lowering_readiness_blocked_same_label_rebirth_duplicate": (
+        "Lowering-readiness refusal: the candidate target is one of a same-label-rebirth duplicate "
+        "pair (a section was re-inserted after repeal) — the readiness lane refuses rather than "
+        "rebinding; lineage/migration must disambiguate (§1.6 / §1.7)."
+    ),
+    "nz_lowering_readiness_blocked_target_hint_compound_target_unparsed": (
+        "Lowering-readiness refusal: the target-hint parser could not reduce the compound target "
+        "citation into typed path steps — surfaced as the readiness-blocked variant of "
+        "nz_target_address_hint_compound_target_unparsed, distinguishing the readiness plane from "
+        "the target-resolution plane (§1.10)."
+    ),
+    "nz_lowering_readiness_blocked_target_hint_unparsed": (
+        "Lowering-readiness refusal: the target-hint parser returned NONE of the known target shapes "
+        "(section / schedule / part); surfaced as the readiness-blocked variant of "
+        "nz_target_address_hint_unparsed (§1.10 distinguishability)."
+    ),
+    # --- nz_operation_surface_<operation_status> (operation_surface.py: f"nz_operation_surface_{operation_status}") ---
+    "nz_operation_surface_missing": (
+        "Operation-surface classifier refusal: the witness row's classified operation family is "
+        "missing (no classified amendment verb) — surfaced as a typed refusal, the row stays "
+        "UNBLOCKED but never silently dropped."
+    ),
+    "nz_operation_surface_unclassified": (
+        "Operation-surface classifier refusal: the witness row's amended verb did not match any "
+        "canonical operation family — typed refusal, never coerced to a related family (§1.2)."
+    ),
+    # --- nz_source_change_text_<status> (effect_candidates.py: f"nz_source_change_text_{status}") ---
+    "nz_source_change_text_observed_single_replacement": (
+        "Source-change witness outcome: before/oracle text-diff shows exactly one occurrence of the "
+        "old_text replaced by the new_text — strong witness for a single-occurrence text-replace op."
+    ),
+    "nz_source_change_text_partial_text_change_observed": (
+        "Source-change witness outcome: before/oracle text-diff shows the old/new text co-occurred "
+        "in a way that does NOT cleanly match a single or each-place substitution — the witness is "
+        "partial/ambiguous, never silently lowered as agreement."
+    ),
+    # --- nz_text_replace_witness_support_<status> (effect_candidates.py: f"nz_text_replace_witness_support_{status}") ---
+    "nz_text_replace_witness_support_latest_oracle_and_source_change_observed": (
+        "Witness-support outcome: BOTH the latest-oracle-text witness AND the archived source-change "
+        "witness corroborate the candidate substitution — strongest evidence combination."
+    ),
+    "nz_text_replace_witness_support_source_change_observed_target_mismatch": (
+        "Witness-support refusal: the latest-oracle-text witness and the source-change witness "
+        "corroborate substitution but resolved to DIFFERENT target addresses — typed refusal rather "
+        "than silently rebinding to one (§1.7)."
+    ),
+    # --- nz_effect_readiness_<rule_suffix> (effect_readiness.py: f"nz_effect_readiness_{rule_suffix}") ---
+    # ``rule_suffix = payload_status.removeprefix('blocked_')``, so:
+    # `nz_effect_readiness_payload_witness_not_available` = payload_status="blocked_payload_witness_not_available".
+    "nz_effect_readiness_payload_witness_not_available": (
+        "Effect-readiness refusal: the readiness lane's payload-witness row is missing or blocked at "
+        "the readiness plane — the row cannot be classified for lowering; surfaced as a typed refusal "
+        "rather than guessed payload semantics."
+    ),
+    "nz_effect_readiness_operation_not_payload_ready": (
+        "Effect-readiness refusal: the readiness lane's operation row is not payload-ready (its "
+        "payload-status did not reach `payload_found`) — surfaced as a typed refusal before lowering."
+    ),
+    # --- nz_instruction_latest_oracle_text_<status> (instruction_workqueue.py: f"nz_instruction_latest_oracle_text_{status}") ---
+    "nz_instruction_latest_oracle_text_oracle_new_text_only": (
+        "Latest-oracle-text witness outcome: the on-or-after oracle carries the new_text but the "
+        "before-version does not — the substitution is observable in oracle-new-text-only form (one "
+        "side of the diff is empty, the other carries the new content)."
+    ),
+    # --- nz_api_v0_version_detail_http_error (acquisition.py: f"{rule_id}_http_error") ---
+    "nz_api_v0_version_detail_http_error": (
+        "Acquisition refusal (HTTP-error variant): an HTTP failure occurred when fetching the "
+        "version-detail payload via the Legislation API v0 — surfaced as a variant of the "
+        "nz_api_v0_version_detail source-lane tag with the `_http_error` suffix, distinguishing the "
+        "fetcher-failure lane from the source-lane-flavour lane (§1.10)."
     ),
 }
 
