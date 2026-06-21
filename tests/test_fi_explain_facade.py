@@ -828,6 +828,32 @@ def test_source_pathology_demotion_fires_when_chapter_matches_blame() -> None:
     assert result[0] == "SOURCE_PATHOLOGY"
 
 
+def test_source_pathology_demotion_fires_for_section_level_destructive_shape_loss() -> None:
+    master = SimpleNamespace(
+        findings=(),
+        source_pathology_rows=lambda: [
+            {
+                "source_statute": "2000/882",
+                "code": "DESTRUCTIVE_SHAPE_LOSS_RISK",
+                "target_unit_kind": "section",
+                "target_label": "1",
+                "detail": {},
+            }
+        ],
+    )
+    blame_op = {
+        "source_statute": "2000/882",
+        "target_norm": "1",
+        "target_unit_kind": "section",
+    }
+
+    result = _source_pathology_diagnosis_for_blame(master, blame_op)
+
+    assert result is not None
+    assert result[0] == "SOURCE_PATHOLOGY"
+    assert "DESTRUCTIVE_SHAPE_LOSS_RISK" in result[1]
+
+
 def test_source_pathology_demotion_skips_pathology_in_other_chapter() -> None:
     # The pathology row is scoped to chapter 9 while the blamed op targets
     # chapter 3.  oracle_check._source_pathology_diagnosis_for_blame skips such a

@@ -235,6 +235,31 @@ def test_source_pathology_demotes_absent_subsection_target_without_failed_op() -
     assert _source_pathology_diagnosis_for_blame(master, blame_op) == "SOURCE_PATHOLOGY"
 
 
+def test_source_pathology_demotes_section_level_destructive_shape_loss() -> None:
+    # Real family: 1993/1709 §1 / 2000/882. The sparse schedule merge records a
+    # section-level DESTRUCTIVE_SHAPE_LOSS_RISK row with target_label="1"; the
+    # divergence blame row points at the same source and section.
+    master = SimpleNamespace(
+        findings=(),
+        source_pathology_rows=lambda: [
+            {
+                "source_statute": "2000/882",
+                "code": "DESTRUCTIVE_SHAPE_LOSS_RISK",
+                "target_unit_kind": "section",
+                "target_label": "1",
+                "detail": {},
+            }
+        ],
+    )
+    blame_op = {
+        "source_statute": "2000/882",
+        "target_norm": "1",
+        "target_unit_kind": "section",
+    }
+
+    assert _source_pathology_diagnosis_for_blame(master, blame_op) == "SOURCE_PATHOLOGY"
+
+
 def test_diagnose_treats_old_code_reference_marker_as_editorial() -> None:
     replay = "5 § - - - - - - - - - - - - - -"
     oracle = "5 § 5 §:n sijasta ks. L velkojien maksunsaantijärjestyksestä 1578/1992."

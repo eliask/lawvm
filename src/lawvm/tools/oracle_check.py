@@ -181,6 +181,14 @@ def _source_pathology_diagnosis_for_blame(
             matched_codes.add(code)
             continue
         row_target_label = str(row.get("target_label") or "")
+        row_target_unit_kind = str(row.get("target_unit_kind") or "")
+        if (
+            target_section
+            and row_target_unit_kind == "section"
+            and norm_section_label(row_target_label) == target_section
+        ):
+            matched_codes.add(code)
+            continue
         if target_section and row_target_label.endswith(f" {target_section} §"):
             matched_codes.add(code)
             continue
@@ -201,6 +209,8 @@ def _source_pathology_diagnosis_for_blame(
     }:
         return "SOURCE_INCOMPLETE"
     if "SUBSECTION_TARGET_ABSENT" in matched_codes:
+        return "SOURCE_PATHOLOGY"
+    if "DESTRUCTIVE_SHAPE_LOSS_RISK" in matched_codes:
         return "SOURCE_PATHOLOGY"
 
     findings = tuple(getattr(master, "findings", ()) or ())
