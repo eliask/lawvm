@@ -26,7 +26,7 @@ from lawvm.core.semantic_types import (
     SourceNormalizationKind,
 )
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
-from lawvm.finland.helpers import _fi_label_postprocessor
+from lawvm.finland.helpers import _fi_label_postprocessor, _norm_num_token
 from lawvm.finland.source_normalize import (
     normalize_source_ir,
     source_normalization_fact_finding_kind,
@@ -40,6 +40,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_INTRO_LIST_TAIL_MOMENT_SPLIT,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
+    BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT,
     TRAILING_CHAPTER_REPARENT,
 )
 
@@ -871,6 +872,127 @@ class TestTagReclassify:
         assert [
             fact for fact in facts if fact.kind_value == BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION
         ] == []
+
+
+class TestUnnumberedSubparagraphMomentSplit:
+    def test_splits_closed_item_unnumbered_subparagraph_payload_into_peer_moment(self) -> None:
+        """A closed item cannot own an unnumbered peer-moment payload."""
+        xml = etree.fromstring(
+            """
+            <section>
+              <num>1 §</num>
+              <subsection>
+                <intro><p>Lakia sovelletaan:</p></intro>
+                <paragraph><num>1)</num><content><p>ensimmäinen kohta;</p></content></paragraph>
+                <paragraph>
+                  <num>2)</num>
+                  <intro><p>toinen kohta päättyy.</p></intro>
+                  <subparagraph><content><p>Uusi momentti sisältää luettelon:</p></content></subparagraph>
+                  <subparagraph><num>1)</num><content><p>ensimmäinen uuden momentin kohta;</p></content></subparagraph>
+                  <subparagraph><num>2)</num><content><p>toinen uuden momentin kohta; tai</p></content></subparagraph>
+                </paragraph>
+                <paragraph><num>3)</num><content><p>kolmas uuden momentin kohta.</p></content></paragraph>
+              </subsection>
+              <subsection><content><p>Vanha kolmas momentti.</p></content></subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2020/1")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+        assert [child.label for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH] == ["1", "2"]
+        second_children = subsections[1].children
+        assert second_children[0].kind == IRNodeKind.INTRO
+        assert [child.label for child in second_children if child.kind == IRNodeKind.PARAGRAPH] == ["1", "2", "3"]
+        assert "Vanha kolmas momentti" in irnode_to_text(subsections[2])
+
+        split_facts = [
+            fact for fact in facts if fact.kind_value == BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT
+        ]
+        assert len(split_facts) == 1
+        assert split_facts[0].basis_value == SourceNormalizationBasis.PROFILE_INVALID.value
+        assert "peer subsection:2" in split_facts[0].after
+
+    def test_preserves_open_item_subparagraph_intro_list(self) -> None:
+        """A colon-introduced item may own its subparagraph list."""
+        xml = etree.fromstring(
+            """
+            <section>
+              <num>1 §</num>
+              <subsection>
+                <paragraph>
+                  <num>2)</num>
+                  <intro><p>kohta sisältää seuraavat alakohdat:</p></intro>
+                  <subparagraph><content><p>Alakohtien johdanto:</p></content></subparagraph>
+                  <subparagraph><num>1)</num><content><p>ensimmäinen alakohta;</p></content></subparagraph>
+                  <subparagraph><num>2)</num><content><p>toinen alakohta.</p></content></subparagraph>
+                </paragraph>
+              </subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2020/1")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        para = next(child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH)
+        assert len([child for child in para.children if child.kind == IRNodeKind.SUBPARAGRAPH]) == 3
+        assert not any(fact.kind_value == BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT for fact in facts)
+
+    def test_real_2019_1567_section_1_restores_misnested_etuyhteys_moment(self) -> None:
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("2019/1567")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        section = next(
+            candidate
+            for candidate in root.findall(".//{*}section")
+            if _norm_num_token("".join(candidate.findtext("{*}num") or "")) == "1"
+        )
+        assert section is not None
+        raw = fi_xml_to_ir_node(section, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2019/1567")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3", "4", "5"]
+        second_items = [child.label for child in subsections[1].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert second_items == ["1", "2"]
+        third_items = [child.label for child in subsections[2].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert third_items == ["1", "2", "3", "4"]
+        assert "Toinen henkilö on etuyhteydessä" in irnode_to_text(subsections[2])
+        assert any(fact.kind_value == BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT for fact in facts)
+
+    def test_real_2021_1177_section_8a_splits_tail_moment_from_item_3(self) -> None:
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("2021/1177")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        section = next(
+            candidate
+            for candidate in root.findall(".//{*}section")
+            if _norm_num_token("".join(candidate.findtext("{*}num") or "")) == "8a"
+        )
+        raw = fi_xml_to_ir_node(section, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2021/1177")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3", "4", "5", "6", "7"]
+        fourth_item_3 = next(
+            child for child in subsections[3].children if child.kind == IRNodeKind.PARAGRAPH and child.label == "3"
+        )
+        assert not any(child.kind == IRNodeKind.SUBPARAGRAPH for child in fourth_item_3.children)
+        assert "Sovellettaessa 4 momenttia" in irnode_to_text(subsections[4])
+        assert "Poiketen siitä" in irnode_to_text(subsections[5])
+        assert any(fact.kind_value == BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT for fact in facts)
 
 
 # ---------------------------------------------------------------------------
