@@ -314,6 +314,7 @@ def _strip_cross_law_description(text: str) -> str:
     after = text[m.end():]
     if not _NOMINATIVE_TARGET_PAT.search(after):
         return text
+    # lawvm-regex: owning_parser leading-verb capture for the johtolause cross-law strip; structural lexer over already-classified text, mints no op
     verb_m = re.match(r'^\s*(\w+)\s+', text)
     verb = (verb_m.group(1) + ' ') if verb_m else ''
     cite_id = m.group(1)
@@ -376,6 +377,7 @@ def _operative_body_repeal_candidate(tree: "etree._Element") -> str:
             parent.remove(node)
 
     raw = _element_text(body_copy)
+    # lawvm-regex: prefilter cheap literal presence guard before the body-repeal candidate path; no op minted here
     if not re.search(r"\bkumotaan\b", raw, re.IGNORECASE):
         return ""
     return _strip_cross_law_description(raw)
@@ -661,6 +663,7 @@ def _anaphoric_antecedent_years(
     so "(123/1986)" can never supply the year.
     """
     sentence_start = 0
+    # lawvm-regex: owning_parser V-validity sentence segmenter scoping the anaphoric antecedent; structural split, no op
     for boundary in _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE.finditer(
         text, 0, anaphor_abs_start
     ):
@@ -668,6 +671,7 @@ def _anaphoric_antecedent_years(
     sentence = text[sentence_start:anaphor_abs_start]
     masked = _STATUTE_CITATION_RE.sub(lambda c: " " * len(c.group(0)), sentence)
     out: list[tuple[int, str, Tuple[int, int]]] = []
+    # lawvm-regex: owning_parser V-validity anaphoric antecedent-year recognizer over masked sentence text
     for m in _VALIDITY_ANTECEDENT_YEAR_RE.finditer(masked):
         year = int(next(g for g in m.groups() if g))
         span = (sentence_start + m.start(), sentence_start + m.end())
@@ -693,11 +697,13 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
     # Per-sentence matching: the whole-law subject and its validity clause
     # must live in the SAME sentence (see WHOLE_LAW_VALIDITY_REMAINDER_RE
     # and the bare-subject NOTE above it).
+    # lawvm-regex: owning_parser V-validity per-sentence split for the whole-law remainder anchor
     boundaries = list(_VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE.finditer(text))
     starts = [0] + [b.end() for b in boundaries]
     ends = [b.start() for b in boundaries] + [len(text)]
     m = None
     for start, end in zip(starts, ends, strict=True):
+        # lawvm-regex: owning_parser V-validity whole-law validity remainder anchor (canonical owner)
         m = WHOLE_LAW_VALIDITY_REMAINDER_RE.search(text, start, end)
         if m is not None:
             break
@@ -728,39 +734,46 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
             )
         )
 
+    # lawvm-regex: owning_parser V-validity canonical FI fixed-term date grammar (per-form RULE_FI_FIXED_TERM_* recognizer battery over already-classified remainder)
     md = _VALIDITY_DAY_FIRST_RE.search(remainder)
     if md:
         month = fi_partitive_month_number(md.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(md.start(), RULE_FI_FIXED_TERM_DAY_FIRST,
                  int(md.group(3)), month, int(md.group(1)))
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (day-essive arm)
     mde = _VALIDITY_DAY_ESSIVE_RE.search(remainder)
     if mde:
         month = fi_partitive_month_number(mde.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(mde.start(), RULE_FI_FIXED_TERM_DAY_ESSIVE,
                  int(mde.group(3)), month, int(mde.group(1)))
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (month-first genitive arm)
     mm = _VALIDITY_MONTH_FIRST_RE.search(remainder)
     if mm:
         month = FI_MONTH_GENITIVE_MAP.get(mm.group(1).lower())
         if month is not None:
             _add(mm.start(), RULE_FI_FIXED_TERM_MONTH_FIRST,
                  int(mm.group(3)), month, int(mm.group(2)))
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (month-day genitive-end arm)
     mdg = _VALIDITY_MONTH_DAY_GEN_END_RE.search(remainder)
     if mdg:
         month = FI_MONTH_GENITIVE_MAP.get(mdg.group(1).lower())
         if month is not None:
             _add(mdg.start(), RULE_FI_FIXED_TERM_MONTH_DAY_GEN_END,
                  int(mdg.group(3)), month, int(mdg.group(2)))
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (day-end month arm)
     mdem = _VALIDITY_DAY_END_MONTH_RE.search(remainder)
     if mdem:
         month = fi_partitive_month_number(mdem.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(mdem.start(), RULE_FI_FIXED_TERM_DAY_END_MONTH,
                  int(mdem.group(3)), month, int(mdem.group(1)))
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (year-end shorthand arm)
     my = _VALIDITY_YEAR_END_RE.search(remainder)
     if my:
         _add(my.start(), RULE_FI_FIXED_TERM_YEAR_END, int(my.group(1)), 12, 31)
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (year-month-end arm)
     mym = _VALIDITY_YEAR_MONTH_END_RE.search(remainder)
     if mym:
         month = FI_MONTH_GENITIVE_MAP.get(mym.group(2).lower())
@@ -768,6 +781,7 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
             year = int(mym.group(1))
             _add(mym.start(), RULE_FI_FIXED_TERM_YEAR_MONTH_END,
                  year, month, calendar.monthrange(year, month)[1])
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (month-end year arm)
     mmy = _VALIDITY_MONTH_END_YEAR_RE.search(remainder)
     if mmy:
         month = FI_MONTH_GENITIVE_MAP.get(mmy.group(1).lower())
@@ -775,15 +789,18 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
             year = int(mmy.group(2))
             _add(mmy.start(), RULE_FI_FIXED_TERM_MONTH_END_YEAR,
                  year, month, calendar.monthrange(year, month)[1])
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (dotted-numeric arm)
     for mdot in _VALIDITY_DOTTED_NUMERIC_RE.finditer(remainder):
         _add(mdot.start(), RULE_FI_FIXED_TERM_DOTTED_NUMERIC,
              int(mdot.group(3)), int(mdot.group(2)), int(mdot.group(1)))
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (saakka/asti arm)
     ms = _VALIDITY_SAAKKA_RE.search(remainder)
     if ms:
         month = fi_partitive_month_number(ms.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(ms.start(), RULE_FI_FIXED_TERM_SAAKKA,
                  int(ms.group(3)), month, int(ms.group(1)))
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (month-year-end arm)
     mmye = _VALIDITY_MONTH_YEAR_END_RE.search(remainder)
     if mmye:
         month = FI_MONTH_GENITIVE_MAP.get(mmye.group(1).lower())
@@ -793,12 +810,14 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
                  year, month, calendar.monthrange(year, month)[1])
     # Bare day-month-year LAST: the more specific families above win position
     # ties because max() keeps the first maximal candidate.
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (bare day-month-year arm)
     mb = _VALIDITY_BARE_DAY_MONTH_RE.search(remainder)
     if mb:
         month = fi_partitive_month_number(mb.group(2), tolerate_finlex_typos=True)
         if month is not None:
             _add(mb.start(), RULE_FI_FIXED_TERM_BARE_DAY_MONTH,
                  int(mb.group(3)), month, int(mb.group(1)))
+    # lawvm-regex: owning_parser V-validity fixed-term date grammar (anaphoric "sanotun vuoden loppuun" arm)
     msaid = _VALIDITY_SAID_YEAR_END_RE.search(remainder)
     if msaid:
         antecedents = _anaphoric_antecedent_years(text, m.start(1) + msaid.start())
@@ -848,10 +867,13 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
     # Toistaiseksi cap classification (V3): "toistaiseksi, ei kuitenkaan
     # kau(v)emmin kuin <date>" / "toistaiseksi, enintään <date>" makes the
     # parsed date an OUTER CAP on an open-ended validity, terminable earlier.
+    # lawvm-regex: owning_parser V-validity upper-cap classifier (toistaiseksi) over already-classified remainder
     if parse.valid_until is not None and _VALIDITY_TOISTAISEKSI_RE.search(remainder):
         phrase_kind: Optional[str] = None
+        # lawvm-regex: owning_parser V-validity cap-phrase discriminator (kau(v)emmin kuin)
         if _VALIDITY_CAP_KAUEMMIN_RE.search(remainder):
             phrase_kind = "toistaiseksi_ei_kauemmin_kuin"
+        # lawvm-regex: owning_parser V-validity cap-phrase discriminator (enintään)
         elif _VALIDITY_CAP_ENINTAAN_RE.search(remainder):
             phrase_kind = "toistaiseksi_enintaan"
         if phrase_kind is not None:
@@ -941,6 +963,7 @@ def _amendment_expiry_date(
     # Pattern 2: section-scoped expiry
     # After _normalize_fi_parse_text: em-dash → en-dash, spacing variants → space.
     # The character class only needs en-dash (U+2013) and ordinary space now.
+    # lawvm-regex: owning_parser V-expiry section-scoped expiry clause LOCATOR over own commencement element; the date itself is lexed by the shared fi_dates.match_fi_date recognizer below, this only anchors the clause
     m2 = SECTION_SCOPED_EXPIRY_RE.search(eit_text)
     if m2:
         # DATE: the allative ``NN päivään Kkkuuta YYYY`` tail isolated by the
@@ -1032,6 +1055,7 @@ def _separate_commencement_witnesses_from_tree(
             source_provision_ref: str,
             source_text: str,
         ) -> None:
+            # lawvm-regex: witness_only separate-commencement target-id extractor; emits SeparateCommencementLawWitness only, no replay-authoritative op
             for cited in _PAREN_STATUTE_ID_RE.finditer(cited_text):
                 target_id = _normalize_textual_statute_id(cited.group("sid"))
                 if target_id is None:
@@ -1047,6 +1071,7 @@ def _separate_commencement_witnesses_from_tree(
                     )
                 )
 
+        # lawvm-regex: witness_only C-commence separate-commencement-law list recognizer; produces witnesses only
         match = _SEPARATE_COMMENCEMENT_LIST_RE.search(section_text)
         if match:
             effective = _date_from_fi_day_month_year_match(match)
@@ -1352,6 +1377,7 @@ def _temporary_provision_expiry_overrides(
         # shared sub-ref grammar. Only ``§:n``-bodied facets are owned here
         # (otsikko + momentti); whole-section / bare-``§`` scopes are handled by
         # _temporary_section_expiry_overrides, so they are NOT emitted here.
+        # lawvm-regex: owning_parser V-expiry per-section ``N §:n …`` clause splitter; section/momentti structure delegated to the shared sub-ref grammar, this only segments the facet scope
         for scoped in re.finditer(
             r'(?P<section>\d+\s*[a-z]?)\s*§:n\s+'
             r'(?P<body>.*?)(?=(?:,\s*|\s+ja\s+|\s+sekä\s+)\d+\s*[a-z]?\s*§:n|$)',
@@ -1362,6 +1388,7 @@ def _temporary_provision_expiry_overrides(
             body = scoped.group("body")
             if not section:
                 continue
+            # lawvm-regex: owning_parser V-expiry otsikko-facet discriminator over the already-segmented clause body
             if _OTSIKKO_FACET_RE.search(body):
                 key = (source_statute_id, section, None, "otsikko", expiry.isoformat())
                 if key not in seen:
@@ -1397,6 +1424,7 @@ def _temporary_provision_expiry_overrides(
                     )
                 )
 
+    # lawvm-regex: owning_parser V-expiry §1.11 sentence ANCHOR (subject+datetail split); subject → parse_body_provision_tail, datetail → _extract_expiry_date_from_text — both already delegated, this only locates the clause
     for sunset in _TEMPORARY_EXPIRY_SENTENCE_RE.finditer(text):
         iso_expiry = _extract_expiry_date_from_text(sunset.group("datetail"))
         if not iso_expiry:
@@ -1507,6 +1535,7 @@ def _temporary_section_expiry_overrides(
 
     target_mid_from_cited = source_statute_id
     if "voimaantulosäänn" in full_text_casefold:
+        # lawvm-regex: owning_parser V-expiry cited-commencement target-id discriminator gated on "voimaantulosäänn"; id parse delegated to _normalize_textual_statute_id, no date/lifecycle minted here
         cited = _TEMPORARY_CITED_COMMENCEMENT_RE.search(full_text)
         if cited:
             norm = _normalize_textual_statute_id(cited.group(1))
@@ -1520,6 +1549,7 @@ def _temporary_section_expiry_overrides(
     expiry_scan_casefold = expiry_scan_text.casefold()
 
     if "päivään" in expiry_scan_casefold:
+        # lawvm-regex: owning_parser V-expiry section-scoped sunset clause LOCATOR; date lexed by shared match_fi_date below, labels by _parse_section_list_labels — anchor only
         for m in _TEMPORARY_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
             expiry_match = match_fi_date(
                 m.group("datetail"), forms={FiDateForm.ALLATIVE}
@@ -1551,6 +1581,7 @@ def _temporary_section_expiry_overrides(
         # "Lain 51 §:n 5 momentti on voimassa 31 päivään joulukuuta 2023."
         # The expiry is still section-scoped for replay stamping: the amendment op
         # target carries the exact subsection/item granularity.
+        # lawvm-regex: owning_parser V-expiry subsection-scoped sunset clause LOCATOR; date via shared match_fi_date below — anchor only
         for m in _TEMPORARY_SUBSECTION_EXPIRY_RE.finditer(expiry_scan_text):
             expiry_match = match_fi_date(
                 m.group("datetail"), forms={FiDateForm.ALLATIVE}
@@ -1564,6 +1595,7 @@ def _temporary_section_expiry_overrides(
         # "on voimassa", e.g.:
         #   "Lain 90 a § on voimassa 31 päivään heinäkuuta 2020 ja 99 a § 31 päivään
         #    toukokuuta 2021."
+        # lawvm-regex: owning_parser V-expiry chained-sunset head clause LOCATOR; date via shared match_fi_date below — chain-split anchor only
         for m_chain in _TEMPORARY_CHAINED_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
             first_match = match_fi_date(
                 m_chain.group("datetail"), forms={FiDateForm.ALLATIVE}
@@ -1575,6 +1607,7 @@ def _temporary_section_expiry_overrides(
                     first_match.value,
                 )
             tail = m_chain.group("chain")
+            # lawvm-regex: owning_parser V-expiry chained-sunset tail clause LOCATOR; date via shared match_fi_date below — anchor only
             for m_tail in _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE.finditer(tail):
                 tail_match = match_fi_date(
                     m_tail.group("datetail"), forms={FiDateForm.ALLATIVE}
@@ -1588,6 +1621,7 @@ def _temporary_section_expiry_overrides(
                 )
 
     if "vuoden" in expiry_scan_casefold and "loppuun" in expiry_scan_casefold:
+        # lawvm-regex: owning_parser V-expiry section year-end (vuoden YYYY loppuun) sunset LOCATOR; year-end arm lexed by shared match_fi_date below — anchor only
         for m_yend in _TEMPORARY_SECTION_YEAR_END_EXPIRY_RE.finditer(expiry_scan_text):
             yend_match = match_fi_date(
                 m_yend.group("datetail"), forms={FiDateForm.YEAR_END}
@@ -1599,6 +1633,7 @@ def _temporary_section_expiry_overrides(
             labels = _parse_section_list_labels(raw_secs)
             _append_override(target_mid_from_cited, labels, expiry)
 
+        # lawvm-regex: owning_parser V-expiry subsection year-end sunset LOCATOR; year-end arm via shared match_fi_date below — anchor only
         for m_yend_moment in _TEMPORARY_SUBSECTION_YEAR_END_EXPIRY_RE.finditer(expiry_scan_text):
             yend_match = match_fi_date(
                 m_yend_moment.group("datetail"), forms={FiDateForm.YEAR_END}
@@ -1613,6 +1648,7 @@ def _temporary_section_expiry_overrides(
             )
 
     if "lakkaa" in expiry_scan_casefold and "muilta osin" in expiry_scan_casefold:
+        # lawvm-regex: owning_parser V-expiry cessation (lakkaa … muilta osin) SCOPE LOCATOR; date comes from the typed _amendment_effective_date(tree), labels from _parse_section_list_labels — no date lexed from raw text here
         for m_lakkaa in _TEMPORARY_SECTION_CESSATION_RE.finditer(expiry_scan_text):
             cessation_date = _amendment_effective_date(tree)
             if cessation_date is None:
@@ -1667,9 +1703,11 @@ def _temporary_section_expiry_overrides(
             # Match the full "N [, M]* [ja|sekä] M §:n väliaikaisesta muuttamisesta"
             # pattern to capture all section labels, including leading ones in
             # "6 ja 12 §:n väliaikaisesta muuttamisesta" style titles.
+            # lawvm-regex: owning_parser V-expiry title-scoped "väliaikaisesta muuttamisesta" clause LOCATOR over the docTitle
             for match in _TEMPORARY_TITLE_SCOPED_SECTION_RE.finditer(title_text):
                 # Extract individual section labels: digit(s) + optional single
                 # letter that is not the start of "ja"/"sekä" (handled by (?![a-z])).
+                # lawvm-regex: owning_parser section-label tokenizer inside the matched title clause; lexer-shaped
                 for sec_str in _TEMPORARY_TITLE_SECTION_LABEL_RE.findall(match.group(1)):
                     title_labels.add(_norm_num_token(sec_str.strip()))
             title_labels.discard("")
@@ -1720,6 +1758,7 @@ def _section_commencement_effective_override(
 
     if not _scoped_commencement_guard(eit_text):
         return None
+    # lawvm-regex: owning_parser C-commence scoped-commencement clause LOCATOR (guarded by _scoped_commencement_guard); date lexed by parse_fi_day_month_year below — anchor only
     match = _SCOPED_COMMENCEMENT_RE.search(eit_text)
     if match is None:
         return None
@@ -1737,6 +1776,7 @@ def _section_commencement_effective_override(
     # 1 momentti") stay excluded via the §-colon lookahead; range chains
     # ("27 a–27 c §") do not parse as enumerations and keep the previous
     # last-label behavior.
+    # lawvm-regex: owning_parser C-commence §-terminated section-chain recognizer over the located refs text; structural label extraction, no op
     for ref in re.finditer(
         r'(?:(?P<chapter>\d+\s*[a-z]?)\s+luvun\s+)?'
         r'(?P<sections>\d+\s*[a-z]?(?:\s*(?:,|ja|sekä)\s+\d+\s*[a-z]?)*)\s*§'
@@ -1749,6 +1789,7 @@ def _section_commencement_effective_override(
         if not sections_raw:
             continue
         chapter = re.sub(r'\s+', '', chapter_raw).lower() if chapter_raw else None
+        # lawvm-regex: owning_parser section-label tokenizer inside the matched section-chain; lexer-shaped
         for label_match in re.finditer(
             r'\d+(?:\s*[a-z](?![a-zåäö]))?', sections_raw, flags=re.IGNORECASE
         ):
@@ -1782,6 +1823,7 @@ def _section_subsection_commencement_effective_override(
 
     if not _scoped_commencement_guard(eit_text):
         return None
+    # lawvm-regex: owning_parser C-commence scoped-commencement clause LOCATOR (subsection-exact consumer); date/provision structure delegated downstream — anchor only
     match = _SCOPED_COMMENCEMENT_RE.search(eit_text)
     if match is None:
         return None
@@ -1851,6 +1893,7 @@ def _commencement_heading_sections(consumed_text: str) -> frozenset[str]:
 def _commencement_repeal_sections(consumed_text: str) -> frozenset[str]:
     labels = {
         _WHITESPACE_RE.sub("", match.group("section")).lower()
+        # lawvm-regex: owning_parser C-commence repeal-facet section-ref detector over already-consumed clause text
         for match in _COMMENCEMENT_REPEAL_REF_RE.finditer(consumed_text)
     }
     labels.discard("")
@@ -1929,6 +1972,7 @@ def _infer_expiry_date_from_temporary_payload_text(text: str) -> Optional[dt.dat
 
     years: list[int] = []
 
+    # lawvm-regex: owning_parser V-expiry tax-year-window expiry inference (plural "Vuosilta … verotuksissa")
     for plural in re.finditer(
         r"\bVuosilta\s+(\d{4})(?:\s*(?:ja|sekä|\u2013|-)\s*(\d{4}))?\s+toimitettavissa\s+verotuksissa\b",
         normalized,
@@ -1938,6 +1982,7 @@ def _infer_expiry_date_from_temporary_payload_text(text: str) -> Optional[dt.dat
         if plural.group(2):
             years.append(int(plural.group(2)))
 
+    # lawvm-regex: owning_parser V-expiry tax-year-window expiry inference (singular "Vuodelta … verotuksessa")
     for singular in re.finditer(
         r"\bVuodelta\s+(\d{4})\s+toimitettavassa\s+verotuksessa\b",
         normalized,
@@ -2012,6 +2057,7 @@ def _commencement_expiry_override(
         return target_mid, labels, expiry
 
     full_text = _normalized_tree_text(tree)
+    # lawvm-regex: owning_parser C-commence cited-voimaantulosäännös target-id redirection; id parse delegated to _normalize_textual_statute_id, no date minted here
     cited = re.search(
         r'\(\s*(\d{1,4}/\d{4}|\d{4}/\d+)\s*\)\s+voimaantulosäänn',
         full_text,
@@ -2042,6 +2088,7 @@ def _chapter_expiry_from_base(
     ``expires_on_from_valid_until``.
     """
     full_text = _normalized_tree_text(tree)
+    # lawvm-regex: owning_parser V-expiry chapter-scoped base-statute expiry clause LOCATOR; date lexed by parse_fi_day_month_year below — anchor only
     m = re.search(
         r'(?:Lain|Asetuksen)\s+(\d+)\s+luku\s+(?:on|ovat)\s+voimassa\s+(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
         full_text,
@@ -2084,6 +2131,7 @@ def _amendment_effective_date_with_step(
     #    Sanity check: if extracted date < issuance date, the match is from the
     #    AMENDED statute's voimaantulo text (context in the amendment XML), not
     #    from the amendment itself.  Fall through to issuance date.
+    # lawvm-regex: owning_parser E-effective effective-date sentence LOCATOR; date lexed by parse_fi_day_month_year below — anchor only
     m = re.search(
         r'Tämä\s+(?:laki|asetus|päätös)\s+tulee\s+voimaan\s+(\d{1,2})\s+päivänä\s+([a-zäöå]+)\s+(\d{4})',
         full_text,
@@ -2094,6 +2142,7 @@ def _amendment_effective_date_with_step(
         # Sanity: effective date must be >= issuance date
         if text_date is not None and (issued is None or text_date >= issued):
             return text_date, 'text_regex'
+    # lawvm-regex: owning_parser E-effective application-date sentence LOCATOR; date lexed by parse_fi_day_month_year below — anchor only
     m = re.search(
         r'Tätä\s+(?:lakia|asetusta|päätöstä)\s+sovelletaan\s+(\d{1,2})\s+päivästä\s+([a-zäöå]+)\s+(\d{4})\s+lukien',
         full_text,
@@ -2105,12 +2154,14 @@ def _amendment_effective_date_with_step(
             return text_date, 'text_regex'
     # 2b. Decree-set or otherwise contingent commencement: we know the law was
     # not in force at issuance, but we do not know the actual force date yet.
+    # lawvm-regex: owning_parser E-effective decree-set contingent-commencement discriminator (no date present)
     if re.search(
         r'Tämä\s+(?:laki|asetus|päätös)\s+tulee\s+voimaan\s+(?:valtioneuvoston\s+)?asetuksella\s+säädettävänä\s+ajankohtana',
         full_text,
         flags=re.IGNORECASE,
     ):
         return None, 'contingent_text'
+    # lawvm-regex: owning_parser E-effective separate-commencement contingent discriminator (no date present)
     if re.search(
         r'(?:Tämän|Taman|Lain|Asetuksen|Päätöksen)\s+voimaantulosta\s+säädetään\s+'
         r'(?:(?:valtioneuvoston\s+)?asetuksella|erikseen\s+lailla)',
@@ -2136,6 +2187,7 @@ def _statute_issue_date(tree: "etree._Element") -> Optional[dt.date]:
     doc_number_el = tree.find('.//{*}docNumber')
     if doc_number_el is not None:
         doc_number_text = etree.tostring(doc_number_el, method="text", encoding="unicode").strip()
+        # lawvm-regex: owning_parser ID docNumber year lexer over the docNumber element text
         m = re.search(r'/(\d{4})\b', doc_number_text)
         if m:
             try:
@@ -2151,6 +2203,7 @@ def _statute_issue_date(tree: "etree._Element") -> Optional[dt.date]:
         )
         if not signatures_text:
             return None
+        # lawvm-regex: owning_parser E-effective signature-date sentence LOCATOR; date lexed by parse_fi_day_month_year below — anchor only
         m = re.search(
             r'Helsingissä\s+(\d{1,2})\s+päivänä\s+([a-zäöå]+)\s+(\d{4})',
             signatures_text,
@@ -2189,6 +2242,7 @@ def _statute_issue_date(tree: "etree._Element") -> Optional[dt.date]:
 def _statute_id_sort_key(statute_id: str) -> Tuple[int, int, str]:
     """Sort key for statute IDs of the form YYYY/NNN."""
     year, num = statute_id.split('/', 1)
+    # lawvm-regex: owning_parser ID statute-id sort-key lexer over an already-split id component
     m = re.match(r'^(\d+)', num)
     num_int = int(m.group(1)) if m else 0
     return (int(year), num_int, num)

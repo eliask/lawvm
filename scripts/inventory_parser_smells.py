@@ -187,6 +187,12 @@ CATEGORY_MAP: dict[str, str] = {
     # VtsSkippedTarget/VtsSourceDiagnostic). Local regexes are the citation/title
     # lexer + fragment-boundary truncation feeding it (C4 triage).
     "src/lawvm/finland/vts.py": "owning_parser",
+    # scope.py is the canonical chapter/part-scope assignment parser: it
+    # consumes its OWN johtolause + already-typed los to assign/strip scope and
+    # mints no ops. Mirrors johto_scope_mentions / references/sections (both
+    # precleared owning_parser). No reach-back site (none of its 44 regexes read
+    # raw_text/source_text/irnode_to_text/.description). Whole-file preclear.
+    "src/lawvm/finland/scope.py": "owning_parser",
     # --- diagnostic (D/E): audit / oracle-comparison rendering, no authority ---
     "src/lawvm/core/ir_helpers.py": "diagnostic",
     "src/lawvm/finland/inline_repeal_stub.py": "diagnostic",

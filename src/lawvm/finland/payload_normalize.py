@@ -815,6 +815,7 @@ def _slot_ir_has_item(node: IRNode, target: str) -> bool:
     if compound_parent_seen and compound_flat_subitem_seen:
         return True
     sub_text = (node.text or " ".join(child.text or "" for child in node.children)).strip()
+    # lawvm-regex: owning_parser P-item-prefix flat ``N)`` item-label predicate over IR sub text; lexer-shaped, drives slot assignment, no op
     m = re.match(r"^(\d+[a-zA-Z]*)\)", sub_text)
     return bool(m and leaf_label_identity_key(m.group(1)) == target_key)
 
@@ -1459,6 +1460,7 @@ def _assign_item_prefix_slot_ops(
         item_norm = leaf_label_identity_key(str(op.target_item))
         for sub in slot_inputs.amend_subs:
             sub_text = (sub.text or " ".join(child.text or "" for child in sub.children)).strip()
+            # lawvm-regex: owning_parser P-item-prefix flat ``N)`` item-label predicate over IR sub text; lexer-shaped
             m = re.match(r"^(\d+[a-zA-Z]*)\)", sub_text)
             if m and leaf_label_identity_key(m.group(1)) == item_norm:
                 state.subsec_map.assign(op, sub)
@@ -2174,6 +2176,7 @@ _TEXT_TABLE_ROW_CONTINUATION_RULE = "ELAB.TEXT_TABLE_ROW_CONTINUATION"
 
 def _flattened_list_row_from_text(text: str) -> Optional[FlattenedListRow]:
     flat_text = " ".join(text.split())
+    # lawvm-regex: owning_parser P-item-prefix flattened-list-row recognizer over normalized local text; lexer-shaped
     m = re.match(r"^(\d+|[a-z])\s*[\).]\s*(.+)$", flat_text, flags=re.I)
     if m is None:
         return None
@@ -2728,6 +2731,7 @@ def _content_only_non_item_subsection_text(sub: IRNode) -> Optional[str]:
     if child.kind is not IRNodeKind.CONTENT:
         return None
     text = irnode_to_text(child).strip()
+    # lawvm-regex: owning_parser P-item-prefix numbered-prefix guard over the normalizer's OWN child IR text (irnode_to_text self-read, §1.12); lexer-shaped, no op
     if not text or re.match(r"^\d+[.)]\s+", text):
         return None
     return text
@@ -3062,6 +3066,7 @@ def _fold_continuation_row_subsections_into_previous_subsection(
             continue
 
         base_text = _content_text(child)
+        # lawvm-regex: owning_parser P-continuation continuation-row prefix predicate over IR content text; lexer-shaped
         if not base_text or _CONTINUATION_ROW_PREFIX_RE.match(base_text):
             new_children.append(child)
             i += 1
@@ -3074,6 +3079,7 @@ def _fold_continuation_row_subsections_into_previous_subsection(
             if sibling.kind is not IRNodeKind.SUBSECTION:
                 break
             row_text = _content_text(sibling)
+            # lawvm-regex: owning_parser P-continuation continuation-row prefix predicate over IR content text; lexer-shaped
             m = _CONTINUATION_ROW_PREFIX_RE.match(row_text)
             if not m:
                 break
@@ -3238,6 +3244,7 @@ def _normalize_item_like_target(
     def _is_flat_numbered_item_sub(sub: IRNode) -> bool:
         if any(c.kind is IRNodeKind.PARAGRAPH for c in sub.children):
             return False
+        # lawvm-regex: owning_parser P-item-prefix flat-numbered-item predicate over IR sub text; lexer-shaped
         return re.match(r"^(\d+[a-zA-Z]*)\)", _sub_text(sub)) is not None
 
     if (
@@ -3265,6 +3272,7 @@ def _normalize_item_like_target(
     if amend_subs and not any(c.kind is IRNodeKind.PARAGRAPH for c in amend_subs[0].children):
         flat_match = False
         for sub in amend_subs:
+            # lawvm-regex: owning_parser P-item-prefix flat-match slot routing predicate over IR sub text; lexer-shaped
             m = re.match(r"^(\d+[a-zA-Z]*)\)", _sub_text(sub))
             if m and _norm_num_token(m.group(1)) == str(op.target_paragraph):
                 flat_match = True
@@ -3358,6 +3366,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
                     return label or None
 
         # Family-base fallback: '20a' → try '20'
+        # lawvm-regex: owning_parser family-base ``20a``→``20`` fallback lexer over a normalized label
         m = re.match(r"^(\d+)[a-z]", _norm_num_token(section_label))
         if m:
             base = m.group(1)
@@ -3649,6 +3658,7 @@ def _split_historical_top_level_kohta_payload_ir(
         if child.kind is not IRNodeKind.PARAGRAPH:
             continue
         text = irnode_to_text(child).strip()
+        # lawvm-regex: owning_parser P-item-prefix parenthesized ``(N)`` label predicate over the normalizer's OWN child IR text (irnode_to_text self-read, §1.12); lexer-shaped
         match = re.match(r"^\((\d+(?:\s*[a-z])?)\)", text)
         if match is None:
             continue
@@ -5002,6 +5012,7 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
                     and _live_para_has_specific_item(op.target_paragraph, item_norm)
                     and other.op_type == "REPLACE"
                     and other.target_item is not None
+                    # lawvm-regex: owning_parser compound-item-label shape predicate over a normalized label; lexer-shaped
                     and re.match(r"^\d+[a-z]$", item_norm)
                     and item_norm.rstrip("abcdefghijklmnopqrstuvwxyz")
                     == leaf_label_identity_key(str(other.target_item))
