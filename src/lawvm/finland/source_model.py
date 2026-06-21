@@ -811,6 +811,58 @@ class AmendmentSourceModel:
         wanted = _norm_num_token(chapter_label)
         return wanted in self._body_inventory_index().real_chapter_labels
 
+    def body_chapter_is_single_mixed_wrapper(
+        self,
+        chapter_label: str,
+        master: "ReplayState",
+    ) -> bool:
+        """Return True when one source chapter wrapper contains multiple live chapters.
+
+        Some historical amendment XML opens one chapter wrapper and then leaves
+        unrelated later sections inside it.  The wrapper is then a source
+        topology defect, not reliable chapter-scope evidence for every
+        contained section.
+        """
+        body_chapter_norm = _norm_num_token(chapter_label)
+        real_chapter_labels = {
+            _norm_num_token(unit.label)
+            for unit in self.observed_body_inventory()
+            if unit.kind == "chapter" and unit.source_tag == "chapter"
+        }
+        if real_chapter_labels != {body_chapter_norm}:
+            return False
+
+        foreign_live_chapters: set[str] = set()
+        for unit in self.observed_body_inventory():
+            if (
+                unit.kind != "section"
+                or _norm_num_token(unit.chapter_label) != body_chapter_norm
+            ):
+                continue
+            section_label = _norm_num_token(unit.label)
+            section_path = master.find_section_path(
+                section_label,
+                None,
+                unit.part_label or None,
+            )
+            if section_path is None:
+                stem_match = re.fullmatch(r"(\d+)[a-z]+", section_label, re.I)
+                if stem_match is not None:
+                    section_path = master.find_section_path(
+                        stem_match.group(1),
+                        None,
+                        unit.part_label or None,
+                    )
+            if section_path is None:
+                continue
+            live_chapter = next(
+                (label for kind, label in section_path if kind == "chapter"),
+                "",
+            )
+            if live_chapter and _norm_num_token(live_chapter) != body_chapter_norm:
+                foreign_live_chapters.add(_norm_num_token(live_chapter))
+        return len(foreign_live_chapters) >= 2
+
     def lookup_body_unit(
         self,
         target_unit_kind: str,

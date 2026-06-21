@@ -379,6 +379,7 @@ def build_amendment_bundle(
             used_preamble_body_fallback=used_preamble_body_fallback,
             parent_id=statute_id,
             strict_profile=None,
+            source_model=source_model,
         )
         ops = _naco_result.output
         bundle["compile_projection_rows"] = [

@@ -11080,6 +11080,86 @@ def test_enrich_ops_prefers_letter_suffix_stem_host_before_unborn_body_wrapper_f
     assert got[0].scope_confidence.resolved_chapter == "5"
 
 
+def test_enrich_ops_uses_vacated_live_scope_for_recodification_insert_under_mixed_wrapper() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="14a"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="6a",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="25"),
+                        IRNode(kind=IRNodeKind.SECTION, label="27f"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="9",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="42"),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>3 luku</num>
+            <section><num>14 a §</num><content><p>new 14a</p></content></section>
+            <section><num>25 §</num><content><p>old 25 body</p></content></section>
+            <section><num>27 f §</num><content><p>new 27f body</p></content></section>
+            <section><num>42 §</num><content><p>old 42 body</p></content></section>
+          </chapter>
+        </body>
+        """
+    )
+    renumber = AmendmentOp(
+        op_id="renumber_27f",
+        op_type="RENUMBER",
+        target_unit_kind="section",
+        target_section="27f",
+        lo=LegalOperation(
+            op_id="renumber_27f",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "27f"),)),
+            destination=LegalAddress(path=(("section", "27g"),)),
+        ),
+    )
+    insert = AmendmentOp(
+        op_id="insert_27f",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="27f",
+    )
+    source_model = AmendmentSourceModel.from_tree(muutos_tree, source_ref="2003/444")
+
+    got = _enrich_ops_from_amendment_tree(
+        [renumber, insert],
+        "2003/444",
+        muutos_tree,
+        master=master,
+        source_model=source_model,
+    )
+
+    got_insert = next(op for op in got if op.op_id == "insert_27f")
+    assert got_insert.target_chapter == "6a"
+    assert got_insert.witness_rule_id == "fi_recodification_vacated_insert_scope"
+    assert got_insert.scope_confidence is not None
+    assert got_insert.scope_confidence.source == "carry_forward"
+    assert got_insert.scope_confidence.resolved_chapter == "6a"
+
+
 def test_flat_body_insert_chapter_scope_uses_bracketing_live_siblings() -> None:
     from lawvm.finland.frontend_compile import (
         _infer_flat_body_insert_chapter_from_bracketing_live_siblings,

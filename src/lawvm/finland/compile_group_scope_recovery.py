@@ -176,35 +176,7 @@ def _source_body_is_single_mixed_chapter_wrapper(
     body_chapter: str,
     master: ReplayState,
 ) -> bool:
-    body_chapter_norm = _norm_num_token(body_chapter)
-    real_chapter_labels = {
-        _norm_num_token(unit.label)
-        for unit in source_model.observed_body_inventory()
-        if unit.kind == "chapter" and unit.source_tag == "chapter"
-    }
-    if real_chapter_labels != {body_chapter_norm}:
-        return False
-
-    foreign_live_chapters: set[str] = set()
-    for unit in source_model.observed_body_inventory():
-        if unit.kind != "section" or _norm_num_token(unit.chapter_label) != body_chapter_norm:
-            continue
-        section_label = _norm_num_token(unit.label)
-        section_path = master.find_section_path(section_label, None, unit.part_label or None)
-        if section_path is None:
-            stem_match = re.fullmatch(r"(\d+)[a-z]+", section_label, re.I)
-            if stem_match is not None:
-                section_path = master.find_section_path(
-                    stem_match.group(1),
-                    None,
-                    unit.part_label or None,
-                )
-        if section_path is None:
-            continue
-        live_chapter = next((label for kind, label in section_path if kind == "chapter"), "")
-        if live_chapter and _norm_num_token(live_chapter) != body_chapter_norm:
-            foreign_live_chapters.add(_norm_num_token(live_chapter))
-    return len(foreign_live_chapters) >= 2
+    return source_model.body_chapter_is_single_mixed_wrapper(body_chapter, master)
 
 
 def _label_in_closed_range(label: str, start: str, end: str) -> bool:

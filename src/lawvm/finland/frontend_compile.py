@@ -1772,6 +1772,68 @@ def _infer_unique_live_section_chapter_scope(
     )
 
 
+def _renumbers_same_section_label_away(
+    op: AmendmentOp,
+    ops: List[AmendmentOp],
+) -> bool:
+    """Return True when this amendment explicitly vacates ``op``'s label."""
+    section_label = _norm_num_token(op.target_section or "")
+    if not section_label:
+        return False
+    for candidate in ops:
+        if (
+            candidate is op
+            or candidate.op_type != "RENUMBER"
+            or candidate.target_unit_kind != "section"
+            or _norm_num_token(candidate.target_section or "") != section_label
+            or candidate.lo is None
+            or candidate.lo.destination is None
+        ):
+            continue
+        destination_label = candidate.lo.destination.leaf_label()
+        if _norm_num_token(destination_label) != section_label:
+            return True
+    return False
+
+
+def _infer_recodification_vacated_insert_scope(
+    *,
+    op: AmendmentOp,
+    ops: List[AmendmentOp],
+    master: "ReplayState",
+    source_model: "AmendmentSourceModel | None",
+) -> tuple[str | None, str | None] | None:
+    """Bind a same-wave new section insert to the label vacated by a relabel.
+
+    Historical source XML can keep later provisions inside one overbroad
+    chapter wrapper.  If the same amendment also renumbers the exact live
+    section label away and then inserts a new whole section with that label, the
+    live pre-wave address of the vacated section is the owned target scope for
+    the insert.
+    """
+    if source_model is None or not _is_whole_section_insert(op):
+        return None
+    section_label = _norm_num_token(op.target_section or "")
+    if not _renumbers_same_section_label_away(op, ops):
+        return None
+    body_scope = source_model.body_section_scope(section_label)
+    if body_scope is None:
+        return None
+    _body_part, body_chapter = body_scope
+    if not body_chapter:
+        return None
+    if not source_model.body_chapter_is_single_mixed_wrapper(body_chapter, master):
+        return None
+    live_path = master.find_section_path(section_label, None, op.target_part)
+    if live_path is None:
+        return None
+    live_part = next((label for kind, label in live_path if kind == "part"), None)
+    live_chapter = next((label for kind, label in live_path if kind == "chapter"), None)
+    if not live_chapter or _norm_num_token(live_chapter) == _norm_num_token(body_chapter):
+        return None
+    return live_part, live_chapter
+
+
 def _infer_letter_suffix_insert_chapter_from_stem_host(
     *,
     op: AmendmentOp,
@@ -2353,14 +2415,24 @@ def _enrich_ops_from_amendment_tree(
                             else "fi_letter_suffix_stem_host_chapter_scope"
                         )
                 if inferred_chapter is None:
-                    inferred_chapter = _body_chapter_scope_for_section_op(
+                    recodification_vacated_scope = _infer_recodification_vacated_insert_scope(
                         op=scoped_op,
-                        muutos_tree=muutos_tree,
+                        ops=ops,
                         master=master,
-                        johto=johto,
                         source_model=source_model,
                     )
-                    inferred_rule_id = "fi_body_chapter_scope_from_source_body"
+                    if recodification_vacated_scope is not None:
+                        inferred_part, inferred_chapter = recodification_vacated_scope
+                        inferred_rule_id = "fi_recodification_vacated_insert_scope"
+                    else:
+                        inferred_chapter = _body_chapter_scope_for_section_op(
+                            op=scoped_op,
+                            muutos_tree=muutos_tree,
+                            master=master,
+                            johto=johto,
+                            source_model=source_model,
+                        )
+                        inferred_rule_id = "fi_body_chapter_scope_from_source_body"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
                         op=scoped_op,
