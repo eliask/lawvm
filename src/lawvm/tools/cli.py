@@ -12014,6 +12014,37 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         default="browse",
         help="check mode (default: browse; audit additionally requires source bytes)",
     )
+
+    pack_corpus_p = sub.add_parser(
+        "pack-corpus",
+        parents=_P,
+        help="build a shared-store corpus pack from >=2 single-work pack directories",
+        description=(
+            "Compose N single-work packs (from 'pack-work') into a corpus pack: "
+            "ONE deduped content-leaf base store (the synergy gate's content-leaf "
+            "dedup across works) plus an edges/<corpus_version> layer holding "
+            "cross-work resolutions. Reads existing packs; never runs replay. The "
+            "offline 'check-pack' verifier accepts the result (edges is an optional "
+            "layer, so an overlay schema yields VALID_WITH_UNSUPPORTED_LAYERS)."
+        ),
+    )
+    pack_corpus_p.add_argument(
+        "member_packs",
+        nargs="+",
+        metavar="PACK_DIR",
+        help="two or more single-work pack directories to compose",
+    )
+    pack_corpus_p.add_argument(
+        "--out",
+        required=True,
+        metavar="DIR",
+        help="output corpus pack directory",
+    )
+    pack_corpus_p.add_argument(
+        "--measure-only",
+        action="store_true",
+        help="only print the cross-work content-leaf dedup measurement, do not write a pack",
+    )
     # --- END substrate pack tooling ---
 
     # --- BEGIN us_federal jurisdiction tooling (additive, self-contained) ---
@@ -13795,6 +13826,30 @@ def _main_impl() -> None:
             IntegrityVerdict.VALID_WITH_UNSUPPORTED_LAYERS,
         )
         raise SystemExit(0 if _clean else 1)
+
+    elif args.command == "pack-corpus":
+        from lawvm.substrate.corpus import build_corpus_pack, measure_leaf_dedup
+
+        _members = {str(p): p for p in args.member_packs}
+        if len(_members) < 2:
+            print("pack-corpus needs >=2 distinct member pack directories", flush=True)
+            raise SystemExit(2)
+        _report = measure_leaf_dedup(_members)
+        print("cross-work content-leaf dedup:", flush=True)
+        print(f"  {_report.summary()}", flush=True)
+        if getattr(args, "measure_only", False):
+            raise SystemExit(0)
+        _cresult = build_corpus_pack(
+            member_pack_dirs=_members,
+            out_dir=args.out,
+            resolutions=[],
+        )
+        print("", flush=True)
+        print(f"  corpus pack_id:   {_cresult.pack_id}", flush=True)
+        print(f"  out dir:          {_cresult.out_dir}", flush=True)
+        print(f"  work_ids:         {list(_cresult.work_ids)}", flush=True)
+        print(f"  shared base leaves: {_cresult.n_shared_base_leaves}", flush=True)
+        print(f"  edges:            {_cresult.n_edges}", flush=True)
     # --- END substrate pack dispatch ---
 
     # --- BEGIN us_federal jurisdiction dispatch (additive, self-contained) ---
