@@ -208,11 +208,19 @@ def _subsection_leaf_text(node: IRNode) -> Optional[str]:
 
 
 def _subsection_has_structured_children(node: IRNode) -> bool:
-    """Return True if the subsection has paragraph/subparagraph/subsection children."""
-    return any(
-        child.kind in (IRNodeKind.PARAGRAPH, IRNodeKind.SUBPARAGRAPH, IRNodeKind.SUBSECTION)
-        for child in node.children
-    )
+    """Return True if the subsection already carries structured legal content."""
+
+    def _has_structured_descendant(child: IRNode) -> bool:
+        if child.kind in (
+            IRNodeKind.PARAGRAPH,
+            IRNodeKind.SUBPARAGRAPH,
+            IRNodeKind.SUBSECTION,
+            IRNodeKind.TABLE,
+        ):
+            return True
+        return any(_has_structured_descendant(grandchild) for grandchild in child.children)
+
+    return any(_has_structured_descendant(child) for child in node.children)
 
 
 def _renumber_subsections(children: List[IRNode]) -> List[IRNode]:

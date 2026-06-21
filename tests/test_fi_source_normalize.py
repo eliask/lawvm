@@ -786,6 +786,106 @@ class TestTagReclassify:
         assert [subsection.label for subsection in subsections] == ["1", "2"]
         assert not any(fact.kind_value == BASE_TABLE_NOTE_SUBSECTION_FOLD for fact in facts)
 
+    def test_folds_numeric_table_note_subsections_with_source_eids(self) -> None:
+        """Numeric note wrappers with source eIds may still be table footnotes."""
+        table = IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(kind=IRNodeKind.CELL, text="Aine"),
+                        IRNode(kind=IRNodeKind.CELL, text="50 1)"),
+                        IRNode(kind=IRNodeKind.CELL, text="8 tuntia 2)"),
+                    ),
+                ),
+            ),
+        )
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    attrs={"eId": "sec_3__subsec_1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text="Raja-arvot ovat seuraavat:",
+                            children=(table,),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    attrs={"eId": "sec_3__subsec_2"},
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="1) Tulokset ilmaistaan lämpötilassa."),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="3",
+                    attrs={"eId": "sec_3__subsec_3"},
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="2) Kahdeksan tunnin keskiarvo."),),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "numeric-table-note-fixture")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        pending = [subsections[0]]
+        has_table = False
+        while pending:
+            candidate = pending.pop()
+            if candidate.kind == IRNodeKind.TABLE:
+                has_table = True
+                break
+            pending.extend(candidate.children)
+        assert has_table
+        assert "1) Tulokset ilmaistaan" in irnode_to_text(subsections[0])
+        assert "2) Kahdeksan tunnin" in irnode_to_text(subsections[0])
+        assert any(fact.kind_value == BASE_TABLE_NOTE_SUBSECTION_FOLD for fact in facts)
+        assert not any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+
+    def test_numeric_table_note_fold_requires_marker_in_table(self) -> None:
+        """A numbered following moment is not a table note without a table marker."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text="Raja-arvot ovat seuraavat:",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(IRNode(kind=IRNodeKind.ROW, children=(IRNode(kind=IRNodeKind.CELL, text="Aine"),)),),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="1) Todellinen kohta."),),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "numeric-table-note-negative")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2"]
+        assert not any(fact.kind_value == BASE_TABLE_NOTE_SUBSECTION_FOLD for fact in facts)
+
     def test_table_note_fold_preserves_unmarked_following_prose_moment(self) -> None:
         """EId-less following prose is not a table-note run without a marker."""
         section = IRNode(

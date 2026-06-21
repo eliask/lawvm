@@ -729,6 +729,10 @@ def _fold_section_content_item_subsection_run(
             rewritten.append(child)
             i += 1
             continue
+        if _node_has_descendant_kind(child, IRNodeKind.TABLE):
+            rewritten.append(child)
+            i += 1
+            continue
 
         existing_values = _paragraph_label_values(child)
         if existing_values:
@@ -1210,6 +1214,46 @@ def _starts_table_note_run(node: IRNode) -> bool:
     return leading.startswith(("(*)", "(**)", "(***)", "(****)"))
 
 
+def _numeric_table_note_label(node: IRNode) -> str | None:
+    """Return a leading numeric table-note marker label, e.g. ``"1"``."""
+    if node.kind != IRNodeKind.SUBSECTION:
+        return None
+    if any(child.kind == IRNodeKind.NUM for child in node.children):
+        return None
+    if any(child.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(child) for child in node.children):
+        return None
+    text = irnode_to_text(node).lstrip()
+    if not text or not text[0].isdigit():
+        return None
+    i = 0
+    while i < len(text) and text[i].isdigit():
+        i += 1
+    label = text[:i]
+    while i < len(text) and text[i].isspace():
+        i += 1
+    if i >= len(text) or text[i] != ")":
+        return None
+    return label
+
+
+def _table_text_has_numeric_note_marker(node: IRNode, label: str) -> bool:
+    marker = f"{label})"
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        if current.kind == IRNodeKind.TABLE:
+            compact = "".join(irnode_to_text(current).split())
+            if marker in compact:
+                return True
+        pending.extend(current.children)
+    return False
+
+
+def _starts_numeric_table_note_run(table_host: IRNode, node: IRNode) -> bool:
+    label = _numeric_table_note_label(node)
+    return label is not None and _table_text_has_numeric_note_marker(table_host, label)
+
+
 def _fold_table_note_subsections_into_previous_moment(
     children: List[IRNode],
     statute_id: str,
@@ -1234,22 +1278,34 @@ def _fold_table_note_subsections_into_previous_moment(
         if (
             child.kind != IRNodeKind.SUBSECTION
             or not _node_has_descendant_kind(child, IRNodeKind.TABLE)
-            or not _subsection_has_omission_marker(child)
         ):
             rewritten.append(child)
             i += 1
             continue
 
         j = i + 1
-        if j >= len(children) or not _starts_table_note_run(children[j]):
+        if j >= len(children):
+            rewritten.append(child)
+            i += 1
+            continue
+        starts_star_note_run = _subsection_has_omission_marker(child) and _starts_table_note_run(children[j])
+        starts_numeric_note_run = _starts_numeric_table_note_run(child, children[j])
+        if not starts_star_note_run and not starts_numeric_note_run:
             rewritten.append(child)
             i += 1
             continue
 
         continuation_children: list[IRNode] = []
         consumed_paths: list[str] = []
-        while j < len(children) and _is_table_note_continuation_subsection(children[j]):
+        while j < len(children):
             continuation = children[j]
+            if starts_star_note_run:
+                if not _is_table_note_continuation_subsection(continuation):
+                    break
+            else:
+                label = _numeric_table_note_label(continuation)
+                if label is None or not _table_text_has_numeric_note_marker(child, label):
+                    break
             continuation_children.extend(continuation.children)
             consumed_paths.append(_node_path_label(continuation))
             j += 1
@@ -3062,13 +3118,13 @@ def normalize_source_ir(
         initial_children = _fold_section_scoped_item_style_subsections(
             initial_children, statute_id, current_path, facts
         )
+        initial_children = _fold_table_note_subsections_into_previous_moment(
+            initial_children, statute_id, current_path, facts
+        )
         initial_children = _fold_section_content_item_subsection_run(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_item_subsection_run(
-            initial_children, statute_id, current_path, facts
-        )
-        initial_children = _fold_table_note_subsections_into_previous_moment(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _split_unnumbered_subparagraph_moment_payloads(
