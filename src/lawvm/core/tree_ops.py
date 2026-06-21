@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from itertools import pairwise
 import re
-from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple, TypeAlias
+from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple, TYPE_CHECKING, TypeAlias
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str, structural_subtree_hash
@@ -43,6 +43,9 @@ from lawvm.core.mutation_boundary import (
 from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
+
+if TYPE_CHECKING:
+    from lawvm.core.provenance import SourceAnchor
 
 
 # ---------------------------------------------------------------------------
@@ -773,6 +776,7 @@ def receipt_from_diff(
     recovery_rule_ids: tuple[str, ...] = (),
     migration_rule_ids: tuple[str, ...] = (),
     fallback_rule_ids: tuple[str, ...] = (),
+    source_anchor: "SourceAnchor | None" = None,
 ) -> WriteReceipt:
     """Build a WriteReceipt from the ACTUAL before/after diff (landed reality).
 
@@ -821,6 +825,7 @@ def receipt_from_diff(
         fallback_rule_ids=fallback_rule_ids,
         pre_hashes=pre_hashes,
         post_hashes=post_hashes,
+        source_anchor=source_anchor,
     )
 
 
