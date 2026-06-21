@@ -583,6 +583,21 @@ def _maybe_apply_body_chapter_insert_correction(
             for op in request.amendment_group_ops
         )
     )
+    source_body_letter_run_scope_corroborated = (
+        body_chapter is not None
+        and _source_body_letter_run_scope_is_corroborated(request, body_chapter)
+    )
+    source_owned_existing_letter_run_scope = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter != request.target_chapter
+        and live_stem_host_scoped
+        and group_targets_whole_section
+        and any(op.op_type == "INSERT" for op in request.group_ops)
+        and not explicit_chapter_scoped
+        and not carry_forward_scoped
+        and source_body_letter_run_scope_corroborated
+    )
     source_owned_existing_chapter_scope = (
         body_chapter is not None
         and request.target_chapter is not None
@@ -608,6 +623,7 @@ def _maybe_apply_body_chapter_insert_correction(
             or body_chapter_is_subchapter
             or (not explicit_chapter_scoped and body_chapter == request.target_chapter)
         )
+        and not source_body_letter_run_scope_corroborated
     ):
         sibling_consensus_scope = request.source_model.retarget_duplicate_body_section_scope_from_close_live_siblings(
             section_norm=request.target_norm,
@@ -645,6 +661,8 @@ def _maybe_apply_body_chapter_insert_correction(
     elif source_owned_inserted_chapter_scope:
         apply_correction = True
     elif source_owned_existing_chapter_scope:
+        apply_correction = True
+    elif source_owned_existing_letter_run_scope:
         apply_correction = True
     elif carry_forward_scoped:
         apply_correction = (
@@ -689,6 +707,38 @@ def _maybe_apply_body_chapter_insert_correction(
         blocking=False,
     )
     return PhaseResult(output=corrected, findings=(finding,))
+
+
+def _source_body_letter_run_scope_is_corroborated(
+    request: CompileGroupScopeRecoveryRequest,
+    body_chapter: str,
+) -> bool:
+    target_match = re.fullmatch(r"(?P<stem>\d+)[a-z]+", request.target_norm, re.I)
+    if target_match is None:
+        return False
+    if not request.source_model.body_has_real_chapter_container(body_chapter):
+        return False
+    if not request.source_model.body_has_section(
+        request.target_norm,
+        target_chapter=body_chapter,
+    ):
+        return False
+
+    stem = target_match.group("stem")
+    target_norm = _norm_num_token(request.target_norm)
+    for sibling_label in request.source_model.body_real_chapter_section_labels(body_chapter):
+        sibling_norm = _norm_num_token(sibling_label)
+        if sibling_norm == target_norm:
+            continue
+        if re.fullmatch(rf"{re.escape(stem)}[a-z]+", sibling_norm, re.I) is None:
+            continue
+        if request.master.find_section_path(
+            sibling_norm,
+            body_chapter,
+            request.target_part,
+        ) is not None:
+            return True
+    return False
 
 
 def _replacement_ops(
