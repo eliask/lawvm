@@ -50,6 +50,17 @@ _SCOPED_FILES = (
     "operation_surface.py",
     # Bench mark / commencement lane:
     "benchmark.py",
+    "commencement.py",
+    # Acquisition / dependency / payload-surface / closure / version-diff / cache /
+    # agreement-projection lanes:
+    "acquisition.py",
+    "dependencies.py",
+    "payload_surface.py",
+    "closure.py",
+    "version_diff.py",
+    "corpus_cache.py",
+    "agreement.py",
+    "chain_replay.py",
 )
 
 

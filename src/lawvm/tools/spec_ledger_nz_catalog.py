@@ -102,14 +102,29 @@ NZ_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
         "nz_operation_surface_",  # operation_surface.py: f"nz_operation_surface_{operation_status}"
         "nz_lowering_readiness_",  # operation_surface.py: f"nz_lowering_readiness_{readiness_status}"
         "nz_instruction_latest_oracle_text_",  # instruction_workqueue.py: f"..._{status}"
-        "nz_text_replace_witness_support_",  # effect_candidates.py: f"..._{status}"
-        "nz_effect_readiness_",  # effect_readiness.py: f"nz_effect_readiness_{readiness_status}"
-        # Surface/role identity tags carried on witness dicts (a `surface` field /
-        # `default_role` field of a source_witness_for_mapping), not per-rule firings:
-        "nz_effect_feed_target_address",  # frontier_work_items.py: target witness `surface` field
-        "nz_amending_instruction_source",  # frontier_work_items.py: source witness `default_role`
-        "nz_instruction_semantics",  # frontier_work_items.py: residual `owner_phase` identity field
-        "nz_instruction_semantic_compile",  # frontier_work_items.py: manual-compilation claim `kind`
+        "nz_text_replace_witness_support_",  # effect_candidates.py: f"nz_text_replace_witness_support_{status}"
+        "nz_effect_readiness_",  # effect_readiness.py: f"nz_effect_readiness_{rule_suffix}"
+        "nz_agreement_comparator_status_",  # agreement.py: f"nz_agreement_comparator_status_{status}"
+        # surface/role identity tags carried on witness dicts: ``nz_effect_feed_target_address``
+        # (target witness ``surface`` field), ``nz_amending_instruction_source`` (source witness
+        # ``default_role`` field), ``nz_instruction_semantics`` (residual ``owner_phase``
+        # identity), ``nz_instruction_semantic_compile`` (manual-compilation claim ``kind``).
+        "nz_effect_feed_target_address",
+        "nz_amending_instruction_source",
+        "nz_instruction_semantics",
+        "nz_instruction_semantic_compile",
+        # agreement-surface identity fields (the ``agreement_surface`` value carried on
+        # residual/finding rows; not per-rule firings):
+        "nz_candidate_oracle_source_tree",  # agreement.py: agreement_surface default
+        "nz_actual_replay_materialized_after_vs_oracle",  # agreement.py: agreement_surface in projection
+        "nz_commencement",  # commencement.py: agreement_surface on commencement outcomes
+        # acquisition source-lane / API identity tags (not per-rule firings):
+        "nz_legislation_api_v0",  # acquisition.py: source_regime identity token
+        "nz_api_v0_works_page",  # acquisition.py: source-lane / fetcher flavour tag
+        "nz_api_v0_work_versions",
+        "nz_api_v0_version_detail",
+        "nz_api_v0_version_xml",
+        "nz_corpus_run_cache",  # corpus_cache.py: cache key surface identity
     }
 )
 
@@ -823,6 +838,134 @@ _NZ_RULE_SPECS: Dict[str, str] = {
     "nz_archived_xml_version_change_window_source_only": (
         "Change-window source identity: the archived-XML version change-window was built from the source-"
         "only side (no on-or-after oracle was available) — a source-only window, never a fabricated on-or-after."
+    ),
+    "nz_archived_xml_version_date_window_source_only": (
+        "Change-window source identity (date-window variant): the archived-version date window was built "
+        "from the source-only side (no on-or-after version available at that date) — surfaced as a distinct "
+        "identity from the change-window variant so the two readings are distinguishable (§1.10)."
+    ),
+    # --- Acquisition lane refusal vocabulary (acquisition.py) -----------------------
+    "nz_acquire_xml_format_missing": (
+        "Acquisition refusal: the fetched resource's advertised format was missing or unrecognized — "
+        "the source cannot be ingested; surfaced as a typed refusal rather than guessed content."
+    ),
+    "nz_acquire_rate_limit_stop": (
+        "Acquisition refusal: the Legislation API rate-limit ceiling was hit — acquisition halts with a "
+        "typed receipt; the work is re-fetchable later, never silently aborted."
+    ),
+    "nz_acquire_json_decode_failed": (
+        "Acquisition refusal: the fetched JSON could not be decoded (malformed payload) — surfaced as a "
+        "typed refusal so the URL/witness is traced; never silently retried with a fabricated body."
+    ),
+    "nz_acquire_json_shape_unexpected": (
+        "Acquisition refusal: the fetched JSON decoded but its shape did not match the API v0 schema — "
+        "surfaced as a typed refusal so the next-step (fix schema or fix adapter) is named."
+    ),
+    # --- Commencement / temporal-state effects (commencement.py) ---------------------
+    "nz_commencement_recorded_in_force_status_temporal_state_effect": (
+        "AGREEMENT-output: a commencement is recorded as a typed in-force status temporal-state effect — "
+        "the work's commencement-date is a sound temporal-state fact, never a structural mutation."
+    ),
+    "nz_commencement_refused_target_address_not_determinate_candidate": (
+        "Commencement refusal: the commencement clause's target address could not be resolved to a single "
+        "determinate candidate — refused rather than guessed (§1.1); carried as a typed temporal_refusal."
+    ),
+    "nz_commencement_refused_effective_date_not_determinate_iso": (
+        "Commencement refusal: the commencement's effective date cannot be reduced to a single ISO date "
+        "(contingent development / undated instrument) — refused rather than estimated (§1.7)."
+    ),
+    # --- Closure lane (closure.py) ---------------------------------------------------
+    "nz_closure_latest_xml_missing": (
+        "Closure refusal: the latest archived XML for the work's closure curve is missing — the closure "
+        "row cannot run; surfaced as a typed blocker."
+    ),
+    "nz_closure_latest_xml_locator_unreadable": (
+        "Closure refusal: the latest archived XML locator is unreadable — the closure row cannot parse; "
+        "surfaced as a typed blocker rather than fabricated agreement."
+    ),
+    # --- Dependencies lane (dependencies.py) -----------------------------------------
+    "nz_dependency_reprint_amend_unparsed": (
+        "Dependency refusal: a reprint/amend-type dependency could not be parsed into a typed payload — "
+        "surfaced as a refusal rather than silently absorbed as a dependency edge."
+    ),
+    "nz_latest_xml_locator_candidate_rejected": (
+        "Locator refusal: the latest-XML locator for the work could not be resolved to a single archived "
+        "candidate (multiple or no candidates) — the locator ambiguity is preserved as a typed refusal (§1.7)."
+    ),
+    # --- Payload-surface refusals (payload_surface.py) -------------------------------
+    "nz_payload_operation_not_payload_ready": (
+        "Payload-surface refusal: the operation row is not payload-ready (the readiness lane did not mark "
+        "it ``payload_found``) — the payload lane refuses rather than forcing the lowering."
+    ),
+    "nz_payload_dependency_unarchived": (
+        "Payload-surface refusal: the amending-work dependency cited by the payload row is unarchived — "
+        "the payload cannot be extracted; surfaced as a typed dependency refusal."
+    ),
+    "nz_payload_href_missing": (
+        "Payload-surface refusal: the amending-provision href is missing from the witness row — the payload "
+        "cannot be located; surfaced as a refusal, never invented."
+    ),
+    "nz_payload_href_not_found": (
+        "Payload-surface refusal: the amending-provision href was not found in the amending act XML — "
+        "the payload cannot be extracted; surfaced as a refusal."
+    ),
+    # --- Amendment-chain replay refusals (chain_replay.py — experimental all-families lane) ---
+    "nz_chain_replay_op_target_resolution_not_exact": (
+        "Chain-replay refusal: the op's target did not resolve to an exact (candidate) source path — "
+        "chain replay refuses inferred scope rather than widening the resolved path (§1.1)."
+    ),
+    "nz_chain_replay_op_unextractable_no_source_path": (
+        "Chain-replay refusal: the operation's target has no source path (it was emitted/amended without a "
+        "path); the op is unextractable, never silently dropped."
+    ),
+    "nz_chain_replay_target_absent_in_evolving_tree": (
+        "Chain-replay refusal: the named target node is absent from the evolving before-tree at this step — "
+        "the op cannot act on it; refused rather than rebinding (§1.1)."
+    ),
+    "nz_chain_replay_target_ambiguous_in_evolving_tree": (
+        "Chain-replay refusal: the resolved target path matches more than one node in the evolving tree at "
+        "this step — ambiguity preserved, never resolved by parser order (§1.7)."
+    ),
+    "nz_chain_replay_target_already_tombstoned_in_evolving_tree": (
+        "Chain-replay refusal (honest skip — pre-cutoff): the target was already tombstoned in the evolving "
+        "tree (an earlier amendment already repealed it); the op is correctly a no-op (per status doc "
+        "Limits #3 — pre-cutoff baked-in changes), surfaced as a typed skip rather than silently dropped."
+    ),
+    "nz_chain_replay_amending_work_or_provision_href_unresolved": (
+        "Chain-replay refusal: the amending work cited by the op could not be resolved to an archived act, "
+        "or the amending-provision href was not found — the payload cannot be extracted."
+    ),
+    "nz_chain_replay_amending_payload_not_extractable": (
+        "Chain-replay refusal: the amending payload's replacement/insertion subtree could not be cleanly "
+        "extracted — the structural op is blocked rather than applied with a fabricated payload."
+    ),
+    "nz_chain_replay_replace_apply_left_subtree_unchanged": (
+        "Chain-replay refusal: applying the extracted replacement subtree to the evolving tree produced no "
+        "change (no-op) — the proof is not materialized."
+    ),
+    "nz_chain_replay_text_apply_left_node_unchanged": (
+        "Chain-replay refusal: applying the text substitution produced no change to the evolving-tree node "
+        "(no-op) — the proof is not materialized; the candidate is rejected, never silently credited."
+    ),
+    "nz_chain_replay_text_old_text_not_single_occurrence_in_evolving_tree": (
+        "Chain-replay refusal: the old_text does not occur exactly once in the evolving-tree target at this "
+        "step — neither a single-occurrence substitution nor a valid each-place proof."
+    ),
+    "nz_chain_replay_insert_target_already_present_in_evolving_tree": (
+        "Chain-replay refusal: the new node to insert is already present in the evolving tree — the insertion "
+        "would duplicate; the chain refuses rather than deduping silently (manual-compilation frontier)."
+    ),
+    "nz_chain_replay_insert_anchor_not_derivable_from_label_or_siblings": (
+        "Chain-replay refusal: the pre-existing anchor sibling cannot be derived from the inserted label "
+        "or its sibling group in the evolving tree — refused rather than guessed (§1.7)."
+    ),
+    "nz_chain_replay_insert_anchor_or_parent_not_unique_in_evolving_tree": (
+        "Chain-replay refusal: the derived anchor (or nested parent) is not unique in the evolving tree at "
+        "this step — ambiguity preserved, never resolved by position (§1.7)."
+    ),
+    "nz_chain_replay_effective_date_after_latest_archived_version": (
+        "Chain-replay refusal: the op's effective date falls after the latest archived version of the work "
+        "(beyond the verified consolidation window) — replay refuses rather than extrapolating."
     ),
     # --- Effect readiness voter — amendment/structural payload extraction state --------
     "nz_effect_readiness_amendment_semantics_not_extracted": (
