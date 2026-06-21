@@ -155,6 +155,15 @@ def _is_self_comparable_with_tolerance(
     if ordering_date is None:
         return False, False
 
+    # The collapsed-dates observation is a data-quality signal about oracle
+    # metadata: ``date_consolidated`` lags the artifact's actual ordering_date
+    # by a positive gap within the 180-day tolerance.  It is logically
+    # orthogonal to whether the amendment has commenced — emit it on both the
+    # commenced early-return path and the Finlex-ahead tolerance path so the
+    # diagnostic is never silently dropped.  Emitting it is a log-only side
+    # effect and must not influence the accept/reject decision.
+    _emit_collapsed_dates_observation_if_applicable(artifact, ordering_date)
+
     if ordering_date <= dt.date.today():
         if expiry_date is not None and expiry_date <= ordering_date:
             return False, False
@@ -167,29 +176,50 @@ def _is_self_comparable_with_tolerance(
             return False, False
         if gap_days > 0:
             tolerance_applied = True
-            warning_key = (
-                artifact.sid,
-                artifact.version_tag,
-                artifact.date_consolidated,
-                ordering_date,
-            )
-            if warning_key not in _SEEN_COLLAPSED_DATE_WARNINGS:
-                _SEEN_COLLAPSED_DATE_WARNINGS.add(warning_key)
-                log.info(
-                    "ORACLE_METADATA_COLLAPSED_DATES sid=%s version_tag=%s "
-                    "date_consolidated=%s ordering_date=%s gap_days=%d "
-                    "— accepting artifact under Option Z (within 180-day tolerance)",
-                    artifact.sid,
-                    artifact.version_tag,
-                    artifact.date_consolidated,
-                    ordering_date,
-                    gap_days,
-                )
 
     if expiry_date is not None and expiry_date <= ordering_date:
         return False, False
 
     return True, tolerance_applied
+
+
+def _emit_collapsed_dates_observation_if_applicable(
+    artifact: CachedConsolidatedArtifact,
+    ordering_date: dt.date,
+) -> None:
+    """Log the ORACLE_METADATA_COLLAPSED_DATES observation when applicable.
+
+    The condition is a pure data-quality signal: a non-null
+    ``date_consolidated`` that trails ``ordering_date`` by a positive gap
+    within the 180-day tolerance.  This is independent of whether the
+    amendment has commenced; it is a logged warning only and never affects
+    the comparability decision.  De-duplicated via
+    ``_SEEN_COLLAPSED_DATE_WARNINGS``.
+    """
+    if artifact.date_consolidated is None:
+        return
+    gap_days = (ordering_date - artifact.date_consolidated).days
+    if not (0 < gap_days <= 180):
+        return
+    warning_key = (
+        artifact.sid,
+        artifact.version_tag,
+        artifact.date_consolidated,
+        ordering_date,
+    )
+    if warning_key in _SEEN_COLLAPSED_DATE_WARNINGS:
+        return
+    _SEEN_COLLAPSED_DATE_WARNINGS.add(warning_key)
+    log.info(
+        "ORACLE_METADATA_COLLAPSED_DATES sid=%s version_tag=%s "
+        "date_consolidated=%s ordering_date=%s gap_days=%d "
+        "— accepting artifact under Option Z (within 180-day tolerance)",
+        artifact.sid,
+        artifact.version_tag,
+        artifact.date_consolidated,
+        ordering_date,
+        gap_days,
+    )
 
 
 def _select_from_cached_artifacts(
