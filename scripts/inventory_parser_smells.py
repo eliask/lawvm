@@ -119,10 +119,48 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/references/by_name.py": "owning_parser",
     "src/lawvm/finland/references/sections.py": "owning_parser",
     "src/lawvm/finland/amendment_payload_lookup.py": "owning_parser",
+    # references/ core owning recognizers (C5 triage: each OWNS a reference family
+    # per notes/FI_REFERENCE_CATALOGUE.md §4; regex feeds the family parser over the
+    # module's OWN prose / AKN-id surface — mirrors the by_name / sections preclear).
+    "src/lawvm/finland/references/ref_mention_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/internal_refs.py": "owning_parser",
+    "src/lawvm/finland/references/inline_citation_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/cross_refs.py": "owning_parser",
+    "src/lawvm/finland/references/eu_reference.py": "owning_parser",
+    "src/lawvm/finland/references/eu_directive.py": "owning_parser",
+    "src/lawvm/finland/references/preparatory_reference_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/freetext_addresses.py": "owning_parser",
+    "src/lawvm/finland/references/anaphora.py": "owning_parser",
+    "src/lawvm/finland/references/elliptical_resolve.py": "owning_parser",
+    "src/lawvm/finland/references/resolve.py": "owning_parser",
+    "src/lawvm/finland/references/shared_reference_orchestrator.py": "owning_parser",
+    # references/ tail owning recognizers (C6 triage: surface-fact recognizers, each
+    # the owning parser for its family — temporal H3, treaty/SopS, modal actor,
+    # sanction, vague targetless-phrase selector — over their own input `text`).
+    "src/lawvm/finland/references/actor_modal.py": "owning_parser",
+    "src/lawvm/finland/references/sanction.py": "owning_parser",
+    "src/lawvm/finland/references/temporal.py": "owning_parser",
+    "src/lawvm/finland/references/treaty.py": "owning_parser",
+    "src/lawvm/finland/references/treaty_article.py": "owning_parser",
+    "src/lawvm/finland/references/vague.py": "owning_parser",
+    # legal_surface owning construction parsers / lenses (C6 triage: each reads its
+    # own scoped surface text / segment — the §1.12 owning-parser-input carve-out).
+    "src/lawvm/finland/legal_surface/case_frame.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/condition_exception_parse.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/delegation_canonical.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/sentence_parse.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/temporal_parse.py": "owning_parser",
+    # legal_surface source-structure normalizers (C6 triage: parse AKN <num>/eId
+    # surface + already-typed provision_path into labels — source-structure plane).
+    "src/lawvm/finland/legal_surface/provision_index.py": "source_plane",
+    "src/lawvm/finland/legal_surface/reference_projection.py": "source_plane",
     # --- diagnostic (D/E): audit / oracle-comparison rendering, no authority ---
     "src/lawvm/core/ir_helpers.py": "diagnostic",
     "src/lawvm/finland/inline_repeal_stub.py": "diagnostic",
     "src/lawvm/finland/oracle_comparison.py": "diagnostic",
+    # pure measurement module, explicitly off the replay/apply path
+    # ("changes no production behaviour"); cheap-signal proxy is corroboration only.
+    "src/lawvm/finland/references/annotation_independence_census.py": "diagnostic",
 }
 
 # Inline waiver vocabulary (a use-site is waived if its line, or the line above,
