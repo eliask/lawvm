@@ -172,7 +172,7 @@ def _he_branch_impact_projection(
     return branch_impact_projection_from_edges(
         branch,
         edges,
-        status="diagnostic_only",
+        projection_status="diagnostic_only",
         message="Finland government-proposal branch impact projection is not enacted-law authority.",
     )
 
