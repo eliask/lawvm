@@ -755,6 +755,20 @@ def _find_scoped_section_insert_parent_path(
     )
 
 
+def _is_unscoped_root_section_parent_in_containered_tree(
+    state: "ReplayState",
+    parent_path: Path,
+    *,
+    target_chapter: str | None,
+    target_part: str | None,
+) -> bool:
+    if target_chapter or target_part:
+        return False
+    if any(kind in {"chapter", "part"} for kind, _label in parent_path):
+        return False
+    return any(child.kind in {IRNodeKind.CHAPTER, IRNodeKind.PART} for child in state.ir.children)
+
+
 def _find_direct_body_part_path(ir: IRNode, target_part: str | None) -> Path | None:
     if not target_part:
         return None
@@ -2414,6 +2428,17 @@ def _apply_whole_section_op(
                     base_parent_path,
                 )
                 if live_parent_path is not None:
+                    if _is_unscoped_root_section_parent_in_containered_tree(
+                        state,
+                        live_parent_path,
+                        target_chapter=_target_chapter,
+                        target_part=_target_part,
+                    ):
+                        logger.debug(
+                            "  %s → section replace-as-insert rejected at unscoped root in containered tree",
+                            ctx_label,
+                        )
+                        return None
                     if source_pathologies_out is not None:
                         source_pathologies_out.append(
                             build_destructive_shape_loss_risk_pathology(
@@ -2452,7 +2477,12 @@ def _apply_whole_section_op(
                         ctx_label,
                     )
                     return None
-                parent_supports_root_section_bootstrap = (
+                parent_supports_root_section_bootstrap = not _is_unscoped_root_section_parent_in_containered_tree(
+                    state,
+                    parent_path,
+                    target_chapter=_target_chapter,
+                    target_part=_target_part,
+                ) and (
                     _target_chapter is not None
                     or any(kind == "hcontainer" for kind, _label in parent_path)
                 )
@@ -3219,8 +3249,18 @@ def _apply_materialization(
     # For whole-section or special (otsikko, etc.) ops we still allow
     # materialisation even when the section exists elsewhere, because
     # pseudo-chapter restructuring legitimately moves sections between chapters.
-    if (_target_paragraph or _target_item) and state.find_node("section", _ts) is not None:
-        return None
+    if _target_paragraph or _target_item:
+        existing_section_paths = tuple(
+            path
+            for path in section_paths_for_label(state.provision_index, _ts)
+            if _tops.resolve(state.ir, path) is not None
+        )
+        if existing_section_paths:
+            return None
+        if not _target_chapter and not _target_part and any(
+            child.kind in {IRNodeKind.CHAPTER, IRNodeKind.PART} for child in state.ir.children
+        ):
+            return None
     # For non-subsection ops: preserve the original chapter-scoped guard.
     if (
         state.find_node(

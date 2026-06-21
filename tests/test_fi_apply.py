@@ -1299,6 +1299,72 @@ def test_apply_materialization_skips_subsection_insert_when_section_exists_in_di
     assert result is None
 
 
+def test_apply_materialization_skips_unscoped_subsection_op_when_section_exists_in_chapter() -> None:
+    """Unscoped subsection ops must not materialize root-level section shells.
+
+    Historical Finnish amendments may cite only ``20 §:n 3 momentti`` even when
+    the live base statute nests section 20 under chapter 3. Materialization is
+    only allowed for genuinely missing sections; existing chapter-contained
+    sections are handled by subsection dispatch/resolution.
+    """
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("20", _sub("1", _content("existing 20 subsection 1"))),
+                ),
+            )
+        )
+    )
+    payload = _sec("20", _sub("3", _content("new subsection 3")))
+    op = AmendmentOp(
+        op_id="subsec_replace_20_3",
+        op_type="REPLACE",
+        target_section="20",
+        target_unit_kind="section",
+        target_paragraph=3,
+        source_statute="1990/270",
+        source_issue_date=_DATE,
+    )
+
+    result = _apply_materialization(state, op, payload, "test")
+
+    assert result is None
+
+
+def test_apply_materialization_skips_unscoped_missing_subsection_op_in_chaptered_statute() -> None:
+    """Missing child targets in chaptered statutes need scope before materialization."""
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("19", _sub("1", _content("neighbor section"))),
+                ),
+            )
+        )
+    )
+    payload = _sec("20", _sub("3", _content("new subsection 3")))
+    op = AmendmentOp(
+        op_id="subsec_replace_missing_20_3",
+        op_type="REPLACE",
+        target_section="20",
+        target_unit_kind="section",
+        target_paragraph=3,
+        source_statute="1990/270",
+        source_issue_date=_DATE,
+    )
+
+    result = _apply_materialization(state, op, payload, "test")
+
+    assert result is None
+
+
 def test_apply_materialization_skips_unscoped_whole_section_replace() -> None:
     state = _make_state(
         _body(
@@ -1323,6 +1389,67 @@ def test_apply_materialization_skips_unscoped_whole_section_replace() -> None:
     )
 
     result = _apply_materialization(state, op, payload, "test")
+
+    assert result is None
+
+
+def test_apply_whole_section_replace_skips_unscoped_missing_section_in_chaptered_statute() -> None:
+    """A chaptered statute must not receive a direct section from unscoped REPLACE."""
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("14", _content("neighbor section")),
+                ),
+            )
+        )
+    )
+    payload = _sec("15", _content("replacement section"))
+    op = _op(op_type="REPLACE", target_section="15")
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        payload,
+        None,
+        _LEGAL_PIT,
+        "15 §",
+    )
+
+    assert result is None
+
+
+def test_apply_whole_section_replace_skips_unscoped_base_root_parent_in_chaptered_statute() -> None:
+    """Base-prior parent bootstrap cannot override a chaptered live tree."""
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("14", _content("neighbor section")),
+                ),
+            )
+        )
+    )
+    payload = _sec("15", _content("replacement section"))
+    op = _op(op_type="REPLACE", target_section="15")
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        payload,
+        None,
+        _LEGAL_PIT,
+        "15 §",
+        base_ir=_body(_sec("15", _content("base root section"))),
+    )
 
     assert result is None
 
