@@ -53,8 +53,11 @@ IN_SCOPE_EXAMPLES = [
     "lisätään 5 §:ään uusi 3 momentti seuraavasti:",
     # Heading plus subsection insert into the same section.
     "lisätään 8 §:ään uusi otsikko ja uusi 4 momentti seuraavasti:",
-    # Same, with the heading's ``uusi`` omitted after an explicit LISATA verb.
-    "lisätään 8 §:ään otsikko ja uusi 4 momentti seuraavasti:",
+    # NOTE: the heading's-``uusi``-omitted variant ("lisätään 8 §:ään otsikko ja uusi
+    # 4 momentti …") is intentionally NOT a zero-delta example: the grammar recognizes
+    # it (a deliberate capability) but the incumbent surface_parse §:ILL arm requires a
+    # leading ``uusi`` and yields no node, so it is a grammar-ahead-of-incumbent case,
+    # covered by the dedicated unit tests below, not by parity.
     # Nominative momentti sub-target insert (Pattern B3, §:GEN uusi).
     "lisätään 4 §:n uusi 2 momentti seuraavasti:",
     # The headline kohta-into-momentti insert (Pattern B2,
