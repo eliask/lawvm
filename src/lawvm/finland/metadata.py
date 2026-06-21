@@ -17,6 +17,7 @@ from typing import List, Literal, Optional, Set, Tuple, cast
 import lxml.etree as etree
 
 from lawvm.core.ir import LegalAddress
+from lawvm.core.semantic_types import FacetKind
 from lawvm.core.unicode_folds import CF_FORMAT_CPS, ZS_NON_ASCII_SPACE_CPS
 from lawvm.finland.fi_dates import (
     FI_MONTH_GENITIVE_TO_NUMBER,
@@ -24,7 +25,7 @@ from lawvm.finland.fi_dates import (
     parse_fi_day_month_year,
 )
 from lawvm.finland.helpers import _norm_num_token, _parse_iso_date
-from lawvm.finland.references.sections import parse_body_provision_tail
+from lawvm.finland.references.sections import BodyProvisionTarget, parse_body_provision_tail, parse_body_provision_tail_spanned
 from lawvm.finland.temporal_lowering import _extract_expiry_date_from_text
 
 
@@ -265,6 +266,15 @@ _COMMENCEMENT_SUBSECTION_LIST_SPLIT_RE = re.compile(r"\s*(?:,|ja|sekä)\s*")
 _COMMENCEMENT_SUBSECTION_RANGE_RE = re.compile(r"(\d+)\s*(?:\u2013|-)\s*(\d+)")
 _COMMENCEMENT_SUBSECTION_LABEL_RE = re.compile(r"\d+")
 _WHITESPACE_RE = re.compile(r"\s+")
+_COMMENCEMENT_HEADING_REF_RE = re.compile(
+    r"(?P<section>\d+\s*[a-z]?)\s*§\s*:\s*n"
+    r"(?:(?!\d+\s*[a-z]?\s*§).){0,160}?\botsikko\b",
+    re.IGNORECASE,
+)
+_COMMENCEMENT_REPEAL_REF_RE = re.compile(
+    r"(?P<section>\d+\s*[a-z]?)\s*§\s*:\s*n\s+kumoaminen\b",
+    re.IGNORECASE,
+)
 
 
 def _scoped_commencement_guard(text: str) -> bool:
@@ -1737,7 +1747,16 @@ def _section_subsection_commencement_effective_override(
     tree: "etree._Element",
     source_statute_id: str,
 ) -> Optional[Tuple[str, tuple[LegalAddress, ...], dt.date]]:
-    """Return subsection-granular commencement overrides from voimaantulo text."""
+    """Return exact child-address commencement overrides from voimaantulo text.
+
+    Historically this surfaced only subsection-granular ``N §:n M momentti``
+    clauses.  Finnish delayed-commencement clauses also name heading facets and
+    sparse item targets in the same subject run, for example ``5 §:n otsikko
+    sekä 1 ja 2 momentti`` and ``4 §:n 2, 3 ja 5 kohta``.  The extraction below
+    uses the shared body provision-reference parser for the provision targets
+    and carries the resulting typed address suffixes through to the temporal
+    rewriter; it does not infer live-state targets here.
+    """
 
     full_text = _normalized_tree_text(tree)
     eit_text = _normalized_entry_into_force_text(tree, full_text)
@@ -1752,26 +1771,99 @@ def _section_subsection_commencement_effective_override(
     if effective is None:
         return None
 
-    addresses: list[LegalAddress] = []
-    seen: set[tuple[tuple[str, str], ...]] = set()
-    for ref in _COMMENCEMENT_SUBSECTION_REF_RE.finditer(match.group(1)):
-        section = _WHITESPACE_RE.sub('', ref.group("section")).lower()
-        chapter_raw = ref.group("chapter")
-        chapter = _WHITESPACE_RE.sub('', chapter_raw).lower() if chapter_raw else ""
-        for subsection in _expand_commencement_subsection_labels(ref.group("subsections")):
-            path: list[tuple[str, str]] = []
-            if chapter:
-                path.append(("chapter", chapter))
-            path.extend((("section", section), ("subsection", subsection)))
-            path_tuple = tuple(path)
-            if path_tuple in seen:
-                continue
-            seen.add(path_tuple)
-            addresses.append(LegalAddress(path=path_tuple))
+    addresses = _commencement_subject_exact_address_suffixes(match.group(1))
 
     if not addresses:
         return None
-    return source_statute_id, tuple(addresses), effective
+    return source_statute_id, addresses, effective
+
+
+def _commencement_subject_exact_address_suffixes(subject_text: str) -> tuple[LegalAddress, ...]:
+    """Parse exact delayed-commencement targets from the scoped subject text."""
+
+    normalized = _WHITESPACE_RE.sub(" ", subject_text).strip()
+    addresses: list[LegalAddress] = []
+    seen: set[tuple[tuple[tuple[str, str], ...], FacetKind | None]] = set()
+    cursor = 0
+    while cursor < len(normalized):
+        digit_pos = next((idx for idx in range(cursor, len(normalized)) if normalized[idx].isdigit()), -1)
+        if digit_pos < 0:
+            break
+        parsed = parse_body_provision_tail_spanned(normalized[digit_pos:])
+        if not parsed.consumed_text:
+            cursor = digit_pos + 1
+            continue
+        consumed = parsed.consumed_text
+        local_context = normalized[digit_pos : digit_pos + len(consumed) + 120]
+        heading_sections = _commencement_heading_sections(consumed)
+        repeal_sections = _commencement_repeal_sections(local_context)
+        for section in sorted(heading_sections):
+            _append_commencement_address(
+                addresses,
+                seen,
+                LegalAddress(path=(("section", section),), special=FacetKind.HEADING),
+            )
+        for target in parsed.targets:
+            address = _commencement_address_from_body_target(target)
+            if address is None:
+                continue
+            if (
+                address.special is None
+                and address.path
+                and address.path[-1][0] == "section"
+                and address.path[-1][1] not in repeal_sections
+            ):
+                continue
+            _append_commencement_address(addresses, seen, address)
+        cursor = digit_pos + max(len(consumed), 1)
+    return tuple(addresses)
+
+
+def _commencement_heading_sections(consumed_text: str) -> frozenset[str]:
+    labels = {
+        _WHITESPACE_RE.sub("", match.group("section")).lower()
+        for match in _COMMENCEMENT_HEADING_REF_RE.finditer(consumed_text)
+    }
+    labels.discard("")
+    return frozenset(labels)
+
+
+def _commencement_repeal_sections(consumed_text: str) -> frozenset[str]:
+    labels = {
+        _WHITESPACE_RE.sub("", match.group("section")).lower()
+        for match in _COMMENCEMENT_REPEAL_REF_RE.finditer(consumed_text)
+    }
+    labels.discard("")
+    return frozenset(labels)
+
+
+def _commencement_address_from_body_target(target: BodyProvisionTarget) -> LegalAddress | None:
+    section = _norm_num_token(target.section_label)
+    if not section:
+        return None
+    path: list[tuple[str, str]] = []
+    if target.chapter:
+        path.append(("chapter", _norm_num_token(target.chapter)))
+    path.append(("section", section))
+    if target.subsection_num is not None:
+        path.append(("subsection", str(target.subsection_num)))
+    if target.item_label:
+        path.append(("item", str(target.item_label)))
+    if target.subitem_label:
+        path.append(("subitem", str(target.subitem_label)))
+    return LegalAddress(path=tuple(path))
+
+
+def _append_commencement_address(
+    addresses: list[LegalAddress],
+    seen: set[tuple[tuple[tuple[str, str], ...], FacetKind | None]],
+    address: LegalAddress,
+) -> None:
+    key = (address.path, address.special)
+    if key in seen:
+        return
+    seen.add(key)
+    addresses.append(address)
 
 
 def _expand_commencement_subsection_labels(text: str) -> tuple[str, ...]:

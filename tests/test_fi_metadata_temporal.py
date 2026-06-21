@@ -4,6 +4,8 @@ import datetime as dt
 
 import lxml.etree as etree
 
+from lawvm.core.ir import LegalAddress
+from lawvm.core.semantic_types import FacetKind
 from lawvm.finland.metadata import (
     _amendment_effective_date_with_step,
     _amendment_expiry_date,
@@ -882,6 +884,32 @@ def test_subsection_commencement_effective_override_chapter_range() -> None:
         "chapter:15/section:2/subsection:5",
     }
     assert effective.isoformat() == "2019-07-22"
+
+
+def test_subsection_commencement_effective_override_parses_mixed_child_and_repeal_scopes() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä heinäkuuta 2025. "
+        "Sen 5 a §:n kumoaminen sekä 4 §:n 2, 3 ja 5 kohta, "
+        "5 §:n otsikko sekä 1 ja 2 momentti, 6 ja 8 § sekä 12 §:n 1 momentti "
+        "tulevat kuitenkin voimaan vasta 1 päivänä tammikuuta 2026."
+    )
+
+    override = _section_subsection_commencement_effective_override(tree, "2025/212")
+
+    assert override is not None
+    target_mid, addresses, effective = override
+    assert target_mid == "2025/212"
+    assert set(addresses) == {
+        LegalAddress(path=(("section", "5a"),)),
+        LegalAddress(path=(("section", "4"), ("item", "2"))),
+        LegalAddress(path=(("section", "4"), ("item", "3"))),
+        LegalAddress(path=(("section", "4"), ("item", "5"))),
+        LegalAddress(path=(("section", "5"),), special=FacetKind.HEADING),
+        LegalAddress(path=(("section", "5"), ("subsection", "1"))),
+        LegalAddress(path=(("section", "5"), ("subsection", "2"))),
+        LegalAddress(path=(("section", "12"), ("subsection", "1"))),
+    }
+    assert effective.isoformat() == "2026-01-01"
 
 
 def test_temporary_provision_expiry_overrides_compose_subref_grammar_and_canonical_date() -> None:
