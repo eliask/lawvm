@@ -15,6 +15,7 @@ from lawvm.finland.oracle_comparison import (
     strip_temporary_residue_annotations,
 )
 from lawvm.tools.divergence_heuristics import (
+    high_overlap_text_corruption,
     oracle_text_has_removable_duplicate_sentence,
     oracle_text_reduces_to_bare_section_stub,
 )
@@ -112,6 +113,13 @@ def diagnose_section_divergence(
                 "divergence is repeal attribution or aiempi-sanamuoto residue — oracle editorial choice",
                 include_explanation,
             )
+
+    if high_overlap_text_corruption(replay_stripped, oracle_stripped):
+        return _finish(
+            "SOURCE_PATHOLOGY",
+            "same-section source/oracle text mostly overlaps but one witness is corrupted",
+            include_explanation,
+        )
 
     if (
         replay_clean

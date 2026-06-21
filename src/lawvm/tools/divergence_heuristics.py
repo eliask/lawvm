@@ -40,7 +40,7 @@ def oracle_text_reduces_to_bare_section_stub(text: str) -> bool:
     return looks_like_bare_section_stub(strip_editorial_annotations(text))
 
 
-def high_overlap_unblamed_text_corruption(
+def high_overlap_text_corruption(
     replay_text: str,
     oracle_text: str,
     *,
@@ -52,12 +52,12 @@ def high_overlap_unblamed_text_corruption(
     tiny_edit_max_distance: int = 3,
     min_shorter_fraction: float = 0.60,
 ) -> bool:
-    """Return True for unblamed same-section text corruption/truncation.
+    """Return True for same-section text corruption/truncation.
 
     This is a classifier-only signal for cases where both surfaces contain the
-    same provision, no amendment can explain the difference, and the oracle text
-    appears to have dropped or mangled a bounded phrase while preserving most of
-    the section.  It must not be used to mutate replay output.
+    same provision and one witness appears to have dropped or mangled a bounded
+    phrase while preserving most of the section.  It must not be used to mutate
+    replay output.
     """
     replay_clean = _clean(replay_text)
     oracle_clean = _clean(oracle_text)
@@ -77,6 +77,15 @@ def high_overlap_unblamed_text_corruption(
     if delta >= min_abs_delta:
         return ratio >= min_ratio
     return delta >= small_delta_min_abs_delta and ratio >= small_delta_min_ratio
+
+
+def high_overlap_unblamed_text_corruption(
+    replay_text: str,
+    oracle_text: str,
+    **kwargs: Any,
+) -> bool:
+    """Compatibility wrapper for callers that gate this predicate by blame."""
+    return high_overlap_text_corruption(replay_text, oracle_text, **kwargs)
 
 
 # Whole-section oracle repeal stub: "<N> § on kumottu L:lla DD.MM.YYYY/NNN."

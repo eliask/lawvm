@@ -1218,6 +1218,32 @@ def test_diagnose_treats_temporary_stub_over_substantive_replay_as_editorial() -
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_blamed_tiny_source_text_corruption_as_source_pathology() -> None:
+    # Real shape: 1983/683 section 7 carries source XML typos ("siitä>" and
+    # "päilidehuolto") while the oracle silently corrects them and adds an
+    # amendment-date heading annotation.
+    replay = (
+        "7 § Palvelujen kehittäminen ja kasvatuksen tukeminen "
+        "Kunnan on sosiaali- ja terveydenhuoltoa, koulutointa sekä muita "
+        "lapsille, nuorille ja lapsiperheille tarkoitettuja palveluja "
+        "kehittäessään pidettävä huolta myös siitä> että näiden palvelujen "
+        "avulla tuetaan huoltajia lasten kasvatuksessa. Kun aikuiselle "
+        "annetaan sosiaali- ja terveydenhuollon, kuten päilidehuolto- ja "
+        "mielenterveyspalveluja, on otettava huomioon myös lapsen tuen tarve."
+    )
+    oracle = (
+        "7 § Palvelujen kehittäminen ja kasvatuksen tukeminen (9.2.1990/139) "
+        "Kunnan on sosiaali- ja terveydenhuoltoa, koulutointa sekä muita "
+        "lapsille, nuorille ja lapsiperheille tarkoitettuja palveluja "
+        "kehittäessään pidettävä huolta myös siitä, että näiden palvelujen "
+        "avulla tuetaan huoltajia lasten kasvatuksessa. Kun aikuiselle "
+        "annetaan sosiaali- ja terveydenhuollon, kuten päihdehuolto- ja "
+        "mielenterveyspalveluja, on otettava huomioon myös lapsen tuen tarve."
+    )
+
+    assert _diagnose(replay, oracle, {"action": "insert", "source_statute": "1990/139"}) == "SOURCE_PATHOLOGY"
+
+
 def test_strip_editorial_annotations_strips_temporary_residue_without_case_suffix() -> None:
     text = "21 b § 21 b § oli väliaikaisesti voimassa 24.11.2021–30.1.2022 L 984/2021."
 

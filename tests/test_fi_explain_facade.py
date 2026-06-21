@@ -780,6 +780,36 @@ def test_diagnose_treats_same_section_oracle_duplicate_sentence_as_oracle_stale(
     assert "duplicates one same-section sentence fragment" in explanation
 
 
+def test_diagnose_treats_blamed_tiny_source_text_corruption_as_source_pathology() -> None:
+    replay = (
+        "7 § Palvelujen kehittäminen ja kasvatuksen tukeminen "
+        "Kunnan on sosiaali- ja terveydenhuoltoa, koulutointa sekä muita "
+        "lapsille, nuorille ja lapsiperheille tarkoitettuja palveluja "
+        "kehittäessään pidettävä huolta myös siitä> että näiden palvelujen "
+        "avulla tuetaan huoltajia lasten kasvatuksessa. Kun aikuiselle "
+        "annetaan sosiaali- ja terveydenhuollon, kuten päilidehuolto- ja "
+        "mielenterveyspalveluja, on otettava huomioon myös lapsen tuen tarve."
+    )
+    oracle = (
+        "7 § Palvelujen kehittäminen ja kasvatuksen tukeminen (9.2.1990/139) "
+        "Kunnan on sosiaali- ja terveydenhuoltoa, koulutointa sekä muita "
+        "lapsille, nuorille ja lapsiperheille tarkoitettuja palveluja "
+        "kehittäessään pidettävä huolta myös siitä, että näiden palvelujen "
+        "avulla tuetaan huoltajia lasten kasvatuksessa. Kun aikuiselle "
+        "annetaan sosiaali- ja terveydenhuollon, kuten päihdehuolto- ja "
+        "mielenterveyspalveluja, on otettava huomioon myös lapsen tuen tarve."
+    )
+
+    diagnosis, explanation = _diagnose(
+        replay,
+        oracle,
+        {"action": "insert", "source_statute": "1990/139"},
+    )
+
+    assert diagnosis == "SOURCE_PATHOLOGY"
+    assert "one witness is corrupted" in explanation
+
+
 def test_explain_sync_classifies_repeal_banner_missing_section_as_oracle_stale_for_2016_768(
     capsys,
 ) -> None:

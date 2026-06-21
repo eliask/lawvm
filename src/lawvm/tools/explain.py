@@ -42,6 +42,7 @@ from lawvm.core.compile_views import (
 )
 from lawvm.tools.divergence_heuristics import blame_title_indicates_temporary_amendment
 from lawvm.tools.divergence_heuristics import blame_source_postdates_oracle_version
+from lawvm.tools.divergence_heuristics import high_overlap_text_corruption
 from lawvm.tools.divergence_heuristics import high_overlap_unblamed_text_corruption
 from lawvm.tools.divergence_heuristics import is_probable_repeal_stale_oracle
 from lawvm.tools.divergence_heuristics import oracle_has_repeal_banner_with_prior_wording
@@ -493,6 +494,12 @@ def _diagnose(
         if Levenshtein.ratio(_clean(r_k), _clean(o_k)) >= 0.95:
             return ("EDITORIAL_CONVENTION",
                     "divergence is repeal attribution or aiempi-sanamuoto residue — oracle editorial choice")
+
+    if high_overlap_text_corruption(r_stripped, o_stripped):
+        return (
+            "SOURCE_PATHOLOGY",
+            "same-section source/oracle text mostly overlaps but one witness is corrupted",
+        )
 
     if (
         r_c
