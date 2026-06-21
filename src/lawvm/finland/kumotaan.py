@@ -21,7 +21,6 @@ from typing import Dict, List, Optional, Set
 
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.references.sections import (
-    parse_body_provision_tail,
     parse_body_provision_tail_spanned,
 )
 
@@ -55,8 +54,8 @@ def _deglue_run(run: str) -> str:
     return _GLUED_LETTER_JOINER_RE.sub(r'\1 ja ', _GLUED_JOINER_DIGIT_RE.sub(r'\1 ', run))
 
 
-def _whole_section_run_before_site(block: str, site_start: int) -> str | None:
-    """Return the grammar-consumed whole-section run before a bare ``§`` marker."""
+def _whole_section_run_before_site(block: str, site_start: int) -> tuple[str, int] | None:
+    """Return the grammar-consumed candidate run before a bare ``§`` marker."""
     window_start = max(0, site_start - _WHOLE_SECTION_SITE_SCAN_WINDOW)
     left = block[window_start:site_start].rstrip()
     for offset, ch in enumerate(left):
@@ -69,7 +68,7 @@ def _whole_section_run_before_site(block: str, site_start: int) -> str | None:
         normalized_tail = _WS_RE.sub(" ", tail).strip()
         parsed = parse_body_provision_tail_spanned(tail)
         if parsed.targets and parsed.consumed_text == normalized_tail:
-            return candidate
+            return candidate, window_start + offset
     return None
 
 
@@ -90,11 +89,12 @@ def _grammar_whole_section_labels(block: str) -> List[str]:
     seen: Set[str] = set()
     # lawvm-regex: owning_parser whole-section SITE anchor; section STRUCTURE handed to the shared references.sections grammar
     for m in _WHOLE_SECTION_SITE_RE.finditer(block):
-        site_run = _whole_section_run_before_site(block, m.start())
-        if site_run is None:
+        site_match = _whole_section_run_before_site(block, m.start())
+        if site_match is None:
             continue
-        run = _deglue_run(site_run)
-        for target in parse_body_provision_tail(run + " §"):
+        _, run_start = site_match
+        parsed = parse_body_provision_tail_spanned(_deglue_run(block[run_start:]))
+        for target in parsed.targets:
             if (
                 target.subsection_num is None
                 and target.item_label is None

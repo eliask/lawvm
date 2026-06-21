@@ -7089,6 +7089,19 @@ def test_extract_kumotaan_section_refs_expands_numeric_to_lettered_range_to_vali
     assert set(got) == {"5", "6", "8", "9", "10", "16", "17"}
 
 
+def test_extract_kumotaan_section_refs_excludes_bare_section_descendant_repeal() -> None:
+    """``9 § 4 kohta`` is an item repeal, while the coordinated ``13 §`` is whole-section."""
+    johto = (
+        "kumotaan laivanrakennuksen innovaatioihin myönnettävästä "
+        "valtionavustuksesta annetun valtioneuvoston asetuksen (364/2015) "
+        "9 § 4 kohta sekä 13 §, ja muutetaan 10 § seuraavasti:"
+    )
+
+    got = _extract_kumotaan_section_refs(johto)
+
+    assert got == ["13"]
+
+
 def test_extract_kumotaan_section_refs_ignores_attachment_number_ranges_without_section_marker() -> None:
     johto = (
         "Tällä lailla kumotaan 29 päivänä joulukuuta 1994 annetun sairausvakuutuslain "

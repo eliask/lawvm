@@ -2596,6 +2596,15 @@ def test_classify_statute_treats_repealed_section_with_duplicated_adjacent_oracl
     assert sec13["diagnosis"] == "ORACLE_STALE"
 
 
+def test_classify_statute_2015_364_keeps_item_repeal_from_expiring_whole_section() -> None:
+    """2017/1153 repeals 9 § 4 kohta, not all of 9 §."""
+    result = _classify_statute("2015/364", "official_consolidation")
+
+    assert result is not None
+    sec9 = next(sec for sec in result.section_results if sec["section"] == "section:9")
+    assert sec9["diagnosis"] != "REPLAY_MISSING"
+
+
 def test_classify_statute_returns_live_source_pathology_codes(monkeypatch) -> None:
     pathology = SourcePathology.from_scope(
         code="CONTAINER_MEMBERSHIP_MISMATCH",
