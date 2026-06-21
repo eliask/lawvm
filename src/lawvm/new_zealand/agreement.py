@@ -48,7 +48,7 @@ _AGREEMENT_FORBIDDEN_SHORTCUTS = (
 @dataclass(frozen=True)
 class NZAgreementRow:
     path: tuple[str, ...]
-    status: str
+    agreement_status: str
     candidate_xml_id: str = ""
     oracle_xml_id: str = ""
     candidate_heading: str = ""
@@ -59,7 +59,7 @@ class NZAgreementRow:
     def to_jsonable(self) -> dict[str, Any]:
         return {
             "path": list(self.path),
-            "status": self.status,
+            "agreement_status": self.agreement_status,
             "candidate_xml_id": self.candidate_xml_id,
             "oracle_xml_id": self.oracle_xml_id,
             "candidate_heading": self.candidate_heading,
@@ -80,7 +80,7 @@ class NZAgreementReport:
     def summary(self) -> dict[str, Any]:
         counts: dict[str, int] = {}
         for row in self.rows:
-            counts[row.status] = counts.get(row.status, 0) + 1
+            counts[row.agreement_status] = counts.get(row.agreement_status, 0) + 1
         total = len(self.rows)
         exact = counts.get("exact", 0)
         return {
@@ -110,25 +110,25 @@ class NZAgreementReport:
 
         residuals: list[AgreementResidual] = []
         for index, row in enumerate(self.rows):
-            family = classify_comparator_status_family(row.status)
-            status: AgreementResidualStatus = _COMPARATOR_RESIDUAL_STATUS.get(row.status, "residual")
+            family = classify_comparator_status_family(row.agreement_status)
+            status: AgreementResidualStatus = _COMPARATOR_RESIDUAL_STATUS.get(row.agreement_status, "residual")
             path_key = "/".join(row.path) or f"row_{index}"
             residuals.append(
                 AgreementResidual(
-                    residual_id=f"nz:{self.candidate_version_id or 'candidate'}:{path_key}:{row.status}",
+                    residual_id=f"nz:{self.candidate_version_id or 'candidate'}:{path_key}:{row.agreement_status}",
                     jurisdiction="nz",
                     agreement_surface=agreement_surface,
                     family=family,
                     agreement_residual_status=status,
                     owner_phase="agreement",
-                    rule_id=f"nz_agreement_comparator_status_{row.status}",
+                    rule_id=f"nz_agreement_comparator_status_{row.agreement_status}",
                     source_artifact_id=path_key,
-                    replay_count=1 if row.candidate_xml_id or row.status == "candidate_only" else 0,
-                    oracle_count=1 if row.oracle_xml_id or row.status == "oracle_only" else 0,
+                    replay_count=1 if row.candidate_xml_id or row.agreement_status == "candidate_only" else 0,
+                    oracle_count=1 if row.oracle_xml_id or row.agreement_status == "oracle_only" else 0,
                     safe_default="classify_candidate_vs_oracle_without_authorizing_replay_or_oracle_truth",
                     forbidden_shortcuts=_AGREEMENT_FORBIDDEN_SHORTCUTS,
                     detail={
-                        "status": row.status,
+                        "status": row.agreement_status,
                         "candidate_xml_id": row.candidate_xml_id,
                         "oracle_xml_id": row.oracle_xml_id,
                         "candidate_heading": row.candidate_heading,
@@ -183,7 +183,7 @@ def compare_source_documents(
             rows.append(
                 NZAgreementRow(
                     path=path,
-                    status="oracle_only",
+                    agreement_status="oracle_only",
                     oracle_xml_id=oracle_node.xml_id,
                     oracle_heading=oracle_node.heading,
                 )
@@ -192,7 +192,7 @@ def compare_source_documents(
             rows.append(
                 NZAgreementRow(
                     path=path,
-                    status="candidate_only",
+                    agreement_status="candidate_only",
                     candidate_xml_id=candidate_node.xml_id,
                     candidate_heading=candidate_node.heading,
                 )
@@ -201,7 +201,7 @@ def compare_source_documents(
             rows.append(
                 NZAgreementRow(
                     path=path,
-                    status=_node_agreement_status(candidate_node, oracle_node),
+                    agreement_status=_node_agreement_status(candidate_node, oracle_node),
                     candidate_xml_id=candidate_node.xml_id,
                     oracle_xml_id=oracle_node.xml_id,
                     candidate_heading=candidate_node.heading,
@@ -471,10 +471,10 @@ def main(args: Any) -> None:
         f"{_counts(residual.family for residual in report.agreement_residuals())}"
     )
     for row in report.rows[: args.limit]:
-        if row.status == "exact":
+        if row.agreement_status == "exact":
             continue
         print(
-            f"{row.status}\t{'/'.join(row.path)}\t"
+            f"{row.agreement_status}\t{'/'.join(row.path)}\t"
             f"{row.candidate_heading or '-'} -> {row.oracle_heading or '-'}"
         )
 

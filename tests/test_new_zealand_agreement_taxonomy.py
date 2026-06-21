@@ -276,7 +276,7 @@ def test_agreement_row_surface_handles_empty_report() -> None:
         oracle_version_id="o",
         candidate_xml_locator="c.xml",
         oracle_xml_locator="o.xml",
-        rows=(NZAgreementRow(path=("prov:1",), status="exact"),),
+        rows=(NZAgreementRow(path=("prov:1",), agreement_status="exact"),),
     )
     surface = empty.agreement_surface()
     assert len(surface.residuals) == 1
