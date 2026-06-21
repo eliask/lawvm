@@ -539,7 +539,7 @@ def test_source_model_owns_frontend_normalization_xml_adapter() -> None:
         base_ir=state.ir,
         amendment_id="2000/8",
         source_title="Testilaki",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1999/1",
         strict_profile=None,
         parse_result=None,

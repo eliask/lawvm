@@ -254,11 +254,11 @@ def _working_johtolause(
         source_title=source_title,
         parent_title=parent_title,
     )
-    used_sec1_fallback = acquisition.decision.selected_lane.startswith("sec1_fallback")
+    used_preamble_body_fallback = acquisition.decision.selected_lane.startswith("sec1_fallback")
     return (
         muutos_tree,
         acquisition.decision.chosen_normalized_text,
-        used_sec1_fallback,
+        used_preamble_body_fallback,
         acquisition.decision.should_apply,
         acquisition.decision.route_reason,
     )
@@ -315,7 +315,7 @@ def build_amendment_bundle(
 
     muutos_tree = etree.fromstring(xml_bytes)
     source_title = _tree_title(muutos_tree)
-    muutos_tree, johto, used_sec1_fallback, should_apply, route_reason = _working_johtolause(
+    muutos_tree, johto, used_preamble_body_fallback, should_apply, route_reason = _working_johtolause(
         statute_id,
         before_master.title,
         source_id,
@@ -345,7 +345,7 @@ def build_amendment_bundle(
         "mode": mode,
         "source_title": source_title,
         "preamble": johto,
-        "used_sec1_fallback": used_sec1_fallback,
+        "used_preamble_body_fallback": used_preamble_body_fallback,
         "route": {
             "should_apply": should_apply,
             "reason": route_reason,
@@ -376,7 +376,7 @@ def build_amendment_bundle(
             before_master.replay_fold_state,
             source_id,
             source_title=source_title,
-            used_sec1_fallback=used_sec1_fallback,
+            used_preamble_body_fallback=used_preamble_body_fallback,
             parent_id=statute_id,
             strict_profile=None,
         )
@@ -623,7 +623,7 @@ def _format_text(bundle: Dict[str, Any]) -> str:
         f"Mode         : {bundle['mode']}",
         f"Title        : {bundle.get('source_title', '')}",
         f"Route        : {'apply' if bundle['route']['should_apply'] else 'skip'} ({bundle['route']['reason']})",
-        f"Sec1 fallback: {'yes' if bundle.get('used_sec1_fallback') else 'no'}",
+        f"Sec1 fallback: {'yes' if bundle.get('used_preamble_body_fallback') else 'no'}",
         "",
     ]
     route_target_amendment_id = str(bundle.get("route", {}).get("target_amendment_id") or "")

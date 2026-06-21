@@ -164,7 +164,7 @@ def _nodes_matching_address(
                             rule_id=_UK_COMMENCEMENT_UNNUMBERED_SINGLE_SCHEDULE_RULE_ID,
                             phase="commencement_filter",
                             reason="unnumbered_schedule_unique_live_root",
-                            status=TARGET_FALLBACK_RESOLVED,
+                            resolution_status=TARGET_FALLBACK_RESOLVED,
                             source_target=source_ref or "schedule:",
                             candidate_count=1,
                             candidates=(

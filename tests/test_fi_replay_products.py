@@ -913,7 +913,7 @@ def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None
     assert "Pudasjärvi (st)" not in section_1_text
     assert any(
         isinstance(row, dict)
-        and row.get("kind") == "ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL"
+        and row.get("kind") == "ELAB.SPARSE_PARTIAL_SCOPE_ROW_OMISSION_REPEAL"
         and row.get("source_statute") == "1999/77"
         for row in observations
     )
@@ -2098,7 +2098,7 @@ def test_normalize_and_compile_ops_1997_1339_rejects_ambiguous_unscoped_fallback
         master=base_replay.replay_fold_state,
         amendment_id="2015/1752",
         source_title=source_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1997/1339",
         strict_profile=None,
     )
@@ -2139,7 +2139,7 @@ def test_normalize_and_compile_ops_2007_626_rejects_single_payload_fallback_reus
         master=base_replay.replay_fold_state,
         amendment_id="2007/626",
         source_title=source_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1972/66",
         strict_profile=None,
     )
@@ -2822,7 +2822,7 @@ def test_replay_xml_2019_371_johto_guard_skips_omission_shell_uncovered_recovery
     findings = [
         finding
         for finding in replay.findings
-        if finding.kind == "APPLY.UNCOVERED_BODY_JOHTO_GUARD"
+        if finding.kind == "APPLY.UNCOVERED_BODY_PREAMBLE_GUARD"
         and finding.source_statute == "2019/371"
         and str((finding.detail or {}).get("target_section")) in {"209", "210", "211", "212"}
     ]
@@ -3108,7 +3108,7 @@ def test_replay_xml_applies_2025_1162_21c_then_22a_sequentially_without_staling_
         master=base_replay.replay_fold_state,
         amendment_id="2025/1162",
         source_title=source_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1999/488",
         strict_profile=None,
     )
@@ -3589,7 +3589,7 @@ def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010
     recycle_findings = [
         finding
         for finding in replay.findings
-        if finding.kind == "PARSE.KUMOTAAN_RECYCLE_GUARD"
+        if finding.kind == "PARSE.REPEAL_RECYCLE_GUARD"
         and finding.source_statute == "2019/1330"
     ]
     assert recycle_findings
@@ -5922,7 +5922,7 @@ def test_lineage_plan_round_trips_core_materialize_for_destination_occupancy_col
         lineage_plan=lineage_decision.lineage_plan,
     )
 
-    assert result.status == "degraded_missing_scope"
+    assert result.materialization_status == "degraded_missing_scope"
     assert result.certificate is not None
     assert result.certificate.ambiguous_address_count == 1
 

@@ -300,7 +300,7 @@ def test_unmarked_oracle_extra_survives_manual_review() -> None:
     payload = json.loads(review._emit_json(rows))
 
     assert rows[0].review_status == "manual_review_candidate"
-    assert rows[0].agreement_residual["status"] == "residual"
+    assert rows[0].agreement_residual["agreement_residual_status"] == "residual"
     assert payload["report_kind"] == "uk_oracle_extra_review"
     assert payload["summary"]["manual_review_candidate_count"] == 1
     assert payload["agreement_claims"] is True

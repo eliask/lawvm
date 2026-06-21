@@ -1972,7 +1972,7 @@ def _refine_source_carried_child_text_target(
                     "UK source text identifies a child-local text rewrite inside "
                     "the effect-feed parent target."
                 ),
-                status=TARGET_RECOVERED,
+                resolution_status=TARGET_RECOVERED,
                 source_target=str(target),
                 selected_target=str(refined),
                 candidate_count=1,

@@ -291,7 +291,7 @@ def test_phase_witness_acquisition_projects_shared_acquisition_result() -> None:
     assert witness["source_lane_selection"]["family"] == "source_lane_selection"
     assert witness["source_lane_selection"]["selected_source_lane"] == "sec1_fallback_pre_routing"
     assert witness["source_lane_selection"]["source_lane_attempts"][1]["lane"] == "sec1_fallback"
-    assert witness["source_lane_selection"]["source_lane_attempts"][1]["status"] == "selected"
+    assert witness["source_lane_selection"]["source_lane_attempts"][1]["lane_attempt_status"] == "selected"
     assert witness["diagnostics"] == []
 
 
@@ -371,7 +371,7 @@ def test_phase_witness_projects_strict_blocked_acquisition_diagnostics() -> None
         }
     ]
     assert witness["source_lane_selection"]["selected_source_lane"] == "preamble"
-    assert witness["source_lane_selection"]["source_lane_attempts"][1]["status"] == (
+    assert witness["source_lane_selection"]["source_lane_attempts"][1]["lane_attempt_status"] == (
         "strict_profile_blocked_context_dependent_anchor_resolution"
     )
 

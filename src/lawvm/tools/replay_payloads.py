@@ -193,7 +193,7 @@ def _uk_replay_adjudication_agreement_residual(
         jurisdiction="uk",
         agreement_surface="replay_adjudication",
         family=_uk_replay_adjudication_residual_family(bucket),
-        status=_uk_replay_adjudication_residual_status(bucket),
+        agreement_residual_status=_uk_replay_adjudication_residual_status(bucket),
         owner_phase=owner_phase,
         rule_id=f"uk_replay_adjudication_{bucket or 'unknown'}",
         source_artifact_id=source_statute,
@@ -606,7 +606,7 @@ def build_uk_replay_payload(
         "replay_adjudication_agreement_residual_status_counts": (
             _record_agreement_residual_field_counts(
                 replay_adjudication_rows,
-                "status",
+                "agreement_residual_status",
             )
         ),
         "replay_adjudication_agreement_residual_owner_phase_counts": (

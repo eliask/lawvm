@@ -241,7 +241,7 @@ def test_parse_clause_exports_surface_parse_result_for_clean_structural_clause()
     data = surface_result.to_dict()
 
     assert data["frontend_id"] == "finland.johtolause.parse_clause"
-    assert data["status"] == "resolved"
+    assert data["parse_status"] == "resolved"
     assert data["original_surface_kind"] == "SurfaceClause"
     assert data["original_produced"] is True
     assert data["enriched"] is False
@@ -261,7 +261,7 @@ def test_parse_clause_surface_parse_result_records_supplementary_enrichment() ->
     assert surface_result is not None
     data = surface_result.to_dict()
 
-    assert data["status"] == "enriched_resolved"
+    assert data["parse_status"] == "enriched_resolved"
     assert data["enriched"] is True
     assert data["enriched_surface_kind"] == "SurfaceClause"
     assert "fi.surface_enrichment.meta_clauses.v1" in data["enrichment_rule_ids"]
@@ -275,7 +275,7 @@ def test_finland_johtolause_frontend_capability_is_clause_scoped() -> None:
 
     assert data["frontend_id"] == "finland.johtolause.parse_clause"
     assert data["scope"] == "clause_compiler_spine"
-    assert data["status"] == "reference_clause_compiler"
+    assert data["capability_status"] == "reference_clause_compiler"
     assert data["has_token_tape"] is True
     assert data["has_annotation_overlay"] is True
     assert data["has_surface_clause"] is True
@@ -344,7 +344,7 @@ def test_parse_clause_phase_surface_records_resolver_internal_error() -> None:
     assert "derive_replay_from_failed_phase" in diagnostic["forbidden_shortcuts"]
 
     rows = {row["phase"]: row for row in data["phase_rows"]}
-    assert rows["surface_resolve"]["status"] == "failed"
+    assert rows["surface_resolve"]["phase_status"] == "failed"
     assert diagnostic["diagnostic_id"] in rows["surface_resolve"]["diagnostic_ids"]
 
 

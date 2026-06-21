@@ -416,7 +416,7 @@ def test_silent_drop_guard_fires_through_production_compile_lane(monkeypatch) ->
         master=master,
         amendment_id="2010/100",
         source_title="Laki muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1967/484",
     )
 

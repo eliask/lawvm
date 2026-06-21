@@ -327,7 +327,7 @@ class VerifySummary:
     jurisdiction: str
     base_id: str
     as_of: str = ""
-    status: str = "ok"
+    verify_status: str = "ok"
     error: str | None = None
     consistent: bool | None = None
     issue_count: int = 0
@@ -342,7 +342,7 @@ class VerifySummary:
     def __post_init__(self) -> None:
         _require_field(self.jurisdiction, "VerifySummary.jurisdiction")
         _require_field(self.base_id, "VerifySummary.base_id")
-        _require_field(self.status, "VerifySummary.status")
+        _require_field(self.verify_status, "VerifySummary.verify_status")
         for field_name, value in (
             ("issue_count", self.issue_count),
             ("divergence_count", self.divergence_count),

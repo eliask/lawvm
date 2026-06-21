@@ -134,7 +134,7 @@ def test_build_operation_surface_extracts_history_witness_rows() -> None:
     evidence_rows = report.operation_evidence_rows()
     assert len(evidence_rows) == 2
     assert all(validate_corpus_operation_evidence_row(row.to_dict()) == () for row in evidence_rows)
-    assert evidence_rows[1].to_dict()["status"] == "unsupported"
+    assert evidence_rows[1].to_dict()["evidence_status"] == "unsupported"
     assert evidence_rows[1].to_dict()["finding_ids"] == ()
     assert evidence_rows[1].to_dict()["detail"]["lowering_readiness_status"] == (
         "ready_for_amending_act_payload_extraction"

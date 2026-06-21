@@ -30,7 +30,7 @@ class FrontendCapability:
     frontend_id: str
     jurisdiction: str
     scope: str
-    status: str
+    capability_status: str
     capability_schema: str = "lawvm.frontend_capability.v1"
     has_token_tape: bool = False
     has_annotation_overlay: bool = False
@@ -61,7 +61,7 @@ class FrontendCapability:
             _required_string("FrontendCapability.jurisdiction", self.jurisdiction),
         )
         object.__setattr__(self, "scope", _required_string("FrontendCapability.scope", self.scope))
-        object.__setattr__(self, "status", _required_string("FrontendCapability.status", self.status))
+        object.__setattr__(self, "capability_status", _required_string("FrontendCapability.capability_status", self.capability_status))
         object.__setattr__(
             self,
             "capability_schema",
@@ -107,7 +107,7 @@ class FrontendCapability:
             "frontend_id": self.frontend_id,
             "jurisdiction": self.jurisdiction,
             "scope": self.scope,
-            "status": self.status,
+            "capability_status": self.capability_status,
             "capability_schema": self.capability_schema,
             "has_token_tape": self.has_token_tape,
             "has_annotation_overlay": self.has_annotation_overlay,
@@ -140,7 +140,7 @@ class SurfaceParseResult:
     frontend_id: str
     jurisdiction: str
     source_hash: str
-    status: str
+    parse_status: str
     original_surface_kind: str
     original_produced: bool
     enriched_surface_kind: str = ""
@@ -169,7 +169,7 @@ class SurfaceParseResult:
             "source_hash",
             _required_string("SurfaceParseResult.source_hash", self.source_hash),
         )
-        object.__setattr__(self, "status", _required_string("SurfaceParseResult.status", self.status))
+        object.__setattr__(self, "parse_status", _required_string("SurfaceParseResult.parse_status", self.parse_status))
         object.__setattr__(
             self,
             "original_surface_kind",
@@ -213,7 +213,7 @@ class SurfaceParseResult:
             "frontend_id": self.frontend_id,
             "jurisdiction": self.jurisdiction,
             "source_hash": self.source_hash,
-            "status": self.status,
+            "parse_status": self.parse_status,
             "original_surface_kind": self.original_surface_kind,
             "original_produced": self.original_produced,
             "enriched_surface_kind": self.enriched_surface_kind,
@@ -398,7 +398,7 @@ def frontend_capability_evidence_report(
         "frontend_capability_count": 1,
         "frontend_id": str(data.get("frontend_id") or ""),
         "scope": str(data.get("scope") or ""),
-        "status": str(data.get("status") or ""),
+        "capability_status": str(data.get("capability_status") or ""),
         "supported_waists": supported_waists,
         "supported_waist_count": len(supported_waists),
         "compatibility_outputs": tuple(str(item) for item in data.get("compatibility_outputs", ())),
@@ -452,7 +452,7 @@ def frontend_capability_matrix_evidence_report(
         "frontend_capability_count": len(rows),
         "jurisdiction_counts": _counts(str(row.get("jurisdiction") or "") for row in rows),
         "scope_counts": _counts(str(row.get("scope") or "") for row in rows),
-        "status_counts": _counts(str(row.get("status") or "") for row in rows),
+        "status_counts": _counts(str(row.get("capability_status") or "") for row in rows),
         "frontend_ids": tuple(str(row.get("frontend_id") or "") for row in rows),
         "supported_waist_counts": {
             str(row.get("frontend_id") or ""): len(tuple(row.get("supported_waists") or ()))
@@ -511,7 +511,7 @@ def _frontend_capability_row(data: Mapping[str, Any]) -> dict[str, Any]:
         "surface": "frontend_capability",
         "row_id": str(data.get("frontend_id") or ""),
         "subject_id": str(data.get("frontend_id") or ""),
-        "status": str(data.get("status") or "reported"),
+        "capability_status": str(data.get("capability_status") or "reported"),
         "replay_authorized": False,
         "semantic_authority": False,
         "supported_waists": supported_waists,
@@ -527,7 +527,7 @@ def _frontend_capability_mapping(capability: FrontendCapability | Mapping[str, A
         frontend_id=str(capability.get("frontend_id") or ""),
         jurisdiction=str(capability.get("jurisdiction") or ""),
         scope=str(capability.get("scope") or ""),
-        status=str(capability.get("status") or ""),
+        capability_status=str(capability.get("capability_status") or ""),
         capability_schema=str(capability.get("capability_schema") or "lawvm.frontend_capability.v1"),
         has_token_tape=bool(capability.get("has_token_tape")),
         has_annotation_overlay=bool(capability.get("has_annotation_overlay")),

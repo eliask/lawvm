@@ -1220,7 +1220,7 @@ def _count_agreement_residual(
     family = str(residual.get("family") or "")
     if family:
         family_counts[family] = family_counts.get(family, 0) + 1
-    status = str(residual.get("status") or "")
+    status = str(residual.get("agreement_residual_status") or "")
     if status:
         status_counts[status] = status_counts.get(status, 0) + 1
     owner_phase = str(residual.get("owner_phase") or "")
@@ -1669,7 +1669,7 @@ def _manual_compile_agreement_residual(payload: Mapping[str, Any]) -> dict[str, 
         jurisdiction="uk",
         agreement_surface="manual_compile_frontier_vs_current_oracle",
         family=_manual_compile_agreement_residual_family(payload),
-        status="frontier",
+        agreement_residual_status="frontier",
         owner_phase=str(
             payload.get("owner_phase")
             or payload.get("manual_compile_owner_phase")

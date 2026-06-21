@@ -431,7 +431,7 @@ def _residual_claim_agreement_residual(
         jurisdiction="uk",
         agreement_surface="candidate_residual_claim_vs_current_oracle",
         family=family,
-        status=_residual_claim_agreement_residual_status(
+        agreement_residual_status=_residual_claim_agreement_residual_status(
             family,
             candidate_set_coverage=candidate_set_coverage,
         ),

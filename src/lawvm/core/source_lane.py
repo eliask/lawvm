@@ -18,21 +18,21 @@ from lawvm.core.frozen_values import FrozenDict, freeze_mapping
 class SourceLaneAttempt:
     lane: str
     locator: str = ""
-    status: str = ""
+    lane_attempt_status: str = ""
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not str(self.lane or "").strip():
             raise ValueError("SourceLaneAttempt.lane must be non-empty")
-        if not str(self.status or "").strip():
-            raise ValueError("SourceLaneAttempt.status must be non-empty")
+        if not str(self.lane_attempt_status or "").strip():
+            raise ValueError("SourceLaneAttempt.lane_attempt_status must be non-empty")
         object.__setattr__(self, "detail", _frozen_source_lane_detail("SourceLaneAttempt.detail", self.detail))
-        _reject_source_lane_overrides("SourceLaneAttempt.detail", self.detail, {"lane", "locator", "status"})
+        _reject_source_lane_overrides("SourceLaneAttempt.detail", self.detail, {"lane", "locator", "lane_attempt_status"})
 
     def to_dict(self) -> dict[str, Any]:
         row: dict[str, Any] = {
             "lane": str(self.lane),
-            "status": str(self.status),
+            "lane_attempt_status": str(self.lane_attempt_status),
         }
         if self.locator:
             row["locator"] = str(self.locator)
@@ -77,7 +77,7 @@ class SourceLaneSelectionEvidence:
         selected_attempt_lanes = frozenset(
             attempt.lane
             for attempt in self.attempts
-            if str(attempt.status).startswith("selected")
+            if str(attempt.lane_attempt_status).startswith("selected")
         )
         if (
             self.selected_lane not in attempt_lanes
@@ -115,11 +115,11 @@ class SourceLaneSelectionEvidence:
 
 
 def source_lane_attempt_from_mapping(row: Mapping[str, Any]) -> SourceLaneAttempt:
-    detail = {key: value for key, value in row.items() if key not in {"lane", "url", "locator", "status"}}
+    detail = {key: value for key, value in row.items() if key not in {"lane", "url", "locator", "lane_attempt_status"}}
     return SourceLaneAttempt(
         lane=str(row.get("lane") or ""),
         locator=str(row.get("locator") or row.get("url") or ""),
-        status=str(row.get("status") or ""),
+        lane_attempt_status=str(row.get("lane_attempt_status") or ""),
         detail=detail,
     )
 

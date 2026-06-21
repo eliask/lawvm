@@ -49,7 +49,7 @@ class ProcessFrontendNormalizationContext:
     base_ir: IRNode | None
     amendment_id: str
     source_title: str
-    used_sec1_fallback: bool
+    used_preamble_body_fallback: bool
     parent_id: str
     strict_profile: Optional[StrictProfile]
     regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]]
@@ -65,7 +65,7 @@ class ProcessFrontendNormalizationContext:
             base_ir=self.base_ir,
             amendment_id=self.amendment_id,
             source_title=self.source_title,
-            used_sec1_fallback=self.used_sec1_fallback,
+            used_preamble_body_fallback=self.used_preamble_body_fallback,
             parent_id=self.parent_id,
             strict_profile=self.strict_profile,
             parse_result=parse_result,

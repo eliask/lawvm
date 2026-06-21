@@ -257,7 +257,7 @@ def build_provenance(
         "as_of": as_of_value,
         "query_type": query_type,
         "in_force": {
-            "status": payload.get("status"),
+            "status": payload.get("provision_status"),
             "text": text.get("rendered") or "",
             "available": bool(text.get("available", False)),
             "version": {

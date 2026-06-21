@@ -5065,7 +5065,7 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
         "candidate_residual_claim_vs_current_oracle"
     )
     assert agreement_residual["family"] == "target_recovery_mismatch"
-    assert agreement_residual["status"] == "frontier"
+    assert agreement_residual["agreement_residual_status"] == "frontier"
     assert agreement_residual["owner_phase"] == "compare_oracle_classification"
     assert agreement_residual["replay_count"] == 53
     assert agreement_residual["oracle_count"] == 1
@@ -5223,7 +5223,7 @@ def test_uk_residual_claim_evidence_rows_preserve_analyzed_root_samples() -> Non
     assert rows[0]["agreement_residual"]["family"] == (
         "accepted_non_executable_frontier"
     )
-    assert rows[0]["agreement_residual"]["status"] == "frontier"
+    assert rows[0]["agreement_residual"]["agreement_residual_status"] == "frontier"
     assert rows[0]["agreement_residual"]["missing_proofs"] == (
         rows[0]["execution_authorization"]["required_proofs"]
     )

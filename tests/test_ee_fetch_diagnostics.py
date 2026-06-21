@@ -38,7 +38,7 @@ def test_redactions_feed_diagnostic_detail_uses_standard_envelope() -> None:
             "source_lane_attempts": (
                 {
                     "lane": "riigi_teataja_redactions_feed",
-                    "status": "fetch_failed",
+                    "lane_attempt_status": "fetch_failed",
                     "locator": "https://example.test/feed",
                 },
             ),

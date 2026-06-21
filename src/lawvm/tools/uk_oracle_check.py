@@ -842,7 +842,7 @@ def oracle_check_uk_statute(
         ),
         (
             "Base source: "
-            f"{base_source.status.value}  "
+            f"{base_source.xml_content_status.value}  "
             f"bytes={base_source.size}  "
             f"NumberOfProvisions={base_source.number_of_provisions or '<unknown>'}  "
             f"body={base_source.has_body}  schedules={base_source.has_schedules}"
@@ -875,7 +875,7 @@ def oracle_check_uk_statute(
         "",
     ]
 
-    if base_source.status is UKStatuteXmlContentStatus.METADATA_ONLY:
+    if base_source.xml_content_status is UKStatuteXmlContentStatus.METADATA_ONLY:
         lines.extend(
             [
                 "BASE_SOURCE_FRONTIER:",

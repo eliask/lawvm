@@ -236,7 +236,7 @@ def test_agreement_residual_projector_editorial_witness_confirmed() -> None:
         statute_id="2013/331",
     )
     assert len(rows) == 1
-    assert rows[0]["status"] == "agrees"
+    assert rows[0]["agreement_residual_status"] == "agrees"
     assert rows[0]["family"] == "agreement"
 
 

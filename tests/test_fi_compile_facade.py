@@ -436,7 +436,7 @@ class TestFromPhaseResult:
         artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
         payload = cast(Any, artifact.payload)
         assert artifact.schema == "lawvm.timeline_compilation_result"
-        assert artifact.status == ProcessingStatus(
+        assert artifact.processing_status == ProcessingStatus(
             kind="partial",
             blockers=("timeline.missing_replace_target",),
         )
@@ -948,7 +948,7 @@ class TestFromPhaseResult:
         assert result.issues == ()
         artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
         payload = cast(Any, artifact.payload)
-        assert artifact.status == ProcessingStatus(kind="complete")
+        assert artifact.processing_status == ProcessingStatus(kind="complete")
         assert payload["issues"] == ()
 
         active_2007 = select_active_version(timelines[target], "2007-01-01")
@@ -1009,7 +1009,7 @@ class TestFromPhaseResult:
         )
 
         degraded = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-        assert degraded.status == "degraded_missing_scope"
+        assert degraded.materialization_status == "degraded_missing_scope"
         assert degraded.required_dimensions == ("territory",)
 
         selected = facade.materialize_pit_ex(
@@ -1018,7 +1018,7 @@ class TestFromPhaseResult:
             base_date="2000-01-01",
             territory="AX",
         )
-        assert selected.status == "materialized"
+        assert selected.materialization_status == "materialized"
 
     def test_materialize_pit_ex_preserves_timeline_issues_from_facade_compile(self):
         base = IRStatute(
@@ -1055,7 +1055,7 @@ class TestFromPhaseResult:
 
         result = facade.materialize_pit_ex(base, "2021-01-01", base_date="2000-01-01")
 
-        assert result.status == "degraded_timeline_issues"
+        assert result.materialization_status == "degraded_timeline_issues"
         assert any(issue.kind == "missing_insert_payload" for issue in result.issues)
         assert result.statute.body.children == ()
 
@@ -1097,14 +1097,14 @@ class TestFromPhaseResult:
 
         result = facade.materialize_pit_ex(base, "2021-01-01", base_date="2000-01-01")
 
-        assert result.status == "degraded_timeline_issues"
+        assert result.materialization_status == "degraded_timeline_issues"
         assert any(issue.kind == "missing_replace_payload" for issue in result.issues)
         assert result.statute.body.children[0].text == "Base text"
         artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
         payload = cast(Any, artifact.payload)
         assert artifact.schema == "lawvm.materialization_result"
-        assert payload["status"] == "degraded_timeline_issues"
-        assert artifact.status == ProcessingStatus(
+        assert payload["materialization_status"] == "degraded_timeline_issues"
+        assert artifact.processing_status == ProcessingStatus(
             kind="partial",
             blockers=("timeline.missing_replace_payload",),
         )
@@ -1153,11 +1153,11 @@ class TestFromPhaseResult:
 
         result = facade.materialize_pit_ex(base, "2021-01-01", base_date="2000-01-01")
 
-        assert result.status == "degraded_timeline_issues"
+        assert result.materialization_status == "degraded_timeline_issues"
         assert any(issue.kind == "skipped_contingent_unresolved" for issue in result.issues)
         assert result.statute.body.children[0].text == "Base text"
         artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
-        assert artifact.status == ProcessingStatus(
+        assert artifact.processing_status == ProcessingStatus(
             kind="partial",
             blockers=("timeline.skipped_contingent_unresolved",),
         )
@@ -1458,7 +1458,7 @@ class TestFindingProjection:
         pr = _pr(output=None, obligations=[obl])
         facade = CompileFacade.from_phase_result(pr, replay_mode="legal_pit")
 
-        assert tuple(facade.to_wire_artifact().status.blockers or ()) == (
+        assert tuple(facade.to_wire_artifact().processing_status.blockers or ()) == (
             "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
         )
 
@@ -1476,7 +1476,7 @@ class TestFindingProjection:
             verdict=verdict,
         )
 
-        assert tuple(facade.to_wire_artifact().status.blockers or ()) == (
+        assert tuple(facade.to_wire_artifact().processing_status.blockers or ()) == (
             "strict_blocked_by_recovery",
         )
 
@@ -1500,7 +1500,7 @@ class TestFindingProjection:
             verdict=verdict,
         )
 
-        assert tuple(facade.to_wire_artifact().status.blockers or ()) == (
+        assert tuple(facade.to_wire_artifact().processing_status.blockers or ()) == (
             "RUNTIME.VIOLATION",
         )
 
@@ -1621,7 +1621,7 @@ class TestOptionalDossierFields:
         )
 
         assert len(facade.finding_ledger) == 3
-        assert tuple(facade.to_wire_artifact().status.blockers or ()) == (
+        assert tuple(facade.to_wire_artifact().processing_status.blockers or ()) == (
             "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
             "RUNTIME.VIOLATION",
         )
@@ -1693,7 +1693,7 @@ class TestWireArtifact:
         assert payload["bundle"]["temporal_event_activation_rule_kinds"] == ("fixed_date",)
         assert payload["bundle"]["migration_events_count"] == 1
         assert payload["bundle"]["migration_event_kinds"] == ("renumber",)
-        assert tuple(artifact.status.blockers or ()) == (
+        assert tuple(artifact.processing_status.blockers or ()) == (
             "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
             "RUNTIME.VIOLATION",
         )
@@ -1876,7 +1876,7 @@ class TestWireArtifact:
         assert artifact.schema == "lawvm.compile_facade"
         assert artifact.producer == "tests.compile_facade"
         assert artifact.version == "wire-1"
-        assert artifact.status == ProcessingStatus(
+        assert artifact.processing_status == ProcessingStatus(
             kind="partial",
             blockers=("ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",),
         )

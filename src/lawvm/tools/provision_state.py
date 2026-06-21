@@ -134,7 +134,7 @@ async def _main(args: Any) -> None:
     )
     _emit_cli_diagnostic(payload, stream=sys.stderr)
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2))
-    if payload.get("status") in {"invalid_address", "invalid_query"}:
+    if payload.get("provision_status") in {"invalid_address", "invalid_query"}:
         raise SystemExit(2)
 
 
@@ -145,7 +145,7 @@ def _emit_cli_diagnostic(payload: Mapping[str, Any], *, stream: Any) -> None:
     if not isinstance(diagnostic, Mapping):
         return
 
-    status = str(payload.get("status") or "")
+    status = str(payload.get("provision_status") or "")
     query = payload.get("query")
     provision = ""
     if isinstance(query, Mapping):
@@ -267,7 +267,7 @@ def build_provision_state_response(
             "jurisdiction": jurisdiction,
             "statute_id": statute_id,
             "title": title,
-            "status": status,
+            "provision_status": status,
             "query": query,
             "resolved_address": None,
             "lineage": _lineage_payload(
@@ -596,7 +596,7 @@ def invalid_provision_selector_payload(
         "jurisdiction": jurisdiction,
         "statute_id": statute_id,
         "title": "",
-        "status": "invalid_address",
+        "provision_status": "invalid_address",
         "query": query,
         "resolved_address": None,
         "lineage": _lineage_payload(
@@ -650,7 +650,7 @@ def invalid_query_payload(
         "jurisdiction": jurisdiction,
         "statute_id": statute_id,
         "title": "",
-        "status": "invalid_query",
+        "provision_status": "invalid_query",
         "query": query,
         "resolved_address": None,
         "lineage": _lineage_payload(
@@ -1133,7 +1133,7 @@ def _selected_response(
         "jurisdiction": jurisdiction,
         "statute_id": statute_id,
         "title": title,
-        "status": status,
+        "provision_status": status,
         "query": query,
         "resolved_address": _address_wire(address),
         "lineage": lineage,
@@ -2753,7 +2753,7 @@ def unsupported_jurisdiction_payload(
         "spec_version": SPEC_VERSION,
         "jurisdiction": jurisdiction,
         "statute_id": statute_id,
-        "status": "unsupported_jurisdiction",
+        "provision_status": "unsupported_jurisdiction",
         "query": _query_payload(
             statute_id=statute_id,
             provision=provision,

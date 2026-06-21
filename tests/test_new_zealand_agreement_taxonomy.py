@@ -191,7 +191,7 @@ def test_refusal_residual_status_tracks_family() -> None:
         classify_refusal_family,
     )
     assert bug.family == "replay_bug"
-    assert bug.status == "residual"
+    assert bug.agreement_residual_status == "residual"
 
     frontier = _refusal_residual(
         _WORK_ID,
@@ -205,7 +205,7 @@ def test_refusal_residual_status_tracks_family() -> None:
         classify_refusal_family,
     )
     assert frontier.family == "accepted_non_executable_frontier"
-    assert frontier.status == "frontier"
+    assert frontier.agreement_residual_status == "frontier"
     assert frontier.missing_proofs == (NZ_DRY_RUN_REFUSED_SOURCE_CHANGE_ONLY_RULE_ID,)
 
 
@@ -276,9 +276,9 @@ def test_agreement_row_surface_handles_empty_report() -> None:
         oracle_version_id="o",
         candidate_xml_locator="c.xml",
         oracle_xml_locator="o.xml",
-        rows=(NZAgreementRow(path=("prov:1",), status="exact"),),
+        rows=(NZAgreementRow(path=("prov:1",), agreement_status="exact"),),
     )
     surface = empty.agreement_surface()
     assert len(surface.residuals) == 1
     assert surface.residuals[0].family == "agreement"
-    assert surface.residuals[0].status == "agrees"
+    assert surface.residuals[0].agreement_residual_status == "agrees"

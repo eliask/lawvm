@@ -1171,7 +1171,7 @@ _PROFILE_GATES: dict[str, tuple[str, bool]] = {
     "APPLY.FALLBACK_WHOLE_SECTION_REPLACE": ("allows_fallback_whole_section_replace", True),
     "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED": ("allows_uncovered_body_recovery", True),
     "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION": ("allows_context_dependent_anchor_resolution", True),
-    "ELAB.SEC1_PRE_ROUTING_FALLBACK": ("allows_context_dependent_anchor_resolution", True),
+    "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK": ("allows_context_dependent_anchor_resolution", True),
     "APPLY.WORD_SUBSTITUTION": ("allows_word_substitution", True),
     "APPLY.SOURCE_CORRECTED_BY_PATCH": ("allows_source_correction_rules", True),
     "TIME.MISSING_EFFECTIVE_DATE": ("requires_explicit_effective_date", False),
@@ -1195,7 +1195,7 @@ _PROFILE_GATES: dict[str, tuple[str, bool]] = {
         ("allows_attested_source_correction", True),
     "ELAB.TARGET_SELECTION_REQUIRED.RESOLVED_BY_ATTESTATION":
         ("allows_attested_target_selection", True),
-    "PARSE.JOHTOLAUSE_FAILED.RESOLVED_BY_ATTESTATION":
+    "PARSE.PREAMBLE_CLAUSE_FAILED.RESOLVED_BY_ATTESTATION":
         ("allows_attested_semantic_compilation", True),
     "ELAB.TARGET_AMBIGUITY_UNCLASSIFIED.RESOLVED_BY_ATTESTATION":
         ("allows_attested_ambiguity_adjudication", True),
@@ -1284,7 +1284,7 @@ def strict_fail_reasons_from_finding_ledger(
     extraction_fallback_tags = {
         "extraction_fallback_heuristic",
         "extraction_title_fallback",
-        "extraction_sec1_body_johto",
+        "extraction_preamble_body",
         "repeal_reenact_normalized",
         "fallback_insert_supplement",
         "fallback_insert_supplement_shadowed",

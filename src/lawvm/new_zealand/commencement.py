@@ -186,7 +186,7 @@ class NZCommencementReport:
                     # is correctly typed/handled, but it is not commensurable with
                     # a text-slice comparison, so it never claims ``agrees``.
                     family="non_commensurable_surface",
-                    status="frontier",
+                    agreement_residual_status="frontier",
                     owner_phase="commencement",
                     rule_id=NZ_COMMENCEMENT_RECORDED_RULE_ID,
                     source_artifact_id=record.source_xml_id or record.row_id,
@@ -211,7 +211,7 @@ class NZCommencementReport:
                     jurisdiction="nz",
                     agreement_surface="nz_commencement",
                     family="accepted_non_executable_frontier",
-                    status="frontier",
+                    agreement_residual_status="frontier",
                     owner_phase="commencement",
                     rule_id=refusal.rule_id,
                     source_artifact_id=refusal.source_xml_id or refusal.row_id,

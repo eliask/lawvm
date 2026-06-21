@@ -1650,7 +1650,7 @@ def _target_resolution_coverage(
             "manual-frontier target witness is projected for validation and "
             "does not authorize replay"
         ),
-        status=status,
+        resolution_status=status,
         source_target=source_target,
         candidate_count=candidate_count,
         candidates=candidates,

@@ -1979,7 +1979,7 @@ def build_replay_products(
         expires_as_of=expires_as_of,
         lineage_plan=lineage_decision.lineage_plan,
     )
-    if materialization_result.status == "degraded_missing_scope":
+    if materialization_result.materialization_status == "degraded_missing_scope":
         # Preserve the historical materialize_pit() contract: missing PIT scope is
         # a hard error, not a silently degraded materialization. The explicit
         # degradation result is now carried into ReplayProducts instead of thrown

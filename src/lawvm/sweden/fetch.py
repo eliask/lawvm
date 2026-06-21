@@ -1115,7 +1115,7 @@ def fetch_se_official_artifacts(
             {
                 "lane": selected_pdf_lane or "unknown",
                 "url": pdf_url,
-                "status": "valid_pdf" if _looks_like_pdf_bytes(pdf_bytes) else "missing_or_non_pdf",
+                "lane_attempt_status": "valid_pdf" if _looks_like_pdf_bytes(pdf_bytes) else "missing_or_non_pdf",
             }
         )
     if pdf_bytes is not None and not _looks_like_pdf_bytes(pdf_bytes):
@@ -1129,7 +1129,7 @@ def fetch_se_official_artifacts(
             {
                 "lane": "legacy_direct_guess",
                 "url": legacy_direct_url,
-                "status": "valid_pdf" if _looks_like_pdf_bytes(legacy_direct_bytes) else "missing_or_non_pdf",
+                "lane_attempt_status": "valid_pdf" if _looks_like_pdf_bytes(legacy_direct_bytes) else "missing_or_non_pdf",
             }
         )
         if _looks_like_pdf_bytes(legacy_direct_bytes):
@@ -1144,7 +1144,7 @@ def fetch_se_official_artifacts(
                 {
                     "lane": "legacy_search_result",
                     "url": se_legacy_sfspdf_search_url(),
-                    "status": "no_result",
+                    "lane_attempt_status": "no_result",
                 }
             )
         else:
@@ -1155,7 +1155,7 @@ def fetch_se_official_artifacts(
                 {
                     "lane": "legacy_search_result",
                     "url": legacy_search_pdf_url,
-                    "status": "valid_pdf" if _looks_like_pdf_bytes(legacy_search_bytes) else "missing_or_non_pdf",
+                    "lane_attempt_status": "valid_pdf" if _looks_like_pdf_bytes(legacy_search_bytes) else "missing_or_non_pdf",
                 }
             )
             if _looks_like_pdf_bytes(legacy_search_bytes):
@@ -1174,7 +1174,7 @@ def fetch_se_official_artifacts(
                 {
                     "lane": "official_month_probe",
                     "url": candidate_url,
-                    "status": "valid_pdf" if _looks_like_pdf_bytes(candidate_bytes) else "missing_or_non_pdf",
+                    "lane_attempt_status": "valid_pdf" if _looks_like_pdf_bytes(candidate_bytes) else "missing_or_non_pdf",
                 }
             )
             if _looks_like_pdf_bytes(candidate_bytes):

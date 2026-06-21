@@ -129,7 +129,7 @@ class SavingsScopedOmissionClaim:
       effect surface is not a real savings-qualified omission.
     - ``source_snippet``: bounded quote of the full omission-with-saving source
       the claim binds to. The validator rejects free-form overrides.
-    - ``claimant`` / ``status``: provenance and lifecycle.
+    - ``claimant`` / ``claim_status``: provenance and lifecycle.
     """
 
     claim_id: str
@@ -144,7 +144,7 @@ class SavingsScopedOmissionClaim:
     saving_snippet: str
     source_snippet: str
     claimant: str = ""
-    status: str = "proposed"
+    claim_status: str = "proposed"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -160,7 +160,7 @@ class SavingsScopedOmissionClaim:
             "saving_snippet": self.saving_snippet,
             "source_snippet": self.source_snippet,
             "claimant": self.claimant,
-            "status": self.status,
+            "claim_status": self.claim_status,
         }
 
 
@@ -213,7 +213,7 @@ def claim_from_dict(row: Any) -> SavingsScopedOmissionClaim:
         saving_snippet=str(get("saving_snippet") or ""),
         source_snippet=str(get("source_snippet") or ""),
         claimant=str(get("claimant") or ""),
-        status=str(get("status") or "proposed"),
+        claim_status=str(get("claim_status") or "proposed"),
     )
 
 

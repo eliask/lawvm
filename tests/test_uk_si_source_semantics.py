@@ -48,7 +48,7 @@ def test_si_source_semantics_records_metadata_commencement_and_structure() -> No
     assert structure["owner_phase"] == "affecting_source_extraction"
 
     commencement = by_family["si_commencement_surface"].to_dict()
-    assert commencement["status"] == "single_date"
+    assert commencement["source_semantics_status"] == "single_date"
     assert commencement["coming_into_force_dates"] == ("2022-02-01",)
     assert commencement["coming_into_force_element_count"] == 1
     assert commencement["owner_phase"] == "effect_metadata_frontend"
@@ -94,7 +94,7 @@ def test_si_source_semantics_records_made_date_commencement_default_candidate() 
     row = next(
         row.to_dict() for row in rows if row.family == "si_commencement_default_surface"
     )
-    assert row["status"] == "single_made_date"
+    assert row["source_semantics_status"] == "single_made_date"
     assert row["made_dates"] == ("2022-02-01",)
     assert row["body_commencement_clause_count"] == 0
     assert row["body_temporal_effect_clause_count"] == 0
@@ -120,7 +120,7 @@ def test_si_source_semantics_records_unresolved_commencement_default_without_mad
     row = next(
         row.to_dict() for row in rows if row.family == "si_commencement_default_surface"
     )
-    assert row["status"] == "missing_made_date"
+    assert row["source_semantics_status"] == "missing_made_date"
     assert row["made_dates"] == ()
     assert row["body_commencement_clause_count"] == 0
     assert row["body_temporal_effect_clause_count"] == 0
@@ -152,7 +152,7 @@ def test_si_source_semantics_marks_default_candidate_body_commencement_adjudicat
     row = next(
         row.to_dict() for row in rows if row.family == "si_commencement_default_surface"
     )
-    assert row["status"] == "single_made_date"
+    assert row["source_semantics_status"] == "single_made_date"
     assert row["body_commencement_clause_count"] == 1
     assert row["body_temporal_effect_clause_count"] == 1
     assert row["commencement_default_adjudication_hint"] == (
@@ -184,7 +184,7 @@ def test_si_source_semantics_marks_default_candidate_temporal_effect_adjudicatio
     row = next(
         row.to_dict() for row in rows if row.family == "si_commencement_default_surface"
     )
-    assert row["status"] == "single_made_date"
+    assert row["source_semantics_status"] == "single_made_date"
     assert row["body_commencement_clause_count"] == 0
     assert row["body_temporal_effect_clause_count"] == 1
     assert row["commencement_default_adjudication_hint"] == (
@@ -238,7 +238,7 @@ def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
         by_family.setdefault(row.family, []).append(row.to_dict())
 
     vires = by_family["si_vires_recital_surface"][0]
-    assert vires["status"] == "matched"
+    assert vires["source_semantics_status"] == "matched"
     assert vires["owner_phase"] == "affecting_source_extraction"
     assert vires["has_vires_phrase"] is True
     assert vires["citation_count"] == 1
@@ -529,7 +529,7 @@ def test_si_source_semantics_marks_amendment_payload_clause_role() -> None:
         if row.family == "si_application_clause_surface"
     }
 
-    assert rows_by_label["234."]["status"] == "payload_carried"
+    assert rows_by_label["234."]["source_semantics_status"] == "payload_carried"
     assert rows_by_label["234."]["source_role"] == "amendment_payload_provision"
 
 
@@ -539,7 +539,7 @@ def test_si_source_semantics_parse_error_is_blocking_record() -> None:
     assert len(rows) == 1
     row = rows[0].to_dict()
     assert row["family"] == "si_source_parse_error"
-    assert row["status"] == "blocking"
+    assert row["source_semantics_status"] == "blocking"
     assert row["rule_id"] == "uk_si_source_xml_parse_error"
     assert row["owner_phase"] == "affecting_source_extraction"
 

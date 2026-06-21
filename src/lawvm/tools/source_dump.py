@@ -232,7 +232,7 @@ def _uk_available_archive_xml(archive: Any, locator: str) -> bytes | None:
     from lawvm.uk_legislation.source_state import UKSourceStatus, classify_uk_source_blob
 
     blob = archive.get(locator)
-    if classify_uk_source_blob(blob).status is UKSourceStatus.AVAILABLE:
+    if classify_uk_source_blob(blob).source_state_status is UKSourceStatus.AVAILABLE:
         return blob
     return None
 
@@ -250,7 +250,7 @@ def _uk_candidate_enacted_locators_from_archive(
     )
 
     direct_state = classify_uk_source_blob(direct_blob)
-    if direct_state.status is UKSourceStatus.MULTIPLE_CHOICES:
+    if direct_state.source_state_status is UKSourceStatus.MULTIPLE_CHOICES:
         candidate_urls = uk_multiple_choice_candidate_data_urls(
             direct_blob,
             include_current=False,
@@ -284,7 +284,7 @@ def _resolve_uk_enacted_source_from_archive(archive: Any, statute_id: str) -> _U
     requested_locator = _uk_enacted_locator(statute_id)
     direct_blob = archive.get(requested_locator)
     direct_state = classify_uk_source_blob(direct_blob)
-    if direct_state.status is UKSourceStatus.AVAILABLE and direct_blob is not None:
+    if direct_state.source_state_status is UKSourceStatus.AVAILABLE and direct_blob is not None:
         return _UKResolvedSource(
             locator=requested_locator,
             xml_bytes=direct_blob,
@@ -325,7 +325,7 @@ def _resolve_uk_enacted_source_from_archive(archive: Any, statute_id: str) -> _U
     raise SystemExit(
         "UK enacted XML not found in farchive for "
         f"{statute_id}: {requested_locator} "
-        f"(source status: {direct_state.status.value})"
+        f"(source status: {direct_state.source_state_status.value})"
     )
 
 

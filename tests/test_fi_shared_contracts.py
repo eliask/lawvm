@@ -375,7 +375,7 @@ def test_ownership_closure_report_summarizes_open_slices_without_replay_claims()
     assert proof_surface["rows"][0]["row_id"] == "closure-fi-open"
     assert proof_surface["rows"][0]["subject_id"] == "fi-demo-slice"
     assert proof_surface["rows"][0]["row_kind"] == "ownership_closure_coverage"
-    assert proof_surface["rows"][0]["status"] == "open"
+    assert proof_surface["rows"][0]["proof_status"] == "open"
 
 
 def test_source_pathology_projection_is_passive_proof_surface_row() -> None:
@@ -754,7 +754,7 @@ def test_source_bundle_policy_admission_does_not_authorize_replay() -> None:
         artifact_id="2024/1",
         source_lane="official_xml",
         assertion_kind="source_artifact_available",
-        status="observed",
+        acquisition_status="observed",
         witness=witness,
     )
     attestation = SourceAcquisitionAttestation(
@@ -762,7 +762,7 @@ def test_source_bundle_policy_admission_does_not_authorize_replay() -> None:
         assertion_id="assertion-1",
         attestation_kind="artifact_digest_verified",
         producer_id="lawvm.fetcher",
-        status="verified",
+        attestation_status="verified",
         witness=witness,
     )
     policy = SourceBundlePolicy(
@@ -776,7 +776,7 @@ def test_source_bundle_policy_admission_does_not_authorize_replay() -> None:
     authorization = admission.to_execution_authorization().to_dict()
 
     assert admission.admitted is True
-    assert admission.status == "source_bundle_admitted"
+    assert admission.admission_status == "source_bundle_admitted"
     assert authorization["executable"] is False
     assert authorization["replay_authorized"] is False
     assert authorization["authorization_status"] == "source_bundle_admitted_not_replay_authority"
@@ -793,7 +793,7 @@ def test_source_bundle_policy_blocks_missing_attestations() -> None:
         artifact_id="1917/1",
         source_lane="official_pdf",
         assertion_kind="pdf_source_atom_available",
-        status="observed",
+        acquisition_status="observed",
     )
     policy = SourceBundlePolicy(
         policy_id="fi.source_bundle.v1",
@@ -806,7 +806,7 @@ def test_source_bundle_policy_blocks_missing_attestations() -> None:
     authorization = admission.to_execution_authorization().to_dict()
 
     assert admission.admitted is False
-    assert admission.status == "source_attestation_missing"
+    assert admission.admission_status == "source_attestation_missing"
     assert admission.missing_attestation_kinds == (
         "artifact_digest_verified",
         "ocr_reviewed",
@@ -827,7 +827,7 @@ def test_source_bundle_evidence_report_projects_passive_admissions() -> None:
         artifact_id="2024/2",
         source_lane="official_xml",
         assertion_kind="source_artifact_available",
-        status="observed",
+        acquisition_status="observed",
         witness=witness,
     )
     attestation = SourceAcquisitionAttestation(
@@ -835,7 +835,7 @@ def test_source_bundle_evidence_report_projects_passive_admissions() -> None:
         assertion_id="assertion-3",
         attestation_kind="artifact_digest_verified",
         producer_id="lawvm-test",
-        status="verified",
+        attestation_status="verified",
         witness=witness,
     )
     policy = SourceBundlePolicy(
@@ -916,7 +916,7 @@ def test_frontend_phase_surface_marks_compatibility_output_without_replay_claims
         phase_rows=(
             FrontendPhaseRow(
                 phase="clause_ast_lowering",
-                status="lowered",
+                phase_status="lowered",
                 artifact_kind="ClauseAST",
                 authority_role="primary_semantic_authority",
                 produced=True,
@@ -924,7 +924,7 @@ def test_frontend_phase_surface_marks_compatibility_output_without_replay_claims
             ),
             FrontendPhaseRow(
                 phase="parsed_ops_compat",
-                status="derived",
+                phase_status="derived",
                 artifact_kind="ParsedOp",
                 authority_role="compatibility_projection_not_authority",
                 produced=True,
@@ -957,7 +957,7 @@ def test_frontend_phase_surface_projects_to_evidence_report_without_authority() 
         phase_rows=(
             FrontendPhaseRow(
                 phase="clause_ast_lowering",
-                status="lowered",
+                phase_status="lowered",
                 artifact_kind="ClauseAST",
                 authority_role="primary_semantic_authority",
                 produced=True,
@@ -965,7 +965,7 @@ def test_frontend_phase_surface_projects_to_evidence_report_without_authority() 
             ),
             FrontendPhaseRow(
                 phase="parsed_ops_compat",
-                status="derived",
+                phase_status="derived",
                 artifact_kind="ParsedOp",
                 authority_role="compatibility_projection_not_authority",
                 produced=True,
@@ -1018,7 +1018,7 @@ def test_frontend_capability_declares_supported_waists_without_replay_authority(
         frontend_id="fi.demo",
         jurisdiction="fi",
         scope="clause_compiler_spine",
-        status="reference_clause_compiler",
+        capability_status="reference_clause_compiler",
         has_token_tape=True,
         has_surface_clause=True,
         has_clause_ast=True,
@@ -1058,7 +1058,7 @@ def test_frontend_capability_matrix_projects_multiple_declarations() -> None:
         frontend_id="fi.clause",
         jurisdiction="fi",
         scope="clause_compiler_spine",
-        status="reference_clause_compiler",
+        capability_status="reference_clause_compiler",
         has_token_tape=True,
         has_surface_clause=True,
         has_clause_ast=True,
@@ -1068,7 +1068,7 @@ def test_frontend_capability_matrix_projects_multiple_declarations() -> None:
         frontend_id="fi.manual_frontier",
         jurisdiction="fi",
         scope="manual_frontier",
-        status="diagnostic_frontier_surface",
+        capability_status="diagnostic_frontier_surface",
         has_agreement_surface=True,
         caveats=("capability_declaration_does_not_authorize_replay",),
     )
@@ -1181,7 +1181,7 @@ def test_surface_parse_result_records_original_enriched_resolved_waist() -> None
         frontend_id="fi.demo",
         jurisdiction="fi",
         source_hash="abc123",
-        status="enriched_resolved",
+        parse_status="enriched_resolved",
         original_surface_kind="SurfaceClause",
         original_produced=True,
         enriched_surface_kind="SurfaceClause",
@@ -1196,7 +1196,7 @@ def test_surface_parse_result_records_original_enriched_resolved_waist() -> None
 
     data = result.to_dict()
 
-    assert data["status"] == "enriched_resolved"
+    assert data["parse_status"] == "enriched_resolved"
     assert data["original_surface_kind"] == "SurfaceClause"
     assert data["enriched"] is True
     assert data["resolved_produced"] is True
@@ -1311,14 +1311,14 @@ def test_payload_elaboration_result_is_projection_only_not_replay_authority() ->
         subject_id="fi:demo",
         jurisdiction="fi",
         owner_phase="payload_elaboration",
-        status="complete",
+        binding_status="complete",
         completeness_kind="complete",
         bindings=(
             SlotBinding(
                 binding_id="fi:demo:slot:0",
                 source_slot_id="payload:1",
                 target_slot_id="subsection:1",
-                status="bound",
+                binding_status="bound",
             ),
         ),
     )
@@ -1326,7 +1326,7 @@ def test_payload_elaboration_result_is_projection_only_not_replay_authority() ->
         result_id="fi:demo:payload",
         jurisdiction="fi",
         owner_phase="payload_elaboration",
-        status="elaborated",
+        elaboration_status="elaborated",
         payload_surface_kind="IRNode",
         completeness_kind="complete",
         elaborated_op_count=1,
@@ -1352,14 +1352,14 @@ def test_payload_elaboration_projection_has_shared_report_read_model() -> None:
         subject_id="fi:demo",
         jurisdiction="fi",
         owner_phase="payload_elaboration",
-        status="complete",
+        binding_status="complete",
         completeness_kind="complete",
         bindings=(
             SlotBinding(
                 binding_id="fi:demo:slot:0",
                 source_slot_id="payload:1",
                 target_slot_id="subsection:1",
-                status="bound",
+                binding_status="bound",
                 operation_id="REPLACE P 5 1",
                 binding_rule_id="REPLACE",
             ),
@@ -1369,7 +1369,7 @@ def test_payload_elaboration_projection_has_shared_report_read_model() -> None:
         result_id="fi:demo:payload",
         jurisdiction="fi",
         owner_phase="payload_elaboration",
-        status="elaborated",
+        elaboration_status="elaborated",
         payload_surface_kind="IRNode",
         completeness_kind="complete",
         elaborated_op_count=1,
@@ -1735,7 +1735,7 @@ def test_frontier_work_item_claim_closure_report_keeps_phase_gate_closed() -> No
     ]
     assert "frontier_claim_closure_as_replay_authorization" in row["forbidden_shortcuts"]
     assert surface["rows"][0]["row_kind"] == "frontier_work_item_claim_closure"
-    assert surface["rows"][0]["status"] == "evidence_policy_satisfied_phase_gate_required"
+    assert surface["rows"][0]["proof_status"] == "evidence_policy_satisfied_phase_gate_required"
     assert surface["rows"][0]["assertion_refs"] == ["claim-1"]
     assert surface["rows"][0]["authorization_ref"] == (
         "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION.strict"
@@ -2080,7 +2080,7 @@ def test_agreement_residual_classifies_without_replay_promotion() -> None:
         jurisdiction="uk",
         agreement_surface="replay_eid_set_vs_current_oracle_eid_set",
         family="non_commensurable_surface",
-        status="frontier",
+        agreement_residual_status="frontier",
         owner_phase="compare_oracle_classification",
         rule_id="uk_broad_zero_oracle_retention",
         source_artifact_id="ukpga/1938/22",
@@ -2095,7 +2095,7 @@ def test_agreement_residual_classifies_without_replay_promotion() -> None:
     data = residual.to_dict()
 
     assert data["family"] == "non_commensurable_surface"
-    assert data["status"] == "frontier"
+    assert data["agreement_residual_status"] == "frontier"
     assert data["missing_proofs"] == ["commensurable_oracle_surface"]
     assert "oracle_score_as_source_truth" in data["forbidden_shortcuts"]
 
@@ -2106,7 +2106,7 @@ def test_agreement_surface_report_projects_residuals_without_replay_claims() -> 
         jurisdiction="fi",
         agreement_surface="finlex_html_oracle_compare",
         family="non_commensurable_surface",
-        status="residual",
+        agreement_residual_status="residual",
         owner_phase="oracle_adjudication",
         rule_id="fi_finlex_html_non_commensurable_surface",
         source_artifact_id="2001/1234",
@@ -2159,7 +2159,7 @@ def test_agreement_residual_rejects_unknown_family() -> None:
             jurisdiction="uk",
             agreement_surface="surface",
             family=cast(Any, "loose_string"),
-            status="frontier",
+            agreement_residual_status="frontier",
             owner_phase="compare_oracle_classification",
             rule_id="bad_rule",
             safe_default="classify",
@@ -2301,7 +2301,7 @@ def test_mutation_boundary_report_projects_to_proof_surface_rows() -> None:
     assert surface["rows"][0]["row_id"] == "proof-proved"
     assert surface["rows"][0]["subject_id"] == "op-2"
     assert surface["rows"][0]["row_kind"] == "mutation_boundary_proof"
-    assert surface["rows"][0]["status"] == "proved"
+    assert surface["rows"][0]["proof_status"] == "proved"
     assert surface["rows"][0]["proof_refs"] == ["proof-proved"]
 
 
@@ -2595,7 +2595,7 @@ def test_source_witness_evidence_report_projects_to_proof_surface() -> None:
         "replay_claims": False,
     }
     assert surface["rows"][0]["row_kind"] == "source_witness"
-    assert surface["rows"][0]["status"] == "artifact_digest"
+    assert surface["rows"][0]["proof_status"] == "artifact_digest"
     assert surface["rows"][0]["source_refs"] == [
         "fi:2024/1",
         "section:1",
@@ -2698,7 +2698,7 @@ def test_proof_surface_rows_are_queryable_without_replay_authority() -> None:
         row_id="row-1",
         subject_id="fi:2001/1234",
         row_kind="temporal_resolution_evidence",
-        status="block",
+        proof_status="block",
         source_refs=("2025/78",),
         proof_refs=("proof-1",),
         detail={"replay_authorized": False},
@@ -2715,7 +2715,7 @@ def test_proof_surface_rows_are_queryable_without_replay_authority() -> None:
 
     assert data["surface_id"] == "fi:strict:demo"
     assert data["rows"][0]["row_kind"] == "temporal_resolution_evidence"
-    assert data["rows"][0]["status"] == "block"
+    assert data["rows"][0]["proof_status"] == "block"
     assert data["rows"][0]["source_refs"] == ["2025/78"]
     assert data["rows"][0]["detail"]["replay_authorized"] is False
 
@@ -2725,7 +2725,7 @@ def test_proof_surface_rejects_duplicate_row_ids() -> None:
         row_id="duplicate-row",
         subject_id="fi:2001/1234",
         row_kind="source_witness",
-        status="reported",
+        proof_status="reported",
     )
 
     with pytest.raises(ValueError, match="unique row_id"):
@@ -2806,7 +2806,7 @@ def test_proof_surface_from_evidence_report_preserves_report_rows_as_read_model(
     }
     assert data["summary"] == {"temporal_resolution_evidence_count": 1}
     assert data["rows"][0]["row_kind"] == "temporal_resolution_evidence"
-    assert data["rows"][0]["status"] == "block"
+    assert data["rows"][0]["proof_status"] == "block"
     assert data["rows"][0]["source_refs"] == ["2025/78"]
     assert data["rows"][1]["frontier_ref"] == "fi:frontier:1"
     assert data["rows"][1]["source_refs"] == [
@@ -3360,7 +3360,7 @@ def test_candidate_set_report_projects_to_proof_surface_rows() -> None:
     assert proof_surface["rows"][0]["row_id"] == "fi:demo:source-unit-enumeration"
     assert proof_surface["rows"][0]["subject_id"] == "fi:demo:source-unit-enumeration"
     assert proof_surface["rows"][0]["row_kind"] == "candidate_set_coverage"
-    assert proof_surface["rows"][0]["status"] == "complete"
+    assert proof_surface["rows"][0]["proof_status"] == "complete"
     assert proof_surface["rows"][0]["proof_refs"] == ["fi_source_unit_enumeration_complete"]
 
 
@@ -3454,8 +3454,8 @@ def test_replay_summary_to_dict_is_json_friendly() -> None:
         applied_count=2,
         op_count=5,
         steps=(
-            ReplayAmendmentStep(source_id="2006-01-01-1", status="applied", op_count=2),
-            ReplayAmendmentStep(source_id="2007-01-01-2", status="skipped", op_count=0),
+            ReplayAmendmentStep(source_id="2006-01-01-1", amendment_status="applied", op_count=2),
+            ReplayAmendmentStep(source_id="2007-01-01-2", amendment_status="skipped", op_count=0),
         ),
         text_view=ReplayTextView(content="hello"),
     )
@@ -3693,7 +3693,7 @@ def test_corpus_operation_evidence_row_to_dict_preserves_unsupported_status() ->
         frontend_id="open_law_maryland",
         source_artifact_id="editorial-actions/x.xml",
         effect_family="expire",
-        status=CorpusRowStatus.UNSUPPORTED,
+        evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
         quirks_disposition="record_unsupported",
@@ -3702,7 +3702,7 @@ def test_corpus_operation_evidence_row_to_dict_preserves_unsupported_status() ->
 
     data = row.to_dict()
 
-    assert data["status"] == "unsupported"
+    assert data["evidence_status"] == "unsupported"
     assert data["finding_ids"] == ("open_law_expire_lifecycle_not_replayed",)
     assert validate_corpus_operation_evidence_row(data) == ()
 
@@ -3740,7 +3740,7 @@ def test_evidence_contracts_freeze_detail_lanes() -> None:
         row_id="row-1",
         frontend_id="starter",
         source_artifact_id="act.xml",
-        status=CorpusRowStatus.UNSUPPORTED,
+        evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
         quirks_disposition="record",
@@ -3774,7 +3774,7 @@ def test_corpus_operation_evidence_validation_rejects_unexplained_non_claim() ->
         "row_id": "row-1",
         "frontend_id": "starter",
         "source_artifact_id": "act.xml",
-        "status": "unsupported",
+        "evidence_status": "unsupported",
         "blocking": True,
         "strict_disposition": "record",
         "quirks_disposition": "record",
@@ -3792,7 +3792,7 @@ def test_corpus_operation_evidence_row_rejects_invalid_construction() -> None:
             row_id="row-1",
             frontend_id="starter",
             source_artifact_id="act.xml",
-            status=CorpusRowStatus.UNSUPPORTED,
+            evidence_status=CorpusRowStatus.UNSUPPORTED,
             blocking=True,
             strict_disposition="block",
             quirks_disposition="record",
@@ -3804,7 +3804,7 @@ def test_corpus_operation_evidence_validation_rejects_blocking_match_without_jus
         "row_id": "row-1",
         "frontend_id": "starter",
         "source_artifact_id": "act.xml",
-        "status": "matched",
+        "evidence_status": "matched",
         "blocking": True,
         "strict_disposition": "block",
         "quirks_disposition": "record",
@@ -3854,7 +3854,7 @@ def test_evidence_rule_ids_extracts_stable_detail_rule_ids() -> None:
         row_id="row-1",
         frontend_id="new_zealand",
         source_artifact_id="act_public_2020_1",
-        status=CorpusRowStatus.ACCEPTED,
+        evidence_status=CorpusRowStatus.ACCEPTED,
         strict_disposition="candidate_only",
         quirks_disposition="candidate_only",
         finding_ids=("nz_existing_finding",),
@@ -3888,7 +3888,7 @@ def test_evidence_rule_ids_allows_stable_reason_rule_ids() -> None:
         row_id="row-1",
         frontend_id="starter",
         source_artifact_id="act.xml",
-        status=CorpusRowStatus.UNSUPPORTED,
+        evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
         quirks_disposition="record",
@@ -3903,7 +3903,7 @@ def test_evidence_rule_ids_scans_detail_and_evidence_maps_when_both_exist() -> N
         "row_id": "row-1",
         "frontend_id": "starter",
         "source_artifact_id": "act.xml",
-        "status": "unsupported",
+        "evidence_status": "unsupported",
         "strict_disposition": "block",
         "quirks_disposition": "record",
         "detail": {"candidate_witness_rule_id": "starter.detail_witness"},
@@ -3945,7 +3945,7 @@ def test_artifact_envelope_to_wire_jsonable_serializes_schema_and_status() -> No
             "body": {"kind": "content", "text": "hello"},
             "tags": {"a", "b"},
         },
-        status=ProcessingStatus(kind="partial", blockers=("missing.source",)),
+        processing_status=ProcessingStatus(kind="partial", blockers=("missing.source",)),
     )
 
     got = to_wire_jsonable(envelope)
@@ -3955,4 +3955,4 @@ def test_artifact_envelope_to_wire_jsonable_serializes_schema_and_status() -> No
     assert got["version"] == "1"
     assert got["payload"]["body"]["text"] == "hello"
     assert sorted(got["payload"]["tags"]) == ["a", "b"]
-    assert got["status"] == {"kind": "partial", "blockers": ["missing.source"]}
+    assert got["processing_status"] == {"kind": "partial", "blockers": ["missing.source"]}

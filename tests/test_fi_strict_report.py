@@ -1464,7 +1464,7 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
     residuals = payload["agreement_residuals"]
     assert len(residuals) == 1
     assert residuals[0]["family"] == "non_commensurable_surface"
-    assert residuals[0]["status"] == "residual"
+    assert residuals[0]["agreement_residual_status"] == "residual"
     assert residuals[0]["detail"]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")
     report = payload["evidence_surface_report"]
     assert report["summary"]["source_lineage_source_witness_count"] == 1

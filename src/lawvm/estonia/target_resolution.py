@@ -115,7 +115,7 @@ def _record_ee_parse_rejection(
                     rule_id=rule_id,
                     phase="parse",
                     reason=reason,
-                    status=TARGET_REJECTED,
+                    resolution_status=TARGET_REJECTED,
                     source_target=target_title or statute_fragment or source_id,
                     candidate_count=len(candidates),
                     candidates=candidates,

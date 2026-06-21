@@ -1591,7 +1591,7 @@ def test_2019_371_renumber_ops_bind_typed_intent_with_compound_source_parent_pat
         quiet=True,
         build_full_products=False,
     )
-    _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
+    _muutos_tree, johto, used_preamble_body_fallback, should_apply, _route_reason = _working_johtolause(
         statute_id,
         before_master.title,
         source_id,
@@ -1606,7 +1606,7 @@ def test_2019_371_renumber_ops_bind_typed_intent_with_compound_source_parent_pat
         before_master.replay_fold_state,
         source_id,
         source_title="",
-        used_sec1_fallback=used_sec1_fallback,
+        used_preamble_body_fallback=used_preamble_body_fallback,
         parent_id=statute_id,
         strict_profile=None,
     )
@@ -1669,7 +1669,7 @@ def test_1992_110_2017_48_reinstatement_chain_compiles_insert_13_and_materialize
     assert xml_bytes is not None
 
     before_master = pinned_replay(statute_id, mode="legal_pit", stop_before=source_id, quiet=True)
-    _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
+    _muutos_tree, johto, used_preamble_body_fallback, should_apply, _route_reason = _working_johtolause(
         statute_id,
         before_master.title,
         source_id,
@@ -1684,7 +1684,7 @@ def test_1992_110_2017_48_reinstatement_chain_compiles_insert_13_and_materialize
         before_master.replay_fold_state,
         source_id,
         source_title="",
-        used_sec1_fallback=used_sec1_fallback,
+        used_preamble_body_fallback=used_preamble_body_fallback,
         parent_id=statute_id,
         strict_profile=None,
     )

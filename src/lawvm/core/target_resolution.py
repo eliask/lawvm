@@ -107,7 +107,7 @@ class TargetResolutionCoverage:
     rule_id: str
     phase: str
     reason: str
-    status: TargetResolutionStatus
+    resolution_status: TargetResolutionStatus
     source_target: str
     candidate_count: int = 0
     candidates: tuple[TargetResolutionCandidate, ...] = ()
@@ -125,11 +125,11 @@ class TargetResolutionCoverage:
             raise ValueError("TargetResolutionCoverage.phase must be non-empty")
         if not str(self.reason or "").strip():
             raise ValueError("TargetResolutionCoverage.reason must be non-empty")
-        if not str(self.status or "").strip():
-            raise ValueError("TargetResolutionCoverage.status must be non-empty")
-        if self.status not in _VALID_TARGET_RESOLUTION_STATUSES:
+        if not str(self.resolution_status or "").strip():
+            raise ValueError("TargetResolutionCoverage.resolution_status must be non-empty")
+        if self.resolution_status not in _VALID_TARGET_RESOLUTION_STATUSES:
             raise ValueError(
-                f"TargetResolutionCoverage.status must be one of "
+                f"TargetResolutionCoverage.resolution_status must be one of "
                 f"{sorted(_VALID_TARGET_RESOLUTION_STATUSES)}"
             )
         if not str(self.source_target or "").strip():
@@ -151,17 +151,17 @@ class TargetResolutionCoverage:
             raise ValueError(
                 "TargetResolutionCoverage.candidate_count must cover listed candidates"
             )
-        if self.status in {TARGET_RESOLVED, TARGET_FALLBACK_RESOLVED, TARGET_RECOVERED}:
+        if self.resolution_status in {TARGET_RESOLVED, TARGET_FALLBACK_RESOLVED, TARGET_RECOVERED}:
             if not self.selected_target:
                 raise ValueError(
-                    f"TargetResolutionCoverage(status={self.status!r}) requires selected_target"
+                    f"TargetResolutionCoverage(status={self.resolution_status!r}) requires selected_target"
                 )
             if self.candidate_count < 1:
                 raise ValueError(
-                    f"TargetResolutionCoverage(status={self.status!r}) requires candidate_count >= 1"
+                    f"TargetResolutionCoverage(status={self.resolution_status!r}) requires candidate_count >= 1"
                 )
             if (
-                self.status == TARGET_RESOLVED
+                self.resolution_status == TARGET_RESOLVED
                 and self.candidates
                 and self.selected_target not in {candidate.target for candidate in self.candidates}
             ):
@@ -178,7 +178,7 @@ class TargetResolutionCoverage:
 
     def to_diagnostic_detail(self) -> dict[str, Any]:
         target_fields: dict[str, Any] = {
-            "target_resolution_status": self.status,
+            "target_resolution_status": self.resolution_status,
             "source_target": self.source_target,
             "candidate_count": self.candidate_count,
         }

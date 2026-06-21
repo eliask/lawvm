@@ -4088,7 +4088,7 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
         "manual_compile_frontier_vs_current_oracle"
     )
     assert payload["agreement_residual"]["family"] == "source_pathology"
-    assert payload["agreement_residual"]["status"] == "frontier"
+    assert payload["agreement_residual"]["agreement_residual_status"] == "frontier"
     assert payload["agreement_residual"]["missing_proofs"] == (
         payload["execution_authorization"]["required_proofs"]
     )
@@ -4648,7 +4648,7 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
     )
     assert payload["agreement_residual"]["residual_id"] == payload["work_item_id"]
     assert payload["agreement_residual"]["family"] == "source_pathology"
-    assert payload["agreement_residual"]["status"] == "frontier"
+    assert payload["agreement_residual"]["agreement_residual_status"] == "frontier"
     assert payload["agreement_residual"]["missing_proofs"] == (
         payload["required_proofs"]
     )

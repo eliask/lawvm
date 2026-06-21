@@ -1054,13 +1054,13 @@ def _sparse_osalta_recovery_finding(
     amendment_id: str,
 ) -> Finding:
     return Finding(
-        kind="ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL",
+        kind="ELAB.SPARSE_PARTIAL_SCOPE_ROW_OMISSION_REPEAL",
         role="observation",
         stage="frontend_extraction",
         source_statute=amendment_id,
         blocking=False,
         detail={
-            "kind": "ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL",
+            "kind": "ELAB.SPARSE_PARTIAL_SCOPE_ROW_OMISSION_REPEAL",
             "rule_id": _SPARSE_OSALTA_ROW_OMISSION_RULE_ID,
             "source_statute": amendment_id,
             "source_verb": "muutetaan",

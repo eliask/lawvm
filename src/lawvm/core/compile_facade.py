@@ -280,7 +280,7 @@ class CompileFacade:
         )
         if compiled.issues:
             combined_issues = compiled.issues + result.issues
-            status = result.status
+            status = result.materialization_status
             statute = result.statute
             if status == "materialized" and any(issue.blocking for issue in combined_issues):
                 status = "degraded_timeline_issues"
@@ -297,7 +297,7 @@ class CompileFacade:
                     metadata=metadata,
                 )
             return MaterializationResult(
-                status=status,
+                materialization_status=status,
                 statute=statute,
                 required_dimensions=result.required_dimensions,
                 ambiguous_addresses=result.ambiguous_addresses,
@@ -431,7 +431,7 @@ class CompileFacade:
                 "findings": findings_payload,
                 "verdict": verdict_payload,
             },
-            status=status,
+            processing_status=status,
         )
 
     # ------------------------------------------------------------------

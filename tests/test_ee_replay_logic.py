@@ -306,7 +306,7 @@ def test_filter_cancelled_pending_refs_records_source_fetch_failure_and_retains_
     assert source_lane["source_lane_attempts"] == (
         {
             "lane": "riigi_teataja_xml",
-            "status": "fetch_failed",
+            "lane_attempt_status": "fetch_failed",
             "locator": "ee/108072025001",
         },
     )
@@ -3715,7 +3715,7 @@ def test_precompose_pending_source_act_commencement_records_fetch_failure(monkey
     assert source_lane["source_lane_attempts"] == (
         {
             "lane": "riigi_teataja_xml",
-            "status": "fetch_failed",
+            "lane_attempt_status": "fetch_failed",
             "locator": "ee/missing",
         },
     )
@@ -3916,7 +3916,7 @@ def test_replay_ee_to_pit_adjudicates_amendment_fetch_failure(monkeypatch) -> No
     assert source_lane["source_lane_attempts"] == (
         {
             "lane": "riigi_teataja_xml",
-            "status": "fetch_failed",
+            "lane_attempt_status": "fetch_failed",
             "locator": "ee/amend-fetch-fails",
         },
     )
@@ -3956,7 +3956,7 @@ def test_replay_ee_to_pit_adjudicates_amendment_parse_failure(monkeypatch) -> No
     assert source_lane["source_lane_attempts"] == (
         {
             "lane": "riigi_teataja_xml",
-            "status": "selected_parse_failed",
+            "lane_attempt_status": "selected_parse_failed",
             "locator": "ee/amend-parse-fails",
         },
     )
@@ -4002,7 +4002,7 @@ def test_replay_ee_to_pit_adjudicates_temporal_source_scan_failure(monkeypatch) 
     assert source_lane["source_lane_attempts"] == (
         {
             "lane": "riigi_teataja_xml",
-            "status": "selected_scan_failed",
+            "lane_attempt_status": "selected_scan_failed",
             "locator": "ee/temporal-scan-fails",
         },
     )

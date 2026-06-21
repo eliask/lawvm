@@ -95,7 +95,7 @@ def test_uk_misses_report_envelope_preserves_legacy_fields() -> None:
     assert report["agreement_residual"]["family"] == (
         "accepted_non_executable_frontier"
     )
-    assert report["agreement_residual"]["status"] == "frontier"
+    assert report["agreement_residual"]["agreement_residual_status"] == "frontier"
     assert report["agreement_residual"]["owner_phase"] == "typed_elaboration"
     assert report["agreement_residual"]["missing_proofs"] == [
         "canonical_operation_compilation",
@@ -133,7 +133,7 @@ def test_uk_misses_report_classifies_zero_oracle_retention() -> None:
     )
 
     assert report["agreement_residual"]["family"] == "non_commensurable_surface"
-    assert report["agreement_residual"]["status"] == "frontier"
+    assert report["agreement_residual"]["agreement_residual_status"] == "frontier"
     assert report["agreement_residual"]["owner_phase"] == (
         "compare_oracle_classification"
     )
@@ -161,5 +161,5 @@ def test_uk_misses_report_classifies_exact_agreement() -> None:
     )
 
     assert report["agreement_residual"]["family"] == "agreement"
-    assert report["agreement_residual"]["status"] == "agrees"
+    assert report["agreement_residual"]["agreement_residual_status"] == "agrees"
     assert report["agreement_residual"]["missing_proofs"] == []

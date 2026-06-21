@@ -1079,7 +1079,7 @@ def materialize_pit(
         migration_events=migration_events,
         lineage_plan=lineage_plan,
     )
-    if result.status == "degraded_missing_scope":
+    if result.materialization_status == "degraded_missing_scope":
         raise ValueError(
             "materialize_pit requires explicit scope when PIT selection is degraded by "
             f"missing {result.required_dimensions!r}; use materialize_pit_ex() for an "
@@ -1549,7 +1549,7 @@ def materialize_pit_ex(
         metadata=metadata,
     )
     return MaterializationResult(
-        status=status,
+        materialization_status=status,
         statute=statute,
         required_dimensions=tuple(sorted(degraded_dimensions)),
         ambiguous_addresses=tuple(sorted(ambiguous_addresses, key=lambda addr: addr.path)),

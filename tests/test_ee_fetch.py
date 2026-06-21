@@ -64,7 +64,7 @@ def test_fetch_redactions_feed_records_fetch_failure_diagnostic(monkeypatch) -> 
     assert source_lane["source_lane_attempts"] == (
         {
             "lane": "riigi_teataja_redactions_feed",
-            "status": "fetch_failed",
+            "lane_attempt_status": "fetch_failed",
             "locator": "https://www.riigiteataja.ee/akti_redaktsioonid.xml?grupiId=123",
         },
     )

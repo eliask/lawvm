@@ -195,7 +195,7 @@ def uk_misses_report_jsonable(
             str(agreement_residual["family"]): 1,
         },
         "agreement_residual_status_counts": {
-            str(agreement_residual["status"]): 1,
+            str(agreement_residual["agreement_residual_status"]): 1,
         },
         "agreement_residual_owner_phase_counts": {
             str(agreement_residual["owner_phase"]): 1,
@@ -286,7 +286,7 @@ def _uk_misses_agreement_residual(
         jurisdiction="uk",
         agreement_surface="replay_eid_set_vs_current_oracle_eid_set",
         family=family,
-        status=status,
+        agreement_residual_status=status,
         owner_phase=owner_phase,
         rule_id=rule_id,
         source_artifact_id=statute_id,

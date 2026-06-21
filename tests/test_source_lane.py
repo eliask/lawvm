@@ -23,7 +23,7 @@ def test_source_lane_selection_projects_diagnostic_detail() -> None:
             SourceLaneAttempt(
                 lane="legacy",
                 locator="https://example.test/source.pdf",
-                status="valid",
+                lane_attempt_status="valid",
                 detail={"payload_digest": "abc"},
             ),
         ),
@@ -43,7 +43,7 @@ def test_source_lane_selection_projects_diagnostic_detail() -> None:
         "source_lane_attempts": (
             {
                 "lane": "legacy",
-                "status": "valid",
+                "lane_attempt_status": "valid",
                 "locator": "https://example.test/source.pdf",
                 "payload_digest": "abc",
             },
@@ -57,20 +57,20 @@ def test_source_lane_attempt_from_mapping_accepts_url_alias() -> None:
         {
             "lane": "official_pdf",
             "url": "https://example.test/source.pdf",
-            "status": "valid_pdf",
+            "lane_attempt_status": "valid_pdf",
         }
     )
 
     assert attempt == SourceLaneAttempt(
         lane="official_pdf",
         locator="https://example.test/source.pdf",
-        status="valid_pdf",
+        lane_attempt_status="valid_pdf",
     )
 
 
 def test_source_lane_selection_normalizes_attempts_and_detail() -> None:
     detail = {"nested": {"key": ["value"]}}
-    attempt = SourceLaneAttempt(lane="legacy", status="valid", detail=detail)
+    attempt = SourceLaneAttempt(lane="legacy", lane_attempt_status="valid", detail=detail)
     attempts = [attempt]
 
     evidence = SourceLaneSelectionEvidence(
@@ -100,7 +100,7 @@ def test_source_lane_selection_rejects_unowned_selection_shape() -> None:
             phase="acquisition",
             reason="fallback lane selected with evidence",
             selected_lane="",
-            attempts=(SourceLaneAttempt(lane="legacy", status="valid"),),
+            attempts=(SourceLaneAttempt(lane="legacy", lane_attempt_status="valid"),),
         )
 
     with pytest.raises(ValueError, match="attempts"):
@@ -113,7 +113,7 @@ def test_source_lane_selection_rejects_unowned_selection_shape() -> None:
         )
 
     with pytest.raises(ValueError, match="override source-lane keys"):
-        SourceLaneAttempt(lane="legacy", status="valid", detail={"status": "override"})
+        SourceLaneAttempt(lane="legacy", lane_attempt_status="valid", detail={"lane_attempt_status": "override"})
 
     with pytest.raises(ValueError, match="override source-lane keys"):
         SourceLaneSelectionEvidence(
@@ -121,7 +121,7 @@ def test_source_lane_selection_rejects_unowned_selection_shape() -> None:
             phase="acquisition",
             reason="fallback lane selected with evidence",
             selected_lane="legacy",
-            attempts=(SourceLaneAttempt(lane="legacy", status="valid"),),
+            attempts=(SourceLaneAttempt(lane="legacy", lane_attempt_status="valid"),),
             detail={"selected_source_lane": "override"},
         )
 
@@ -135,7 +135,7 @@ def test_source_lane_selection_rejects_unowned_selection_shape() -> None:
         )
 
     with pytest.raises(ValueError, match="detail must be a mapping"):
-        SourceLaneAttempt(lane="legacy", status="valid", detail=cast(Any, []))
+        SourceLaneAttempt(lane="legacy", lane_attempt_status="valid", detail=cast(Any, []))
 
 
 def test_source_lane_selection_requires_selected_lane_to_be_attempted_or_explicit_none() -> None:
@@ -145,7 +145,7 @@ def test_source_lane_selection_requires_selected_lane_to_be_attempted_or_explici
             phase="acquisition",
             reason="selected lane was not listed among attempts",
             selected_lane="enacted_xml",
-            attempts=(SourceLaneAttempt(lane="current_xml", status="too_small"),),
+            attempts=(SourceLaneAttempt(lane="current_xml", lane_attempt_status="too_small"),),
         )
 
     evidence = SourceLaneSelectionEvidence(
@@ -153,7 +153,7 @@ def test_source_lane_selection_requires_selected_lane_to_be_attempted_or_explici
         phase="acquisition",
         reason="all lanes failed",
         selected_lane="no_source_lane_selected_fetch_failed",
-        attempts=(SourceLaneAttempt(lane="official_xml", status="fetch_failed"),),
+        attempts=(SourceLaneAttempt(lane="official_xml", lane_attempt_status="fetch_failed"),),
         blocking=True,
         strict_disposition="block",
     )
@@ -165,7 +165,7 @@ def test_source_lane_selection_requires_selected_lane_to_be_attempted_or_explici
             phase="acquisition",
             reason="selected route lacks explicit routing evidence",
             selected_lane="sec1_fallback_pre_routing",
-            attempts=(SourceLaneAttempt(lane="sec1_fallback", status="selected"),),
+            attempts=(SourceLaneAttempt(lane="sec1_fallback", lane_attempt_status="selected"),),
         )
 
     routed = SourceLaneSelectionEvidence(
@@ -173,12 +173,12 @@ def test_source_lane_selection_requires_selected_lane_to_be_attempted_or_explici
         phase="acquisition",
         reason="selected route is a more specific variant of the selected lane",
         selected_lane="sec1_fallback_pre_routing",
-        attempts=(SourceLaneAttempt(lane="sec1_fallback", status="selected"),),
+        attempts=(SourceLaneAttempt(lane="sec1_fallback", lane_attempt_status="selected"),),
         detail={
             "selected_lane_route_from": "sec1_fallback",
             "selected_lane_routing_rule": "pre-routing fallback",
         },
     )
     routed_detail = routed.to_diagnostic_detail()
-    assert routed_detail["source_lane_attempts"][0]["status"] == "selected"
+    assert routed_detail["source_lane_attempts"][0]["lane_attempt_status"] == "selected"
     assert routed_detail["selected_lane_route_from"] == "sec1_fallback"

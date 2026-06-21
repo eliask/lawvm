@@ -93,7 +93,7 @@ def test_build_instruction_workqueue_lists_candidate_direct_rows_without_replay_
     assert row.payload_match_headings == ("Amend",)
     assert row.payload_text_snippets == ("Section 1 is amended by replacing Old with New.",)
     evidence_row = report.operation_evidence_rows()[0].to_dict()
-    assert evidence_row["status"] == "unsupported"
+    assert evidence_row["evidence_status"] == "unsupported"
     assert evidence_row["blocking"] is True
     assert evidence_row["detail"]["queue_status"] == "candidate"
     assert evidence_row["detail"]["replay_claims"] is False
@@ -139,7 +139,7 @@ def test_build_instruction_workqueue_keeps_repeal_as_not_required() -> None:
     assert report.rows[0].queue_status == "not_required"
     assert report.rows[0].instruction_semantic_candidate_family == "repeal_without_enacted_payload"
     evidence_row = report.operation_evidence_rows()[0].to_dict()
-    assert evidence_row["status"] == "skipped"
+    assert evidence_row["evidence_status"] == "skipped"
     assert evidence_row["blocking"] is False
     assert evidence_row["detail"]["reason"] == "repeal candidate is owned by effect-candidates surface"
     assert validate_corpus_operation_evidence_row(evidence_row) == ()
@@ -262,7 +262,7 @@ def test_build_instruction_workqueue_classifies_structural_insert_payload_withou
         report.filtered_rows(payload_structural_subfamily="definition_alphabetical_insert_payload")[0].row_id
         == row.row_id
     )
-    assert evidence_row["status"] == "unsupported"
+    assert evidence_row["evidence_status"] == "unsupported"
     assert evidence_row["blocking"] is True
     assert (
         evidence_row["detail"]["payload_structural_subfamily_rule_id"]

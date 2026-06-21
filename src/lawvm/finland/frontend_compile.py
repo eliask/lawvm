@@ -527,7 +527,7 @@ def _normalize_historical_top_level_kohta_subsection_ops(
         emitted = sorted(emitted_labels_by_section.get(section_label, ()), key=lambda value: int(value))
         findings.append(
             Finding(
-                kind="ELAB.HISTORICAL_TOP_LEVEL_KOHTA_AS_SUBSECTION",
+                kind="ELAB.HISTORICAL_TOP_LEVEL_ITEM_AS_SUBSECTION",
                 role="observation",
                 stage="frontend_compile",
                 detail={
@@ -789,7 +789,7 @@ def _compiled_cited_section_scopes(
         base_ir=None,
         amendment_id=cited_id,
         source_title=cited_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id=parent_id,
         strict_profile=None,
     )
@@ -3509,7 +3509,7 @@ def normalize_and_compile_ops(
     master: "ReplayState",
     amendment_id: str,
     source_title: str,
-    used_sec1_fallback: bool,
+    used_preamble_body_fallback: bool,
     parent_id: str = "",
     strict_profile: Optional[StrictProfile] = None,
     parse_result: "ClauseParseResult | None" = None,
@@ -3534,7 +3534,7 @@ def normalize_and_compile_ops(
         base_ir:            Original parent statute IR, used only as a read-only prior-address witness.
         amendment_id:                Amendment statute id (for enrichment + logging).
         source_title:       Amendment title (for title-fallback path).
-        used_sec1_fallback: True when ``johto`` came from sec_1 body text.
+        used_preamble_body_fallback: True when ``johto`` came from sec_1 body text.
         parent_id:          Parent statute id (for peg-skip check).
         strict_profile:     Optional strictness gate; None uses the caller-provided default behavior.
         parse_result:       Optional precomputed Finland ClauseParseResult for this johtolause.
@@ -3631,7 +3631,7 @@ def normalize_and_compile_ops(
     # lower (MetaClause/ItemShiftClause/NamedRowClause) so they stop being a
     # silent drop. Filled by whichever extraction call actually runs.
     _ingress_lowering_diagnostics: List[ClauseAstLoweringDiagnostic] = []
-    if used_sec1_fallback:
+    if used_preamble_body_fallback:
         if parse_result_local is None:
             parse_result_local = parse_johtolause_clause(johto, statute_id=parent_id or amendment_id)
         prechecked_legal_ops = extract_johtolause_legal_ops_from_parse_result(
@@ -3639,7 +3639,7 @@ def normalize_and_compile_ops(
         )
         parser_has_structural_targets = _parser_produced_structural_targets(prechecked_legal_ops)
 
-    peg_skip_for_sec1_repeal_list = used_sec1_fallback and _sec1_fallback_peg_skip_required(
+    peg_skip_for_sec1_repeal_list = used_preamble_body_fallback and _sec1_fallback_peg_skip_required(
         johto,
         parent_id,
         parser_has_structural_targets=parser_has_structural_targets,
@@ -3682,14 +3682,14 @@ def normalize_and_compile_ops(
     if peg_skip_for_sec1_repeal_list:
         frontend_findings_out.append(
             Finding(
-                kind="PARSE.PEG_SKIP_SEC1_REPEAL_LIST",
+                kind="PARSE.GRAMMAR_SKIP_PREAMBLE_REPEAL_LIST",
                 role="observation",
                 stage="frontend_compile",
                 detail={
                     "message": "PEG extraction skipped for sec1 repeal-list fallback pattern",
                     "source_statute": amendment_id,
                     "parent_statute": parent_id,
-                    "used_sec1_fallback": True,
+                    "used_preamble_body_fallback": True,
                     "johto_excerpt": johto[:200],
                 },
                 source_statute=amendment_id,
@@ -4299,11 +4299,11 @@ def normalize_and_compile_ops(
                 )
 
     # Tag sec1 body-text fallback on all ops from this amendment
-    if used_sec1_fallback and ops:
+    if used_preamble_body_fallback and ops:
         for op in ops:
             op.sec1_body_johto_fallback = True
             op.extraction_provenance_tags = tuple(
-                dict.fromkeys((*op.extraction_provenance_tags, "extraction_sec1_body_johto"))
+                dict.fromkeys((*op.extraction_provenance_tags, "extraction_preamble_body"))
             )
     if not ops:
         frontend_findings_out.append(
@@ -4315,7 +4315,7 @@ def normalize_and_compile_ops(
                     "message": "PEG and fallback extraction produced no legal operations",
                     "source_statute": amendment_id,
                     "parent_statute": parent_id,
-                    "used_sec1_fallback": used_sec1_fallback,
+                    "used_preamble_body_fallback": used_preamble_body_fallback,
                     "peg_skip_for_sec1_repeal_list": peg_skip_for_sec1_repeal_list,
                 },
                 source_statute=amendment_id,

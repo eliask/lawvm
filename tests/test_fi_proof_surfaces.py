@@ -546,7 +546,7 @@ def test_finland_he_branch_evidence_surface_keeps_proposals_non_enacted() -> Non
     assert branch_projection["status"] == "branch_projection_not_enacted_authority"
     assert branch_projection["executable"] is False
     assert branch_projection["replay_authorized"] is False
-    assert branch_projection["projection"]["status"] == "diagnostic_only"
+    assert branch_projection["projection"]["projection_status"] == "diagnostic_only"
     assert branch_projection["projection"]["branch"]["authority_layer"] == "proposal"
     assert branch_projection["projection"]["rows"][0]["edge_kind"] == "would_insert"
     assert branch_projection["projection"]["rows"][0]["target_statute_id"] == "711/2022"
@@ -1436,7 +1436,7 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
                     "jurisdiction": "fi",
                     "agreement_surface": "finlex_html_oracle_compare",
                     "family": "non_commensurable_surface",
-                    "status": "residual",
+                    "agreement_residual_status": "residual",
                     "owner_phase": "oracle_adjudication",
                     "rule_id": "fi_finlex_html_non_commensurable_surface",
                     "source_artifact_id": "2001/1234",
@@ -2157,7 +2157,7 @@ def test_finlex_editorial_witness_residuals_classify_agreement_and_disagreement(
         statute_id="2013/331",
     )
 
-    assert [row["status"] for row in rows] == ["agrees", "residual", "residual"]
+    assert [row["agreement_residual_status"] for row in rows] == ["agrees", "residual", "residual"]
     assert [row["family"] for row in rows] == ["agreement", "unknown", "source_footing_gap"]
     assert rows[0]["replay_count"] == 1
     assert rows[0]["oracle_count"] == 1
@@ -2183,7 +2183,7 @@ def test_source_adjudication_noncommensurable_reason_projects_residual() -> None
     assert len(rows) == 1
     residual = rows[0]
     assert residual["family"] == "non_commensurable_surface"
-    assert residual["status"] == "residual"
+    assert residual["agreement_residual_status"] == "residual"
     assert residual["agreement_surface"] == "finlex_html_oracle_compare"
     assert residual["missing_proofs"] == ["compare_projection_review"]
     assert residual["detail"]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")

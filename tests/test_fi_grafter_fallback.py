@@ -1254,7 +1254,7 @@ def test_process_muutoslaki_observes_sec1_pre_routing_fallback(monkeypatch) -> N
     )
 
     findings = result.findings()
-    sec1 = [finding for finding in findings if finding.kind == "ELAB.SEC1_PRE_ROUTING_FALLBACK"]
+    sec1 = [finding for finding in findings if finding.kind == "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK"]
     assert len(sec1) == 1
     assert sec1[0].role == "obligation"
     assert sec1[0].blocking is True
@@ -9389,7 +9389,7 @@ def test_uncovered_body_skip_helper_maps_peg_owned_same_chapter_reason() -> None
         ("body_pairing_guard", "APPLY.UNCOVERED_BODY_BODY_PAIRING_GUARD"),
         ("no_content_ops", "APPLY.UNCOVERED_BODY_NO_CONTENT_OPS"),
         ("would_lose_subsections", "APPLY.UNCOVERED_BODY_WOULD_LOSE_SUBSECTIONS"),
-        ("johto_guard", "APPLY.UNCOVERED_BODY_JOHTO_GUARD"),
+        ("johto_guard", "APPLY.UNCOVERED_BODY_PREAMBLE_GUARD"),
         ("omission_merge_failed", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_FAILED"),
         ("omission_merge_low_text_ratio", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_LOW_TEXT_RATIO"),
         ("omission_merge_duplicate_subsection_labels", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_DUPLICATE_LABELS"),
@@ -12715,7 +12715,7 @@ def test_supplement_sparse_osalta_row_omission_repeals_owns_action_recovery() ->
     ]
     assert got[0].witness_rule_id == "fi.sparse_osalta_row_omission_repeal.v1"
     assert got[0].extraction_provenance_tags == ("sparse_osalta_row_omission_repeal",)
-    assert [finding.kind for finding in findings] == ["ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL"]
+    assert [finding.kind for finding in findings] == ["ELAB.SPARSE_PARTIAL_SCOPE_ROW_OMISSION_REPEAL"]
     assert findings[0].detail["source_verb"] == "muutetaan"
     assert findings[0].detail["lowered_action"] == "REPEAL"
 
@@ -15295,7 +15295,7 @@ def test_normalize_amendment_1992_1243_2004_254_rehomes_section_71_from_cited_re
         base_ir=None,
         amendment_id="2004/254",
         source_title="Valtioneuvoston asetus valtion talousarviosta annetun asetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1992/1243",
         strict_profile=None,
     )

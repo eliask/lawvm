@@ -249,7 +249,7 @@ def build_replay_debug_bundle(
         if show_source_blocks:
             report["source_blocks"] = _load_source_blocks(source)
         report["source_route"] = dict(source_bundle.get("route", {}) or {})
-        report["source_used_sec1_fallback"] = bool(source_bundle.get("used_sec1_fallback"))
+        report["source_used_preamble_body_fallback"] = bool(source_bundle.get("used_preamble_body_fallback"))
 
     return report
 
@@ -283,8 +283,8 @@ def _format_text(bundle: Dict[str, Any]) -> str:
         if bundle.get("source_route"):
             route = bundle["source_route"]
             lines.append(f"Source route : {'apply' if route.get('should_apply') else 'skip'} ({route.get('reason', '')})")
-        if bundle.get("source_used_sec1_fallback") is not None:
-            lines.append(f"Sec1 fallback: {'yes' if bundle.get('source_used_sec1_fallback') else 'no'}")
+        if bundle.get("source_used_preamble_body_fallback") is not None:
+            lines.append(f"Sec1 fallback: {'yes' if bundle.get('source_used_preamble_body_fallback') else 'no'}")
         lines.append("")
         lines.append("Source clause:")
         for line in source_clause_text.splitlines() or [""]:

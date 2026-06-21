@@ -146,7 +146,7 @@ class DeixisInApplicationClaim:
     - ``inserting_program_snippet``: bounded quote of the inserting instruction
       surface, used to prove the resolution is reachable (reuses the cat-4
       inserted-anchor recognizer applied to the APPLYING instrument).
-    - ``claimant`` / ``status``: provenance and lifecycle.
+    - ``claimant`` / ``claim_status``: provenance and lifecycle.
     """
 
     claim_id: str
@@ -164,7 +164,7 @@ class DeixisInApplicationClaim:
     inserting_amendment_ref: str = ""
     inserting_program_snippet: str = ""
     claimant: str = ""
-    status: str = "proposed"
+    claim_status: str = "proposed"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -183,7 +183,7 @@ class DeixisInApplicationClaim:
             "inserting_amendment_ref": self.inserting_amendment_ref,
             "inserting_program_snippet": self.inserting_program_snippet,
             "claimant": self.claimant,
-            "status": self.status,
+            "claim_status": self.claim_status,
         }
 
 
@@ -239,7 +239,7 @@ def claim_from_dict(row: Any) -> DeixisInApplicationClaim:
         inserting_amendment_ref=str(get("inserting_amendment_ref") or ""),
         inserting_program_snippet=str(get("inserting_program_snippet") or ""),
         claimant=str(get("claimant") or ""),
-        status=str(get("status") or "proposed"),
+        claim_status=str(get("claim_status") or "proposed"),
     )
 
 

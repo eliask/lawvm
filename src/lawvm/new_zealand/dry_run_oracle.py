@@ -370,7 +370,7 @@ class NZDryRunOracleComparisonReport:
                     jurisdiction="nz",
                     agreement_surface="nz_dry_run_repeal_whole_tree",
                     family=_CORE_FAMILY.get(residual.family, "unknown"),
-                    status=status,
+                    agreement_residual_status=status,
                     owner_phase="dry_run",
                     rule_id=residual.rule_id,
                     source_artifact_id="/".join(residual.path),
@@ -560,7 +560,7 @@ def _compare_one_window(plan: _WindowPlan) -> NZDryRunOracleWindowComparison:
         is_target = row.path in target_set
         candidate_occ = _occupancy_or_blank(candidate_index.get(row.path))
         oracle_occ = _occupancy_or_blank(oracle_index.get(row.path))
-        if row.status == "exact":
+        if row.agreement_status == "exact":
             exact_count += 1
             if is_target:
                 # Our tombstone matched the oracle's tombstone exactly.
@@ -595,7 +595,7 @@ def _compare_one_window(plan: _WindowPlan) -> NZDryRunOracleWindowComparison:
             # repeal-target agreement even though the oracle erased body text.
             repeal_target_agree_count += 1
         residuals.append(
-            _residual(row.path, row.status, family, is_target, candidate_occ, oracle_occ)
+            _residual(row.path, row.agreement_status, family, is_target, candidate_occ, oracle_occ)
         )
 
     return NZDryRunOracleWindowComparison(

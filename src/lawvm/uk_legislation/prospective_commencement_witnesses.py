@@ -25,7 +25,7 @@ class UKProspectiveCommencementWitness:
     affected_provisions: str
     affecting_act_id: str
     affecting_provisions: str
-    status: str
+    witness_status: str
     rule_id: str
     start_dates: tuple[str, ...] = ()
     as_of: str = ""
@@ -39,7 +39,7 @@ class UKProspectiveCommencementWitness:
             "affected_provisions": self.affected_provisions,
             "affecting_act_id": self.affecting_act_id,
             "affecting_provisions": self.affecting_provisions,
-            "status": self.status,
+            "witness_status": self.witness_status,
             "rule_id": self.rule_id,
         }
         if self.start_dates:
@@ -88,7 +88,7 @@ def prospective_commencement_witness_for_effect(
         affected_provisions=effect.affected_provisions,
         affecting_act_id=effect.affecting_act_id,
         affecting_provisions=effect.affecting_provisions,
-        status=status,
+        witness_status=status,
         rule_id=rule_id,
         start_dates=start_dates,
         as_of=as_of,
@@ -150,4 +150,4 @@ def scan_prospective_commencement_witnesses(
 def prospective_commencement_status_counts(
     witnesses: Iterable[UKProspectiveCommencementWitness],
 ) -> dict[str, int]:
-    return dict(Counter(witness.status for witness in witnesses))
+    return dict(Counter(witness.witness_status for witness in witnesses))

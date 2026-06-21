@@ -49,6 +49,18 @@ class SourceSurfaceUnit:
     effective_interval: tuple[str | None, str | None] = (None, None)
     metadata: Mapping[str, object] = field(default_factory=dict)
 
+    # Raw source bytes (e.g. the statute's AKN XML) — a TYPED view for the
+    # adapter lenses that genuinely need to re-parse the original markup tree
+    # (the §D4 Stage-1 bridge). This replaces the former free-form
+    # ``metadata["xml_bytes"]`` dict channel with a typed field so the byte
+    # origin is part of the unit schema rather than an untyped key. Read it via
+    # :func:`source_bytes_of`, which fails loud (returns ``None``) on absence so
+    # a missing-source view stays a typed residual, never a silent skip. Like
+    # ``token_tape`` this is a view a later pass consumes, NOT a graph input (the
+    # assembler's graph_id never folds unit views), so populating it cannot
+    # perturb the assembled surface graph.
+    source_bytes: bytes | None = None
+
     # future optional views (Phase 7)
     token_tape: object | None = None
     morph_overlay: object | None = None
@@ -70,6 +82,20 @@ class SourceSurfaceBundle:
     jurisdiction: str
     subject: SurfaceGraphSubject
     units: tuple[SourceSurfaceUnit, ...]
+
+
+def source_bytes_of(unit: SourceSurfaceUnit) -> bytes | None:
+    """Typed accessor for a unit's raw source bytes (the §D4 bridge view).
+
+    Returns the unit's :attr:`SourceSurfaceUnit.source_bytes` when present, or
+    ``None`` when the unit carries no raw-byte view. The caller treats ``None``
+    as a fail-loud miss (a typed residual), never a silent skip.
+
+    This is the single typed entry point adapter lenses use to reach the raw
+    markup; it replaces ad-hoc ``unit.metadata["xml_bytes"]`` reach-back so the
+    byte origin flows through the unit schema instead of an untyped dict key.
+    """
+    return unit.source_bytes
 
 
 # ── Analysis context ─────────────────────────────────────────────────────────

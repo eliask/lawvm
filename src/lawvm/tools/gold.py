@@ -419,7 +419,7 @@ def _cmd_verify_strict(sid: Optional[str], mode: Literal["official_consolidation
     for target_sid in targets:
         try:
             facade = compile_fi_facade(target_sid, replay_mode=mode)
-            blockers = list(facade.to_wire_artifact().status.blockers or [])
+            blockers = list(facade.to_wire_artifact().processing_status.blockers or [])
             results.append((target_sid, blockers))
         except Exception as exc:
             errors.append(f"{target_sid}: {exc}")

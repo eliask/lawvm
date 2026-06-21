@@ -300,7 +300,7 @@ class ProcessTemporalPostprocessContext:
                 "(appear in both kumotaan+muutetaan)"
             )
             self.record_finding(
-                kind="PARSE.KUMOTAAN_RECYCLE_GUARD",
+                kind="PARSE.REPEAL_RECYCLE_GUARD",
                 message=(
                     "Kumotaan repeal candidates were excluded because the "
                     "same source also replaces those targets."

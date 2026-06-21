@@ -71,7 +71,7 @@ def test_prospective_commencement_witness_resolves_in_force() -> None:
 
     assert witness is not None
     row = witness.to_dict()
-    assert row["status"] == "resolved_in_force"
+    assert row["witness_status"] == "resolved_in_force"
     assert row["rule_id"] == "uk_prospective_effect_affecting_provision_in_force"
     assert row["start_dates"] == ("2025-01-01",)
     assert row["owner_phase"] == "effect_metadata_frontend"
@@ -86,7 +86,7 @@ def test_prospective_commencement_witness_resolves_future() -> None:
     )
 
     assert witness is not None
-    assert witness.status == "resolved_future"
+    assert witness.witness_status == "resolved_future"
     assert witness.rule_id == "uk_prospective_effect_affecting_provision_future"
 
 
@@ -99,7 +99,7 @@ def test_prospective_commencement_witness_preserves_unknown() -> None:
     )
 
     assert witness is not None
-    assert witness.status == "unresolved"
+    assert witness.witness_status == "unresolved"
     assert witness.rule_id == "uk_prospective_effect_affecting_provision_unresolved"
     assert witness.start_dates == ()
 

@@ -1253,7 +1253,7 @@ def build_certificate_bundle(
             projection_hash = projection_payload_hash(payload, SEAM_HASH_EXCLUDED_MEMBERS)
             projection_hashes.append(projection_hash)
             certification_status = certification_status_for_row(
-                payload["status"],
+                payload["provision_status"],
                 row_address=addr,
                 row_interval=(start, end),
                 residual_rows=residual_rows,

@@ -65,7 +65,7 @@ def test_effect_candidate_preflight_accepts_complete_candidate_set_without_repla
     evidence_rows = report.operation_evidence_rows()
     assert len(evidence_rows) == 1
     evidence_row = evidence_rows[0].to_dict()
-    assert evidence_row["status"] == "accepted"
+    assert evidence_row["evidence_status"] == "accepted"
     assert evidence_row["strict_disposition"] == "candidate_only_preflight"
     assert evidence_row["detail"]["replay_claims"] is False
     assert evidence_row["detail"]["operation_lowering_readiness_status"] == "ready_for_amending_act_payload_extraction"
@@ -234,7 +234,7 @@ def test_effect_candidate_preflight_blocks_source_change_only_text_replace_candi
     assert blocked_rows[0]["preflight_blocking_rule_id"] == (
         "nz_effect_preflight_source_change_only_candidates_not_dry_run_replayable"
     )
-    assert operation_row["status"] == "unsupported"
+    assert operation_row["evidence_status"] == "unsupported"
     assert operation_row["detail"]["status"] == "blocked_source_change_only_candidate"
     assert operation_row["detail"]["candidate_witness_rule_id"] == (
         "nz_text_replace_candidate_from_archived_source_change_witness"
@@ -328,7 +328,7 @@ def test_effect_candidate_preflight_blocks_target_recovery_text_replace_candidat
     assert blocked_rows[0]["preflight_blocking_rule_id"] == (
         "nz_effect_preflight_target_recovery_candidates_not_dry_run_replayable"
     )
-    assert operation_row["status"] == "unsupported"
+    assert operation_row["evidence_status"] == "unsupported"
     assert operation_row["detail"]["status"] == "blocked_target_recovery_candidate"
     assert operation_row["detail"]["reason"] == (
         "nz_effect_preflight_target_recovery_candidates_not_dry_run_replayable"
@@ -501,7 +501,7 @@ def test_effect_candidate_preflight_blocks_mixed_candidate_set_but_preserves_row
         "nz_effect_readiness_amendment_semantics_not_extracted": 1,
     }
     operation_rows = [row.to_dict() for row in report.operation_evidence_rows()]
-    assert [row["status"] for row in operation_rows] == ["accepted", "unsupported"]
+    assert [row["evidence_status"] for row in operation_rows] == ["accepted", "unsupported"]
     assert operation_rows[0]["detail"]["batch_blocked"] is True
     assert operation_rows[1]["detail"]["reason"] == "nz_effect_readiness_amendment_semantics_not_extracted"
     assert operation_rows[1]["detail"]["batch_blocking_rule_id"] == (
@@ -566,7 +566,7 @@ def test_effect_candidate_preflight_blocks_emitted_candidate_without_operation()
     assert blocked_rows[0]["preflight_blocking_rule_id"] == "nz_effect_preflight_candidate_operation_missing"
     assert report.operations_for_dry_run_replay() == ()
     operation_rows = [row.to_dict() for row in report.operation_evidence_rows()]
-    assert operation_rows[0]["status"] == "unsupported"
+    assert operation_rows[0]["evidence_status"] == "unsupported"
     assert operation_rows[0]["detail"]["status"] == "blocked_candidate_operation_missing"
     assert operation_rows[0]["detail"]["reason"] == "nz_effect_preflight_candidate_operation_missing"
     assert operation_rows[0]["detail"]["candidate_operation_missing"] is True

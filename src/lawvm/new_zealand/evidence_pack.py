@@ -182,7 +182,7 @@ class NZEvidencePackReport:
         *,
         surface: str = "",
         row_kind: str = "",
-        status: str = "",
+        evidence_pack_status: str = "",
         rule_id: str = "",
         blocking: bool = False,
     ) -> tuple[CorpusOperationEvidenceRow | CorpusFindingEvidenceRow, ...]:
@@ -194,7 +194,7 @@ class NZEvidencePackReport:
                 row,
                 surface=surface,
                 row_kind=row_kind,
-                status=status,
+                evidence_pack_status=evidence_pack_status,
                 rule_id=rule_id,
                 blocking=blocking,
             )
@@ -206,14 +206,14 @@ class NZEvidencePackReport:
         row_limit: int | None = None,
         surface: str = "",
         row_kind: str = "",
-        status: str = "",
+        evidence_pack_status: str = "",
         rule_id: str = "",
         blocking: bool = False,
     ) -> dict[str, Any]:
         rows = self.filtered_evidence_rows(
             surface=surface,
             row_kind=row_kind,
-            status=status,
+            evidence_pack_status=evidence_pack_status,
             rule_id=rule_id,
             blocking=blocking,
         )
@@ -229,7 +229,7 @@ class NZEvidencePackReport:
             "filters": _jsonable_filters(
                 surface=surface,
                 row_kind=row_kind,
-                status=status,
+                evidence_pack_status=evidence_pack_status,
                 rule_id=rule_id,
                 blocking=blocking,
             ),
@@ -276,7 +276,7 @@ def write_evidence_pack_jsonl(
     *,
     surface: str = "",
     row_kind: str = "",
-    status: str = "",
+    evidence_pack_status: str = "",
     rule_id: str = "",
     blocking: bool = False,
 ) -> int:
@@ -285,7 +285,7 @@ def write_evidence_pack_jsonl(
         for row in report.filtered_evidence_rows(
             row_kind=row_kind,
             surface=surface,
-            status=status,
+            evidence_pack_status=evidence_pack_status,
             rule_id=rule_id,
             blocking=blocking,
         )
@@ -304,7 +304,7 @@ def main(args: Any) -> None:
             Path(args.output_jsonl),
             row_kind=args.row_kind,
             surface=args.surface,
-            status=args.status,
+            evidence_pack_status=args.status,
             rule_id=args.rule_id,
             blocking=args.blocking,
         )
@@ -313,7 +313,7 @@ def main(args: Any) -> None:
             row_limit=args.limit,
             row_kind=args.row_kind,
             surface=args.surface,
-            status=args.status,
+            evidence_pack_status=args.status,
             rule_id=args.rule_id,
             blocking=args.blocking,
         )
@@ -330,13 +330,13 @@ def main(args: Any) -> None:
     filters = _jsonable_filters(
         surface=args.surface,
         row_kind=args.row_kind,
-        status=args.status,
+        evidence_pack_status=args.status,
         rule_id=args.rule_id,
         blocking=args.blocking,
     )
     print(
         f"work_id={summary['work_id']} total_evidence_rows={summary['total_evidence_rows']} "
-        f"filtered_rows={len(report.filtered_evidence_rows(surface=args.surface, row_kind=args.row_kind, status=args.status, rule_id=args.rule_id, blocking=args.blocking))} "
+        f"filtered_rows={len(report.filtered_evidence_rows(surface=args.surface, row_kind=args.row_kind, evidence_pack_status=args.status, rule_id=args.rule_id, blocking=args.blocking))} "
         f"filters={filters} "
         f"operation_rows={summary['operation_evidence_rows']} "
         f"candidate_rows={summary['effect_candidate_evidence_rows']} "
@@ -350,7 +350,7 @@ def _evidence_row_matches(
     *,
     surface: str,
     row_kind: str,
-    status: str,
+    evidence_pack_status: str,
     rule_id: str,
     blocking: bool,
 ) -> bool:
@@ -359,7 +359,7 @@ def _evidence_row_matches(
         return False
     if row_kind and _row_kind(row_dict) != row_kind:
         return False
-    if status and str(row_dict.get("status", "")) != status:
+    if evidence_pack_status and str(row_dict.get("evidence_status", "")) != evidence_pack_status:
         return False
     if rule_id and rule_id not in _rule_ids(row_dict):
         return False
@@ -372,7 +372,7 @@ def _jsonable_filters(
     *,
     surface: str,
     row_kind: str,
-    status: str,
+    evidence_pack_status: str,
     rule_id: str,
     blocking: bool,
 ) -> dict[str, Any]:
@@ -381,7 +381,7 @@ def _jsonable_filters(
         for key, value in {
             "surface": surface,
             "row_kind": row_kind,
-            "status": status,
+            "evidence_pack_status": evidence_pack_status,
             "rule_id": rule_id,
         }.items()
         if value
@@ -432,7 +432,7 @@ def _row_kind_counts(rows: tuple[Mapping[str, Any], ...]) -> dict[str, int]:
 
 
 def _surface_status_counts(rows: tuple[Mapping[str, Any], ...]) -> dict[str, int]:
-    counts = Counter(f"{_surface(row)}|{str(row.get('status') or _row_kind(row))}" for row in rows)
+    counts = Counter(f"{_surface(row)}|{str(row.get('evidence_status') or _row_kind(row))}" for row in rows)
     return dict(sorted(counts.items()))
 
 

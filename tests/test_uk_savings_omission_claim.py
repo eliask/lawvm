@@ -62,7 +62,7 @@ def _claim(**overrides: Any) -> SavingsScopedOmissionClaim:
         saving_snippet=_SAVING_SNIPPET,
         source_snippet=_SOURCE,
         claimant="reviewer",
-        status="proposed",
+        claim_status="proposed",
     )
     return replace(base, **overrides)
 
@@ -99,7 +99,7 @@ def test_claim_from_dict_defaults() -> None:
         }
     )
     assert claim.claimant == ""
-    assert claim.status == "proposed"
+    assert claim.claim_status == "proposed"
 
 
 # ── validator: accept ────────────────────────────────────────────────────────

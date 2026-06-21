@@ -24,7 +24,7 @@ class ProofSurfaceRow:
     row_id: str
     subject_id: str
     row_kind: str
-    status: str
+    proof_status: str
     source_refs: tuple[str, ...] = ()
     witness_refs: tuple[str, ...] = ()
     assertion_refs: tuple[str, ...] = ()
@@ -38,7 +38,7 @@ class ProofSurfaceRow:
         object.__setattr__(self, "row_id", _required_string("row_id", self.row_id))
         object.__setattr__(self, "subject_id", _required_string("subject_id", self.subject_id))
         object.__setattr__(self, "row_kind", _required_string("row_kind", self.row_kind))
-        object.__setattr__(self, "status", _required_string("status", self.status))
+        object.__setattr__(self, "proof_status", _required_string("proof_status", self.proof_status))
         object.__setattr__(self, "source_refs", _string_tuple(self.source_refs))
         object.__setattr__(self, "witness_refs", _string_tuple(self.witness_refs))
         object.__setattr__(self, "assertion_refs", _string_tuple(self.assertion_refs))
@@ -55,7 +55,7 @@ class ProofSurfaceRow:
             "row_id": self.row_id,
             "subject_id": self.subject_id,
             "row_kind": self.row_kind,
-            "status": self.status,
+            "proof_status": self.proof_status,
             "source_refs": list(self.source_refs),
             "witness_refs": list(self.witness_refs),
             "assertion_refs": list(self.assertion_refs),
@@ -192,7 +192,7 @@ def _proof_surface_row_from_mapping(
         row_id=row_id,
         subject_id=_row_subject_id(row, row_id=row_id),
         row_kind=row_kind,
-        status=_row_status(row),
+        proof_status=_row_status(row),
         source_refs=_source_refs(row),
         witness_refs=_refs(row, ("witness_ref", "witness_refs")),
         assertion_refs=_refs(row, ("assertion_ref", "assertion_refs", "assertion_id")),
@@ -228,6 +228,17 @@ def _row_status(row: Mapping[str, Any]) -> str:
         row,
         (
             "status",
+            "proof_status",
+            "projection_status",
+            "binding_status",
+            "elaboration_status",
+            "acquisition_status",
+            "attestation_status",
+            "admission_status",
+            "evidence_status",
+            "phase_status",
+            "capability_status",
+            "parse_status",
             "closure_status",
             "authorization_status",
             "frontier_status",

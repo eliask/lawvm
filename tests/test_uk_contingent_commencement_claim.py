@@ -52,7 +52,7 @@ def _did_not_commence_claim(**overrides) -> ContingentCommencementClaim:
         resolution=RESOLUTION_DID_NOT_COMMENCE,
         repeal_fires_on=REPEAL_FIRES_ON_DID_NOT_COMMENCE,
         claimant="reviewer",
-        status="proposed",
+        claim_status="proposed",
     )
     base.update(overrides)
     return ContingentCommencementClaim(**base)
