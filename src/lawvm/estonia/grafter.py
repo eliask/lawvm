@@ -2128,6 +2128,8 @@ def parse_ee_amendment_ops(
                             ),
                             source_statute=global_op.source.statute_id if global_op.source else source_id,
                             op_id=global_op.op_id,
+                            blocking=True,
+                            phase="payload_normalization",
                             detail=diagnostic_detail(
                                 rule_id=rule_id,
                                 phase="payload_normalization",
@@ -4199,6 +4201,8 @@ def _record_old_format_ref_slice_filtered_ops(
                 ),
                 source_statute=op.source.statute_id if op.source is not None else "",
                 op_id=op.op_id,
+                blocking=True,
+                phase="parse",
                 detail=diagnostic_detail(
                     rule_id=_EE_REF_SLICE_OP_FILTER_RULE,
                     phase="parse",
@@ -10002,6 +10006,8 @@ def _append_ee_replay_adjudication(
             message=message,
             source_statute=op.source.statute_id if op.source else "",
             op_id=op.op_id,
+            blocking=True,
+            phase=str(normalized_detail.get("phase") or "replay"),
             detail=normalized_detail,
         )
     )

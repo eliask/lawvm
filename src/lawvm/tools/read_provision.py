@@ -66,7 +66,7 @@ def _render_provision_human(payload: dict[str, Any]) -> str:
     if title:
         lines.append(f"  {title}")
 
-    status = payload.get("status", "")
+    status = payload.get("provision_status", "")
     if status != "selected":
         # Surface non-resolution honestly rather than printing empty text.
         lines.append("")
@@ -110,7 +110,7 @@ def _resolve_replay_l1(args: Any, locator: str) -> dict[str, Any]:
 
 
 def _provision_state_is_invalid(payload: dict[str, Any]) -> bool:
-    return payload.get("status") in {"invalid_address", "invalid_query"}
+    return payload.get("provision_status") in {"invalid_address", "invalid_query"}
 
 
 def _emit_invalid_provision_state_diagnostic(payload: dict[str, Any]) -> None:

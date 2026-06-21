@@ -12,6 +12,7 @@ from lawvm.core.mutation_accounting import MutationInvariantReport as ApplyMutat
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.chapter_seed_targets import ChapterSeedSkipInput
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
@@ -48,6 +49,7 @@ class ResolvedProcessAmendmentCall:
     mutation_events_out: Optional[list[ApplyMutationEvent]]
     mutation_invariant_reports_out: Optional[list[ApplyMutationInvariantReport]]
     write_audits_out: Optional[list[ObservedWriteAudit]]
+    write_receipts_out: Optional[list[WriteReceipt]]
     migration_events_out: Optional[list[MigrationEvent]]
     prior_migration_events: Optional[Iterable[MigrationEvent]]
     restructure_plans_out: Optional[list[StructuralTransformPlan]]
@@ -83,6 +85,7 @@ def resolve_process_amendment_call(
         mutation_events_out=sinks.mutation_events_out,
         mutation_invariant_reports_out=sinks.mutation_invariant_reports_out,
         write_audits_out=sinks.write_audits_out,
+        write_receipts_out=sinks.write_receipts_out,
         migration_events_out=sinks.migration_events_out,
         prior_migration_events=request.prior_migration_events,
         restructure_plans_out=sinks.restructure_plans_out,

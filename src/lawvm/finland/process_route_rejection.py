@@ -250,7 +250,7 @@ class ProcessRouteRejectionContext:
                         "to a prior source-backed effect."
                     ),
                     source_finding="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
-                    resolved=False,
+                    target_resolution="target_instrument_unresolved",
                 )
             )
             self.record_finding(
@@ -299,7 +299,7 @@ class ProcessRouteRejectionContext:
                             route_reason=disposition.route_reason,
                             message="Meta-repeal of prior amending instrument recorded as lifecycle evidence.",
                             source_finding="APPLY.META_REPEAL_EFFECT_RECORDED",
-                            resolved=True,
+                            target_resolution="target_instrument_resolved",
                         )
                     )
                     self.record_finding(
@@ -318,7 +318,7 @@ class ProcessRouteRejectionContext:
                         route_reason=disposition.route_reason,
                         message="Meta-repeal target could not be resolved to a prior source-backed effect.",
                         source_finding="APPLY.META_REPEAL_EFFECT_UNRESOLVED",
-                        resolved=False,
+                        target_resolution="target_instrument_unresolved",
                     )
                 )
                 self.record_finding(

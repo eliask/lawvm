@@ -644,7 +644,7 @@ def _operation_evidence_row(row: OpenLawOperationAuditRow) -> CorpusOperationEvi
         canonical_family=row.action if row.status in {"matched", "metadata_matched"} else "",
         original_target="|".join(row.codify_path),
         resolved_target=row.xml_path,
-        status=_shared_status(row.status),
+        evidence_status=_shared_status(row.status),
         blocking=any(finding.blocking for finding in row.findings),
         strict_disposition=_strict_disposition(row),
         quirks_disposition=_quirks_disposition(row),

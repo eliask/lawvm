@@ -50,9 +50,11 @@ from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.ops import ScopeConfidence
+from lawvm.finland.ops import ScopeResolutionConfidence, ScopeResolutionSource
 from lawvm.finland.ops import classify_legal_operation_conversion_skip
 from lawvm.finland.ops import normalize_scope_confidence, projection_scope_confidence
 from lawvm.finland.ops import _lo_with_path_update
+from lawvm.finland.ops import _op_target_subsection_label
 from lawvm.finland.normalize import (
     _sec1_fallback_peg_skip_required,
     _extract_root_replace_ops_from_body_fallback,
@@ -60,6 +62,7 @@ from lawvm.finland.normalize import (
     parse_ops_fallback_heuristic_with_coverage,
     parse_ops_title_fallback,
 )
+from lawvm.core.clause_ast import ClauseAstLoweringDiagnostic
 from lawvm.finland.johtolause import (
     extract_legal_ops_from_parse_result as extract_johtolause_legal_ops_from_parse_result,
     parse_clause as parse_johtolause_clause,
@@ -123,6 +126,10 @@ FI_HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID = (
     "fi.historical_top_level_kohta_as_subsection"
 )
 FI_ACT_WIDE_BODY_SECTION_REPLACE_RULE_ID = "fi.act_wide_body_section_replace"
+FI_BODY_ROOT_REPLACE_FALLBACK_RULE_ID = "fi.body_root_replace_fallback"
+FI_ENACTING_FORMULA_BODY_REPLACE_FALLBACK_RULE_ID = "fi.enacting_formula_body_replace_fallback"
+FI_ENACTING_FORMULA_BODY_INSERT_FALLBACK_RULE_ID = "fi.enacting_formula_body_insert_fallback"
+FI_TITLE_FALLBACK_RULE_ID = "fi.title_fallback"
 _PARENTHESIZED_LEADING_LABEL_RE = re.compile(r"^\s*\((\d+(?:\s*[a-z])?)\)")
 _POSTPOSED_KOHTA_LABELS_RE = re.compile(
     r"\bkohd(?:an|at|ien)\s+([0-9a-zA-Z\s,–—\-]+)",
@@ -341,6 +348,17 @@ def _reject_overbroad_section_repeals_for_deep_targets(
     return kept, findings
 
 
+def _parser_produced_structural_targets(ops: List[LegalOperation]) -> bool:
+    """True when grammar lowering yielded executable structural target ops."""
+    structural_actions = {
+        StructuralAction.REPEAL,
+        StructuralAction.REPLACE,
+        StructuralAction.INSERT,
+        StructuralAction.RENUMBER,
+    }
+    return any(op.action in structural_actions and bool(op.target.path) for op in ops)
+
+
 def _parenthesized_payload_labels_for_section(
     muutos_tree: "etree._Element",
     *,
@@ -509,7 +527,7 @@ def _normalize_historical_top_level_kohta_subsection_ops(
         emitted = sorted(emitted_labels_by_section.get(section_label, ()), key=lambda value: int(value))
         findings.append(
             Finding(
-                kind="ELAB.HISTORICAL_TOP_LEVEL_KOHTA_AS_SUBSECTION",
+                kind="ELAB.HISTORICAL_TOP_LEVEL_ITEM_AS_SUBSECTION",
                 role="observation",
                 stage="frontend_compile",
                 detail={
@@ -771,7 +789,7 @@ def _compiled_cited_section_scopes(
         base_ir=None,
         amendment_id=cited_id,
         source_title=cited_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id=parent_id,
         strict_profile=None,
     )
@@ -888,8 +906,8 @@ def _lift_explicit_scopes_from_cited_version_ops(
                 target_chapter=target_chapter,
                 scope_confidence=ScopeConfidence(
                     tag="chapter_scope_from_cited_version_binding",
-                    source="explicit_chunk",
-                    confidence="explicit",
+                    source=ScopeResolutionSource.EXPLICIT_CHUNK,
+                    confidence=ScopeResolutionConfidence.EXPLICIT,
                     resolved_chapter=target_chapter,
                 ),
                 lo=_lo_with_path_update(op.lo, part=target_part, chapter=target_chapter) if op.lo is not None else op.lo,
@@ -1182,6 +1200,18 @@ def _lo_to_whole_section_insert(lo: "LegalOperation") -> "LegalOperation":
         destination=None,
         provenance_tags=tuple(lo.provenance_tags)
         + ("identity_renumber_absent_target_to_insert",),
+    )
+
+
+def _lo_to_declared_move_replace(lo: "LegalOperation") -> "LegalOperation":
+    """Rewrite an identity-renumber residue into a source-declared move replace."""
+    return dc_replace(
+        lo,
+        action=StructuralAction.REPLACE,
+        destination=None,
+        move_clause_target_unit_kind="chapter",
+        provenance_tags=tuple(lo.provenance_tags)
+        + ("identity_renumber_declared_move_to_replace",),
     )
 
 
@@ -1840,8 +1870,8 @@ def _add_inferred_section_chapter_scope(
         scope_provenance_tags=tags,
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=chapter,
         ),
         lo=scoped_lo,
@@ -2423,11 +2453,12 @@ def _enrich_ops_from_amendment_tree(
                         scope_confidence=(
                             ScopeConfidence(
                                 tag="body_container_membership_rewrite",
-                                source="explicit_scope_rewrite",
-                                confidence="rewritten",
+                                source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                                confidence=ScopeResolutionConfidence.REWRITTEN,
                                 resolved_chapter=retargeted_chapter,
                             )
-                            if scope_witness is not None and scope_witness.source == "explicit_chunk"
+                            if scope_witness is not None
+                            and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
                             else normalize_scope_confidence(
                                 projection_scope_confidence(
                                     scope_confidence=scoped_op.scope_confidence,
@@ -2464,16 +2495,33 @@ def _enrich_ops_from_amendment_tree(
                 source_model=source_model,
             )
         ):
+            declared_move_destination = (
+                scoped_op.target_chapter is not None
+                and _norm_num_token(scoped_op.target_section)
+                in _same_label_move_sections_for_chapter(johto, scoped_op.target_chapter)
+            )
+            rewritten_lo = scoped_op.lo
+            if scoped_op.lo is not None:
+                rewritten_lo = (
+                    _lo_to_declared_move_replace(scoped_op.lo)
+                    if declared_move_destination
+                    else _lo_to_whole_section_insert(scoped_op.lo)
+                )
             scoped_op = dc_replace(
                 scoped_op,
-                op_type="INSERT",
-                scope_provenance_tags=tuple(scoped_op.scope_provenance_tags)
-                + ("identity_renumber_absent_target_to_insert",),
-                lo=(
-                    _lo_to_whole_section_insert(scoped_op.lo)
-                    if scoped_op.lo is not None
-                    else scoped_op.lo
+                op_type="REPLACE" if declared_move_destination else "INSERT",
+                move_clause_target_unit_kind=(
+                    "chapter" if declared_move_destination else scoped_op.move_clause_target_unit_kind
                 ),
+                scope_provenance_tags=tuple(scoped_op.scope_provenance_tags)
+                + (
+                    (
+                        "identity_renumber_declared_move_to_replace"
+                        if declared_move_destination
+                        else "identity_renumber_absent_target_to_insert"
+                    ),
+                ),
+                lo=rewritten_lo,
             )
         enriched.append(
             dc_replace(
@@ -3398,6 +3446,53 @@ def _extract_act_wide_body_section_replace_ops_fallback(
     return _dedupe_fallback_ops_ir(ops)
 
 
+def _accepted_fallback_op_findings(
+    ops: "list[AmendmentOp]",
+    *,
+    amendment_id: str,
+    source: str,
+    rule_id: str,
+    johto: str,
+) -> "list[Finding]":
+    """Emit one witnessed observation per executable op minted from raw text.
+
+    A heuristic fallback recognizer minted these ops from raw johtolause because
+    no typed parser owned the clause. Each minted op carries ``witness_rule_id``
+    and ``fallback_provenance``; this records the matching finding so the
+    raw-text mint is a first-class evidence object, never a silent legal-state
+    move (no-representation-regression witness exception).
+    """
+    findings: "list[Finding]" = []
+    johto_preview = _WHITESPACE_RE.sub(" ", johto or "").strip()[:240]
+    for op in ops:
+        findings.append(
+            Finding(
+                kind="PARSE.FALLBACK_OP_FROM_RAW_TEXT",
+                role="observation",
+                stage="frontend_compile",
+                detail={
+                    "message": (
+                        "Executable op minted from raw johtolause by a heuristic "
+                        "fallback recognizer; no typed parser owned the clause."
+                    ),
+                    "fallback_source": source,
+                    "rule_id": rule_id,
+                    "op_type": op.op_type,
+                    "description": op.description(),
+                    "target_section": op.target_section or "",
+                    "target_unit_kind": op.target_unit_kind,
+                    "target_paragraph": op.target_paragraph,
+                    "target_item": op.target_item or "",
+                    "target_special": op.target_special or "",
+                    "johto_preview": johto_preview,
+                },
+                source_statute=amendment_id,
+                blocking=False,
+            )
+        )
+    return findings
+
+
 def _act_wide_body_section_replace_findings(
     ops: "list[AmendmentOp]",
     *,
@@ -3443,7 +3538,7 @@ def normalize_and_compile_ops(
     master: "ReplayState",
     amendment_id: str,
     source_title: str,
-    used_sec1_fallback: bool,
+    used_preamble_body_fallback: bool,
     parent_id: str = "",
     strict_profile: Optional[StrictProfile] = None,
     parse_result: "ClauseParseResult | None" = None,
@@ -3468,7 +3563,7 @@ def normalize_and_compile_ops(
         base_ir:            Original parent statute IR, used only as a read-only prior-address witness.
         amendment_id:                Amendment statute id (for enrichment + logging).
         source_title:       Amendment title (for title-fallback path).
-        used_sec1_fallback: True when ``johto`` came from sec_1 body text.
+        used_preamble_body_fallback: True when ``johto`` came from sec_1 body text.
         parent_id:          Parent statute id (for peg-skip check).
         strict_profile:     Optional strictness gate; None uses the caller-provided default behavior.
         parse_result:       Optional precomputed Finland ClauseParseResult for this johtolause.
@@ -3494,6 +3589,8 @@ def normalize_and_compile_ops(
                 target_section=op.target_section or "",
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=op.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
             detail = {
                 **failed.as_detail(),
@@ -3556,13 +3653,55 @@ def normalize_and_compile_ops(
     johto = _normalize_fi_parse_text(johto)
     _allows_additive_subsection_fallback = "sellaisena kuin se on" in johto.lower()
 
-    peg_skip_for_sec1_repeal_list = used_sec1_fallback and _sec1_fallback_peg_skip_required(johto, parent_id)
     parse_result_local = parse_result
-    legal_ops = []
+    prechecked_legal_ops: List[LegalOperation] | None = None
+    parser_has_structural_targets = False
+    # Rank-17: collect typed receipts for clause nodes the ingress seam cannot
+    # lower (MetaClause/ItemShiftClause/NamedRowClause) so they stop being a
+    # silent drop. Filled by whichever extraction call actually runs.
+    _ingress_lowering_diagnostics: List[ClauseAstLoweringDiagnostic] = []
+    if used_preamble_body_fallback:
+        if parse_result_local is None:
+            parse_result_local = parse_johtolause_clause(johto, statute_id=parent_id or amendment_id)
+        prechecked_legal_ops = extract_johtolause_legal_ops_from_parse_result(
+            parse_result_local, diagnostics_out=_ingress_lowering_diagnostics
+        )
+        parser_has_structural_targets = _parser_produced_structural_targets(prechecked_legal_ops)
+
+    peg_skip_for_sec1_repeal_list = used_preamble_body_fallback and _sec1_fallback_peg_skip_required(
+        johto,
+        parent_id,
+        parser_has_structural_targets=parser_has_structural_targets,
+    )
+    legal_ops: List[LegalOperation] = []
     if not peg_skip_for_sec1_repeal_list:
         if parse_result_local is None:
             parse_result_local = parse_johtolause_clause(johto, statute_id=parent_id or amendment_id)
-        legal_ops = extract_johtolause_legal_ops_from_parse_result(parse_result_local)
+        if prechecked_legal_ops is not None:
+            legal_ops = prechecked_legal_ops
+        else:
+            legal_ops = extract_johtolause_legal_ops_from_parse_result(
+                parse_result_local, diagnostics_out=_ingress_lowering_diagnostics
+            )
+    for _ld in _ingress_lowering_diagnostics:
+        frontend_findings_out.append(
+            Finding(
+                kind=_ld.kind,
+                role="observation",
+                stage="frontend_compile",
+                detail={
+                    "message": _ld.reason,
+                    "node_kind": _ld.node_kind,
+                    "rule_id": _ld.rule_id,
+                    "sequence": _ld.sequence,
+                    "scope": str(_ld.scope) if _ld.scope is not None else "",
+                    "detail": _ld.detail or "",
+                    "source_statute": amendment_id,
+                },
+                source_statute=amendment_id,
+                blocking=False,
+            )
+        )
     if parse_result_local is not None:
         # Conservation across the frontend boundary: parse-layer findings are
         # part of this phase's output. In particular a blocking parse-layer
@@ -3572,14 +3711,14 @@ def normalize_and_compile_ops(
     if peg_skip_for_sec1_repeal_list:
         frontend_findings_out.append(
             Finding(
-                kind="PARSE.PEG_SKIP_SEC1_REPEAL_LIST",
+                kind="PARSE.GRAMMAR_SKIP_PREAMBLE_REPEAL_LIST",
                 role="observation",
                 stage="frontend_compile",
                 detail={
                     "message": "PEG extraction skipped for sec1 repeal-list fallback pattern",
                     "source_statute": amendment_id,
                     "parent_statute": parent_id,
-                    "used_sec1_fallback": True,
+                    "used_preamble_body_fallback": True,
                     "johto_excerpt": johto[:200],
                 },
                 source_statute=amendment_id,
@@ -3844,6 +3983,15 @@ def normalize_and_compile_ops(
         )
         frontend_findings_out.extend(rejected_overbroad_fallback_repeals)
         if not ops:
+            frontend_findings_out.extend(
+                _accepted_fallback_op_findings(
+                    enriched_fallback_ops,
+                    amendment_id=amendment_id,
+                    source="parse_ops_fallback_heuristic",
+                    rule_id=FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID,
+                    johto=johto,
+                )
+            )
             ops = enriched_fallback_ops
         elif _allows_additive_subsection_fallback and fallback_plain_insert_count > 0:
             existing_keys = {
@@ -3887,6 +4035,15 @@ def normalize_and_compile_ops(
                     continue
                 if op.target_special is not None:
                     continue
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        [op],
+                        amendment_id=amendment_id,
+                        source="parse_ops_fallback_heuristic_additive_insert",
+                        rule_id=FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID,
+                        johto=johto,
+                    )
+                )
                 ops.append(op)
                 existing_keys.add(key)
     elif fallback_ops:
@@ -3919,9 +4076,20 @@ def normalize_and_compile_ops(
                 for op in ops:
                     op.body_root_replace_fallback = True
                     op.fallback_provenance = True
+                    if not op.witness_rule_id:
+                        op.witness_rule_id = FI_BODY_ROOT_REPLACE_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_body_root_replace"))
                     )
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        source="_extract_root_replace_ops_from_body_fallback",
+                        rule_id=FI_BODY_ROOT_REPLACE_FALLBACK_RULE_ID,
+                        johto=johto,
+                    )
+                )
             else:
                 frontend_findings_out.extend(
                     _strict_rejected_op_findings(
@@ -3951,9 +4119,20 @@ def normalize_and_compile_ops(
                 )
                 for op in ops:
                     op.fallback_provenance = True
+                    if not op.witness_rule_id:
+                        op.witness_rule_id = FI_ENACTING_FORMULA_BODY_REPLACE_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_enacting_formula_body_replace"))
                     )
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        source="_extract_enacting_formula_body_replace_ops_fallback",
+                        rule_id=FI_ENACTING_FORMULA_BODY_REPLACE_FALLBACK_RULE_ID,
+                        johto=johto,
+                    )
+                )
             else:
                 frontend_findings_out.extend(
                     _strict_rejected_op_findings(
@@ -3988,6 +4167,15 @@ def normalize_and_compile_ops(
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_ceremonial_body_only"))
                     )
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        source="_extract_ceremonial_body_only_ops_fallback",
+                        rule_id=FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID,
+                        johto=johto,
+                    )
+                )
             else:
                 frontend_findings_out.extend(
                     _strict_rejected_op_findings(
@@ -4064,9 +4252,20 @@ def normalize_and_compile_ops(
                 )
                 for op in ops:
                     op.fallback_provenance = True
+                    if not op.witness_rule_id:
+                        op.witness_rule_id = FI_TITLE_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_title_fallback"))
                     )
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        source="parse_ops_title_fallback",
+                        rule_id=FI_TITLE_FALLBACK_RULE_ID,
+                        johto=johto,
+                    )
+                )
             else:
                 frontend_findings_out.extend(
                     _strict_rejected_op_findings(
@@ -4106,9 +4305,20 @@ def normalize_and_compile_ops(
                 )
                 for op in ops:
                     op.fallback_provenance = True
+                    if not op.witness_rule_id:
+                        op.witness_rule_id = FI_ENACTING_FORMULA_BODY_INSERT_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_enacting_formula_body_insert"))
                     )
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        source="_extract_enacting_formula_body_insert_ops_fallback",
+                        rule_id=FI_ENACTING_FORMULA_BODY_INSERT_FALLBACK_RULE_ID,
+                        johto=johto,
+                    )
+                )
             else:
                 frontend_findings_out.extend(
                     _strict_rejected_op_findings(
@@ -4118,11 +4328,11 @@ def normalize_and_compile_ops(
                 )
 
     # Tag sec1 body-text fallback on all ops from this amendment
-    if used_sec1_fallback and ops:
+    if used_preamble_body_fallback and ops:
         for op in ops:
             op.sec1_body_johto_fallback = True
             op.extraction_provenance_tags = tuple(
-                dict.fromkeys((*op.extraction_provenance_tags, "extraction_sec1_body_johto"))
+                dict.fromkeys((*op.extraction_provenance_tags, "extraction_preamble_body"))
             )
     if not ops:
         frontend_findings_out.append(
@@ -4134,7 +4344,7 @@ def normalize_and_compile_ops(
                     "message": "PEG and fallback extraction produced no legal operations",
                     "source_statute": amendment_id,
                     "parent_statute": parent_id,
-                    "used_sec1_fallback": used_sec1_fallback,
+                    "used_preamble_body_fallback": used_preamble_body_fallback,
                     "peg_skip_for_sec1_repeal_list": peg_skip_for_sec1_repeal_list,
                 },
                 source_statute=amendment_id,

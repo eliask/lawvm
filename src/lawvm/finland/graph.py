@@ -6,16 +6,22 @@ canonical forward-grant delegation parser). They are separated from
 core/graph.py so that core/ remains jurisdiction-agnostic.
 
 Delegation forward-grant source: the canonical token-native parser via
-``legal_surface.delegation_edge_adapter.extract_delegations_canonical``. The
-legacy nine-regex ``delegation.extract_delegations`` is retained as a typed
-residue / cross-check oracle (see its docstring) but is no longer the source.
+``legal_surface.delegation_edge_adapter.extract_delegations_canonical``. This is
+the SHARED source for every offline delegation producer — the StatuteGraph paths
+here AND the default lightweight ``lawvm build`` worker
+(:func:`lawvm.tools.build._worker_fn`) — so both build paths emit identical
+delegation sets for the same corpus. The legacy nine-regex
+``delegation.extract_delegations`` is retained as a typed residue / cross-check
+oracle (see its docstring) but is no longer the source on any path.
 
 Entry points used by core/graph.py dispatch:
     build_statute_graph_fi(sid)             -> StatuteGraph  (with timelines)
     build_statute_graph_fi_lightweight(sid) -> StatuteGraph  (no timelines)
 
 Entry points used by tools/build.py:
-    build_statute_graph_fi            (same as above)
+    build_statute_graph_fi            (--with-timelines path)
+    delegation_edge_adapter.extract_delegations_canonical  (default lightweight
+        _worker_fn delegation source — same canonical source as above)
 """
 from __future__ import annotations
 

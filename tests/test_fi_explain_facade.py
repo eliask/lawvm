@@ -415,7 +415,7 @@ class TestPrintCompileSummary:
                 },
             ),
             source_adjudication=None,
-            strict_fail_reasons=list(facade.to_wire_artifact().status.blockers or []),
+            strict_fail_reasons=list(facade.to_wire_artifact().processing_status.blockers or []),
         )
         out = _capture_compile_summary(report_record=report_record)
 
@@ -471,7 +471,7 @@ class TestPrintCompileSummary:
                     "detail": {"diagnostic_reason": "partial_body_only"},
                 },
             ),
-            strict_fail_reasons=list(facade.to_wire_artifact().status.blockers or []),
+            strict_fail_reasons=list(facade.to_wire_artifact().processing_status.blockers or []),
         )
         out = _capture_compile_summary(report_record=report_record)
 
@@ -592,6 +592,95 @@ def test_explain_diagnose_does_not_treat_substantive_high_similarity_as_editoria
     assert "different content" in explanation
 
 
+def test_explain_diagnose_treats_source_projection_residue_as_editorial() -> None:
+    replay = (
+        "26 § Tämä laki tulee voimaan 1 päivänä tammikuuta 1923. "
+        "Tätä kaikki asianomaiset noudattakoot."
+    )
+    oracle = "26 § Tämä laki tulee voimaan 1 päivänä tammikuuta 1923."
+
+    diagnosis, explanation = _diagnose(replay, oracle, None)
+
+    assert diagnosis == "EDITORIAL_CONVENTION"
+    assert "source heading/promulgation residue" in explanation
+
+
+def test_explain_diagnose_treats_numbered_source_heading_residue_as_editorial() -> None:
+    replay = (
+        "67 § 2. Vekselinjäljennökset. Jokaisella vekselin haltijalla on "
+        "oikeus ottaa siitä jäljennöksiä."
+    )
+    oracle = "67 § Jokaisella vekselin haltijalla on oikeus ottaa siitä jäljennöksiä."
+
+    diagnosis, explanation = _diagnose(replay, oracle, None)
+
+    assert diagnosis == "EDITORIAL_CONVENTION"
+    assert "source heading/promulgation residue" in explanation
+
+
+def test_explain_diagnose_treats_oracle_subsection_ordinals_as_editorial() -> None:
+    replay = (
+        "5 § Ajoneuvon, järjestelmän, osan tai teknisen yksikön valmistaja ja valmistajan edustaja "
+        "Ajoneuvon valmistajalla tarkoitetaan valmistajaa. "
+        "Ajoneuvovalmistajan edustajalla tarkoitetaan edustajaa. "
+        "Piensarjatyyppikatsastuksessa valmistajaksi rinnastetaan muuttaja."
+    )
+    oracle = (
+        "5 § Ajoneuvon, järjestelmän, osan tai teknisen yksikön valmistaja ja valmistajan edustaja "
+        "1. Ajoneuvon valmistajalla tarkoitetaan valmistajaa. "
+        "2. Ajoneuvovalmistajan edustajalla tarkoitetaan edustajaa. "
+        "3. Piensarjatyyppikatsastuksessa valmistajaksi rinnastetaan muuttaja."
+    )
+
+    diagnosis, explanation = _diagnose(replay, oracle, None)
+
+    assert diagnosis == "EDITORIAL_CONVENTION"
+    assert "subsection ordinal prefixes" in explanation
+
+
+def test_explain_diagnose_treats_blame_owned_extra_insert_as_oracle_stale() -> None:
+    replay = (
+        "12 b § Tavarankuljetustukea voidaan myöntää. "
+        "Asetuksella annetaan tarkempia säännöksiä ehdoista."
+    )
+    oracle = "12 b § Tavarankuljetustukea voidaan myöntää."
+
+    diagnosis, explanation = _diagnose(
+        replay,
+        oracle,
+        {"action": "insert", "source_statute": "1981/935"},
+    )
+
+    assert diagnosis == "ORACLE_STALE"
+    assert "1981/935" in explanation
+
+
+def test_explain_source_pathology_demotes_absent_subsection_target() -> None:
+    master = SimpleNamespace(
+        findings=(),
+        source_pathology_rows=lambda: [
+            {
+                "source_statute": "1975/10",
+                "code": "SUBSECTION_TARGET_ABSENT",
+                "target_label": "7 § 2 mom",
+                "detail": {"target_section": "7", "target_paragraph": "2"},
+            }
+        ],
+    )
+    blame_op = {
+        "source_statute": "1975/10",
+        "target_norm": "7",
+        "target_paragraph": "2",
+    }
+
+    result = _source_pathology_diagnosis_for_blame(master, blame_op)
+    assert result is not None
+    diagnosis, explanation = result
+
+    assert diagnosis == "SOURCE_PATHOLOGY"
+    assert "SUBSECTION_TARGET_ABSENT" in explanation
+
+
 @pytest.mark.slow
 def test_explain_sync_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -> None:
     _explain_sync(
@@ -691,6 +780,36 @@ def test_diagnose_treats_same_section_oracle_duplicate_sentence_as_oracle_stale(
     assert "duplicates one same-section sentence fragment" in explanation
 
 
+def test_diagnose_treats_blamed_tiny_source_text_corruption_as_source_pathology() -> None:
+    replay = (
+        "7 § Palvelujen kehittäminen ja kasvatuksen tukeminen "
+        "Kunnan on sosiaali- ja terveydenhuoltoa, koulutointa sekä muita "
+        "lapsille, nuorille ja lapsiperheille tarkoitettuja palveluja "
+        "kehittäessään pidettävä huolta myös siitä> että näiden palvelujen "
+        "avulla tuetaan huoltajia lasten kasvatuksessa. Kun aikuiselle "
+        "annetaan sosiaali- ja terveydenhuollon, kuten päilidehuolto- ja "
+        "mielenterveyspalveluja, on otettava huomioon myös lapsen tuen tarve."
+    )
+    oracle = (
+        "7 § Palvelujen kehittäminen ja kasvatuksen tukeminen (9.2.1990/139) "
+        "Kunnan on sosiaali- ja terveydenhuoltoa, koulutointa sekä muita "
+        "lapsille, nuorille ja lapsiperheille tarkoitettuja palveluja "
+        "kehittäessään pidettävä huolta myös siitä, että näiden palvelujen "
+        "avulla tuetaan huoltajia lasten kasvatuksessa. Kun aikuiselle "
+        "annetaan sosiaali- ja terveydenhuollon, kuten päihdehuolto- ja "
+        "mielenterveyspalveluja, on otettava huomioon myös lapsen tuen tarve."
+    )
+
+    diagnosis, explanation = _diagnose(
+        replay,
+        oracle,
+        {"action": "insert", "source_statute": "1990/139"},
+    )
+
+    assert diagnosis == "SOURCE_PATHOLOGY"
+    assert "one witness is corrupted" in explanation
+
+
 def test_explain_sync_classifies_repeal_banner_missing_section_as_oracle_stale_for_2016_768(
     capsys,
 ) -> None:
@@ -774,6 +893,32 @@ def test_source_pathology_demotion_fires_when_chapter_matches_blame() -> None:
 
     assert result is not None
     assert result[0] == "SOURCE_PATHOLOGY"
+
+
+def test_source_pathology_demotion_fires_for_section_level_destructive_shape_loss() -> None:
+    master = SimpleNamespace(
+        findings=(),
+        source_pathology_rows=lambda: [
+            {
+                "source_statute": "2000/882",
+                "code": "DESTRUCTIVE_SHAPE_LOSS_RISK",
+                "target_unit_kind": "section",
+                "target_label": "1",
+                "detail": {},
+            }
+        ],
+    )
+    blame_op = {
+        "source_statute": "2000/882",
+        "target_norm": "1",
+        "target_unit_kind": "section",
+    }
+
+    result = _source_pathology_diagnosis_for_blame(master, blame_op)
+
+    assert result is not None
+    assert result[0] == "SOURCE_PATHOLOGY"
+    assert "DESTRUCTIVE_SHAPE_LOSS_RISK" in result[1]
 
 
 def test_source_pathology_demotion_skips_pathology_in_other_chapter() -> None:

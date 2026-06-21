@@ -164,12 +164,12 @@ def test_johtolause_extraction_full(cap: AmendmentCapture) -> None:
 # ---------------------------------------------------------------------------
 # Test 2: extract_legal_ops(preamble_normalized) matches captured peg_ops
 #
-# Only runs when extraction_path == "peg" — other paths (fallback_heuristic,
-# title_fallback, sec1) are not produced by extract_legal_ops.
+# Only runs when extraction_path == "grammar" — other paths (fallback_heuristic,
+# title_fallback, preamble_body) are not produced by extract_legal_ops.
 # ---------------------------------------------------------------------------
 
-_FAST_PEG_CAPTURES = [c for c in _FAST_CAPTURES if c.extraction_path == "peg"]
-_ALL_PEG_CAPTURES  = [c for c in _ALL_CAPTURES  if c.extraction_path == "peg"]
+_FAST_PEG_CAPTURES = [c for c in _FAST_CAPTURES if c.extraction_path == "grammar"]
+_ALL_PEG_CAPTURES  = [c for c in _ALL_CAPTURES  if c.extraction_path == "grammar"]
 
 
 @pytest.mark.parametrize("cap", _FAST_PEG_CAPTURES, ids=_capture_id)
@@ -253,11 +253,11 @@ def _whole_section_repeal_labels(peg_ops: list[dict]) -> set[str]:
 
 _FAST_REPEAL_CAPTURES = [
     c for c in _FAST_CAPTURES
-    if c.extraction_path == "peg" and _whole_section_repeal_labels(c.peg_ops)
+    if c.extraction_path == "grammar" and _whole_section_repeal_labels(c.peg_ops)
 ]
 _ALL_REPEAL_CAPTURES  = [
     c for c in _ALL_CAPTURES
-    if c.extraction_path == "peg" and _whole_section_repeal_labels(c.peg_ops)
+    if c.extraction_path == "grammar" and _whole_section_repeal_labels(c.peg_ops)
 ]
 
 

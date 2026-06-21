@@ -19,11 +19,17 @@ from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
     EffectRef,
     EffectRelation,
+    EffectRelationTargetResolution,
     SourceInstrumentRef,
     SourceProvisionRef,
+    append_unique_effect_lifecycle_event,
+    append_unique_effect_ref,
+    append_unique_effect_relation,
+    effect_graph_wire,
+    lower_lifecycle_events_to_temporal_events,
 )
 from lawvm.core.compile_result import (
-    AdmissibleBindingCertificate,
+    AdmissibleBindingCoverage,
     CanonicalBundle,
     CanonicalEffect,
     CompiledOpEvidenceRow,
@@ -59,6 +65,7 @@ from lawvm.core.ir import (
     StructuralAction,
 )
 from lawvm.core.provenance import MigrationEvent
+from lawvm.core.semantic_types import FacetKind
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
 from lawvm.core.target_scope import normalize_target_unit_kind
 
@@ -161,6 +168,14 @@ def test_effect_relation_requires_source_witness_and_target_identifier() -> None
             kind="extends_effect_expiry",
             source_provision=witness,
         )
+    with pytest.raises(ValueError, match="exactly one target endpoint"):
+        EffectRelation(
+            relation_id="rel:both",
+            kind="extends_effect_expiry",
+            source_provision=witness,
+            target_effect=EffectRef(effect_id="effect:target", source_instrument=instrument),
+            target_instrument=SourceInstrumentRef(instrument_id="2019/1"),
+        )
 
     relation = EffectRelation(
         relation_id="rel:2",
@@ -174,9 +189,599 @@ def test_effect_relation_requires_source_witness_and_target_identifier() -> None
     assert relation.target_instrument.instrument_id == "2019/1"
 
 
+def test_effect_source_refs_reject_untyped_identity_fields() -> None:
+    with pytest.raises(TypeError, match="instrument_id"):
+        SourceInstrumentRef(instrument_id=cast(Any, 2020))
+    with pytest.raises(TypeError, match="title"):
+        SourceInstrumentRef(instrument_id="2020/1", title=cast(Any, object()))
+
+    instrument = SourceInstrumentRef(instrument_id=" 2020/1 ")
+    assert instrument.instrument_id == "2020/1"
+
+    with pytest.raises(TypeError, match="path"):
+        SourceProvisionRef(instrument=instrument, path=cast(Any, (1,)))
+    with pytest.raises(TypeError, match="span_id"):
+        SourceProvisionRef(instrument=instrument, span_id=cast(Any, object()))
+    with pytest.raises(TypeError, match="text_excerpt"):
+        SourceProvisionRef(instrument=instrument, text_excerpt=cast(Any, object()))
+
+    witness = SourceProvisionRef(
+        instrument=instrument,
+        path=(" 1 § ",),
+        text_excerpt="  exact witness text  ",
+    )
+    assert witness.path == ("1 §",)
+    assert witness.text_excerpt == "  exact witness text  "
+
+
+def test_effect_lifecycle_carriers_reject_untyped_identity_fields() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id=" effect:1 ", source_instrument=instrument)
+
+    assert effect.effect_id == "effect:1"
+
+    with pytest.raises(TypeError, match="effect_id"):
+        EffectRef(effect_id=cast(Any, 1), source_instrument=instrument)
+    with pytest.raises(TypeError, match="target_statute"):
+        EffectRef(
+            effect_id="effect:target",
+            source_instrument=instrument,
+            target_statute=cast(Any, object()),
+        )
+    with pytest.raises(TypeError, match="projection_group_id"):
+        EffectRef(
+            effect_id="effect:group",
+            source_instrument=instrument,
+            projection_group_id=cast(Any, object()),
+        )
+
+    relation = EffectRelation(
+        relation_id=" relation:1 ",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    assert relation.relation_id == "relation:1"
+
+    with pytest.raises(TypeError, match="relation_id"):
+        EffectRelation(
+            relation_id=cast(Any, 1),
+            kind="extends_effect_expiry",
+            source_provision=witness,
+            target_effect=effect,
+        )
+
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id=" lifecycle:1 ",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires=" 2021-12-31 ",
+        intended_lifecycle_kind=_runtime_input(" change_effect_expiry "),
+        intended_relation_kind=_runtime_input(" extends_effect_expiry "),
+    )
+    assert lifecycle.lifecycle_event_id == "lifecycle:1"
+    assert lifecycle.expires == "2021-12-31"
+    assert lifecycle.intended_lifecycle_kind == "change_effect_expiry"
+    assert lifecycle.intended_relation_kind == "extends_effect_expiry"
+
+    with pytest.raises(TypeError, match="lifecycle_event_id"):
+        EffectLifecycleEvent(
+            lifecycle_event_id=cast(Any, 1),
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2021-12-31",
+        )
+    with pytest.raises(TypeError, match="effective"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:bad-effective",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            effective=cast(Any, object()),
+            expires="2021-12-31",
+        )
+    with pytest.raises(TypeError, match="executable"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:bad-executable",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2021-12-31",
+            executable=cast(Any, "true"),
+        )
+    with pytest.raises(ValueError, match="intended_lifecycle_kind"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:bad-intended-kind",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2021-12-31",
+            intended_lifecycle_kind=cast(Any, "not-a-lifecycle-kind"),
+        )
+    with pytest.raises(ValueError, match="intended_relation_kind"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:bad-intended-relation",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2021-12-31",
+            intended_relation_kind=cast(Any, "not-a-relation-kind"),
+        )
+
+
+def test_effect_lifecycle_detail_requires_string_keyed_mappings() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+
+    with pytest.raises(TypeError, match="EffectRelation.detail"):
+        EffectRelation(
+            relation_id="relation:bad-detail",
+            kind="extends_effect_expiry",
+            source_provision=witness,
+            target_effect=effect,
+            detail=cast(Any, (("reason", "not-a-mapping"),)),
+        )
+    with pytest.raises(TypeError, match="keys must be strings"):
+        EffectRelation(
+            relation_id="relation:bad-key",
+            kind="extends_effect_expiry",
+            source_provision=witness,
+            target_effect=effect,
+            detail=cast(Any, {1: "not-a-string-key"}),
+        )
+
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    with pytest.raises(TypeError, match="keys must be strings"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:bad-nested-key",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2021-12-31",
+            detail=cast(Any, {"rows": [{1: "not-a-string-key"}]}),
+        )
+
+
+def test_effect_relation_target_resolution_is_typed_and_endpoint_consistent() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument)
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+
+    resolved = EffectRelation(
+        relation_id="relation:effect",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    assert resolved.target_resolution is not None
+    assert resolved.target_resolution.kind == "target_effect_resolved"
+    assert resolved.target_resolution.matched_effect_count == 1
+
+    ambiguous = EffectRelation(
+        relation_id="relation:ambiguous",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_instrument=instrument,
+        target_resolution=EffectRelationTargetResolution(
+            kind="ambiguous_multiple_effects",
+            matched_effect_count=2,
+            non_executable_reason="multiple source effects match",
+        ),
+    )
+    assert ambiguous.target_resolution is not None
+    assert ambiguous.target_resolution.kind == "ambiguous_multiple_effects"
+    assert ambiguous.target_resolution.non_executable_reason == "multiple source effects match"
+
+    with pytest.raises(ValueError, match="at least two matched effects"):
+        EffectRelationTargetResolution(kind="ambiguous_multiple_effects", matched_effect_count=1)
+    with pytest.raises(ValueError, match="target_effect requires target_effect_resolved"):
+        EffectRelation(
+            relation_id="relation:mismatch",
+            kind="modifies_effect",
+            source_provision=witness,
+            target_effect=effect,
+            target_resolution=EffectRelationTargetResolution(kind="target_instrument_only"),
+        )
+
+
 def test_canonical_bundle_requires_source_effect_records() -> None:
     with pytest.raises(TypeError, match="source_effects"):
         CanonicalBundle(source_effects=cast(Any, ("not-an-effect",)))
+
+
+def test_canonical_bundle_requires_temporal_event_records_and_normalizes_sequence() -> None:
+    temporal = TemporalEvent(
+        event_id="temporal:1",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-01-01",
+    )
+    bundle = CanonicalBundle(temporal_events=cast(Any, [temporal]))
+
+    assert bundle.temporal_events == (temporal,)
+    with pytest.raises(TypeError, match="temporal_events"):
+        CanonicalBundle(temporal_events=cast(Any, ("not-a-temporal-event",)))
+
+
+def test_canonical_bundle_rejects_duplicate_effect_graph_ids() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect_a = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    effect_b = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    target_effect = EffectRef(effect_id="effect:target", source_instrument=instrument)
+    relation_a = EffectRelation(
+        relation_id="relation:1",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    relation_b = EffectRelation(
+        relation_id="relation:1",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    lifecycle_a = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        executable=False,
+    )
+    lifecycle_b = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        executable=False,
+    )
+
+    with pytest.raises(ValueError, match="duplicate effect_id"):
+        CanonicalBundle(source_effects=(effect_a, effect_b))
+    with pytest.raises(ValueError, match="duplicate relation_id"):
+        CanonicalBundle(effect_relations=(relation_a, relation_b))
+    with pytest.raises(ValueError, match="duplicate lifecycle_event_id"):
+        CanonicalBundle(effect_lifecycle_events=(lifecycle_a, lifecycle_b))
+
+
+def test_canonical_bundle_requires_closed_effect_graph() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2021-01-01",
+    )
+
+    with pytest.raises(ValueError, match="missing target_effect"):
+        CanonicalBundle(effect_relations=(relation,))
+    with pytest.raises(ValueError, match="missing relation"):
+        CanonicalBundle(
+            source_effects=(effect,),
+            effect_lifecycle_events=(lifecycle,),
+        )
+
+
+def test_canonical_bundle_rejects_stale_effect_graph_endpoint_records() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    graph_effect = EffectRef(
+        effect_id="effect:1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    stale_effect = EffectRef(
+        effect_id="effect:1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "2"),)),
+    )
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=stale_effect,
+    )
+    graph_relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=graph_effect,
+    )
+    relation_with_detail = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=graph_effect,
+        detail={"note": "stale"},
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=graph_effect,
+        relation=relation_with_detail,
+        expires="2021-01-01",
+    )
+
+    with pytest.raises(ValueError, match="target_effect differs from graph effect"):
+        CanonicalBundle(
+            source_effects=(graph_effect,),
+            effect_relations=(relation,),
+        )
+    with pytest.raises(ValueError, match="relation differs from graph relation"):
+        CanonicalBundle(
+            source_effects=(graph_effect,),
+            effect_relations=(graph_relation,),
+            effect_lifecycle_events=(lifecycle,),
+        )
+
+
+def test_effect_graph_merge_helpers_reject_untyped_records() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(
+        effect_id="effect:1",
+        source_instrument=instrument,
+        source_provision=witness,
+    )
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        executable=False,
+    )
+
+    with pytest.raises(TypeError, match="EffectRef"):
+        append_unique_effect_ref([], cast(Any, "effect:1"), subject="test source effects")
+    with pytest.raises(TypeError, match="EffectRelation"):
+        append_unique_effect_relation([], cast(Any, "relation:1"), subject="test relations")
+    with pytest.raises(TypeError, match="EffectLifecycleEvent"):
+        append_unique_effect_lifecycle_event([], cast(Any, "event:1"), subject="test lifecycle")
+
+    with pytest.raises(TypeError, match="EffectRef"):
+        append_unique_effect_ref(
+            cast(Any, ["effect:old"]),
+            effect,
+            subject="test source effects",
+        )
+    with pytest.raises(TypeError, match="EffectRelation"):
+        append_unique_effect_relation(
+            cast(Any, ["relation:old"]),
+            relation,
+            subject="test relations",
+        )
+    with pytest.raises(TypeError, match="EffectLifecycleEvent"):
+        append_unique_effect_lifecycle_event(
+            cast(Any, ["event:old"]),
+            lifecycle,
+            subject="test lifecycle",
+        )
+
+
+def test_effect_graph_wire_projects_typed_lifecycle_graph() -> None:
+    instrument = SourceInstrumentRef(
+        instrument_id="2024/1",
+        title="Amending Act",
+        enacted="2024-01-01",
+        effective="2024-02-01",
+    )
+    witness = SourceProvisionRef(
+        instrument=instrument,
+        path=("1", "2"),
+        span_id="s-1",
+        text_excerpt="Effect witness",
+        rule_id="test.effect_graph_wire",
+    )
+    effect = EffectRef(
+        effect_id="effect:2024/1:op-1",
+        source_instrument=instrument,
+        target_statute="1991/1",
+        target_address=LegalAddress(path=(("section", "4 a"),), special=FacetKind.HEADING),
+        projection_group_id="g:2024/1:op-1",
+        source_provision=witness,
+    )
+    relation = EffectRelation(
+        relation_id="relation:2024/1:op-1",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=effect,
+        detail={"source_finding": "APPLY.META_REPEAL_EFFECT_RECORDED"},
+    )
+    temporal = TemporalEvent(
+        event_id="temporal:relation:2024/1:op-1",
+        kind="expire",
+        scope=TemporalScope(
+            target_statute="1991/1",
+            exact_addresses=(
+                LegalAddress(path=(("section", "4 a"),), special=FacetKind.HEADING),
+            ),
+        ),
+        expires="2024-02-01",
+        group_id="g:2024/1:op-1",
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:2024/1:op-1:repeal",
+        kind="repeal_effect",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2024-02-01",
+        temporal_event=temporal,
+        executable=True,
+        detail={"projection": "effect_relation_signal"},
+    )
+
+    payload = effect_graph_wire(
+        source_effects=(effect,),
+        effect_relations=(relation,),
+        effect_lifecycle_events=(lifecycle,),
+        detail_converter=lambda detail: {"converted": tuple(sorted(detail))},
+    )
+
+    assert payload == {
+        "source_effects": (
+            {
+                "effect_id": "effect:2024/1:op-1",
+                "source_instrument": {
+                    "instrument_id": "2024/1",
+                    "title": "Amending Act",
+                    "enacted": "2024-01-01",
+                    "effective": "2024-02-01",
+                    "expires": "",
+                },
+                "target_statute": "1991/1",
+                "target_address": {
+                    "path": ({"kind": "section", "label": "4 a"},),
+                    "special": "heading",
+                },
+                "projection_group_id": "g:2024/1:op-1",
+                "source_provision": {
+                    "instrument": {
+                        "instrument_id": "2024/1",
+                        "title": "Amending Act",
+                        "enacted": "2024-01-01",
+                        "effective": "2024-02-01",
+                        "expires": "",
+                    },
+                    "path": ("1", "2"),
+                    "span_id": "s-1",
+                    "text_excerpt": "Effect witness",
+                    "rule_id": "test.effect_graph_wire",
+                    "witness_id": "2024/1:1/2",
+                },
+            },
+        ),
+        "effect_relations": (
+            {
+                "relation_id": "relation:2024/1:op-1",
+                "kind": "repeals_effect",
+                "source_provision": {
+                    "instrument": {
+                        "instrument_id": "2024/1",
+                        "title": "Amending Act",
+                        "enacted": "2024-01-01",
+                        "effective": "2024-02-01",
+                        "expires": "",
+                    },
+                    "path": ("1", "2"),
+                    "span_id": "s-1",
+                    "text_excerpt": "Effect witness",
+                    "rule_id": "test.effect_graph_wire",
+                    "witness_id": "2024/1:1/2",
+                },
+                "target_effect_id": "effect:2024/1:op-1",
+                "target_instrument": None,
+                "source_effect_id": "",
+                "target_resolution": {
+                    "kind": "target_effect_resolved",
+                    "matched_effect_count": 1,
+                    "non_executable_reason": "",
+                },
+                "detail": {"converted": ("source_finding",)},
+            },
+        ),
+        "effect_lifecycle_events": (
+            {
+                "lifecycle_event_id": "lifecycle:2024/1:op-1:repeal",
+                "kind": "repeal_effect",
+                "source_provision": {
+                    "instrument": {
+                        "instrument_id": "2024/1",
+                        "title": "Amending Act",
+                        "enacted": "2024-01-01",
+                        "effective": "2024-02-01",
+                        "expires": "",
+                    },
+                    "path": ("1", "2"),
+                    "span_id": "s-1",
+                    "text_excerpt": "Effect witness",
+                    "rule_id": "test.effect_graph_wire",
+                    "witness_id": "2024/1:1/2",
+                },
+                "effect_id": "effect:2024/1:op-1",
+                "relation_id": "relation:2024/1:op-1",
+                "effective": "",
+                "expires": "2024-02-01",
+                "expiry_convention": "exclusive_cutoff",
+                "temporal_event": {
+                    "event_id": "temporal:relation:2024/1:op-1",
+                    "kind": "expire",
+                    "effective": "",
+                    "expires": "2024-02-01",
+                    "group_id": "g:2024/1:op-1",
+                },
+                "executable": True,
+                "intended_lifecycle_kind": "",
+                "intended_relation_kind": "",
+                "detail": {"converted": ("projection",)},
+            },
+        ),
+    }
+
+
+def test_effect_graph_wire_requires_closed_graph() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id="effect:2024/1:op-1", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:2024/1:op-1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:2024/1:op-1:expiry",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2024-12-31",
+    )
+
+    with pytest.raises(ValueError, match="references missing target_effect"):
+        effect_graph_wire(
+            source_effects=(),
+            effect_relations=(relation,),
+            effect_lifecycle_events=(),
+        )
+    with pytest.raises(ValueError, match="references missing relation"):
+        effect_graph_wire(
+            source_effects=(effect,),
+            effect_relations=(),
+            effect_lifecycle_events=(lifecycle,),
+        )
 
 
 def test_unresolved_effect_lifecycle_event_cannot_emit_executable_projection() -> None:
@@ -192,6 +797,73 @@ def test_unresolved_effect_lifecycle_event_cannot_emit_executable_projection() -
     assert bundle.lifecycle_projected_temporal_events == ()
 
 
+def test_unresolved_effect_lifecycle_event_cannot_smuggle_resolved_target() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument)
+    target_effect = EffectRef(effect_id="effect:target", source_instrument=instrument)
+
+    with pytest.raises(ValueError, match="cannot name effect"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:effect",
+            kind="unresolved_effect_target",
+            source_provision=witness,
+            effect=target_effect,
+            executable=False,
+        )
+
+    with pytest.raises(ValueError, match="relation cannot name target_effect"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:relation",
+            kind="unresolved_effect_target",
+            source_provision=witness,
+            relation=EffectRelation(
+                relation_id="relation:resolved",
+                kind="modifies_effect",
+                source_provision=witness,
+                target_effect=target_effect,
+            ),
+            executable=False,
+        )
+
+
+def test_lifecycle_event_relation_requires_supported_kind_and_same_source_witness() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    other_witness = SourceProvisionRef(instrument=instrument, path=("2",))
+    effect = EffectRef(effect_id="effect:target", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:resolved",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    unresolved_relation = EffectRelation(
+        relation_id="relation:unresolved",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_instrument=instrument,
+    )
+
+    with pytest.raises(ValueError, match="relation is only supported"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:commence-relation",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            effective="2020-01-01",
+        )
+
+    with pytest.raises(ValueError, match="source_provision must match relation source_provision"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:unresolved-source-mismatch",
+            kind="unresolved_effect_target",
+            source_provision=other_witness,
+            relation=unresolved_relation,
+            executable=False,
+        )
+
+
 def test_resolved_effect_lifecycle_event_requires_target_effect() -> None:
     instrument = SourceInstrumentRef(instrument_id="2020/1")
 
@@ -201,6 +873,104 @@ def test_resolved_effect_lifecycle_event_requires_target_effect() -> None:
             kind="change_effect_expiry",
             source_provision=SourceProvisionRef(instrument=instrument),
             executable=False,
+        )
+
+
+def test_executable_expiry_lifecycle_event_requires_resolved_date() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument)
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=effect,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="executable expiry/repeal EffectLifecycleEvent requires effective or expires date",
+    ):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:1",
+            kind="repeal_effect",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            executable=True,
+        )
+
+
+def test_effect_modifying_lifecycle_event_requires_relation() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument)
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+
+    with pytest.raises(
+        ValueError,
+        match="effect-modifying EffectLifecycleEvent requires EffectRelation",
+    ):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:1",
+            kind="change_effect_commencement",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-01-01",
+        )
+
+
+def test_effect_modifying_lifecycle_event_relation_must_match_event() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    other_witness = SourceProvisionRef(instrument=instrument, path=("2",))
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    other_effect = EffectRef(effect_id="effect:2", source_instrument=instrument)
+    matching_relation = EffectRelation(
+        relation_id="relation:1",
+        kind="changes_effect_commencement",
+        source_provision=witness,
+        target_effect=effect,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="relation kind must be 'changes_effect_commencement'",
+    ):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-kind",
+            kind="change_effect_commencement",
+            source_provision=witness,
+            effect=effect,
+            relation=EffectRelation(
+                relation_id="relation:wrong-kind",
+                kind="extends_effect_expiry",
+                source_provision=witness,
+                target_effect=effect,
+            ),
+            effective="2020-01-01",
+        )
+    with pytest.raises(ValueError, match="relation target must match event effect"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-target",
+            kind="change_effect_commencement",
+            source_provision=witness,
+            effect=effect,
+            relation=EffectRelation(
+                relation_id="relation:wrong-target",
+                kind="changes_effect_commencement",
+                source_provision=witness,
+                target_effect=other_effect,
+            ),
+            effective="2020-01-01",
+        )
+    with pytest.raises(ValueError, match="source_provision must match relation source_provision"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-source",
+            kind="change_effect_commencement",
+            source_provision=other_witness,
+            effect=effect,
+            relation=matching_relation,
+            effective="2020-01-01",
         )
 
 
@@ -264,7 +1034,10 @@ def test_effect_lifecycle_event_lowers_to_temporal_event_semantics() -> None:
         effect=effect,
         effective="2020-06-01",
     )
-    bundle = CanonicalBundle(effect_lifecycle_events=(event,))
+    bundle = CanonicalBundle(
+        source_effects=(effect,),
+        effect_lifecycle_events=(event,),
+    )
 
     (temporal_event,) = bundle.lifecycle_projected_temporal_events
     assert temporal_event.kind == "commence"
@@ -285,24 +1058,208 @@ def test_canonical_bundle_executable_temporal_events_dedupes_lifecycle_projectio
     )
     instrument = SourceInstrumentRef(instrument_id="2020/1", effective="2020-06-01")
     witness = SourceProvisionRef(instrument=instrument, path=("2 §",))
+    effect = EffectRef(
+        effect_id="effect:2020/1:op-1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        source_provision=witness,
+    )
     lifecycle = EffectLifecycleEvent(
         lifecycle_event_id="life:2020/1:op-1:commence",
         kind="commence_effect",
         source_provision=witness,
-        effect=EffectRef(
-            effect_id="effect:2020/1:op-1",
-            source_instrument=instrument,
-            target_statute="1999/1",
-            source_provision=witness,
-        ),
+        effect=effect,
         effective="2020-06-01",
+        temporal_event=direct,
     )
     bundle = CanonicalBundle(
         temporal_events=(direct,),
+        source_effects=(effect,),
         effect_lifecycle_events=(lifecycle,),
     )
 
     assert bundle.executable_temporal_events == (direct,)
+
+
+def test_lifecycle_event_temporal_projection_must_match_lifecycle_semantics() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1", effective="2020-06-01")
+    witness = SourceProvisionRef(instrument=instrument, path=("2 §",))
+    effect = EffectRef(
+        effect_id="effect:2020/1:op-1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        source_provision=witness,
+    )
+
+    with pytest.raises(ValueError, match="temporal_event kind must match"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-kind",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-06-01",
+            temporal_event=TemporalEvent(
+                event_id="life:wrong-kind:temporal",
+                kind="expire",
+                scope=TemporalScope(
+                    target_statute="1999/1",
+                    exact_addresses=(LegalAddress(path=(("section", "1"),)),),
+                ),
+                expires="2020-06-01",
+            ),
+        )
+
+    with pytest.raises(ValueError, match="effective date must match"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-effective",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-06-01",
+            temporal_event=TemporalEvent(
+                event_id="life:wrong-effective:temporal",
+                kind="commence",
+                scope=TemporalScope(
+                    target_statute="1999/1",
+                    exact_addresses=(LegalAddress(path=(("section", "1"),)),),
+                ),
+                effective="2020-07-01",
+            ),
+        )
+
+    with pytest.raises(ValueError, match="exact address scope must match"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-scope",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-06-01",
+            temporal_event=TemporalEvent(
+                event_id="life:wrong-scope:temporal",
+                kind="commence",
+                scope=TemporalScope(
+                    target_statute="1999/1",
+                    exact_addresses=(LegalAddress(path=(("section", "2"),)),),
+                ),
+                effective="2020-06-01",
+            ),
+        )
+
+    with pytest.raises(ValueError, match="non-executable EffectLifecycleEvent"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:non-executable-temporal",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-06-01",
+            executable=False,
+            temporal_event=TemporalEvent(
+                event_id="life:non-executable-temporal:temporal",
+                kind="commence",
+                scope=TemporalScope(
+                    target_statute="1999/1",
+                    exact_addresses=(LegalAddress(path=(("section", "1"),)),),
+                ),
+                effective="2020-06-01",
+            ),
+        )
+
+
+def test_lifecycle_expiry_temporal_projection_matches_inclusive_expiry_convention() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("2 §",))
+    effect = EffectRef(
+        effect_id="effect:2020/1:op-1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        source_provision=witness,
+    )
+    relation = EffectRelation(
+        relation_id="relation:2020/1:op-1:expiry",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="life:expiry",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2020-12-31",
+        expiry_convention="inclusive_valid_until",
+        temporal_event=TemporalEvent(
+            event_id="life:expiry:temporal",
+            kind="expire",
+            scope=TemporalScope(
+                target_statute="1999/1",
+                exact_addresses=(LegalAddress(path=(("section", "1"),)),),
+            ),
+            expires="2021-01-01",
+        ),
+    )
+
+    assert lifecycle.temporal_event is not None
+    assert lifecycle.temporal_event.expires == "2021-01-01"
+
+    with pytest.raises(ValueError, match="expires date must match"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-expiry",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2020-12-31",
+            expiry_convention="inclusive_valid_until",
+            temporal_event=TemporalEvent(
+                event_id="life:wrong-expiry:temporal",
+                kind="expire",
+                scope=TemporalScope(
+                    target_statute="1999/1",
+                    exact_addresses=(LegalAddress(path=(("section", "1"),)),),
+                ),
+                expires="2020-12-31",
+            ),
+        )
+
+
+def test_canonical_bundle_rejects_conflicting_executable_temporal_event_ids() -> None:
+    direct = TemporalEvent(
+        event_id="life:2020/1:op-1:commence:temporal",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-06-01",
+        source=OperationSource(statute_id="2020/1", effective="2020-06-01"),
+    )
+    instrument = SourceInstrumentRef(instrument_id="2020/1", effective="2020-06-01")
+    witness = SourceProvisionRef(instrument=instrument, path=("2 §",))
+    effect = EffectRef(
+        effect_id="effect:2020/1:op-1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        source_provision=witness,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="life:2020/1:op-1:commence",
+        kind="commence_effect",
+        source_provision=witness,
+        effect=effect,
+        effective="2020-06-01",
+    )
+    with pytest.raises(ValueError, match="conflicting duplicate event_id"):
+        CanonicalBundle(
+            temporal_events=(direct,),
+            source_effects=(effect,),
+            effect_lifecycle_events=(lifecycle,),
+        )
+
+
+def test_lifecycle_event_lowering_rejects_untyped_inputs() -> None:
+    with pytest.raises(TypeError, match="EffectLifecycleEvent"):
+        lower_lifecycle_events_to_temporal_events(cast(Any, ("life:1",)))
 
 
 def test_compiled_op_provenance_tags_freeze_and_validate_tag_sets() -> None:
@@ -358,9 +1315,9 @@ def test_compiled_op_scope_witness_rejects_unrecognized_scope_source() -> None:
     ) is None
 
 
-def test_admissible_binding_certificate_rejects_count_contradictions() -> None:
+def test_admissible_binding_coverage_rejects_count_contradictions() -> None:
     assert (
-        AdmissibleBindingCertificate(
+        AdmissibleBindingCoverage(
             slot_id=1,
             amendment_id="",
             candidate_count=1,
@@ -369,14 +1326,14 @@ def test_admissible_binding_certificate_rejects_count_contradictions() -> None:
         == ""
     )
     with pytest.raises(ValueError, match="single admissibility"):
-        AdmissibleBindingCertificate(
+        AdmissibleBindingCoverage(
             slot_id=1,
             amendment_id="2024/100",
             candidate_count=2,
             admissibility="single",
         )
     with pytest.raises(ValueError, match="ambiguous admissibility"):
-        AdmissibleBindingCertificate(
+        AdmissibleBindingCoverage(
             slot_id=1,
             amendment_id="2024/100",
             candidate_count=1,
@@ -595,6 +1552,37 @@ class TestCanonicalBundleTemporalSummaries:
 
         assert bundle.temporal_events_with_source == 1
 
+    def test_temporal_summaries_include_lifecycle_projected_events(self) -> None:
+        instrument = SourceInstrumentRef(instrument_id="2020/1")
+        witness = SourceProvisionRef(
+            instrument=instrument,
+            path=("2 §",),
+            text_excerpt="Tulee voimaan 1.6.2020.",
+        )
+        effect = EffectRef(
+            effect_id="effect:2020/1:op-1",
+            source_instrument=instrument,
+            target_statute="1999/1",
+            target_address=LegalAddress(path=(("section", "1"),)),
+            source_provision=witness,
+        )
+        lifecycle = EffectLifecycleEvent(
+            lifecycle_event_id="life:2020/1:commence",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2020-06-01",
+        )
+        bundle = CanonicalBundle(
+            source_effects=(effect,),
+            effect_lifecycle_events=(lifecycle,),
+        )
+
+        assert bundle.temporal_event_kinds == ("commence",)
+        assert bundle.temporal_events_with_activation_rules == 1
+        assert bundle.temporal_events_with_source == 1
+        assert bundle.temporal_event_activation_rule_kinds == ("fixed_date",)
+
 
 class TestCompileResultTargetScopeNormalization:
     def test_normalize_target_unit_kind_prefers_neutral_vocabulary(self) -> None:
@@ -683,6 +1671,8 @@ class TestCompileResultTargetScopeNormalization:
             kind="replay_target_not_found",
             message="target missing",
             source_statute="2024/1",
+            blocking=True,
+            phase="replay",
             op_id="op-1",
         )
         assert adjudication.kind == "replay_target_not_found"

@@ -937,7 +937,7 @@ def _agreement_residual(
         jurisdiction="uk",
         agreement_surface="applied_effect_source_fragment_vs_archived_current_xml",
         family=_residual_family(review_status),
-        status=_residual_status(review_status),
+        agreement_residual_status=_residual_status(review_status),
         owner_phase="compare_oracle_classification",
         rule_id=f"uk_applied_effect_current_{review_status}",
         source_artifact_id=statute_id,
@@ -1279,7 +1279,7 @@ def _emit_json(rows: Sequence[AppliedEffectCurrentReviewRow]) -> str:
         status_counts[row.review_status] = status_counts.get(row.review_status, 0) + 1
         residual = row.agreement_residual
         family = str(residual.get("family") or "")
-        status = str(residual.get("status") or "")
+        status = str(residual.get("agreement_residual_status") or "")
         residual_family_counts[family] = residual_family_counts.get(family, 0) + 1
         residual_status_counts[status] = residual_status_counts.get(status, 0) + 1
     summary = {

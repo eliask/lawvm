@@ -40,15 +40,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping, Optional, Tuple
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
-from lawvm.core.authority import DEFAULT_ENACTED_CONTEXT
+from lawvm.core.branch_authority import DEFAULT_ENACTED_CONTEXT
 from lawvm.core.compile_metadata import build_compile_metadata
 from lawvm.core.compile_result import (
     CanonicalBundle,
     strict_fail_reasons_from_findings_and_verdict,
 )
+from lawvm.core.effect_lifecycle import effect_graph_wire
 from lawvm.core.ir import IRStatute
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.timeline import (
@@ -61,11 +62,11 @@ from lawvm.core.timeline_results import (
 )
 
 if TYPE_CHECKING:
-    from lawvm.core.authority import BranchContext
+    from lawvm.core.branch_authority import BranchContext
     from lawvm.core.compile_metadata import CompileMetadata
     from lawvm.core.compile_result import CompileVerdict, StrictProfile
     from lawvm.core.evidence_policy import EvidencePolicyRegistry
-    from lawvm.core.ir import ProvisionTimeline, ProvisionVersion, LegalAddress
+    from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
     from lawvm.core.provenance_graph import ProvenanceGraph
     from lawvm.core.timeline_results import TimelineCompilationResult
 
@@ -80,6 +81,14 @@ def _finding_sort_key(finding: Finding) -> tuple[object, ...]:
         bool(finding.blocking),
         tuple(sorted((str(k), repr(v)) for k, v in finding.detail.items())),
     )
+
+
+def _distinct(values: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(value for value in values if value))
+
+
+def _effect_detail_wire(detail: Mapping[str, Any]) -> object:
+    return to_wire_jsonable(dict(detail))
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +280,7 @@ class CompileFacade:
         )
         if compiled.issues:
             combined_issues = compiled.issues + result.issues
-            status = result.status
+            status = result.materialization_status
             statute = result.statute
             if status == "materialized" and any(issue.blocking for issue in combined_issues):
                 status = "degraded_timeline_issues"
@@ -288,7 +297,7 @@ class CompileFacade:
                     metadata=metadata,
                 )
             return MaterializationResult(
-                status=status,
+                materialization_status=status,
                 statute=statute,
                 required_dimensions=result.required_dimensions,
                 ambiguous_addresses=result.ambiguous_addresses,
@@ -372,6 +381,12 @@ class CompileFacade:
                 kind="partial",
                 blockers=blockers,
             )
+        effect_graph_payload = effect_graph_wire(
+            source_effects=self.bundle.source_effects,
+            effect_relations=self.bundle.effect_relations,
+            effect_lifecycle_events=self.bundle.effect_lifecycle_events,
+            detail_converter=_effect_detail_wire,
+        )
         return ArtifactEnvelope(
             schema="lawvm.compile_facade",
             producer=producer,
@@ -383,7 +398,11 @@ class CompileFacade:
                     "source_statute": self.bundle.source_statute,
                     "target_statute": self.bundle.target_statute,
                     "structural_ops_count": len(self.bundle.structural_ops),
-                    "temporal_events_count": len(self.bundle.temporal_events),
+                    "temporal_events_count": len(self.bundle.executable_temporal_events),
+                    "direct_temporal_events_count": len(self.bundle.temporal_events),
+                    "lifecycle_projected_temporal_events_count": len(
+                        self.bundle.lifecycle_projected_temporal_events
+                    ),
                     "temporal_event_kinds": self.temporal_event_kinds,
                     "temporal_events_with_activation_rules": self.temporal_events_with_activation_rules,
                     "temporal_events_with_source": self.temporal_events_with_source,
@@ -391,8 +410,20 @@ class CompileFacade:
                     "migration_events_count": len(self.bundle.migration_events),
                     "migration_event_kinds": self.migration_event_kinds,
                     "source_effects_count": len(self.bundle.source_effects),
+                    "source_effect_ids": tuple(effect.effect_id for effect in self.bundle.source_effects),
+                    "source_effects": effect_graph_payload["source_effects"],
                     "effect_relations_count": len(self.bundle.effect_relations),
+                    "effect_relation_ids": tuple(relation.relation_id for relation in self.bundle.effect_relations),
+                    "effect_relation_kinds": _distinct(tuple(relation.kind for relation in self.bundle.effect_relations)),
+                    "effect_relations": effect_graph_payload["effect_relations"],
                     "effect_lifecycle_events_count": len(self.bundle.effect_lifecycle_events),
+                    "effect_lifecycle_event_ids": tuple(
+                        event.lifecycle_event_id for event in self.bundle.effect_lifecycle_events
+                    ),
+                    "effect_lifecycle_event_kinds": _distinct(
+                        tuple(event.kind for event in self.bundle.effect_lifecycle_events)
+                    ),
+                    "effect_lifecycle_events": effect_graph_payload["effect_lifecycle_events"],
                     "effects_count": len(self.bundle.effects),
                     "groups_count": len(self.bundle.groups),
                     "has_source": self.bundle.source is not None,
@@ -400,7 +431,7 @@ class CompileFacade:
                 "findings": findings_payload,
                 "verdict": verdict_payload,
             },
-            status=status,
+            processing_status=status,
         )
 
     # ------------------------------------------------------------------

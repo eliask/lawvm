@@ -402,6 +402,23 @@ def test_amendment_effective_date_resolves_erikseen_lailla_from_separate_commenc
     assert witness.rule_id == "fi_separate_commencement_law_list"
 
 
+def test_decree_inline_list_resolves_deferred_commencement_for_pending_law() -> None:
+    corpus = get_corpus()
+    source = corpus.read_source("2005/493")
+    assert source is not None
+    tree = etree.fromstring(source)
+
+    result, step = _amendment_effective_date_with_step(tree)
+    witness = separate_commencement_law_witness("2005/493")
+
+    assert result == dt.date(2022, 1, 1)
+    assert step == "separate_commencement_law"
+    assert witness is not None
+    assert witness.commencement_statute_id == "2021/1324"
+    assert witness.source_provision_ref == "2021/1324/1"
+    assert witness.rule_id == "fi_separate_commencement_decree_inline_list"
+
+
 def test_statute_issue_date_prefers_signature_when_frbr_year_conflicts_with_doc_number_year() -> None:
     tree = _make_tree(
         "<meta>"

@@ -17,7 +17,7 @@ def _payload(
 ) -> dict:
     source = {"statute_id": source_amendment} if source_amendment else {}
     return {
-        "status": "selected",
+        "provision_status": "selected",
         "text": {"rendered": "3 § Test wording", "available": True},
         "version": {
             "effective": effective,

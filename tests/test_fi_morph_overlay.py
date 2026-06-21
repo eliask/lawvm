@@ -144,7 +144,103 @@ def test_morph_annotation_fail_loud_invariants() -> None:
 def test_morph_overlay_key_must_match_token_index() -> None:
     ann = MorphAnnotation(token_index=3, lemmas=("laki",), unique=True)
     with pytest.raises(ValueError):
-        MorphOverlay(source_unit_id="u", text_hash="h", annotations={5: ann})
+        MorphOverlay(
+            source_unit_id="u",
+            text_hash="h",
+            total_tokens=10,
+            analyzed_token_indices=frozenset({3, 5}),
+            vocab_fingerprint="fp",
+            annotations={5: ann},
+        )
+
+
+def test_morph_overlay_annotation_must_be_in_analyzed_set() -> None:
+    # An annotation for a token that was never analyzed is incoherent.
+    ann = MorphAnnotation(token_index=3, lemmas=("laki",), unique=True)
+    with pytest.raises(ValueError):
+        MorphOverlay(
+            source_unit_id="u",
+            text_hash="h",
+            total_tokens=10,
+            analyzed_token_indices=frozenset({0, 1}),  # 3 not analyzed
+            vocab_fingerprint="fp",
+            annotations={3: ann},
+        )
+
+
+def test_morph_overlay_analyzed_index_must_be_in_range() -> None:
+    with pytest.raises(ValueError):
+        MorphOverlay(
+            source_unit_id="u",
+            text_hash="h",
+            total_tokens=2,
+            analyzed_token_indices=frozenset({5}),  # out of [0, 2)
+            vocab_fingerprint="fp",
+            annotations={},
+        )
+
+
+def test_token_status_distinguishes_analyzed_empty_from_not_analyzed() -> None:
+    # The core finding: annotation-absence alone conflates two facts. The
+    # coverage account splits them.
+    tape = build_token_tape("u#body", "Laissa robotti.")
+    overlay = build_morph_overlay(tape)
+
+    laissa_idx = next(
+        i for i, t in enumerate(tape.tokens) if t.normalized == "laissa"
+    )
+    robotti_idx = next(
+        i for i, t in enumerate(tape.tokens) if t.normalized == "robotti"
+    )
+    # a non-word token (whitespace / punctuation) was never analyzed.
+    nonword_idx = next(
+        i for i, t in enumerate(tape.tokens) if t.category != "word"
+    )
+
+    # "laissa" -> annotated.
+    assert overlay.token_status(laissa_idx) == "annotated"
+    assert overlay.was_analyzed(laissa_idx) is True
+
+    # "robotti" -> analyzed but no known lemma (a genuine negative fact).
+    assert robotti_idx not in overlay.annotations
+    assert overlay.token_status(robotti_idx) == "analyzed_empty"
+    assert overlay.was_analyzed(robotti_idx) is True
+
+    # whitespace/punct -> never analyzed; absence carries NO lemma information.
+    assert nonword_idx not in overlay.annotations
+    assert overlay.token_status(nonword_idx) == "not_analyzed"
+    assert overlay.was_analyzed(nonword_idx) is False
+
+
+def test_coverage_account_totals_and_fingerprint() -> None:
+    tape = build_token_tape("u#body", "Laissa robotti.")
+    overlay = build_morph_overlay(tape)
+    cov = overlay.coverage()
+
+    assert cov.total_tokens == len(tape.tokens)
+    # exactly the word tokens were analyzed.
+    n_words = sum(1 for t in tape.tokens if t.category == "word")
+    assert cov.analyzed_tokens == n_words
+    # one of the two words ("laissa") was annotated, "robotti" was not.
+    assert cov.annotated_tokens == 1
+    assert 0.0 < cov.annotated_fraction < 1.0
+    # the fingerprint is the analyzer's closed-vocabulary fingerprint.
+    assert cov.vocab_fingerprint == build_lemma_index().fingerprint()
+    assert overlay.vocab_fingerprint == cov.vocab_fingerprint
+
+
+def test_vocab_fingerprint_changes_with_vocabulary() -> None:
+    # Different closed vocabularies => different fingerprints (so a consumer can
+    # detect it is reading absence against a different vocabulary).
+    default_fp = build_lemma_index().fingerprint()
+    smaller_fp = build_lemma_index(lemmas=("laki",)).fingerprint()
+    assert default_fp != smaller_fp
+    # but the fingerprint is stable for the same vocabulary.
+    assert build_lemma_index().fingerprint() == default_fp
+    assert (
+        build_lemma_index(lemmas=("laki",)).fingerprint()
+        == build_lemma_index(lemmas=("laki",)).fingerprint()
+    )
 
 
 def test_overlay_ignores_non_word_tokens() -> None:

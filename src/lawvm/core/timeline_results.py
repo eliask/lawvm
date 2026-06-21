@@ -114,7 +114,7 @@ _MATERIALIZATION_QUERY_TYPES = frozenset({"governing", "in_force"})
 
 
 @dataclass(frozen=True)
-class MaterializationCertificate:
+class MaterializationCoverage:
     """Positive certificate summarizing one PIT materialization decision."""
 
     as_of: str
@@ -126,26 +126,26 @@ class MaterializationCertificate:
 
     def __post_init__(self) -> None:
         if not isinstance(self.as_of, str) or not self.as_of:
-            raise ValueError("MaterializationCertificate.as_of must be a non-empty string")
+            raise ValueError("MaterializationCoverage.as_of must be a non-empty string")
         if self.query_type not in _MATERIALIZATION_QUERY_TYPES:
-            raise ValueError("MaterializationCertificate.query_type is not supported")
+            raise ValueError("MaterializationCoverage.query_type is not supported")
         if self.territory is not None and not isinstance(self.territory, str):
-            raise TypeError("MaterializationCertificate.territory must be a string or None")
+            raise TypeError("MaterializationCoverage.territory must be a string or None")
         if not isinstance(self.selected_address_count, int) or isinstance(
             self.selected_address_count, bool
         ):
-            raise TypeError("MaterializationCertificate.selected_address_count must be an integer")
+            raise TypeError("MaterializationCoverage.selected_address_count must be an integer")
         if not isinstance(self.ambiguous_address_count, int) or isinstance(
             self.ambiguous_address_count, bool
         ):
-            raise TypeError("MaterializationCertificate.ambiguous_address_count must be an integer")
+            raise TypeError("MaterializationCoverage.ambiguous_address_count must be an integer")
         if self.selected_address_count < 0:
-            raise ValueError("MaterializationCertificate.selected_address_count must be non-negative")
+            raise ValueError("MaterializationCoverage.selected_address_count must be non-negative")
         if self.ambiguous_address_count < 0:
-            raise ValueError("MaterializationCertificate.ambiguous_address_count must be non-negative")
+            raise ValueError("MaterializationCoverage.ambiguous_address_count must be non-negative")
         object.__setattr__(self, "required_dimensions", tuple(self.required_dimensions))
         if any(not isinstance(dimension, str) or not dimension for dimension in self.required_dimensions):
-            raise ValueError("MaterializationCertificate.required_dimensions must contain strings")
+            raise ValueError("MaterializationCoverage.required_dimensions must contain strings")
 
 
 def _address_wire_path(address: Optional[LegalAddress]) -> tuple[dict[str, str], ...]:
@@ -246,16 +246,16 @@ def timeline_issues_to_findings(issues: tuple[TimelineIssue, ...]) -> tuple[Find
 class MaterializationResult:
     """Explicit PIT materialization result with degradation metadata."""
 
-    status: MaterializationStatus
+    materialization_status: MaterializationStatus
     statute: IRStatute
     required_dimensions: tuple[str, ...] = ()
     ambiguous_addresses: tuple[LegalAddress, ...] = ()
     issues: tuple[TimelineIssue, ...] = ()
-    certificate: Optional[MaterializationCertificate] = None
+    certificate: Optional[MaterializationCoverage] = None
 
     def __post_init__(self) -> None:
-        if self.status not in _MATERIALIZATION_STATUSES:
-            raise ValueError("MaterializationResult.status is not supported")
+        if self.materialization_status not in _MATERIALIZATION_STATUSES:
+            raise ValueError("MaterializationResult.materialization_status is not supported")
         if not isinstance(self.statute, IRStatute):
             raise TypeError("MaterializationResult.statute must be IRStatute")
         object.__setattr__(self, "required_dimensions", tuple(self.required_dimensions))
@@ -268,20 +268,20 @@ class MaterializationResult:
         if any(not isinstance(issue, TimelineIssue) for issue in self.issues):
             raise TypeError("MaterializationResult.issues must contain TimelineIssue")
         if self.certificate is not None and not isinstance(
-            self.certificate, MaterializationCertificate
+            self.certificate, MaterializationCoverage
         ):
-            raise TypeError("MaterializationResult.certificate must be MaterializationCertificate or None")
+            raise TypeError("MaterializationResult.certificate must be MaterializationCoverage or None")
 
         blocking_issues = tuple(issue for issue in self.issues if issue.blocking)
-        if self.status == "materialized" and blocking_issues:
+        if self.materialization_status == "materialized" and blocking_issues:
             raise ValueError("MaterializationResult materialized status cannot carry blocking issues")
         if (
-            self.status == "degraded_missing_scope"
+            self.materialization_status == "degraded_missing_scope"
             and not self.required_dimensions
             and not self.ambiguous_addresses
         ):
             raise ValueError("MaterializationResult degraded_missing_scope requires required_dimensions")
-        if self.status == "degraded_timeline_issues" and not blocking_issues:
+        if self.materialization_status == "degraded_timeline_issues" and not blocking_issues:
             raise ValueError("MaterializationResult degraded_timeline_issues requires blocking issues")
         if self.certificate is not None:
             if self.certificate.ambiguous_address_count != len(self.ambiguous_addresses):
@@ -297,7 +297,7 @@ class MaterializationResult:
 
     @property
     def is_degraded(self) -> bool:
-        return self.status != "materialized"
+        return self.materialization_status != "materialized"
 
     def to_wire_artifact(
         self,
@@ -323,7 +323,7 @@ class MaterializationResult:
             producer=producer,
             version=version,
             payload={
-                "status": self.status,
+                "materialization_status": self.materialization_status,
                 "statute_id": self.statute.statute_id,
                 "required_dimensions": self.required_dimensions,
                 "ambiguous_addresses": tuple(
@@ -332,7 +332,7 @@ class MaterializationResult:
                 "issues": tuple(issue.to_jsonable_dict() for issue in self.issues),
                 "certificate": certificate_payload,
             },
-            status=status,
+            processing_status=status,
         )
 
 
@@ -366,5 +366,5 @@ class TimelineCompilationResult:
                 "timelines_count": len(self.timelines),
                 "issues": tuple(issue.to_jsonable_dict() for issue in self.issues),
             },
-            status=status,
+            processing_status=status,
         )

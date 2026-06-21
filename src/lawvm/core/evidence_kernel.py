@@ -22,7 +22,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Mapping
+from typing import Mapping, TypeAlias
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.evidence_policy import (
@@ -39,7 +39,10 @@ from lawvm.core.provenance_graph import (
     ProvenanceGraph,
 )
 
-Json = object
+# Recursive structural JSON type for proof-verdict inputs. Constraining this
+# (instead of the old ``Json = object`` escape hatch) keeps ``ty`` checking the
+# shapes that flow through the trusted evaluator.
+Json: TypeAlias = "None | bool | int | float | str | list[Json] | dict[str, Json]"
 
 
 # ---------------------------------------------------------------------------

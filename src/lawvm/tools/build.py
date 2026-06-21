@@ -133,7 +133,9 @@ def _worker_fn(sid: str) -> Optional[dict[str, Any]]:
     delegations (list[dict]), amendment_chain.  Returns None on any error.
     """
     from lawvm.finland.references.cross_refs import extract_cross_refs, extract_eu_refs
-    from lawvm.finland.delegation import extract_delegations
+    from lawvm.finland.legal_surface.delegation_edge_adapter import (
+        extract_delegations_canonical,
+    )
 
     assert _w_corpus is not None
     base_xml = _w_corpus.read_source(sid)
@@ -159,7 +161,17 @@ def _worker_fn(sid: str) -> Optional[dict[str, Any]]:
     con_xml = _w_corpus.read_oracle(sid)
     if con_xml:
         try:
-            delegations = [dataclasses.asdict(e) for e in extract_delegations(con_xml, sid)]
+            # Canonical token-native forward-grant parser — the SAME source the
+            # StatuteGraph (build_statute_graph_fi / --with-timelines) path uses,
+            # so both offline build paths emit identical delegation sets. The
+            # adapter returns production DelegationEdge dataclasses, so the JSONL
+            # line schema (statute_id/section/eid/delegation_type/match_text/quote)
+            # is unchanged. Legacy delegation.extract_delegations is retained as a
+            # typed-residue cross-check oracle, not the source.
+            delegations = [
+                dataclasses.asdict(e)
+                for e in extract_delegations_canonical(con_xml, sid)
+            ]
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception:

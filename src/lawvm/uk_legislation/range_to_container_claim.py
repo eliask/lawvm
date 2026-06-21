@@ -131,7 +131,7 @@ class RangeToContainerClaim:
       post-program-renumbered-span).
     - ``renumbering_program_id``: the program whose renumber/insertion the
       post-program span resolves against (the "uncertain member set" source).
-    - ``claimant`` / ``status``: provenance and lifecycle.
+    - ``claimant`` / ``claim_status``: provenance and lifecycle.
     """
 
     claim_id: str
@@ -146,7 +146,7 @@ class RangeToContainerClaim:
     resolution_basis: str
     renumbering_program_id: str = ""
     claimant: str = ""
-    status: str = "proposed"
+    claim_status: str = "proposed"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -162,7 +162,7 @@ class RangeToContainerClaim:
             "resolution_basis": self.resolution_basis,
             "renumbering_program_id": self.renumbering_program_id,
             "claimant": self.claimant,
-            "status": self.status,
+            "claim_status": self.claim_status,
         }
 
 
@@ -216,7 +216,7 @@ def claim_from_dict(row: Any) -> RangeToContainerClaim:
         resolution_basis=str(get("resolution_basis") or ""),
         renumbering_program_id=str(get("renumbering_program_id") or ""),
         claimant=str(get("claimant") or ""),
-        status=str(get("status") or "proposed"),
+        claim_status=str(get("claim_status") or "proposed"),
     )
 
 

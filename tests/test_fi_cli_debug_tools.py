@@ -1094,7 +1094,7 @@ def test_inspect_amendment_main_prints_group_details(capsys, monkeypatch) -> Non
             "mode": mode,
             "source_title": "Test title",
             "route": {"should_apply": True, "reason": "ok"},
-            "used_sec1_fallback": False,
+            "used_preamble_body_fallback": False,
             "preamble": "Muutetaan 4 §",
             "source_payload": {
                 "raw_ir": {"kind": "section", "label": "4", "children": 1, "text": "raw source"},
@@ -1214,7 +1214,7 @@ def test_inspect_amendment_main_stage_source_omits_group_details(capsys, monkeyp
             "mode": mode,
             "source_title": "Test title",
             "route": {"should_apply": True, "reason": "ok"},
-            "used_sec1_fallback": False,
+            "used_preamble_body_fallback": False,
             "preamble": "Muutetaan 4 §",
             "source_payload": {
                 "raw_ir": {"kind": "section", "label": "4", "children": 1, "text": "raw source"},
@@ -1444,7 +1444,7 @@ def test_replay_debug_main_prints_clause_text_and_filtered_ops(capsys, monkeypat
             "source_title": "Source title",
             "preamble": "Muutetaan 4 §",
             "route": {"should_apply": True, "reason": "ok"},
-            "used_sec1_fallback": False,
+            "used_preamble_body_fallback": False,
         },
     )
     monkeypatch.setattr(
@@ -1955,7 +1955,12 @@ def test_build_amendment_bundle_suppresses_temporary_amendment_notice(capsys) ->
 
 
 def test_serialize_scope_authority_parity_surfaces_runtime_projection_agreement() -> None:
-    from lawvm.finland.ops import AmendmentOp, ScopeConfidence
+    from lawvm.finland.ops import (
+        AmendmentOp,
+        ScopeConfidence,
+        ScopeResolutionConfidence,
+        ScopeResolutionSource,
+    )
 
     op = AmendmentOp(
         op_type="REPLACE",
@@ -1966,8 +1971,8 @@ def test_serialize_scope_authority_parity_surfaces_runtime_projection_agreement(
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         )
 

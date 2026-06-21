@@ -20,11 +20,15 @@ Design (mirrors the established whitelist-audit requirements):
   4. Reuses coverage_audit.covered_token_indices for the produced-op witness
      coverage, lifted to raw-tape coordinates.
 
-This is a pure measure-only function. It has no effect on a parse and is not on
-the default parse hot path: ``parse_clause`` only calls it under the env flag
-``LAWVM_PARSE_TOTALITY`` (it roughly doubles per-parse cost). On a flagged drop
-the caller emits a self-evidencing ``silent_drop`` residual; the predicate itself
-never raises a parse-affecting error.
+This is a pure measure-only function. It has no effect on a parse. Because it
+roughly DOUBLES per-parse cost (it re-runs the full parse on the raw tape),
+``parse_clause`` does not run it on every parse: a typed :class:`TotalityPolicy`
+decides. The PRODUCTION default is ``sampled`` (a deterministic 1-in-N subset of
+clauses), so the no-silent-drop guard is LIVE on the compile/replay lane without
+paying 2x on every parse; parse-bench / characterization / CI pass ``always``
+(or set ``LAWVM_PARSE_TOTALITY``). On a flagged drop the caller emits a
+self-evidencing ``silent_drop`` residual; the predicate itself never raises a
+parse-affecting error.
 
 ``predicate(text) -> (list[FlaggedDrop], n_ops)``. ``n_ops`` lets a corpus harness
 separate true silent-DROPs (``n_ops > 0``: an op was produced but a sibling target
@@ -48,8 +52,11 @@ Hard-raise becomes GO only once that drop tail is driven to ~0.
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 from dataclasses import dataclass
+from typing import Literal
 
 from lawvm.finland.johtolause.coverage_audit import covered_token_indices
 from lawvm.finland.johtolause.lexer import tokenize
@@ -78,6 +85,114 @@ _CONT_CONJ: frozenset[str] = frozenset({"CONJ"})  # sekä / ja / tai lemma carri
 _SUBREF_STRUCTS: frozenset[str] = frozenset({"MOMENTTI", "KOHTA", "ALAKOHTA"})
 _MOVE_VERB_PREFIXES: tuple[str, ...] = ("siirre", "siirty", "siirret")
 _WS_RE = re.compile(r"\s+")
+
+
+# ── Typed totality policy (replaces the ambient LAWVM_PARSE_TOTALITY flag) ──────
+#
+# The totality predicate roughly DOUBLES per-parse cost (it re-runs the full
+# parse on the raw tape; profiled ~1.96x). Running it on every production parse
+# is an unacceptable wall-time regression on the replay hot path. But running it
+# only behind an opt-in env flag means the no-silent-drop guard is NOT live in
+# production (rank 8, ARCHITECTURE_LEAK_LEDGER). The resolution is a TYPED policy
+# threaded through ``parse_clause``:
+#
+#   * ``off``     — never check (cheapest; for callers that have already audited).
+#   * ``always``  — check on every parse (parse-bench / characterization / CI).
+#   * ``sampled`` — check on a DETERMINISTIC subset of parses, so the guard is
+#                   reachable from the live compile/replay lane WITHOUT paying 2x
+#                   on every parse. The decision is a pure function of the clause
+#                   text (a hash modulo ``sample_rate``), so it is reproducible,
+#                   cache-key-safe, and a fire-drill can pick a clause that always
+#                   trips the gate.
+#
+# Production default is ``sampled`` (guard live) — overridable to ``always`` via
+# ``LAWVM_PARSE_TOTALITY`` (preserved for the census tools that mean "full
+# totality"), or to ``off`` via ``LAWVM_PARSE_TOTALITY=off``/``0``.
+
+TotalityMode = Literal["off", "always", "sampled"]
+
+#: Production sampling cadence: 1-in-N parses runs the predicate. N=64 keeps the
+#: amortised hot-path overhead at ~1/64 of the ~2x predicate cost (≈ +1.5%) while
+#: guaranteeing the guard fires from production over any non-trivial corpus run.
+_DEFAULT_SAMPLE_RATE = 64
+
+
+@dataclass(frozen=True)
+class TotalityPolicy:
+    """Typed policy for the raw-tape no-silent-drop totality check.
+
+    Carries its own identity contribution (:meth:`cache_key_fragment`) so a
+    caller that memoises parse results can fold the policy into its cache key —
+    a cached result computed under ``off`` must not be returned to a caller that
+    asked for ``always``/``sampled`` (the residual set differs).
+    """
+
+    mode: TotalityMode = "sampled"
+    sample_rate: int = _DEFAULT_SAMPLE_RATE
+
+    def should_check(self, text: str) -> bool:
+        """Whether the totality predicate runs for ``text`` under this policy.
+
+        Deterministic in ``text`` for ``sampled`` (pure hash bucket) so the same
+        clause always gets the same decision — reproducible across processes and
+        safe to fold into a content-addressed cache key.
+        """
+        if self.mode == "off":
+            return False
+        if self.mode == "always":
+            return True
+        # sampled
+        rate = self.sample_rate if self.sample_rate > 0 else _DEFAULT_SAMPLE_RATE
+        bucket = int.from_bytes(
+            hashlib.sha256(text.encode("utf-8")).digest()[:8], "big"
+        )
+        return bucket % rate == 0
+
+    def cache_key_fragment(self) -> str:
+        """A stable string folding the policy into a parse cache key."""
+        if self.mode == "sampled":
+            return f"totality=sampled:{self.sample_rate if self.sample_rate > 0 else _DEFAULT_SAMPLE_RATE}"
+        return f"totality={self.mode}"
+
+
+#: The OFF policy — skip the totality check entirely (legacy default-off behaviour).
+TOTALITY_OFF = TotalityPolicy(mode="off")
+#: The ALWAYS policy — check every parse (parse-bench / characterization / CI gate).
+TOTALITY_ALWAYS = TotalityPolicy(mode="always")
+#: The sampled production gate — guard live without paying 2x on every parse.
+TOTALITY_SAMPLED = TotalityPolicy(mode="sampled")
+
+
+def resolve_totality_policy() -> TotalityPolicy:
+    """Resolve the ambient totality policy for a caller that passes none.
+
+    Production default is ``sampled`` so the guard is LIVE on the compile/replay
+    lane. ``LAWVM_PARSE_TOTALITY`` is honoured for back-compat:
+
+      * unset / ``""``            → ``sampled`` (guard live, amortised cost)
+      * ``"0"`` / ``"off"`` / ``"false"`` → ``off`` (explicit opt-out)
+      * any other truthy value    → ``always`` (full totality; what the census
+                                    tools and parse-bench mean by the flag)
+
+    A ``LAWVM_PARSE_TOTALITY_SAMPLE_RATE`` override tunes the sampled cadence.
+    """
+    raw = os.environ.get("LAWVM_PARSE_TOTALITY")
+    if raw is None or raw == "":
+        return TotalityPolicy(mode="sampled", sample_rate=_resolved_sample_rate())
+    if raw.strip().lower() in ("0", "off", "false", "no"):
+        return TOTALITY_OFF
+    return TOTALITY_ALWAYS
+
+
+def _resolved_sample_rate() -> int:
+    raw = os.environ.get("LAWVM_PARSE_TOTALITY_SAMPLE_RATE")
+    if not raw:
+        return _DEFAULT_SAMPLE_RATE
+    try:
+        rate = int(raw)
+    except ValueError:
+        return _DEFAULT_SAMPLE_RATE
+    return rate if rate > 0 else _DEFAULT_SAMPLE_RATE
 
 
 @dataclass(frozen=True)
@@ -199,7 +314,10 @@ def _filtered_to_raw_coverage(
     # witness-fidelity guard: a label that IS already a produced op-target but
     # whose RAW tokens are uncovered is a re-mention (provenance `niistä N §
     # sellaisina kuin ne ovat`, range-expansion witness gap), NOT a drop.
-    _ops = _parse_clause(text).parsed_ops or []
+    # Pass TOTALITY_OFF so this inner parse never re-enters the predicate (the
+    # ambient production policy is `sampled`, which WOULD recurse on a matching
+    # clause without this explicit opt-out).
+    _ops = _parse_clause(text, totality_policy=TOTALITY_OFF).parsed_ops or []
     n_ops = len(_ops)
     op_labels = {_normalize(op.number or "") for op in _ops if op.number}
     # An appendix/annex (``kind == "A"``) op is a fee-table / luettelo edit. Its

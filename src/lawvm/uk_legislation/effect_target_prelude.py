@@ -14,7 +14,7 @@ from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
     TARGET_RECOVERED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.uk_legislation.addressing import (
     _addr_container,
@@ -822,14 +822,14 @@ def refine_enacted_schedule_table_row_part_target(
             "source_part_label": source_schedule_table_row_part_label,
             "source_rule_id": str(extracted_el.get("source_rule_id") or "") if extracted_el is not None else "",
             "source_row_text": str(extracted_el.get("source_row_text") or "") if extracted_el is not None else "",
-            "target_resolution": TargetResolutionCertificate(
+            "target_resolution": TargetResolutionCoverage(
                 rule_id=_UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID,
                 phase="lowering",
                 reason=(
                     "UK enacted affecting source exposes the added schedule "
                     "paragraph under a unique schedule Part."
                 ),
-                status=TARGET_RECOVERED,
+                resolution_status=TARGET_RECOVERED,
                 source_target=str(target),
                 selected_target=str(refined_target),
                 candidate_count=1,
@@ -903,14 +903,14 @@ def refine_source_text_schedule_paragraph_target(
             "target_ref": t_str,
             "metadata_target": str(target),
             "source_target": str(refined_target),
-            "target_resolution": TargetResolutionCertificate(
+            "target_resolution": TargetResolutionCoverage(
                 rule_id=_UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID,
                 phase="lowering",
                 reason=(
                     "UK source text explicitly names the affected schedule "
                     "paragraph and overrides the effect metadata target."
                 ),
-                status=TARGET_RECOVERED,
+                resolution_status=TARGET_RECOVERED,
                 source_target=t_str,
                 selected_target=str(refined_target),
                 candidate_count=1,
@@ -969,14 +969,14 @@ def refine_flat_p1para_schedule_insert_target(
             "metadata_target": str(target),
             "normalized_target": str(refined_target),
             "removed_part_label": _addr_field(target, "part") or "",
-            "target_resolution": TargetResolutionCertificate(
+            "target_resolution": TargetResolutionCoverage(
                 rule_id=_UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID,
                 phase="lowering",
                 reason=(
                     "UK source names a schedule Part as insertion context while "
                     "the source-owned payload is a direct labelled schedule paragraph."
                 ),
-                status=TARGET_RECOVERED,
+                resolution_status=TARGET_RECOVERED,
                 source_target=str(target),
                 selected_target=str(refined_target),
                 candidate_count=1,

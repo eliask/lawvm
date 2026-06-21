@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional, Set
 
 from lawvm.core.compile_result import SourcePathology, StrictProfile
@@ -11,6 +11,7 @@ from lawvm.core.ir import LegalOperation
 from lawvm.core.mutation_accounting import MutationAccountingResult
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.phase_result import Finding
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.migration_ledger import MigrationLedger
@@ -46,8 +47,17 @@ class ApplyOpsRequest:
 
 @dataclass(frozen=True, slots=True)
 class ApplyOpsSinks:
-    """Mutable evidence/artifact channels for the resolved-op apply fold."""
+    """Mutable evidence/artifact channels for the resolved-op apply fold.
 
+    ``write_receipts_out`` and ``write_audits_out`` are NON-Optional: the apply
+    fold always collects one conservation receipt + observed-write audit per
+    landed write. A caller cannot drive the fold without supplying the receipt
+    accumulator (it defaults to a fresh list), so no production path can mutate
+    the legal-state tree and leave the write un-accounted.
+    """
+
+    write_receipts_out: List[WriteReceipt] = field(default_factory=list)
+    write_audits_out: List[ObservedWriteAudit] = field(default_factory=list)
     compiled_ops_out: Optional[List[Dict[str, object]]] = None
     lo_ops_out: Optional[List[LegalOperation]] = None
     failed_ops_out: Optional[List[FailedOp]] = None
@@ -58,4 +68,3 @@ class ApplyOpsSinks:
     observations_out: Optional[List[Dict[str, object]]] = None
     findings_out: Optional[List[Finding]] = None
     observed_touch_results_out: Optional[List[MutationAccountingResult]] = None
-    write_audits_out: Optional[List[ObservedWriteAudit]] = None

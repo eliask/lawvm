@@ -2,6 +2,17 @@
 
 The script is intentionally mechanical: it only reports explicit pattern hits that
 are known to indicate fallback- or heuristic-heavy parser behavior.
+
+It also hosts the reusable scan for the *regex ratchet* gate
+(``tests/test_regex_ratchet.py``). That gate enforces the pipeline-contract rule
+"no NEW post-parse raw-text semantic regex without a waiver/category"
+(``notes/LAWVM_PIPELINE_CONTRACT.md`` §4, AGENTS.md §1.12 / §2.4): every file in
+``src/lawvm/{core,finland}`` is either pre-cleared by ``CATEGORY_MAP`` (genuine
+source-plane / lexer / owning-parser / diagnostic regex) or *scanned*, and every
+regex use-site in a scanned (post-parse / legal-state / projection) file must
+carry an inline ``# lawvm-regex:`` waiver or be a baselined leak. The committed
+baseline (``tests/data/regex_ratchet_baseline.json``) is a monotone ratchet: the
+un-waived semantic-plane count may never increase, only fall.
 """
 from __future__ import annotations
 
@@ -57,6 +68,98 @@ SMELL_MARKERS = {
         r"\bTEXT_[A-Z0-9_]+",
     ),
 }
+
+
+# ===========================================================================
+# Regex ratchet (Gate "no new post-parse raw-text semantic regex")
+# ===========================================================================
+#
+# CATEGORY_MAP pre-clears files whose regex use is *legitimate* under the
+# pipeline contract: source-plane I/O (locators/spans/bytes/XML), lexical
+# tokenization, the ONE owning parser for a construction family (regex is then
+# "input to the owning parser"), or pure diagnostic/oracle-comparison rendering.
+# A pre-cleared file is exempt from the ratchet by category, NOT by being outside
+# the scan. Be CONSERVATIVE: only pre-clear a file you are confident is genuinely
+# source/lexer/owning-parser/diagnostic. Anything post-parse semantic / replay /
+# legal-state / projection is SCANNED (i.e. absent from CATEGORY_MAP).
+#
+# The four pre-clear categories and the planes they map to
+# (notes/LAWVM_PIPELINE_CONTRACT.md §3):
+#   source_plane  -> plane A (bytes, locators, spans, URL/path/XML parsing)
+#   lexer         -> plane B (lexical tokenization, label normalization)
+#   owning_parser -> plane B (the canonical parser that OWNS a family; regex feeds it)
+#   diagnostic    -> plane D/E (audit/oracle-comparison rendering, no replay authority)
+#
+# Files NOT listed here are SCANNED on the semantic plane and must waive every
+# regex use-site (or be baselined). The known leaks named in the Gate-2 spec
+# (normalize.parse_ops_fallback_heuristic, kumotaan_replay, replay_products,
+# effect_lowering, scope, metadata, ...) are deliberately absent so they are
+# baselined and fenced, never hidden.
+PRECLEAR_CATEGORIES: frozenset[str] = frozenset(
+    {"source_plane", "lexer", "owning_parser", "diagnostic"}
+)
+
+CATEGORY_MAP: dict[str, str] = {
+    # --- source plane (A): locators / paths / XML / byte-origin parsing ---
+    "src/lawvm/finland/corpus.py": "source_plane",
+    "src/lawvm/finland/transparent_store.py": "source_plane",
+    "src/lawvm/finland/finlex_api.py": "source_plane",
+    "src/lawvm/finland/xml_ir.py": "source_plane",
+    # --- lexer (B): label / numeric-token normalization only ---
+    "src/lawvm/core/tree_ops.py": "lexer",
+    "src/lawvm/finland/labels.py": "lexer",
+    "src/lawvm/finland/profile/normalize.py": "lexer",
+    # --- owning parser (B): the canonical parser for a construction family ---
+    "src/lawvm/finland/johtolause/api.py": "owning_parser",
+    "src/lawvm/finland/johtolause/clause_patterns.py": "owning_parser",
+    "src/lawvm/finland/johtolause/clause_surface.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/delegation_parse.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/modal_parse.py": "owning_parser",
+    "src/lawvm/finland/references/by_name.py": "owning_parser",
+    "src/lawvm/finland/references/sections.py": "owning_parser",
+    "src/lawvm/finland/amendment_payload_lookup.py": "owning_parser",
+    # --- diagnostic (D/E): audit / oracle-comparison rendering, no authority ---
+    "src/lawvm/core/ir_helpers.py": "diagnostic",
+    "src/lawvm/finland/inline_repeal_stub.py": "diagnostic",
+    "src/lawvm/finland/oracle_comparison.py": "diagnostic",
+}
+
+# Inline waiver vocabulary (a use-site is waived if its line, or the line above,
+# carries `# lawvm-regex: <category> <rationale>`). legacy_escape_hatch is the
+# highest-severity waiver — see part (d) below.
+WAIVER_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "owning_parser",
+        "witness_only",
+        "diagnostic",
+        "prefilter",
+        "legacy_escape_hatch",
+    }
+)
+_RE_WAIVER_COMMENT = re.compile(
+    r"#\s*lawvm-regex:\s*(?P<category>[a-z_]+)\b(?P<rationale>.*)$"
+)
+
+# The four targeted regex methods (the *use* sites). re.compile alone is NOT a
+# use-site; it only counts once invoked. We match calls whose receiver is either
+# the ``re`` module OR an identifier that follows the project's regex-constant
+# naming convention (``_NAME_RE`` / ``NAME_PATTERN`` / ``foo_re`` / ``bar_pattern``),
+# so module-scope compiled patterns invoked via ``_X_RE.finditer(...)`` count too
+# (e.g. replay_products rank-2), while ``.match(...)`` on arbitrary objects does not.
+_REGEX_METHODS = ("search", "finditer", "findall", "match")
+_RE_REGEX_USE_SITE = re.compile(
+    r"\b(?P<receiver>re|[A-Za-z_][A-Za-z0-9_]*(?:_RE|_PATTERN|_re|_pattern))"
+    r"\.(?P<method>search|finditer|findall|match)\("
+)
+
+# Part (d): regex over these raw/rendered-text accessors in a scanned (semantic)
+# file is the highest-severity class. An un-waived hit of this shape is reported
+# as ``legacy_escape_hatch`` so the rank-1/2/3/15 raw-text reach-back sites cannot
+# be added to without an explicit waiver naming a leak-ledger rank.
+_RE_RAW_TEXT_ACCESSOR = re.compile(
+    r"\b(raw_text|source_text|irnode_to_text|\.description)\b"
+)
+_RE_LEAK_LEDGER_RANK = re.compile(r"\brank[\s_-]*\d+\b", re.IGNORECASE)
 
 
 _BOUND_COVERAGE_NEARBY_LINES = 80
@@ -532,9 +635,206 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------------------
+# Regex ratchet scan (imported by tests/test_regex_ratchet.py)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
+_RATCHET_SCAN_ROOTS = (
+    Path("src/lawvm/core"),
+    Path("src/lawvm/finland"),
+)
+
+
+def _rel_posix(path: Path, repo_root: Path) -> str:
+    try:
+        return path.resolve().relative_to(repo_root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def iter_scanned_files(repo_root: Path | None = None) -> list[str]:
+    """All ``src/lawvm/{core,finland}`` python files that are NOT pre-cleared.
+
+    A file is scanned unless ``CATEGORY_MAP`` pre-clears it as source-plane /
+    lexer / owning-parser / diagnostic. Test/``__pycache__`` files are excluded.
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    scanned: list[str] = []
+    for scan_root in _RATCHET_SCAN_ROOTS:
+        base = root / scan_root
+        if not base.exists():
+            continue
+        for pyfile in sorted(base.rglob("*.py")):
+            rel = _rel_posix(pyfile, root)
+            if "/tests/" in f"/{rel}" or pyfile.name.startswith("test_"):
+                continue
+            if rel in CATEGORY_MAP:
+                continue
+            scanned.append(rel)
+    return scanned
+
+
+def _line_is_waived(lines: list[str], idx: int) -> tuple[bool, str]:
+    """A use-site is waived if its own line, or the line directly above it,
+    carries a ``# lawvm-regex: <category> <rationale>`` comment with a known
+    category. Returns (waived, waiver_category)."""
+    for probe in (idx, idx - 1):
+        if probe < 0:
+            continue
+        match = _RE_WAIVER_COMMENT.search(lines[probe])
+        if not match:
+            continue
+        category = match.group("category")
+        if category in WAIVER_CATEGORIES:
+            return True, category
+    return False, ""
+
+
+def scan_file_regex_use_sites(
+    rel_path: str,
+    text: str,
+) -> list[dict[str, Any]]:
+    """Find every targeted regex use-site in one scanned file.
+
+    Returns one record per ``re.(search|finditer|findall|match)(`` style call
+    (including module-scope compiled-constant call sites), each annotated with
+    whether it is waived, the waiver category, and whether it is a raw-text
+    ``legacy_escape_hatch`` shape.
+    """
+    lines = text.splitlines()
+    records: list[dict[str, Any]] = []
+    for idx, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            continue  # a commented-out call is not a live use-site
+        for use_site in _RE_REGEX_USE_SITE.finditer(line):
+            waived, waiver_category = _line_is_waived(lines, idx)
+            is_raw_text = bool(_RE_RAW_TEXT_ACCESSOR.search(line))
+            records.append(
+                {
+                    "file": rel_path,
+                    "line": idx + 1,
+                    "receiver": use_site.group("receiver"),
+                    "method": use_site.group("method"),
+                    "waived": waived,
+                    "waiver_category": waiver_category,
+                    "raw_text_accessor": is_raw_text,
+                    "snippet": stripped,
+                }
+            )
+    return records
+
+
+def scan_regex_ratchet(repo_root: Path | None = None) -> dict[str, Any]:
+    """Compute the full ratchet state for the scanned (semantic-plane) files.
+
+    Returns:
+      - ``unwaived_counts``: {rel_path: count} of UN-waived regex use-sites
+        (this is the monotone ratchet quantity);
+      - ``total_unwaived``: sum across files;
+      - ``waived_counts`` / ``total_waived``;
+      - ``legacy_escape_hatch_unwaived``: raw-text reach-back use-sites that are
+        un-waived (part d) — these MUST be acknowledged with a leak-ledger rank;
+      - ``legacy_escape_hatch_waived_without_rank``: hatch sites whose waiver does
+        not cite a leak-ledger rank (a discipline violation under part d);
+      - ``records``: every use-site record;
+      - ``preclear_summary``: per-category pre-clear counts.
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    records: list[dict[str, Any]] = []
+    for rel in iter_scanned_files(root):
+        path = root / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        records.extend(scan_file_regex_use_sites(rel, text))
+
+    unwaived_counts: Counter[str] = Counter()
+    waived_counts: Counter[str] = Counter()
+    legacy_escape_hatch_unwaived: list[dict[str, Any]] = []
+    legacy_escape_hatch_waived_without_rank: list[dict[str, Any]] = []
+    for rec in records:
+        if rec["waived"]:
+            waived_counts[rec["file"]] += 1
+        else:
+            unwaived_counts[rec["file"]] += 1
+        if rec["raw_text_accessor"]:
+            if not rec["waived"]:
+                legacy_escape_hatch_unwaived.append(rec)
+            elif rec["waiver_category"] == "legacy_escape_hatch" and not _RE_LEAK_LEDGER_RANK.search(
+                rec["snippet"]
+            ):
+                legacy_escape_hatch_waived_without_rank.append(rec)
+
+    preclear_summary: Counter[str] = Counter(CATEGORY_MAP.values())
+
+    return {
+        "unwaived_counts": dict(sorted(unwaived_counts.items())),
+        "total_unwaived": sum(unwaived_counts.values()),
+        "waived_counts": dict(sorted(waived_counts.items())),
+        "total_waived": sum(waived_counts.values()),
+        "legacy_escape_hatch_unwaived": legacy_escape_hatch_unwaived,
+        "legacy_escape_hatch_waived_without_rank": legacy_escape_hatch_waived_without_rank,
+        "records": records,
+        "scanned_file_count": len(iter_scanned_files(root)),
+        "precleared_file_count": len(CATEGORY_MAP),
+        "preclear_summary": dict(sorted(preclear_summary.items())),
+    }
+
+
+RATCHET_BASELINE_PATH = Path("tests/data/regex_ratchet_baseline.json")
+
+
+def ratchet_baseline_snapshot(repo_root: Path | None = None) -> dict[str, Any]:
+    """The committed-baseline shape: per-file un-waived counts + hatch ceiling.
+
+    Only the monotone quantities are persisted (un-waived per-file counts, the
+    raw-text legacy_escape_hatch ceiling, and the total). Volatile detail (line
+    numbers, snippets) is NOT persisted so the baseline is stable across cosmetic
+    edits and only changes when a real count changes.
+    """
+    state = scan_regex_ratchet(repo_root)
+    return {
+        "_doc": (
+            "Monotone regex ratchet baseline for the post-parse semantic plane. "
+            "Generated by scripts/inventory_parser_smells.py "
+            "(ratchet_baseline_snapshot). Per-file 'unwaived' counts may only "
+            "fall, never rise; a fall must be committed (regenerate with "
+            "`uv run python scripts/inventory_parser_smells.py --update-baseline`). "
+            "See tests/test_regex_ratchet.py and notes/LAWVM_PIPELINE_CONTRACT.md §4."
+        ),
+        "total_unwaived": state["total_unwaived"],
+        "legacy_escape_hatch_unwaived_ceiling": len(state["legacy_escape_hatch_unwaived"]),
+        "unwaived_counts": state["unwaived_counts"],
+    }
+
+
+def write_ratchet_baseline(repo_root: Path | None = None) -> Path:
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    out_path = root / RATCHET_BASELINE_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = ratchet_baseline_snapshot(root)
+    out_path.write_text(
+        json.dumps(snapshot, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return out_path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate parser smell inventory from known heuristic patterns."
+    )
+    parser.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help=(
+            "Regenerate tests/data/regex_ratchet_baseline.json from the current "
+            "tree (the regex ratchet baseline). Only ever commit a baseline whose "
+            "counts are <= the committed one."
+        ),
     )
     parser.add_argument(
         "--format",
@@ -578,6 +878,16 @@ _build_parser = build_parser
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.update_baseline:
+        out_path = write_ratchet_baseline()
+        snapshot = json.loads(out_path.read_text(encoding="utf-8"))
+        print(
+            f"wrote {out_path} "
+            f"(total_unwaived={snapshot['total_unwaived']}, "
+            f"legacy_escape_hatch_ceiling="
+            f"{snapshot['legacy_escape_hatch_unwaived_ceiling']})"
+        )
+        return 0
     categories = None if args.category is None else {category.strip() for category in args.category}
     if categories is not None:
         unknown = categories - set(SMELL_MARKERS)

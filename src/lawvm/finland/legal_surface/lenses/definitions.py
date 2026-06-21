@@ -46,6 +46,7 @@ from lawvm.core.legal_surface_lens import (
     SurfaceLensResult,
     SurfaceNodeSeed,
     SurfaceResidualSeed,
+    source_bytes_of,
 )
 from lawvm.finland.legal_surface.bundle import (
     decode_body_text,
@@ -193,15 +194,15 @@ class DefinitionLens:
         term_ids: tuple[str, ...]
 
     def _analyze_unit(self, unit: SourceSurfaceUnit) -> "DefinitionLens._UnitSeeds":
-        # The §D4 bridge keeps the raw XML in metadata["xml_bytes"] for adapter
-        # lenses; the recognizers here, however, operate on the statute body text,
-        # and the bundle's raw_text IS that body text (the same <p>-joined decode
-        # of those exact xml_bytes). We therefore run the recognizers over
-        # raw_text — the coordinate space locate_span anchors against — so every
-        # minted span stays in the bundle's own coordinate system. We assert the
-        # bridge contract holds (raw_text consistent with the bridged xml_bytes)
-        # rather than re-decoding into a divergent coordinate space.
-        xml_bytes = unit.metadata.get("xml_bytes")
+        # The §D4 bridge carries the raw XML as the typed ``source_bytes`` unit
+        # view for adapter lenses; the recognizers here, however, operate on the
+        # statute body text, and the bundle's raw_text IS that body text (the same
+        # <p>-joined decode of those exact source bytes). We therefore run the
+        # recognizers over raw_text — the coordinate space locate_span anchors
+        # against — so every minted span stays in the bundle's own coordinate
+        # system. We assert the bridge contract holds (raw_text consistent with the
+        # bridged source bytes) rather than re-decoding into a divergent space.
+        xml_bytes = source_bytes_of(unit)
         body_text = unit.raw_text
         if not body_text:
             return self._UnitSeeds((), (), (), 0, 0, ())

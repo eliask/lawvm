@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Protocol, Sequence
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
-from lawvm.core.authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
+from lawvm.core.branch_authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
 from lawvm.core.timeline import Timelines
 
 
@@ -588,5 +588,5 @@ class CorpusGraph:
             producer=producer,
             version=version,
             payload=self.wire_projection(),
-            status=self.processing_status,
+            processing_status=self.processing_status,
         )

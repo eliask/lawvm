@@ -1,0 +1,6 @@
+{
+  "_doc": "Monotone apply-decline ratchet baseline. Counts UN-witnessed `return state` op-handler declines per apply file (a decline that drops an authored op without appending a typed pathology/finding to a production ledger). The per-file count may only FALL, never rise; a fall must be committed (regenerate with `uv run python scripts/inventory_apply_declines.py --update-baseline`). See tests/test_apply_decline_ratchet.py and notes_internal/EXIT_REAUDIT.md. `producerless_codes` lists registered source-pathology codes with NO production emit site (recorded debt); the list may only SHRINK.",
+  "producerless_codes": [],
+  "total_unwitnessed": 0,
+  "unwitnessed_counts": {}
+}

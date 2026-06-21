@@ -5,10 +5,11 @@ themselves. For v0 we expose ONE whole-body unit per statute:
 
   * ``raw_text``  — the decoded body text (``<p>`` content, newline-joined), the
     coordinate space SourceSpanRef char offsets index into.
-  * ``metadata["xml_bytes"]`` — the raw XML, so adapter lenses can still run the
-    existing recognizers (the AKN ``<ref>`` lane genuinely needs the XML tree;
-    Pro r5 endorses "assembler first with minimal substrate; v0 lenses may
-    tokenize internally"). This is the Stage-1 bridge, not a permanent fixture.
+  * ``source_bytes`` (typed unit field, read via ``source_bytes_of``) — the raw
+    XML, so adapter lenses can still run the existing recognizers (the AKN
+    ``<ref>`` lane genuinely needs the XML tree; Pro r5 endorses "assembler first
+    with minimal substrate; v0 lenses may tokenize internally"). This is the
+    Stage-1 bridge, not a permanent fixture.
 
 ``locate_span`` is the shared helper every adapter uses to turn a recognizer's
 matched ``surface_text`` into a SourceSpanRef anchored in ``raw_text`` (a
@@ -105,8 +106,10 @@ def build_surface_bundle(
             text_hash=text_hash,
         ),
         # Stage-1 bridge: adapter lenses run the existing recognizers, which need
-        # the XML tree (the <ref> lane especially). Removed once lenses migrate
-        # to token_tape views (Phase 7).
+        # the XML tree (the <ref> lane especially). Carried as the TYPED
+        # ``source_bytes`` field below (read via ``source_bytes_of``), not a
+        # free-form ``metadata`` key. Removed once those lenses migrate to
+        # token_tape views (Phase 7).
         #
         # SegmentationGraph (additive structural substrate, one level above the
         # clause index in the SourceSyntaxGraph stack): classifies the body into
@@ -128,7 +131,6 @@ def build_surface_bundle(
         # anaphora + span-scoped composition: a consumer queries
         # ``provision_index.provision_at(char_start, char_end)``.
         metadata={
-            "xml_bytes": xml_bytes,
             "segmentation_graph": build_segmentation_graph(
                 source_unit_id, raw_text
             ),
@@ -139,6 +141,12 @@ def build_surface_bundle(
                 text_hash=text_hash,
             ),
         },
+        # §D4 Stage-1 bridge: the raw AKN XML as a TYPED unit view. Adapter
+        # lenses (references / annotation_witness / definitions) read it via
+        # ``source_bytes_of`` to re-parse the markup tree, instead of the former
+        # untyped ``metadata["xml_bytes"]`` channel. Additive: like the token
+        # tape it is a view the assembler's graph_id never folds in.
+        source_bytes=xml_bytes,
         # Phase 7 (§D4): populate the source-preserving token view additively.
         # Lenses that ignore it are unaffected; token-consuming lenses set
         # required_views=("token_tape",).

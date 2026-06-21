@@ -264,7 +264,7 @@ def test_actual_replay_surface_is_labeled_actual_replay_not_dry_run() -> None:
     # The replayed-slice agreement rows carry the slice-agrees rule id; refusal
     # rows (when present) carry their own typed rule id + family, so the surface
     # is no longer single-rule-id — but every agreeing row still uses the slice id.
-    agreeing = [r for r in surface["residuals"] if r["status"] == "agrees"]
+    agreeing = [r for r in surface["residuals"] if r["agreement_residual_status"] == "agrees"]
     assert agreeing
     assert all(residual["rule_id"] == NZ_ACTUAL_REPLAY_SLICE_AGREES_RULE_ID for residual in agreeing)
     assert all(residual["family"] == "agreement" for residual in agreeing)

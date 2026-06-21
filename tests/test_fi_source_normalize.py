@@ -26,7 +26,7 @@ from lawvm.core.semantic_types import (
     SourceNormalizationKind,
 )
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
-from lawvm.finland.helpers import _fi_label_postprocessor
+from lawvm.finland.helpers import _fi_label_postprocessor, _norm_num_token
 from lawvm.finland.source_normalize import (
     normalize_source_ir,
     source_normalization_fact_finding_kind,
@@ -37,9 +37,13 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_INTRO_LIST_RESTART_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
+    BASE_HEADING_BODY_SUBSECTION_SPLIT,
     BASE_INTRO_LIST_TAIL_MOMENT_SPLIT,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
+    BASE_TABLE_CONTINUATION_SUBSECTION_MERGE,
+    BASE_TABLE_CONTINUATION_HEADER_REPAIR,
+    BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT,
     TRAILING_CHAPTER_REPARENT,
 )
 
@@ -59,6 +63,14 @@ def test_source_normalization_fact_finding_kind_resolves_registered_base_codes()
     assert (
         source_normalization_fact_finding_kind("base_intro_list_tail_moment_split")
         == "BASE_INTRO_LIST_TAIL_MOMENT_SPLIT"
+    )
+    assert (
+        source_normalization_fact_finding_kind("base_table_continuation_subsection_merge")
+        == "BASE_TABLE_CONTINUATION_SUBSECTION_MERGE"
+    )
+    assert (
+        source_normalization_fact_finding_kind("base_table_continuation_header_repair")
+        == "BASE_TABLE_CONTINUATION_HEADER_REPAIR"
     )
     assert source_normalization_fact_finding_kind("") is None
     assert source_normalization_fact_finding_kind("not_registered") is None
@@ -548,6 +560,117 @@ class TestTagReclassify:
         assert len(fold_facts) == 1
         assert fold_facts[0].basis_value == SourceNormalizationBasis.IMPOSSIBLE_NUMBERING.value
 
+    def test_folds_connector_wrapper_before_next_section_item_carrier(self) -> None:
+        """Connector-only wrappers may belong to a split section-level item run."""
+        xml = etree.fromstring(
+            """
+            <section>
+              <num>2 §</num>
+              <subsection>
+                <intro><p>Luettelo:</p></intro>
+                <paragraph><num>1)</num><content><p>ensimmäinen kohta;</p></content></paragraph>
+                <paragraph><num>2)</num><content><p>toinen kohta;</p></content></paragraph>
+              </subsection>
+              <subsection><content><p>sekä</p></content></subsection>
+              <subsection>
+                <paragraph><num>3)</num><content><p>kolmas kohta.</p></content></paragraph>
+              </subsection>
+              <subsection><content><p>Todellinen toinen momentti.</p></content></subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1978/380")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2"]
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3"]
+        assert "toinen kohta; sekä" in irnode_to_text(paragraphs[1])
+        assert "Todellinen toinen momentti" in irnode_to_text(subsections[1])
+        assert check_invariants(normalized) == []
+
+        fold_facts = [fact for fact in facts if fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD]
+        assert len(fold_facts) == 1
+        assert "subsection:2" in fold_facts[0].before
+        assert "subsection:3" in fold_facts[0].before
+
+    def test_preserves_connector_wrapper_without_next_section_item_carrier(self) -> None:
+        """A connector word alone is not enough to collapse a peer moment."""
+        xml = etree.fromstring(
+            """
+            <section>
+              <num>2 §</num>
+              <subsection>
+                <intro><p>Luettelo:</p></intro>
+                <paragraph><num>1)</num><content><p>ensimmäinen kohta;</p></content></paragraph>
+                <paragraph><num>2)</num><content><p>toinen kohta;</p></content></paragraph>
+              </subsection>
+              <subsection><content><p>sekä</p></content></subsection>
+              <subsection><content><p>Todellinen kolmas momentti.</p></content></subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1978/380")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+        assert not any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+
+    def test_real_1978_380_section_2_folds_connector_split_item_tail(self) -> None:
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("1978/380")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        section = next(
+            candidate
+            for candidate in root.findall(".//{*}section")
+            if _norm_num_token("".join(candidate.findtext("{*}num") or "")) == "2"
+        )
+        raw = fi_xml_to_ir_node(section, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1978/380")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1"]
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3"]
+        section_text = irnode_to_text(subsections[0])
+        assert "ristin sakaran leveys 3 mittayksikköä; sekä" in section_text
+        assert "kenttien korkeus 4" in section_text
+        assert any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+
+    def test_real_1995_361_section_4_preserves_nested_lettered_definition_order(self) -> None:
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("1995/361")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        section = next(
+            candidate
+            for candidate in root.findall(".//{*}section")
+            if _norm_num_token("".join(candidate.findtext("{*}num") or "")) == "4"
+        )
+        raw = fi_xml_to_ir_node(section, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1995/361")
+
+        text = irnode_to_text(normalized)
+        assert text.index("1) elintarvikemääräyksillä") < text.index(
+            "(a) elintarviketta, jonka tiedetään"
+        )
+        assert text.index("(a) elintarviketta, jonka tiedetään") < text.index(
+            "(b) elintarviketta, joka pilaantumisen"
+        )
+        assert text.index("(b) elintarviketta, joka pilaantumisen") < text.index(
+            "4) kuluttajalla"
+        )
+        assert not any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+
     def test_real_1998_711_dash_definition_list_preserves_all_items(self) -> None:
         """Regression: 1998/711 section 2 is a single definition-list moment."""
         from lawvm.corpus_store import get_corpus_store
@@ -669,6 +792,106 @@ class TestTagReclassify:
         )
 
         normalized, facts = normalize_source_ir(section, "real-moment-fixture")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2"]
+        assert not any(fact.kind_value == BASE_TABLE_NOTE_SUBSECTION_FOLD for fact in facts)
+
+    def test_folds_numeric_table_note_subsections_with_source_eids(self) -> None:
+        """Numeric note wrappers with source eIds may still be table footnotes."""
+        table = IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(kind=IRNodeKind.CELL, text="Aine"),
+                        IRNode(kind=IRNodeKind.CELL, text="50 1)"),
+                        IRNode(kind=IRNodeKind.CELL, text="8 tuntia 2)"),
+                    ),
+                ),
+            ),
+        )
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    attrs={"eId": "sec_3__subsec_1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text="Raja-arvot ovat seuraavat:",
+                            children=(table,),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    attrs={"eId": "sec_3__subsec_2"},
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="1) Tulokset ilmaistaan lämpötilassa."),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="3",
+                    attrs={"eId": "sec_3__subsec_3"},
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="2) Kahdeksan tunnin keskiarvo."),),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "numeric-table-note-fixture")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        pending = [subsections[0]]
+        has_table = False
+        while pending:
+            candidate = pending.pop()
+            if candidate.kind == IRNodeKind.TABLE:
+                has_table = True
+                break
+            pending.extend(candidate.children)
+        assert has_table
+        assert "1) Tulokset ilmaistaan" in irnode_to_text(subsections[0])
+        assert "2) Kahdeksan tunnin" in irnode_to_text(subsections[0])
+        assert any(fact.kind_value == BASE_TABLE_NOTE_SUBSECTION_FOLD for fact in facts)
+        assert not any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+
+    def test_numeric_table_note_fold_requires_marker_in_table(self) -> None:
+        """A numbered following moment is not a table note without a table marker."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text="Raja-arvot ovat seuraavat:",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(IRNode(kind=IRNodeKind.ROW, children=(IRNode(kind=IRNodeKind.CELL, text="Aine"),)),),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="1) Todellinen kohta."),),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "numeric-table-note-negative")
 
         subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
         assert [subsection.label for subsection in subsections] == ["1", "2"]
@@ -871,6 +1094,127 @@ class TestTagReclassify:
         assert [
             fact for fact in facts if fact.kind_value == BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION
         ] == []
+
+
+class TestUnnumberedSubparagraphMomentSplit:
+    def test_splits_closed_item_unnumbered_subparagraph_payload_into_peer_moment(self) -> None:
+        """A closed item cannot own an unnumbered peer-moment payload."""
+        xml = etree.fromstring(
+            """
+            <section>
+              <num>1 §</num>
+              <subsection>
+                <intro><p>Lakia sovelletaan:</p></intro>
+                <paragraph><num>1)</num><content><p>ensimmäinen kohta;</p></content></paragraph>
+                <paragraph>
+                  <num>2)</num>
+                  <intro><p>toinen kohta päättyy.</p></intro>
+                  <subparagraph><content><p>Uusi momentti sisältää luettelon:</p></content></subparagraph>
+                  <subparagraph><num>1)</num><content><p>ensimmäinen uuden momentin kohta;</p></content></subparagraph>
+                  <subparagraph><num>2)</num><content><p>toinen uuden momentin kohta; tai</p></content></subparagraph>
+                </paragraph>
+                <paragraph><num>3)</num><content><p>kolmas uuden momentin kohta.</p></content></paragraph>
+              </subsection>
+              <subsection><content><p>Vanha kolmas momentti.</p></content></subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2020/1")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+        assert [child.label for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH] == ["1", "2"]
+        second_children = subsections[1].children
+        assert second_children[0].kind == IRNodeKind.INTRO
+        assert [child.label for child in second_children if child.kind == IRNodeKind.PARAGRAPH] == ["1", "2", "3"]
+        assert "Vanha kolmas momentti" in irnode_to_text(subsections[2])
+
+        split_facts = [
+            fact for fact in facts if fact.kind_value == BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT
+        ]
+        assert len(split_facts) == 1
+        assert split_facts[0].basis_value == SourceNormalizationBasis.PROFILE_INVALID.value
+        assert "peer subsection:2" in split_facts[0].after
+
+    def test_preserves_open_item_subparagraph_intro_list(self) -> None:
+        """A colon-introduced item may own its subparagraph list."""
+        xml = etree.fromstring(
+            """
+            <section>
+              <num>1 §</num>
+              <subsection>
+                <paragraph>
+                  <num>2)</num>
+                  <intro><p>kohta sisältää seuraavat alakohdat:</p></intro>
+                  <subparagraph><content><p>Alakohtien johdanto:</p></content></subparagraph>
+                  <subparagraph><num>1)</num><content><p>ensimmäinen alakohta;</p></content></subparagraph>
+                  <subparagraph><num>2)</num><content><p>toinen alakohta.</p></content></subparagraph>
+                </paragraph>
+              </subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2020/1")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        para = next(child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH)
+        assert len([child for child in para.children if child.kind == IRNodeKind.SUBPARAGRAPH]) == 3
+        assert not any(fact.kind_value == BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT for fact in facts)
+
+    def test_real_2019_1567_section_1_restores_misnested_etuyhteys_moment(self) -> None:
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("2019/1567")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        section = next(
+            candidate
+            for candidate in root.findall(".//{*}section")
+            if _norm_num_token("".join(candidate.findtext("{*}num") or "")) == "1"
+        )
+        assert section is not None
+        raw = fi_xml_to_ir_node(section, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2019/1567")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3", "4", "5"]
+        second_items = [child.label for child in subsections[1].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert second_items == ["1", "2"]
+        third_items = [child.label for child in subsections[2].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert third_items == ["1", "2", "3", "4"]
+        assert "Toinen henkilö on etuyhteydessä" in irnode_to_text(subsections[2])
+        assert any(fact.kind_value == BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT for fact in facts)
+
+    def test_real_2021_1177_section_8a_splits_tail_moment_from_item_3(self) -> None:
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("2021/1177")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        section = next(
+            candidate
+            for candidate in root.findall(".//{*}section")
+            if _norm_num_token("".join(candidate.findtext("{*}num") or "")) == "8a"
+        )
+        raw = fi_xml_to_ir_node(section, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2021/1177")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3", "4", "5", "6", "7"]
+        fourth_item_3 = next(
+            child for child in subsections[3].children if child.kind == IRNodeKind.PARAGRAPH and child.label == "3"
+        )
+        assert not any(child.kind == IRNodeKind.SUBPARAGRAPH for child in fourth_item_3.children)
+        assert "Sovellettaessa 4 momenttia" in irnode_to_text(subsections[4])
+        assert "Poiketen siitä" in irnode_to_text(subsections[5])
+        assert any(fact.kind_value == BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT for fact in facts)
 
 
 # ---------------------------------------------------------------------------
@@ -1751,3 +2095,151 @@ class TestDigitResetSubparagraphSplit:
         assert normalized.label == "4"
         assert [child.label for child in normalized.children if child.kind == IRNodeKind.SUBPARAGRAPH] == ["a", "b"]
         assert not any("digit-labelled subparagraph" in f.before for f in facts)
+
+
+def test_heading_body_subsection_split_rehomes_body_heading_as_first_moment() -> None:
+    raw = fi_xml_to_ir_node(
+        etree.fromstring(
+            """
+            <section>
+              <num>51 §</num>
+              <heading>Nopeuskilpailuja henkilöautoille ja moottoripyörille saa järjestää vain suljetulla tiellä. Tien sulkemiseen tarvitaan lupa, jonka myöntää kunnanhallitus tai lääninhallitus. Lääninhallituksen on kuultava tienpitäjää.</heading>
+              <subsection><content><p>Muille moottoriajoneuvoille ei nopeuskilpailuja saa järjestää.</p></content></subsection>
+              <subsection><content><p>Poliisilla on tienpitäjää kuultuaan oikeus tien tilapäiseen sulkemiseen.</p></content></subsection>
+            </section>
+            """
+        ),
+        _fi_label_postprocessor,
+    )
+
+    normalized, facts = normalize_source_ir(raw, "1994/328")
+
+    assert [child.kind for child in normalized.children] == [
+        IRNodeKind.NUM,
+        IRNodeKind.SUBSECTION,
+        IRNodeKind.SUBSECTION,
+        IRNodeKind.SUBSECTION,
+    ]
+    subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+    assert [child.label for child in subsections] == ["1", "2", "3"]
+    assert "Nopeuskilpailuja henkilöautoille" in irnode_to_text(subsections[0])
+    assert subsections[0].attrs["lawvm_source_normalization_rule"] == "fi_heading_body_subsection_split_v1"
+    assert subsections[1].attrs["lawvm_source_normalization_original_label"] == "1"
+
+    repair_facts = [fact for fact in facts if fact.kind_value == BASE_HEADING_BODY_SUBSECTION_SPLIT]
+    assert len(repair_facts) == 1
+    assert repair_facts[0].basis == SourceNormalizationBasis.PROFILE_INVALID
+    assert "heading converted to subsection:1" in repair_facts[0].after
+    assert check_invariants(normalized) == []
+
+
+def test_heading_body_subsection_split_does_not_rehome_real_section_title() -> None:
+    raw = fi_xml_to_ir_node(
+        etree.fromstring(
+            """
+            <section>
+              <num>1 §</num>
+              <heading>Pakkaamattomista elintarvikkeista annettavien tietojen ilmoittamistapa</heading>
+              <subsection><content><p>Elintarvikkeesta on ilmoitettava tarpeelliset tiedot.</p></content></subsection>
+            </section>
+            """
+        ),
+        _fi_label_postprocessor,
+    )
+
+    normalized, facts = normalize_source_ir(raw, "2020/1")
+
+    assert [child.kind for child in normalized.children] == [
+        IRNodeKind.NUM,
+        IRNodeKind.HEADING,
+        IRNodeKind.SUBSECTION,
+    ]
+    assert not any(fact.kind_value == BASE_HEADING_BODY_SUBSECTION_SPLIT for fact in facts)
+
+
+def test_table_continuation_subsection_merge_joins_interrupted_first_moment() -> None:
+    raw = fi_xml_to_ir_node(
+        etree.fromstring(
+            """
+            <section>
+              <num>21 §</num>
+              <subsection><content><p>Ensimmäisessä momentissa säädetty määrä koskee seuraavia</p></content></subsection>
+              <subsection>
+                <content>
+                  <p>hyväksyttäviä ryhmiä:</p>
+                  <table>
+                    <tr><td><p>Alue</p></td><td><p>Mänty</p></td><td><p>Pääpuulaji Kuusi kpl/hehtaari</p></td><td><p>Muu puulaji</p></td></tr>
+                    <tr><td><p>Pohjoinen</p></td><td><p>1 000</p></td><td><p>1 000</p></td><td><p>1000</p></td></tr>
+                  </table>
+                </content>
+              </subsection>
+              <subsection eId="sec_21__subsec_3"><content><p>Edellä 1 momentissa tarkoitettua määrää voidaan alentaa.</p></content></subsection>
+              <subsection eId="sec_21__subsec_4"><content><p>Päätös tehdään hakemuksesta.</p></content></subsection>
+            </section>
+            """
+        ),
+        _fi_label_postprocessor,
+    )
+
+    normalized, facts = normalize_source_ir(raw, "1991/1208")
+
+    subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+    assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+    assert "koskee seuraavia hyväksyttäviä ryhmiä" in irnode_to_text(subsections[0])
+    table = next(child for child in subsections[0].children[1].children if child.kind == IRNodeKind.TABLE)
+    assert [irnode_to_text(row) for row in table.children[:3]] == [
+        "Pääpuulaji",
+        "Alue Mänty Kuusi Muu puulaji",
+        "kpl/hehtaari",
+    ]
+    assert "Pohjoinen 1 000 1 000 1 000" in irnode_to_text(table)
+    assert subsections[0].attrs["lawvm_source_normalization_rule"] == (
+        "fi_table_continuation_subsection_merge_v1"
+    )
+    assert subsections[0].attrs["lawvm_source_normalization_merged_label"] == "2"
+    assert subsections[1].attrs["lawvm_source_normalization_original_label"] == "3"
+    assert "eId" not in subsections[1].attrs
+    assert subsections[1].attrs["lawvm_source_subsection_eid"] == "sec_21__subsec_3"
+
+    repair_facts = [
+        fact for fact in facts if fact.kind_value == BASE_TABLE_CONTINUATION_SUBSECTION_MERGE
+    ]
+    assert len(repair_facts) == 1
+    assert repair_facts[0].basis == SourceNormalizationBasis.PROFILE_INVALID
+    assert "table continuation" in repair_facts[0].before
+    header_facts = [
+        fact for fact in facts if fact.kind_value == BASE_TABLE_CONTINUATION_HEADER_REPAIR
+    ]
+    assert len(header_facts) == 1
+    assert check_invariants(normalized) == []
+
+
+def test_table_continuation_subsection_merge_keeps_real_table_moment() -> None:
+    raw = fi_xml_to_ir_node(
+        etree.fromstring(
+            """
+            <section>
+              <num>2 §</num>
+              <subsection><content><p>Ensimmäinen momentti on kokonainen.</p></content></subsection>
+              <subsection>
+                <content>
+                  <p>Toisessa momentissa säädetään taulukosta:</p>
+                  <table>
+                    <tr><td><p>Alue</p></td><td><p>Määrä</p></td></tr>
+                  </table>
+                </content>
+              </subsection>
+              <subsection><content><p>Kolmas momentti säilyy erillisenä.</p></content></subsection>
+            </section>
+            """
+        ),
+        _fi_label_postprocessor,
+    )
+
+    normalized, facts = normalize_source_ir(raw, "2020/1")
+
+    subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+    assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+    assert not any(
+        fact.kind_value == BASE_TABLE_CONTINUATION_SUBSECTION_MERGE for fact in facts
+    )

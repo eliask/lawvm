@@ -38,6 +38,7 @@ the architecture, keep it explanatory.
 ## Normative Core
 
 - [LAWVM_CONSTITUTION.md](LAWVM_CONSTITUTION.md)
+- [LAWVM_PIPELINE_CONTRACT.md](LAWVM_PIPELINE_CONTRACT.md) — the checkable constitution of the pipeline: the central invariant + four sub-invariants (no silent drop/guess/authority-promotion/representation-regression), the 10 waists with canonical input/output/coverage/authority types, the six type-distinct planes, the no-reach-back rule + witness exception, closed conservation vocabularies, guard-liveness as a registry rule, the authority firewall in types, identity discipline, certificate as destination. Backlog measured against it: `ARCHITECTURE_LEAK_LEDGER.md`
 - [CANONICAL_OP_SEMANTICS.md](CANONICAL_OP_SEMANTICS.md)
 - [COMPILER_OBSERVATION_STREAM.md](COMPILER_OBSERVATION_STREAM.md)
 - [LAWVM_PROOF_SURFACES.md](LAWVM_PROOF_SURFACES.md)
@@ -65,7 +66,7 @@ the architecture, keep it explanatory.
 - [FI_AMENDMENT_DRAFTING_GRAMMAR.md](FI_AMENDMENT_DRAFTING_GRAMMAR.md) — best-practice johtolause drafting guide derived from the per-rule register tiers (32 canonical / 7 accepted / 22 discouraged / 5 archaic)
 - [FI_REFERENCE_CATALOGUE.md](FI_REFERENCE_CATALOGUE.md) — living catalogue of Finnish citation/reference families: resolution-status ladder + determinism tiers (T1/T2/T3), the typed-overlay IR model (references as H1 of the Legal Surface Algebra), per-family table + detail cards, recognizer inventory (wired vs standalone), typed-primitive/status map, registry/convention dependencies, verification matrix, coverage ledger
 - [FINLAND_PERIODIC_TABLE.md](FINLAND_PERIODIC_TABLE.md) — Finland abstraction axes (phase/structure/time/provenance/evidence/instrumentation); filled cells, open holes, proof-projector split map; machine catalog in `src/lawvm/finland/periodic_table.py`
-- **Legal Surface Graph** (code, no standalone .md — design in `notes_internal/pro_on_fi_theory_grammar5.txt`): the spine the catalogue's H1 plugs into. Core algebra `src/lawvm/core/legal_surface_{graph,assembler,lens,lints,tokens}.py` (typed surface-fact nodes/edges, stable node_id, order-invariant graph_id, structural authority firewall: surface_only/replay_authorized). Finland lenses `src/lawvm/finland/legal_surface/lenses/` (references, definitions, temporal, actor_modal, delegation, procedure, sanction, exception_condition, anaphora) → assembler → cross-lens edge passes (`cross_lens_passes.py`, `frame_relations.py`, `passes.py`) → lints (`lints.py`, `ref_lints.py`, `frame_lints.py`, `def_scope_lints.py`). Cross-statute `corpus_graph.py` (+ `citations_of`) and `closure.py` (transitive closure); `corpus_lints.py` (structural type-mismatch); `bitemporal.py` + `lawvm broken-refs` (current-state default + opt-in replay provenance); `affordances.py` (experimental MeVM channels). Projections: `fi_refs` parquet + the viewer. E2E entry: `lawvm surface-graph <id>`. Recall diagnostics: `tools/recall_audit.py` (detection), `tools/resolution_miss_analysis.py` (resolution).
+- [LEGAL_SURFACE_GRAPH.md](LEGAL_SURFACE_GRAPH.md) — canonical spec for the Legal Surface Graph: node/edge model + source-anchored identity, lens producers, the surface_only/replay_authorized authority firewall, typed residue + token-partition/coverage certificate, the SourceSyntaxGraph forest (totality certifier, not yet sole producer), bitemporal broken-ref detection, and the projection consumers. The spine the catalogue's H1 plugs into. Core algebra `src/lawvm/core/legal_surface_{graph,assembler,lens,lints,tokens}.py`; Finland lenses `src/lawvm/finland/legal_surface/`; E2E entry `lawvm surface-graph <id>` (full code map in the spec).
 
 ## Other Frontends
 
@@ -74,6 +75,7 @@ the architecture, keep it explanatory.
 - [UK_REPLAY_LIVING_SPEC.md](UK_REPLAY_LIVING_SPEC.md)
 - [UK_REPLAY_REGIME_CONTRACT.md](UK_REPLAY_REGIME_CONTRACT.md)
 - [UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md](UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md) — per-statute UK official drafting-source rules
+- [US_LAWVM_STATUS.md](US_LAWVM_STATUS.md) — U.S. federal frontend status/limits/roadmap: witness-anchored dry-run over keyless govinfo PLAW USLM source + USC annual-edition htm oracle; coverage, lowering-gap residual classes, geo-block reality
 - [OPEN_LAW_FRONTEND_SPEC.md](OPEN_LAW_FRONTEND_SPEC.md)
 
 ## Evidence and Verification
@@ -98,4 +100,5 @@ the architecture, keep it explanatory.
 - [LAWVM_STACK_MAP.md](LAWVM_STACK_MAP.md)
 - [REGEX_TO_GRAMMAR_MIGRATION.md](REGEX_TO_GRAMMAR_MIGRATION.md) — when string matching stays regex (lint + prefilter) vs becomes a named recognizer/spec; applies AGENTS.md §1.13
 - [IMPLEMENTATION_DIVERGENCE_LEDGER.md](IMPLEMENTATION_DIVERGENCE_LEDGER.md) — current target-vs-implementation gaps + active work queue
+- [ARCHITECTURE_LEAK_LEDGER.md](ARCHITECTURE_LEAK_LEDGER.md) — EV-ranked backlog of representation/typing/authority leaks vs `LAWVM_PIPELINE_CONTRACT.md` (audit-and-enforce, not rewrite); 27 ranked sites + 2 CI-gate specs + 2 seam candidates from the e2e architecture-coherence audit
 - [FINLAND_COVERAGE_GAP_REPORT.md](FINLAND_COVERAGE_GAP_REPORT.md) — Finland projection freshness / coverage snapshot

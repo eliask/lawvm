@@ -69,6 +69,7 @@ from lawvm.finland.johtolause.grammar.sections import (
     _chapter_ctx,
     _expand_range_single,
     _letter,
+    _letter_list,
     _number_list,
     _part_ctx,
     _sep,
@@ -540,8 +541,11 @@ def _recognize_alakohta_insert_into_item(
     if not _consume_uusi(scan):
         scan.goto(saved)
         return None
-    letter = _letter(scan)
-    if letter is None or not _at(scan, "ALAKOHTA"):
+    letters = _letter_list(scan)
+    if not letters:
+        letter = _letter(scan)
+        letters = [letter] if letter is not None else []
+    if not letters or not _at(scan, "ALAKOHTA"):
         scan.goto(saved)
         return None
     scan.advance()
@@ -554,7 +558,64 @@ def _recognize_alakohta_insert_into_item(
             sub_target=InsSubTarget(momentti=mom, item=f"{base_item}{letter}"),
             witness_rule_id="fi.insertion_alakohta_into_item",
         )
+        for letter in letters
     ]
+
+
+def _consume_same_section_alakohta_insert_continuations(
+    scan: _Scan,
+    sec: str,
+    chapter: str,
+    part: str,
+    mom: int,
+    out: list[InsNode],
+) -> None:
+    while True:
+        saved = scan.pos
+        if _sep(scan) is None:
+            scan.goto(saved)
+            return
+        after_sep = scan.pos
+        if _at_cat_case(scan, "MOMENTTI", "GEN"):
+            scan.advance()
+            item_nums = _number_list(scan) or []
+            if len(item_nums) != 1:
+                scan.goto(saved)
+                return
+            item_label = item_nums[0][0] + item_nums[0][1]
+            scan.goto(after_sep)
+            scan.advance()  # consume MOMENTTI:GEN
+            more = _recognize_alakohta_insert_into_item(
+                scan,
+                sec,
+                chapter,
+                part,
+                mom,
+                item_label,
+            )
+            if not more:
+                scan.goto(saved)
+                return
+            out.extend(more)
+            continue
+        item_nums = _number_list(scan) or []
+        if len(item_nums) != 1:
+            scan.goto(saved)
+            return
+        item_label = item_nums[0][0] + item_nums[0][1]
+        scan.goto(after_sep)
+        more = _recognize_alakohta_insert_into_item(
+            scan,
+            sec,
+            chapter,
+            part,
+            mom,
+            item_label,
+        )
+        if not more:
+            scan.goto(saved)
+            return
+        out.extend(more)
 
 
 # A placeholder label/chapter the bare-anaphoric recognizer stamps on its
@@ -1501,6 +1562,43 @@ def _dispatch(
         if bare is not None:
             return bare
 
+    # ── Bare ``LUKU:ILL [reinst] uusi numlist (§ | luku)`` (old Pattern E) ──
+    #
+    # A NUMBER-less ``lukuun`` (the ``said chapter``) whose number is the inherited
+    # running chapter — an in-batch continuation arm (``…, lukuun uusi 31 a … §``)
+    # the old parser owns via Pattern E (surface_parse 2841-2877). Dispatch before
+    # the broad structural-tail guard: a later zero-node heading residue belongs to
+    # a later arm and must not block this clean chapter-scoped insertion.
+    if _at_cat_case(scan, "LUKU", "ILL") and inherited_chapter:
+        luku_nodes = recognize_bare_anaphoric_chapter_insert(scan, verb)
+        if luku_nodes is not None:
+            return [
+                InsNode(
+                    kind=n.kind,
+                    label=n.label,
+                    chapter=inherited_chapter,
+                    part=n.part or inherited_part,
+                )
+                for n in luku_nodes
+            ]
+
+    # ``luvun 7 §:ään uusi 2 momentti`` — a section sub-target insertion under
+    # the inherited chapter in the same insertion chain.
+    if _at_cat_case(scan, "LUKU", "GEN") and inherited_chapter:
+        saved_luvun = scan.pos
+        scan.advance()
+        luvun_nums = _number_list(scan)
+        if luvun_nums and _at_cat_case(scan, "PYKALA", "ILL"):
+            luvun_nodes = _try_section_ill_sub_target(
+                scan,
+                luvun_nums,
+                inherited_chapter,
+                inherited_part,
+            )
+            if luvun_nodes is not None:
+                return luvun_nodes
+        scan.goto(saved_luvun)
+
     # Out-of-scope guard for the remaining (whole-target) arms. Two scans:
     #
     #   * Provenance markers (reinstatement / citation / tilalle spans) attach to
@@ -1521,37 +1619,6 @@ def _dispatch(
     osa_nodes = _try_osa_scoped(scan, effective_part)
     if osa_nodes is not None:
         return osa_nodes
-
-    # ── Bare ``LUKU:ILL [reinst] uusi numlist (§ | luku)`` (old Pattern E) ──
-    #
-    # A NUMBER-less ``lukuun`` (the ``said chapter``) whose number is the inherited
-    # running chapter — an in-batch continuation arm (``…, lukuun uusi 31 a … §``)
-    # the old parser owns via Pattern E (surface_parse 2841-2877). The numbered
-    # ``N lukuun`` form is dispatched above (before the provenance guard); this bare
-    # form reuses the same recognizer (which consumes its own reinstatement
-    # preamble) and emits with the INHERITED chapter, exactly as Pattern E's
-    # ``chapter=chapter``. (The numbered form would have set ``ch_pre`` and been
-    # handled above, so a bare ``LUKU:ILL`` here is unambiguous.)
-    #
-    # Only fired when the inherited chapter is KNOWN (a ``N luvun`` arm earlier in
-    # THIS insertion batch sets it). A bare ``lukuun`` opening a fresh verb group
-    # (``muutetaan … 20 luvun … § sekä lisätään lukuun uusi 9 a §``) inherits the
-    # chapter from a PRIOR verb group — a cross-group resolution this single-arm
-    # recognizer does not perform; emitting a chapter-less node there would DIVERGE
-    # from the old parser (which carries the prior group's chapter). Decline so the
-    # driver keeps the old parser's fail-loud rather than ship a wrong chapter.
-    if _at_cat_case(scan, "LUKU", "ILL") and inherited_chapter:
-        luku_nodes = recognize_bare_anaphoric_chapter_insert(scan, verb)
-        if luku_nodes is not None:
-            return [
-                InsNode(
-                    kind=n.kind,
-                    label=n.label,
-                    chapter=inherited_chapter,
-                    part=n.part or inherited_part,
-                )
-                for n in luku_nodes
-            ]
 
     # (The LUKU:ILL-scoped insert arm is dispatched above, before the broad
     # provenance guard, so its reinstatement preamble is consumed faithfully.)
@@ -1642,6 +1709,24 @@ def _consume_sub_target_continuation(
             if nxt is None or nxt.cat not in ("NUM", "LETTER"):
                 scan.goto(saved_c)
                 break
+            if len(sec_nums) == 1:
+                saved_alakohta = scan.pos
+                item_nums = _number_list(scan) or []
+                if len(item_nums) == 1:
+                    item_label = item_nums[0][0] + item_nums[0][1]
+                    scan.goto(saved_alakohta)
+                    alakohta = _recognize_alakohta_insert_into_item(
+                        scan,
+                        sec_nums[0],
+                        chapter,
+                        part,
+                        1,
+                        item_label,
+                    )
+                    if alakohta:
+                        all_nodes.extend(alakohta)
+                        continue
+                scan.goto(saved_alakohta)
         batch: list[InsNode] = []
         for sec in sec_nums:
             saved_sub = scan.pos
@@ -1719,6 +1804,14 @@ def _try_section_gen_sub_target(
             item_label,
         )
         if alakohta:
+            _consume_same_section_alakohta_insert_continuations(
+                scan,
+                sec_nums[0],
+                chapter,
+                part,
+                1,
+                alakohta,
+            )
             return alakohta
         scan.goto(saved_subtarget)
 
@@ -1740,6 +1833,14 @@ def _try_section_gen_sub_target(
                     item_label,
                 )
                 if alakohta:
+                    _consume_same_section_alakohta_insert_continuations(
+                        scan,
+                        sec_nums[0],
+                        chapter,
+                        part,
+                        m_num,
+                        alakohta,
+                    )
                     return alakohta
             scan.goto(saved_alakohta)
         _skip_gen_reinst_preamble(scan)
@@ -1859,10 +1960,18 @@ def _try_luku_scoped(
             ):
                 kind = TargetKind.SECTION if t.cat == "PYKALA" else TargetKind.CHAPTER
                 scan.advance()
-                return [
+                out = [
                     InsNode(kind=kind, label=n + sf, chapter=chap_num, part=effective_part)
                     for n, sf in ins_nums
                 ]
+                _fold_same_whole_target_continuation(
+                    scan,
+                    kind,
+                    chap_num,
+                    effective_part,
+                    out,
+                )
+                return out
         scan.goto(saved)
         return None
     _skip_optional_comma_nain_kuuluva(scan)
@@ -1871,12 +1980,46 @@ def _try_luku_scoped(
     if ins_nums and t is not None and t.cat in ("PYKALA", "LUKU"):
         kind = TargetKind.SECTION if t.cat == "PYKALA" else TargetKind.CHAPTER
         scan.advance()
-        return [
+        out = [
             InsNode(kind=kind, label=n + sf, chapter=chap_num, part=effective_part)
             for n, sf in ins_nums
         ]
+        _fold_same_whole_target_continuation(
+            scan,
+            kind,
+            chap_num,
+            effective_part,
+            out,
+        )
+        return out
     scan.goto(saved)
     return None
+
+
+def _fold_same_whole_target_continuation(
+    scan: _Scan,
+    kind: TargetKind,
+    chapter: str,
+    part: str,
+    out: list[InsNode],
+) -> None:
+    """Fold ``uusi 12 a § ja 13 b §`` style same-noun whole-target tails."""
+    noun = "PYKALA" if kind == TargetKind.SECTION else "LUKU"
+    while True:
+        saved = scan.pos
+        if _sep(scan) is None:
+            scan.goto(saved)
+            return
+        _consume_uusi(scan)
+        more_nums = _number_list(scan)
+        if not more_nums or not _at_cat_case(scan, noun, "NOM"):
+            scan.goto(saved)
+            return
+        scan.advance()
+        out.extend(
+            InsNode(kind=kind, label=n + sf, chapter=chapter, part=part)
+            for n, sf in more_nums
+        )
 
 
 # Heading-facet / postfix-chapter markers whose presence in a post-``§`` DOC
@@ -1942,13 +2085,17 @@ def _fold_doc_section_continuation(scan: _Scan, out_nodes: list[InsNode]) -> boo
         if _arm_has_oos_marker(scan, arm_start, boundary):
             # An anaphoric heading-placement arm (``[sen] edellä uusi [N luvun]
             # (väli|ala)otsikko``) is NOT folded into the insertion batch by the
-            # old parser — it mints no node and the whole clause is consumed with
-            # just the section node. End the fold cleanly (rewound to the
-            # separator) so the section batch stands and the driver's continuation
-            # loop swallows the heading, rather than declining the whole insertion.
-            if _is_anaphoric_heading_arm(scan, arm_start):
-                scan.goto(cont_saved)
-                return True
+            # old parser — it mints no node. If it is terminal, end the fold
+            # cleanly. If it is followed by another plain section/chapter insert
+            # arm, step over the zero-node heading residue so that the following
+            # operative insert remains reachable.
+            heading_end = _foldable_anaphoric_heading_arm_end(scan, arm_start)
+            if heading_end is not None:
+                if heading_end >= len(scan.cur.tokens) or scan.cur.tokens[heading_end].cat == "END_SENTINEL_SPAN":
+                    scan.goto(cont_saved)
+                    return True
+                scan.goto(heading_end)
+                continue
             scan.goto(cont_saved)
             return False
         scan.goto(cont_saved)
@@ -2021,13 +2168,19 @@ def _arm_has_oos_marker(scan: _Scan, start: int, end: int) -> bool:
     return False
 
 
-def _is_anaphoric_heading_arm(scan: _Scan, start: int) -> bool:
-    """True if tokens from ``start`` form ``[<anaphor>] EDELLA uusi [N luvun] OTSIKKO``.
+def _foldable_anaphoric_heading_arm_end(scan: _Scan, start: int) -> int | None:
+    """End of a zero-node anaphoric heading residue, if safe to skip.
 
-    Pure token-peek (no cursor mutation). Identifies the anaphoric
-    heading-placement arm (``ja sen edelle uusi väliotsikko``) the old parser
-    consumes but mints no node for — distinct from the non-anaphoric ``N §:n
-    edelle …`` form (a §:GEN target before EDELLA), which it DOES emit a node for.
+    Pure token-peek (no cursor mutation). Identifies the anaphoric heading
+    placement (``ja sen edelle uusi väliotsikko`` / ``uusi 2 a luvun otsikko``)
+    the old parser consumes but mints no node for — distinct from the
+    non-anaphoric ``N §:n edelle …`` form (a §:GEN target before EDELLA), which
+    it DOES emit a node for.
+
+    The residue is safe to skip when it is terminal, or when the next separator
+    opens another plain insertion arm. It is deliberately not safe before
+    ``jolloin`` / move tails or unrelated prose: those clauses stay declined so
+    the legacy parser owns their wider control flow.
     """
     toks = scan.cur.tokens
     n = len(toks)
@@ -2036,10 +2189,10 @@ def _is_anaphoric_heading_arm(scan: _Scan, start: int) -> bool:
     if i < n and toks[i].cat == "WORD" and i + 1 < n and toks[i + 1].cat == "EDELLA":
         i += 1
     if not (i < n and toks[i].cat == "EDELLA"):
-        return False
+        return None
     i += 1
     if not (i < n and toks[i].cat == "UUSI"):
-        return False
+        return None
     i += 1
     # Optional ``N [letter] luvun`` chapter-genitive qualifier.
     if i < n and toks[i].cat == "NUM":
@@ -2051,14 +2204,23 @@ def _is_anaphoric_heading_arm(scan: _Scan, start: int) -> bool:
     elif i < n and toks[i].cat == "LUKU" and toks[i].case == "GEN":
         i += 1
     if not (i < n and toks[i].cat in ("OTSIKKO", "VALIOTSIKKO")):
-        return False
-    # Only a TERMINAL anaphoric heading (the last arm, followed by the END
-    # sentinel / end-of-stream) is the benign consume-and-drop form. A heading
-    # followed by more content — a ``, jolloin …`` renumber tail, further arms, or
-    # a cross-verb-group ``muutetaan … sekä lisätään …`` continuation — belongs to
-    # a complex clause the new parser must still decline (1999/1001), so leave it.
+        return None
     j = i + 1
-    return j >= n or toks[j].cat == "END_SENTINEL_SPAN"
+    if j >= n or toks[j].cat == "END_SENTINEL_SPAN":
+        return j
+    if toks[j].cat not in {"COMMA", "CONJ", "SEKA"}:
+        return None
+    k = j + 1
+    if k < n and toks[k].cat == "DOC" and toks[k].case == "ILL":
+        k += 1
+    if k < n and toks[k].cat == "UUSI":
+        k += 1
+    nums_end = _number_list_at(toks, k)
+    if nums_end is None:
+        return None
+    if nums_end < n and toks[nums_end].cat in {"PYKALA", "LUKU"} and toks[nums_end].case != "GEN":
+        return j
+    return None
 
 
 def _try_doc_ill_liite(scan: _Scan) -> Optional[list[InsNode]]:

@@ -380,7 +380,7 @@ def _no_duplicate_logical_locator_source_lane_evidence(
             SourceLaneAttempt(
                 lane="norway_lovtidend_archive_member",
                 locator=_no_artifact_source_lane_locator(artifact),
-                status=(
+                lane_attempt_status=(
                     "selected_identical_duplicate"
                     if selected is artifact
                     else (

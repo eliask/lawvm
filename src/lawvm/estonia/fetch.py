@@ -103,7 +103,7 @@ class RedactionsFeedDiagnostic:
                     SourceLaneAttempt(
                         lane="riigi_teataja_redactions_feed",
                         locator=self.url,
-                        status="fetch_failed",
+                        lane_attempt_status="fetch_failed",
                     ),
                 ),
                 blocking=self.blocking,

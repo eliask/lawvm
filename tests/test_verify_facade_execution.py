@@ -87,7 +87,7 @@ def test_build_verify_facade_carries_temporal_events_into_timeline_execution() -
     assert len(facade.bundle.temporal_events) == 2
 
     materialized = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized.status == "degraded_missing_scope"
+    assert materialized.materialization_status == "degraded_missing_scope"
     assert materialized.required_dimensions == ("territory",)
 
     selected = facade.materialize_pit_ex(
@@ -96,7 +96,7 @@ def test_build_verify_facade_carries_temporal_events_into_timeline_execution() -
         base_date="2000-01-01",
         territory="AX",
     )
-    assert selected.status == "materialized"
+    assert selected.materialization_status == "materialized"
     assert selected.statute.body.children[0].text == "Updated"
 
 
@@ -128,7 +128,7 @@ def test_verify_materialization_degradation_projection_distinguishes_statuses() 
         body=IRNode(kind=IRNodeKind.BODY),
     )
     missing_scope = MaterializationResult(
-        status="degraded_missing_scope",
+        materialization_status="degraded_missing_scope",
         statute=statute,
         required_dimensions=("territory",),
     )
@@ -137,11 +137,11 @@ def test_verify_materialization_degradation_projection_distinguishes_statuses() 
         message="contingent temporal event unresolved",
     )
     timeline_degraded = MaterializationResult(
-        status="degraded_timeline_issues",
+        materialization_status="degraded_timeline_issues",
         statute=statute,
         issues=(timeline_issue,),
     )
-    clean = MaterializationResult(status="materialized", statute=statute)
+    clean = MaterializationResult(materialization_status="materialized", statute=statute)
 
     scope_issue = _materialization_degradation_issue(missing_scope, "test/statute")
     assert scope_issue is not None
@@ -180,7 +180,7 @@ def test_verify_report_json_projects_issues_to_shared_contract(capsys) -> None:
     assert rc == 0
     assert data["jurisdiction"] == "fi"
     assert data["base_id"] == "2006/1299"
-    assert data["status"] == "ok"
+    assert data["verify_status"] == "ok"
     assert data["consistent"] is None
     assert data["issue_count"] == 1
     assert data["detail"] == {"stage": "observations", "mode": "legal_pit"}
@@ -426,7 +426,7 @@ def test_build_verify_facade_ignores_temporal_events_with_nonmatching_group_id()
     )
 
     materialized = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized.status == "degraded_timeline_issues"
+    assert materialized.materialization_status == "degraded_timeline_issues"
     assert materialized.required_dimensions == ()
     assert materialized.statute.body.children[0].text == "Base"
 
@@ -490,7 +490,7 @@ def test_build_verify_facade_ignores_temporal_events_with_nonmatching_target_sta
     )
 
     materialized = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized.status == "degraded_timeline_issues"
+    assert materialized.materialization_status == "degraded_timeline_issues"
     assert materialized.required_dimensions == ()
     assert materialized.statute.body.children[0].text == "Base"
 
@@ -558,7 +558,7 @@ def test_build_verify_facade_ignores_temporal_events_with_nonmatching_exact_addr
     )
 
     materialized = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized.status == "degraded_timeline_issues"
+    assert materialized.materialization_status == "degraded_timeline_issues"
     assert materialized.required_dimensions == ()
     assert materialized.statute.body.children[0].text == "Base"
 
@@ -626,12 +626,12 @@ def test_build_verify_facade_honors_temporal_events_with_exact_address() -> None
     )
 
     materialized_2007 = facade.materialize_pit_ex(base, "2007-01-01", base_date="2000-01-01")
-    assert materialized_2007.status == "materialized"
+    assert materialized_2007.materialization_status == "materialized"
     chapter_2007 = next(child for child in materialized_2007.statute.body.children if child.kind == IRNodeKind.CHAPTER)
     assert chapter_2007.children[0].text == "Base"
 
     materialized_2011 = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized_2011.status == "materialized"
+    assert materialized_2011.materialization_status == "materialized"
     chapter_2011 = next(child for child in materialized_2011.statute.body.children if child.kind == IRNodeKind.CHAPTER)
     assert chapter_2011.children[0].text == "Updated"
 
@@ -700,12 +700,12 @@ def test_build_verify_facade_honors_temporal_events_with_address_prefix() -> Non
     )
 
     materialized_2007 = facade.materialize_pit_ex(base, "2007-01-01", base_date="2000-01-01")
-    assert materialized_2007.status == "materialized"
+    assert materialized_2007.materialization_status == "materialized"
     chapter_2007 = next(child for child in materialized_2007.statute.body.children if child.kind == IRNodeKind.CHAPTER)
     assert chapter_2007.children[0].text == "Base"
 
     materialized_2011 = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized_2011.status == "materialized"
+    assert materialized_2011.materialization_status == "materialized"
     chapter_2011 = next(child for child in materialized_2011.statute.body.children if child.kind == IRNodeKind.CHAPTER)
     assert chapter_2011.children[0].text == "Updated"
 
@@ -782,12 +782,12 @@ def test_build_verify_facade_honors_exact_address_descendants_when_opted_in() ->
     )
 
     materialized_2007 = facade.materialize_pit_ex(base, "2007-01-01", base_date="2000-01-01")
-    assert materialized_2007.status == "materialized"
+    assert materialized_2007.materialization_status == "materialized"
     chapter_2007 = next(child for child in materialized_2007.statute.body.children if child.kind == IRNodeKind.CHAPTER)
     assert chapter_2007.children[0].children[0].text == "Base"
 
     materialized_2011 = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized_2011.status == "materialized"
+    assert materialized_2011.materialization_status == "materialized"
     chapter_2011 = next(child for child in materialized_2011.statute.body.children if child.kind == IRNodeKind.CHAPTER)
     assert chapter_2011.children[0].children[0].text == "Updated"
 
@@ -862,11 +862,11 @@ def test_build_verify_facade_does_not_honor_exact_address_descendants_without_op
     )
 
     materialized_2007 = facade.materialize_pit_ex(base, "2007-01-01", base_date="2000-01-01")
-    assert materialized_2007.status == "degraded_timeline_issues"
+    assert materialized_2007.materialization_status == "degraded_timeline_issues"
     chapter_2007 = next(child for child in materialized_2007.statute.body.children if child.kind == IRNodeKind.CHAPTER)
     assert chapter_2007.children[0].children[0].text == "Base"
 
     materialized_2011 = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized_2011.status == "degraded_timeline_issues"
+    assert materialized_2011.materialization_status == "degraded_timeline_issues"
     chapter_2011 = next(child for child in materialized_2011.statute.body.children if child.kind == IRNodeKind.CHAPTER)
     assert chapter_2011.children[0].children[0].text == "Base"

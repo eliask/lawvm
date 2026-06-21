@@ -153,7 +153,7 @@ def test_build_no_amendment_index_records_identical_duplicate_logical_locator(tm
         "source_lane_attempts": (
             {
                 "lane": "norway_lovtidend_archive_member",
-                "status": "selected_identical_duplicate",
+                "lane_attempt_status": "selected_identical_duplicate",
                 "locator": "lovtidend-avd1-2025-2026.tar.bz2:lti/2025/nl-20250202-005.xml",
                 "logical_id": "no/lovtid/2025-02-02-5",
                 "logical_locator": "no://lovtid/2025-02-02-5/amendment.xml",
@@ -161,7 +161,7 @@ def test_build_no_amendment_index_records_identical_duplicate_logical_locator(tm
             },
             {
                 "lane": "norway_lovtidend_archive_member",
-                "status": "duplicate_identical_not_selected",
+                "lane_attempt_status": "duplicate_identical_not_selected",
                 "locator": "lovtidend-avd1-2025.tar.bz2:lti/2025/nl-20250202-005.xml",
                 "logical_id": "no/lovtid/2025-02-02-5",
                 "logical_locator": "no://lovtid/2025-02-02-5/amendment.xml",
@@ -205,7 +205,7 @@ def test_build_no_amendment_index_blocks_conflicting_duplicate_logical_locator(t
     assert source_lane_selection["selected_source_locator"] == ""
     assert source_lane_selection["quirks_disposition"] == "block"
     assert {
-        attempt["status"]
+        attempt["lane_attempt_status"]
         for attempt in source_lane_selection["source_lane_attempts"]
     } == {"blocked_conflicting_duplicate"}
     assert len(diagnostic["payload_digests"]) == 2

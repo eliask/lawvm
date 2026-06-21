@@ -938,8 +938,8 @@ def uk_effects_summary_counts(
                         "required_proofs": authorization.required_proofs,
                         "owner_phase": owner_phase_key,
                         "frontier_work_item": work_item,
-                        "candidate_set_certificate": (
-                            _candidate_set_certificate_from_frontier_work_item(
+                        "candidate_set_coverage": (
+                            _candidate_set_coverage_from_frontier_work_item(
                                 work_item
                             )
                         ),
@@ -1200,7 +1200,7 @@ def _work_item_candidate_set_status(work_item: Mapping[str, Any]) -> str:
     detail = work_item.get("detail")
     if not isinstance(detail, Mapping):
         return ""
-    certificate = detail.get("candidate_set_certificate")
+    certificate = detail.get("candidate_set_coverage")
     if not isinstance(certificate, Mapping):
         return ""
     return str(certificate.get("completeness_status") or "")
@@ -1220,7 +1220,7 @@ def _count_agreement_residual(
     family = str(residual.get("family") or "")
     if family:
         family_counts[family] = family_counts.get(family, 0) + 1
-    status = str(residual.get("status") or "")
+    status = str(residual.get("agreement_residual_status") or "")
     if status:
         status_counts[status] = status_counts.get(status, 0) + 1
     owner_phase = str(residual.get("owner_phase") or "")
@@ -1625,8 +1625,8 @@ def _effect_report_row_jsonable(
         )
     else:
         payload["frontier_work_item"] = {}
-    payload["candidate_set_certificate"] = (
-        _candidate_set_certificate_from_frontier_work_item(
+    payload["candidate_set_coverage"] = (
+        _candidate_set_coverage_from_frontier_work_item(
             payload["frontier_work_item"]
         )
     )
@@ -1635,7 +1635,7 @@ def _effect_report_row_jsonable(
     return payload
 
 
-def _candidate_set_certificate_from_frontier_work_item(
+def _candidate_set_coverage_from_frontier_work_item(
     work_item: Any,
 ) -> dict[str, Any]:
     if not isinstance(work_item, Mapping):
@@ -1643,7 +1643,7 @@ def _candidate_set_certificate_from_frontier_work_item(
     detail = work_item.get("detail")
     if not isinstance(detail, Mapping):
         return {}
-    certificate = detail.get("candidate_set_certificate")
+    certificate = detail.get("candidate_set_coverage")
     return dict(certificate) if isinstance(certificate, Mapping) else {}
 
 
@@ -1660,16 +1660,16 @@ def _manual_compile_agreement_residual(payload: Mapping[str, Any]) -> dict[str, 
         or payload.get("effect_id")
         or "unknown"
     )
-    candidate_set_certificate = payload.get("candidate_set_certificate")
+    candidate_set_coverage = payload.get("candidate_set_coverage")
     certificate_payload = (
-        candidate_set_certificate if isinstance(candidate_set_certificate, Mapping) else {}
+        candidate_set_coverage if isinstance(candidate_set_coverage, Mapping) else {}
     )
     return AgreementResidual(
         residual_id=work_item_id,
         jurisdiction="uk",
         agreement_surface="manual_compile_frontier_vs_current_oracle",
         family=_manual_compile_agreement_residual_family(payload),
-        status="frontier",
+        agreement_residual_status="frontier",
         owner_phase=str(
             payload.get("owner_phase")
             or payload.get("manual_compile_owner_phase")
@@ -1989,8 +1989,8 @@ def _manual_compile_evidence_row_jsonable(
         )
     else:
         payload["frontier_work_item"] = {}
-    payload["candidate_set_certificate"] = (
-        _candidate_set_certificate_from_frontier_work_item(
+    payload["candidate_set_coverage"] = (
+        _candidate_set_coverage_from_frontier_work_item(
             payload["frontier_work_item"]
         )
     )

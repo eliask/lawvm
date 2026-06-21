@@ -146,7 +146,7 @@ def _resolve_hash(statute_id: str, provision: str, as_of: str, query_type: str) 
         jurisdiction="fi",
     )
     hashes = payload["hashes"]
-    return payload["status"], hashes["derived_state_hash"], hashes["content_hash"]
+    return payload["provision_status"], hashes["derived_state_hash"], hashes["content_hash"]
 
 
 def _assert_source_locator_span(payload: dict) -> None:
@@ -195,7 +195,7 @@ def test_provision_state_consumer_pin_reproduces(
         jurisdiction="fi",
     )
     hashes = payload["hashes"]
-    status = payload["status"]
+    status = payload["provision_status"]
     derived_hash = hashes["derived_state_hash"]
     # The consumer only mints CONFIRMED from a resolved/selected state.
     assert status == "selected", (
@@ -262,7 +262,7 @@ def test_base_version_reports_populated_enacted_date(
         query_type=_QT,
         jurisdiction="fi",
     )
-    assert payload["status"] == "selected", (
+    assert payload["provision_status"] == "selected", (
         f"{statute_id} {provision}: expected status 'selected', got {payload['status']!r}"
     )
     version = payload.get("version") or {}

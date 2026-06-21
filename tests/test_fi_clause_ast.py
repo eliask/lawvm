@@ -738,3 +738,105 @@ def test_clause_ast_to_legal_ops_with_diagnostics_records_unsupported_generic_no
     assert "source_items" in (diagnostics[0].detail or "")
     assert "named_targets" in (diagnostics[1].detail or "")
     assert diagnostics[2].detail == "meta_kind=other"
+
+
+# ---------------------------------------------------------------------------
+# Rank-17: ingress seam routes through the diagnostic twin (no silent drop)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_legal_ops_from_parse_result_records_unsupported_nodes() -> None:
+    """An unsupported clause node at the ingress seam yields a residual."""
+    from lawvm.finland.johtolause import extract_legal_ops_from_parse_result
+    from lawvm.finland.johtolause.api import ClauseParseResult
+    from lawvm.core.clause_ast import (
+        CLAUSE_AST_UNSUPPORTED_GENERIC_LOWERING_KIND,
+        ClauseAstLoweringDiagnostic,
+    )
+
+    replace = RefAmend(
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "5"),)),
+    )
+    meta = MetaClause(kind=MetaClauseKind.OTHER, raw_text="voimaantulo erikseen")
+    ast = ClauseAST(
+        source_text="test",
+        verb_groups=(
+            VerbGroup(
+                verb=StructuralAction.REPLACE,
+                nodes=(replace, meta),
+            ),
+        ),
+    )
+    result = ClauseParseResult(clause_ast=ast)
+
+    diagnostics: list[ClauseAstLoweringDiagnostic] = []
+    ops = extract_legal_ops_from_parse_result(result, diagnostics_out=diagnostics)
+
+    # Supported node still lowers identically; the unsupported node is a residual.
+    assert [op.target for op in ops] == [LegalAddress(path=(("section", "5"),))]
+    assert len(diagnostics) == 1
+    assert diagnostics[0].kind == CLAUSE_AST_UNSUPPORTED_GENERIC_LOWERING_KIND
+    assert diagnostics[0].node_kind == "MetaClause"
+
+
+def test_extract_legal_ops_from_parse_result_supported_only_no_residual() -> None:
+    """Negative: an all-supported clause produces no diagnostics."""
+    from lawvm.finland.johtolause import extract_legal_ops_from_parse_result
+    from lawvm.finland.johtolause.api import ClauseParseResult
+    from lawvm.core.clause_ast import ClauseAstLoweringDiagnostic
+
+    ast = ClauseAST(
+        source_text="test",
+        verb_groups=(
+            VerbGroup(
+                verb=StructuralAction.REPLACE,
+                nodes=(
+                    RefAmend(
+                        action=StructuralAction.REPLACE,
+                        target=LegalAddress(path=(("section", "5"),)),
+                    ),
+                ),
+            ),
+        ),
+    )
+    result = ClauseParseResult(clause_ast=ast)
+
+    diagnostics: list[ClauseAstLoweringDiagnostic] = []
+    ops = extract_legal_ops_from_parse_result(result, diagnostics_out=diagnostics)
+
+    assert len(ops) == 1
+    assert diagnostics == []
+
+
+def test_extract_legal_ops_from_parse_result_ops_identical_to_silent() -> None:
+    """Routing through the diagnostic twin must not change which ops are produced."""
+    from lawvm.finland.johtolause import extract_legal_ops_from_parse_result
+    from lawvm.finland.johtolause.api import ClauseParseResult
+    from lawvm.core.clause_ast import clause_ast_to_legal_ops
+
+    ast = ClauseAST(
+        source_text="test",
+        verb_groups=(
+            VerbGroup(
+                verb=StructuralAction.REPLACE,
+                nodes=(
+                    RefAmend(
+                        action=StructuralAction.REPLACE,
+                        target=LegalAddress(path=(("section", "5"),)),
+                    ),
+                    MetaClause(kind=MetaClauseKind.OTHER, raw_text="x"),
+                    RefAmend(
+                        action=StructuralAction.REPEAL,
+                        target=LegalAddress(path=(("section", "9"),)),
+                    ),
+                ),
+            ),
+        ),
+    )
+    result = ClauseParseResult(clause_ast=ast)
+
+    seam_ops = extract_legal_ops_from_parse_result(result)
+    silent_ops = clause_ast_to_legal_ops(ast)
+    assert [op.target for op in seam_ops] == [op.target for op in silent_ops]
+    assert [op.action for op in seam_ops] == [op.action for op in silent_ops]

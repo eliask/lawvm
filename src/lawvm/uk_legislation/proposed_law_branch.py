@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence, cast
 
-from lawvm.core.authority import (
+from lawvm.core.branch_authority import (
     BRANCH_FAILED,
     BRANCH_INTRODUCED,
     BranchGraphEdge,

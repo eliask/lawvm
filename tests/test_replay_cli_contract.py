@@ -186,6 +186,8 @@ def test_no_replay_main_emits_normalized_json(monkeypatch, capsys) -> None:
                     kind="no_replay_missing_amendment_source",
                     message="Norway replay skipped amendment: source bytes not found.",
                     source_statute="a2",
+                    blocking=True,
+                    phase="acquisition",
                     op_id="",
                     detail={
                         "rule_id": "no_replay_missing_amendment_source",
@@ -224,6 +226,8 @@ def test_no_replay_main_emits_normalized_json(monkeypatch, capsys) -> None:
             "message": "Norway replay skipped amendment: source bytes not found.",
             "source_statute": "a2",
             "op_id": "",
+            "blocking": True,
+            "phase": "acquisition",
             "detail": {
                 "rule_id": "no_replay_missing_amendment_source",
                 "phase": "acquisition",
@@ -268,10 +272,12 @@ def test_ee_replay_main_emits_normalized_json(monkeypatch, capsys) -> None:
                     message="Replay skipped unsupported action",
                     op_id="op-1",
                     source_statute="a1",
+                    blocking=True,
+                    phase="replay",
                     detail={"rule_id": "ee_replay_unsupported_action", "phase": "replay"},
                 ),
-                SimpleNamespace(kind="ee_replay_unsupported_action"),
-                SimpleNamespace(kind="ee_text_replace_ambiguous"),
+                SimpleNamespace(kind="ee_replay_unsupported_action", blocking=True, phase="replay"),
+                SimpleNamespace(kind="ee_text_replace_ambiguous", blocking=True, phase="replay"),
             ],
             replayed=None,
             timelines={},
@@ -305,6 +311,8 @@ def test_ee_replay_main_emits_normalized_json(monkeypatch, capsys) -> None:
         "message": "Replay skipped unsupported action",
         "source_statute": "a1",
         "op_id": "op-1",
+        "blocking": True,
+        "phase": "replay",
         "detail": {"rule_id": "ee_replay_unsupported_action", "phase": "replay"},
     }
     evidence_row = payload["evidence"]["finding_rows"][0]
@@ -359,6 +367,8 @@ def test_build_uk_replay_payload_shape() -> None:
                 message="UK replay skipped op",
                 op_id="op-1",
                 source_statute="ukpga/2020/1",
+                blocking=True,
+                phase="replay",
                 detail={"rule_id": "uk_replay_payload_missing", "phase": "replay"},
             )
         ],
@@ -490,7 +500,7 @@ def test_build_uk_replay_payload_shape() -> None:
     assert adjudication["authorization_status"] == "replay_adjudication_replay_bug"
     assert adjudication["replay_authorized"] is False
     assert adjudication["agreement_residual"]["family"] == "replay_bug"
-    assert adjudication["agreement_residual"]["status"] == "residual"
+    assert adjudication["agreement_residual"]["agreement_residual_status"] == "residual"
     assert adjudication["agreement_residual"]["owner_phase"] == (
         "affecting_source_extraction"
     )
@@ -861,6 +871,8 @@ def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_
                     message="UK replay skipped target",
                     op_id=ops[0].op_id,
                     source_statute="ukpga/2020/1",
+                    blocking=True,
+                    phase="replay",
                     detail={"phase": "replay", "target": "section:99"},
                 )
             )
@@ -1089,6 +1101,8 @@ def test_uk_replay_main_text_reports_evidence_summary(monkeypatch, tmp_path, cap
                     message="UK replay skipped target",
                     op_id="op-1",
                     source_statute="ukpga/2020/1",
+                    blocking=True,
+                    phase="replay",
                     detail={"phase": "replay", "target": "section:99"},
                 )
             )
@@ -1216,6 +1230,8 @@ def test_uk_replay_adjudication_text_formatter_prints_requested_samples() -> Non
                 message="text match missing",
                 op_id="op-1",
                 source_statute="ukpga/2020/1",
+                blocking=True,
+                phase="replay",
                 detail={
                     "target": "section:1/subsection:2",
                     "text_match": "old words",
@@ -1227,6 +1243,8 @@ def test_uk_replay_adjudication_text_formatter_prints_requested_samples() -> Non
                 message="second missing",
                 op_id="op-2",
                 source_statute="ukpga/2021/2",
+                blocking=True,
+                phase="replay",
                 detail={"target": "section:3"},
             ),
             CompileAdjudication(
@@ -1234,6 +1252,8 @@ def test_uk_replay_adjudication_text_formatter_prints_requested_samples() -> Non
                 message="not requested",
                 op_id="op-3",
                 source_statute="ukpga/2022/3",
+                blocking=True,
+                phase="replay",
                 detail={"target": "section:4"},
             ),
         ],

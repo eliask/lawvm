@@ -78,6 +78,18 @@ Currently handled corrections
    subparagraphs): a ``WRAP_UP`` continuation facet is appended.  This pass
    runs BEFORE the numbering-anomaly dedup so the peer is still present.
 
+10. **UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT / PROFILE_INVALID** -- a closed
+    numbered paragraph whose direct child run starts with an unnumbered
+    ``subparagraph`` is split so that the unnumbered payload becomes the next
+    peer subsection.  If numbered subparagraphs and immediately following
+    numbered paragraph siblings continue that payload's item run, they are
+    carried into the new peer subsection.
+
+11. **HEADING_BODY_SUBSECTION_SPLIT / PROFILE_INVALID** -- a section-local
+    ``heading`` that carries paragraph-length body text before a consecutive
+    subsection run is converted to subsection 1, and following subsections are
+    shifted by one. Real short section headings are preserved.
+
 All corrections are applied in a single recursive tree walk so that a
 statute with multiple pathological nodes produces one fact per corrected node.
 """
@@ -113,10 +125,16 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_DUPLICATE_TAIL_SPLIT,
     BASE_NUM_IN_INTRO_MISMATCH,
     BASE_NUM_IN_INTRO_RECOVERED,
+    BASE_HEADING_BODY_SUBSECTION_SPLIT,
+    HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
     BASE_TAIL_PROSE_ABSORB,
+    BASE_TABLE_CONTINUATION_SUBSECTION_MERGE,
+    BASE_TABLE_CONTINUATION_HEADER_REPAIR,
+    BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT,
     TRAILING_CHAPTER_REPARENT,
+    TABLE_CONTINUATION_SUBSECTION_MERGE_RULE_ATTR,
     UNNUMBERED_PEER_REPARENT,
 )
 
@@ -176,6 +194,355 @@ def _is_item_style_subsection(node: IRNode) -> bool:
         and _LETTER_LABEL_RE.match(c.label)
         for c in node.children
     )
+
+
+def _is_substantive_body_heading(text: str) -> bool:
+    compact = " ".join(text.split())
+    if len(compact) < 80:
+        return False
+    if not compact.endswith("."):
+        return False
+    # Section titles can be long, but they rarely contain multiple full
+    # sentences. A body-bearing heading in malformed source XML does.
+    return compact.count(".") >= 2
+
+
+def _numeric_subsection_labels_are_initial_run(subsections: list[IRNode]) -> bool:
+    labels: list[int] = []
+    for subsection in subsections:
+        label = str(subsection.label or "")
+        if not label.isdigit():
+            return False
+        labels.append(int(label))
+    return labels == list(range(1, len(labels) + 1))
+
+
+def _shift_subsection_label(subsection: IRNode) -> IRNode:
+    label = str(subsection.label or "")
+    if not label.isdigit():
+        return subsection
+    attrs = dict(subsection.attrs)
+    attrs.setdefault("lawvm_source_normalization_original_label", label)
+    attrs["lawvm_source_normalization_rule"] = HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR
+    return IRNode(
+        kind=subsection.kind,
+        label=str(int(label) + 1),
+        text=subsection.text,
+        attrs=attrs,
+        children=tuple(subsection.children),
+    )
+
+
+def _split_body_heading_into_first_subsection(
+    children: list[IRNode],
+    statute_id: str,
+    parent_path: tuple[str, ...],
+    facts: list[SourceNormalizationFact],
+) -> list[IRNode]:
+    """Convert a paragraph-length section heading into first subsection body.
+
+    Historical Finlex XML occasionally wraps the first momentti body in a
+    ``heading`` tag while the following momentit are normal ``subsection``
+    nodes. A real section heading is preserved; this only fires for long,
+    sentence-like heading text followed by a clean consecutive subsection run.
+    """
+    if not children:
+        return children
+    heading_indexes = [idx for idx, child in enumerate(children) if child.kind == IRNodeKind.HEADING]
+    if len(heading_indexes) != 1:
+        return children
+    heading_index = heading_indexes[0]
+    heading = children[heading_index]
+    heading_text = " ".join(irnode_to_text(heading).split())
+    if not _is_substantive_body_heading(heading_text):
+        return children
+
+    following = children[heading_index + 1 :]
+    if not following or any(child.kind is not IRNodeKind.SUBSECTION for child in following):
+        return children
+    subsections = list(following)
+    if not _numeric_subsection_labels_are_initial_run(subsections):
+        return children
+    if any(child.kind is IRNodeKind.SUBSECTION for child in children[:heading_index]):
+        return children
+
+    first_subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        attrs={"lawvm_source_normalization_rule": HEADING_BODY_SUBSECTION_SPLIT_RULE_ATTR},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text=heading_text),),
+    )
+    rewritten = (
+        children[:heading_index]
+        + [first_subsection]
+        + [_shift_subsection_label(subsection) for subsection in subsections]
+    )
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=BASE_HEADING_BODY_SUBSECTION_SPLIT,
+            basis=SourceNormalizationBasis.PROFILE_INVALID,
+            before=(
+                "section heading contains paragraph-length first-moment body; "
+                f"heading excerpt={heading_text[:120]!r}; shifted_subsections={len(subsections)}"
+            ),
+            after="heading converted to subsection:1 and following subsection labels shifted by +1",
+            explanation=(
+                "The source section has no title facet; its <heading> carries substantive "
+                "body prose while the following children are a consecutive subsection run. "
+                "Treat the heading text as the missing first momentti body and preserve the "
+                "following momentit by shifting their labels."
+            ),
+            path=parent_path,
+            confidence=0.94,
+        )
+    )
+    return rewritten
+
+
+def _contains_node_kind(node: IRNode, kind: IRNodeKind) -> bool:
+    return node.kind == kind or any(_contains_node_kind(child, kind) for child in node.children)
+
+
+def _first_text_segment(node: IRNode) -> str:
+    if node.text and node.text.strip():
+        return node.text.strip()
+    for child in node.children:
+        text = _first_text_segment(child)
+        if text:
+            return text
+    return ""
+
+
+def _relabel_subsection_with_source_label(subsection: IRNode, label: int) -> IRNode:
+    source_label = str(subsection.label or "")
+    if not source_label.isdigit() or int(source_label) == label:
+        return subsection
+    attrs = dict(subsection.attrs)
+    source_eid = attrs.pop("eId", None)
+    if source_eid:
+        attrs["lawvm_source_subsection_eid"] = str(source_eid)
+    attrs.setdefault("lawvm_source_normalization_original_label", source_label)
+    attrs["lawvm_source_normalization_rule"] = TABLE_CONTINUATION_SUBSECTION_MERGE_RULE_ATTR
+    return IRNode(
+        kind=subsection.kind,
+        label=str(label),
+        text=subsection.text,
+        attrs=attrs,
+        children=tuple(subsection.children),
+    )
+
+
+def _table_cell_texts(row: IRNode) -> list[str]:
+    if row.kind != IRNodeKind.ROW:
+        return []
+    return [" ".join(irnode_to_text(cell).split()) for cell in row.children if cell.kind == IRNodeKind.CELL]
+
+
+def _table_row_from_texts(cells: tuple[str, ...]) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.ROW,
+        children=tuple(IRNode(kind=IRNodeKind.CELL, text=cell) for cell in cells),
+    )
+
+
+def _normalize_table_number_cell(cell: IRNode) -> IRNode:
+    text = " ".join(irnode_to_text(cell).split())
+    if len(text) == 4 and text.isdigit():
+        attrs = dict(cell.attrs)
+        attrs["lawvm_source_normalization_rule"] = TABLE_CONTINUATION_SUBSECTION_MERGE_RULE_ATTR
+        return IRNode(kind=cell.kind, label=cell.label, text=f"{text[0]} {text[1:]}", attrs=attrs)
+    return cell
+
+
+def _repair_table_continuation_header(table: IRNode) -> tuple[IRNode, bool]:
+    if table.kind != IRNodeKind.TABLE or not table.children:
+        return table, False
+    first_row = table.children[0]
+    cells = _table_cell_texts(first_row)
+    if len(cells) != 4:
+        return table, False
+    third_tokens = cells[2].split()
+    if (
+        cells[0] != "Alue"
+        or cells[1] != "Mänty"
+        or cells[3] != "Muu puulaji"
+        or third_tokens != ["Pääpuulaji", "Kuusi", "kpl/hehtaari"]
+    ):
+        return table, False
+
+    data_rows = []
+    for row in table.children[1:]:
+        if row.kind == IRNodeKind.ROW:
+            data_rows.append(
+                IRNode(
+                    kind=row.kind,
+                    label=row.label,
+                    attrs=row.attrs,
+                    children=tuple(
+                        _normalize_table_number_cell(cell)
+                        if cell.kind == IRNodeKind.CELL
+                        else cell
+                        for cell in row.children
+                    ),
+                )
+            )
+        else:
+            data_rows.append(row)
+    rewritten = IRNode(
+        kind=table.kind,
+        label=table.label,
+        text=table.text,
+        attrs=dict(table.attrs),
+        children=(
+            _table_row_from_texts(("", "", "Pääpuulaji", "")),
+            _table_row_from_texts(("Alue", "Mänty", "Kuusi", "Muu puulaji")),
+            _table_row_from_texts(("", "", "kpl/hehtaari", "")),
+            *data_rows,
+        ),
+    )
+    return rewritten, True
+
+
+def _repair_table_continuation_payload(
+    node: IRNode,
+) -> tuple[IRNode, bool]:
+    changed = False
+    rewritten_children = []
+    for child in node.children:
+        if child.kind == IRNodeKind.TABLE:
+            rewritten_child, child_changed = _repair_table_continuation_header(child)
+        else:
+            rewritten_child, child_changed = _repair_table_continuation_payload(child)
+        rewritten_children.append(rewritten_child)
+        changed = changed or child_changed
+    if not changed:
+        return node, False
+    return (
+        IRNode(
+            kind=node.kind,
+            label=node.label,
+            text=node.text,
+            attrs=node.attrs,
+            children=tuple(rewritten_children),
+        ),
+        True,
+    )
+
+
+def _merge_table_continuation_subsection(
+    children: list[IRNode],
+    statute_id: str,
+    parent_path: tuple[str, ...],
+    facts: list[SourceNormalizationFact],
+) -> list[IRNode]:
+    """Merge a table-bearing continuation split out as a fake momentti.
+
+    Some Finlex enacted XML splits a first momentti immediately before a table:
+    ``subsection:1`` ends mid-sentence and ``subsection:2`` starts with a
+    lowercase continuation plus the table. Consolidated XML for the same text
+    treats them as one momentti. This repair is limited to the initial
+    subsection run so it cannot merge real later legal paragraphs.
+    """
+    subsections = [child for child in children if child.kind == IRNodeKind.SUBSECTION]
+    if len(subsections) < 3:
+        return children
+    if not _numeric_subsection_labels_are_initial_run(subsections):
+        return children
+
+    first, second, *remaining = subsections
+    first_text = " ".join(irnode_to_text(first).split())
+    second_first_text = _first_text_segment(second)
+    if not first_text or first_text[-1] in ".;:":
+        return children
+    first_char = second_first_text[:1]
+    if not first_char or not first_char.islower():
+        return children
+    if not _contains_node_kind(second, IRNodeKind.TABLE):
+        return children
+
+    first_index = children.index(first)
+    second_index = children.index(second)
+    if second_index != first_index + 1:
+        return children
+
+    repaired_second, repaired_table_header = _repair_table_continuation_payload(second)
+
+    first_attrs = dict(first.attrs)
+    first_attrs["lawvm_source_normalization_rule"] = TABLE_CONTINUATION_SUBSECTION_MERGE_RULE_ATTR
+    first_attrs["lawvm_source_normalization_merged_label"] = str(second.label or "")
+    merged_first = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text=first.text,
+        attrs=first_attrs,
+        children=tuple(first.children) + tuple(repaired_second.children),
+    )
+    rewritten_subsections = [merged_first] + [
+        _relabel_subsection_with_source_label(subsection, idx)
+        for idx, subsection in enumerate(remaining, start=2)
+    ]
+    subsection_iter = iter(rewritten_subsections)
+    rewritten: list[IRNode] = []
+    skip_second = False
+    for child in children:
+        if child is first:
+            rewritten.append(next(subsection_iter))
+            skip_second = True
+            continue
+        if skip_second and child is second:
+            skip_second = False
+            continue
+        if child.kind == IRNodeKind.SUBSECTION:
+            rewritten.append(next(subsection_iter))
+        else:
+            rewritten.append(child)
+
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=BASE_TABLE_CONTINUATION_SUBSECTION_MERGE,
+            basis=SourceNormalizationBasis.PROFILE_INVALID,
+            before=(
+                "first subsection ended without terminal punctuation and the next "
+                "subsection began with a lowercase table continuation; "
+                f"first_excerpt={first_text[:120]!r}; second_start={second_first_text[:80]!r}"
+            ),
+            after="subsection:2 payload merged into subsection:1 and later subsection labels shifted by -1",
+            explanation=(
+                "The source XML split one printed momentti around a table. The first "
+                "subsection ends mid-sentence, the following subsection starts as a "
+                "lowercase continuation and contains the table, while the remaining "
+                "siblings form a consecutive momentti run. Preserve the legal text by "
+                "merging the continuation into momentti 1."
+            ),
+            path=parent_path,
+            confidence=0.95,
+        )
+    )
+    if repaired_table_header:
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_TABLE_CONTINUATION_HEADER_REPAIR,
+                basis=SourceNormalizationBasis.PROFILE_INVALID,
+                before="table continuation had one fused header row: Alue | Mänty | Pääpuulaji Kuusi kpl/hehtaari | Muu puulaji",
+                after=(
+                    "table header split into superheader, column-label, and unit rows; "
+                    "four-digit numeric cells normalized with a thousands space"
+                ),
+                explanation=(
+                    "The same malformed source split that separated the table from "
+                    "the first moment also fused the table's multi-row header into one "
+                    "cell. The consolidated witness presents the header as distinct "
+                    "rows. Reconstruct that local table header shape while preserving "
+                    "the data rows."
+                ),
+                path=parent_path,
+                confidence=0.94,
+            )
+        )
+    return rewritten
 
 
 def _reclassify_item_style_subsection(
@@ -721,6 +1088,10 @@ def _fold_section_content_item_subsection_run(
             rewritten.append(child)
             i += 1
             continue
+        if _node_has_descendant_kind(child, IRNodeKind.TABLE):
+            rewritten.append(child)
+            i += 1
+            continue
 
         existing_values = _paragraph_label_values(child)
         if existing_values:
@@ -968,6 +1339,58 @@ def _fold_item_carrier_into_paragraphs(
     return consumed
 
 
+def _section_item_connector_payload(subsection: IRNode) -> tuple[IRNode, ...] | None:
+    """Return payload for a connector-only subsection inside a split item run."""
+    if subsection.kind != IRNodeKind.SUBSECTION:
+        return None
+    if any(child.kind in {IRNodeKind.NUM, IRNodeKind.HEADING, IRNodeKind.INTRO} for child in subsection.children):
+        return None
+    if any(child.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(child) for child in subsection.children):
+        return None
+    payload = tuple(child for child in subsection.children if irnode_to_text(child).strip())
+    if not payload:
+        return None
+    text = " ".join(irnode_to_text(child).strip() for child in payload).casefold()
+    if text not in {"ja", "sekä", "tai", "taikka"}:
+        return None
+    return payload
+
+
+def _subsection_can_start_item_run_at(
+    subsection: IRNode | None,
+    expected_next_value: int,
+) -> bool:
+    if subsection is None or subsection.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(subsection):
+        return False
+    if _item_num_value(subsection) == expected_next_value:
+        return True
+    return _subsection_resumes_item_run_after_dash_continuation(
+        subsection,
+        expected_next_value,
+    )
+
+
+def _subsection_can_start_item_run_after_connector(
+    subsection: IRNode | None,
+    expected_next_value: int,
+) -> bool:
+    if _subsection_can_start_item_run_at(subsection, expected_next_value):
+        return True
+    if subsection is None or subsection.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(subsection):
+        return False
+    paragraph_values = [
+        value
+        for child in subsection.children
+        for value in (_numbered_paragraph_value(child),)
+        if value is not None
+    ]
+    if paragraph_values and paragraph_values == list(
+        range(expected_next_value, expected_next_value + len(paragraph_values))
+    ):
+        return True
+    return False
+
+
 def _paragraph_labels_are_consecutive(paragraphs: list[IRNode]) -> bool:
     values = [
         value
@@ -1007,18 +1430,16 @@ def _fold_section_item_subsection_run(
 
         next_child = children[i + 1] if i + 1 < len(children) else None
         expected_next_value = max(base_values) + 1
-        if (
-            next_child is None
-            or next_child.kind != IRNodeKind.SUBSECTION
-            or (
-                _item_num_value(next_child) != expected_next_value
-                and not _subsection_resumes_item_run_after_dash_continuation(
-                    next_child,
-                    expected_next_value,
-                )
+        starts_with_next_item = _subsection_can_start_item_run_at(next_child, expected_next_value)
+        starts_with_connector_then_item = (
+            next_child is not None
+            and _section_item_connector_payload(next_child) is not None
+            and _subsection_can_start_item_run_after_connector(
+                children[i + 2] if i + 2 < len(children) else None,
+                expected_next_value,
             )
-            or _is_item_style_subsection(next_child)
-        ):
+        )
+        if not starts_with_next_item and not starts_with_connector_then_item:
             rewritten.append(child)
             i += 1
             continue
@@ -1030,6 +1451,22 @@ def _fold_section_item_subsection_run(
             candidate = children[j]
             if candidate.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(candidate):
                 break
+            connector_payload = _section_item_connector_payload(candidate)
+            if connector_payload is not None:
+                following = children[j + 1] if j + 1 < len(children) else None
+                expected_after_connector = len(folded_paragraphs) + 1
+                if not folded_paragraphs or not _subsection_can_start_item_run_after_connector(
+                    following,
+                    expected_after_connector,
+                ):
+                    break
+                folded_paragraphs[-1] = _append_item_continuation(
+                    folded_paragraphs[-1],
+                    connector_payload,
+                )
+                consumed_paths.append(_node_path_label(candidate))
+                j += 1
+                continue
             trial = list(folded_paragraphs)
             if not _fold_item_carrier_into_paragraphs(candidate, trial):
                 break
@@ -1136,6 +1573,46 @@ def _starts_table_note_run(node: IRNode) -> bool:
     return leading.startswith(("(*)", "(**)", "(***)", "(****)"))
 
 
+def _numeric_table_note_label(node: IRNode) -> str | None:
+    """Return a leading numeric table-note marker label, e.g. ``"1"``."""
+    if node.kind != IRNodeKind.SUBSECTION:
+        return None
+    if any(child.kind == IRNodeKind.NUM for child in node.children):
+        return None
+    if any(child.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(child) for child in node.children):
+        return None
+    text = irnode_to_text(node).lstrip()
+    if not text or not text[0].isdigit():
+        return None
+    i = 0
+    while i < len(text) and text[i].isdigit():
+        i += 1
+    label = text[:i]
+    while i < len(text) and text[i].isspace():
+        i += 1
+    if i >= len(text) or text[i] != ")":
+        return None
+    return label
+
+
+def _table_text_has_numeric_note_marker(node: IRNode, label: str) -> bool:
+    marker = f"{label})"
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        if current.kind == IRNodeKind.TABLE:
+            compact = "".join(irnode_to_text(current).split())
+            if marker in compact:
+                return True
+        pending.extend(current.children)
+    return False
+
+
+def _starts_numeric_table_note_run(table_host: IRNode, node: IRNode) -> bool:
+    label = _numeric_table_note_label(node)
+    return label is not None and _table_text_has_numeric_note_marker(table_host, label)
+
+
 def _fold_table_note_subsections_into_previous_moment(
     children: List[IRNode],
     statute_id: str,
@@ -1160,22 +1637,34 @@ def _fold_table_note_subsections_into_previous_moment(
         if (
             child.kind != IRNodeKind.SUBSECTION
             or not _node_has_descendant_kind(child, IRNodeKind.TABLE)
-            or not _subsection_has_omission_marker(child)
         ):
             rewritten.append(child)
             i += 1
             continue
 
         j = i + 1
-        if j >= len(children) or not _starts_table_note_run(children[j]):
+        if j >= len(children):
+            rewritten.append(child)
+            i += 1
+            continue
+        starts_star_note_run = _subsection_has_omission_marker(child) and _starts_table_note_run(children[j])
+        starts_numeric_note_run = _starts_numeric_table_note_run(child, children[j])
+        if not starts_star_note_run and not starts_numeric_note_run:
             rewritten.append(child)
             i += 1
             continue
 
         continuation_children: list[IRNode] = []
         consumed_paths: list[str] = []
-        while j < len(children) and _is_table_note_continuation_subsection(children[j]):
+        while j < len(children):
             continuation = children[j]
+            if starts_star_note_run:
+                if not _is_table_note_continuation_subsection(continuation):
+                    break
+            else:
+                label = _numeric_table_note_label(continuation)
+                if label is None or not _table_text_has_numeric_note_marker(child, label):
+                    break
             continuation_children.extend(continuation.children)
             consumed_paths.append(_node_path_label(continuation))
             j += 1
@@ -1376,6 +1865,249 @@ def _split_digit_reset_subparagraph_runs(
         rewritten.append(new_para)
 
     return rewritten
+
+
+def _node_without_kind_text(node: IRNode, excluded_kind: IRNodeKind) -> str:
+    return irnode_to_text(
+        IRNode(
+            kind=node.kind,
+            label=node.label,
+            text=node.text,
+            attrs=node.attrs,
+            children=tuple(child for child in node.children if child.kind is not excluded_kind),
+        )
+    ).strip()
+
+
+def _closed_paragraph_before_misnested_subparagraphs(paragraph: IRNode) -> bool:
+    text = _node_without_kind_text(paragraph, IRNodeKind.SUBPARAGRAPH)
+    return bool(text) and text[-1] in ".!?"
+
+
+def _is_unnumbered_subparagraph_payload(node: IRNode) -> bool:
+    return node.kind is IRNodeKind.SUBPARAGRAPH and node.label is None and not _paragraph_has_num(node)
+
+
+def _subparagraph_as_content(node: IRNode) -> IRNode:
+    children = tuple(child for child in node.children if child.kind is not IRNodeKind.NUM)
+    if children:
+        return IRNode(kind=IRNodeKind.CONTENT, attrs=node.attrs, children=children)
+    return IRNode(kind=IRNodeKind.CONTENT, text=irnode_to_text(node).strip(), attrs=node.attrs)
+
+
+def _subparagraph_as_paragraph(node: IRNode) -> IRNode | None:
+    value = _numeric_label_value(node.label)
+    if value is None:
+        return None
+    return IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label=str(value),
+        text=node.text,
+        attrs=node.attrs,
+        children=node.children,
+    )
+
+
+def _relabel_subsection(node: IRNode, label: int) -> IRNode:
+    if node.kind is not IRNodeKind.SUBSECTION:
+        return node
+    if _numeric_label_value(node.label) is None:
+        return node
+    if node.label == str(label):
+        return node
+    attrs = dict(node.attrs)
+    attrs.setdefault("lawvm_source_subsection_label", str(node.label))
+    attrs["lawvm_source_normalization_rule"] = "fi_unnumbered_subparagraph_moment_split_v1"
+    return IRNode(
+        kind=node.kind,
+        label=str(label),
+        text=node.text,
+        attrs=attrs,
+        children=node.children,
+    )
+
+
+def _split_unnumbered_subparagraph_moment_payloads(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Split a peer moment misnested as an unnumbered subparagraph under an item.
+
+    Finlex AKN sometimes places a later momentti under the final numbered kohta
+    as an unnumbered ``subparagraph``.  When the containing kohta is already a
+    closed sentence, that child cannot be a normal alakohta introduction.  If
+    the child is followed by numeric subparagraphs, those become kohdat of the
+    new peer moment; immediate numbered paragraph siblings continuing the same
+    run are carried with it.
+    """
+    if len(children) < 1:
+        return children
+
+    rewritten: list[IRNode] = []
+    changed = False
+    relabel_from: int | None = None
+    idx = 0
+    while idx < len(children):
+        child = children[idx]
+        if child.kind is not IRNodeKind.SUBSECTION:
+            rewritten.append(child)
+            idx += 1
+            continue
+
+        child_label_value = _numeric_label_value(child.label)
+        split_result = _split_one_subsection_unnumbered_subparagraph_payload(child)
+        if split_result is None or child_label_value is None:
+            if relabel_from is not None and child_label_value is not None:
+                rewritten.append(_relabel_subsection(child, relabel_from))
+                relabel_from += 1
+            else:
+                rewritten.append(child)
+            idx += 1
+            continue
+
+        trimmed_subsection, new_payload_children, source_paragraph_label, consumed_positions = split_result
+        next_label = child_label_value + 1
+        expected_item = _next_expected_item_label(new_payload_children)
+        remaining_children = list(trimmed_subsection.children)
+
+        # Carry immediately following numbered paragraph siblings into the new
+        # peer moment when they continue the numeric run started inside the
+        # misnested subparagraph payload.
+        if expected_item is not None:
+            kept_remaining: list[IRNode] = []
+            for pos, node in enumerate(remaining_children):
+                if pos <= max(consumed_positions):
+                    kept_remaining.append(node)
+                    continue
+                if node.kind is not IRNodeKind.PARAGRAPH:
+                    kept_remaining.append(node)
+                    continue
+                value = _numeric_label_value(node.label)
+                if value == expected_item:
+                    new_payload_children.append(node)
+                    consumed_positions.append(pos)
+                    expected_item += 1
+                    continue
+                kept_remaining.append(node)
+            remaining_children = kept_remaining
+
+        trimmed_subsection = IRNode(
+            kind=trimmed_subsection.kind,
+            label=trimmed_subsection.label,
+            text=trimmed_subsection.text,
+            attrs=trimmed_subsection.attrs,
+            children=tuple(remaining_children),
+        )
+        new_subsection = IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label=str(next_label),
+            attrs={"lawvm_source_normalization_rule": "fi_unnumbered_subparagraph_moment_split_v1"},
+            children=tuple(new_payload_children),
+        )
+        rewritten.append(trimmed_subsection)
+        rewritten.append(new_subsection)
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT,
+                basis=SourceNormalizationBasis.PROFILE_INVALID,
+                before=(
+                    f"{_node_path_label(child)} paragraph {source_paragraph_label or '?'} "
+                    "contained an unnumbered subparagraph payload under a closed item"
+                ),
+                after=f"split payload into peer subsection:{next_label}",
+                explanation=(
+                    "The source nested a later momentti payload under a numbered kohta "
+                    "as an unnumbered subparagraph even though the kohta's own text is "
+                    "a closed sentence. The unnumbered payload is split into the next "
+                    "peer subsection; any numeric subparagraph run and immediately "
+                    "following numbered paragraph siblings are carried as that new "
+                    "moment's kohdat."
+                ),
+                path=parent_path + (_node_path_label(child),),
+                confidence=0.95,
+            )
+        )
+        relabel_from = next_label + 1
+        changed = True
+        idx += 1
+
+    return rewritten if changed else children
+
+
+def _split_one_subsection_unnumbered_subparagraph_payload(
+    subsection: IRNode,
+) -> tuple[IRNode, list[IRNode], str | None, list[int]] | None:
+    new_subsection_children: list[IRNode] = []
+    for child_pos, child in enumerate(subsection.children):
+        if child.kind is not IRNodeKind.PARAGRAPH:
+            continue
+        subparagraphs = [node for node in child.children if node.kind is IRNodeKind.SUBPARAGRAPH]
+        if not subparagraphs:
+            continue
+        first = subparagraphs[0]
+        if not _is_unnumbered_subparagraph_payload(first):
+            continue
+        if not _closed_paragraph_before_misnested_subparagraphs(child):
+            continue
+
+        payload_intro = _subparagraph_as_content(first)
+        numeric_payload: list[IRNode] = []
+        for node in subparagraphs[1:]:
+            paragraph = _subparagraph_as_paragraph(node)
+            if paragraph is None:
+                return None
+            numeric_payload.append(paragraph)
+
+        if numeric_payload and irnode_to_text(payload_intro).strip().endswith(":"):
+            new_subsection_children.append(
+                IRNode(kind=IRNodeKind.INTRO, text=irnode_to_text(payload_intro).strip(), attrs=payload_intro.attrs)
+            )
+            new_subsection_children.extend(numeric_payload)
+        elif numeric_payload:
+            return None
+        else:
+            new_subsection_children.append(payload_intro)
+
+        trimmed_paragraph = IRNode(
+            kind=child.kind,
+            label=child.label,
+            text=child.text,
+            attrs=child.attrs,
+            children=tuple(node for node in child.children if node.kind is not IRNodeKind.SUBPARAGRAPH),
+        )
+        trimmed_children = list(subsection.children)
+        trimmed_children[child_pos] = trimmed_paragraph
+        return (
+            IRNode(
+                kind=subsection.kind,
+                label=subsection.label,
+                text=subsection.text,
+                attrs=subsection.attrs,
+                children=tuple(trimmed_children),
+            ),
+            new_subsection_children,
+            child.label,
+            [child_pos],
+        )
+    return None
+
+
+def _next_expected_item_label(nodes: list[IRNode]) -> int | None:
+    values = [
+        value
+        for node in nodes
+        if node.kind is IRNodeKind.PARAGRAPH
+        for value in (_numeric_label_value(node.label),)
+        if value is not None
+    ]
+    if not values:
+        return None
+    if values != list(range(1, len(values) + 1)):
+        return None
+    return values[-1] + 1
 
 
 # ---------------------------------------------------------------------------
@@ -2739,10 +3471,19 @@ def normalize_source_ir(
         initial_children = _split_intro_list_tail_moment_subsections(
             initial_children, statute_id, current_path, facts
         )
+        initial_children = _split_body_heading_into_first_subsection(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _merge_table_continuation_subsection(
+            initial_children, statute_id, current_path, facts
+        )
         initial_children = _split_intro_then_numbered_list_subsections(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_scoped_item_style_subsections(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_table_note_subsections_into_previous_moment(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_content_item_subsection_run(
@@ -2751,7 +3492,7 @@ def normalize_source_ir(
         initial_children = _fold_section_item_subsection_run(
             initial_children, statute_id, current_path, facts
         )
-        initial_children = _fold_table_note_subsections_into_previous_moment(
+        initial_children = _split_unnumbered_subparagraph_moment_payloads(
             initial_children, statute_id, current_path, facts
         )
 

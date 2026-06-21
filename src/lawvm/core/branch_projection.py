@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
-from lawvm.core.authority import BranchGraphEdge, LegalBranch, branch_graph_edges_from_operations
+from lawvm.core.branch_authority import BranchGraphEdge, LegalBranch, branch_graph_edges_from_operations
 from lawvm.core.frozen_values import freeze_mapping
 
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ class BranchImpactRow:
     source_unit_id: str = ""
     current_text: str = ""
     branch_text: str = ""
-    status: str = "projected"
+    projection_status: str = "projected"
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -39,8 +39,8 @@ class BranchImpactRow:
             raise ValueError("BranchImpactRow.edge_kind must be non-empty")
         if not self.target_statute_id:
             raise ValueError("BranchImpactRow.target_statute_id must be non-empty")
-        if not self.status:
-            raise ValueError("BranchImpactRow.status must be non-empty")
+        if not self.projection_status:
+            raise ValueError("BranchImpactRow.projection_status must be non-empty")
         if not isinstance(self.detail, Mapping):
             raise ValueError("BranchImpactRow.detail must be a mapping")
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
@@ -57,15 +57,15 @@ class BranchImpactProjection:
 
     branch: LegalBranch
     rows: tuple[BranchImpactRow, ...] = ()
-    status: str = "ok"
+    projection_status: str = "ok"
     message: str = ""
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.branch, LegalBranch):
             raise ValueError("BranchImpactProjection.branch must be a LegalBranch")
-        if not self.status:
-            raise ValueError("BranchImpactProjection.status must be non-empty")
+        if not self.projection_status:
+            raise ValueError("BranchImpactProjection.projection_status must be non-empty")
         rows = tuple(self.rows)
         if not all(isinstance(row, BranchImpactRow) for row in rows):
             raise ValueError("BranchImpactProjection.rows must contain BranchImpactRow records")
@@ -89,7 +89,7 @@ class BranchImpactProjection:
         return {
             "branch": self.branch.to_dict(),
             "rows": [row.to_dict() for row in self.rows],
-            "status": self.status,
+            "projection_status": self.projection_status,
             "message": self.message,
             "detail": dict(self.detail),
         }
@@ -99,7 +99,7 @@ def branch_impact_projection_from_edges(
     branch: LegalBranch,
     edges: Sequence[BranchGraphEdge],
     *,
-    status: str = "ok",
+    projection_status: str = "ok",
     message: str = "",
 ) -> BranchImpactProjection:
     """Build a branch impact projection from graph edges for one branch."""
@@ -121,7 +121,7 @@ def branch_impact_projection_from_edges(
     return BranchImpactProjection(
         branch=branch,
         rows=rows,
-        status=status,
+        projection_status=projection_status,
         message=message,
     )
 
@@ -131,7 +131,7 @@ def branch_impact_projection_from_operations(
     ops: Sequence["LegalOperation"],
     *,
     target_statute_id: str,
-    status: str = "ok",
+    projection_status: str = "ok",
     message: str = "",
 ) -> BranchImpactProjection:
     """Build a branch impact projection from typed non-enacted operations."""
@@ -139,7 +139,7 @@ def branch_impact_projection_from_operations(
     return branch_impact_projection_from_edges(
         branch,
         branch_graph_edges_from_operations(ops, target_statute_id=target_statute_id),
-        status=status,
+        projection_status=projection_status,
         message=message,
     )
 
@@ -170,7 +170,7 @@ def enrich_branch_impact_projection_texts(
             source_unit_id=row.source_unit_id,
             current_text=current_text_by_target.get(_target_key(row), row.current_text),
             branch_text=branch_text_by_target.get(_target_key(row), row.branch_text),
-            status=row.status,
+            projection_status=row.projection_status,
             detail=row.detail,
         )
         for row in projection.rows
@@ -178,7 +178,7 @@ def enrich_branch_impact_projection_texts(
     return BranchImpactProjection(
         branch=projection.branch,
         rows=rows,
-        status=projection.status,
+        projection_status=projection.projection_status,
         message=projection.message,
         detail=projection.detail,
     )

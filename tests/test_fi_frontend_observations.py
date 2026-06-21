@@ -24,7 +24,12 @@ from lawvm.finland.frontend_observations import (
     _semantic_collapse_move_or_renumber_observations,
     _scope_anchor_dependence_observations,
 )
-from lawvm.finland.ops import AmendmentOp, ScopeConfidence
+from lawvm.finland.ops import (
+    AmendmentOp,
+    ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
+)
 from lawvm.finland.target_kind import TargetKind
 
 
@@ -309,8 +314,8 @@ def test_scope_anchor_prefers_stored_scope_confidence_over_tags() -> None:
             scope_provenance_tags=("grouped_chapter_scope",),
             scope_confidence=ScopeConfidence(
                 tag="chapter_scope_from_explicit_chunk",
-                source="explicit_chunk",
-                confidence="explicit",
+                source=ScopeResolutionSource.EXPLICIT_CHUNK,
+                confidence=ScopeResolutionConfidence.EXPLICIT,
                 resolved_chapter="5",
             ),
         )

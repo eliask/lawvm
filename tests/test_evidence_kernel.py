@@ -15,6 +15,7 @@ from typing import Any, cast
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.evidence_kernel import (
+    Json,
     authorize,
     query_retraction_taint,
 )
@@ -499,3 +500,20 @@ def test_internal_profile_tag_compat_imports_do_not_warn():
         for module_name in module_names:
             module = importlib.import_module(module_name)
             importlib.reload(module)
+
+
+def test_json_alias_is_constrained_recursive_type_not_object() -> None:
+    # The evaluator's JSON type alias must be a constrained structural alias,
+    # not the old ``Json = object`` escape hatch that disabled checking.
+    assert Json is not object
+    # It resolves as a typing alias usable in annotations (recursive forward
+    # ref over JSON scalars + containers).
+    from typing import get_type_hints
+
+    def _annotated(value: "Json") -> "Json":
+        return value
+
+    hints = get_type_hints(_annotated)
+    rendered = str(hints["value"])
+    for scalar in ("bool", "int", "float", "str", "list", "dict"):
+        assert scalar in rendered

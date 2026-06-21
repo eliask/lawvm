@@ -4,7 +4,7 @@ import copy
 import datetime as dt
 from contextlib import redirect_stdout
 from io import StringIO
-from typing import cast
+from typing import Any, cast
 
 import lxml.etree as etree
 import pytest
@@ -20,6 +20,7 @@ from lawvm.core.ir import ProvisionVersion
 from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
     EffectRef,
+    EffectRelation,
     SourceInstrumentRef,
     SourceProvisionRef,
 )
@@ -56,6 +57,7 @@ from lawvm.finland.replay_products import _renumber_source_prefix_may_match_cach
 from lawvm.finland.replay_products import _classify_finland_lineage_bridge
 from lawvm.finland.replay_products import _select_pit_lineage_inputs
 from lawvm.finland.replay_products import _temporal_events_from_lo_ops
+from lawvm.finland.replay_products import _merge_temporal_events
 from lawvm.finland.replay_products import build_replay_products
 from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
 from lawvm.finland.replay_products import project_materialized_provisions_wrapper
@@ -418,6 +420,76 @@ def test_restore_replay_fold_repeal_placeholders_preserves_editorial_notice_slot
     assert projected_parent is materialized_parent_missing
 
 
+def test_editorial_repeal_notice_substring_path_is_witnessed_not_silent() -> None:
+    from lawvm.finland.replay_products import (
+        EditorialRepealNoticeSubstringWitness,
+        FI_EDITORIAL_REPEAL_NOTICE_SUBSTRING_RULE_ID,
+        _content_is_editorial_repeal_notice,
+    )
+
+    # Typed-first: a replay-minted placeholder is recognised by the typed attr
+    # and never touches the substring path (no witness emitted).
+    typed_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3) something"),),
+    )
+    typed_sink: list[EditorialRepealNoticeSubstringWitness] = []
+    assert _content_is_editorial_repeal_notice(typed_placeholder, witness_sink=typed_sink) is True
+    assert typed_sink == []
+
+    # Residual substring path: no typed marker, but the consolidation text shows
+    # "kumottu". The decision still fires (representation parity preserved) AND a
+    # witness is recorded — the surface predicate is no longer silent.
+    notice = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3 kohta on kumottu L:lla 16.1.2026/45."),),
+    )
+    sink: list[EditorialRepealNoticeSubstringWitness] = []
+    assert _content_is_editorial_repeal_notice(notice, witness_sink=sink) is True
+    assert len(sink) == 1
+    witness = sink[0]
+    assert witness.label == "3"
+    assert "kumottu" in witness.clause_text
+    assert witness.witness_rule_id == FI_EDITORIAL_REPEAL_NOTICE_SUBSTRING_RULE_ID
+
+    # Negative: ordinary substantive text is not misfired and emits no witness.
+    plain = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="4",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="4) substantive in-force text"),),
+    )
+    plain_sink: list[EditorialRepealNoticeSubstringWitness] = []
+    assert _content_is_editorial_repeal_notice(plain, witness_sink=plain_sink) is False
+    assert plain_sink == []
+
+
+def test_restore_replay_fold_repeal_placeholders_threads_substring_witness() -> None:
+    from lawvm.finland.replay_products import EditorialRepealNoticeSubstringWitness
+
+    replay_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1", "lawvm_restore_materialized_stale_item_slot": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3)"),),
+    )
+    materialized_notice = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3 kohta on kumottu L:lla 16.1.2026/45."),),
+    )
+    sink: list[EditorialRepealNoticeSubstringWitness] = []
+    result = _restore_replay_fold_repeal_placeholders(
+        materialized_notice, replay_placeholder, witness_sink=sink
+    )
+    # Representation parity: still returns the materialized notice unchanged.
+    assert result is materialized_notice
+    assert len(sink) == 1
+    assert sink[0].label == "3"
+
+
 def test_project_materialized_provisions_wrapper_reparents_eid_sections_to_chapters() -> None:
     section_17g = IRNode(
         kind=IRNodeKind.SECTION,
@@ -749,6 +821,34 @@ def test_replay_xml_2011_806_pure_kumotaan_subsection_keeps_chapter_scope() -> N
     assert replay.materialized_state.find_section("21", "8") is not None
 
 
+@pytest.mark.slow
+def test_replay_xml_1980_55_sec1_keeper_repeal_list_reaches_section_12f() -> None:
+    """2015/521 sec_1 fallback must not truncate parent-owned targets after a conjunction."""
+    lo_ops: list[LegalOperation] = []
+    replay = replay_xml_for_test(
+        "1980/55",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    repeal_markers = [
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2015/521"
+        and op.target == LegalAddress(path=(("section", "12f"),))
+        and op.payload is not None
+        and op.payload.attrs.get("lawvm_repeal_placeholder") == "1"
+    ]
+    assert len(repeal_markers) == 1
+
+    section = replay.materialized_state.find_node("section", "12f")
+    assert section is not None
+    assert section.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert " ".join(irnode_to_text(section).split()) == "12 f §"
+
+
 def test_pure_kumotaan_subsection_injection_skips_unscoped_duplicate_sections() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
@@ -813,7 +913,7 @@ def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None
     assert "Pudasjärvi (st)" not in section_1_text
     assert any(
         isinstance(row, dict)
-        and row.get("kind") == "ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL"
+        and row.get("kind") == "ELAB.SPARSE_PARTIAL_SCOPE_ROW_OMISSION_REPEAL"
         and row.get("source_statute") == "1999/77"
         for row in observations
     )
@@ -1057,6 +1157,28 @@ def test_replay_xml_2014_938_composes_pending_amendment_children(
     assert "8 tai 8 a §:n mukaan" in text29
     assert "tai hän on tullut oikeutetuksi" in text41
     assert "8 §:n 2 momentin tai 8 a §:n" in text41
+
+
+def test_replay_xml_1972_484_composes_pending_amendment_after_renamed_base() -> None:
+    replay = pinned_replay(
+        "1972/484",
+        oracle_version="20211061",
+        mode="official_consolidation",
+        quiet=True,
+    )
+
+    sec18 = replay.materialized_state.find_section("18")
+
+    assert sec18 is not None
+    text18 = " ".join(irnode_to_text(sec18).split())
+    assert "1,2 miljardia euroa" in text18
+    assert "600 miljoonaa erityisnosto-oikeutta" not in text18
+    assert any(
+        str(f.kind or "") == "APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET"
+        and str(f.source_statute or "") == "2021/1061"
+        and str(f.detail.get("target_amendment_id") or "") == "2005/493"
+        for f in replay.findings or ()
+    )
 
 
 def test_replay_xml_2014_938_keeps_permanent_section_25_change_after_temporary_51_expires(
@@ -1518,6 +1640,244 @@ def test_replay_xml_2013_185_cited_version_group_keeps_new_inserted_items() -> N
     assert "11) täydennysveron tietoilmoitusta koskevien tietojen ilmoittamisen automaattisella tietojenvaihdolla" in section_3_text
 
 
+def _synthetic_cited_version_drop_products():
+    """Build replay products containing a real cited-version snapshot op-drop.
+
+    Two same-effective, same-target ops: the later amending act's item-scoped
+    cited-version clause (kept op stream removes it) and the cited act's broader
+    same-effective snapshot. ``build_replay_products`` runs the production drop
+    filter, so ``dropped_cited_version_snapshots`` is populated by the real
+    pipeline rather than constructed by hand.
+    """
+    base_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="base text for section 5"),),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="synthetic/cited-version-drop",
+        title="Synthetic cited-version drop",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+    current_payload = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="short current"),),
+    )
+    cited_payload = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=(
+                    "much longer cited snapshot text that materially covers the "
+                    "current one with extra body content"
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="extra covered subsection"),),
+            ),
+        ),
+    )
+    current_src = OperationSource(
+        statute_id="2020/9",
+        title="amend",
+        enacted="2020-01-01",
+        effective="2020-06-01",
+        raw_text="muutetaan 5 §:n 2 kohta, sellaisena kuin se on laissa 123/2019",
+    )
+    cited_src = OperationSource(
+        statute_id="2019/123",
+        title="cited",
+        enacted="2019-01-01",
+        effective="2020-06-01",
+        raw_text="muutetaan 5 §",
+    )
+    ops = [
+        LegalOperation(
+            op_id="current_cited_version_op",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "5"),)),
+            payload=current_payload,
+            source=current_src,
+        ),
+        LegalOperation(
+            op_id="cited_snapshot_op",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "5"),)),
+            payload=cited_payload,
+            source=cited_src,
+        ),
+    ]
+    products = build_replay_products(
+        ctx=ctx,
+        statute_id=ctx.id,
+        replay_fold_state=ReplayState(ir=base_body),
+        lo_ops_out=ops,
+        as_of="2021-01-01",
+    )
+    return ctx, products
+
+
+def test_cited_version_snapshot_drop_is_witnessed_through_assembly_projection_and_certificate() -> None:
+    """A dropped cited-version legal-state op reaches the certificate consumer.
+
+    Closes leak-ledger rank 2 sub-fix (a): the typed ``CitedVersionSnapshotDrop``
+    must survive ``_normalize_product_trees`` (sever-point 1), surface as a typed
+    projection finding (sever-point 2), and be readable by the certificate's
+    findings ledger (sever-point 3) so a clean certificate can never sit silently
+    over a real materialized-state op drop.
+    """
+    from lawvm.finland.replay_product_assembly import _normalize_product_trees
+    from lawvm.finland.replay_product_projection import (
+        ReplayProductProjectionRequest,
+        project_replay_products,
+    )
+    from lawvm.tools.certificate_bundle import (
+        BundleSpecError,
+        _finding_row,
+        build_diagnostic_registry_rows,
+    )
+
+    ctx, products = _synthetic_cited_version_drop_products()
+    assert len(products.dropped_cited_version_snapshots) == 1
+
+    # Sever-point 1: the assembly rebuild must NOT reset the witness to ().
+    normalized = _normalize_product_trees(products)
+    assert normalized.dropped_cited_version_snapshots == products.dropped_cited_version_snapshots
+
+    # Sever-point 2: projection surfaces the drop as a typed observation finding.
+    findings: list = []
+    project_replay_products(
+        ReplayProductProjectionRequest(
+            ctx=ctx,
+            products=normalized,
+            parent_id=ctx.id,
+            replay_findings=findings,
+            replay_meta_out=None,
+            replay_print=lambda _s: None,
+            debug_enabled=False,
+            debug_log=lambda *_a: None,
+        )
+    )
+    cited_findings = [f for f in findings if f.kind == "REPLAY.CITED_VERSION_SNAPSHOT_DROP"]
+    assert len(cited_findings) == 1
+    finding = cited_findings[0]
+    assert finding.role == "observation"
+    assert finding.detail["op_id"] == "current_cited_version_op"
+    assert tuple(finding.detail["target_path"]) == ("section:5",)
+    assert finding.detail["witness_rule_id"] == "fi.replay.cited_version_ancestor_snapshot_drop"
+
+    # Sever-point 3: the certificate's findings-ledger consumer reads it. The
+    # production loop (build_certificate_bundle, §5.7) iterates result.findings,
+    # rejects any kind not in the pinned registry, then ledgers it into a finding
+    # row. Drive that exact consumer logic over the projected finding.
+    registry_rows = build_diagnostic_registry_rows({"allows_estimated_dates": True})
+    registered_codes = frozenset(r["code"] for r in registry_rows)
+    assert finding.kind in registered_codes  # else the certificate would raise
+
+    finding_rows: list = []
+    for f in findings:
+        if f.kind not in registered_codes:
+            raise BundleSpecError(f"unexpected unregistered finding {f.kind!r}")
+        finding_rows.append(
+            _finding_row(
+                diagnostic_code=f.kind,
+                role=f.role,
+                blocking=bool(f.blocking),
+                address=None,
+                date_range=[None, None],
+                source_refs=[],
+                phase=f.stage,
+                detail=f.detail,
+            )
+        )
+    ledgered = [r for r in finding_rows if r["diagnostic_code"] == "REPLAY.CITED_VERSION_SNAPSHOT_DROP"]
+    assert len(ledgered) == 1
+    assert ledgered[0]["detail"]["op_id"] == "current_cited_version_op"
+
+
+def test_no_cited_version_drop_replay_stays_quiet() -> None:
+    """A replay with no covered ancestor snapshot emits no drop finding."""
+    from lawvm.finland.replay_product_assembly import _normalize_product_trees
+    from lawvm.finland.replay_product_projection import (
+        ReplayProductProjectionRequest,
+        project_replay_products,
+    )
+
+    base_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="base"),),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="synthetic/no-cited-version-drop",
+        title="Synthetic no drop",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+    ops = [
+        LegalOperation(
+            op_id="plain_replace",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "5"),)),
+            payload=IRNode(
+                kind=IRNodeKind.SECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="ordinary amendment"),),
+            ),
+            source=OperationSource(
+                statute_id="2020/9",
+                title="amend",
+                enacted="2020-01-01",
+                effective="2020-06-01",
+                raw_text="muutetaan 5 §",
+            ),
+        )
+    ]
+    products = build_replay_products(
+        ctx=ctx,
+        statute_id=ctx.id,
+        replay_fold_state=ReplayState(ir=base_body),
+        lo_ops_out=ops,
+        as_of="2021-01-01",
+    )
+    assert products.dropped_cited_version_snapshots == ()
+
+    normalized = _normalize_product_trees(products)
+    findings: list = []
+    project_replay_products(
+        ReplayProductProjectionRequest(
+            ctx=ctx,
+            products=normalized,
+            parent_id=ctx.id,
+            replay_findings=findings,
+            replay_meta_out=None,
+            replay_print=lambda _s: None,
+            debug_enabled=False,
+            debug_log=lambda *_a: None,
+        )
+    )
+    assert [f for f in findings if f.kind == "REPLAY.CITED_VERSION_SNAPSHOT_DROP"] == []
+
+
 def test_replay_xml_2009_862_complete_section_replace_retires_old_transition_subsections() -> None:
     pathologies: list[object] = []
     replay = replay_xml_for_test(
@@ -1738,7 +2098,7 @@ def test_normalize_and_compile_ops_1997_1339_rejects_ambiguous_unscoped_fallback
         master=base_replay.replay_fold_state,
         amendment_id="2015/1752",
         source_title=source_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1997/1339",
         strict_profile=None,
     )
@@ -1779,7 +2139,7 @@ def test_normalize_and_compile_ops_2007_626_rejects_single_payload_fallback_reus
         master=base_replay.replay_fold_state,
         amendment_id="2007/626",
         source_title=source_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1972/66",
         strict_profile=None,
     )
@@ -2462,7 +2822,7 @@ def test_replay_xml_2019_371_johto_guard_skips_omission_shell_uncovered_recovery
     findings = [
         finding
         for finding in replay.findings
-        if finding.kind == "APPLY.UNCOVERED_BODY_JOHTO_GUARD"
+        if finding.kind == "APPLY.UNCOVERED_BODY_PREAMBLE_GUARD"
         and finding.source_statute == "2019/371"
         and str((finding.detail or {}).get("target_section")) in {"209", "210", "211", "212"}
     ]
@@ -2748,7 +3108,7 @@ def test_replay_xml_applies_2025_1162_21c_then_22a_sequentially_without_staling_
         master=base_replay.replay_fold_state,
         amendment_id="2025/1162",
         source_title=source_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1999/488",
         strict_profile=None,
     )
@@ -3229,7 +3589,7 @@ def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010
     recycle_findings = [
         finding
         for finding in replay.findings
-        if finding.kind == "PARSE.KUMOTAAN_RECYCLE_GUARD"
+        if finding.kind == "PARSE.REPEAL_RECYCLE_GUARD"
         and finding.source_statute == "2019/1330"
     ]
     assert recycle_findings
@@ -4139,6 +4499,7 @@ def test_build_replay_products_accepts_lifecycle_events_for_materialization() ->
             source=OperationSource(
                 statute_id="2010/100",
                 enacted="2005-01-01",
+                effective="2010-01-01",
             ),
         )
     ]
@@ -4151,18 +4512,26 @@ def test_build_replay_products_accepts_lifecycle_events_for_materialization() ->
         path=("voimaantulo",),
         text_excerpt="Tulee voimaan 1.1.2010.",
     )
-    lifecycle = EffectLifecycleEvent(
-        lifecycle_event_id="life:2011/200:replace_1:commence",
-        kind="change_effect_commencement",
+    effect = EffectRef(
+        effect_id="effect:2010/100:replace_1",
+        source_instrument=SourceInstrumentRef(instrument_id="2010/100"),
+        target_statute="test/lifecycle-products",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        projection_group_id="g:fi-lifecycle-replay",
+    )
+    relation = EffectRelation(
+        relation_id="relation:2011/200:replace_1:expiry",
+        kind="extends_effect_expiry",
         source_provision=witness,
-        effect=EffectRef(
-            effect_id="effect:2010/100:replace_1",
-            source_instrument=SourceInstrumentRef(instrument_id="2010/100"),
-            target_statute="test/lifecycle-products",
-            target_address=LegalAddress(path=(("section", "1"),)),
-            projection_group_id="g:fi-lifecycle-replay",
-        ),
-        effective="2010-01-01",
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="life:2011/200:replace_1:expiry",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2012-01-01",
         executable=True,
     )
 
@@ -4172,16 +4541,217 @@ def test_build_replay_products_accepts_lifecycle_events_for_materialization() ->
         replay_fold_state=replay_fold_state,
         lo_ops_out=lo_ops,
         as_of="2011-01-01",
+        source_effects=(effect,),
+        effect_relations=(relation,),
         effect_lifecycle_events=(lifecycle,),
     )
 
     assert products.timelines is not None
-    assert len(products.temporal_events) == 1
-    assert products.temporal_events[0].event_id == "life:2011/200:replace_1:commence:temporal"
-    assert products.temporal_events[0].group_id == "g:fi-lifecycle-replay"
+    lifecycle_temporal = next(
+        event
+        for event in products.temporal_events
+        if event.event_id == "life:2011/200:replace_1:expiry:temporal"
+    )
+    assert lifecycle_temporal.group_id == "g:fi-lifecycle-replay"
     active = products.timelines[LegalAddress(path=(("section", "1"),))].versions[-1]
     assert active.effective == "2010-01-01"
+    assert active.expires == "2012-01-01"
     assert products.materialized_state.ir.children[0].text == "Updated"
+
+
+def test_replay_products_require_typed_effect_graph_records() -> None:
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+
+    with pytest.raises(TypeError, match="temporal_events"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            temporal_events=cast(Any, ("temporal:1",)),
+        )
+    with pytest.raises(TypeError, match="migration_events"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            migration_events=cast(Any, ("migration:1",)),
+        )
+    with pytest.raises(TypeError, match="source_effects"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            source_effects=cast(Any, ("effect:1",)),
+        )
+    with pytest.raises(TypeError, match="effect_relations"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            effect_relations=cast(Any, ("relation:1",)),
+        )
+    with pytest.raises(TypeError, match="effect_lifecycle_events"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            effect_lifecycle_events=cast(Any, ("lifecycle:1",)),
+        )
+
+
+def test_replay_products_reject_duplicate_effect_graph_ids() -> None:
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect_a = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    effect_b = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    target_effect = EffectRef(effect_id="effect:target", source_instrument=instrument)
+    relation_a = EffectRelation(
+        relation_id="relation:1",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    relation_b = EffectRelation(
+        relation_id="relation:1",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    lifecycle_a = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        executable=False,
+    )
+    lifecycle_b = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        executable=False,
+    )
+
+    with pytest.raises(ValueError, match="duplicate effect_id"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            source_effects=(effect_a, effect_b),
+        )
+    with pytest.raises(ValueError, match="duplicate relation_id"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            effect_relations=(relation_a, relation_b),
+        )
+    with pytest.raises(ValueError, match="duplicate lifecycle_event_id"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            effect_lifecycle_events=(lifecycle_a, lifecycle_b),
+        )
+
+
+def test_replay_products_require_closed_effect_graph() -> None:
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2021-01-01",
+    )
+
+    with pytest.raises(ValueError, match="missing target_effect"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            effect_relations=(relation,),
+        )
+    with pytest.raises(ValueError, match="missing relation"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            source_effects=(effect,),
+            effect_lifecycle_events=(lifecycle,),
+        )
+
+
+def test_replay_products_reject_stale_effect_graph_endpoint_records() -> None:
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    graph_effect = EffectRef(
+        effect_id="effect:1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    stale_effect = EffectRef(
+        effect_id="effect:1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        target_address=LegalAddress(path=(("section", "2"),)),
+    )
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=stale_effect,
+    )
+    graph_relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=graph_effect,
+    )
+    relation_with_detail = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=graph_effect,
+        detail={"note": "stale"},
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=graph_effect,
+        relation=relation_with_detail,
+        expires="2021-01-01",
+    )
+
+    with pytest.raises(ValueError, match="target_effect differs from graph effect"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            source_effects=(graph_effect,),
+            effect_relations=(relation,),
+        )
+    with pytest.raises(ValueError, match="relation differs from graph relation"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            source_effects=(graph_effect,),
+            effect_relations=(graph_relation,),
+            effect_lifecycle_events=(lifecycle,),
+        )
 
 
 def test_build_replay_products_requires_explicit_effective_date_for_derived_temporal_events() -> None:
@@ -4262,6 +4832,42 @@ def test_build_replay_products_merges_existing_temporal_events_with_synthesized_
 
     assert len(products.temporal_events) == 2
     assert products.materialized_state.ir.children[0].text == "Updated"
+
+
+def test_merge_temporal_events_rejects_conflicting_duplicate_event_ids() -> None:
+    existing = TemporalEvent(
+        event_id="temporal:1",
+        group_id="g:1",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-01-01",
+    )
+    identical = TemporalEvent(
+        event_id="temporal:1",
+        group_id="g:1",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-01-01",
+    )
+    same_signature = TemporalEvent(
+        event_id="temporal:1:alias",
+        group_id="g:1",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-01-01",
+    )
+    conflicting = TemporalEvent(
+        event_id="temporal:1",
+        group_id="g:1",
+        kind="expire",
+        scope=TemporalScope(target_statute="1999/1"),
+        expires="2021-01-01",
+    )
+
+    assert _merge_temporal_events((existing,), (identical,)) == (existing,)
+    assert _merge_temporal_events((existing,), (same_signature,)) == (existing,)
+    with pytest.raises(ValueError, match="conflicting duplicate event_id"):
+        _merge_temporal_events((existing,), (conflicting,))
 
 
 def test_retarget_root_node_preserves_existing_num_suffix_for_section() -> None:
@@ -5316,7 +5922,7 @@ def test_lineage_plan_round_trips_core_materialize_for_destination_occupancy_col
         lineage_plan=lineage_decision.lineage_plan,
     )
 
-    assert result.status == "degraded_missing_scope"
+    assert result.materialization_status == "degraded_missing_scope"
     assert result.certificate is not None
     assert result.certificate.ambiguous_address_count == 1
 

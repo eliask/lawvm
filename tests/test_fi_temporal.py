@@ -31,7 +31,7 @@ from lawvm.core.temporal import (
     TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
     TRIGGER_COVERAGE_INCOMPLETE,
     UNTRIGGERED_CERTIFIED_STATUS,
-    TriggerCoverageCertificate,
+    TriggerCoverage,
     derive_temporal_status,
     project_temporal_status,
 )
@@ -312,14 +312,14 @@ def test_finland_ops_temporary_signal_is_coarse_and_live() -> None:
 # ---------------------------------------------------------------------------
 
 
-class TestTriggerCoverageCertificateConstruction:
-    """TriggerCoverageCertificate validates trigger source coverage evidence."""
+class TestTriggerCoverageConstruction:
+    """TriggerCoverage validates trigger source coverage evidence."""
 
     def test_complete_no_resolution_requires_as_of_and_checked_sources(self) -> None:
         detail: dict[str, Any] = {"nested": {"sources": ["a"]}}
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             certificate_id="coverage-1",
-            status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
+            certificate_status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
             as_of="2026-04-07",
             activation_rule_ref="event:1",
             checked_sources=_runtime_string_tuple(["decree-register"]),
@@ -332,24 +332,24 @@ class TestTriggerCoverageCertificateConstruction:
         assert cert.checked_sources == ("decree-register",)
         assert cert.source_scope == ("commencement-instruments",)
         assert cert.detail == {"nested": {"sources": ("a",)}}
-        assert cert.to_dict()["status"] == "complete_no_resolution"
+        assert cert.to_dict()["certificate_status"] == "complete_no_resolution"
         frozen_detail = cast(Any, cert.detail)
         with pytest.raises(TypeError, match="immutable"):
             frozen_detail["extra"] = "blocked"
 
     def test_complete_coverage_requires_checked_sources(self) -> None:
         with pytest.raises(ValueError, match="checked_sources"):
-            TriggerCoverageCertificate(
+            TriggerCoverage(
                 certificate_id="coverage-1",
-                status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
+                certificate_status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
                 as_of="2026-04-07",
             )
 
     def test_incomplete_coverage_requires_missing_sources(self) -> None:
         with pytest.raises(ValueError, match="missing_sources"):
-            TriggerCoverageCertificate(
+            TriggerCoverage(
                 certificate_id="coverage-1",
-                status=TRIGGER_COVERAGE_INCOMPLETE,
+                certificate_status=TRIGGER_COVERAGE_INCOMPLETE,
             )
 
 

@@ -3,6 +3,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import cast
 
+import pytest
+
+from lawvm.core.effect_lifecycle import EffectRef, SourceInstrumentRef
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import OperationSource
 from lawvm.core.semantic_types import IRNodeKind
@@ -85,7 +88,7 @@ def test_prepare_replay_plan_carries_base_source_body_patch_ids(monkeypatch) -> 
         stop_before="",
         label_postprocessor=lambda _sid, label: label,
         get_replay_profile=lambda _mode: SimpleNamespace(normalize_replay_text=False),
-        resolve_applicable_amendment_records=lambda _sid, _mode, corpus=None: ([], None, ""),
+        resolve_applicable_amendment_records=lambda _sid, _mode, corpus=None, residuals_out=None: ([], None, ""),
         get_consolidated_oracle_suspect=lambda _sid, corpus=None: None,
         extract_inline_corrections=lambda xml_bytes, _sid: ([], xml_bytes),
     )
@@ -689,7 +692,7 @@ def test_prepare_replay_plan_dedupes_consecutive_identical_amendment_records() -
         stop_before="",
         label_postprocessor=lambda _sid, label: label,
         get_replay_profile=lambda _mode: SimpleNamespace(normalize_replay_text=False),
-        resolve_applicable_amendment_records=lambda _sid, _mode, corpus=None: (records, None, ""),
+        resolve_applicable_amendment_records=lambda _sid, _mode, corpus=None, residuals_out=None: (records, None, ""),
         get_consolidated_oracle_suspect=lambda _sid, corpus=None: None,
         extract_inline_corrections=lambda xml_bytes, _sid: ([], xml_bytes),
     )
@@ -1060,6 +1063,95 @@ def test_execute_replay_plan_handles_empty_temporal_events_without_side_channels
     )
 
     assert collected_events == []
+
+
+def test_execute_replay_plan_collapses_exact_duplicate_source_effect_ids() -> None:
+    plan = ReplayPlan(
+        parent_id="test/1",
+        replay_mode="legal_pit",
+        replay_profile=SimpleNamespace(normalize_replay_text=False),
+        ctx=StatuteContext(
+            id="test/1",
+            title="Test",
+            base_ir=IRNode(kind=IRNodeKind.BODY),
+            base_xml_bytes=b"<body/>",
+        ),
+        initial_state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        amendment_records=[{"statute_id": "1991/1"}, {"statute_id": "1991/2"}],
+        amendment_ids=["1991/1", "1991/2"],
+        cutoff_date=None,
+        oracle_version_amendment_id="",
+        oracle_suspect="",
+    )
+    effect = EffectRef(
+        effect_id="effect:shared",
+        source_instrument=SourceInstrumentRef(instrument_id="1991/1"),
+        target_statute="test/1",
+    )
+    signals = ReplaySignalBuffers.empty()
+
+    def fake_process_muutoslaki(
+        request: ProcessAmendmentRequest,
+        _sinks: ProcessAmendmentSinks,
+    ) -> PhaseResult[ReplayState]:
+        return PhaseResult(output=request.state, source_effects=(effect,))
+
+    execute_replay_plan(
+        plan,
+        corpus=_corpus_stub(),
+        process_muutoslaki=fake_process_muutoslaki,
+        seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
+        pre_scan_repeal_targets=lambda request, sinks=None: [],
+        future_repeals_for_index=lambda schedule: [],
+        post_process_tree=lambda ir, normalize: ir,
+        check_tree_invariants=check_invariants,
+        signal_buffers=signals,
+    )
+
+    assert signals.source_effects == [effect]
+
+
+def test_execute_replay_plan_rejects_conflicting_duplicate_source_effect_ids() -> None:
+    plan = ReplayPlan(
+        parent_id="test/1",
+        replay_mode="legal_pit",
+        replay_profile=SimpleNamespace(normalize_replay_text=False),
+        ctx=StatuteContext(
+            id="test/1",
+            title="Test",
+            base_ir=IRNode(kind=IRNodeKind.BODY),
+            base_xml_bytes=b"<body/>",
+        ),
+        initial_state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        amendment_records=[{"statute_id": "1991/1"}, {"statute_id": "1991/2"}],
+        amendment_ids=["1991/1", "1991/2"],
+        cutoff_date=None,
+        oracle_version_amendment_id="",
+        oracle_suspect="",
+    )
+
+    def fake_process_muutoslaki(
+        request: ProcessAmendmentRequest,
+        _sinks: ProcessAmendmentSinks,
+    ) -> PhaseResult[ReplayState]:
+        effect = EffectRef(
+            effect_id="effect:shared",
+            source_instrument=SourceInstrumentRef(instrument_id=request.amendment_id),
+            target_statute="test/1",
+        )
+        return PhaseResult(output=request.state, source_effects=(effect,))
+
+    with pytest.raises(ValueError, match="replay phase result conflicting duplicate effect_id"):
+        execute_replay_plan(
+            plan,
+            corpus=_corpus_stub(),
+            process_muutoslaki=fake_process_muutoslaki,
+            seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
+            pre_scan_repeal_targets=lambda request, sinks=None: [],
+            future_repeals_for_index=lambda schedule: [],
+            post_process_tree=lambda ir, normalize: ir,
+            check_tree_invariants=check_invariants,
+        )
 
 
 def test_execute_replay_plan_uses_phase_result_contract_without_optional_side_bags() -> None:

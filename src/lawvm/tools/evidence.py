@@ -3464,7 +3464,7 @@ def build_evidence_bundle(
     # Trigger coverage certificates — one per contingent activation rule.
     # Built from compiled_ops that carry is_contingent=True and an activation_rule.
     # Uses the amendment_index to determine whether a commencement decree was found.
-    _trigger_coverage_certificates: List[Dict[str, Any]] = []
+    _trigger_coverages: List[Dict[str, Any]] = []
     _trigger_coverage_search_failures: List[Dict[str, Any]] = []
     if contingent_effective_sources:
         try:
@@ -3526,12 +3526,12 @@ def build_evidence_bundle(
                     amendment_children=_statute_amendment_children,
                     as_of=_dt.date.today(),
                 )
-                _trigger_coverage_certificates = [c.to_dict() for c in _cert_result.certificates]
+                _trigger_coverages = [c.to_dict() for c in _cert_result.certificates]
                 _trigger_coverage_search_failures = [f.to_dict() for f in _cert_result.search_failures]
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception as exc:
-            _evidence_context_diagnostics.append(_evidence_context_degradation("trigger_coverage_certificates", exc))
+            _evidence_context_diagnostics.append(_evidence_context_degradation("trigger_coverages", exc))
 
     should_include_bisect = include_bisect or any(
         str(item.get("diagnosis") or "") in _REPLAY_BUG_DIAGNOSES for item in section_results
@@ -3899,7 +3899,7 @@ def build_evidence_bundle(
                 diagnostics=_evidence_context_diagnostics,
             ),
         },
-        "trigger_coverage_certificates": _trigger_coverage_certificates,
+        "trigger_coverages": _trigger_coverages,
         "trigger_coverage_search_failures": _trigger_coverage_search_failures,
     }
     bundle["evidence_surface_report"] = finland_evidence_bundle_evidence_surface(bundle)
@@ -3966,8 +3966,8 @@ def build_uk_evidence_bundle(
         source_surface = {
             "enacted_source_url": enacted_url,
             "oracle_source_url": current_url,
-            "enacted_source_status": enacted_source.status.value,
-            "oracle_source_status": oracle_source.status.value,
+            "enacted_source_status": enacted_source.source_state_status.value,
+            "oracle_source_status": oracle_source.source_state_status.value,
             "enacted_source_size": enacted_source.size,
             "oracle_source_size": oracle_source.size,
             "enacted_source_sha256": hashlib.sha256(enacted_bytes).hexdigest() if enacted_bytes is not None else "",
@@ -4521,8 +4521,8 @@ def build_uk_evidence_bundle(
         "jurisdiction": "uk",
         "enacted_source_url": enacted_url,
         "oracle_source_url": current_url,
-        "enacted_source_status": enacted_source.status.value,
-        "oracle_source_status": oracle_source.status.value,
+        "enacted_source_status": enacted_source.source_state_status.value,
+        "oracle_source_status": oracle_source.source_state_status.value,
         "enacted_source_size": enacted_source.size,
         "oracle_source_size": oracle_source.size,
         "enacted_source_sha256": source_surface["enacted_source_sha256"],

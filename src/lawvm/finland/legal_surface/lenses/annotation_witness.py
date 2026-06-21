@@ -33,6 +33,7 @@ from lawvm.core.legal_surface_lens import (
     SurfaceLensResult,
     SurfaceNodeSeed,
     SurfaceResidualSeed,
+    source_bytes_of,
 )
 from lawvm.finland.legal_surface.bundle import locate_span
 from lawvm.finland.references.cross_refs import (
@@ -93,7 +94,9 @@ class AnnotationWitnessLens:
         index = 0
         for unit in bundle.units:
             n_units += 1
-            xml_bytes = unit.metadata.get("xml_bytes")
+            # Read the raw AKN XML from the TYPED unit view (§D4 bridge), not a
+            # free-form metadata key. Absence is fail-loud: a typed residual.
+            xml_bytes = source_bytes_of(unit)
             if not isinstance(xml_bytes, (bytes, bytearray)):
                 residuals.append(
                     SurfaceResidualSeed(
@@ -103,7 +106,7 @@ class AnnotationWitnessLens:
                             f"{LENS_ID}::missing_xml::{unit.source_unit_id}"
                         ),
                         rule_id=_RULE_BLOCKED,
-                        reason_code="unit_metadata_has_no_xml_bytes",
+                        reason_code="unit_has_no_source_bytes",
                         payload={"source_unit_id": unit.source_unit_id},
                         status="blocked",
                     )

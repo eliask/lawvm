@@ -52,6 +52,43 @@ def test_fi_xml_to_ir_node_preserves_table_rows_as_paragraphs() -> None:
     assert paragraphs[1].attrs["row_anchor"] == "tampere"
 
 
+def test_fi_xml_to_ir_node_splits_paragraph_wrapped_numbered_table_items() -> None:
+    xml = etree.fromstring(
+        """
+        <subsection>
+          <intro>
+            <p>Pyyntilupamaksu on kustakin kaadetusta hirvieläimestä:</p>
+          </intro>
+          <paragraph>
+            <content>
+              <table>
+                <tr>
+                  <td><p>1) aikuinen hirvi</p></td>
+                  <td><p>120 euroa</p></td>
+                </tr>
+                <tr>
+                  <td><p>2) hirvenvasa</p></td>
+                  <td><p>50 euroa</p></td>
+                </tr>
+              </table>
+            </content>
+          </paragraph>
+        </subsection>
+        """
+    )
+
+    subsection = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    assert subsection.kind == IRNodeKind.SUBSECTION
+    assert subsection.children[0].kind == IRNodeKind.INTRO
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs] == ["1", "2"]
+    assert [irnode_to_text(paragraph) for paragraph in paragraphs] == [
+        "1) aikuinen hirvi 120 euroa",
+        "2) hirvenvasa 50 euroa",
+    ]
+
+
 def test_fi_xml_to_ir_node_preserves_terminal_omission_inside_content_wrapper() -> None:
     xml = etree.fromstring(
         """
@@ -67,6 +104,49 @@ def test_fi_xml_to_ir_node_preserves_terminal_omission_inside_content_wrapper() 
     assert content.kind == IRNodeKind.CONTENT
     assert any(child.kind == IRNodeKind.OMISSION for child in content.children)
     assert irnode_to_text(content) == "Raasepori Tammisaari Hanko Kirkkonummi"
+
+
+def test_fi_xml_to_ir_node_preserves_image_block_until_source_normalization() -> None:
+    xml = etree.fromstring(
+        """
+        <content>
+          <p>Merkillä varoitetaan mutkasta.</p>
+          <block name="image">
+            <img alt="" height="88" src="media/0729.gif" width="100"/>
+          </block>
+        </content>
+        """
+    )
+
+    content = fi_xml_to_ir_node(xml)
+
+    image = next(child for child in content.children if child.kind == IRNodeKind.BLOCK)
+    assert image.attrs["name"] == "image"
+    assert image.attrs["img_src"] == "media/0729.gif"
+    assert image.attrs["img_height"] == "88"
+    assert image.attrs["img_width"] == "100"
+
+    normalized, facts = normalize_source_ir(content, "1994/328")
+
+    assert all(child.kind != IRNodeKind.BLOCK for child in normalized.children)
+    assert any(fact.kind_value == "editorial_strip" and "image" in fact.before for fact in facts)
+    assert irnode_to_text(normalized) == "Merkillä varoitetaan mutkasta."
+
+
+def test_fi_xml_to_ir_node_records_inline_text_markup_on_content() -> None:
+    xml = etree.fromstring(
+        """
+        <content>
+          <p><i>Kunnan työttömyysetuuksien korvauksen laskeminen</i></p>
+        </content>
+        """
+    )
+
+    content = fi_xml_to_ir_node(xml)
+
+    assert content.kind == IRNodeKind.CONTENT
+    assert content.attrs["lawvm_source_inline_tags"] == ("i",)
+    assert irnode_to_text(content) == "Kunnan työttömyysetuuksien korvauksen laskeminen"
 
 
 def test_fi_xml_to_ir_node_hoists_inline_content_omission_to_subsection_level() -> None:
@@ -1323,6 +1403,52 @@ def test_fi_xml_to_ir_node_renests_flat_digit_item_subsections() -> None:
     assert check_invariants(section) == []
 
 
+def test_fi_xml_to_ir_node_renests_flat_dash_items_after_finnish_list_carriers() -> None:
+    xml = etree.fromstring(
+        """
+        <section>
+          <num>8 §</num>
+          <heading>Pakkaamattomista elintarvikkeista annettavien tietojen ilmoittamistapa</heading>
+          <subsection>
+            <content><p>Edellä 6, 7 ja 7 a §:ssä tarkoitetut tiedot on ilmoitettava kirjallisesti.</p></content>
+          </subsection>
+          <subsection>
+            <content><p>Edellä 6 ja 7 §:ssä tarkoitetut tiedot voidaan antaa suullisesti edellyttäen, että</p></content>
+          </subsection>
+          <subsection>
+            <content><p>– tiedot ovat saatavissa pyydettäessä henkilökunnalta; ja</p></content>
+          </subsection>
+          <subsection>
+            <content><p>– tiedot ovat kirjallisessa tai elektronisessa muodossa saatavilla.</p></content>
+          </subsection>
+          <subsection>
+            <content><p>Edellä 7 a §:ssä tarkoitettuja tietoja ei vaadita silloin, kun</p></content>
+          </subsection>
+          <subsection>
+            <content><p>– elintarvikkeet luovutetaan kuluttajalle kohdennetusti; tai</p></content>
+          </subsection>
+          <subsection>
+            <content><p>– elintarvikkeita luovutetaan valvotun toiminnan yhteydessä.</p></content>
+          </subsection>
+        </section>
+        """
+    )
+
+    section = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    subsections = [ch for ch in section.children if ch.kind == IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in subsections] == ["1", "2", "3"]
+    second_intro = next(ch for ch in subsections[1].children if ch.kind == IRNodeKind.INTRO)
+    assert "edellyttäen, että" in (second_intro.text or "")
+    second_items = [ch for ch in subsections[1].children if ch.kind == IRNodeKind.PARAGRAPH]
+    assert [item.label for item in second_items] == ["1", "2"]
+    third_intro = next(ch for ch in subsections[2].children if ch.kind == IRNodeKind.INTRO)
+    assert "silloin, kun" in (third_intro.text or "")
+    third_items = [ch for ch in subsections[2].children if ch.kind == IRNodeKind.PARAGRAPH]
+    assert [item.label for item in third_items] == ["1", "2"]
+    assert check_invariants(section) == []
+
+
 def test_normalize_source_ir_folds_content_item_subsection_run_with_relabelling() -> None:
     """Content-only sibling subsections starting ``1)``/``2)`` can be one moment's kohdat.
 
@@ -1888,3 +2014,81 @@ def test_fi_xml_to_ir_node_does_not_reclassify_unnumbered_subsection() -> None:
     node = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
 
     assert node.kind == IRNodeKind.SUBSECTION, f"Expected 'subsection', got '{node.kind}'"
+
+
+def test_production_ingest_witnesses_drops_labels_and_repairs() -> None:
+    """The XML→IR ingest witnesses must fire on the production FI path.
+
+    The witnesses (dropped childless unknown element, unknown tag, positional
+    label assignment, structural-repair re-parenting) live in ``xml_ingest`` but
+    the production FI ingest goes through ``StatuteContext.from_xml`` ->
+    ``fi_xml_to_ir_node``. This drives that real entry (not ``xml_body_to_ir``)
+    and asserts the sink surfaces every family in ``ctx.ingest_metadata``, plus a
+    valid coverage partition.
+    """
+    from lawvm.finland.statute import StatuteContext
+    from lawvm.xml_ingest import (
+        INGEST_DROPPED_CHILD,
+        INGEST_POSITIONAL_LABEL,
+        INGEST_STRUCTURAL_REPAIR,
+        INGEST_UNKNOWN_TAG,
+    )
+
+    xml = (
+        '<?xml version="1.0"?>'
+        '<act xmlns="urn:test">'
+        "<docNumber>9/9999</docNumber>"
+        "<docTitle>Sink Probe Act</docTitle>"
+        "<body>"
+        "<section>"
+        "<num>1 §</num>"
+        # No <num> on this subsection -> positional label assigned (witnessed).
+        "<subsection><content>Eka momentti.</content></subsection>"
+        # Unknown childless element collapsing to '' -> dropped + unknown-tag witness.
+        "<foobar/>"
+        "</section>"
+        # Orphaned subsection as body sibling -> structural-repair absorb witness.
+        "<subsection><content>Orpo momentti.</content></subsection>"
+        "</body>"
+        "</act>"
+    ).encode("utf-8")
+
+    ctx = StatuteContext.from_xml(xml)
+    observations = ctx.ingest_metadata["xml_ingest_observations"]
+    codes = {obs["kind"] for obs in observations}
+    assert INGEST_DROPPED_CHILD in codes
+    assert INGEST_UNKNOWN_TAG in codes
+    assert INGEST_POSITIONAL_LABEL in codes
+    assert INGEST_STRUCTURAL_REPAIR in codes
+
+    # Dropped-child witness embeds the offending tag + parent for triage.
+    dropped = next(o for o in observations if o["kind"] == INGEST_DROPPED_CHILD)
+    assert dropped["tag"] == "foobar"
+    assert dropped["parent_tag"] == "section"
+
+    # The token-partition coverage account is a checkable partition and records
+    # the dropped source unit (so it can no longer silently understate source).
+    coverage = ctx.ingest_metadata["xml_ingest_coverage"]
+    assert coverage["dropped"] == 1
+    assert coverage["total"] == coverage["owned"] + coverage["benign"] + coverage["dropped"]
+
+
+def test_production_ingest_clean_statute_has_empty_metadata() -> None:
+    """A clean parse leaves ``ingest_metadata`` empty (no dirty default)."""
+    from lawvm.finland.statute import StatuteContext
+
+    xml = (
+        '<?xml version="1.0"?>'
+        '<act xmlns="urn:test">'
+        "<docNumber>1/2026</docNumber>"
+        "<docTitle>Clean Act</docTitle>"
+        "<body>"
+        "<section><num>1 §</num>"
+        "<subsection><num>1 mom.</num><content>Selkea momentti.</content></subsection>"
+        "</section>"
+        "</body>"
+        "</act>"
+    ).encode("utf-8")
+
+    ctx = StatuteContext.from_xml(xml)
+    assert dict(ctx.ingest_metadata) == {}

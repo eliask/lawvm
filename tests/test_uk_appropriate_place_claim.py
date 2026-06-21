@@ -62,7 +62,7 @@ def _alpha_claim(**overrides: Any) -> AppropriatePlaceInsertClaim:
         position_kind=POSITION_ALPHABETICAL_INDEX,
         alphabetical_index=1,
         claimant="reviewer",
-        status="proposed",
+        claim_status="proposed",
     )
     return replace(base, **overrides)
 
@@ -105,7 +105,7 @@ def test_claim_from_dict_defaults() -> None:
     )
     assert claim.alphabetical_index == 0
     assert claim.preceding_sibling_eid == ""
-    assert claim.status == "proposed"
+    assert claim.claim_status == "proposed"
 
 
 # ── validator: accept ────────────────────────────────────────────────────────

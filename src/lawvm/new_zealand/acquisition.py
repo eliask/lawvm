@@ -903,7 +903,7 @@ def _http_diagnostic(
                 SourceLaneAttempt(
                     lane=rule_id,
                     locator=locator or url,
-                    status=f"http_{response.status_code}",
+                    lane_attempt_status=f"http_{response.status_code}",
                     detail={"url": url, "content_type": response.content_type},
                 ),
             ),

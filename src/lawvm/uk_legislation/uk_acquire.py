@@ -222,8 +222,8 @@ def _source_fetch_error(data: bytes | None, status: int | None) -> str | None:
     if not data:
         return f"http_{status}" if status else "transport_error"
     source_state = classify_uk_source_blob(data)
-    if source_state.status is not UKSourceStatus.AVAILABLE:
-        return source_state.status.value
+    if source_state.source_state_status is not UKSourceStatus.AVAILABLE:
+        return source_state.source_state_status.value
     if not _is_storable_xml_source_blob(data):
         return "non_xml"
     return None
@@ -233,7 +233,7 @@ def _source_cached_available(archive: Any, url: str) -> bool:
     if not archive.has(url):
         return False
     source_state = classify_uk_source_blob(archive.get(url))
-    return source_state.status is UKSourceStatus.AVAILABLE
+    return source_state.source_state_status is UKSourceStatus.AVAILABLE
 
 
 def _fetch_multiple_choice_candidate_sources(

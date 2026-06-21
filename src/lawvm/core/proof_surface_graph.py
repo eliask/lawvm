@@ -105,7 +105,7 @@ def _row_to_assertion(
         "row_id": row.row_id,
         "subject_id": row.subject_id,
         "row_kind": row.row_kind,
-        "status": row.status,
+        "proof_status": row.proof_status,
         "source_refs": list(row.source_refs),
         "witness_refs": list(row.witness_refs),
         "assertion_refs": list(row.assertion_refs),

@@ -98,7 +98,7 @@ from lawvm.finland.normalize import (
 from lawvm.finland.ops import AmendmentOp, FailedOp, ResolvedOp, _build_canonical_intent
 from lawvm.finland.ops import _lo_with_path_update
 from lawvm.finland.ops import get_replay_profile
-from lawvm.finland.ops import ScopeConfidence
+from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
 from lawvm.finland.replay_findings import (
     _apply_mutation_boundary_violation_finding,
     _serialize_apply_mutation_event,
@@ -1254,7 +1254,7 @@ def test_process_muutoslaki_observes_sec1_pre_routing_fallback(monkeypatch) -> N
     )
 
     findings = result.findings()
-    sec1 = [finding for finding in findings if finding.kind == "ELAB.SEC1_PRE_ROUTING_FALLBACK"]
+    sec1 = [finding for finding in findings if finding.kind == "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK"]
     assert len(sec1) == 1
     assert sec1[0].role == "obligation"
     assert sec1[0].blocking is True
@@ -1636,6 +1636,7 @@ def test_replay_xml_projects_apply_mutation_boundary_violations(monkeypatch) -> 
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1729,6 +1730,7 @@ def test_replay_xml_projects_legacy_apply_mutation_boundary_findings_without_met
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1830,6 +1832,7 @@ def test_replay_xml_projects_base_tail_prose_absorb_fact() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1896,6 +1899,7 @@ def test_replay_xml_projects_base_num_in_intro_normalization_facts() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1984,6 +1988,7 @@ def test_replay_xml_projects_shape_rewrite_normalization_facts() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -2067,6 +2072,7 @@ def test_replay_xml_projects_editorial_and_numbering_family_facts() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -2365,8 +2371,8 @@ def test_allow_unscoped_live_section_retarget_requires_carry_forward_scope() -> 
         scope_provenance_tags=("chapter_scope_carry_forward",),
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="2",
         ),
         source_statute="2019/371",
@@ -2599,8 +2605,8 @@ def test_compile_group_retargets_duplicate_section_label_from_close_live_sibling
         target_chapter="3",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="3",
         ),
         source_statute="2021/984",
@@ -3016,8 +3022,8 @@ def test_compile_group_pure_insert_keeps_explicit_chapter_over_sibling_consensus
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="5",
         ),
         source_statute="2022/33",
@@ -3088,8 +3094,8 @@ def test_compile_group_reports_pure_insert_body_chapter_scope_correction() -> No
         target_chapter="7",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="7",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -3292,6 +3298,78 @@ def test_compile_group_reports_body_chapter_replace_to_insert_move_recovery() ->
     assert finding.detail["strict_disposition"] == "block"
 
 
+def test_compile_group_preserves_declared_body_chapter_move_as_replace() -> None:
+    def _section(label: str, text: str = "") -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
+
+    def _chapter(label: str, *sections: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.CHAPTER, label=label, children=tuple(sections))
+
+    master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=(_chapter("6", _section("25", "live")),)))
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <hcontainer>
+              <section><num>6 a luku</num><heading>Sopimukset</heading></section>
+              <section><num>25 §</num><content><p>payload</p></content></section>
+            </hcontainer>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="replace25",
+        op_type="REPLACE",
+        target_section="25",
+        target_unit_kind="section",
+        target_chapter="6",
+        source_statute="1999/466",
+        lo=LegalOperation(
+            op_id="replace25",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "6"), ("section", "25"))),
+            payload=None,
+        ),
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "25",
+        "6",
+        None,
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "lisätään lakiin uusi 6 a luku, johon samalla siirretään muutettu 25 §",
+        get_replay_profile("legal_pit"),
+        None,
+        None,
+    )
+
+    assert len(result.output) == 1
+    rop = result.output[0]
+    assert rop.op.op_type == "REPLACE"
+    assert rop.op.target_chapter == "6a"
+    assert rop.op.move_clause_target_unit_kind == "chapter"
+    assert rop.op.body_chapter_move_from == "6"
+    assert rop.op.lo is not None
+    assert rop.op.lo.action is StructuralAction.REPLACE
+    finding = next(
+        finding
+        for finding in result.findings()
+        if finding.kind == "LOWER.BODY_CHAPTER_DECLARED_MOVE_REPLACE"
+    )
+    assert finding.detail["family"] == "action_family_recovery"
+    assert finding.detail["original_action"] == "REPLACE"
+    assert finding.detail["lowered_action"] == "REPLACE"
+    assert finding.detail["body_chapter"] == "6a"
+    assert finding.detail["strict_disposition"] == "allow"
+
+
 def test_compile_group_strict_rejects_body_chapter_replace_to_insert_move_recovery() -> None:
     def _section(label: str, text: str = "") -> IRNode:
         return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
@@ -3443,8 +3521,8 @@ def test_compile_group_retargets_explicit_scope_rewrite_live_section_to_unique_c
         target_chapter="2",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_stripped_unique_section",
-            source="explicit_scope_rewrite",
-            confidence="rewritten",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
             resolved_chapter="2",
         ),
         source_statute="2016/533",
@@ -3531,8 +3609,8 @@ def test_compile_group_retargets_explicit_chunk_section_to_body_backed_live_part
         target_chapter="7",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         ),
         source_statute="2023/497",
@@ -3630,8 +3708,8 @@ def test_compile_group_retargets_explicit_chunk_section_from_stale_part_only_sco
         target_paragraph=4,
         scope_confidence=ScopeConfidence(
             tag="part_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
         ),
         source_statute="2023/497",
         lo=LegalOperation(
@@ -3724,8 +3802,8 @@ def test_compile_group_strict_profile_blocks_explicit_chunk_body_backed_live_sec
         target_chapter="7",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         ),
         source_statute="2023/497",
@@ -3810,8 +3888,8 @@ def test_compile_group_retargets_explicit_chunk_section_to_unique_live_path_when
         target_chapter="7",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         ),
         source_statute="2023/497",
@@ -4502,8 +4580,8 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_carry_forwa
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -4515,8 +4593,8 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_carry_forwa
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -4591,8 +4669,8 @@ def test_retarget_stale_body_scope_skips_whole_section_insert_when_body_matches_
         target_chapter="25",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="25",
         ),
     )
@@ -4643,8 +4721,8 @@ def test_compile_group_keeps_explicit_chunk_insert_under_matching_body_chapter()
         target_chapter="2",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="2",
         ),
         source_statute="2023/1250",
@@ -4738,8 +4816,8 @@ def test_compile_group_retargets_inferred_body_wrapper_scope_from_live_stem() ->
         target_chapter="1",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_letter_suffix_stem_host",
-            source="live_stem_host",
-            confidence="inferred",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="1",
         ),
         source_statute="2010/661",
@@ -4835,8 +4913,8 @@ def test_compile_group_does_not_undo_live_stem_host_scope_with_body_wrapper_chap
         target_chapter="9",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_letter_suffix_stem_host",
-            source="live_stem_host",
-            confidence="inferred",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="9",
         ),
         source_statute="2010/661",
@@ -5033,8 +5111,8 @@ def test_compile_group_prefers_live_body_chapter_over_live_stem_host_scope() -> 
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_letter_suffix_stem_host",
-            source="live_stem_host",
-            confidence="inferred",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         source_statute="2025/500",
@@ -5120,8 +5198,8 @@ def test_compile_group_retargets_descendant_insert_from_body_wrapper_to_live_sec
         target_paragraph=3,
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_scope_rewrite",
-            confidence="rewritten",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
             resolved_chapter="1",
         ),
         source_statute="2010/661",
@@ -5285,8 +5363,8 @@ def test_compile_group_prefers_scoped_body_chapter_for_repeated_explicit_chunk_i
         target_chapter="6",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="6",
         ),
         source_statute="2023/1250",
@@ -5382,8 +5460,8 @@ def test_compile_group_keeps_carry_forward_insert_scope_when_body_chapter_is_new
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -5478,8 +5556,8 @@ def test_retarget_stale_body_scope_does_not_hijack_explicit_same_label_move_dest
         target_chapter="5b",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="5b",
         ),
     )
@@ -8168,8 +8246,8 @@ def test_append_compiled_group_ops_prefers_stored_scope_confidence_over_sidecar_
         scope_provenance_tags=("grouped_chapter_scope",),
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="5",
         ),
     )
@@ -9383,7 +9461,7 @@ def test_uncovered_body_skip_helper_maps_peg_owned_same_chapter_reason() -> None
         ("body_pairing_guard", "APPLY.UNCOVERED_BODY_BODY_PAIRING_GUARD"),
         ("no_content_ops", "APPLY.UNCOVERED_BODY_NO_CONTENT_OPS"),
         ("would_lose_subsections", "APPLY.UNCOVERED_BODY_WOULD_LOSE_SUBSECTIONS"),
-        ("johto_guard", "APPLY.UNCOVERED_BODY_JOHTO_GUARD"),
+        ("johto_guard", "APPLY.UNCOVERED_BODY_PREAMBLE_GUARD"),
         ("omission_merge_failed", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_FAILED"),
         ("omission_merge_low_text_ratio", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_LOW_TEXT_RATIO"),
         ("omission_merge_duplicate_subsection_labels", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_DUPLICATE_LABELS"),
@@ -10650,8 +10728,8 @@ def test_retarget_stale_body_chapter_scope_respects_stored_scope_confidence_carr
         target_chapter="4d",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="4d",
         ),
     )
@@ -10708,8 +10786,8 @@ def test_retarget_stale_body_chapter_scope_keeps_explicit_chunk_whole_section_in
         target_chapter="2",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="2",
         ),
     )
@@ -10763,8 +10841,8 @@ def test_retarget_stale_body_chapter_scope_allows_explicit_scope_rewrite_carrier
         target_chapter="4d",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_stripped_unique_section",
-            source="explicit_scope_rewrite",
-            confidence="rewritten",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
             resolved_chapter="4d",
         ),
     )
@@ -10903,8 +10981,8 @@ def test_body_chapter_scope_for_section_op_overrides_carry_forward_with_unique_e
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -11222,8 +11300,8 @@ def test_enrich_ops_keeps_live_carry_forward_subsection_scope_over_stale_body_ch
         target_paragraph=2,
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="3",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -11277,8 +11355,8 @@ def test_enrich_ops_still_rewrites_deep_carry_forward_when_live_host_is_absent()
         target_paragraph=2,
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -11940,13 +12018,17 @@ def test_replay_xml_1920_26_applies_conclusions_repeal_clause_for_section_6() ->
         and event.relation is not None
         and event.relation.target_effect is not None
     }
-    assert "fi-effect:1958/371:lifecycle:section:1" in repeal_lifecycle_targets
-    assert (
-        "fi-effect:2000/90:lifecycle:section:21,section:22,section:23,section:23a,section:24,section:25"
-        in repeal_lifecycle_targets
-    )
+    assert {
+        "fi-effect:1958/371:snapshot_section_1",
+        "fi-effect:2000/90:snapshot_section_21",
+        "fi-effect:2000/90:snapshot_section_22",
+        "fi-effect:2000/90:snapshot_section_23",
+        "fi-effect:2000/90:snapshot_section_23a",
+        "fi-effect:2000/90:snapshot_section_24",
+        "fi-effect:2000/90:snapshot_section_25",
+    }.issubset(repeal_lifecycle_targets)
     assert all(
-        event.executable is False
+        event.executable is True
         for event in replay.products.effect_lifecycle_events
         if event.kind == "repeal_effect"
     )
@@ -12705,7 +12787,7 @@ def test_supplement_sparse_osalta_row_omission_repeals_owns_action_recovery() ->
     ]
     assert got[0].witness_rule_id == "fi.sparse_osalta_row_omission_repeal.v1"
     assert got[0].extraction_provenance_tags == ("sparse_osalta_row_omission_repeal",)
-    assert [finding.kind for finding in findings] == ["ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL"]
+    assert [finding.kind for finding in findings] == ["ELAB.SPARSE_PARTIAL_SCOPE_ROW_OMISSION_REPEAL"]
     assert findings[0].detail["source_verb"] == "muutetaan"
     assert findings[0].detail["lowered_action"] == "REPEAL"
 
@@ -15027,6 +15109,19 @@ def test_collect_johto_chapter_mentions_accepts_luvun_otsikko_form() -> None:
     assert {"1", "3", "4"} <= set(mentions.new_chapter_labels)
 
 
+def test_collect_johto_chapter_mentions_anaphoric_new_chapter_move_tail() -> None:
+    mentions = _collect_johto_chapter_scope_mentions(
+        "lisätään lakiin uusi 6 a luku, johon samalla siirretään "
+        "muutettu 25, 26 ja 27 §, seuraavasti:"
+    )
+
+    assert mentions.new_chapter_labels == frozenset({"6a"})
+    assert {
+        (moved.section_label, moved.destination_chapter_label)
+        for moved in mentions.moved_section_destinations
+    } == {("25", "6a"), ("26", "6a"), ("27", "6a")}
+
+
 def test_replay_xml_2001_101_preserves_section_24_sparse_item_tail_from_2017_169() -> None:
     from lawvm.core.ir_helpers import irnode_to_text
 
@@ -15285,7 +15380,7 @@ def test_normalize_amendment_1992_1243_2004_254_rehomes_section_71_from_cited_re
         base_ir=None,
         amendment_id="2004/254",
         source_title="Valtioneuvoston asetus valtion talousarviosta annetun asetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1992/1243",
         strict_profile=None,
     )
@@ -15390,6 +15485,37 @@ def test_inspect_amendment_1966_611_1981_20_recovers_heading_tagged_subsection_p
         observation["kind"] == "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
         and observation["detail"]["target_paragraph"] == 1
         and observation["detail"]["rule"] == "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
+        for observation in group["elaboration_observations"]
+    )
+
+
+def test_inspect_amendment_2020_811_2021_278_promotes_leading_subsection_heading_payload() -> None:
+    """A whole-section insert may carry the section heading as its first subsection."""
+    bundle = build_amendment_bundle("2020/811", "2021/278", mode="legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "11a")
+
+    assert bundle["compiled_ops"] == ["INSERT 1 luku 11a §"]
+    assert group["ops_raw"] == ["INSERT 1 luku 11a §"]
+    assert group["ops_final"] == ["INSERT 1 luku 11a §"]
+    assert group["source_pathologies"] == []
+    assert any(
+        observation["kind"] == "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
+        and observation["detail"]["shifted_subsection_count"] == 1
+        and observation["detail"]["rule"] == "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
+        for observation in group["elaboration_observations"]
+    )
+
+
+def test_inspect_amendment_2022_1393_2024_870_keeps_inline_styled_leading_subsection() -> None:
+    """Inline-styled leading subsection text is not promoted to a section heading."""
+    bundle = build_amendment_bundle("2022/1393", "2024/870", mode="legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "7a")
+
+    assert "INSERT 7a §" in bundle["compiled_ops"]
+    assert group["ops_raw"] == ["INSERT 7a §"]
+    assert group["ops_final"] == ["INSERT 7a §"]
+    assert all(
+        observation["kind"] != "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
         for observation in group["elaboration_observations"]
     )
 

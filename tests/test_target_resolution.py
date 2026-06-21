@@ -15,17 +15,17 @@ from lawvm.core.target_resolution import (
     TARGET_RESOLVED,
     TargetResolutionStatus,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
     target_resolution_candidate_from_mapping,
 )
 
 
-def test_target_resolution_certificate_projects_selected_target() -> None:
-    detail = TargetResolutionCertificate(
+def test_target_resolution_coverage_projects_selected_target() -> None:
+    detail = TargetResolutionCoverage(
         rule_id="test_target_exact",
         phase="elaboration",
         reason="explicit source target matched exactly one live node",
-        status=TARGET_RESOLVED,
+        resolution_status=TARGET_RESOLVED,
         source_target="section:5",
         selected_target="section:5",
         candidate_count=1,
@@ -66,12 +66,12 @@ def test_target_resolution_certificate_projects_selected_target() -> None:
     assert validate_diagnostic_detail(detail) == ()
 
 
-def test_target_resolution_certificate_records_fallback_difference() -> None:
-    detail = TargetResolutionCertificate(
+def test_target_resolution_coverage_records_fallback_difference() -> None:
+    detail = TargetResolutionCoverage(
         rule_id="test_target_fallback",
         phase="elaboration",
         reason="source target required named recovery",
-        status=TARGET_FALLBACK_RESOLVED,
+        resolution_status=TARGET_FALLBACK_RESOLVED,
         source_target="chapter:2/section:5",
         selected_target="chapter:2/section:5/subsection:1",
         candidate_count=1,
@@ -86,12 +86,12 @@ def test_target_resolution_certificate_records_fallback_difference() -> None:
     assert validate_diagnostic_detail(detail) == ()
 
 
-def test_target_resolution_certificate_can_record_ambiguity_without_selection() -> None:
-    detail = TargetResolutionCertificate(
+def test_target_resolution_coverage_can_record_ambiguity_without_selection() -> None:
+    detail = TargetResolutionCoverage(
         rule_id="test_target_ambiguous",
         phase="elaboration",
         reason="two same-label targets remained plausible",
-        status=TARGET_AMBIGUOUS,
+        resolution_status=TARGET_AMBIGUOUS,
         source_target="section:5",
         candidate_count=2,
         candidates=(
@@ -107,13 +107,13 @@ def test_target_resolution_certificate_can_record_ambiguity_without_selection() 
     assert validate_diagnostic_detail(detail) == ()
 
 
-def test_target_resolution_certificate_rejects_reserved_detail_keys() -> None:
+def test_target_resolution_coverage_rejects_reserved_detail_keys() -> None:
     with pytest.raises(ValueError, match="selected_target"):
-        TargetResolutionCertificate(
+        TargetResolutionCoverage(
             rule_id="test_target_bad",
             phase="elaboration",
             reason="bad detail",
-            status=TARGET_REJECTED,
+            resolution_status=TARGET_REJECTED,
             source_target="section:5",
             detail={"selected_target": "section:6"},
         )
@@ -128,60 +128,60 @@ def test_target_resolution_candidate_rejects_reserved_detail_keys() -> None:
         )
 
 
-def test_target_resolution_certificate_requires_selected_target_for_resolved_status() -> None:
+def test_target_resolution_coverage_requires_selected_target_for_resolved_status() -> None:
     with pytest.raises(ValueError, match="requires selected_target"):
-        TargetResolutionCertificate(
+        TargetResolutionCoverage(
             rule_id="test_target_bad",
             phase="elaboration",
             reason="missing selected target",
-            status=TARGET_RESOLVED,
+            resolution_status=TARGET_RESOLVED,
             source_target="section:5",
             candidate_count=1,
         )
 
 
-def test_target_resolution_certificate_rejects_invalid_status() -> None:
+def test_target_resolution_coverage_rejects_invalid_status() -> None:
     with pytest.raises(ValueError, match="status must be one of"):
-        TargetResolutionCertificate(
+        TargetResolutionCoverage(
             rule_id="test_target_bad",
             phase="elaboration",
             reason="bad status",
-            status=cast(TargetResolutionStatus, "exact_source_path"),
+            resolution_status=cast(TargetResolutionStatus, "exact_source_path"),
             source_target="section:5",
         )
 
 
-def test_target_resolution_certificate_requires_candidate_count_for_selected_status() -> None:
+def test_target_resolution_coverage_requires_candidate_count_for_selected_status() -> None:
     with pytest.raises(ValueError, match="candidate_count >= 1"):
-        TargetResolutionCertificate(
+        TargetResolutionCoverage(
             rule_id="test_target_bad",
             phase="elaboration",
             reason="selected target without counted candidate",
-            status=TARGET_RESOLVED,
+            resolution_status=TARGET_RESOLVED,
             source_target="section:5",
             selected_target="section:5",
         )
 
 
-def test_target_resolution_certificate_rejects_unknown_scope_confidence() -> None:
+def test_target_resolution_coverage_rejects_unknown_scope_confidence() -> None:
     with pytest.raises(ValueError, match="scope_confidence must be one of"):
-        TargetResolutionCertificate(
+        TargetResolutionCoverage(
             rule_id="test_target_bad",
             phase="elaboration",
             reason="bad confidence",
-            status=TARGET_REJECTED,
+            resolution_status=TARGET_REJECTED,
             source_target="section:5",
             scope_confidence="probably",
         )
 
 
-def test_target_resolution_certificate_candidate_count_covers_listed_candidates() -> None:
+def test_target_resolution_coverage_candidate_count_covers_listed_candidates() -> None:
     with pytest.raises(ValueError, match="candidate_count"):
-        TargetResolutionCertificate(
+        TargetResolutionCoverage(
             rule_id="test_target_bad",
             phase="elaboration",
             reason="bad count",
-            status=TARGET_AMBIGUOUS,
+            resolution_status=TARGET_AMBIGUOUS,
             source_target="section:5",
             candidate_count=1,
             candidates=(
@@ -191,13 +191,13 @@ def test_target_resolution_certificate_candidate_count_covers_listed_candidates(
         )
 
 
-def test_target_resolution_certificate_resolved_selection_must_be_listed_candidate() -> None:
+def test_target_resolution_coverage_resolved_selection_must_be_listed_candidate() -> None:
     with pytest.raises(ValueError, match="selected_target must be one of the listed candidates"):
-        TargetResolutionCertificate(
+        TargetResolutionCoverage(
             rule_id="test_target_bad",
             phase="elaboration",
             reason="resolved target selected outside candidates",
-            status=TARGET_RESOLVED,
+            resolution_status=TARGET_RESOLVED,
             source_target="section:5",
             selected_target="chapter:2/section:5",
             candidate_count=1,
@@ -207,12 +207,12 @@ def test_target_resolution_certificate_resolved_selection_must_be_listed_candida
         )
 
 
-def test_target_resolution_certificate_recovery_selection_may_differ_from_listed_candidates() -> None:
-    detail = TargetResolutionCertificate(
+def test_target_resolution_coverage_recovery_selection_may_differ_from_listed_candidates() -> None:
+    detail = TargetResolutionCoverage(
         rule_id="test_target_recovery",
         phase="elaboration",
         reason="frontend recorded named fallback after listed candidates failed",
-        status=TARGET_FALLBACK_RESOLVED,
+        resolution_status=TARGET_FALLBACK_RESOLVED,
         source_target="section:5",
         selected_target="chapter:2/section:5",
         candidate_count=1,
@@ -238,7 +238,7 @@ def test_target_resolution_candidate_from_mapping_preserves_local_payload() -> N
     }
 
 
-def test_target_resolution_certificate_normalizes_candidates_and_detail() -> None:
+def test_target_resolution_coverage_normalizes_candidates_and_detail() -> None:
     candidate_detail = {"nested": {"labels": ["5"]}}
     candidate = TargetResolutionCandidate(
         target="section:5",
@@ -247,11 +247,11 @@ def test_target_resolution_certificate_normalizes_candidates_and_detail() -> Non
     )
     candidates = [candidate]
 
-    certificate = TargetResolutionCertificate(
+    certificate = TargetResolutionCoverage(
         rule_id="test_target_exact",
         phase="elaboration",
         reason="explicit source target matched exactly one live node",
-        status=TARGET_RESOLVED,
+        resolution_status=TARGET_RESOLVED,
         source_target="section:5",
         selected_target="section:5",
         candidate_count=1,
@@ -270,13 +270,13 @@ def test_target_resolution_certificate_normalizes_candidates_and_detail() -> Non
     )
 
 
-def test_target_resolution_certificate_rejects_malformed_detail_lanes() -> None:
+def test_target_resolution_coverage_rejects_malformed_detail_lanes() -> None:
     with pytest.raises(ValueError, match="candidates must contain TargetResolutionCandidate"):
-        TargetResolutionCertificate(
+        TargetResolutionCoverage(
             rule_id="test_target_bad",
             phase="elaboration",
             reason="bad candidate",
-            status=TARGET_AMBIGUOUS,
+            resolution_status=TARGET_AMBIGUOUS,
             source_target="section:5",
             candidate_count=1,
             candidates=cast(Any, ("not-a-candidate",)),

@@ -18,6 +18,7 @@ removed; top-level dossier consumers should use ``lawvm.core.compile_facade``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, Mapping, Optional, cast
 
 from lawvm.core.frozen_values import freeze_mapping
@@ -27,6 +28,8 @@ from lawvm.core.effect_lifecycle import (
     EffectRef,
     EffectRelation,
     lower_lifecycle_events_to_temporal_events,
+    validate_effect_graph_closure,
+    validate_effect_graph_unique_ids,
 )
 from lawvm.core.event_summaries import (
     count_events_with_activation_rules,
@@ -320,6 +323,45 @@ class CompiledOpProvenanceTags:
         )
 
 
+class CompiledOpScopeSource(StrEnum):
+    """Scope-source rail carried by a compiled-op transport row.
+
+    Mirrors ``lawvm.finland.ops.ScopeResolutionSource`` by value. It is
+    redeclared here (rather than imported) because ``finland`` depends on this
+    core module; the values are the transport contract between the two layers.
+    """
+
+    PREAMBLE = "preamble"
+    EXPLICIT_CHUNK = "explicit_chunk"
+    CARRY_FORWARD = "carry_forward"
+    GROUPED_PART = "grouped_part"
+    GROUPED_CHAPTER = "grouped_chapter"
+    EXPLICIT_SCOPE_REWRITE = "explicit_scope_rewrite"
+
+
+class CompiledOpScopeWitnessKind(StrEnum):
+    """Finding-code rail a compiled-op scope source resolves to."""
+
+    CONTEXT_DEPENDENT_ANCHOR_RESOLUTION = "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION"
+    EXPLICIT_CHUNK_SCOPE_REQUIRED = "LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED"
+    EXPLICIT_SCOPE_REWRITE_REQUIRED = "LOWER.EXPLICIT_SCOPE_REWRITE_REQUIRED"
+
+
+# Single source-rail → witness-kind table. Replaces the prior string if/elif
+# chain so the mapping is enum-keyed and a new source value is a typed miss
+# (None) instead of a silent string fall-through.
+_COMPILED_OP_SCOPE_WITNESS_KIND_BY_SOURCE: Mapping[
+    CompiledOpScopeSource, CompiledOpScopeWitnessKind
+] = {
+    CompiledOpScopeSource.CARRY_FORWARD: CompiledOpScopeWitnessKind.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION,
+    CompiledOpScopeSource.PREAMBLE: CompiledOpScopeWitnessKind.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION,
+    CompiledOpScopeSource.GROUPED_PART: CompiledOpScopeWitnessKind.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION,
+    CompiledOpScopeSource.GROUPED_CHAPTER: CompiledOpScopeWitnessKind.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION,
+    CompiledOpScopeSource.EXPLICIT_CHUNK: CompiledOpScopeWitnessKind.EXPLICIT_CHUNK_SCOPE_REQUIRED,
+    CompiledOpScopeSource.EXPLICIT_SCOPE_REWRITE: CompiledOpScopeWitnessKind.EXPLICIT_SCOPE_REWRITE_REQUIRED,
+}
+
+
 @dataclass(frozen=True)
 class CompiledOpScopeWitness:
     """Normalized scope witness derived from a compiled-op transport row."""
@@ -361,7 +403,7 @@ class CompiledOpEvidenceRow:
 
 
 @dataclass(frozen=True)
-class AdmissibleBindingCertificate:
+class AdmissibleBindingCoverage:
     """Certificate that a subsection slot binding was deterministic."""
 
     slot_id: int
@@ -370,14 +412,14 @@ class AdmissibleBindingCertificate:
     admissibility: Literal["single", "ambiguous", "fallback"]
 
     def __post_init__(self) -> None:
-        _require_nonnegative_int("AdmissibleBindingCertificate", "slot_id", self.slot_id)
-        _require_nonnegative_int("AdmissibleBindingCertificate", "candidate_count", self.candidate_count)
+        _require_nonnegative_int("AdmissibleBindingCoverage", "slot_id", self.slot_id)
+        _require_nonnegative_int("AdmissibleBindingCoverage", "candidate_count", self.candidate_count)
         if self.admissibility not in {"single", "ambiguous", "fallback"}:
-            raise ValueError("AdmissibleBindingCertificate.admissibility must be single, ambiguous, or fallback")
+            raise ValueError("AdmissibleBindingCoverage.admissibility must be single, ambiguous, or fallback")
         if self.admissibility == "single" and self.candidate_count != 1:
-            raise ValueError("AdmissibleBindingCertificate single admissibility requires candidate_count=1")
+            raise ValueError("AdmissibleBindingCoverage single admissibility requires candidate_count=1")
         if self.admissibility == "ambiguous" and self.candidate_count <= 1:
-            raise ValueError("AdmissibleBindingCertificate ambiguous admissibility requires candidate_count > 1")
+            raise ValueError("AdmissibleBindingCoverage ambiguous admissibility requires candidate_count > 1")
 
 
 @dataclass(frozen=True)
@@ -602,6 +644,23 @@ def _validate_bundle_purity(
     return violations
 
 
+def _merge_executable_temporal_events(
+    direct_events: tuple[TemporalEvent, ...],
+    lifecycle_events: tuple[EffectLifecycleEvent, ...],
+) -> tuple[TemporalEvent, ...]:
+    events_by_id: dict[str, TemporalEvent] = {}
+    for event in direct_events + lower_lifecycle_events_to_temporal_events(lifecycle_events):
+        previous = events_by_id.get(event.event_id)
+        if previous is None:
+            events_by_id[event.event_id] = event
+        elif previous != event:
+            raise ValueError(
+                "CanonicalBundle.executable_temporal_events conflicting "
+                f"duplicate event_id: {event.event_id!r}"
+            )
+    return tuple(events_by_id.values())
+
+
 @dataclass(frozen=True)
 class CanonicalBundle:
     """The semantic output of compilation.
@@ -638,9 +697,12 @@ class CanonicalBundle:
         canonical_migration_events = _canonical_migration_events(self.migration_events)
         if canonical_migration_events != self.migration_events:
             object.__setattr__(self, "migration_events", canonical_migration_events)
+        object.__setattr__(self, "temporal_events", tuple(self.temporal_events))
         object.__setattr__(self, "source_effects", tuple(self.source_effects))
         object.__setattr__(self, "effect_relations", tuple(self.effect_relations))
         object.__setattr__(self, "effect_lifecycle_events", tuple(self.effect_lifecycle_events))
+        if not all(isinstance(event, TemporalEvent) for event in self.temporal_events):
+            raise TypeError("CanonicalBundle.temporal_events must contain TemporalEvent records")
         if not all(isinstance(effect, EffectRef) for effect in self.source_effects):
             raise TypeError("CanonicalBundle.source_effects must contain EffectRef records")
         if not all(isinstance(relation, EffectRelation) for relation in self.effect_relations):
@@ -649,6 +711,22 @@ class CanonicalBundle:
             raise TypeError(
                 "CanonicalBundle.effect_lifecycle_events must contain EffectLifecycleEvent records"
             )
+        validate_effect_graph_unique_ids(
+            subject="CanonicalBundle",
+            source_effects=self.source_effects,
+            effect_relations=self.effect_relations,
+            effect_lifecycle_events=self.effect_lifecycle_events,
+        )
+        validate_effect_graph_closure(
+            subject="CanonicalBundle",
+            source_effects=self.source_effects,
+            effect_relations=self.effect_relations,
+            effect_lifecycle_events=self.effect_lifecycle_events,
+        )
+        _merge_executable_temporal_events(
+            self.temporal_events,
+            self.effect_lifecycle_events,
+        )
 
     def validate_purity(self) -> list[str]:
         """Return a list of purity violations (empty means pure).
@@ -666,23 +744,23 @@ class CanonicalBundle:
 
     @property
     def temporal_event_kinds(self) -> tuple[str, ...]:
-        """Return the distinct temporal-event kinds carried by this bundle."""
-        return distinct_event_kinds(self.temporal_events)
+        """Return the distinct executable temporal-event kinds for this bundle."""
+        return distinct_event_kinds(self.executable_temporal_events)
 
     @property
     def temporal_events_with_activation_rules(self) -> int:
-        """Return the number of temporal events carrying an embedded activation rule."""
-        return count_events_with_activation_rules(self.temporal_events)
+        """Return the number of executable temporal events carrying an activation rule."""
+        return count_events_with_activation_rules(self.executable_temporal_events)
 
     @property
     def temporal_events_with_source(self) -> int:
-        """Return the number of temporal events carrying provenance source data."""
-        return count_events_with_source(self.temporal_events)
+        """Return the number of executable temporal events carrying source data."""
+        return count_events_with_source(self.executable_temporal_events)
 
     @property
     def temporal_event_activation_rule_kinds(self) -> tuple[str, ...]:
-        """Return the distinct activation-rule kinds carried by this bundle."""
-        return distinct_activation_rule_kinds(self.temporal_events)
+        """Return executable temporal activation-rule kinds for this bundle."""
+        return distinct_activation_rule_kinds(self.executable_temporal_events)
 
     @property
     def lifecycle_projected_temporal_events(self) -> tuple[TemporalEvent, ...]:
@@ -692,10 +770,10 @@ class CanonicalBundle:
     @property
     def executable_temporal_events(self) -> tuple[TemporalEvent, ...]:
         """Return direct temporal events plus lifecycle-derived projections."""
-        events_by_id: dict[str, TemporalEvent] = {}
-        for event in self.temporal_events + self.lifecycle_projected_temporal_events:
-            events_by_id.setdefault(event.event_id, event)
-        return tuple(events_by_id.values())
+        return _merge_executable_temporal_events(
+            self.temporal_events,
+            self.effect_lifecycle_events,
+        )
 
     def provision_lineage(
         self,
@@ -928,62 +1006,60 @@ def _compiled_op_scope_witness(row: Mapping[str, Any]) -> CompiledOpScopeWitness
     source_value = str(scope_source).strip() if isinstance(scope_source, str) else ""
     confidence_value = str(scope_confidence).strip() if isinstance(scope_confidence, str) else ""
     if source_value and confidence_value:
-        if source_value in {"carry_forward", "preamble", "grouped_part", "grouped_chapter"}:
-            scope_kind = "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION"
-        elif source_value == "explicit_chunk":
-            scope_kind = "LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED"
-        elif source_value == "explicit_scope_rewrite":
-            scope_kind = "LOWER.EXPLICIT_SCOPE_REWRITE_REQUIRED"
-        else:
+        scope_source_member = _compiled_op_scope_source_member(source_value)
+        if scope_source_member is None:
             return None
+        scope_kind = _COMPILED_OP_SCOPE_WITNESS_KIND_BY_SOURCE[scope_source_member]
         return CompiledOpScopeWitness(
-            kind=scope_kind,
-            source=source_value,
+            kind=str(scope_kind),
+            source=str(scope_source_member),
             confidence=confidence_value,
             tag=next(iter(scope_tag_list), ""),
             used_legacy_tag_fallback=False,
         )
 
-    if "chapter_scope_from_explicit_chunk" in scope_tag_list:
-        return CompiledOpScopeWitness(
-            kind="LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED",
-            source="explicit_chunk",
-            confidence="explicit",
-            tag="chapter_scope_from_explicit_chunk",
-            used_legacy_tag_fallback=True,
-        )
-
-    for tag in (
-        "chapter_scope_stripped_subsection_insert",
-        "chapter_scope_stripped_section_facet_insert",
-        "chapter_scope_stripped_unique_section",
-        "chapter_scope_stripped_duplicate_label_outside_stated_chapter",
-    ):
+    for tag, source_member, confidence in _COMPILED_OP_SCOPE_LEGACY_TAG_WITNESSES:
         if tag in scope_tag_list:
             return CompiledOpScopeWitness(
-                kind="LOWER.EXPLICIT_SCOPE_REWRITE_REQUIRED",
-                source="explicit_scope_rewrite",
-                confidence="rewritten",
-                tag=tag,
-                used_legacy_tag_fallback=True,
-            )
-
-    for tag, source_value in (
-        ("chapter_scope_carry_forward", "carry_forward"),
-        ("chapter_scope_from_preamble", "preamble"),
-        ("grouped_part_scope", "grouped_part"),
-        ("grouped_chapter_scope", "grouped_chapter"),
-    ):
-        if tag in scope_tag_list:
-            return CompiledOpScopeWitness(
-                kind="LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION",
-                source=source_value,
-                confidence="inferred",
+                kind=str(_COMPILED_OP_SCOPE_WITNESS_KIND_BY_SOURCE[source_member]),
+                source=str(source_member),
+                confidence=confidence,
                 tag=tag,
                 used_legacy_tag_fallback=True,
             )
 
     return None
+
+
+def _compiled_op_scope_source_member(value: str) -> CompiledOpScopeSource | None:
+    """Return the typed scope-source member for a transport-row source string."""
+    try:
+        return CompiledOpScopeSource(value)
+    except ValueError:
+        return None
+
+
+# Legacy provenance-tag fallback, evaluated in priority order. Each entry binds
+# a scope tag to its typed (source, confidence); the witness kind is derived
+# from the same source→kind table used by the structured carrier path so the
+# two rails cannot drift.
+_COMPILED_OP_SCOPE_LEGACY_TAG_WITNESSES: tuple[
+    tuple[str, CompiledOpScopeSource, str], ...
+] = (
+    ("chapter_scope_from_explicit_chunk", CompiledOpScopeSource.EXPLICIT_CHUNK, "explicit"),
+    ("chapter_scope_stripped_subsection_insert", CompiledOpScopeSource.EXPLICIT_SCOPE_REWRITE, "rewritten"),
+    ("chapter_scope_stripped_section_facet_insert", CompiledOpScopeSource.EXPLICIT_SCOPE_REWRITE, "rewritten"),
+    ("chapter_scope_stripped_unique_section", CompiledOpScopeSource.EXPLICIT_SCOPE_REWRITE, "rewritten"),
+    (
+        "chapter_scope_stripped_duplicate_label_outside_stated_chapter",
+        CompiledOpScopeSource.EXPLICIT_SCOPE_REWRITE,
+        "rewritten",
+    ),
+    ("chapter_scope_carry_forward", CompiledOpScopeSource.CARRY_FORWARD, "inferred"),
+    ("chapter_scope_from_preamble", CompiledOpScopeSource.PREAMBLE, "inferred"),
+    ("grouped_part_scope", CompiledOpScopeSource.GROUPED_PART, "inferred"),
+    ("grouped_chapter_scope", CompiledOpScopeSource.GROUPED_CHAPTER, "inferred"),
+)
 
 
 def _operation_section_labels(op: LegalOperation) -> set[str]:
@@ -1095,7 +1171,7 @@ _PROFILE_GATES: dict[str, tuple[str, bool]] = {
     "APPLY.FALLBACK_WHOLE_SECTION_REPLACE": ("allows_fallback_whole_section_replace", True),
     "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED": ("allows_uncovered_body_recovery", True),
     "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION": ("allows_context_dependent_anchor_resolution", True),
-    "ELAB.SEC1_PRE_ROUTING_FALLBACK": ("allows_context_dependent_anchor_resolution", True),
+    "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK": ("allows_context_dependent_anchor_resolution", True),
     "APPLY.WORD_SUBSTITUTION": ("allows_word_substitution", True),
     "APPLY.SOURCE_CORRECTED_BY_PATCH": ("allows_source_correction_rules", True),
     "TIME.MISSING_EFFECTIVE_DATE": ("requires_explicit_effective_date", False),
@@ -1119,7 +1195,7 @@ _PROFILE_GATES: dict[str, tuple[str, bool]] = {
         ("allows_attested_source_correction", True),
     "ELAB.TARGET_SELECTION_REQUIRED.RESOLVED_BY_ATTESTATION":
         ("allows_attested_target_selection", True),
-    "PARSE.JOHTOLAUSE_FAILED.RESOLVED_BY_ATTESTATION":
+    "PARSE.PREAMBLE_CLAUSE_FAILED.RESOLVED_BY_ATTESTATION":
         ("allows_attested_semantic_compilation", True),
     "ELAB.TARGET_AMBIGUITY_UNCLASSIFIED.RESOLVED_BY_ATTESTATION":
         ("allows_attested_ambiguity_adjudication", True),
@@ -1208,7 +1284,7 @@ def strict_fail_reasons_from_finding_ledger(
     extraction_fallback_tags = {
         "extraction_fallback_heuristic",
         "extraction_title_fallback",
-        "extraction_sec1_body_johto",
+        "extraction_preamble_body",
         "repeal_reenact_normalized",
         "fallback_insert_supplement",
         "fallback_insert_supplement_shadowed",

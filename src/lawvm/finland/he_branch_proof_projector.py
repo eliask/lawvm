@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Mapping
 
-from lawvm.core.authority import (
+from lawvm.core.branch_authority import (
     UNKNOWN_STATUS,
     BranchEdgeKind,
     WOULD_AMEND_EDGE,
@@ -172,7 +172,7 @@ def _he_branch_impact_projection(
     return branch_impact_projection_from_edges(
         branch,
         edges,
-        status="diagnostic_only",
+        projection_status="diagnostic_only",
         message="Finland government-proposal branch impact projection is not enacted-law authority.",
     )
 

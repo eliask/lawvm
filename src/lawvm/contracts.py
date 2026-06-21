@@ -58,7 +58,7 @@ class ArtifactEnvelope(Generic[T]):
     producer: str
     version: str
     payload: T
-    status: ProcessingStatus = field(default_factory=lambda: ProcessingStatus(kind="complete"))
+    processing_status: ProcessingStatus = field(default_factory=lambda: ProcessingStatus(kind="complete"))
 
     def __post_init__(self) -> None:
         if not str(self.schema or "").strip():
@@ -67,8 +67,8 @@ class ArtifactEnvelope(Generic[T]):
             raise ValueError("ArtifactEnvelope.producer must be non-empty")
         if not str(self.version or "").strip():
             raise ValueError("ArtifactEnvelope.version must be non-empty")
-        if not isinstance(self.status, ProcessingStatus):
-            raise ValueError("ArtifactEnvelope.status must be a ProcessingStatus")
+        if not isinstance(self.processing_status, ProcessingStatus):
+            raise ValueError("ArtifactEnvelope.processing_status must be a ProcessingStatus")
 
     def to_jsonable_dict(self) -> dict[str, Any]:
         """Return the wire shape for a persisted artifact envelope."""
@@ -77,7 +77,7 @@ class ArtifactEnvelope(Generic[T]):
             "producer": self.producer,
             "version": self.version,
             "payload": to_wire_jsonable(self.payload),
-            "status": self.status.to_jsonable_dict(),
+            "processing_status": self.processing_status.to_jsonable_dict(),
         }
 
 

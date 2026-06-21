@@ -147,7 +147,7 @@ def test_corpus_graph_wire_artifact_projects_stable_summary() -> None:
     assert artifact.schema == "lawvm.corpus_graph"
     assert artifact.producer == "tests.graph"
     assert artifact.version == "wire-1"
-    assert artifact.status == ProcessingStatus(
+    assert artifact.processing_status == ProcessingStatus(
         kind="partial",
         blockers=("graph_build_failed:fi/z",),
     )

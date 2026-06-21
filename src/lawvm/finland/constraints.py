@@ -25,7 +25,7 @@ import lxml.etree as etree
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.payload_surface import TargetUnitKind
-from lawvm.finland.ops import AmendmentOp, FailedOp
+from lawvm.finland.ops import AmendmentOp, FailedOp, _op_target_subsection_label
 from lawvm.finland.payload_normalize import SubsectionSlotAssignmentResult, SubsectionSlotMap
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.replay_notices import replay_print
@@ -1107,6 +1107,8 @@ def _filter_ops_by_constraints(
                         target_section=op.target_section or "",
                         target_unit_kind=op.target_unit_kind,
                         target_chapter=op.target_chapter,
+                        target_subsection=_op_target_subsection_label(op),
+                        target_item=op.target_item,
                     )
                 )
                 keep = False

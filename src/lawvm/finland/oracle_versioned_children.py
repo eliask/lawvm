@@ -16,7 +16,7 @@ from lxml import etree
 
 from lawvm.finland.helpers import _norm_num_token
 
-_ORACLE_VERSION_SUFFIX_RE = re.compile(r"v\d{8}$")
+_ORACLE_VERSION_SUFFIX_RE = re.compile(r"v(?P<version>\d{8})$")
 
 
 def _tag(el: etree._Element) -> str:
@@ -41,6 +41,44 @@ def _oracle_eid_base(el: etree._Element) -> Optional[str]:
     if not eid:
         return None
     return _ORACLE_VERSION_SUFFIX_RE.sub("", eid.split("__")[-1])
+
+
+def _oracle_eid_component_version(el: etree._Element) -> int:
+    eid = el.get("eId", "")
+    if not eid:
+        return -1
+    match = _ORACLE_VERSION_SUFFIX_RE.search(eid.split("__")[-1])
+    if match is None:
+        return -1
+    return int(match.group("version"))
+
+
+def _eid_slot_number(eid_base: str) -> tuple[str, int] | None:
+    prefix, sep, tail = eid_base.rpartition("_")
+    if not sep or not tail.isdigit():
+        return None
+    return f"{prefix}_", int(tail)
+
+
+def _has_following_next_slot_child(
+    child: etree._Element,
+    child_tag: str,
+    eid_base: str,
+) -> bool:
+    slot = _eid_slot_number(eid_base)
+    if slot is None:
+        return False
+    prefix, number = slot
+    sibling = child.getnext()
+    while sibling is not None:
+        if _tag(sibling) == child_tag:
+            sibling_base = _oracle_eid_base(sibling)
+            sibling_slot = _eid_slot_number(sibling_base or "")
+            if sibling_slot == (prefix, number + 1):
+                return True
+            return False
+        sibling = sibling.getnext()
+    return False
 
 
 def _element_clean_text(el: etree._Element) -> str:
@@ -88,6 +126,16 @@ def dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:
             candidate_text = _element_clean_text(child)
             if existing_text and candidate_text:
                 if existing_has_orig != candidate_has_orig:
+                    candidate_is_unversioned_slot = _oracle_eid_component_version(child) < 0
+                    adjacent_plain_shadow = (
+                        existing_has_orig
+                        and candidate_is_unversioned_slot
+                        and existing.getnext() is child
+                        and _has_following_next_slot_child(child, child_tag, eid_base)
+                    )
+                    if adjacent_plain_shadow:
+                        parent.remove(child)
+                        continue
                     overlaps_as_prior_wording = (
                         existing_text in candidate_text
                         or candidate_text in existing_text
@@ -107,7 +155,7 @@ def dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:
                 if shorter / longer < 0.5 or not _sequence_ratio_at_least(
                     existing_text, candidate_text, 0.75
                 ):
-                    if not (existing.get(finlex_orig_attr) and child.get(finlex_orig_attr)):
+                    if not (existing_has_orig and candidate_has_orig):
                         continue
             parent.remove(child)
             continue

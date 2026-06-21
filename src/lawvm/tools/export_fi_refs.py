@@ -75,12 +75,26 @@ def _attach_profile_metadata(table: Any, profile: ProfileTag) -> Any:
 # ---------------------------------------------------------------------------
 
 
+# Authority firewall (AGENTS.md §1.11/§2.10, contract §7, legal_surface_graph D7):
+# deterministic extraction is a SURFACE projection — surface_only by construction.
+# A deterministic row records WHERE a reference was extracted from; it carries NO
+# replay/review authority. So these columns must hold surface-truthful values that
+# do NOT claim a human verified the row or that replay is authorized:
+#   - replay_authorized = False   (no execution authority; the legal_surface_graph
+#                                  plane already enforces this and RAISES on a True)
+#   - review_status     = PROPOSED   (machine-produced, NOT human_reviewed)
+#   - validator_status  = UNVALIDATED (no span/entailment human validation)
+# The decision-driven NULL-slot-fill path (_apply_null_slot_fills) legitimately
+# overwrites these from the composer-derived ClaimCompositionDecision; only the
+# author-set deterministic default lived here, and it was an authority leak.
+# `deterministic_extraction` is the positive surface fact this row actually carries.
 _DETERMINISTIC_ROW_EXTRAS = {
     "source_witness_type": SourceWitnessType.FINLEX_AKN.value,
     "claim_id": None,
-    "validator_status": ValidatorStatus.SPAN_VERIFIED.value,
-    "review_status": ReviewStatus.HUMAN_REVIEWED.value,
-    "replay_authorized": True,
+    "validator_status": ValidatorStatus.UNVALIDATED.value,
+    "review_status": ReviewStatus.PROPOSED.value,
+    "replay_authorized": False,
+    "deterministic_extraction": True,
 }
 
 
@@ -418,6 +432,49 @@ def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
     return table.replace_schema_metadata(meta)
 
 
+# The CANONICAL fi_refs parquet schema (field name + arrow type), as a list of
+# (name, arrow-type-factory) pairs so the explicit pa.schema can be built lazily
+# (pyarrow is an optional import) and pinned on BOTH the empty AND the populated
+# write paths. Pinning the explicit schema on the populated path is the rank-21
+# fix: ``pa.Table.from_pylist(rows)`` INFERS the schema from the dict rows, so a
+# column rename / drop / type drift in ``reference_mention_to_row`` or
+# ``_augment_row`` would silently produce a DIFFERENT parquet schema (an untyped
+# boundary) instead of a loud failure. Passing this schema to ``from_pylist``
+# makes any drift a hard ``pyarrow`` error at write (a missing key → the column
+# is all-NULL but typed; an EXTRA key not in the schema → from_pylist RAISES;
+# a type mismatch → RAISES), so the projection schema is type-carried, not
+# convention-bridged. Order/columns mirror ``reference_mention_to_row`` (14 base)
+# + ``_DETERMINISTIC_ROW_EXTRAS`` (6 provenance/surface) + ``emit_profile`` (1).
+def _fi_refs_arrow_schema(pa: Any) -> Any:
+    """Build the explicit, pinned fi_refs parquet schema (requires pyarrow)."""
+    return pa.schema([
+        pa.field("source_statute_id", pa.string()),
+        pa.field("source_provision_ref_str", pa.string()),
+        pa.field("target_statute_id", pa.string()),
+        pa.field("target_provision_ref_str", pa.string()),
+        pa.field("cite_kind", pa.string()),
+        pa.field("cite_confidence", pa.string()),
+        pa.field("edge_subtype", pa.string()),
+        pa.field("phrase_lemma", pa.string()),
+        pa.field("source_span_file", pa.string()),
+        pa.field("source_span_byte_offset", pa.int64()),
+        pa.field("source_span_len", pa.int64()),
+        pa.field("valid_at_start", pa.string()),
+        pa.field("valid_at_end", pa.string()),
+        pa.field("target_stat_hash", pa.string()),
+        # Slice 3 provenance columns
+        pa.field("source_witness_type", pa.string()),
+        pa.field("claim_id", pa.string()),
+        pa.field("validator_status", pa.string()),
+        pa.field("review_status", pa.string()),
+        pa.field("replay_authorized", pa.bool_()),
+        # Surface fact: this row was produced by deterministic extraction
+        # (carries NO replay/review authority — see _DETERMINISTIC_ROW_EXTRAS).
+        pa.field("deterministic_extraction", pa.bool_()),
+        pa.field("emit_profile", pa.string()),
+    ])
+
+
 def _try_write_parquet(
     path: Path,
     rows: List[Dict[str, Any]],
@@ -431,30 +488,9 @@ def _try_write_parquet(
     except ImportError:
         return False
 
+    schema = _fi_refs_arrow_schema(pa)
+
     if not rows:
-        schema = pa.schema([
-            pa.field("source_statute_id", pa.string()),
-            pa.field("source_provision_ref_str", pa.string()),
-            pa.field("target_statute_id", pa.string()),
-            pa.field("target_provision_ref_str", pa.string()),
-            pa.field("cite_kind", pa.string()),
-            pa.field("cite_confidence", pa.string()),
-            pa.field("edge_subtype", pa.string()),
-            pa.field("phrase_lemma", pa.string()),
-            pa.field("source_span_file", pa.string()),
-            pa.field("source_span_byte_offset", pa.int64()),
-            pa.field("source_span_len", pa.int64()),
-            pa.field("valid_at_start", pa.string()),
-            pa.field("valid_at_end", pa.string()),
-            pa.field("target_stat_hash", pa.string()),
-            # Slice 3 provenance columns
-            pa.field("source_witness_type", pa.string()),
-            pa.field("claim_id", pa.string()),
-            pa.field("validator_status", pa.string()),
-            pa.field("review_status", pa.string()),
-            pa.field("replay_authorized", pa.bool_()),
-            pa.field("emit_profile", pa.string()),
-        ])
         table = pa.table({col: [] for col in schema.names}, schema=schema)
         table = _attach_profile_metadata(table, profile)
         table = _attach_compile_metadata(table, compile_metadata)
@@ -463,7 +499,34 @@ def _try_write_parquet(
         return True
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    table = pa.Table.from_pylist(rows)
+    # Pin the explicit schema (do NOT let from_pylist INFER it from the dicts):
+    # a column drift now fails loud instead of silently writing a different
+    # schema. NB: ``from_pylist(rows, schema=schema)`` alone is NOT sufficient —
+    # pyarrow SILENTLY drops dict keys absent from the schema and SILENTLY NULLs
+    # schema columns absent from the dict (only a TYPE mismatch raises). So we
+    # first assert the row key-set equals the schema field-set (the loud guard a
+    # rename/add/drop trips), then pass the schema so a type drift also raises.
+    expected_cols = {f.name for f in schema}
+    row_cols = set(rows[0].keys())
+    if row_cols != expected_cols:
+        missing = expected_cols - row_cols
+        extra = row_cols - expected_cols
+        raise ValueError(
+            "export_fi_refs: parquet row schema drift — projected rows no longer "
+            "match the pinned fi_refs schema. "
+            f"missing_columns={sorted(missing)} extra_columns={sorted(extra)}. "
+            "A column was renamed/added/dropped in reference_mention_to_row / "
+            "_augment_row; update _fi_refs_arrow_schema and all consumers in "
+            "lockstep (no version-migration burden — we control the whole stack)."
+        )
+    try:
+        table = pa.Table.from_pylist(rows, schema=schema)
+    except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError) as exc:
+        raise ValueError(
+            "export_fi_refs: parquet column TYPE drift — a value in the projected "
+            "rows no longer matches the pinned fi_refs schema type. Update "
+            f"_fi_refs_arrow_schema and all consumers in lockstep. Underlying: {exc}"
+        ) from exc
     table = _attach_profile_metadata(table, profile)
     table = _attach_compile_metadata(table, compile_metadata)
     pq.write_table(table, str(path), compression="zstd")

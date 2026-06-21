@@ -57,11 +57,21 @@ from __future__ import annotations
 
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Generic, Iterable, List, Mapping, Tuple, TypeVar, cast
+from typing import Any, Generic, Iterable, List, Mapping, Tuple, TypeVar, cast
 
 import icontract
 
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    merge_unique_effect_lifecycle_events,
+    merge_unique_effect_refs,
+    merge_unique_effect_relations,
+    validate_effect_graph_unique_ids,
+)
+from lawvm.core.provenance import MigrationEvent
+from lawvm.core.temporal import TemporalEvent
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.observation_registry import (
     FindingRole,
@@ -74,11 +84,6 @@ from lawvm.core.event_summaries import (
     distinct_activation_rule_kinds,
     distinct_event_kinds,
 )
-
-if TYPE_CHECKING:
-    from lawvm.core.provenance import MigrationEvent
-    from lawvm.core.temporal import TemporalEvent
-
 
 T = TypeVar("T")
 _C = TypeVar("_C")
@@ -261,8 +266,16 @@ class PhaseResult(Generic[T]):
                     "PhaseResult.findings must contain Finding instances"
                 )
             validate_finding_projection(finding.kind, finding.role, finding.blocking)
-        resolved_temporal_events = tuple(temporal_events)
-        resolved_migration_events = tuple(migration_events)
+        resolved_temporal_events = _checked_tuple(
+            "PhaseResult.temporal_events",
+            temporal_events,
+            TemporalEvent,
+        )
+        resolved_migration_events = _checked_tuple(
+            "PhaseResult.migration_events",
+            migration_events,
+            MigrationEvent,
+        )
         resolved_source_effects = _checked_tuple(
             "PhaseResult.source_effects",
             source_effects,
@@ -277,6 +290,12 @@ class PhaseResult(Generic[T]):
             "PhaseResult.effect_lifecycle_events",
             effect_lifecycle_events,
             EffectLifecycleEvent,
+        )
+        validate_effect_graph_unique_ids(
+            subject="PhaseResult",
+            source_effects=resolved_source_effects,
+            effect_relations=resolved_effect_relations,
+            effect_lifecycle_events=resolved_effect_lifecycle_events,
         )
         object.__setattr__(self, "output", output)
         object.__setattr__(self, "finding_ledger", finding_ledger)
@@ -353,9 +372,21 @@ class PhaseResult(Generic[T]):
             findings=self.finding_ledger + other.finding_ledger,
             temporal_events=self.temporal_events + other.temporal_events,
             migration_events=self.migration_events + other.migration_events,
-            source_effects=self.source_effects + other.source_effects,
-            effect_relations=self.effect_relations + other.effect_relations,
-            effect_lifecycle_events=self.effect_lifecycle_events + other.effect_lifecycle_events,
+            source_effects=merge_unique_effect_refs(
+                self.source_effects,
+                other.source_effects,
+                subject="PhaseResult.source_effects",
+            ),
+            effect_relations=merge_unique_effect_relations(
+                self.effect_relations,
+                other.effect_relations,
+                subject="PhaseResult.effect_relations",
+            ),
+            effect_lifecycle_events=merge_unique_effect_lifecycle_events(
+                self.effect_lifecycle_events,
+                other.effect_lifecycle_events,
+                subject="PhaseResult.effect_lifecycle_events",
+            ),
         )
 
     def findings(self) -> "Tuple[Finding, ...]":
@@ -473,16 +504,22 @@ class PhaseBuilder(Generic[T]):
             self._findings.append(finding)
 
     def add_temporal_event(self, event: "TemporalEvent") -> None:
+        if not isinstance(event, TemporalEvent):
+            raise TypeError("PhaseBuilder.add_temporal_event requires TemporalEvent")
         self._temporal_events.append(event)
 
     def add_temporal_events(self, events: Iterable["TemporalEvent"]) -> None:
-        self._temporal_events.extend(events)
+        for event in events:
+            self.add_temporal_event(event)
 
     def add_migration_event(self, event: "MigrationEvent") -> None:
+        if not isinstance(event, MigrationEvent):
+            raise TypeError("PhaseBuilder.add_migration_event requires MigrationEvent")
         self._migration_events.append(event)
 
     def add_migration_events(self, events: Iterable["MigrationEvent"]) -> None:
-        self._migration_events.extend(events)
+        for event in events:
+            self.add_migration_event(event)
 
     def add_source_effect(self, effect: "EffectRef") -> None:
         if not isinstance(effect, EffectRef):

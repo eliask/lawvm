@@ -101,13 +101,13 @@ class TargetResolutionCandidate:
 
 
 @dataclass(frozen=True, slots=True)
-class TargetResolutionCertificate:
+class TargetResolutionCoverage:
     """Evidence envelope for frontend-owned target/slot selection decisions."""
 
     rule_id: str
     phase: str
     reason: str
-    status: TargetResolutionStatus
+    resolution_status: TargetResolutionStatus
     source_target: str
     candidate_count: int = 0
     candidates: tuple[TargetResolutionCandidate, ...] = ()
@@ -120,65 +120,65 @@ class TargetResolutionCertificate:
 
     def __post_init__(self) -> None:
         if not str(self.rule_id or "").strip():
-            raise ValueError("TargetResolutionCertificate.rule_id must be non-empty")
+            raise ValueError("TargetResolutionCoverage.rule_id must be non-empty")
         if not str(self.phase or "").strip():
-            raise ValueError("TargetResolutionCertificate.phase must be non-empty")
+            raise ValueError("TargetResolutionCoverage.phase must be non-empty")
         if not str(self.reason or "").strip():
-            raise ValueError("TargetResolutionCertificate.reason must be non-empty")
-        if not str(self.status or "").strip():
-            raise ValueError("TargetResolutionCertificate.status must be non-empty")
-        if self.status not in _VALID_TARGET_RESOLUTION_STATUSES:
+            raise ValueError("TargetResolutionCoverage.reason must be non-empty")
+        if not str(self.resolution_status or "").strip():
+            raise ValueError("TargetResolutionCoverage.resolution_status must be non-empty")
+        if self.resolution_status not in _VALID_TARGET_RESOLUTION_STATUSES:
             raise ValueError(
-                f"TargetResolutionCertificate.status must be one of "
+                f"TargetResolutionCoverage.resolution_status must be one of "
                 f"{sorted(_VALID_TARGET_RESOLUTION_STATUSES)}"
             )
         if not str(self.source_target or "").strip():
-            raise ValueError("TargetResolutionCertificate.source_target must be non-empty")
+            raise ValueError("TargetResolutionCoverage.source_target must be non-empty")
         candidates = tuple(self.candidates)
         if not all(isinstance(candidate, TargetResolutionCandidate) for candidate in candidates):
             raise ValueError(
-                "TargetResolutionCertificate.candidates must contain TargetResolutionCandidate records"
+                "TargetResolutionCoverage.candidates must contain TargetResolutionCandidate records"
             )
         object.__setattr__(self, "candidates", candidates)
         object.__setattr__(
             self,
             "detail",
-            _frozen_target_resolution_detail("TargetResolutionCertificate.detail", self.detail),
+            _frozen_target_resolution_detail("TargetResolutionCoverage.detail", self.detail),
         )
         if self.candidate_count < 0:
-            raise ValueError("TargetResolutionCertificate.candidate_count must be non-negative")
+            raise ValueError("TargetResolutionCoverage.candidate_count must be non-negative")
         if self.candidate_count < len(self.candidates):
             raise ValueError(
-                "TargetResolutionCertificate.candidate_count must cover listed candidates"
+                "TargetResolutionCoverage.candidate_count must cover listed candidates"
             )
-        if self.status in {TARGET_RESOLVED, TARGET_FALLBACK_RESOLVED, TARGET_RECOVERED}:
+        if self.resolution_status in {TARGET_RESOLVED, TARGET_FALLBACK_RESOLVED, TARGET_RECOVERED}:
             if not self.selected_target:
                 raise ValueError(
-                    f"TargetResolutionCertificate(status={self.status!r}) requires selected_target"
+                    f"TargetResolutionCoverage(status={self.resolution_status!r}) requires selected_target"
                 )
             if self.candidate_count < 1:
                 raise ValueError(
-                    f"TargetResolutionCertificate(status={self.status!r}) requires candidate_count >= 1"
+                    f"TargetResolutionCoverage(status={self.resolution_status!r}) requires candidate_count >= 1"
                 )
             if (
-                self.status == TARGET_RESOLVED
+                self.resolution_status == TARGET_RESOLVED
                 and self.candidates
                 and self.selected_target not in {candidate.target for candidate in self.candidates}
             ):
                 raise ValueError(
-                    "TargetResolutionCertificate(status='resolved') selected_target must be one of "
+                    "TargetResolutionCoverage(status='resolved') selected_target must be one of "
                     "the listed candidates"
                 )
         if self.scope_confidence and self.scope_confidence not in _VALID_SCOPE_CONFIDENCES:
             raise ValueError(
-                f"TargetResolutionCertificate.scope_confidence must be one of "
+                f"TargetResolutionCoverage.scope_confidence must be one of "
                 f"{sorted(_VALID_SCOPE_CONFIDENCES)}"
             )
         _reject_target_resolution_overrides(self.detail)
 
     def to_diagnostic_detail(self) -> dict[str, Any]:
         target_fields: dict[str, Any] = {
-            "target_resolution_status": self.status,
+            "target_resolution_status": self.resolution_status,
             "source_target": self.source_target,
             "candidate_count": self.candidate_count,
         }

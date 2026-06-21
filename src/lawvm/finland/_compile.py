@@ -24,10 +24,16 @@ from lawvm.core.compile_result import (
     strict_fail_reasons_from_finding_ledger,
     _compiled_op_scope_witness,
 )
+from lawvm.core.effect_lifecycle import (
+    merge_unique_effect_lifecycle_events,
+    merge_unique_effect_refs,
+    merge_unique_effect_relations,
+)
 from lawvm.replay_adjudication import SourceAdjudication
 from lawvm.core.phase_result import Finding
 from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.target_scope import NeutralTargetUnitKind, resolve_internal_target_scope
+from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.strict_profile import default_finland_strict_profile
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
@@ -657,7 +663,7 @@ def _compile_findings(
 def _collect_fi_temporal_coverage_findings(
     *,
     canonical_ops: Sequence[_LegalOperation],
-    temporal_events: Sequence[object],
+    temporal_events: Sequence[TemporalEvent],
     source_statute: str,
     compile_mode: Literal["strict", "quirks"],
 ) -> tuple[Finding, ...]:
@@ -668,7 +674,7 @@ def _collect_fi_temporal_coverage_findings(
     }
     temporal_groups: set[str] = set()
     for event in temporal_events:
-        event_group_id = getattr(event, "group_id", None)
+        event_group_id = event.group_id
         if isinstance(event_group_id, str) and event_group_id.strip():
             temporal_groups.add(event_group_id.strip())
     missing_groups = tuple(sorted(structural_groups - temporal_groups))
@@ -863,27 +869,31 @@ def compile_fi_facade_from_replay(
         target_statute=parent_id,
         canonical_ops=tuple(canonical_ops),
         temporal_events=resolved_temporal_events,
+        known_source_effects=replay_result.products.source_effects,
     )
-    source_effects_by_id = {
-        effect.effect_id: effect
-        for effect in tuple(replay_result.products.source_effects) + tuple(derived_source_effects)
-    }
-    effect_relations_by_id = {
-        relation.relation_id: relation
-        for relation in tuple(replay_result.products.effect_relations) + tuple(derived_effect_relations)
-    }
-    effect_lifecycle_events_by_id = {
-        event.lifecycle_event_id: event
-        for event in tuple(replay_result.products.effect_lifecycle_events) + tuple(derived_effect_lifecycle_events)
-    }
+    source_effects = merge_unique_effect_refs(
+        replay_result.products.source_effects,
+        derived_source_effects,
+        subject="Finland facade source_effects",
+    )
+    effect_relations = merge_unique_effect_relations(
+        replay_result.products.effect_relations,
+        derived_effect_relations,
+        subject="Finland facade effect_relations",
+    )
+    effect_lifecycle_events = merge_unique_effect_lifecycle_events(
+        replay_result.products.effect_lifecycle_events,
+        derived_effect_lifecycle_events,
+        subject="Finland facade effect_lifecycle_events",
+    )
     bundle = CanonicalBundle(
         target_statute=parent_id,
         structural_ops=tuple(canonical_ops),
         temporal_events=resolved_temporal_events,
         migration_events=tuple(replay_result.migration_events),
-        source_effects=tuple(source_effects_by_id.values()),
-        effect_relations=tuple(effect_relations_by_id.values()),
-        effect_lifecycle_events=tuple(effect_lifecycle_events_by_id.values()),
+        source_effects=source_effects,
+        effect_relations=effect_relations,
+        effect_lifecycle_events=effect_lifecycle_events,
     )
     pr = builder.finish(bundle)
     facade = CompileFacade.from_phase_result(

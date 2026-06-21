@@ -126,7 +126,7 @@ class ContingentCommencementClaim:
       (required when ``resolution == commenced``).
     - ``commenced_by_date``: ISO date the trigger commenced (required when
       ``resolution == commenced``).
-    - ``claimant`` / ``status``: provenance and lifecycle.
+    - ``claimant`` / ``claim_status``: provenance and lifecycle.
     """
 
     claim_id: str
@@ -141,7 +141,7 @@ class ContingentCommencementClaim:
     witness_si_id: str = ""
     commenced_by_date: str = ""
     claimant: str = ""
-    status: str = "proposed"
+    claim_status: str = "proposed"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -157,7 +157,7 @@ class ContingentCommencementClaim:
             "witness_si_id": self.witness_si_id,
             "commenced_by_date": self.commenced_by_date,
             "claimant": self.claimant,
-            "status": self.status,
+            "claim_status": self.claim_status,
         }
 
 
@@ -214,7 +214,7 @@ def claim_from_dict(row: Any) -> ContingentCommencementClaim:
         witness_si_id=str(get("witness_si_id") or ""),
         commenced_by_date=str(get("commenced_by_date") or ""),
         claimant=str(get("claimant") or ""),
-        status=str(get("status") or "proposed"),
+        claim_status=str(get("claim_status") or "proposed"),
     )
 
 

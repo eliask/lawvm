@@ -52,11 +52,12 @@ def build_replay_plan_inspection(args: Any) -> dict[str, Any]:
         label_postprocessor=_fi_label_postprocessor,
         get_replay_profile=get_replay_profile,
         resolve_applicable_amendment_records=(
-            lambda resolved_parent_id, resolved_mode, corpus=None: _resolve_applicable_amendment_records(
+            lambda resolved_parent_id, resolved_mode, corpus=None, residuals_out=None: _resolve_applicable_amendment_records(
                 resolved_parent_id,
                 resolved_mode,
                 corpus=corpus,
                 selector=selector,
+                residuals_out=residuals_out,
             )
         ),
         get_consolidated_oracle_suspect=(

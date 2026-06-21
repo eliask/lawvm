@@ -13,6 +13,7 @@ from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, List, Optional
 
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind
@@ -325,7 +326,7 @@ def _rebound_item_only_target_to_unique_subsection(
                 source_statute=source_statute,
                 target_section=target_section,
                 target_paragraph=int(rebound_label),
-                rebound_kind="unique_item_label_subsection_fallback",
+                rebound_kind=RecoveryKind.UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK,
                 stale_fragment_idx=-1,
                 live_has_paragraphs=True,
                 amend_has_paragraphs=bool(
@@ -429,7 +430,7 @@ def _normalize_subsection_dispatch_inputs(
                     source_statute=rebound_source_statute,
                     target_section=rebound_target_section,
                     target_paragraph=original_target_paragraph,
-                    rebound_kind="single_subsection_item_fallback",
+                    rebound_kind=RecoveryKind.SINGLE_SUBSECTION_ITEM_FALLBACK,
                     stale_fragment_idx=-1,
                     live_has_paragraphs=any(
                         any(child.kind == IRNodeKind.PARAGRAPH for child in sub.children) for sub in master_subsecs
@@ -487,10 +488,10 @@ def _maybe_update_section_heading(
         target_item = dispatch_op.target_item
         target_special = dispatch_op.target_special
 
-    # Item-level amendment payloads often arrive in a whole-section XML shell
+    # Descendant-scoped payloads often arrive in a whole-section XML shell
     # whose heading is carried context, not source ownership for a heading
     # mutation. A separate heading target must own heading changes.
-    if target_item is not None:
+    if target_special != "otsikko":
         return result
 
     # Sparse subsection/item payloads often carry a whole-section shell with the

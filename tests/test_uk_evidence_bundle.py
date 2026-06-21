@@ -150,11 +150,15 @@ def test_uk_evidence_bundle_preserves_compile_rejection_lanes(monkeypatch, tmp_p
                         kind="uk_replay_target_not_found",
                         message="target missing",
                         source_statute="ukpga/2000/1",
+                        blocking=True,
+                        phase="replay",
                     ),
                     CompileAdjudication(
                         kind="uk_replay_text_match_missing",
                         message="text preimage missing",
                         source_statute="ukpga/2000/1",
+                        blocking=True,
+                        phase="replay",
                     ),
                 ]
             )

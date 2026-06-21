@@ -30,6 +30,37 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "the primary parser left unmodeled (op.fallback_provenance, gated by "
         "allows_target_guessing)."
     ),
+    "fi.body_root_replace_fallback": (
+        "Root body-text replacement fallback mints a whole-section REPLACE from "
+        "amendment body text when the johtolause names no provision target "
+        "(op.fallback_provenance, gated by allows_target_guessing)."
+    ),
+    "fi.enacting_formula_body_replace_fallback": (
+        "Enacting-formula body-replace fallback mints REPLACE ops from amendment body "
+        "sections introduced by a bare enacting formula with no explicit target "
+        "(op.fallback_provenance, gated by allows_target_guessing)."
+    ),
+    "fi.enacting_formula_body_insert_fallback": (
+        "Enacting-formula body-insert fallback mints INSERT ops from amendment body "
+        "sections introduced by a bare enacting formula with no explicit target "
+        "(op.fallback_provenance, gated by allows_target_guessing)."
+    ),
+    "fi.title_fallback": (
+        "Title fallback mints ops from the amendment title when the johtolause yields "
+        "no parsed structural target (op.fallback_provenance, gated by "
+        "allows_target_guessing)."
+    ),
+    # --- pure-kumotaan repeal reconstruction (kumotaan_replay.py) ---
+    "fi.recovery.pure_kumotaan_repeal": (
+        "Pure-kumotaan repeal injection reconstructs a whole-section/container REPEAL "
+        "from a raw kumotaan johtolause when the typed pipeline emitted no op for the "
+        "named target (witnessed reconstruction with a structured finding)."
+    ),
+    "fi.recovery.pure_kumotaan_subsection_repeal": (
+        "Pure-kumotaan subsection repeal injection reconstructs a subsection "
+        "repeal-placeholder REPLACE from a raw 'N §:n M momentti' kumotaan clause when "
+        "no body op covered the subsection (witnessed reconstruction with a finding)."
+    ),
     # --- structural target references (surface_parse / rule_registry) ---
     "fi.section_ref_pykala_prefix": (
         "A genitive-plural prefix citation 'pykälien N, M ...' targets the listed live "

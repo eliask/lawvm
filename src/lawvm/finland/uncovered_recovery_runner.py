@@ -126,6 +126,13 @@ class UncoveredRecoveryRun:
         base_label = re.match(r"^(\d+)", label)
         return bool(base_label and base_label.group(1) in self.johto_mentioned_labels)
 
+    def is_declared_move_destination(self, label: str, chapter: Optional[str]) -> bool:
+        """Whether the source preamble declares this section moved to chapter."""
+        if chapter is None:
+            return False
+        destination = self.moved_section_destinations.get(_norm_num_token(label))
+        return destination is not None and _norm_num_token(destination) == _norm_num_token(chapter)
+
     def make_uncovered_rop(self, draft: UncoveredRopDraft) -> ResolvedOp:
         return _build_uncovered_rop(
             draft,
@@ -224,15 +231,26 @@ class UncoveredRecoveryRun:
                     chapter=amend_chapter_label,
                     section=label,
                 )
+                declared_move_destination = self.is_declared_move_destination(
+                    label,
+                    amend_chapter_label,
+                )
                 self.append_recovered_rop(
                     self.make_uncovered_rop(
                         UncoveredRopDraft(
-                            op_type="INSERT",
+                            op_type="REPLACE" if declared_move_destination else "INSERT",
                             target_label=label,
                             target_chapter=amend_chapter_label,
                             target_part=amend_part_label,
                             muutos_ir=adopt_sec_ir,
-                            op_id=f"uncov_chapter_adopt_{label}",
+                            op_id=(
+                                f"uncovered_move_replace_{label}"
+                                if declared_move_destination
+                                else f"uncov_chapter_adopt_{label}"
+                            ),
+                            move_clause_target_unit_kind=(
+                                "chapter" if declared_move_destination else None
+                            ),
                         )
                     )
                 )

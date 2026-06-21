@@ -6,10 +6,32 @@ from dataclasses import dataclass
 from typing import Iterable, Literal
 
 from lawvm.core.ir import LegalAddress
+from lawvm.finland.helpers import _norm_num_token
 
 EffectLifecycleOverrideScopeKind = Literal["instrument", "section", "address", "mixed"]
 EffectRelationSignalKind = Literal["pending_amendment", "meta_repeal"]
 EffectRelationSignalRelationKind = Literal["modifies_effect", "repeals_effect"]
+EffectRelationSignalTargetResolution = Literal[
+    "target_instrument_resolved",
+    "target_instrument_unresolved",
+]
+
+
+def _normalized_signal_string(subject: str, value: object) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{subject} must be a string")
+    return value.strip()
+
+
+def _normalized_section_labels(labels: Iterable[object]) -> tuple[str, ...]:
+    cleaned: list[str] = []
+    for label in labels:
+        if not isinstance(label, str):
+            raise TypeError("lifecycle override scope section labels must be strings")
+        if not label.strip():
+            continue
+        cleaned.append(_norm_num_token(label))
+    return tuple(cleaned)
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,8 +48,10 @@ class EffectLifecycleOverrideScope:
     addresses: tuple[LegalAddress, ...] = ()
 
     def __post_init__(self) -> None:
-        labels = tuple(str(label).strip() for label in self.labels if str(label).strip())
+        labels = _normalized_section_labels(self.labels)
         addresses = tuple(self.addresses)
+        if not all(isinstance(address, LegalAddress) for address in addresses):
+            raise TypeError("lifecycle override scope addresses must contain LegalAddress rows")
         if self.kind == "instrument":
             labels = ()
             addresses = ()
@@ -52,8 +76,8 @@ class EffectLifecycleOverrideScope:
         return cls(kind="instrument")
 
     @classmethod
-    def sections(cls, labels: Iterable[object]) -> "EffectLifecycleOverrideScope":
-        cleaned = tuple(str(label).strip() for label in labels if str(label).strip())
+    def sections(cls, labels: Iterable[str]) -> "EffectLifecycleOverrideScope":
+        cleaned = _normalized_section_labels(labels)
         if not cleaned or cleaned == ("*",):
             return cls.instrument()
         return cls(kind="section", labels=tuple(sorted(cleaned)))
@@ -71,10 +95,10 @@ class EffectLifecycleOverrideScope:
     def mixed(
         cls,
         *,
-        labels: Iterable[object],
+        labels: Iterable[str],
         addresses: Iterable[LegalAddress],
     ) -> "EffectLifecycleOverrideScope":
-        cleaned_labels = tuple(str(label).strip() for label in labels if str(label).strip())
+        cleaned_labels = _normalized_section_labels(labels)
         cleaned_addresses = tuple(sorted(tuple(addresses), key=str))
         if cleaned_labels and cleaned_addresses:
             return cls(kind="mixed", labels=tuple(sorted(cleaned_labels)), addresses=cleaned_addresses)
@@ -124,11 +148,20 @@ class EffectLifecycleOverride:
     expiry: str = ""
 
     def __post_init__(self) -> None:
-        source_statute = str(self.source_statute).strip()
-        target_statute = str(self.target_statute).strip()
-        context = str(self.context).strip()
-        effective = str(self.effective).strip()
-        expiry = str(self.expiry).strip()
+        source_statute = _normalized_signal_string(
+            "EffectLifecycleOverride.source_statute",
+            self.source_statute,
+        )
+        target_statute = _normalized_signal_string(
+            "EffectLifecycleOverride.target_statute",
+            self.target_statute,
+        )
+        context = _normalized_signal_string("EffectLifecycleOverride.context", self.context)
+        effective = _normalized_signal_string(
+            "EffectLifecycleOverride.effective",
+            self.effective,
+        )
+        expiry = _normalized_signal_string("EffectLifecycleOverride.expiry", self.expiry)
         if not source_statute:
             raise ValueError("lifecycle override source_statute must be non-empty")
         if not target_statute:
@@ -170,18 +203,42 @@ class EffectRelationSignal:
     route_reason: str = ""
     message: str = ""
     source_finding: str = ""
-    resolved: bool = False
+    target_resolution: EffectRelationSignalTargetResolution = "target_instrument_unresolved"
 
     def __post_init__(self) -> None:
-        signal_kind = str(self.signal_kind).strip()
-        relation_kind = str(self.relation_kind).strip()
-        source_statute = str(self.source_statute).strip()
-        target_statute = str(self.target_statute).strip()
-        target_title = str(self.target_title).strip()
-        base_parent_id = str(self.base_parent_id).strip()
-        route_reason = str(self.route_reason).strip()
-        message = str(self.message).strip()
-        source_finding = str(self.source_finding).strip()
+        signal_kind = _normalized_signal_string(
+            "EffectRelationSignal.signal_kind",
+            self.signal_kind,
+        )
+        relation_kind = _normalized_signal_string(
+            "EffectRelationSignal.relation_kind",
+            self.relation_kind,
+        )
+        source_statute = _normalized_signal_string(
+            "EffectRelationSignal.source_statute",
+            self.source_statute,
+        )
+        target_statute = _normalized_signal_string(
+            "EffectRelationSignal.target_statute",
+            self.target_statute,
+        )
+        target_title = _normalized_signal_string(
+            "EffectRelationSignal.target_title",
+            self.target_title,
+        )
+        base_parent_id = _normalized_signal_string(
+            "EffectRelationSignal.base_parent_id",
+            self.base_parent_id,
+        )
+        route_reason = _normalized_signal_string(
+            "EffectRelationSignal.route_reason",
+            self.route_reason,
+        )
+        message = _normalized_signal_string("EffectRelationSignal.message", self.message)
+        source_finding = _normalized_signal_string(
+            "EffectRelationSignal.source_finding",
+            self.source_finding,
+        )
         if signal_kind not in {"pending_amendment", "meta_repeal"}:
             raise ValueError(f"unknown effect relation signal kind: {self.signal_kind!r}")
         if relation_kind not in {"modifies_effect", "repeals_effect"}:
@@ -192,10 +249,19 @@ class EffectRelationSignal:
             raise ValueError("pending amendment relation signal must modify an effect")
         if signal_kind == "meta_repeal" and relation_kind != "repeals_effect":
             raise ValueError("meta-repeal relation signal must repeal an effect")
-        if not isinstance(self.resolved, bool):
-            raise ValueError("effect relation signal resolved must be a bool")
-        if self.resolved and not target_statute:
-            raise ValueError("resolved effect relation signal requires target_statute")
+        target_resolution = _normalized_signal_string(
+            "EffectRelationSignal.target_resolution",
+            self.target_resolution,
+        )
+        if target_resolution not in {
+            "target_instrument_resolved",
+            "target_instrument_unresolved",
+        }:
+            raise ValueError(
+                f"unknown effect relation signal target resolution: {self.target_resolution!r}"
+            )
+        if target_resolution == "target_instrument_resolved" and not target_statute:
+            raise ValueError("resolved target-instrument relation signal requires target_statute")
         object.__setattr__(self, "signal_kind", signal_kind)
         object.__setattr__(self, "relation_kind", relation_kind)
         object.__setattr__(self, "source_statute", source_statute)
@@ -205,6 +271,7 @@ class EffectRelationSignal:
         object.__setattr__(self, "route_reason", route_reason)
         object.__setattr__(self, "message", message)
         object.__setattr__(self, "source_finding", source_finding)
+        object.__setattr__(self, "target_resolution", target_resolution)
 
     @classmethod
     def pending_amendment(
@@ -216,7 +283,7 @@ class EffectRelationSignal:
         base_parent_id: str = "",
         message: str = "",
         source_finding: str = "",
-        resolved: bool,
+        target_resolution: EffectRelationSignalTargetResolution,
     ) -> "EffectRelationSignal":
         return cls(
             signal_kind="pending_amendment",
@@ -227,7 +294,7 @@ class EffectRelationSignal:
             base_parent_id=base_parent_id,
             message=message,
             source_finding=source_finding,
-            resolved=resolved,
+            target_resolution=target_resolution,
         )
 
     @classmethod
@@ -239,7 +306,7 @@ class EffectRelationSignal:
         route_reason: str = "",
         message: str = "",
         source_finding: str = "",
-        resolved: bool,
+        target_resolution: EffectRelationSignalTargetResolution,
     ) -> "EffectRelationSignal":
         return cls(
             signal_kind="meta_repeal",
@@ -249,7 +316,7 @@ class EffectRelationSignal:
             route_reason=route_reason,
             message=message,
             source_finding=source_finding,
-            resolved=resolved,
+            target_resolution=target_resolution,
         )
 
     def to_meta_row(self) -> dict[str, object]:
@@ -257,7 +324,7 @@ class EffectRelationSignal:
             "signal_kind": self.signal_kind,
             "relation_kind": self.relation_kind,
             "source_statute": self.source_statute,
-            "resolved": self.resolved,
+            "target_resolution": self.target_resolution,
         }
         if self.target_statute:
             row["target_amendment_id"] = self.target_statute

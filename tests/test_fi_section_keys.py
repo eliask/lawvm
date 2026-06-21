@@ -108,7 +108,7 @@ def test_extract_oracle_sections_strips_inline_prior_wording_duplicates() -> Non
     assert "Aiempi sanamuoto kuuluu" not in text
 
 
-def test_extract_oracle_sections_skips_original_version_shadow_sections() -> None:
+def test_extract_oracle_sections_prefers_highest_section_level_version_variant() -> None:
     oracle = etree.fromstring(
         """
         <statute xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" xmlns:finlex="http://data.finlex.fi/schema/finlex">
@@ -116,12 +116,12 @@ def test_extract_oracle_sections_skips_original_version_shadow_sections() -> Non
             <section eId="chp_11__sec_75v20250743" finlex:originalVersion="@20250743" finlex:originalVersionLabel="27.6.2025/743">
               <num>75 §</num>
               <heading>Ahvenanmaan valtionviraston perimät maksut</heading>
-              <subsection><content><p>shadow text</p></content></subsection>
+              <subsection><content><p>current versioned text</p></content></subsection>
             </section>
             <section eId="chp_11__sec_75">
               <num>75 §</num>
               <heading>Ahvenanmaan valtionviraston perimät maksut</heading>
-              <subsection><content><p>current text</p></content></subsection>
+              <subsection><content><p>stale unversioned text</p></content></subsection>
             </section>
           </body>
         </statute>
@@ -132,8 +132,8 @@ def test_extract_oracle_sections_skips_original_version_shadow_sections() -> Non
 
     assert set(oracle_keys) == {"section:75"}
     text = etree.tostring(oracle_keys["section:75"], method="text", encoding="unicode")
-    assert "current text" in text
-    assert "shadow text" not in text
+    assert "current versioned text" in text
+    assert "stale unversioned text" not in text
 
 
 def test_extract_oracle_sections_keeps_versioned_current_section_when_it_is_the_only_current_copy() -> None:
@@ -156,6 +156,33 @@ def test_extract_oracle_sections_keeps_versioned_current_section_when_it_is_the_
     assert set(oracle_keys) == {"section:7"}
     text = etree.tostring(oracle_keys["section:7"], method="text", encoding="unicode")
     assert "current versioned text" in text
+
+
+def test_extract_oracle_sections_does_not_select_future_repeal_overlay() -> None:
+    oracle = etree.fromstring(
+        """
+        <statute xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" xmlns:finlex="http://data.finlex.fi/schema/finlex">
+          <body>
+            <section eId="chp_3__sec_9v20250290" finlex:originalVersion="@20250290" finlex:originalVersionLabel="5.6.2025/290">
+              <num>9 §</num>
+              <content><p>9 § on kumottu A:lla 5.6.2025/290, joka tulee voimaan 1.8.2026. Aiempi sanamuoto kuuluu:</p></content>
+            </section>
+            <section eId="chp_3__sec_9">
+              <num>9 §</num>
+              <heading>Erityisopetusta koskevat erityissäännökset</heading>
+              <subsection><content><p>still-live wording</p></content></subsection>
+            </section>
+          </body>
+        </statute>
+        """
+    )
+
+    oracle_keys = extract_oracle_sections(oracle)
+
+    assert set(oracle_keys) == {"section:9"}
+    text = etree.tostring(oracle_keys["section:9"], method="text", encoding="unicode")
+    assert "still-live wording" in text
+    assert "Aiempi sanamuoto kuuluu" not in text
 
 
 def test_reconcile_unique_unscoped_aliases_maps_identical_unscoped_section_to_scoped_oracle() -> None:
@@ -340,7 +367,7 @@ def test_dedup_versioned_children_preserves_unnumbered_subsections_with_differen
     # provision with an intro paragraph and 3 items; subsec_1v20240859 is a short
     # single-sentence provision. Cleaned-text length ratio ~0.07 < 0.5.
     sec = etree.fromstring(
-        f"""<section xmlns="{ns}" eId="sec_1v20150795">
+        f"""<section xmlns="{ns}" xmlns:finlex="http://data.finlex.fi/schema/finlex" eId="sec_1v20150795">
           <num>1 §</num>
           <subsection eId="sec_1v20150795__subsec_1v20150795">
             <intro><p>Seuraavat valtioneuvoston yleisistunnossa tehtävät päätökset ovat valtion maksuperustelain 6 pykälän 2 momentissa tarkoitettuja maksullisia julkisoikeudellisia suoritteita, joista peritään kiinteä omakustannusarvon mukainen maksu:</p></intro>
@@ -354,7 +381,7 @@ def test_dedup_versioned_children_preserves_unnumbered_subsections_with_differen
               <num>3)</num><content><p>opetusministeriön kelpoisuusvaatimuksia koskeva erivapauspäätös.</p></content>
             </paragraph>
           </subsection>
-          <subsection eId="sec_1v20150795__subsec_1v20240859">
+          <subsection eId="sec_1v20150795__subsec_1v20240859" finlex:originalVersion="@20240859">
             <content><p>Maksun suuruus on 7 135 euroa.</p></content>
           </subsection>
         </section>"""
@@ -462,6 +489,78 @@ def test_dedup_versioned_children_prefers_versioned_same_slot_subsection_over_pl
     assert "aiempi 4 momentti" not in texts
 
 
+def test_dedup_versioned_children_drops_adjacent_plain_shadow_with_dissimilar_text() -> None:
+    ns = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+    sec = etree.fromstring(
+        f"""<section xmlns="{ns}" xmlns:finlex="http://data.finlex.fi/schema/finlex" eId="sec_7">
+          <num>7 §</num>
+          <subsection eId="sec_7__subsec_1v20160780" finlex:originalVersion="@20160780">
+            <content><p>Poiketen siitä, mitä 3 pykälässä säädetään, palkkatuloa verotetaan verotusmenettelylain mukaisesti.</p></content>
+          </subsection>
+          <subsection eId="sec_7__subsec_1">
+            <content><p>Verovelvollisen vaatimuksesta palkkatulon verottaminen toimitetaan vanhan verotuslain mukaisessa järjestyksessä.</p></content>
+          </subsection>
+          <subsection eId="sec_7__subsec_2v20100537">
+            <content><p>Vaatimus on tehtävä veroilmoituksessa.</p></content>
+          </subsection>
+        </section>"""
+    )
+    from lawvm.tools.section_keys import _dedup_versioned_children
+
+    _dedup_versioned_children(sec, "subsection")
+
+    texts = etree.tostring(sec, method="text", encoding="unicode")
+    assert "palkkatuloa verotetaan verotusmenettelylain mukaisesti" in texts
+    assert "vanhan verotuslain mukaisessa järjestyksessä" not in texts
+
+
+def test_dedup_versioned_children_preserves_adjacent_plain_live_tail_without_next_slot() -> None:
+    ns = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+    sec = etree.fromstring(
+        f"""<section xmlns="{ns}" xmlns:finlex="http://data.finlex.fi/schema/finlex" eId="sec_3">
+          <num>3 §</num>
+          <subsection eId="sec_3__subsec_1">
+            <content><p>Ensimmäinen live momentti.</p></content>
+          </subsection>
+          <subsection eId="sec_3__subsec_2v20240942" finlex:originalVersion="@20240942">
+            <content><p>Myöhemmin lisätty live momentti.</p></content>
+          </subsection>
+          <subsection eId="sec_3__subsec_2">
+            <content><p>Alkuperäinen loppumomentti säilyy erillisenä live-momenttina.</p></content>
+          </subsection>
+        </section>"""
+    )
+    from lawvm.tools.section_keys import _dedup_versioned_children
+
+    _dedup_versioned_children(sec, "subsection")
+
+    texts = etree.tostring(sec, method="text", encoding="unicode")
+    assert "Myöhemmin lisätty live momentti" in texts
+    assert "Alkuperäinen loppumomentti säilyy" in texts
+
+
+def test_dedup_versioned_children_preserves_plain_then_versioned_insertion() -> None:
+    ns = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+    sec = etree.fromstring(
+        f"""<section xmlns="{ns}" xmlns:finlex="http://data.finlex.fi/schema/finlex" eId="sec_6">
+          <num>6 §</num>
+          <subsection eId="sec_6__subsec_1">
+            <content><p>Ensimmäinen live momentti säilyy ennallaan.</p></content>
+          </subsection>
+          <subsection eId="sec_6__subsec_1v20151079" finlex:originalVersion="@20151079">
+            <content><p>Myöhemmin lisätty toinen live momentti käyttää samaa eId-paikkaa.</p></content>
+          </subsection>
+        </section>"""
+    )
+    from lawvm.tools.section_keys import _dedup_versioned_children
+
+    _dedup_versioned_children(sec, "subsection")
+
+    texts = etree.tostring(sec, method="text", encoding="unicode")
+    assert "Ensimmäinen live momentti säilyy ennallaan" in texts
+    assert "Myöhemmin lisätty toinen live momentti" in texts
+
+
 def test_extract_oracle_sections_prefers_versioned_same_slot_subsection_for_2016_768_section_35() -> None:
     from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
     from lawvm.finland.corpus import get_consolidated_oracle_context, get_corpus
@@ -479,6 +578,32 @@ def test_extract_oracle_sections_prefers_versioned_same_slot_subsection_for_2016
 
     assert "ellei verovelvollisen kuuleminen ennen myöhästymismaksun määräämistä ole ilmeisen tarpeetonta" in text
     assert "ennen myöhästymismaksun määräämistä, jos se on erityisestä syystä tarpeen" not in text
+
+
+def test_extract_oracle_sections_materializes_1976_562_bench_comparable_versions() -> None:
+    from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
+    from lawvm.finland.corpus import get_ground_truth_tree
+
+    oracle = get_ground_truth_tree(
+        "1976/562",
+        selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    assert oracle is not None
+
+    sections = extract_oracle_sections(oracle)
+    section_5 = etree.tostring(sections["section:5"], method="text", encoding="unicode")
+    section_7 = etree.tostring(sections["section:7"], method="text", encoding="unicode")
+    section_10 = etree.tostring(sections["section:10"], method="text", encoding="unicode")
+    section_13 = etree.tostring(sections["section:13"], method="text", encoding="unicode")
+
+    assert "Lopullinen palkkavero kohdistetaan" in section_5
+    assert "Perityt lopullisen palkkaveron määrät" not in section_5
+    assert "palkkatuloa verotetaan verotusmenettelystä annetun lain" in section_7
+    assert "toimitettava verotuslain" not in section_7
+    assert "Verovelvollinen ja Veronsaajien oikeudenvalvontayksikkö" in section_10
+    assert "Helsingin hallinto-oikeudelle" not in section_10
+    assert "Mitä veronkantolaissa säädetään verosta vapauttamisesta" in section_13
+    assert "Mitä verotuslain 125 §:ssä" not in section_13
 
 
 def test_extract_oracle_sections_excludes_kumottu_tombstone_without_original_version() -> None:

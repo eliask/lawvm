@@ -6,7 +6,12 @@ from lawvm.finland.compile_group_scope_recovery import (
     CompileGroupScopeRecoveryRequest,
     resolve_compile_group_scope_recovery,
 )
-from lawvm.finland.ops import AmendmentOp, ScopeConfidence
+from lawvm.finland.ops import (
+    AmendmentOp,
+    ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
+)
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 
@@ -50,8 +55,8 @@ def test_inserted_body_chapter_scopes_following_child_section_insert() -> None:
         target_special="otsikko",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_preamble",
-            source="preamble",
-            confidence="explicit",
+            source=ScopeResolutionSource.PREAMBLE,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="6",
         ),
         scope_provenance_tags=("chapter_scope_from_preamble",),
@@ -73,8 +78,8 @@ def test_inserted_body_chapter_scopes_following_child_section_insert() -> None:
         target_paragraph=2,
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_preamble",
-            source="preamble",
-            confidence="explicit",
+            source=ScopeResolutionSource.PREAMBLE,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="6",
         ),
         scope_provenance_tags=("chapter_scope_from_preamble",),
@@ -303,8 +308,8 @@ def test_inserted_subchapter_body_overrides_live_stem_scope_guess() -> None:
         target_chapter="6",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_letter_suffix_stem_host",
-            source="live_stem_host",
-            confidence="inferred",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="6",
         ),
         scope_provenance_tags=("chapter_scope_from_letter_suffix_stem_host",),
@@ -377,8 +382,8 @@ def test_real_inserted_body_chapter_does_not_override_explicit_source_chapter() 
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_from_explicit_chunk",),
@@ -529,8 +534,8 @@ def test_source_owned_existing_chapter_insert_is_not_retargeted_to_duplicate_liv
         target_chapter="2",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="2",
         ),
         scope_provenance_tags=("chapter_scope_from_explicit_chunk",),

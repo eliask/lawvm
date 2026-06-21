@@ -5,6 +5,7 @@ import sys
 import types
 from dataclasses import dataclass
 
+from lawvm.core.filter_result import FilterResult
 from lawvm.tools.delegate import _parse_type_filter, main
 
 
@@ -24,14 +25,16 @@ class _Corpus:
 
 
 def _install_delegate_fakes(monkeypatch, edges: list[_Edge]) -> None:
-    def extract_delegations(xml_bytes: bytes, statute_id: str) -> list[_Edge]:
+    def extract_delegations(xml_bytes: bytes, statute_id: str) -> FilterResult[_Edge]:
         assert xml_bytes == b"<akomaNtoso/>"
         assert statute_id == "2009/953"
-        return edges
+        return FilterResult(accepted_items=tuple(edges), rejected_items=())
 
     fake_delegation = types.SimpleNamespace(
         extract_delegations=extract_delegations,
-        extract_asetus_authority=lambda xml_bytes, statute_id: [],
+        extract_asetus_authority=lambda xml_bytes, statute_id: FilterResult(
+            accepted_items=(), rejected_items=()
+        ),
     )
     fake_corpus = types.SimpleNamespace(get_corpus=lambda: _Corpus())
     monkeypatch.setitem(sys.modules, "lawvm.finland.delegation", fake_delegation)

@@ -16,11 +16,11 @@ from lawvm.core.agreement_residual import (
     AgreementResidualFamily,
     AgreementResidualStatus,
 )
-from lawvm.core.candidate_set_certificate import (
+from lawvm.core.candidate_set_coverage import (
     CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_TRUNCATED,
     CANDIDATE_SET_UNAVAILABLE,
-    CandidateSetCertificate,
+    CandidateSetCoverage,
 )
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
@@ -356,7 +356,7 @@ def _residual_claim_candidate_ids(row: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(ids))
 
 
-def _residual_claim_candidate_set_certificate(
+def _residual_claim_candidate_set_coverage(
     row: Mapping[str, Any],
     *,
     work_item_id: str,
@@ -378,7 +378,7 @@ def _residual_claim_candidate_set_certificate(
         blockers["candidate_samples_omitted"] = omitted
     else:
         completeness_status = CANDIDATE_SET_COMPLETE
-    return CandidateSetCertificate(
+    return CandidateSetCoverage(
         scope_id=f"{work_item_id}:residual-candidates",
         candidate_set_kind="uk_residual_claim_candidate_overlap",
         phase=owner_phase,
@@ -419,21 +419,21 @@ def _residual_claim_agreement_residual(
     work_item_id: str,
     owner_phase: str,
     authorization: Mapping[str, Any],
-    candidate_set_certificate: Mapping[str, Any],
+    candidate_set_coverage: Mapping[str, Any],
 ) -> dict[str, Any]:
     family = _residual_claim_agreement_residual_family(
         row,
         claim,
-        candidate_set_certificate=candidate_set_certificate,
+        candidate_set_coverage=candidate_set_coverage,
     )
     return AgreementResidual(
         residual_id=work_item_id,
         jurisdiction="uk",
         agreement_surface="candidate_residual_claim_vs_current_oracle",
         family=family,
-        status=_residual_claim_agreement_residual_status(
+        agreement_residual_status=_residual_claim_agreement_residual_status(
             family,
-            candidate_set_certificate=candidate_set_certificate,
+            candidate_set_coverage=candidate_set_coverage,
         ),
         owner_phase=owner_phase,
         rule_id=f"uk_residual_claim_{family}",
@@ -460,10 +460,10 @@ def _residual_claim_agreement_residual(
                 default=False,
             ),
             "candidate_set_completeness_status": str(
-                candidate_set_certificate.get("completeness_status") or ""
+                candidate_set_coverage.get("completeness_status") or ""
             ),
             "candidate_count": int(
-                candidate_set_certificate.get("candidate_count") or 0
+                candidate_set_coverage.get("candidate_count") or 0
             ),
             "residual_status": str(row.get("status") or ""),
             "triage_rule_id": str(row.get("triage_rule_id") or ""),
@@ -475,7 +475,7 @@ def _residual_claim_agreement_residual_family(
     row: Mapping[str, Any],
     claim: Mapping[str, object],
     *,
-    candidate_set_certificate: Mapping[str, Any],
+    candidate_set_coverage: Mapping[str, Any],
 ) -> AgreementResidualFamily:
     comparison_class = str(
         claim.get("comparison_class") or row.get("comparison_class") or ""
@@ -491,7 +491,7 @@ def _residual_claim_agreement_residual_family(
         return "extent_branch_mismatch"
     if "text_match" in kind or "already_rewritten" in kind:
         return "oracle_editorial_pathology"
-    if str(candidate_set_certificate.get("completeness_status") or "") != (
+    if str(candidate_set_coverage.get("completeness_status") or "") != (
         CANDIDATE_SET_COMPLETE
     ):
         return "accepted_non_executable_frontier"
@@ -514,11 +514,11 @@ def _residual_claim_agreement_residual_family(
 def _residual_claim_agreement_residual_status(
     family: AgreementResidualFamily,
     *,
-    candidate_set_certificate: Mapping[str, Any],
+    candidate_set_coverage: Mapping[str, Any],
 ) -> AgreementResidualStatus:
     if family == "agreement":
         return "agrees"
-    if str(candidate_set_certificate.get("completeness_status") or "") != (
+    if str(candidate_set_coverage.get("completeness_status") or "") != (
         CANDIDATE_SET_COMPLETE
     ):
         return "frontier"
@@ -578,7 +578,7 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
         claim=claim,
         owner_phase=owner_phase,
     ).to_dict()
-    candidate_set_certificate = _residual_claim_candidate_set_certificate(
+    candidate_set_coverage = _residual_claim_candidate_set_coverage(
         row,
         work_item_id=work_item_id,
         owner_phase=owner_phase,
@@ -589,7 +589,7 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
         work_item_id=work_item_id,
         owner_phase=owner_phase,
         authorization=authorization,
-        candidate_set_certificate=candidate_set_certificate,
+        candidate_set_coverage=candidate_set_coverage,
     )
     source_witness = _residual_claim_source_witness(row, claim)
     residual_roots = tuple(str(root) for root in row.get("residual_roots") or ())
@@ -636,7 +636,7 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
         authorization_status=str(authorization["authorization_status"]),
         detail={
             "execution_authorization": authorization,
-            "candidate_set_certificate": candidate_set_certificate,
+            "candidate_set_coverage": candidate_set_coverage,
             "agreement_residual": agreement_residual,
             "claim_status": str(claim.get("selected_tier") or "UNRESOLVED"),
             "validator_status": "not_validated",
@@ -656,7 +656,7 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
         "work_item_id": work_item_id,
         "execution_authorization": authorization,
         "frontier_work_item": frontier_work_item,
-        "candidate_set_certificate": candidate_set_certificate,
+        "candidate_set_coverage": candidate_set_coverage,
         "agreement_residual": agreement_residual,
         "executable": bool(authorization["executable"]),
         "replay_authorized": bool(authorization["replay_authorized"]),
@@ -2854,7 +2854,7 @@ def _uk_candidates_report_jsonable(
     candidate_set_blockers = (
         {"frontier_truncated": 1} if candidate_set_status == CANDIDATE_SET_TRUNCATED else {}
     )
-    candidate_set_certificate = CandidateSetCertificate(
+    candidate_set_coverage = CandidateSetCoverage(
         scope_id=f"uk-candidates:{label}",
         candidate_set_kind="uk_candidates_frontier_rows",
         phase="tooling",
@@ -2897,7 +2897,7 @@ def _uk_candidates_report_jsonable(
         detail={
             "label": label,
             "candidate_claim_scope": "frontier_triage_only",
-            "candidate_set_certificate": candidate_set_certificate.to_dict(),
+            "candidate_set_coverage": candidate_set_coverage.to_dict(),
             "next_promotion_requires": (
                 "candidate_set_completeness_and_execution_authorization"
             ),

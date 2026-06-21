@@ -180,7 +180,7 @@ class ApplicationOverlayClaim:
       surface the claim binds to (the ``modified`` / ``excluded (temp.)`` /
       ``restricted`` effect type or prose clause). The validator rejects the claim
       if this is not a real out-of-scope non-textual application/modification.
-    - ``claimant`` / ``status``: provenance and lifecycle.
+    - ``claimant`` / ``claim_status``: provenance and lifecycle.
     """
 
     claim_id: str
@@ -197,7 +197,7 @@ class ApplicationOverlayClaim:
     temporal_window: str = ""
     deictic_applying_provision: str = ""
     claimant: str = ""
-    status: str = "proposed"
+    claim_status: str = "proposed"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -215,7 +215,7 @@ class ApplicationOverlayClaim:
             "temporal_window": self.temporal_window,
             "deictic_applying_provision": self.deictic_applying_provision,
             "claimant": self.claimant,
-            "status": self.status,
+            "claim_status": self.claim_status,
         }
 
 
@@ -270,7 +270,7 @@ def claim_from_dict(row: Any) -> ApplicationOverlayClaim:
         temporal_window=str(get("temporal_window") or ""),
         deictic_applying_provision=str(get("deictic_applying_provision") or ""),
         claimant=str(get("claimant") or ""),
-        status=str(get("status") or "proposed"),
+        claim_status=str(get("claim_status") or "proposed"),
     )
 
 

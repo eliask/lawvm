@@ -94,7 +94,13 @@ def _apply_ops_to_tree_typed(
     observations_out = sinks.observations_out
     findings_out = sinks.findings_out
     observed_touch_results_out = sinks.observed_touch_results_out
-    write_audits_out = sinks.write_audits_out
+    # write_receipts_out / write_audits_out are non-Optional on ApplyOpsSinks,
+    # but legacy callers may still pass an explicit None; coerce to a concrete
+    # accumulator so the apply path ALWAYS collects a conservation receipt per
+    # landed write (the contract is "you always get the receipts", not "you may
+    # opt out with None").
+    write_receipts_out = sinks.write_receipts_out if sinks.write_receipts_out is not None else []
+    write_audits_out = sinks.write_audits_out if sinks.write_audits_out is not None else []
 
     # Group-boundary bookkeeping for the resolved-op apply fold, threaded as one
     # typed state machine (ApplyGroupState) rather than four bare locals mutated
@@ -266,13 +272,14 @@ def _apply_ops_to_tree_typed(
                 strict_profile=strict_profile,
             ),
             ApplyResolvedOpSinks(
+                write_receipts_out=write_receipts_out,
+                write_audits_out=write_audits_out,
                 lo_ops_out=lo_ops_out,
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
                 findings_out=findings_out,
                 observed_touch_results_out=observed_touch_results_out,
-                write_audits_out=write_audits_out,
             ),
         )
         state = _apply_result.state
@@ -354,6 +361,7 @@ def _apply_ops_to_tree_typed(
             findings_out=findings_out,
             observed_touch_results_out=observed_touch_results_out,
             write_audits_out=write_audits_out,
+            write_receipts_out=write_receipts_out,
         ),
     )
     state = supplemental_result.state

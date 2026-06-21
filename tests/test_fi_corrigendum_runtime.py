@@ -232,6 +232,256 @@ def test_replay_xml_1981_494_applies_owned_source_defects_without_overpatching()
     assert "tuen määrään vaikuttavana" in section_10
 
 
+def test_manual_base_source_patch_1982_182_corrects_section_57_source_defects() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrongs = [
+        (
+            "merkit 375 (taksiasema-alue), 571 (taajama) ja 572 (taajama päättyy) "
+            "on otettava käyttöön heti tämän asetuksen tullessa voi- maan;"
+        ),
+        (
+            "merkit 322 (polkupyörällä ja mopolla ajo kielletty), 323 (jalankulku "
+            "kielletty), 416 (pakollinen kiertosuunta), 563 (moottoriliikennetie) "
+            "ja 564 (moottoriliikennetie päättyy) on otettava käyttöön vuoden "
+            "1983 loppuun men- nessä; sekä"
+        ),
+        (
+            "merkit 312 (moottorikäyttöisellä ajoneuvolla ajo kielletty), 313 "
+            "(kuorma- ja pakettiautolla ajo kielletty), 316 (moottoripyörällä ajo "
+            "kielletty), 551 (yksisuuntainen tie), 621 ja 622 (ajokaistaopastus) "
+            "ja merkki 623 (ajokaistan päättyminen) on otettava käyttöön vuoden"
+        ),
+        (
+            "Aikaisempien määräysten mukaisia ryhmitysmerkkejä voidaan käyttää "
+            "merkkien 412-415 (pakollinen ajosuunta) sekä 40 §:n mukaisten "
+            "ajokaistanuolten asemesta vuoden 1990 loppuun saakka."
+        ),
+    ]
+    corrects = [
+        wrongs[0].replace("voi- maan", "voimaan"),
+        wrongs[1].replace("men- nessä", "mennessä"),
+        wrongs[2] + " 1990 loppuun mennessä.",
+        wrongs[3].replace("412-415", "412–415"),
+    ]
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<akomaNtoso><act><body>"
+        + "".join(f"<section><content><p>{wrong}</p></content></section>" for wrong in wrongs)
+        + "</body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "1982/182")
+
+    assert applied == [f"body_patch/1982/182/{idx}" for idx in range(4)]
+    for idx, (wrong, correct) in enumerate(zip(wrongs, corrects, strict=True)):
+        if idx == 2:
+            assert (wrong + "</p>").encode("utf-8") not in patched
+        else:
+            assert wrong.encode("utf-8") not in patched
+        assert correct.encode("utf-8") in patched
+
+
+def test_replay_xml_1982_182_applies_owned_section_57_source_defects() -> None:
+    replay = replay_xml_for_test(
+        "1982/182",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_57 = " ".join(irnode_to_text(sections["section:57"]).split())
+
+    assert "tullessa voimaan" in section_57
+    assert "1983 loppuun mennessä" in section_57
+    assert "käyttöön vuoden 1990 loppuun mennessä." in section_57
+    assert "merkkien 412–415" in section_57
+
+
+def test_manual_amendment_source_patch_2007_491_fills_missing_fee_rows() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrong_row = """<tr>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>2) hirvenvasa</p>
+                                        </td>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>50 euroa</p>
+                                        </td>
+                                    </tr>"""
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<akomaNtoso><act><body><section><subsection><paragraph><content><table>"
+        "<tr><td><p>1) aikuinen hirvi</p></td><td><p>120 euroa</p></td></tr>"
+        f"{wrong_row}"
+        "</table></content></paragraph></subsection></section></body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "2007/491")
+
+    assert applied == ["body_patch/2007/491/0"]
+    assert "3) aikuinen kuusipeura".encode("utf-8") in patched
+    assert "4) kuusipeuran, saksanhirven".encode("utf-8") in patched
+
+
+def test_replay_xml_2001_823_applies_owned_2007_491_fee_row_source_defect() -> None:
+    replay = replay_xml_for_test(
+        "2001/823",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_2 = " ".join(irnode_to_text(sections["section:2"]).split())
+
+    assert "1) aikuinen hirvi 120 euroa" in section_2
+    assert "2) hirvenvasa 50 euroa" in section_2
+    assert (
+        "3) aikuinen kuusipeura, saksanhirvi, japaninpeura, "
+        "valkohäntäpeura tai metsäpeura 17 euroa"
+    ) in section_2
+    assert (
+        "4) kuusipeuran, saksanhirven, japaninpeuran, "
+        "valkohäntäpeuran tai metsäpeuran vasa 8 euroa."
+    ) in section_2
+
+
+def test_manual_base_source_patch_1991_1161_fills_empty_section_9_shell() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrong = """<section eId="sec_9">
+                        <num>9 § </num>
+                    </section>"""
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f"<akomaNtoso><act><body>{wrong}</body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "1991/1161")
+
+    assert applied == ["body_patch/1991/1161/0"]
+    assert wrong.encode("utf-8") not in patched
+    assert b'eId="sec_9__heading">Voimaantulo' in patched
+    assert "Tämä asetus tulee voimaan 1 päivänä lokakuuta 1991.".encode("utf-8") in patched
+    assert "täytäntöönpanon edellyttämiin toimenpiteisiin.".encode("utf-8") in patched
+
+
+def test_replay_xml_1991_1161_applies_owned_section_9_source_defect() -> None:
+    replay = replay_xml_for_test(
+        "1991/1161",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_9 = " ".join(irnode_to_text(sections["section:9"]).split())
+
+    assert "Voimaantulo" in section_9
+    assert "Tämä asetus tulee voimaan 1 päivänä lokakuuta 1991." in section_9
+    assert "täytäntöönpanon edellyttämiin toimenpiteisiin" in section_9
+
+
+def test_manual_base_source_patch_1991_1208_corrects_owned_ocr_defects() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrongs = [
+        "koko naan luovuttu",
+        "Taajamaalueilla luokitus",
+        "rantaalueiden tuulisuus",
+        "varustet tujen rakennettujen teiden",
+        "vastaava pätevyys(<i>veroluokittaja</i>)",
+        "vuodelta 1991 toimirerravassa verotuksessa. Asetuksen 17§:ää sovelletan",
+        "maatilaatalouden tuloveroastesus",
+    ]
+    corrects = [
+        "kokonaan luovuttu",
+        "Taajama-alueilla luokitus",
+        "ranta-alueiden tuulisuus",
+        "varustettujen rakennettujen teiden",
+        "vastaava pätevyys (<i>veroluokittaja</i>)",
+        "vuodelta 1991 toimitettavassa verotuksessa. Asetuksen 17 §:ää sovelletaan",
+        "maatilatalouden tuloveroasetus",
+    ]
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<akomaNtoso><act><body>"
+        + "".join(f"<section><content><p>{wrong}</p></content></section>" for wrong in wrongs)
+        + "</body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "1991/1208")
+
+    assert applied == [f"body_patch/1991/1208/{idx}" for idx in range(7)]
+    for wrong, correct in zip(wrongs, corrects, strict=True):
+        assert wrong.encode("utf-8") not in patched
+        assert correct.encode("utf-8") in patched
+
+
+def test_replay_xml_1991_1208_applies_owned_ocr_defects() -> None:
+    replay = replay_xml_for_test(
+        "1991/1208",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    joined = {
+        key: " ".join(irnode_to_text(sections[key]).split())
+        for key in ("section:2", "section:5", "section:7", "section:8", "section:12", "section:25")
+    }
+
+    assert "kokonaan luovuttu" in joined["section:2"]
+    assert "koko naan luovuttu" not in joined["section:2"]
+    assert "varustettujen rakennettujen teiden" in joined["section:5"]
+    assert "varustet tujen rakennettujen teiden" not in joined["section:5"]
+    assert "ranta-alueiden tuulisuus" in joined["section:7"]
+    assert "rantaalueiden tuulisuus" not in joined["section:7"]
+    assert "Taajama-alueilla luokitus" in joined["section:8"]
+    assert "Taajamaalueilla luokitus" not in joined["section:8"]
+    assert "pätevyys (veroluokittaja)" in joined["section:12"]
+    assert "pätevyys(veroluokittaja)" not in joined["section:12"]
+    assert "toimitettavassa verotuksessa" in joined["section:25"]
+    assert "17 §:ää sovelletaan" in joined["section:25"]
+    assert "maatilatalouden tuloveroasetus" in joined["section:25"]
+    assert "toimirerravassa" not in joined["section:25"]
+    assert "tuloveroastesus" not in joined["section:25"]
+
+
+def test_manual_source_patches_1992_1578_correct_base_and_amendment_typos() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    base_wrong = "konkursissa varojen tilittämiseen"
+    amendment_wrong = "ei saada sen vakuutema olevasta pantista"
+
+    base_patched, base_applied = table.patch_source_body_xml(
+        f"<body><p>{base_wrong}</p></body>".encode("utf-8"),
+        "1992/1578",
+    )
+    amendment_patched, amendment_applied = table.patch_source_body_xml(
+        f"<body><p>{amendment_wrong}</p></body>".encode("utf-8"),
+        "1995/1776",
+    )
+
+    assert base_applied == ["body_patch/1992/1578/0"]
+    assert amendment_applied == ["body_patch/1995/1776/0"]
+    assert base_wrong.encode("utf-8") not in base_patched
+    assert amendment_wrong.encode("utf-8") not in amendment_patched
+    assert "konkurssissa varojen tilittämiseen".encode("utf-8") in base_patched
+    assert "ei saada sen vakuutena olevasta pantista".encode("utf-8") in amendment_patched
+
+
+def test_replay_xml_1992_1578_applies_owned_source_typos() -> None:
+    replay = replay_xml_for_test(
+        "1992/1578",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_3 = " ".join(irnode_to_text(sections["section:3"]).split())
+    section_9 = " ".join(irnode_to_text(sections["section:9"]).split())
+
+    assert "konkurssissa varojen tilittämiseen" in section_3
+    assert "konkursissa varojen tilittämiseen" not in section_3
+    assert "ei saada sen vakuutena olevasta pantista" in section_9
+    assert "ei saada sen vakuutema olevasta pantista" not in section_9
+
+
 def test_patch_table_keeps_johtolauseen_jalkeen_in_body_patch_lane(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
     manual_path = tmp_path / "corrigendum_manual.yaml"

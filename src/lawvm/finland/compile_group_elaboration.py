@@ -23,12 +23,21 @@ from lawvm.finland.group_ops import (
 )
 from lawvm.finland.helpers import _norm_num_token, _norm_row_anchor_text
 from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile
+from lawvm.finland.sparse_tail_claims import (
+    SPARSE_OMISSION_TAIL_PRUNE_RULE,
+    SparseOmissionTailClaim,
+    prune_sparse_tail_claims_from_carrier,
+)
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.compile_group_surface import (
     collect_recodification_omission_only_section_shell_pathologies,
 )
-from lawvm.finland.payload_normalize import elaborate_payload_against_live, prepare_payload_surface
+from lawvm.finland.payload_normalize import (
+    _rewrite_internal_ordered_list_inserts,
+    elaborate_payload_against_live,
+    prepare_payload_surface,
+)
 from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
 
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
@@ -223,6 +232,7 @@ class ElaborateGroupRequest:
     strict_profile: Optional[StrictProfile]
     foreign_scoped_descendant_section_targets: set[str] = field(default_factory=set)
     foreign_scoped_replace_section_target_scopes: frozenset[StandaloneSectionTarget] = frozenset()
+    sparse_omission_tail_claims: tuple[SparseOmissionTailClaim, ...] = ()
 
 
 def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGroup]:
@@ -258,6 +268,33 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         lookups,
         row_anchor_normalizer=_norm_row_anchor_text,
     )
+    muutos_ir, pre_prepare_pruned_sparse_tail_claims = prune_sparse_tail_claims_from_carrier(
+        muutos_ir,
+        request.sparse_omission_tail_claims,
+        target_norm=target_norm,
+        target_chapter=target_chapter,
+        target_part=target_part,
+    )
+    pre_prepare_observations: list[dict[str, object]] = []
+    if pre_prepare_pruned_sparse_tail_claims:
+        pre_prepare_observations.append(
+            _internal_elaboration_observation_row(
+                kind=SPARSE_OMISSION_TAIL_PRUNE_RULE,
+                stage="group_payload_normalization",
+                detail={
+                    "target_unit_kind": target_unit_kind,
+                    "target_norm": target_norm,
+                    "target_chapter": target_chapter or "",
+                    "pruned_claims": [
+                        claim.detail() for claim in pre_prepare_pruned_sparse_tail_claims
+                    ],
+                },
+                source_statute=observation_source_statute,
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_chapter=target_chapter,
+            )
+        )
     muutos_ir = prepare_payload_surface(
         payload_ctx,
         group_ops,
@@ -265,6 +302,24 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         profile,
         strict_profile,
     )
+    group_ops, muutos_ir, internal_list_observation = _rewrite_internal_ordered_list_inserts(
+        payload_ctx,
+        target_unit_kind,
+        muutos_ir,
+        group_ops,
+    )
+    if internal_list_observation is not None:
+        pre_prepare_observations.append(
+            _internal_elaboration_observation_row(
+                kind=str(internal_list_observation.kind or ""),
+                stage=str(internal_list_observation.stage or ""),
+                detail=dict(internal_list_observation.detail or {}),
+                source_statute=observation_source_statute,
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_chapter=target_chapter,
+            )
+        )
     prepared_payload_observations = _payload_normalization_observation_rows(
         muutos_ir,
         source_statute=observation_source_statute,
@@ -333,6 +388,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
             target_unit_kind=target_unit_kind,
             target_norm=target_norm,
         ),
+        sparse_omission_tail_claims=request.sparse_omission_tail_claims,
         surface=surface,
     )
     muutos_ir = payload_norm.muutos_ir
@@ -350,6 +406,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         )
     )
     local_elaboration_observations: list[dict[str, object]] = [
+        *pre_prepare_observations,
         *prepared_payload_observations,
         *[
         _internal_elaboration_observation_row(

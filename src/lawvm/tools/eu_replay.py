@@ -18,6 +18,8 @@ class _AdjudicationLike(Protocol):
     message: str
     source_statute: str
     op_id: str
+    blocking: bool
+    phase: str
     detail: object
 
 
@@ -35,6 +37,8 @@ def _serialize_adjudication(adj: "CompileAdjudication | _AdjudicationLike") -> d
         "message": str(adj.message),
         "source_statute": str(adj.source_statute),
         "op_id": str(adj.op_id),
+        "blocking": bool(adj.blocking),
+        "phase": str(adj.phase),
         "detail": detail_payload,
     }
 

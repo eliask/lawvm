@@ -24,6 +24,7 @@ from lawvm.finland.kumotaan import (
     kumotaan_recycle_guard_result,
 )
 from lawvm.finland.kumotaan_replay import (
+    PureKumotaanInjectedRepeal,
     _inject_pure_kumotaan_repeal_ops,
     _inject_pure_kumotaan_subsection_repeal_ops,
     _live_suffix_section_labels_for_numeric_kumotaan_ranges,
@@ -33,6 +34,7 @@ from lawvm.finland.effect_lifecycle_signals import (
     EffectLifecycleOverride,
     EffectLifecycleOverrideScope,
 )
+from lawvm.finland.helpers import _parse_iso_date
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import (
     _rewrite_compiled_op_activation_rule_effective,
@@ -98,16 +100,20 @@ class ProcessTemporalPostprocessContext:
     def apply_commencement_expiry_overrides(self) -> None:
         # Accepted voimaantulosäännös-only amendments may extend or expire prior
         # ops even when this amendment emitted no section-level replacement ops.
-        has_foreign_scoped_expiry = any(
-            target_mid != self.amendment_id
-            for target_mid, _labels, _expiry in self.section_expiry_overrides
+        #
+        # Legal-state authority is the typed commencement/expiry surface
+        # ``commencement_expiry_override`` (it owns the voimaantulosäännös parse
+        # and the foreign-scoped section-expiry decision), never a raw-text
+        # substring predicate (AGENTS §1.11/§1.12, leak-ledger rank 15). The
+        # former raw-text prefilter on the commencement-clause keyword could not
+        # change the result — the typed parser's own ``voimaantulosäänn`` match
+        # already implies that keyword, and the foreign-scoped branch is carried
+        # by ``section_expiry_overrides`` — so it is dropped and the typed
+        # surface is consulted unconditionally.
+        accepted = self.source_model.commencement_expiry_override(
+            self.amendment_id,
+            section_expiry_overrides=self.section_expiry_overrides,
         )
-        accepted = None
-        if has_foreign_scoped_expiry or self.source_model.source_text_contains("voimaantulos"):
-            accepted = self.source_model.commencement_expiry_override(
-                self.amendment_id,
-                section_expiry_overrides=self.section_expiry_overrides,
-            )
         if accepted is not None:
             target_mid, labels, expiry = accepted
             if target_mid != self.amendment_id:
@@ -295,7 +301,7 @@ class ProcessTemporalPostprocessContext:
                 "(appear in both kumotaan+muutetaan)"
             )
             self.record_finding(
-                kind="PARSE.KUMOTAAN_RECYCLE_GUARD",
+                kind="PARSE.REPEAL_RECYCLE_GUARD",
                 message=(
                     "Kumotaan repeal candidates were excluded because the "
                     "same source also replaces those targets."
@@ -324,31 +330,44 @@ class ProcessTemporalPostprocessContext:
                 if chap_map_sets is not None:
                     chap_map_sets.setdefault(chapter, set()).update(labels)
 
-        if kumotaan_labels:
+        kumotaan_expiry_groups = _kumotaan_labels_by_effective_date(
+            self.lo_ops_out,
+            labels=kumotaan_labels,
+            amendment_id=self.amendment_id,
+            default_effective_date=self.amendment_effective_date,
+        )
+        for expiry_date, labels in sorted(kumotaan_expiry_groups.items()):
             self.commencement_expiry_override_notes.append(
                 EffectLifecycleOverride(
                     source_statute=self.amendment_id,
                     target_statute=self.amendment_id,
-                    scope=_kumotaan_override_scope(kumotaan_labels, chap_map_sets),
-                    expiry=self.amendment_effective_date.isoformat(),
+                    scope=_kumotaan_override_scope(
+                        labels,
+                        _filter_chapter_section_map(chap_map_sets, labels),
+                    ),
+                    expiry=expiry_date.isoformat(),
                     context="repeal_clause",
                 )
             )
-        if kumotaan_labels and _rewrite_lo_op_source_expiry(
-            self.lo_ops_out,
-            self.amendment_id,
-            set(kumotaan_labels),
-            self.amendment_effective_date,
-            parent_statute_id=self.parent_id,
-            replay_mode=self.replay_mode,
-            chapter_section_map=chap_map_sets,
-            expiry_convention="exclusive_cutoff",
-        ):
-            scope = sorted(set(kumotaan_labels))
+        for expiry_date, labels in sorted(kumotaan_expiry_groups.items()):
+            label_set = set(labels)
+            if not _rewrite_lo_op_source_expiry(
+                self.lo_ops_out,
+                self.amendment_id,
+                label_set,
+                expiry_date,
+                parent_statute_id=self.parent_id,
+                replay_mode=self.replay_mode,
+                chapter_section_map=_filter_chapter_section_map(chap_map_sets, labels),
+                expiry_convention="exclusive_cutoff",
+            ):
+                continue
+            scope = sorted(label_set)
             self.replay_print(
                 f"  [{self.amendment_id}] kumotaan_section_expiry_override: "
-                f"{self.amendment_id} {scope} -> {self.amendment_effective_date.isoformat()}"
+                f"{self.amendment_id} {scope} -> {expiry_date.isoformat()}"
             )
+        if kumotaan_expiry_groups:
             _rewrite_kumotaan_snapshot_replaces_to_repeal(
                 self.lo_ops_out,
                 target_source_statute=self.amendment_id,
@@ -358,7 +377,7 @@ class ProcessTemporalPostprocessContext:
             )
 
         if kumotaan_labels:
-            pure_count = _inject_pure_kumotaan_repeal_ops(
+            pure_result = _inject_pure_kumotaan_repeal_ops(
                 self.lo_ops_out,
                 amendment_id=self.amendment_id,
                 source_title=self.source_title,
@@ -369,6 +388,17 @@ class ProcessTemporalPostprocessContext:
                 state=self.state,
                 source_raw_text=self.johto,
             )
+            _rewrite_delayed_kumotaan_injected_ops(
+                self.lo_ops_out,
+                amendment_id=self.amendment_id,
+                default_effective_date=self.amendment_effective_date,
+                expiry_groups=kumotaan_expiry_groups,
+                base_ir=self.base_ir,
+                group_id_prefix=f"finland-johto:{self.amendment_id}:kumotaan_commencement",
+                chapter_section_map=chap_map_sets,
+            )
+            self._emit_pure_kumotaan_injection_findings(pure_result.injected)
+            pure_count = pure_result.injected_count
             if pure_count:
                 self.replay_print(f"  [{self.amendment_id}] pure_kumotaan_repeal_injected: {pure_count} section(s)")
 
@@ -402,11 +432,42 @@ class ProcessTemporalPostprocessContext:
                 role="observation",
                 blocking=False,
             )
+        self._emit_pure_kumotaan_injection_findings(pure_subsection_result.injected)
         pure_subsection_count = pure_subsection_result.injected_count
         if pure_subsection_count:
             self.replay_print(
                 f"  [{self.amendment_id}] pure_kumotaan_subsection_repeal_injected: "
                 f"{pure_subsection_count} subsection(s)"
+            )
+
+    def _emit_pure_kumotaan_injection_findings(
+        self,
+        injected: tuple[PureKumotaanInjectedRepeal, ...],
+    ) -> None:
+        """Record one witnessed finding per repeal reconstructed from raw johtolause.
+
+        The repeal op was minted from raw kumotaan source text because the typed
+        pipeline produced no op for the target. Each injected op carries a
+        witness_rule_id; this surfaces the matching evidence record so the mint
+        is never a silent legal-state move.
+        """
+        for record in injected:
+            self.record_finding(
+                kind="PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED",
+                message=(
+                    "Repeal reconstructed from raw kumotaan johtolause; the typed "
+                    "pipeline produced no op for this target."
+                ),
+                source_statute=self.amendment_id,
+                detail={
+                    "message": (
+                        "Repeal reconstructed from raw kumotaan johtolause; the "
+                        "typed pipeline produced no op for this target."
+                    ),
+                    **record.finding_detail(),
+                },
+                role="observation",
+                blocking=False,
             )
 
     def _commence_event(
@@ -487,3 +548,93 @@ def _kumotaan_override_scope(
             continue
         uncovered_labels.append(str(label))
     return EffectLifecycleOverrideScope.mixed(labels=uncovered_labels, addresses=addresses)
+
+
+def _kumotaan_labels_by_effective_date(
+    lo_ops_out: Optional[List[_LegalOperation]],
+    *,
+    labels: list[str],
+    amendment_id: str,
+    default_effective_date: dt.date,
+) -> dict[dt.date, list[str]]:
+    groups: dict[dt.date, list[str]] = {}
+    for label in sorted(set(labels)):
+        expiry_date = _kumotaan_label_effective_date(
+            lo_ops_out,
+            label=label,
+            amendment_id=amendment_id,
+            default_effective_date=default_effective_date,
+        )
+        groups.setdefault(expiry_date, []).append(label)
+    return groups
+
+
+def _kumotaan_label_effective_date(
+    lo_ops_out: Optional[List[_LegalOperation]],
+    *,
+    label: str,
+    amendment_id: str,
+    default_effective_date: dt.date,
+) -> dt.date:
+    if lo_ops_out is None:
+        return default_effective_date
+    label_norm = label.lower()
+    for lo in lo_ops_out:
+        src = lo.source
+        if src is None or src.statute_id != amendment_id:
+            continue
+        section = next((value for kind, value in lo.target.path if kind == "section"), "")
+        if section.lower() != label_norm or not src.effective:
+            continue
+        effective_date = _parse_iso_date(src.effective)
+        if effective_date is None:
+            continue
+        if effective_date > default_effective_date:
+            return effective_date
+    return default_effective_date
+
+
+def _filter_chapter_section_map(
+    chapter_section_map: Optional[Dict[Optional[str], Set[str]]],
+    labels: list[str],
+) -> Optional[Dict[Optional[str], Set[str]]]:
+    if not chapter_section_map:
+        return None
+    label_set = {label.lower() for label in labels}
+    filtered: Dict[Optional[str], Set[str]] = {}
+    for chapter, sections in chapter_section_map.items():
+        scoped = {section for section in sections if section.lower() in label_set}
+        if scoped:
+            filtered[chapter] = scoped
+    return filtered or None
+
+
+def _rewrite_delayed_kumotaan_injected_ops(
+    lo_ops_out: Optional[List[_LegalOperation]],
+    *,
+    amendment_id: str,
+    default_effective_date: dt.date,
+    expiry_groups: dict[dt.date, list[str]],
+    base_ir: Optional[IRNode],
+    group_id_prefix: str,
+    chapter_section_map: Optional[Dict[Optional[str], Set[str]]],
+) -> None:
+    for effective_date, labels in expiry_groups.items():
+        if effective_date <= default_effective_date:
+            continue
+        scoped_map = _filter_chapter_section_map(chapter_section_map, labels)
+        if scoped_map is None:
+            scoped_map = {None: {label.lower() for label in labels}}
+        _rewrite_lo_op_source_effective(
+            lo_ops_out,
+            amendment_id,
+            effective_date,
+            chapter_section_map=scoped_map,
+            base_ir=base_ir,
+        )
+        _rewrite_lo_op_group_id(
+            lo_ops_out,
+            amendment_id,
+            f"{group_id_prefix}:{effective_date.isoformat()}",
+            chapter_section_map=scoped_map,
+        )

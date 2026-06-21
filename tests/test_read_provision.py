@@ -32,7 +32,7 @@ _PAYLOAD = {
     "schema": "lawvm.provision_state.v1",
     "statute_id": "2011/805",
     "title": "Esitutkintalaki",
-    "status": "selected",
+    "provision_status": "selected",
     "query": {"provision": "chapter:3/section:1", "as_of": "2026-06-09",
               "query_type": "in_force"},
     "version": {"effective": "2026-04-14", "content_state": "live"},
@@ -96,7 +96,7 @@ class TestHumanRender:
 
     def test_unresolved_render(self, monkeypatch, capsys):
         payload = {
-            "statute_id": "2011/805", "title": "", "status": "address_not_found",
+            "statute_id": "2011/805", "title": "", "provision_status": "address_not_found",
             "query": {"provision": "chapter:9/section:9", "as_of": "2026-06-09",
                       "query_type": "in_force"},
             "address_candidates": [],
@@ -121,7 +121,7 @@ class TestJsonPassthrough:
     def test_json_invalid_selector_preserves_payload_and_exits_2(self, monkeypatch, capsys):
         payload = {
             "schema": "lawvm.provision_state.v1",
-            "status": "invalid_address",
+            "provision_status": "invalid_address",
             "statute_id": "1992/1535",
             "query": {"provision": "section:127 a §"},
             "diagnostic": {
@@ -145,7 +145,7 @@ class TestJsonPassthrough:
     def test_human_invalid_selector_exits_2_with_diagnostic(self, monkeypatch, capsys):
         payload = {
             "schema": "lawvm.provision_state.v1",
-            "status": "invalid_address",
+            "provision_status": "invalid_address",
             "statute_id": "1992/1535",
             "title": "",
             "query": {"provision": "section:127 a §", "as_of": "2024-06-01"},

@@ -190,7 +190,7 @@ def test_in_window_query_on_target_address_is_blocked() -> None:
         as_of="2021-03-15",
         timeline_breaks=(_window_break(),),
     )
-    assert payload["status"] == "timeline_unverified"
+    assert payload["provision_status"] == "timeline_unverified"
     assert payload["timeline_broken_at"] == {
         "amendment_id": "2020/900",
         "diagnostic_code": WINDOW_UNMATERIALIZED_CODE,
@@ -223,7 +223,7 @@ def test_temporal_scheduler_materializes_proved_window() -> None:
         timeline_breaks=scheduled.unresolved_breaks,
         temporal_schedule_deltas=scheduled.deltas,
     )
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["version"]["variant_kind"] == "temporary"
     assert payload["text"]["rendered"] == "Temporary provision duty."
     assert "timeline_integrity" not in payload
@@ -251,7 +251,7 @@ def test_window_blocks_start_day_and_last_in_force_day() -> None:
             as_of=as_of,
             timeline_breaks=(_window_break(),),
         )
-        assert payload["status"] == "timeline_unverified", as_of
+        assert payload["provision_status"] == "timeline_unverified", as_of
 
 
 def test_outside_window_is_byte_identical_to_no_break_baseline() -> None:
@@ -319,7 +319,7 @@ def test_window_break_flag_off_restores_prior_behavior(monkeypatch) -> None:
         as_of="2021-03-15",
         timeline_breaks=(_window_break(),),
     )
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert "timeline_broken_at" not in payload
 
 
@@ -357,7 +357,7 @@ def test_live_twin_window_query_is_materialized(
         as_of=as_of,
         query_type="in_force",
     )
-    assert payload["status"] == "selected", (provision, as_of)
+    assert payload["provision_status"] == "selected", (provision, as_of)
     assert payload["version"]["variant_kind"] == "temporary"
     assert "timeline_integrity" not in payload
     schedule = payload["temporal_schedule"]
@@ -380,7 +380,7 @@ def test_live_78c_twin_window_boundaries(live_2010_1326_runtime) -> None:
             as_of=as_of,
             query_type="in_force",
         )
-        assert payload["status"] == status, as_of
+        assert payload["provision_status"] == status, as_of
         if variant_kind is None:
             assert payload["version"] is None
             assert payload["source"] is None
@@ -399,7 +399,7 @@ def test_live_twin_window_is_scoped_off_window_and_off_address(live_2010_1326_ru
         as_of="2026-06-11",
         query_type="in_force",
     )
-    assert after["status"] != "timeline_unverified"
+    assert after["provision_status"] != "timeline_unverified"
     assert "timeline_integrity" not in after
 
     # an unaffected address of the same statute -> not blocked
@@ -408,5 +408,5 @@ def test_live_twin_window_is_scoped_off_window_and_off_address(live_2010_1326_ru
         as_of="2023-03-01",
         query_type="in_force",
     )
-    assert other["status"] != "timeline_unverified"
+    assert other["provision_status"] != "timeline_unverified"
     assert "timeline_integrity" not in other

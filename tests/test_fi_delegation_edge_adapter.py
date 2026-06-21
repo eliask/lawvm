@@ -112,3 +112,45 @@ def test_parse_failure_returns_empty_and_records_diagnostic() -> None:
     edges = extract_delegations_canonical(b"<not-xml", "2020/100", diagnostics_out=diags)
     assert edges == []
     assert any(d.rule_id == "fi_delegation_extraction_xml_parse_failed" for d in diags)
+
+
+def test_canonical_residuals_surfaced_as_typed_diagnostics() -> None:
+    # A grant-shaped clause the canonical parser DECLINES (a cross-reference to an
+    # existing decree's section) is canonical residue: no edge, but it must be
+    # OBSERVABLE at the production boundary as a typed, self-evidencing diagnostic
+    # rather than silently discarded.
+    xml = _statute(
+        _subsec(
+            "sec_7",
+            "7",
+            "sec_7__subsec_1",
+            "Asiasta säädetään valtioneuvoston asetuksen 34 §:n 2 momentissa.",
+        )
+    )
+    diags: list = []
+    edges = extract_delegations_canonical(xml, "2020/100", diagnostics_out=diags)
+    assert edges == []
+    residual_diags = [
+        d for d in diags if d.rule_id.startswith("fi_delegation_canonical_residual_")
+    ]
+    assert residual_diags, "declined grant-shaped clause must surface a residual diagnostic"
+    d = residual_diags[0]
+    assert d.family == "graph_edge_filter"
+    assert d.section == "7"
+    assert d.eid == "sec_7__subsec_1"
+    assert not d.blocking
+    # self-evidencing: the verbatim offending clause text is carried.
+    assert "asetuksen" in d.match_text
+
+
+def test_no_diagnostics_sink_does_not_raise() -> None:
+    # Default call (no diagnostics_out): residuals are simply not surfaced, no error.
+    xml = _statute(
+        _subsec(
+            "sec_7",
+            "7",
+            "sec_7__subsec_1",
+            "Asiasta säädetään valtioneuvoston asetuksen 34 §:n 2 momentissa.",
+        )
+    )
+    assert extract_delegations_canonical(xml, "2020/100") == []

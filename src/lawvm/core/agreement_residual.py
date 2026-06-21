@@ -59,7 +59,7 @@ class AgreementResidual:
     jurisdiction: str
     agreement_surface: str
     family: AgreementResidualFamily
-    status: AgreementResidualStatus
+    agreement_residual_status: AgreementResidualStatus
     owner_phase: str
     rule_id: str
     source_artifact_id: str = ""
@@ -92,14 +92,14 @@ class AgreementResidual:
                 "AgreementResidual.family must be one of "
                 f"{sorted(_VALID_FAMILIES)}"
             )
-        status = _required_string("status", self.status)
-        if status not in _VALID_STATUSES:
+        agreement_residual_status = _required_string("agreement_residual_status", self.agreement_residual_status)
+        if agreement_residual_status not in _VALID_STATUSES:
             raise ValueError(
-                "AgreementResidual.status must be one of "
+                "AgreementResidual.agreement_residual_status must be one of "
                 f"{sorted(_VALID_STATUSES)}"
             )
         object.__setattr__(self, "family", family)
-        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "agreement_residual_status", agreement_residual_status)
         object.__setattr__(
             self,
             "owner_phase",
@@ -134,7 +134,7 @@ class AgreementResidual:
             "jurisdiction": self.jurisdiction,
             "agreement_surface": self.agreement_surface,
             "family": self.family,
-            "status": self.status,
+            "agreement_residual_status": self.agreement_residual_status,
             "owner_phase": self.owner_phase,
             "rule_id": self.rule_id,
             "source_artifact_id": self.source_artifact_id,
@@ -277,7 +277,7 @@ def agreement_surface_evidence_report(
         "agreement_surface_count": 1,
         "agreement_residual_count": len(typed_surface.residuals),
         "residual_family_counts": _counts(residual.family for residual in typed_surface.residuals),
-        "residual_status_counts": _counts(residual.status for residual in typed_surface.residuals),
+        "residual_status_counts": _counts(residual.agreement_residual_status for residual in typed_surface.residuals),
         "agreement_surface": typed_surface.agreement_surface,
         "comparison_kind": typed_surface.comparison_kind,
         "materialization_kind": typed_surface.materialization_kind,
@@ -353,7 +353,7 @@ def _residual(row: AgreementResidual | Mapping[str, Any]) -> AgreementResidual:
         jurisdiction=str(row.get("jurisdiction") or ""),
         agreement_surface=str(row.get("agreement_surface") or ""),
         family=cast(AgreementResidualFamily, str(row.get("family") or "")),
-        status=cast(AgreementResidualStatus, str(row.get("status") or "")),
+        agreement_residual_status=cast(AgreementResidualStatus, str(row.get("agreement_residual_status") or "")),
         owner_phase=str(row.get("owner_phase") or ""),
         rule_id=str(row.get("rule_id") or ""),
         source_artifact_id=str(row.get("source_artifact_id") or ""),
@@ -372,7 +372,7 @@ def _agreement_residual_report_row(residual: AgreementResidual) -> dict[str, Any
         "surface": "agreement_residual",
         "row_id": residual.residual_id,
         "subject_id": residual.source_artifact_id or residual.residual_id,
-        "status": residual.status,
+        "agreement_residual_status": residual.agreement_residual_status,
         "replay_authorized": False,
         **data,
     }

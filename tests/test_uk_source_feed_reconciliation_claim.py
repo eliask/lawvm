@@ -72,7 +72,7 @@ def _claim(**overrides: Any) -> SourceFeedReconciliationClaim:
         source_snippet=_SOURCE,
         rationale="source explicitly scopes the omission to sub-paragraph (i)",
         claimant="reviewer",
-        status="proposed",
+        claim_status="proposed",
     )
     return replace(base, **overrides)
 
@@ -110,7 +110,7 @@ def test_claim_from_dict_defaults() -> None:
     )
     assert claim.rationale == ""
     assert claim.claimant == ""
-    assert claim.status == "proposed"
+    assert claim.claim_status == "proposed"
 
 
 # ── validator: accept each basis ─────────────────────────────────────────────

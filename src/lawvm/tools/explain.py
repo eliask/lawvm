@@ -42,6 +42,8 @@ from lawvm.core.compile_views import (
 )
 from lawvm.tools.divergence_heuristics import blame_title_indicates_temporary_amendment
 from lawvm.tools.divergence_heuristics import blame_source_postdates_oracle_version
+from lawvm.tools.divergence_heuristics import high_overlap_text_corruption
+from lawvm.tools.divergence_heuristics import high_overlap_unblamed_text_corruption
 from lawvm.tools.divergence_heuristics import is_probable_repeal_stale_oracle
 from lawvm.tools.divergence_heuristics import oracle_has_repeal_banner_with_prior_wording
 from lawvm.tools.divergence_heuristics import oracle_section_duplicates_adjacent_section
@@ -57,6 +59,8 @@ from lawvm.finland.replay_products import fi_label_norm
 from lawvm.finland.oracle_comparison import (
     strip_editorial_annotations,
     strip_kumottu_attribution,
+    strip_non_substantive_source_projection_residue,
+    strip_standalone_subsection_ordinals,
     strip_temporary_residue_annotations,
 )
 from lawvm.tools.section_keys import (
@@ -147,6 +151,15 @@ def _source_pathology_diagnosis_for_blame(
         if exact_target_label and str(row.get("target_label") or "") == exact_target_label:
             matched_codes.add(code)
             continue
+        row_target_label = str(row.get("target_label") or "")
+        row_target_unit_kind = str(row.get("target_unit_kind") or "")
+        if (
+            target_section
+            and row_target_unit_kind == "section"
+            and norm_section_label(row_target_label) == target_section
+        ):
+            matched_codes.add(code)
+            continue
         if (
             target_section
             and str(detail.get("target_section") or "") == target_section
@@ -174,6 +187,16 @@ def _source_pathology_diagnosis_for_blame(
     )
     if not matched_codes:
         return None
+    if "SUBSECTION_TARGET_ABSENT" in matched_codes:
+        return (
+            "SOURCE_PATHOLOGY",
+            f"blamed amendment {blame_source} already carries SUBSECTION_TARGET_ABSENT",
+        )
+    if "DESTRUCTIVE_SHAPE_LOSS_RISK" in matched_codes:
+        return (
+            "SOURCE_PATHOLOGY",
+            f"blamed amendment {blame_source} already carries DESTRUCTIVE_SHAPE_LOSS_RISK",
+        )
     if not has_degraded_coverage and not has_failed_no_deterministic:
         return None
 
@@ -472,6 +495,12 @@ def _diagnose(
             return ("EDITORIAL_CONVENTION",
                     "divergence is repeal attribution or aiempi-sanamuoto residue — oracle editorial choice")
 
+    if high_overlap_text_corruption(r_stripped, o_stripped):
+        return (
+            "SOURCE_PATHOLOGY",
+            "same-section source/oracle text mostly overlaps but one witness is corrupted",
+        )
+
     if (
         r_c
         and o_c
@@ -490,13 +519,37 @@ def _diagnose(
             "oracle duplicates one same-section sentence fragment beyond the replay/source-backed text",
         )
 
+    r_source_residue_stripped = strip_non_substantive_source_projection_residue(r_text)
+    if r_source_residue_stripped != r_text:
+        c_r_residue = _clean(strip_editorial_annotations(r_source_residue_stripped))
+        if c_r_residue and o_c and Levenshtein.ratio(c_r_residue, o_c) >= 0.999:
+            return (
+                "EDITORIAL_CONVENTION",
+                "replay carries non-substantive source heading/promulgation residue absent from oracle",
+            )
+
+    o_without_subsection_ordinals = strip_standalone_subsection_ordinals(o_text)
+    if o_without_subsection_ordinals != o_text:
+        c_o_ordinals = _clean(strip_editorial_annotations(o_without_subsection_ordinals))
+        if r_c and c_o_ordinals and Levenshtein.ratio(r_c, c_o_ordinals) >= 0.999:
+            return (
+                "EDITORIAL_CONVENTION",
+                "oracle carries subsection ordinal prefixes already represented by structure",
+            )
+
+    if not blame_op and high_overlap_unblamed_text_corruption(r_text, o_text):
+        return (
+            "SOURCE_PATHOLOGY",
+            "unblamed same-section text mostly overlaps but one witness is truncated or corrupted",
+        )
+
     # Use cleaned lengths for the sign check: oracle XML whitespace can add
     # hundreds of chars via etree.tostring, making oracle appear longer than
     # replay even when replay has MORE content.  _clean strips all whitespace
     # and punctuation so only alphanumeric content is compared.
     clean_len_diff = len(_clean(r_text)) - len(_clean(o_text))
     src = blame_op.get("source_statute", "?") if blame_op else None
-    action = blame_op.get("action", "") if blame_op else ""
+    action = str(blame_op.get("action", "") if blame_op else "").upper()
 
     # Keep the coarse replay-vs-oracle size heuristic aligned with
     # oracle_check._diagnose(): moderate extra/missing content should not fall

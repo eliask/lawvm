@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.timeline_addresses import STRUCTURAL_RENUMBER_SNAPSHOT_ATTR
 
 if TYPE_CHECKING:
     from lawvm.core.timeline import Timelines
@@ -18,6 +19,10 @@ FI_TIMELINE_SAME_SOURCE_SEMANTIC_DEDUPE_RULE_ID = (
 FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID = (
     "fi.timeline.absent_content_shadow_collapse"
 )
+FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID = (
+    "fi.timeline.restructure_relabel_snapshot_shadow_collapse"
+)
+_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_ATTR = "lawvm_restructure_relabel_section_snapshot"
 _TIMELINE_SECTION_MARK_SPACING_RE = re.compile(r"^(\d+[a-z]?)\s*§")
 SemanticTextKeyCache = dict[tuple[str, str], str]
 
@@ -104,6 +109,65 @@ def _collapse_absent_content_shadow_rows(
     return [version for version in versions if id(version) not in drop_ids], records
 
 
+def _is_restructure_relabel_snapshot(version: ProvisionVersion) -> bool:
+    content = version.content
+    return isinstance(content, IRNode) and content.attrs.get(_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_ATTR) == "1"
+
+
+def _is_structural_renumber_snapshot(version: ProvisionVersion) -> bool:
+    content = version.content
+    return isinstance(content, IRNode) and content.attrs.get(STRUCTURAL_RENUMBER_SNAPSHOT_ATTR) == "1"
+
+
+def _collapse_restructure_relabel_snapshot_shadow_rows(
+    address: LegalAddress,
+    versions: list[ProvisionVersion],
+) -> tuple[list[ProvisionVersion], list[TimelineVersionDedupeRecord]]:
+    """Drop early restructure snapshots shadowed by same-source payload authority."""
+    grouped: dict[tuple[str, str, str, str], list[ProvisionVersion]] = {}
+    for version in versions:
+        source_id = version.source.statute_id if version.source is not None else ""
+        if not source_id:
+            continue
+        key = (source_id, version.effective, version.enacted, version.variant_kind)
+        grouped.setdefault(key, []).append(version)
+
+    drop_ids: set[int] = set()
+    records: list[TimelineVersionDedupeRecord] = []
+    for (source_id, effective, enacted, variant_kind), group in grouped.items():
+        if len(group) < 2:
+            continue
+        restructure_snapshots = [
+            version for version in group if _is_restructure_relabel_snapshot(version)
+        ]
+        non_snapshot_payloads = [
+            version
+            for version in group
+            if version.content is not None
+            and not _is_restructure_relabel_snapshot(version)
+            and not _is_structural_renumber_snapshot(version)
+        ]
+        if not restructure_snapshots or not non_snapshot_payloads:
+            continue
+        for version in restructure_snapshots:
+            drop_ids.add(id(version))
+        records.append(
+            TimelineVersionDedupeRecord(
+                address=str(address),
+                source_statute=source_id,
+                effective=effective,
+                enacted=enacted,
+                variant_kind=variant_kind,
+                witness_rule_id=FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID,
+                removed_count=len(restructure_snapshots),
+            )
+        )
+
+    if not drop_ids:
+        return versions, records
+    return [version for version in versions if id(version) not in drop_ids], records
+
+
 def _dedupe_same_source_semantic_versions(
     address: LegalAddress,
     versions: list[ProvisionVersion],
@@ -162,12 +226,17 @@ def dedupe_finland_timelines(
     for address, timeline in timelines.items():
         versions = list(timeline.versions)
         versions, absent_records = _collapse_absent_content_shadow_rows(address, versions)
+        versions, restructure_records = _collapse_restructure_relabel_snapshot_shadow_rows(
+            address,
+            versions,
+        )
         versions, semantic_records = _dedupe_same_source_semantic_versions(
             address,
             versions,
             semantic_text_cache=semantic_text_cache,
         )
         records.extend(absent_records)
+        records.extend(restructure_records)
         records.extend(semantic_records)
         out[address] = ProvisionTimeline(address=address, versions=versions)
     return out, tuple(records)
@@ -175,6 +244,7 @@ def dedupe_finland_timelines(
 
 __all__ = [
     "FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID",
+    "FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID",
     "FI_TIMELINE_SAME_SOURCE_SEMANTIC_DEDUPE_RULE_ID",
     "SemanticTextKeyCache",
     "TimelineVersionDedupeRecord",

@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import pytest
 
-from lawvm.core.authority import BranchGraphEdge, LegalBranch
+from lawvm.core.branch_authority import BranchGraphEdge, LegalBranch
 from lawvm.core.branch_projection import (
     BranchImpactProjection,
     BranchImpactRow,
@@ -116,7 +116,7 @@ def test_branch_impact_row_requires_status_and_mapping_detail() -> None:
             branch_id="proposal:example:2026-1",
             edge_kind="would_amend",
             target_statute_id="base/1",
-            status="",
+            projection_status="",
         )
 
 
@@ -128,7 +128,7 @@ def test_branch_impact_projection_validates_envelope() -> None:
     )
 
     with pytest.raises(ValueError, match="status"):
-        BranchImpactProjection(branch=branch, status="")
+        BranchImpactProjection(branch=branch, projection_status="")
 
 
 def test_branch_impact_projection_rejects_row_branch_or_scenario_mismatch() -> None:

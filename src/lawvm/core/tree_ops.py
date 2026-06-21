@@ -33,9 +33,16 @@ import re
 from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple, TypeAlias
 
 from lawvm.core.ir import IRNode
-from lawvm.core.ir_helpers import _kind_str
-from lawvm.core.mutation_boundary import TreePath, TreePathStep
+from lawvm.core.ir_helpers import _kind_str, structural_subtree_hash
+from lawvm.core.mutation_boundary import (
+    TreePath,
+    TreePaths,
+    TreePathStep,
+    diff_ir_paths_identity_pruned,
+)
+from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
 
 # ---------------------------------------------------------------------------
@@ -718,6 +725,193 @@ def insert_sorted_required(
     if normalized_parent_path:
         resolve_required(tree, normalized_parent_path)
     return insert_sorted(tree, normalized_parent_path, content, sort_key_fn)
+
+
+# ---------------------------------------------------------------------------
+# Witnessed write primitives — receipt-by-construction
+# ---------------------------------------------------------------------------
+#
+# These wrap the pure primitives above so that performing a write YIELDS a
+# WriteReceipt computed from landed reality (the actual before/after diff +
+# structural subtree hashes) alongside the mutated tree. You cannot obtain the
+# mutated tree from a witnessed primitive without also obtaining the receipt —
+# the conservation account is a structural product of the write, not an
+# optional side-channel. The receipt records WHAT LANDED, never what was
+# intended; the included ObservedWriteAudit is the independent tree-diff check
+# that catches an incomplete or lying receipt (contract
+# notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4, §5).
+
+
+@dataclass(frozen=True, slots=True)
+class WriteOutcome:
+    """A mutated tree bundled with its conservation receipt and audit.
+
+    The pair is inseparable by construction: the witnessed primitives return
+    this, so no caller can take ``tree`` without also taking ``receipt`` and
+    ``audit``. ``audit.status == "violation"`` means the receipt did not cover
+    the observed mutation footprint — strict mode must block on it.
+    """
+
+    tree: IRNode
+    receipt: WriteReceipt
+    audit: ObservedWriteAudit
+
+
+_WriteAction = Literal["create", "replace", "remove", ""]
+
+
+def receipt_from_diff(
+    before: IRNode,
+    after: IRNode,
+    *,
+    op_id: str,
+    helper: str,
+    action: str,
+    bound_target_path: TreePath | None,
+    landed_primary_path: TreePath | None = None,
+    footprint_kind: _WriteAction = "",
+    recovery_rule_ids: tuple[str, ...] = (),
+    migration_rule_ids: tuple[str, ...] = (),
+    fallback_rule_ids: tuple[str, ...] = (),
+) -> WriteReceipt:
+    """Build a WriteReceipt from the ACTUAL before/after diff (landed reality).
+
+    The declared footprint and the pre/post structural hashes are derived from
+    the real identity-pruned tree diff, NEVER from the nominal target. This is
+    the by-construction guarantee: the receipt records exactly the paths that
+    landed. ``footprint_kind`` only chooses which footprint bucket
+    (created/replaced/removed) the observed paths are filed under; the paths
+    themselves are always the observed diff, so the declared footprint equals
+    the observed footprint and the independent audit is clean by construction.
+    ``bound_target_path`` / ``landed_primary_path`` are the nominal addresses,
+    kept for the bound→landed divergence check at lanes that have a real
+    resolver binding.
+    """
+    observed = diff_ir_paths_identity_pruned(before, after)
+    created: TreePaths = ()
+    replaced: TreePaths = ()
+    removed: TreePaths = ()
+    if footprint_kind == "create":
+        created = observed
+    elif footprint_kind == "remove":
+        removed = observed
+    else:
+        # Default and "replace": file every observed change as a replaced path.
+        replaced = observed
+    pre_hashes: Dict[str, str] = {}
+    post_hashes: Dict[str, str] = {}
+    for path in observed:
+        addr = receipt_address_string(path)
+        pre_hashes[addr] = structural_subtree_hash(resolve(before, path))
+        post_hashes[addr] = structural_subtree_hash(resolve(after, path))
+    landed = landed_primary_path
+    if landed is None:
+        landed = observed[0] if observed else bound_target_path
+    return WriteReceipt(
+        op_id=op_id,
+        helper=helper,
+        action=action,
+        bound_target_path=bound_target_path,
+        landed_primary_path=landed,
+        created_paths=created,
+        replaced_paths=replaced,
+        removed_paths=removed,
+        recovery_rule_ids=recovery_rule_ids,
+        migration_rule_ids=migration_rule_ids,
+        fallback_rule_ids=fallback_rule_ids,
+        pre_hashes=pre_hashes,
+        post_hashes=post_hashes,
+    )
+
+
+def _witnessed_outcome(
+    before: IRNode,
+    after: IRNode,
+    *,
+    op_id: str,
+    helper: str,
+    action: str,
+    bound_target_path: TreePath | None,
+    footprint_kind: _WriteAction,
+) -> WriteOutcome:
+    receipt = receipt_from_diff(
+        before,
+        after,
+        op_id=op_id,
+        helper=helper,
+        action=action,
+        bound_target_path=bound_target_path,
+        footprint_kind=footprint_kind,
+    )
+    audit = build_observed_write_audit(before, after, receipt)
+    return WriteOutcome(tree=after, receipt=receipt, audit=audit)
+
+
+def replace_at_witnessed(
+    tree: IRNode,
+    path: Sequence[PathStep],
+    content: IRNode,
+    *,
+    op_id: str = "",
+    helper: str = "tree_ops.replace_at_witnessed",
+) -> WriteOutcome:
+    """``replace_at`` that yields a receipt + audit by construction."""
+    target_path = _as_path(path)
+    after = replace_at(tree, target_path, content)
+    return _witnessed_outcome(
+        tree,
+        after,
+        op_id=op_id,
+        helper=helper,
+        action="replace",
+        bound_target_path=target_path or None,
+        footprint_kind="replace",
+    )
+
+
+def remove_at_witnessed(
+    tree: IRNode,
+    path: Sequence[PathStep],
+    *,
+    op_id: str = "",
+    helper: str = "tree_ops.remove_at_witnessed",
+) -> WriteOutcome:
+    """``remove_at`` that yields a receipt + audit by construction."""
+    target_path = _as_path(path)
+    after = remove_at(tree, target_path)
+    return _witnessed_outcome(
+        tree,
+        after,
+        op_id=op_id,
+        helper=helper,
+        action="remove",
+        bound_target_path=target_path or None,
+        footprint_kind="remove",
+    )
+
+
+def insert_sorted_witnessed(
+    tree: IRNode,
+    parent_path: Sequence[PathStep],
+    content: IRNode,
+    sort_key_fn: Callable[[Optional[str]], Tuple[int, str, int]] = _default_sort_key,
+    *,
+    op_id: str = "",
+    helper: str = "tree_ops.insert_sorted_witnessed",
+) -> WriteOutcome:
+    """``insert_sorted`` that yields a receipt + audit by construction."""
+    parent = _as_path(parent_path)
+    after = insert_sorted(tree, parent, content, sort_key_fn)
+    created = parent + ((_kind_str(content.kind), content.label or ""),)
+    return _witnessed_outcome(
+        tree,
+        after,
+        op_id=op_id,
+        helper=helper,
+        action="insert",
+        bound_target_path=created,
+        footprint_kind="create",
+    )
 
 
 def insert_after(

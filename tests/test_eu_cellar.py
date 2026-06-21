@@ -143,7 +143,7 @@ def test_fetch_manifest_records_failed_request_rows(monkeypatch, tmp_path) -> No
                 "source_lane_attempts": (
                     {
                         "lane": "eu_cellar_tree_xml",
-                        "status": "request_failed",
+                        "lane_attempt_status": "request_failed",
                         "locator": (
                             "http://publications.europa.eu/resource/celex/32016R0679"
                             "?language=eng&filter=true"

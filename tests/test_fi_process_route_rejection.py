@@ -107,7 +107,7 @@ def test_route_rejection_pending_amendment_carries_target_and_rule_metadata() ->
     assert signal.relation_kind == "modifies_effect"
     assert signal.source_statute == "2020/100"
     assert signal.target_statute == "2019/50"
-    assert signal.resolved is False
+    assert signal.target_resolution == "target_instrument_unresolved"
 
 
 def test_route_rejection_delegated_authority_has_stable_rule_metadata() -> None:
@@ -156,7 +156,7 @@ def test_route_rejection_meta_repeal_has_stable_rule_metadata() -> None:
     assert signal.relation_kind == "repeals_effect"
     assert signal.source_statute == "2020/100"
     assert signal.target_statute == "2010/123"
-    assert signal.resolved is True
+    assert signal.target_resolution == "target_instrument_resolved"
 
 
 def test_skipped_amendment_expiry_override_records_lifecycle_when_rewrite_fails(
@@ -178,7 +178,7 @@ def test_skipped_amendment_expiry_override_records_lifecycle_when_rewrite_fails(
     assert note.source_statute == "2020/100"
     assert note.target_statute == "2019/50"
     assert note.scope.kind == "section"
-    assert note.scope.labels == ("4 a",)
+    assert note.scope.labels == ("4a",)
     assert note.expiry == "2022-12-31"
 
 

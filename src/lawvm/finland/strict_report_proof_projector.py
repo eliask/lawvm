@@ -6,16 +6,16 @@ import hashlib
 import json
 from typing import Any, Mapping
 
-from lawvm.core.candidate_set_certificate import (
+from lawvm.core.candidate_set_coverage import (
     CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_PARTIAL,
     CANDIDATE_SET_UNAVAILABLE,
-    CandidateSetCertificate,
+    CandidateSetCoverage,
 )
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.ownership_closure import (
-    OwnershipClosureCertificate,
+    OwnershipClosureCoverage,
     ownership_closure_evidence_report,
 )
 from lawvm.core.potential_operation import (
@@ -48,7 +48,7 @@ from lawvm.finland.recovery_temporal_proof_projector import (
     temporal_resolution_evidence_rows_from_projection_rows,
 )
 
-def finland_strict_report_candidate_set_certificates(
+def finland_strict_report_candidate_set_coverages(
     payload: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     """Candidate-set certificates for visible strict-report accounting slices."""
@@ -73,7 +73,7 @@ def finland_strict_report_candidate_set_certificates(
         or _source_lineage_candidate_ids(source_lineage_witnesses)
     )
     return [
-        CandidateSetCertificate(
+        CandidateSetCoverage(
             scope_id=f"fi:{statute_id}:strict-report-visible-operation-rows",
             candidate_set_kind="fi_strict_report_visible_operation_rows",
             phase="strict_report_projection",
@@ -102,7 +102,7 @@ def finland_strict_report_candidate_set_certificates(
                 "safe_default": "do_not_treat_visible_operation_rows_as_complete_source_cue_coverage",
             },
         ).to_dict(),
-        CandidateSetCertificate(
+        CandidateSetCoverage(
             scope_id=f"fi:{statute_id}:strict-report-source-lineage-units",
             candidate_set_kind="fi_strict_report_source_lineage_units",
             phase="source_chain_elaboration",
@@ -129,7 +129,7 @@ def finland_strict_report_candidate_set_certificates(
                 "safe_default": "do_not_treat_lineage_witnesses_as_full_source_unit_enumeration",
             },
         ).to_dict(),
-        CandidateSetCertificate(
+        CandidateSetCoverage(
             scope_id=f"fi:{statute_id}:strict-report-source-unit-enumeration",
             candidate_set_kind="fi_strict_report_source_unit_enumeration",
             phase="source_unit_enumeration",
@@ -159,7 +159,7 @@ def finland_strict_report_candidate_set_certificates(
                 "safe_default": "do_not_treat_this_as_source_unit_closure_until_complete",
             },
         ).to_dict(),
-        CandidateSetCertificate(
+        CandidateSetCoverage(
             scope_id=f"fi:{statute_id}:strict-report-operation-cue-coverage",
             candidate_set_kind="fi_strict_report_operation_cue_coverage",
             phase="operation_cue_detection",
@@ -380,7 +380,7 @@ def finland_strict_report_candidate_set_execution_authorizations(
 ) -> list[dict[str, Any]]:
     """Replay-authorization boundary rows for strict-report candidate sets."""
 
-    rows = mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
+    rows = mapping_sequence(payload.get("strict_report_candidate_set_coverages"))
     authorizations: list[dict[str, Any]] = []
     for row in rows:
         candidate_set_kind = str(row.get("candidate_set_kind") or "unknown")
@@ -408,9 +408,9 @@ def finland_strict_report_candidate_set_execution_authorizations(
                 else "candidate_set_incomplete_requires_missing_coverage_proofs"
             ),
             required_proofs=required_proofs,
-            safe_default="do_not_treat_candidate_set_certificate_as_replay_authorization",
+            safe_default="do_not_treat_candidate_set_coverage_as_replay_authorization",
             forbidden_shortcuts=(
-                "candidate_set_certificate_as_replay_authorization",
+                "candidate_set_coverage_as_replay_authorization",
                 "visible_candidate_set_as_source_cue_exhaustiveness_proof",
                 "partial_candidate_set_as_target_uniqueness_proof",
             ),
@@ -510,7 +510,7 @@ def finland_strict_report_candidate_set_frontier_work_items(
     """
 
     statute_id = str(payload.get("statute_id") or "unknown")
-    rows = mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
+    rows = mapping_sequence(payload.get("strict_report_candidate_set_coverages"))
     frontier_items: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=1):
         completeness_status = str(row.get("completeness_status") or "")
@@ -586,7 +586,7 @@ def finland_strict_report_candidate_set_frontier_work_items(
     return frontier_items
 
 
-def finland_strict_report_ownership_closure_certificate(
+def finland_strict_report_ownership_closure_coverage(
     payload: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Build a passive ownership-closure certificate for strict-report facts.
@@ -607,11 +607,11 @@ def finland_strict_report_ownership_closure_certificate(
     failed_operation_frontier_items = mapping_sequence(payload.get("failed_operation_frontier_work_items"))
     potential_operations = mapping_sequence(payload.get("potential_operations"))
     source_unit_coverages = mapping_sequence(payload.get("source_unit_coverages"))
-    sparse_certificates = mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
+    sparse_certificates = mapping_sequence(payload.get("sparse_slot_candidate_set_coverages"))
     source_lineage_witnesses = mapping_sequence(payload.get("source_lineage_source_witnesses"))
     agreement_residuals = mapping_sequence(payload.get("agreement_residuals"))
     mutation_boundary_proofs = mapping_sequence(payload.get("mutation_boundary_proofs"))
-    candidate_set_certificates = mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
+    candidate_set_coverages = mapping_sequence(payload.get("strict_report_candidate_set_coverages"))
     candidate_set_authorizations = mapping_sequence(payload.get("strict_report_candidate_set_execution_authorizations"))
     candidate_set_frontier_items = mapping_sequence(payload.get("strict_report_candidate_set_frontier_work_items"))
     source_completeness = mapping_or_empty(payload.get("source_completeness"))
@@ -629,7 +629,7 @@ def finland_strict_report_ownership_closure_certificate(
     )
     incomplete_candidate_sets = tuple(
         row
-        for row in candidate_set_certificates
+        for row in candidate_set_coverages
         if str(row.get("completeness_status") or "") != "complete"
     )
     candidate_set_authorization_keys = {
@@ -639,7 +639,7 @@ def finland_strict_report_ownership_closure_certificate(
     }
     candidate_sets_without_authorization = tuple(
         row
-        for row in candidate_set_certificates
+        for row in candidate_set_coverages
         if _strict_report_candidate_set_authorization_key(row)
         not in candidate_set_authorization_keys
     )
@@ -659,7 +659,7 @@ def finland_strict_report_ownership_closure_certificate(
                 "source_unit_enumeration_closure_unverified",
                 "operation_candidate_coverage_unverified",
             )
-            if not candidate_set_certificates
+            if not candidate_set_coverages
             else ()
         ),
         *(
@@ -679,16 +679,16 @@ def finland_strict_report_ownership_closure_certificate(
     )
     unowned_counts = {
         "source_units_without_enumeration_certificate": 1
-        if not _has_candidate_set(candidate_set_certificates, "fi_strict_report_source_unit_enumeration")
+        if not _has_candidate_set(candidate_set_coverages, "fi_strict_report_source_unit_enumeration")
         else 0,
         "operation_cues_without_candidate_coverage_certificate": 1
-        if not _has_candidate_set(candidate_set_certificates, "fi_strict_report_operation_cue_coverage")
+        if not _has_candidate_set(candidate_set_coverages, "fi_strict_report_operation_cue_coverage")
         else 0,
-        "incomplete_candidate_set_certificates": len(incomplete_candidate_sets),
-        "candidate_set_certificates_without_execution_authorization": len(
+        "incomplete_candidate_set_coverages": len(incomplete_candidate_sets),
+        "candidate_set_coverages_without_execution_authorization": len(
             candidate_sets_without_authorization
         ),
-        "incomplete_candidate_set_certificates_without_frontier_work_item": len(
+        "incomplete_candidate_set_coverages_without_frontier_work_item": len(
             incomplete_candidate_sets_without_frontier
         ),
         "failed_ops_without_frontier_work_item": max(
@@ -701,13 +701,13 @@ def finland_strict_report_ownership_closure_certificate(
     closed = not failed_gates and all(count == 0 for count in unowned_counts.values())
     missing_required_certificates = (
         *_closure_certificate_requirements(
-            candidate_set_certificates,
+            candidate_set_coverages,
             candidate_set_kind="fi_strict_report_source_unit_enumeration",
             missing_certificate="source_unit_enumeration_certificate",
             incomplete_certificate="complete_source_unit_enumeration_certificate",
         ),
         *_closure_certificate_requirements(
-            candidate_set_certificates,
+            candidate_set_coverages,
             candidate_set_kind="fi_strict_report_operation_cue_coverage",
             missing_certificate="operation_candidate_coverage_certificate",
             incomplete_certificate="complete_operation_cue_exhaustiveness_certificate",
@@ -739,7 +739,7 @@ def finland_strict_report_ownership_closure_certificate(
         *(
             ()
             if _candidate_set_complete(
-                candidate_set_certificates,
+                candidate_set_coverages,
                 "fi_strict_report_source_unit_enumeration",
             )
             else ("source_unit_enumeration_closure",)
@@ -747,7 +747,7 @@ def finland_strict_report_ownership_closure_certificate(
         *(
             ()
             if _candidate_set_complete(
-                candidate_set_certificates,
+                candidate_set_coverages,
                 "fi_strict_report_operation_cue_coverage",
             )
             else ("operation_candidate_coverage_closure",)
@@ -769,11 +769,11 @@ def finland_strict_report_ownership_closure_certificate(
         "mutation_boundary_proofs": len(mutation_boundary_proofs),
         "temporal_resolution_evidence_rows": len(temporal_rows),
         "recovery_authorization_rows": len(recovery_authorizations),
-        "strict_report_candidate_set_certificates": len(candidate_set_certificates),
+        "strict_report_candidate_set_coverages": len(candidate_set_coverages),
         "strict_report_candidate_set_authorizations": len(candidate_set_authorizations),
         "strict_report_candidate_set_frontier_items": len(candidate_set_frontier_items),
     }
-    certificate = OwnershipClosureCertificate(
+    certificate = OwnershipClosureCoverage(
         certificate_id=_strict_report_id("ownership-closure", statute_id, payload),
         corpus_slice_id=f"fi:{statute_id}:strict-report-visible-surfaces",
         source_bundle_hash=_strict_report_digest(
@@ -825,7 +825,7 @@ def finland_strict_report_ownership_closure_certificate(
             "strict_report_candidate_sets": _strict_report_id(
                 "strict-report-candidate-sets",
                 statute_id,
-                candidate_set_certificates,
+                candidate_set_coverages,
             ),
             "strict_report_candidate_set_authorizations": _strict_report_id(
                 "strict-report-candidate-set-authorizations",
@@ -858,7 +858,7 @@ def finland_strict_report_ownership_closure_report(
 ) -> dict[str, Any]:
     """Wrap one strict-report closure certificate in a passive evidence report."""
 
-    cert = OwnershipClosureCertificate(
+    cert = OwnershipClosureCoverage(
         certificate_id=str(certificate.get("certificate_id") or ""),
         corpus_slice_id=str(certificate.get("corpus_slice_id") or ""),
         source_bundle_hash=str(certificate.get("source_bundle_hash") or ""),
@@ -1199,11 +1199,11 @@ def _strict_report_closure_graph_payload(payload: Mapping[str, Any]) -> Mapping[
         "failed_operation_frontier_work_items",
         "potential_operations",
         "source_unit_coverages",
-        "sparse_slot_candidate_set_certificates",
+        "sparse_slot_candidate_set_coverages",
         "source_lineage_source_witnesses",
         "agreement_residuals",
         "mutation_boundary_proofs",
-        "strict_report_candidate_set_certificates",
+        "strict_report_candidate_set_coverages",
         "strict_report_candidate_set_execution_authorizations",
         "strict_report_candidate_set_frontier_work_items",
         "strict_fail_reasons",
@@ -1213,10 +1213,10 @@ def _strict_report_closure_graph_payload(payload: Mapping[str, Any]) -> Mapping[
     return {key: payload.get(key) for key in keys if key in payload}
 
 __all__ = [
-    "finland_strict_report_candidate_set_certificates",
+    "finland_strict_report_candidate_set_coverages",
     "finland_strict_report_candidate_set_execution_authorizations",
     "finland_strict_report_candidate_set_frontier_work_items",
-    "finland_strict_report_ownership_closure_certificate",
+    "finland_strict_report_ownership_closure_coverage",
     "finland_strict_report_ownership_closure_report",
     "finland_strict_report_potential_operation_rows",
     "finland_strict_report_source_unit_coverage_rows",

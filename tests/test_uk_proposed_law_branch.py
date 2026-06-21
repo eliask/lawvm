@@ -6,7 +6,7 @@ from typing import Any, Mapping, cast
 
 import pytest
 
-from lawvm.core.authority import PROPOSAL_AUTHORITY
+from lawvm.core.branch_authority import PROPOSAL_AUTHORITY
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.tools import cli

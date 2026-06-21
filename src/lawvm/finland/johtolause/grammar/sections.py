@@ -385,6 +385,28 @@ def _chapter_ctx(scan: _Scan) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
+def _same_item_alakohta_continuation(scan: _Scan, subs: list["SubRef"]) -> Optional[list["SubRef"]]:
+    """Parse ``ja i alakohta`` as a sibling under the previous item target."""
+    parent = next((sr for sr in reversed(subs) if sr.item), None)
+    if parent is None:
+        return None
+
+    saved = scan.pos
+    labels = _letter_list(scan)
+    if not labels:
+        nums = _number_list(scan)
+        labels = [n + sf for n, sf in nums] if nums else None
+    if labels and (t := scan.peek()) and t.cat == "ALAKOHTA":
+        scan.advance()
+        return [
+            SubRef(momentti=parent.momentti, item=parent.item, subitem=label)
+            for label in labels
+        ]
+
+    scan.goto(saved)
+    return None
+
+
 def recognize_section_ref(scan: _Scan) -> Optional[ParsedSection]:
     """Recognize the suffix / renumber forms: [part][chapter] numlist § [sub].
 
@@ -452,7 +474,11 @@ def recognize_section_ref(scan: _Scan) -> Optional[ParsedSection]:
         saved2 = scan.pos
         if _sep(scan) is None:
             break
+        after_sep = scan.pos
         more = _sub_ref(scan)
+        if not more:
+            scan.goto(after_sep)
+            more = _same_item_alakohta_continuation(scan, subs)
         if more:
             subs.extend(more)
         else:
@@ -656,7 +682,13 @@ def _to_surface_sub_refs(subs: list[SubRef]) -> tuple[SurfaceSubRef, ...]:
         elif sr.facet == FacetKind.INTRO:
             special = "johd"
         out.append(
-            SurfaceSubRef(momentti=sr.momentti, item=sr.item, facet=sr.facet, special=special)
+            SurfaceSubRef(
+                momentti=sr.momentti,
+                item=sr.item,
+                subitem=sr.subitem,
+                facet=sr.facet,
+                special=special,
+            )
         )
     return tuple(out)
 

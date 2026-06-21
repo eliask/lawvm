@@ -23,6 +23,7 @@ from lawvm.finland.group_plan import (
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
+from lawvm.finland.sparse_tail_claims import build_sparse_omission_tail_claims
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
     group_shadow_pruning_foreign_scoped_descendant_section_targets,
@@ -111,6 +112,7 @@ def _scope_recovered_ops_for_shadow_pruning(
     *,
     inserted_chapter_labels: set[str],
     source_model: AmendmentSourceModel,
+    johto: str,
     strict_profile: Optional[StrictProfile],
 ) -> list[AmendmentOp]:
     recovered_ops: list[AmendmentOp] = []
@@ -126,6 +128,7 @@ def _scope_recovered_ops_for_shadow_pruning(
                 group_ops=group_ops,
                 inserted_chapter_labels=inserted_chapter_labels,
                 source_model=source_model,
+                johto=johto,
                 strict_profile=strict_profile,
             )
         )
@@ -168,12 +171,18 @@ def compile_amendment_ops(
         section_groups,
         inserted_chapter_labels=inserted_chapter_labels,
         source_model=source_model,
+        johto=johto,
         strict_profile=strict_profile,
+    )
+    sparse_omission_tail_claims = build_sparse_omission_tail_claims(
+        shadow_pruning_ops,
+        source_model,
     )
     resolved: list[ResolvedOp] = []
     all_findings: list[Finding] = []
 
     precomputed_lookups = snapshot_replay_lookups(cast(Any, master))
+    amendment_group_ops = tuple(op for ops in section_groups.values() for op in ops)
 
     for group_key, group_ops in section_groups.items():
         target_unit_kind_value = cast(TargetUnitKind, group_key.unit_kind.value)
@@ -237,12 +246,14 @@ def compile_amendment_ops(
                     foreign_scoped_descendant_section_targets=foreign_scoped_descendant_section_targets,
                     foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
                     foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
+                    sparse_omission_tail_claims=sparse_omission_tail_claims,
                     inserted_chapter_labels=inserted_chapter_labels,
                     source_model=source_model,
                     johto=johto,
                     profile=profile,
                     strict_profile=strict_profile,
                     lookups=precomputed_lookups,
+                    amendment_group_ops=amendment_group_ops,
                 ),
                 CompileGroupSinks(compiled_ops_out=compiled_ops_out),
             )
