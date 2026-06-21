@@ -36,6 +36,7 @@ class CompileGroupRequest:
     foreign_scoped_replace_section_target_scopes: frozenset[StandaloneSectionTarget] = frozenset()
     sparse_omission_tail_claims: tuple[SparseOmissionTailClaim, ...] = ()
     lookups: Optional[ReplayLookups] = None
+    amendment_group_ops: tuple[AmendmentOp, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

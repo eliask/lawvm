@@ -22,6 +22,7 @@ from lawvm.finland.sparse_tail_claims import (
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.source_normalize import normalize_source_ir
 from lawvm.finland.source_pathology import (
+    build_body_section_label_mismatch_payload_pathology,
     build_recodification_omission_only_section_shell_pathology,
 )
 
@@ -111,6 +112,96 @@ def collect_recodification_omission_only_section_shell_pathologies(
     )
 
 
+def _is_explicit_whole_section_replace_group(group_ops: list[AmendmentOp]) -> bool:
+    if len(group_ops) != 1:
+        return False
+    op = group_ops[0]
+    return (
+        op.op_type == "REPLACE"
+        and op.target_unit_kind == "section"
+        and op.target_paragraph is None
+        and not op.target_item
+        and not op.target_special
+        and not op.fallback_provenance
+        and not op.target_guessing_provenance_tags
+        and bool(op.witness_rule_id)
+    )
+
+
+def _single_conflicting_section_payload(
+    *,
+    source_model: AmendmentSourceModel,
+    amendment_group_ops: tuple[AmendmentOp, ...],
+    target_norm: str,
+    target_chapter: Optional[str],
+    target_part: Optional[str],
+) -> tuple[str, str, IRNode, IRNode | None] | None:
+    target_label = _norm_num_token(target_norm)
+    units = tuple(
+        unit
+        for unit in source_model.observed_body_inventory()
+        if unit.kind == "section"
+    )
+    if len(units) != 1:
+        return None
+    unit = units[0]
+    observed_label = _norm_num_token(unit.label)
+    if not observed_label or observed_label == target_label:
+        return None
+    if any(
+        _norm_num_token(op.target_section or "") == observed_label
+        for op in amendment_group_ops
+        if op.target_section
+    ):
+        return None
+    unit_chapter = _norm_num_token(unit.chapter_label) if unit.chapter_label else None
+    unit_part = _norm_num_token(unit.part_label) if unit.part_label else None
+    if target_chapter and unit_chapter and unit_chapter != target_chapter:
+        return None
+    if target_part and unit_part and unit_part != target_part:
+        return None
+
+    observed_payload = source_model.lookup_payload_ir(
+        "section",
+        observed_label,
+        unit_chapter,
+        unit_part,
+    )
+    if observed_payload.status != "unique" or observed_payload.payload_ir is None:
+        return None
+    if not irnode_to_text(observed_payload.payload_ir).strip():
+        return None
+    return observed_label, unit.unit_id, observed_payload.payload_ir, observed_payload.cross_heading_ir
+
+
+def _relabel_section_payload_root(payload: IRNode, target_norm: str) -> IRNode:
+    """Return payload with its root section label aligned to the explicit target."""
+    if payload.kind is not IRNodeKind.SECTION:
+        return payload
+    target_label = _norm_num_token(target_norm)
+    children: list[IRNode] = []
+    for child in payload.children:
+        if child.kind is IRNodeKind.NUM:
+            children.append(
+                IRNode(
+                    kind=child.kind,
+                    label=target_label,
+                    text=f"{target_label} §",
+                    attrs=child.attrs,
+                    children=child.children,
+                )
+            )
+            continue
+        children.append(child)
+    return IRNode(
+        kind=payload.kind,
+        label=target_label,
+        text=payload.text,
+        attrs=payload.attrs,
+        children=tuple(children),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class BuildGroupSurfaceRequest:
     """Typed inputs for compile-group payload surface extraction."""
@@ -122,6 +213,7 @@ class BuildGroupSurfaceRequest:
     target_part: Optional[str]
     source_model: AmendmentSourceModel
     sparse_omission_tail_claims: tuple[SparseOmissionTailClaim, ...] = ()
+    amendment_group_ops: tuple[AmendmentOp, ...] = ()
 
 
 def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupSurface]:
@@ -153,6 +245,39 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
     )
     muutos_ir = source_payload.payload_ir
     cross_ir = source_payload.cross_heading_ir
+    if (
+        muutos_ir is None
+        and target_unit_kind == "section"
+        and _is_explicit_whole_section_replace_group(group_ops)
+    ):
+        conflicting_payload = _single_conflicting_section_payload(
+            source_model=request.source_model,
+            amendment_group_ops=request.amendment_group_ops,
+            target_norm=target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+        )
+        if conflicting_payload is not None:
+            observed_label, source_unit_id, muutos_ir, cross_ir = conflicting_payload
+            muutos_ir = _relabel_section_payload_root(muutos_ir, target_norm)
+            pathology = build_body_section_label_mismatch_payload_pathology(
+                source_statute=source_statute,
+                target_unit_kind=cast(TargetUnitKind, target_unit_kind),
+                target_section=target_norm,
+                target_chapter=target_chapter or "",
+                observed_section=observed_label,
+                source_unit_id=source_unit_id,
+            )
+            surface_findings.append(
+                Finding(
+                    kind="ELAB.SOURCE_PATHOLOGY",
+                    role="observation",
+                    stage="_build_group_surface",
+                    detail=pathology.as_detail(),
+                    source_statute=source_statute,
+                    blocking=False,
+                )
+            )
     sparse_tail_claim = sparse_tail_claim_for_target(
         request.sparse_omission_tail_claims,
         target_norm=target_norm,

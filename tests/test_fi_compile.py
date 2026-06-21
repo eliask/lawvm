@@ -4923,6 +4923,142 @@ def test_strict_fail_reasons_from_finding_ledger_accept_semantic_collapse_move_r
     assert "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER" in reasons
 
 
+def test_group_surface_uses_single_mislabeled_body_section_for_explicit_replace() -> None:
+    from lawvm.finland.compile_group_surface import BuildGroupSurfaceRequest, build_group_surface
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="urn:test">
+          <body>
+            <hcontainer name="statuteProvisionsWrapper">
+              <section>
+                <num>57§</num>
+                <subsection>
+                  <content>
+                    <p>Tässä laissa tarkoitetaan pankilla Suomen Pankkia.</p>
+                  </content>
+                </subsection>
+              </section>
+            </hcontainer>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="explicit-54",
+        op_type="REPLACE",
+        target_section="54",
+        target_chapter="11",
+        target_unit_kind="section",
+        source_statute="1971/304",
+        witness_rule_id="fi.section_ref",
+    )
+
+    result = build_group_surface(
+        BuildGroupSurfaceRequest(
+            group_ops=[op],
+            target_unit_kind="section",
+            target_norm="54",
+            target_chapter="11",
+            target_part=None,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree, source_ref="1971/304"),
+        )
+    )
+
+    assert result.output.body_ir is not None
+    text = irnode_to_text(result.output.body_ir)
+    assert text.startswith("54 §")
+    assert "Tässä laissa tarkoitetaan pankilla Suomen Pankkia" in text
+    pathology = next(f for f in result.findings() if f.kind == "ELAB.SOURCE_PATHOLOGY")
+    assert pathology.detail["code"] == "BODY_SECTION_LABEL_MISMATCH_PAYLOAD"
+    assert pathology.detail["target_section"] == "54"
+    assert pathology.detail["observed_section"] == "57"
+
+
+def test_group_surface_does_not_reuse_payload_claimed_by_another_section_op() -> None:
+    from lawvm.finland.compile_group_surface import BuildGroupSurfaceRequest, build_group_surface
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="urn:test">
+          <body>
+            <hcontainer name="statuteProvisionsWrapper">
+              <section>
+                <num>6 §</num>
+                <heading>Viitemäärä</heading>
+                <subsection>
+                  <content>
+                    <p>Keskimääräisen maitotuotoksen laskennassa käytetään viitemäärää.</p>
+                  </content>
+                </subsection>
+              </section>
+            </hcontainer>
+          </body>
+        </act>
+        """
+    )
+    current = AmendmentOp(
+        op_id="explicit-2",
+        op_type="REPLACE",
+        target_section="2",
+        target_unit_kind="section",
+        source_statute="2000/464",
+        witness_rule_id="fi.section_ref",
+    )
+    claimed = AmendmentOp(
+        op_id="explicit-6",
+        op_type="REPLACE",
+        target_section="6",
+        target_unit_kind="section",
+        source_statute="2000/464",
+        witness_rule_id="fi.section_ref",
+    )
+
+    result = build_group_surface(
+        BuildGroupSurfaceRequest(
+            group_ops=[current],
+            amendment_group_ops=(current, claimed),
+            target_unit_kind="section",
+            target_norm="2",
+            target_chapter=None,
+            target_part=None,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree, source_ref="2000/464"),
+        )
+    )
+
+    assert result.output.body_ir is None
+    assert not any(
+        f.kind == "ELAB.SOURCE_PATHOLOGY"
+        and f.detail.get("code") == "BODY_SECTION_LABEL_MISMATCH_PAYLOAD"
+        for f in result.findings()
+    )
+
+
+def test_replay_xml_1932_244_updates_section_54_after_1971_304_label_mismatch() -> None:
+    from tests.corpus_pin_helpers import replay_xml_for_test
+
+    replay = replay_xml_for_test(
+        "1932/244",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sec = replay.materialized_state.find_section("54", "11")
+
+    assert sec is not None
+    text = irnode_to_text(sec)
+    assert "Tässä laissa tarkoitetaan pankilla Suomen Pankkia" in text
+    assert "Pankkina pidetään tämän lain mukaan" not in text
+    assert any(
+        finding.kind == "ELAB.SOURCE_PATHOLOGY"
+        and finding.detail.get("code") == "BODY_SECTION_LABEL_MISMATCH_PAYLOAD"
+        and finding.source_statute == "1971/304"
+        for finding in replay.findings
+    )
+
+
 def test_strict_fail_reasons_from_finding_ledger_detect_source_pathology_again() -> None:
     profile = default_finland_strict_profile()
     reasons = strict_fail_reasons_from_finding_ledger(

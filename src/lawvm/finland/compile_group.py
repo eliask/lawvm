@@ -88,6 +88,7 @@ def compile_group_typed(
             target_part=recovery.surface_target_part,
             source_model=source_model,
             sparse_omission_tail_claims=sparse_omission_tail_claims,
+            amendment_group_ops=request.amendment_group_ops,
         )
     )
 

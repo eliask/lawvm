@@ -182,6 +182,7 @@ def compile_amendment_ops(
     all_findings: list[Finding] = []
 
     precomputed_lookups = snapshot_replay_lookups(cast(Any, master))
+    amendment_group_ops = tuple(op for ops in section_groups.values() for op in ops)
 
     for group_key, group_ops in section_groups.items():
         target_unit_kind_value = cast(TargetUnitKind, group_key.unit_kind.value)
@@ -252,6 +253,7 @@ def compile_amendment_ops(
                     profile=profile,
                     strict_profile=strict_profile,
                     lookups=precomputed_lookups,
+                    amendment_group_ops=amendment_group_ops,
                 ),
                 CompileGroupSinks(compiled_ops_out=compiled_ops_out),
             )

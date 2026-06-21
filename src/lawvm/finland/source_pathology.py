@@ -79,6 +79,37 @@ def build_malformed_broad_replace_body_pathology(
     )
 
 
+def build_body_section_label_mismatch_payload_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    observed_section: str,
+    target_chapter: str = "",
+    source_unit_id: str = "",
+) -> SourcePathology:
+    """Build a typed source-pathology record for one-section payload label drift."""
+    return SourcePathology.from_scope(
+        code="BODY_SECTION_LABEL_MISMATCH_PAYLOAD",
+        message=(
+            "The operative formula explicitly targeted one section, but the only "
+            "source-body section payload carried a conflicting label; the payload "
+            "was bound to the explicit formula target and the label drift was "
+            "recorded as source pathology."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "observed_section": observed_section,
+            "source_unit_id": source_unit_id,
+            "diagnostic_reason": "single_body_section_label_mismatch",
+        },
+    )
+
+
 def build_empty_operative_body_pathology(
     *,
     source_statute: str,
