@@ -488,10 +488,10 @@ def _maybe_update_section_heading(
         target_item = dispatch_op.target_item
         target_special = dispatch_op.target_special
 
-    # Item-level amendment payloads often arrive in a whole-section XML shell
+    # Descendant-scoped payloads often arrive in a whole-section XML shell
     # whose heading is carried context, not source ownership for a heading
     # mutation. A separate heading target must own heading changes.
-    if target_item is not None:
+    if target_special != "otsikko":
         return result
 
     # Sparse subsection/item payloads often carry a whole-section shell with the

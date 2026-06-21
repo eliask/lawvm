@@ -644,6 +644,11 @@ def _apply_intent_section_level(
         and rop.effective_target_special is None
         and any(binding.op_type == "INSERT" for binding in rop.slot_assignment.sparse_slot_bindings)
     )
+    descendant_scoped_target = (
+        rop.effective_target_paragraph is not None
+        or rop.effective_target_item_label is not None
+        or rop.effective_target_special is not None
+    )
     migration_rebased_target_path: TreePath | None = None
     migration_rebase_source_path: TreePath | None = None
     if (
@@ -672,20 +677,22 @@ def _apply_intent_section_level(
                     )
                 sec_path = None
 
-    whole_result = _apply_whole_section_op(
-        state,
-        rop,
-        sec_path,
-        muutos_ir,
-        cross_ir,
-        profile,
-        ctx_label,
-        base_ir=base_ir,
-        replay_history_ops=replay_history_ops,
-        source_pathologies_out=source_pathologies_out,
-        mixed_sparse_insert=mixed_sparse_insert,
-        migration_ledger=migration_ledger,
-    )
+    whole_result = None
+    if not descendant_scoped_target:
+        whole_result = _apply_whole_section_op(
+            state,
+            rop,
+            sec_path,
+            muutos_ir,
+            cross_ir,
+            profile,
+            ctx_label,
+            base_ir=base_ir,
+            replay_history_ops=replay_history_ops,
+            source_pathologies_out=source_pathologies_out,
+            mixed_sparse_insert=mixed_sparse_insert,
+            migration_ledger=migration_ledger,
+        )
     if whole_result is not None:
         resolved_target_path = _resolved_target_path_for_rop_event(rop, sec_path)
         if migration_rebased_target_path is not None:

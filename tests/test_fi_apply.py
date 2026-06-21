@@ -13398,6 +13398,40 @@ class TestDispatchIntegration:
         text = " ".join(c.text or "" for c in sub.children)
         assert "replacement" in text
 
+    def test_insert_subsection_via_dispatch_does_not_rewrite_carried_section_heading(self):
+        sec = _sec(
+            "6",
+            IRNode(kind=IRNodeKind.HEADING, text="Tiedot tiivistelmässä"),
+            _sub("1", _content("existing first moment")),
+        )
+        state = _make_state(_body(sec))
+        sec_path = (("section", "6"),)
+        op = _op(op_type="INSERT", target_section="6", target_paragraph=2)
+        amend_sub = _sub("1", _content("inserted second moment"))
+        muutos_ir = _sec(
+            "6",
+            IRNode(kind=IRNodeKind.HEADING, text="Tiedot tiivistelmästä"),
+            amend_sub,
+        )
+
+        result = _apply_deterministic_subsection_op(
+            state,
+            op,
+            sec_path,
+            muutos_ir,
+            amend_sub,
+            None,
+            _LEGAL_PIT,
+            "6 § 2 mom insert",
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        heading = next(c for c in new_sec.children if c.kind == IRNodeKind.HEADING)
+        assert heading.text == "Tiedot tiivistelmässä"
+        assert [c.label for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION] == ["1", "2"]
+        assert "inserted second moment" in irnode_to_text(new_sec)
+
     def test_typed_chapter_scoped_heading_insert_does_not_fallback_to_root_section(self):
         sec = _sec("22", _sub("1", _content("Tämä laki tulee voimaan.")))
         chapter = IRNode(
@@ -14097,7 +14131,12 @@ def _make_insert_intent(section: str, payload: Any) -> "object":
     )
 
 
-def _make_rop(op: AmendmentOp, intent: Any, muutos_ir: Optional[IRNode] = None) -> ResolvedOp:
+def _make_rop(
+    op: AmendmentOp,
+    intent: Any,
+    muutos_ir: Optional[IRNode] = None,
+    slot_assignment: Optional[SubsectionSlotAssignmentResult] = None,
+) -> ResolvedOp:
     """Build a minimal ResolvedOp carrying a typed intent."""
     path_parts: tuple[tuple[str, str], ...] = ()
     if op.target_chapter:
@@ -14116,9 +14155,78 @@ def _make_rop(op: AmendmentOp, intent: Any, muutos_ir: Optional[IRNode] = None) 
         target_norm=op.target_section or "",
         target_chapter=op.target_chapter,
         target_address=LegalAddress(path=tuple(path_parts)),
+        slot_assignment=slot_assignment,
     )
     rop.intent = intent
     return rop
+
+
+def test_typed_insert_subsection_with_carried_section_shell_uses_descendant_dispatch() -> None:
+    from lawvm.core.canonical_intent import (
+        ExecutionContract,
+        Insert,
+        InsertOrder,
+        IntentKind,
+        NodeTarget,
+        OccupancyPolicy,
+    )
+    from lawvm.core.ir import LegalAddress
+
+    state = _make_state(
+        _body(
+            _sec(
+                "6",
+                IRNode(kind=IRNodeKind.HEADING, text="Tiedot tiivistelmässä"),
+                _sub("1", _content("existing first moment")),
+            )
+        )
+    )
+    payload = _sec(
+        "6",
+        IRNode(kind=IRNodeKind.HEADING, text="Tiedot tiivistelmästä"),
+        _sub("1", _content("inserted second moment")),
+    )
+    op = _op(op_type="INSERT", target_section="6", target_paragraph=2)
+    slot_map = SubsectionSlotMap()
+    mapped_payload = next(c for c in payload.children if c.kind == IRNodeKind.SUBSECTION)
+    slot_map.assign(op, mapped_payload)
+    slot_assignment = SubsectionSlotAssignmentResult(
+        subsec_map=slot_map,
+        sparse_slot_bindings=(),
+        used_subs=(0,),
+        unassigned_payload_slots=(),
+    )
+    intent = Insert(
+        kind=IntentKind.INSERT,
+        target=NodeTarget(address=LegalAddress(path=(("section", "6"), ("subsection", "2")))),
+        payload=cast(Any, payload),
+        contract=ExecutionContract(
+            occupancy=OccupancyPolicy.fresh_insert(),
+            insert_order=InsertOrder.SORTED_FAMILY,
+        ),
+    )
+    rop = _make_rop(op, intent, muutos_ir=payload, slot_assignment=slot_assignment)
+    ctx = _ctx(_body())
+    mutation_events: List[ApplyMutationEvent] = []
+
+    result = _apply_intent_section_level(
+        state,
+        rop,
+        "test",
+        ctx,
+        _LEGAL_PIT,
+        "6 § 2 mom insert",
+        payload,
+        mutation_events_out=mutation_events,
+    )
+
+    result = _modified(state, result)
+    new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+    heading = next(c for c in new_sec.children if c.kind == IRNodeKind.HEADING)
+    assert heading.text == "Tiedot tiivistelmässä"
+    assert [c.label for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION] == ["1", "2"]
+    assert "inserted second moment" in irnode_to_text(new_sec)
+    assert [event.helper for event in mutation_events] == ["_apply_deterministic_subsection_op"]
 
 
 def test_typed_repeal_section_emits_mutation_event() -> None:
