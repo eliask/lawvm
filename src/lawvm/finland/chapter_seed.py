@@ -260,6 +260,73 @@ def _strip_trailing_missing_span_notice(chapter: IRNode) -> IRNode:
     return _tops._with_children(chapter, chapter_children)
 
 
+def _numeric_labels_between(start_label: str, end_label: str) -> list[str]:
+    """Return integer chapter labels strictly between two numeric labels."""
+    if not (start_label.isdigit() and end_label.isdigit()):
+        return []
+    start = int(start_label)
+    end = int(end_label)
+    if end <= start + 1:
+        return []
+    return [str(num) for num in range(start + 1, end)]
+
+
+def _record_unseeded_implicit_chapter_gaps(
+    containers: list[tuple[list[tuple[str, str]], IRNode]],
+    seedable: dict[str, tuple[str, IRNode]],
+    diagnostics_out: Optional[list[ChapterSeedDiagnostic]],
+) -> None:
+    """Record source-incomplete implicit chapter gaps witnessed by amendment bodies.
+
+    Some abridged AKN bases silently jump across a chapter span with no omission
+    node and no textual ``Puuttuu luvut`` notice.  A later amendment body for a
+    chapter inside that numeric gap proves the base witness is abridged, but it
+    does not reconstruct sibling chapters in the same gap that no amendment body
+    carries.  Those unseeded siblings are source-limited, not replay misses.
+    """
+    if not seedable:
+        return
+    seen: set[str] = set()
+    for _path, container in containers:
+        chapters = [
+            child
+            for child in container.children
+            if child.kind is IRNodeKind.CHAPTER and child.label
+        ]
+        for left_chapter, right_chapter in zip(chapters, chapters[1:], strict=False):
+            if _chapter_missing_span_notice(left_chapter) is not None:
+                continue
+            left = left_chapter.label or ""
+            right = right_chapter.label or ""
+            gap_labels = _numeric_labels_between(left, right)
+            if not gap_labels:
+                continue
+            if not any(label in seedable for label in gap_labels):
+                continue
+            for label in gap_labels:
+                if label in seedable or label in seen:
+                    continue
+                seen.add(label)
+                _record_chapter_seed_diagnostic(
+                    diagnostics_out,
+                    rule_id="fi_chapter_seed_abridged_base_chapter_unreconstructable",
+                    family="source_pathology",
+                    phase="acquisition",
+                    reason=(
+                        "Abridged base witness jumps from chapter "
+                        f"{left} to chapter {right} without an omission marker; "
+                        "an amendment body restates at least one chapter inside "
+                        f"the implicit span, but no amendment body carries chapter {label}, "
+                        "so provisions the oracle places there cannot be reconstructed "
+                        "from replay inputs"
+                    ),
+                    source_statute="",
+                    chapter_label=label,
+                    blocking=False,
+                    quirks_disposition="record",
+                )
+
+
 def _chapters_in_gap(
     seedable: Dict[str, Tuple[str, IRNode]],
     prev_label: Optional[str],
@@ -402,6 +469,8 @@ def seed_missing_chapters(
             # Parse the chapter element into an IRNode
             ch_ir = xml_to_ir_node(ch_el, _fi_label_postprocessor)
             seedable[label] = (amendment_id, ch_ir)
+
+    _record_unseeded_implicit_chapter_gaps(containers, seedable, diagnostics_out)
 
     if not seedable:
         return ir, set()

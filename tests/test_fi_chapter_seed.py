@@ -433,7 +433,38 @@ def test_seed_missing_chapters_flags_unseedable_span_chapters() -> None:
     # The partially-seeded chapter's reason names the subset-restatement limit.
     by_label = {d.chapter_label: d for d in unreconstructable}
     assert "newly added section" in by_label["8"].reason
-    assert "no amendment body carries it" in by_label["7"].reason
+
+
+def test_seed_missing_chapters_flags_unseeded_implicit_numeric_gap_chapters() -> None:
+    tree = _body(
+        _chapter("3", _section("13")),
+        _chapter("8", _section("49")),
+    )
+    corpus = _FakeCorpus(
+        {
+            "1992/163": _chapter_xml("5", "32"),
+            "1994/328": _chapter_xml("6", "46"),
+        }
+    )
+    diagnostics: list[ChapterSeedDiagnostic] = []
+
+    _updated, seeded = seed_missing_chapters(
+        tree,
+        ["1992/163", "1994/328"],
+        cast(Any, corpus),
+        diagnostics_out=diagnostics,
+    )
+
+    assert seeded == set()
+    unreconstructable = [
+        diagnostic
+        for diagnostic in diagnostics
+        if diagnostic.rule_id == "fi_chapter_seed_abridged_base_chapter_unreconstructable"
+    ]
+    assert [diagnostic.chapter_label for diagnostic in unreconstructable] == ["4", "7"]
+    assert all("jumps from chapter 3 to chapter 8" in diagnostic.reason for diagnostic in unreconstructable)
+    by_label = {d.chapter_label: d for d in unreconstructable}
+    assert "no amendment body carries chapter 7" in by_label["7"].reason
 
 
 def test_seed_missing_chapters_records_source_scan_failures() -> None:

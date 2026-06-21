@@ -373,6 +373,25 @@ def test_classify_statute_1990_1295_abridged_chapter_missing_is_source_incomplet
         assert by_section[label]["diagnosis"] == "MISSING"
 
 
+def test_classify_statute_1982_182_implicit_abridged_chapter_gap_is_source_incomplete() -> None:
+    # 1982/182 base XML silently jumps from chapter 3 to chapter 8. Amendment
+    # bodies later restate chapters inside that gap, proving the base witness is
+    # abridged, but no amendment body carries chapter 4. Sections the oracle
+    # still places under chapter 4 cannot be reconstructed from replay inputs.
+    result = _classify_statute("1982/182", "official_consolidation")
+
+    assert result is not None
+
+    by_section = {item["section"]: item for item in result.section_results}
+    for label in (
+        "chapter:4/section:24",
+        "chapter:4/section:25",
+        "chapter:4/section:29",
+        "chapter:4/section:30",
+    ):
+        assert by_section[label]["diagnosis"] == "SOURCE_INCOMPLETE"
+
+
 def test_classify_statute_1994_1466_repealed_sections_are_editorial_not_missing() -> None:
     # 1994/1466 has many sections the oracle keeps only as a one-line repeal
     # tombstone ("N § on kumottu L:lla MMMM/NN"); the replay correctly
