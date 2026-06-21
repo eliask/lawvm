@@ -46,6 +46,7 @@ from urllib.parse import quote, urljoin
 
 from lawvm.core import tree_ops
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.ir import (
     IRNode,
     IRStatute,
@@ -3695,4 +3696,95 @@ def apply_se_ops(
         body=body,
         supplements=supplements,
         metadata=metadata,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Typed apply-result carrier (AGENTS.md §1.8 — replay conservation contract).
+#
+# The classic ``apply_se_ops`` returns only the mutated :class:`IRStatute` and
+# shuttles skipped-op evidence through an ``adjudications_out`` out-parameter.
+# The AGENTS.md §1.8 contract requires the apply path to return accepted AND
+# rejected carriers (``FilterResult`` shape) so a downstream consumer cannot
+# silently lose track of filtered ops. ``apply_se_ops_conserved`` is the
+# typed wrapper that mirrors ``apply_se_ops``'s behaviour and surfaces both
+# lanes via the contract-shape FilterResult[LegalOperation].
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SEApplyResult:
+    """Typed apply-resultconservation carrier (AGENTS.md §1.8).
+
+    Mirrors the FilterResult contract shape: every op in the input set is
+    either in ``applied_ops`` (its binding landed in the output statute) or
+    surfaces as a :class:`RejectedItem[LegalOperation]` witness in
+    ``skipped_items`` with a ``reason`` / ``reason_code`` and ``blocking``
+    disposition. The mutation footprint (the IRStatute returned by
+    :func:`apply_se_ops`) is the ``statute`` field.
+
+    The ``filter_result`` field is the canonical ``FilterResult`` projection
+    of the same accepted/rejected partition, so callers that already consume
+    the shared core type can reuse it without unpacking ``applied_ops`` /
+    ``skipped_items`` separately.
+    """
+
+    statute: IRStatute
+    filter_result: "FilterResult[LegalOperation]"
+
+    @property
+    def applied_ops(self) -> tuple["LegalOperation", ...]:
+        return self.filter_result.accepted_items
+
+    @property
+    def skipped_items(self) -> tuple["RejectedItem[LegalOperation]", ...]:
+        return self.filter_result.rejected_items
+
+
+def apply_se_ops_conserved(
+    statute: IRStatute,
+    ops: list[LegalOperation] | tuple["LegalOperation", ...],
+    *,
+    adjudications_out: list[CompileAdjudication] | None = None,
+) -> SEApplyResult:
+    """Apply a Sweden op set with a typed conservation receipt (§1.8).
+
+    Mirrors :func:`apply_se_ops` exactly (same replay semantics, same
+    ``adjudications_out`` side channel — when the caller passes one, both the
+    conserved typed result AND the existing descriptive adjudications are
+    populated). Returns a :class:`SEApplyResult` whose ``filter_result``
+    partitions every input op into accepted (its replay applied) or rejected
+    (its replay skipped, with a witness adjudication carrying the reason).
+    The contract is monotone: every input op ends up either accepted or
+    rejected, never silently dropped.
+    """
+    adjudications: list[CompileAdjudication] = list(adjudications_out or [])
+    applied = apply_se_ops(statute, list(ops), adjudications_out=adjudications)
+    skipped_op_ids = {a.op_id for a in adjudications if a.op_id}
+    accepted: list[LegalOperation] = []
+    rejected: list[RejectedItem[LegalOperation]] = []
+    for op in ops:
+        if op.op_id in skipped_op_ids:
+            matching = [a for a in adjudications if a.op_id == op.op_id]
+            reason = matching[0].message if matching else "Sweden replay op skipped without a typed reason."
+            reason_code = matching[0].kind if matching else "se_replay_skipped_unspecified"
+            rejected.append(
+                RejectedItem(
+                    item=op,
+                    reason=reason,
+                    reason_code=reason_code,
+                    blocking=False,
+                )
+            )
+        else:
+            accepted.append(op)
+    # If the caller passed their own adjudications_out, surface there too --
+    # the existing descriptive adjudications path is NOT replaced by the typed
+    # carrier; both share the same evidence ledger.
+    if adjudications_out is not None:
+        adjudications_out.clear()
+        adjudications_out.extend(adjudications)
+    return SEApplyResult(
+        statute=applied,
+        filter_result=FilterResult(accepted_items=tuple(accepted), rejected_items=tuple(rejected)),
     )

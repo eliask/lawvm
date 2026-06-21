@@ -110,6 +110,7 @@ from lawvm.sweden.grafter import (
 )
 from lawvm.sweden.grafter import (
     apply_se_ops,
+    apply_se_ops_conserved,
     canonicalize_se_table_section_text,
     extract_se_current_section_texts,
     materialize_se_statute_as_of,
@@ -3281,6 +3282,107 @@ def test_apply_se_ops_records_replay_failures_as_adjudications() -> None:
     assert adjudications[3].source_statute == "2026:999"
     assert adjudications[3].detail["target_kind"] == "article"
     assert replayed.metadata["applied_op_count"] == 0
+
+
+def test_apply_se_ops_conserved_returns_typed_filter_result_partition() -> None:
+    """Typed conservation receipt (AGENTS.md §1.8): every op ends up in exactly one lane.
+
+    The classic :func:`apply_se_ops` returns only the replayed IRStatute and
+    shuttles skipped-op evidence through an ``adjudications_out`` out-param;
+    a consumer that doesn't pass one silently loses track of which ops were
+    filtered. :func:`apply_se_ops_conserved` returns a typed
+    :class:`SEApplyResult` whose ``filter_result`` partitions every input op
+    into ``accepted_items`` (its binding landed in the output statute) or
+    ``rejected_items`` (:class:`RejectedItem[LegalOperation]` witness). Every
+    input op MUST land in exactly one lane — never silently dropped.
+    """
+    from lawvm.core.filter_result import FilterResult, RejectedItem
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "2 § Ursprunglig 2 §.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    statute = parse_se_statute(json.dumps(payload).encode("utf-8"))
+
+    ops: list[LegalOperation] = [
+        # op #1 — succeeds: REPLACE §2 with a valid section payload
+        LegalOperation(
+            op_id="replace-section-ok",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Ny lydelse."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        # op #2 — skipped: REPLACE §9, target not found in the statute body
+        LegalOperation(
+            op_id="replace-section-missing",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "9"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="9", text="Nytt innehåll."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        # op #3 — skipped: INSERT §2, target already exists (replay won't hijack)
+        LegalOperation(
+            op_id="insert-section-existing",
+            sequence=3,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Ny befintlig text."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    result = apply_se_ops_conserved(statute, ops)
+
+    # The returned statute IS the replayed IRStatute — §2's text was replaced.
+    assert "Ny lydelse" in result.statute.body.children[0].text
+
+    # Conservation contract: every input op appears in exactly one lane.
+    # No silent drops, no phantom duplicates.
+    assert len(result.applied_ops) == 1
+    assert result.applied_ops[0].op_id == "replace-section-ok"
+
+    assert len(result.skipped_items) == 2
+    rejected_by_id = {item.item.op_id: item for item in result.skipped_items}
+    assert "replace-section-missing" in rejected_by_id
+    assert "insert-section-existing" in rejected_by_id
+
+    # Each RejectedItem carries the typed witness: reason, reason_code, blocking.
+    for item in result.skipped_items:
+        assert isinstance(item, RejectedItem)
+        assert item.reason
+        assert item.reason_code
+        assert item.blocking is False  # SE skips are recorded, not blocking
+
+    # The filter_result is a contract FilterResult[LegalOperation]
+    assert isinstance(result.filter_result, FilterResult)
+    accepted_ids = {op.op_id for op in result.filter_result.accepted_items}
+    rejected_ids = {item.item.op_id for item in result.filter_result.rejected_items}
+    input_ids = {op.op_id for op in ops}
+    # Exactly the input — partition is total (no silent drops, no phantoms).
+    assert accepted_ids | rejected_ids == input_ids
+    assert accepted_ids & rejected_ids == set()  # disjoint
+
+    # Adjudications are also forwarded when the caller passes an out-param
+    # (the typed carrier does NOT replace the existing descriptive adjudication
+    # path; both share the same evidence ledger).
+    adjudications: list[CompileAdjudication] = []
+    result_with_adj = apply_se_ops_conserved(statute, ops, adjudications_out=adjudications)
+    assert len(adjudications) == 2  # the two skipped ops
+    assert result_with_adj.applied_ops[0].op_id == result.applied_ops[0].op_id
 
 
 def test_apply_se_ops_records_renumber_and_heading_skip_adjudications() -> None:
