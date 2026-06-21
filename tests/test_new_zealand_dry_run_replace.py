@@ -17,7 +17,7 @@ from lxml import etree
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPLACE_FAMILY,
     NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_TARGET_NOT_CANDIDATE,
-    NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+    NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_REFUSED_REPLACE_NO_AMENDING_WORK_RULE_ID,
     NZ_DRY_RUN_REFUSED_REPLACE_PAYLOAD_NOT_EXTRACTABLE_RULE_ID,
     NZ_DRY_RUN_REPLACE_AGREES_RULE_ID,
@@ -918,7 +918,9 @@ def test_replace_no_candidate_witness_refuses_whole_work() -> None:
     report = _run(_AFTER_XML_AGREES, (row,))
     assert report.proofs == ()
     assert len(report.refusals) == 1
-    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID
+    # The family-specific no-candidate rule (AGENTS §1.10 distinguishability): the
+    # receipt must name this family's witness reader, not the repeal lane's.
+    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID
     completeness = report.scope_completeness
     assert completeness is not None
     assert completeness.not_in_scope_reason_counts.get(NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPLACE_FAMILY) == 1

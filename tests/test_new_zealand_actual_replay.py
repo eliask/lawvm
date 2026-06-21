@@ -429,6 +429,76 @@ def test_actual_replay_canary_replays_transitions_against_archived_oracle() -> N
         assert transition.target_slice_agrees is True
 
 
+_COMPOSITE_BLOCK_INSERT_WORK_ID = "act_public_1956_47"
+_COMPOSITE_BLOCK_INSERT_DATE = "2011-05-01"
+# Witness: the 2011-05-01 transition of act_public_1956_47 declares 3
+# structural whole-provision REPLACEs + 1 INSERT in its change window, and the
+# insert is a block member whose oracle-adjacent predecessor is another
+# block insert this work makes. The dry-run co-inserted-block carveout
+# (status doc Limits #2b) admits the position; actual replay must re-confirm
+# with the SAME carveout (it copies the proof's co_inserted_block_labels
+# forward, never re-derives from a lossier oracle partition). Before this fix
+# actual replay reconfirmed WITHOUT the carveout and the transition fail-closed
+# with ``nz_actual_replay_refused_materialized_target_slice_diverges_from_oracle``.
+_COMPOSITE_BLOCK_INSERT_OP_IDS = frozenset(
+    {
+        f"nz:{_COMPOSITE_BLOCK_INSERT_WORK_ID}:nz-opw-1502:replace",
+        f"nz:{_COMPOSITE_BLOCK_INSERT_WORK_ID}:nz-opw-1503:replace",
+        f"nz:{_COMPOSITE_BLOCK_INSERT_WORK_ID}:nz-opw-1504:replace",
+        f"nz:{_COMPOSITE_BLOCK_INSERT_WORK_ID}:nz-opw-40:insert",
+    }
+)
+
+
+@pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
+def test_actual_replay_confirms_block_insert_composite_transition() -> None:
+    # Defence-in-depth regresssion: a dry-run-verified composite transition (3
+    # replace + 1 block-insert in one change window) must materialize cleanly
+    # and the materialized target slice must re-agree with the archived on-or-
+    # after oracle, NOT fail-closed on a false position mismatch.
+    from lawvm.new_zealand.actual_replay import (
+        NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_OP_NEIGHBOURS_PERTURBED_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_MATERIALIZED_SLICE_DIVERGES_RULE_ID,
+        build_archived_work_actual_replay,
+    )
+
+    report = build_archived_work_actual_replay(_REAL_DB, _COMPOSITE_BLOCK_INSERT_WORK_ID)
+    summary = report.summary()
+
+    # The 2011-05-01 transition must be present as a replayed transition (not a
+    # fail-closed refusal). It carries 3 replace + 1 insert ops and a target
+    # slice that fully agrees with the archived on-or-after oracle.
+    matching = [
+        t for t in report.transitions
+        if t.amendment_date_iso == _COMPOSITE_BLOCK_INSERT_DATE
+    ]
+    assert matching, "expected the 2011-05-01 transition to materialize (not be refused)"
+    assert len(matching) == 1
+    transition = matching[0]
+    assert transition.target_slice_node_count == len(_COMPOSITE_BLOCK_INSERT_OP_IDS)
+    assert transition.target_slice_agreements == transition.target_slice_node_count
+    assert transition.target_slice_agrees is True
+
+    # The diverge rule fired by the old buggy re-confirm path MUST be absent.
+    refusal_rules = {refusal.rule_id for refusal in report.refusals}
+    assert NZ_ACTUAL_REPLAY_REFUSED_MATERIALIZED_SLICE_DIVERGES_RULE_ID not in refusal_rules
+
+    # Sanity: the transition materialized at least one insert op. Other
+    # refusals carry over as the honest per-op fail-closed set and never as
+    # a materialized-slice-diverge.
+    other_blocking = refusal_rules - {
+        NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_OP_NEIGHBOURS_PERTURBED_RULE_ID,
+    }
+    assert other_blocking == set(), f"unexpected blocking refusal rules: {other_blocking}"
+    assert summary["all_slices_agree"] is True
+    assert summary["replay_claims"] is True
+
+
 def test_apply_verified_mutation_each_place_replaces_every_occurrence() -> None:
     # The promotion kernel materializes an each-place text substitution at EVERY
     # occurrence (not just the first), driven by the proof's ``text_each_place``

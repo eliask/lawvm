@@ -69,6 +69,15 @@ NZ_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID = "nz_dry_run_surface_not_replay_author
 
 NZ_DRY_RUN_REFUSED_PREFLIGHT_NOT_READY_RULE_ID = "nz_dry_run_refused_preflight_not_ready_for_dry_run"
 NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID = "nz_dry_run_refused_no_replayable_repeal_candidate"
+# Family-specific "no candidate row in this family's witness surface" refusals.
+# Kept as distinct diagnostics (rather than the historical reuse of the repeal
+# rule id for replace/insert) so the lane that produced the receipt is named, per
+# the AGENTS §1.10 distinguishability contract — a diagnostic that names the wrong
+# family's witness reader tells the wrong next-step and is indistinguishable from
+# a genuine repeal-lane miss. These are family-level refusals: a missing witness
+# row carries no per-op identity (only the work-id family-level receipt).
+NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID = "nz_dry_run_refused_no_replayable_replace_candidate"
+NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID = "nz_dry_run_refused_no_replayable_insert_candidate"
 NZ_DRY_RUN_REFUSED_TARGET_RECOVERED_RULE_ID = "nz_dry_run_refused_target_recovered_not_exact"
 NZ_DRY_RUN_REFUSED_SOURCE_CHANGE_ONLY_RULE_ID = "nz_dry_run_refused_source_change_only_payload"
 NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID = "nz_dry_run_refused_missing_before_after_version_window"
@@ -562,6 +571,13 @@ class NZMutationBoundaryProof:
     insert_anchor_digest_after: str = ""
     insert_candidate_subtree_digest: str = ""
     insert_oracle_subtree_digest: str = ""
+    # The co-inserted block-member labels the dry-run anchor-position arbiter
+    # admitted as oracle-confirmed position: members of the same (parent, kind)
+    # block this work also inserts and absent from the before tree. Carried so
+    # actual replay's slice re-confirm can apply the SAME carveout the dry-run
+    # verified under — never the proof-schema without it, which would falsely
+    # reject a verified block-insert (see ``NZ_DRY_RUN_INSERT_RESIDUAL_...``).
+    insert_co_inserted_block_labels: frozenset[str] = frozenset()
     # --- Auto-classified residual-divergence signal (residual proofs only). ----
     # ``divergence_class`` is the target-level fold of the per-node oracle-
     # divergence classifier: ``structural_nodeset`` / ``editorial`` /
@@ -663,6 +679,7 @@ class NZMutationBoundaryProof:
             "insert_anchor_digest_after": self.insert_anchor_digest_after,
             "insert_candidate_subtree_digest": self.insert_candidate_subtree_digest,
             "insert_oracle_subtree_digest": self.insert_oracle_subtree_digest,
+            "insert_co_inserted_block_labels": sorted(self.insert_co_inserted_block_labels),
             "divergence_class": self.divergence_class,
             "divergence_sub_families": list(self.divergence_sub_families),
             "non_commensurable_whole_node": self.non_commensurable_whole_node,
@@ -1976,7 +1993,7 @@ def build_dry_run_replace(
             refusals=(
                 NZDryRunRefusal(
                     op_id=work_id or "new_zealand",
-                    rule_id=NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+                    rule_id=NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID,
                     message="dry-run structural-replace refused because no candidate replaced/substituted witness was found",
                 ),
             ),
@@ -2493,7 +2510,7 @@ def build_dry_run_insert(
             refusals=(
                 NZDryRunRefusal(
                     op_id=work_id or "new_zealand",
-                    rule_id=NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+                    rule_id=NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
                     message="dry-run structural-insert refused because no candidate inserted/added witness was found",
                 ),
             ),
@@ -3248,6 +3265,7 @@ def _dry_run_one_insert(
         insert_anchor_digest_after=anchor_digest,
         insert_candidate_subtree_digest=candidate_subtree_digest,
         insert_oracle_subtree_digest=oracle_subtree_digest,
+        insert_co_inserted_block_labels=group_block_labels,
         temporal_window_unprovable=window_unprovable,
         temporal_window_unprovable_reason=window_reason,
         **divergence_fields,

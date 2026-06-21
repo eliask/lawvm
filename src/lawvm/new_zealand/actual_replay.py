@@ -23,10 +23,11 @@ transition into an actual materialized replay. It is deliberately small:
   the whole transition is refused with a distinct named diagnostic and NOTHING
   is materialized for it. There is never a silent skip and never a guessed
   fallback.
-* It starts with the two safest families only — direct repeal and direct
-  single-occurrence text substitution. Source-diff-only / recovered-carrier
-  candidates never reach this surface: the dry-run kernel refuses them upstream
-  (target-recovery, source-change-only) so their proofs are never ``agrees``.
+* Four families are promotable: direct repeal, direct single-occurrence text
+  substitution, structural whole-provision replace, and structural whole-provision
+  or nested insert. Source-diff-only / recovered-carrier candidates never reach
+  this surface: the dry-run kernel refuses them upstream (target-recovery,
+  source-change-only) so their proofs are never ``agrees``.
 * Its output is a SEPARATE artifact from the official NZ XML, with explicit
   candidate / replay / oracle labels. The archived on-or-after XML is the
   oracle the materialized replay is *checked against*; it is never treated as
@@ -51,7 +52,9 @@ from lawvm.core.agreement_residual import (
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dry_run import (
+    NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+    NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_REFUSED_PREFLIGHT_NOT_READY_RULE_ID,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
@@ -170,6 +173,8 @@ _FORBIDDEN_SHORTCUTS = (
 _FAMILY_LEVEL_DRY_RUN_REFUSALS = frozenset(
     {
         NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+        NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID,
+        NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
         NZ_DRY_RUN_REFUSED_PREFLIGHT_NOT_READY_RULE_ID,
     }
 )
@@ -1016,6 +1021,7 @@ def _reconfirm_slice_agreement(
             derived_anchor_label=anchor_label,
             derived_anchor_kind=anchor_kind,
             derived_direction=proof.insert_direction,
+            co_inserted_block_labels=proof.insert_co_inserted_block_labels,
         )
         return match
     raise ValueError(
@@ -1070,11 +1076,11 @@ def _apply_verified_mutation(node: NZSourceNode, proof: NZMutationBoundaryProof)
             proof.text_new_text,
             count=-1 if proof.text_each_place else 1,
         )
-    # Defence in depth: only the two promotable families reach here (others are
+    # Defence in depth: only the four promotable families reach here (others are
     # refused before they can be verified). Fail loud rather than guess a kernel.
     raise ValueError(
         f"actual replay has no materialization kernel for action {proof.action!r}; "
-        "only repeal and text_replace are promotable"
+        "only repeal, text_replace, replace, and insert are promotable"
     )
 
 
