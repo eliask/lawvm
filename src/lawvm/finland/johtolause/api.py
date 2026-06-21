@@ -53,7 +53,7 @@ FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY = FrontendCapability(
     frontend_id=FINLAND_JOHTOLAUSE_FRONTEND_ID,
     jurisdiction="fi",
     scope="clause_compiler_spine",
-    status="reference_clause_compiler",
+    capability_status="reference_clause_compiler",
     has_token_tape=True,
     has_annotation_overlay=True,
     has_surface_clause=True,
@@ -763,7 +763,7 @@ def _build_finland_clause_phase_surface(
     ) -> FrontendPhaseRow:
         return FrontendPhaseRow(
             phase=phase,
-            status=status,
+            phase_status=status,
             artifact_kind=artifact_kind,
             authority_role=authority_role,
             produced=produced,
@@ -914,7 +914,7 @@ def _build_finland_clause_phase_surface(
         agreement_claims=False,
         detail={
             "frontend_capability_id": FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.frontend_id,
-            "frontend_capability_status": FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.status,
+            "frontend_capability_status": FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.capability_status,
             "frontend_capability_scope": FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.scope,
             "parsed_ops_are_compatibility_output": True,
             "compatibility_artifacts": tuple(
@@ -988,7 +988,7 @@ def _build_finland_surface_parse_result(
         frontend_id=FINLAND_JOHTOLAUSE_FRONTEND_ID,
         jurisdiction="fi",
         source_hash=source_hash,
-        status=status,
+        parse_status=status,
         original_surface_kind=type(original_surface_clause).__name__,
         original_produced=True,
         enriched_surface_kind=type(enriched_surface_clause).__name__ if enriched_surface_clause is not None else "",

@@ -180,7 +180,7 @@ def test_verify_report_json_projects_issues_to_shared_contract(capsys) -> None:
     assert rc == 0
     assert data["jurisdiction"] == "fi"
     assert data["base_id"] == "2006/1299"
-    assert data["status"] == "ok"
+    assert data["verify_status"] == "ok"
     assert data["consistent"] is None
     assert data["issue_count"] == 1
     assert data["detail"] == {"stage": "observations", "mode": "legal_pit"}

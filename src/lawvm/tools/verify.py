@@ -639,7 +639,7 @@ def _verify_summary(
     return VerifySummary(
         jurisdiction="fi",
         base_id=sid,
-        status="failed" if errors else "ok",
+        verify_status="failed" if errors else "ok",
         consistent=None,
         issue_count=len(issues),
         issues=tuple(

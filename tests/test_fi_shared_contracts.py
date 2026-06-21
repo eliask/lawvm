@@ -916,7 +916,7 @@ def test_frontend_phase_surface_marks_compatibility_output_without_replay_claims
         phase_rows=(
             FrontendPhaseRow(
                 phase="clause_ast_lowering",
-                status="lowered",
+                phase_status="lowered",
                 artifact_kind="ClauseAST",
                 authority_role="primary_semantic_authority",
                 produced=True,
@@ -924,7 +924,7 @@ def test_frontend_phase_surface_marks_compatibility_output_without_replay_claims
             ),
             FrontendPhaseRow(
                 phase="parsed_ops_compat",
-                status="derived",
+                phase_status="derived",
                 artifact_kind="ParsedOp",
                 authority_role="compatibility_projection_not_authority",
                 produced=True,
@@ -957,7 +957,7 @@ def test_frontend_phase_surface_projects_to_evidence_report_without_authority() 
         phase_rows=(
             FrontendPhaseRow(
                 phase="clause_ast_lowering",
-                status="lowered",
+                phase_status="lowered",
                 artifact_kind="ClauseAST",
                 authority_role="primary_semantic_authority",
                 produced=True,
@@ -965,7 +965,7 @@ def test_frontend_phase_surface_projects_to_evidence_report_without_authority() 
             ),
             FrontendPhaseRow(
                 phase="parsed_ops_compat",
-                status="derived",
+                phase_status="derived",
                 artifact_kind="ParsedOp",
                 authority_role="compatibility_projection_not_authority",
                 produced=True,
@@ -1018,7 +1018,7 @@ def test_frontend_capability_declares_supported_waists_without_replay_authority(
         frontend_id="fi.demo",
         jurisdiction="fi",
         scope="clause_compiler_spine",
-        status="reference_clause_compiler",
+        capability_status="reference_clause_compiler",
         has_token_tape=True,
         has_surface_clause=True,
         has_clause_ast=True,
@@ -1058,7 +1058,7 @@ def test_frontend_capability_matrix_projects_multiple_declarations() -> None:
         frontend_id="fi.clause",
         jurisdiction="fi",
         scope="clause_compiler_spine",
-        status="reference_clause_compiler",
+        capability_status="reference_clause_compiler",
         has_token_tape=True,
         has_surface_clause=True,
         has_clause_ast=True,
@@ -1068,7 +1068,7 @@ def test_frontend_capability_matrix_projects_multiple_declarations() -> None:
         frontend_id="fi.manual_frontier",
         jurisdiction="fi",
         scope="manual_frontier",
-        status="diagnostic_frontier_surface",
+        capability_status="diagnostic_frontier_surface",
         has_agreement_surface=True,
         caveats=("capability_declaration_does_not_authorize_replay",),
     )
@@ -1181,7 +1181,7 @@ def test_surface_parse_result_records_original_enriched_resolved_waist() -> None
         frontend_id="fi.demo",
         jurisdiction="fi",
         source_hash="abc123",
-        status="enriched_resolved",
+        parse_status="enriched_resolved",
         original_surface_kind="SurfaceClause",
         original_produced=True,
         enriched_surface_kind="SurfaceClause",
@@ -1196,7 +1196,7 @@ def test_surface_parse_result_records_original_enriched_resolved_waist() -> None
 
     data = result.to_dict()
 
-    assert data["status"] == "enriched_resolved"
+    assert data["parse_status"] == "enriched_resolved"
     assert data["original_surface_kind"] == "SurfaceClause"
     assert data["enriched"] is True
     assert data["resolved_produced"] is True
@@ -3454,8 +3454,8 @@ def test_replay_summary_to_dict_is_json_friendly() -> None:
         applied_count=2,
         op_count=5,
         steps=(
-            ReplayAmendmentStep(source_id="2006-01-01-1", status="applied", op_count=2),
-            ReplayAmendmentStep(source_id="2007-01-01-2", status="skipped", op_count=0),
+            ReplayAmendmentStep(source_id="2006-01-01-1", amendment_status="applied", op_count=2),
+            ReplayAmendmentStep(source_id="2007-01-01-2", amendment_status="skipped", op_count=0),
         ),
         text_view=ReplayTextView(content="hello"),
     )

@@ -19,7 +19,7 @@ class ReplayAmendmentStep:
 
     source_id: str
     action: str = ""
-    status: str = ""
+    amendment_status: str = ""
     effective_date: str = ""
     op_count: int = 0
     detail: Mapping[str, Any] = field(default_factory=dict)
@@ -28,7 +28,7 @@ class ReplayAmendmentStep:
         _require_non_empty(self.source_id, "ReplayAmendmentStep.source_id")
         for field_name, value in (
             ("action", self.action),
-            ("status", self.status),
+            ("amendment_status", self.amendment_status),
             ("effective_date", self.effective_date),
         ):
             if not isinstance(value, str):
@@ -71,7 +71,7 @@ class ReplaySummary:
     base_id: str
     as_of: str
     title: str = ""
-    status: str = "ok"
+    replay_status: str = "ok"
     error: str | None = None
     oracle_id: str = ""
     source_id: str = ""
@@ -90,7 +90,7 @@ class ReplaySummary:
         _require_non_empty(self.jurisdiction, "ReplaySummary.jurisdiction")
         _require_non_empty(self.base_id, "ReplaySummary.base_id")
         _require_non_empty(self.as_of, "ReplaySummary.as_of")
-        _require_non_empty(self.status, "ReplaySummary.status")
+        _require_non_empty(self.replay_status, "ReplaySummary.replay_status")
         count_fields = (
             ("amendment_count", self.amendment_count),
             ("applied_count", self.applied_count),
