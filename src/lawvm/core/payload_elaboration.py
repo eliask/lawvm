@@ -58,7 +58,7 @@ class SlotBinding:
     binding_id: str
     source_slot_id: str
     target_slot_id: str
-    status: str
+    binding_status: str
     operation_id: str = ""
     binding_rule_id: str = ""
     detail: Mapping[str, Any] = field(default_factory=dict)
@@ -75,7 +75,7 @@ class SlotBinding:
             "target_slot_id",
             _required_string("SlotBinding.target_slot_id", self.target_slot_id),
         )
-        object.__setattr__(self, "status", _required_string("SlotBinding.status", self.status))
+        object.__setattr__(self, "binding_status", _required_string("SlotBinding.binding_status", self.binding_status))
         object.__setattr__(self, "operation_id", str(self.operation_id or ""))
         object.__setattr__(self, "binding_rule_id", str(self.binding_rule_id or ""))
         if not isinstance(self.detail, Mapping):
@@ -87,7 +87,7 @@ class SlotBinding:
             "binding_id": self.binding_id,
             "source_slot_id": self.source_slot_id,
             "target_slot_id": self.target_slot_id,
-            "status": self.status,
+            "binding_status": self.binding_status,
             "operation_id": self.operation_id,
             "binding_rule_id": self.binding_rule_id,
             "detail": _plain_jsonable(self.detail),
@@ -101,7 +101,7 @@ class SlotBindingReport:
     subject_id: str
     jurisdiction: str
     owner_phase: str
-    status: str
+    binding_status: str
     completeness_kind: str
     bindings: tuple[SlotBinding, ...] = ()
     unassigned_source_slots: tuple[str, ...] = ()
@@ -124,7 +124,7 @@ class SlotBindingReport:
             "owner_phase",
             _required_string("SlotBindingReport.owner_phase", self.owner_phase),
         )
-        object.__setattr__(self, "status", _required_string("SlotBindingReport.status", self.status))
+        object.__setattr__(self, "binding_status", _required_string("SlotBindingReport.binding_status", self.binding_status))
         object.__setattr__(
             self,
             "completeness_kind",
@@ -153,7 +153,7 @@ class SlotBindingReport:
             "subject_id": self.subject_id,
             "jurisdiction": self.jurisdiction,
             "owner_phase": self.owner_phase,
-            "status": self.status,
+            "binding_status": self.binding_status,
             "completeness_kind": self.completeness_kind,
             "binding_count": len(self.bindings),
             "bindings": [binding.to_dict() for binding in self.bindings],
@@ -175,7 +175,7 @@ class PayloadElaborationResult:
     result_id: str
     jurisdiction: str
     owner_phase: str
-    status: str
+    elaboration_status: str
     payload_surface_kind: str
     completeness_kind: str
     elaborated_op_count: int = 0
@@ -206,7 +206,7 @@ class PayloadElaborationResult:
             "owner_phase",
             _required_string("PayloadElaborationResult.owner_phase", self.owner_phase),
         )
-        object.__setattr__(self, "status", _required_string("PayloadElaborationResult.status", self.status))
+        object.__setattr__(self, "elaboration_status", _required_string("PayloadElaborationResult.elaboration_status", self.elaboration_status))
         object.__setattr__(
             self,
             "payload_surface_kind",
@@ -262,7 +262,7 @@ class PayloadElaborationResult:
             "result_id": self.result_id,
             "jurisdiction": self.jurisdiction,
             "owner_phase": self.owner_phase,
-            "status": self.status,
+            "elaboration_status": self.elaboration_status,
             "payload_surface_kind": self.payload_surface_kind,
             "completeness_kind": self.completeness_kind,
             "elaborated_op_count": self.elaborated_op_count,
@@ -364,7 +364,7 @@ def _payload_result_report_row(data: Mapping[str, Any]) -> dict[str, Any]:
         "surface": "payload_elaboration_result",
         "row_id": str(data.get("result_id") or ""),
         "subject_id": str(data.get("result_id") or ""),
-        "status": str(data.get("status") or "reported"),
+        "elaboration_status": str(data.get("elaboration_status") or "reported"),
         "jurisdiction": str(data.get("jurisdiction") or ""),
         "owner_phase": str(data.get("owner_phase") or ""),
         "payload_surface_kind": str(data.get("payload_surface_kind") or ""),
@@ -419,7 +419,7 @@ def _slot_report_rows(
         "surface": "slot_binding_report",
         "row_id": _slot_report_id(slot_report, data=data),
         "subject_id": str(slot_report.get("subject_id") or data.get("result_id") or ""),
-        "status": str(slot_report.get("status") or "reported"),
+        "binding_status": str(slot_report.get("binding_status") or "reported"),
         "jurisdiction": str(slot_report.get("jurisdiction") or data.get("jurisdiction") or ""),
         "owner_phase": str(slot_report.get("owner_phase") or data.get("owner_phase") or ""),
         "completeness_kind": str(slot_report.get("completeness_kind") or data.get("completeness_kind") or ""),
@@ -443,7 +443,7 @@ def _slot_binding_report_row(
         "surface": "slot_binding",
         "row_id": str(row.get("binding_id") or f"{data.get('result_id')}:slot:{index}"),
         "subject_id": str(data.get("result_id") or ""),
-        "status": str(row.get("status") or "reported"),
+        "binding_status": str(row.get("binding_status") or "reported"),
         "jurisdiction": str(data.get("jurisdiction") or ""),
         "owner_phase": str(data.get("owner_phase") or "payload_elaboration"),
         "source_slot_id": str(row.get("source_slot_id") or ""),
