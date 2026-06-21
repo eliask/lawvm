@@ -264,8 +264,10 @@ def _nodes_owned_by_scope(scope: ast.AST) -> Iterable[ast.AST]:
     taint a same-named local of the enclosing one). Comprehensions and class/if/
     for/with blocks ARE part of the scope and are descended into.
     """
-    def _push(seq: Iterable[ast.AST]) -> None:
+    def _push(seq: Iterable[object]) -> None:
         for child in seq:
+            if not isinstance(child, ast.AST):
+                continue
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
                 continue  # a nested scope; handled by its own _function_scopes pass
             stack.append(child)
