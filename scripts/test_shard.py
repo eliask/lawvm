@@ -223,6 +223,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "finland_replay_rules": (
         "test_fi_corrigendum_*.py",
         "test_fi_guard_liveness.py",
+        "test_filter_conservation_ratchet.py",
+        "test_scope_source_ratchet.py",
         "test_fi_post_process_repeal_consolidation.py",
         "test_fi_uncovered_dispose.py",
         "test_fi_uncovered_recovery_helpers.py",
@@ -371,6 +373,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_downgrade_witness.py",
         "test_downgrade_witness_lint.py",
         "test_dual_registration_completeness.py",
+        "test_authority_boundary_ratchet.py",
     ),
     "core_ir_contracts": (
         "test_fi_address_parse.py",
