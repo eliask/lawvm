@@ -86,6 +86,7 @@ from lawvm.finland.scope import (
     assign_chapter_scope_from_johtolause as _assign_chapter_scope_from_johtolause,
     assign_scope_from_renumber_destinations as _assign_scope_from_renumber_destinations,
 )
+from lawvm.finland.scoped_section_resolver import section_paths_for_label
 from lawvm.finland.metadata import (
     TemporaryProvisionExpiryOverride,
     _statute_issue_date,
@@ -1780,6 +1781,75 @@ def _infer_unique_live_section_chapter_scope(
     )
 
 
+def _direct_heading_text(node: IRNode | None) -> str:
+    if node is None:
+        return ""
+    for child in node.children:
+        if child.kind is IRNodeKind.HEADING:
+            return " ".join(irnode_to_text(child).split())
+    return ""
+
+
+def _infer_duplicate_section_scope_from_source_heading(
+    *,
+    op: AmendmentOp,
+    master: "ReplayState",
+    source_model: "AmendmentSourceModel | None",
+) -> tuple[str | None, str] | None:
+    """Bind an unscoped duplicate section label by unique source/live heading fit."""
+    if source_model is None:
+        return None
+    if (
+        op.target_unit_kind != "section"
+        or op.op_type not in {"REPLACE", "REPEAL"}
+        or not op.target_section
+        or op.target_chapter is not None
+        or op.target_paragraph is not None
+        or op.target_item is not None
+        or op.target_special is not None
+    ):
+        return None
+
+    section_norm = _norm_num_token(op.target_section)
+    source_payload = source_model.lookup_payload_ir(
+        "section",
+        section_norm,
+        target_part=op.target_part,
+    )
+    source_heading = _direct_heading_text(source_payload.payload_ir).casefold()
+    if not source_heading:
+        return None
+
+    candidates: list[tuple[float, str | None, str]] = []
+    for path in section_paths_for_label(
+        master.provision_index,
+        section_norm,
+        target_part=op.target_part,
+    ):
+        node = master.resolve(path)
+        if node is None:
+            continue
+        live_heading = _direct_heading_text(node).casefold()
+        if not live_heading:
+            continue
+        chapter = next((label for kind, label in path if kind == "chapter"), None)
+        if chapter is None:
+            continue
+        part = next((label for kind, label in path if kind == "part"), None)
+        candidates.append(
+            (SequenceMatcher(None, source_heading, live_heading).ratio(), part, chapter)
+        )
+
+    if len(candidates) < 2:
+        return None
+    ranked = sorted(candidates, key=lambda row: row[0], reverse=True)
+    best_score, best_part, best_chapter = ranked[0]
+    second_score = ranked[1][0]
+    if best_score < 0.60 or best_score - second_score < 0.15:
+        return None
+    return (best_part, best_chapter)
+
+
 def _renumbers_same_section_label_away(
     op: AmendmentOp,
     ops: List[AmendmentOp],
@@ -2325,6 +2395,7 @@ def _enrich_ops_from_amendment_tree(
     last_inferred_section_norm: str | None = None
     last_inferred_section_chapter: str | None = None
     last_inferred_section_part: str | None = None
+    heading_scope_source_model = source_model
     for op in ops:
         scoped_op = op
         body_scoped = False
@@ -2433,6 +2504,19 @@ def _enrich_ops_from_amendment_tree(
                             is not None
                             else "fi_letter_suffix_stem_host_chapter_scope"
                         )
+                if inferred_chapter is None:
+                    if heading_scope_source_model is None:
+                        from lawvm.finland.source_model import AmendmentSourceModel
+
+                        heading_scope_source_model = AmendmentSourceModel.from_tree(muutos_tree)
+                    heading_scope = _infer_duplicate_section_scope_from_source_heading(
+                        op=scoped_op,
+                        master=master,
+                        source_model=heading_scope_source_model,
+                    )
+                    if heading_scope is not None:
+                        inferred_part, inferred_chapter = heading_scope
+                        inferred_rule_id = "fi_duplicate_section_scope_from_source_heading"
                 if inferred_chapter is None:
                     recodification_vacated_scope = _infer_recodification_vacated_insert_scope(
                         op=scoped_op,

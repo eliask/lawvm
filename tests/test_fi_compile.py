@@ -3989,6 +3989,107 @@ def test_strip_impossible_chapter_scope_for_bare_body_section_op_keeps_real_chap
     assert patched is None
 
 
+def test_duplicate_section_scope_from_source_heading_binds_unique_live_duplicate() -> None:
+    import lawvm.finland.frontend_compile as frontend_compile
+    from lawvm.finland.ops import AmendmentOp
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="17",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="17 §"),
+                                IRNode(kind=IRNodeKind.HEADING, text="Unrelated costs"),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="17",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="17 §"),
+                                IRNode(kind=IRNodeKind.HEADING, text="Water administration tasks"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    source_tree = etree.fromstring(
+        """
+        <act>
+          <body>
+            <section>
+              <num>17 §</num>
+              <heading>Water administration task</heading>
+              <subsection><content><p>Payload.</p></content></subsection>
+            </section>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="replace-17",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="17",
+    )
+
+    assert frontend_compile._infer_duplicate_section_scope_from_source_heading(
+        op=op,
+        master=master,
+        source_model=AmendmentSourceModel.from_tree(source_tree),
+    ) == (None, "5")
+
+
+def test_normalize_and_compile_ops_1993_1390_1995_64_scopes_duplicate_17_by_heading() -> None:
+    from tests.corpus_pin_helpers import replay_xml_for_test
+
+    before = replay_xml_for_test("1993/1390", stop_before="1995/64", mode="official_consolidation", quiet=True)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("1995/64")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        amendment_id="1995/64",
+        source_title="Asetus jäteasetuksen muuttamisesta",
+        used_preamble_body_fallback=False,
+        parent_id="1993/1390",
+        strict_profile=None,
+    )
+
+    section17 = [
+        op
+        for op in phase2.output
+        if op.op_type == "REPLACE"
+        and op.target_unit_kind == "section"
+        and op.target_section == "17"
+        and op.target_paragraph is None
+    ]
+    assert len(section17) == 1
+    assert section17[0].target_chapter == "5"
+    assert section17[0].witness_rule_id == "fi_duplicate_section_scope_from_source_heading"
+
+
 def test_normalize_and_compile_ops_1996_627_does_not_leak_parent_title_chapter_scope() -> None:
     before = pinned_replay("1996/627", stop_before="2023/674", mode="official_consolidation", quiet=True)
     corpus = get_corpus_store()
