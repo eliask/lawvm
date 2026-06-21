@@ -443,6 +443,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_opaque_marker_boundary.py",
         "test_fi_text_amend.py",
         "test_tree_ops_ambiguity.py",
+        "test_tree_ops_stage.py",
     ),
     "core_compile_projection": (
         "test_fi_effect_lifecycle_projection.py",

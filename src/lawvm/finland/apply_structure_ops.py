@@ -1220,12 +1220,26 @@ def _apply_container_op(
             pre_hashes=pre_hashes,
             post_hashes=post_hashes,
         )
-        if not receipt.divergence_explained:
+        # Surface the landed footprint as the canonical StageResult[IRNode]
+        # account and DRIVE the divergence decision off its typed
+        # mutation-boundary residual (WAIST #3 — the structural-mutation account
+        # is type-carried, not a strict-mode-only bool read of the receipt). A
+        # blocking unowned_violation residual marks an unexplained bound→landed
+        # divergence; the carrying receipt is then routed to ``write_receipts_out``
+        # where the strict apply verdict (apply_resolved_op) consumes it and
+        # promotes it to a blocking REPLAY_APPLY_BOUNDARY finding. Reading the
+        # typed residual here is what makes the account, not the bare bool, the
+        # decision input at the apply boundary.
+        staged = _tops.structural_stage_result(post_ir, receipt)
+        if staged.has_blocking_residual:
+            blocking = next(r for r in staged.residuals if r.blocking)
             logger.warning(
-                "  %s → APPLY.WRITE_RECEIPT_UNEXPLAINED_DIVERGENCE: bound=%s landed=%s with no named rule",
+                "  %s → APPLY.WRITE_RECEIPT_UNEXPLAINED_DIVERGENCE: %s bound=%s landed=%s scope=%s",
                 ctx_label,
+                blocking.reason,
                 receipt.bound_target_path,
                 receipt.landed_primary_path,
+                blocking.scope,
             )
         write_receipts_out.append(receipt)
 
