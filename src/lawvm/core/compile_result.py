@@ -1157,7 +1157,7 @@ _PROFILE_GATES: dict[str, tuple[str, bool]] = {
         ("allows_attested_source_correction", True),
     "ELAB.TARGET_SELECTION_REQUIRED.RESOLVED_BY_ATTESTATION":
         ("allows_attested_target_selection", True),
-    "PARSE.JOHTOLAUSE_FAILED.RESOLVED_BY_ATTESTATION":
+    "PARSE.PREAMBLE_CLAUSE_FAILED.RESOLVED_BY_ATTESTATION":
         ("allows_attested_semantic_compilation", True),
     "ELAB.TARGET_AMBIGUITY_UNCLASSIFIED.RESOLVED_BY_ATTESTATION":
         ("allows_attested_ambiguity_adjudication", True),

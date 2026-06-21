@@ -1281,7 +1281,7 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "PARSE.EXTRACTION_FALLBACK": ("parse barrier; needs fixture", "2026-06-20"),
     "PARSE.FRONTEND_BLOCKING_DIAGNOSTIC": ("frontend phase barrier; needs fixture", "2026-06-20"),
     "PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA": ("frontend recovery; needs fixture", "2026-06-20"),
-    "PARSE.JOHTOLAUSE_FAILED.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    "PARSE.PREAMBLE_CLAUSE_FAILED.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
     "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER": ("frontend recovery; needs fixture", "2026-06-20"),
     "PARSE.STRICT_REJECTED_TARGET_GUESSING": ("strict-mode barrier; needs fixture", "2026-06-20"),
     "PARSE.TARGET_GUESSING": ("parse barrier; needs fixture", "2026-06-20"),

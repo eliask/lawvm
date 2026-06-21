@@ -1114,7 +1114,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "strict_fail", "evidence_kernel",
                 "target selection requirement resolved via provenance attestation",
                 ("ambiguity_resolution", "strictness"), role="barrier"),
-    FindingSpec("PARSE.JOHTOLAUSE_FAILED.RESOLVED_BY_ATTESTATION", "evidence_kernel",
+    FindingSpec("PARSE.PREAMBLE_CLAUSE_FAILED.RESOLVED_BY_ATTESTATION", "evidence_kernel",
                 "recovery", "strict_fail", "evidence_kernel",
                 "preamble (fi: johtolause) parse failure resolved via provenance attestation",
                 ("parse_witness", "strictness"), role="barrier"),
