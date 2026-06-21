@@ -6825,6 +6825,31 @@ def test_replay_xml_2017_320_section_19_definitions_do_not_emit_flattened_sublis
 
 
 @pytest.mark.slow
+def test_replay_xml_2017_320_2018_984_bare_section_replace_declares_observed_write() -> None:
+    replay = replay_xml_for_test("2017/320", mode="official_consolidation", quiet=True)
+
+    undeclared = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "APPLY.REPLAY_UNDECLARED_TREE_TOUCH"
+        and finding.detail.get("source_statute") == "2018/984"
+        and finding.detail.get("op_id") == "mixed_bare_section_replace_18_11"
+    ]
+    assert undeclared == []
+
+    receipt = next(
+        receipt
+        for receipt in replay.write_receipts
+        if receipt.op_id == "mixed_bare_section_replace_18_11"
+    )
+    assert receipt.landed_primary_path == (
+        ("hcontainer", ""),
+        ("part", "2"),
+        ("chapter", "3"),
+    )
+
+
+@pytest.mark.slow
 def test_replay_xml_2004_301_2023_389_does_not_duplicate_applicability_subsections() -> None:
     """2023/389 moment-scoped uncovered merges must not leave stale 72 a clauses.
 

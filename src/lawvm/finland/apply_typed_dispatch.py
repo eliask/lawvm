@@ -535,6 +535,38 @@ def _post_apply_section_path(result_state: "ReplayState", rop: ResolvedOp) -> Tr
     )
 
 
+def _event_path_explains_observed(candidate: TreePath | None, observed_paths: TreePaths) -> bool:
+    if candidate is None:
+        return not observed_paths
+    declared = (candidate,)
+    return all(
+        path_has_prefix(path, declared) or path_is_strict_prefix(path, candidate)
+        for path in observed_paths
+    )
+
+
+def _observed_single_write_event_path(
+    before_state: "ReplayState",
+    after_state: "ReplayState",
+    candidate: TreePath | None,
+) -> TreePath | None:
+    """Return the single observed landed path when the nominal event path is stale.
+
+    Section materialization can temporarily make a chapter/section lookup
+    ambiguous. If ``landed_section_event_path`` then falls back to an unrelated
+    same-numbered section, the mutation event under-declares the actual write.
+    For a single observed write, prefer the observed landed container/path.
+    """
+    if before_state.ir is after_state.ir:
+        return candidate
+    observed_paths = diff_ir_paths_identity_pruned(before_state.ir, after_state.ir)
+    if not observed_paths or _event_path_explains_observed(candidate, observed_paths):
+        return candidate
+    if len(observed_paths) == 1:
+        return observed_paths[0]
+    return candidate
+
+
 def _apply_intent_section_level(
     state: "ReplayState",
     rop: ResolvedOp,
@@ -701,6 +733,11 @@ def _apply_intent_section_level(
             post_path = _post_apply_section_path(whole_result, rop)
             if post_path is not None:
                 resolved_target_path = post_path
+            resolved_target_path = _observed_single_write_event_path(
+                state,
+                whole_result,
+                resolved_target_path,
+            )
         parent_path = _parent_path(resolved_target_path)
         rebind_paths = _whole_section_move_rebind_paths(state, rop, muutos_ir, sec_path)
         declared_allowances = _whole_section_move_rebind_allowances(state, rop, muutos_ir, sec_path)
@@ -726,7 +763,10 @@ def _apply_intent_section_level(
         elif rop.resolved_action_type == "REPLACE":
             if resolved_target_path is not None:
                 if sec_path is None:
-                    created_paths = (resolved_target_path,)
+                    if resolved_target_path[-1][0] == "section":
+                        created_paths = (resolved_target_path,)
+                    else:
+                        replaced_paths = (resolved_target_path,)
                 else:
                     replaced_paths = (resolved_target_path,)
                 if rebind_paths:
@@ -781,7 +821,19 @@ def _apply_intent_section_level(
                     post_path = _post_apply_section_path(mat_result, rop)
                     if post_path is not None:
                         resolved_target_path = post_path
+                    resolved_target_path = _observed_single_write_event_path(
+                        state,
+                        mat_result,
+                        resolved_target_path,
+                    )
             root_move_paths = _materialization_root_move_paths(state, rop, muutos_ir, sec_path)
+            materialized_created_paths: TreePaths = ()
+            materialized_replaced_paths: TreePaths = ()
+            if resolved_target_path is not None:
+                if resolved_target_path[-1][0] == "section":
+                    materialized_created_paths = (resolved_target_path,)
+                else:
+                    materialized_replaced_paths = (resolved_target_path,)
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
                 rop=rop,
@@ -790,7 +842,8 @@ def _apply_intent_section_level(
                 resolved_target_path=resolved_target_path,
                 parent_path=_parent_path(resolved_target_path),
                 declared_allowances=_materialization_root_move_allowances(state, rop, muutos_ir, sec_path),
-                created_paths=(resolved_target_path,) if resolved_target_path is not None else (),
+                created_paths=materialized_created_paths,
+                replaced_paths=materialized_replaced_paths,
                 removed_paths=root_move_paths,
                 used_fallback_tags=used_fallback_tags,
             )
