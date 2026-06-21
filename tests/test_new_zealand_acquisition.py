@@ -448,7 +448,7 @@ def test_nz_corpus_sync_http_error_records_source_lane_selection(tmp_path: Path)
     assert source_lane["source_lane_attempts"] == (
         {
             "lane": "nz_api_v0_version_detail",
-            "status": "http_500",
+            "lane_attempt_status": "http_500",
             "locator": version_url,
             "url": version_url,
             "content_type": "text/plain",

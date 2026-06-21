@@ -760,7 +760,7 @@ def _manifest_request_failure_row(
                 SourceLaneAttempt(
                     lane=f"eu_cellar_{notice.notice_type}_{notice.notice_format}",
                     locator=notice_url,
-                    status="request_failed",
+                    lane_attempt_status="request_failed",
                     detail={
                         "accept_header": accept_header,
                         "request_path": request_path,

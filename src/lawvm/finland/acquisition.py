@@ -123,7 +123,7 @@ def operative_lane_selection_evidence(result: AmendmentAcquisitionResult) -> dic
     attempts = tuple(
         SourceLaneAttempt(
             lane=candidate.lane,
-            status="selected" if candidate.selected else candidate.reason or "not_selected",
+            lane_attempt_status="selected" if candidate.selected else candidate.reason or "not_selected",
             detail={
                 "usable": candidate.usable,
                 "raw_text_length": len(candidate.raw_text),

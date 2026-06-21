@@ -130,7 +130,7 @@ def test_latest_xml_locator_selection_records_rejected_newer_source_lanes() -> N
         "no_source_lane_selected_candidate_rejected",
         "no_source_lane_selected_candidate_rejected",
     ]
-    assert [diag["source_lane_selection"]["source_lane_attempts"][0]["status"] for diag in selection.diagnostics] == [
+    assert [diag["source_lane_selection"]["source_lane_attempts"][0]["lane_attempt_status"] for diag in selection.diagnostics] == [
         "detail_json_invalid",
         "xml_not_archived",
     ]

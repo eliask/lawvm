@@ -591,13 +591,13 @@ def uk_affecting_act_current_shell_enacted_source_selected(
             SourceLaneAttempt(
                 lane="current_xml",
                 locator=current_locator,
-                status="rejected_non_substantive_shell",
+                lane_attempt_status="rejected_non_substantive_shell",
                 detail={"source_size": int(current_source_size), "text_preview": current_text_preview},
             ),
             SourceLaneAttempt(
                 lane="enacted_xml",
                 locator=enacted_locator,
-                status="selected",
+                lane_attempt_status="selected",
                 detail={"source_size": int(enacted_source_size), "text_preview": enacted_text_preview},
             ),
         ),
@@ -642,13 +642,13 @@ def uk_affecting_act_current_editorial_gap_enacted_source_selected(
             SourceLaneAttempt(
                 lane="current_xml",
                 locator=current_locator,
-                status="rejected_editorial_omission_gap",
+                lane_attempt_status="rejected_editorial_omission_gap",
                 detail={"source_size": int(current_source_size), "text_preview": current_text_preview},
             ),
             SourceLaneAttempt(
                 lane="enacted_xml",
                 locator=enacted_locator,
-                status="selected",
+                lane_attempt_status="selected",
                 detail={"source_size": int(enacted_source_size), "text_preview": enacted_text_preview},
             ),
         ),
@@ -692,13 +692,13 @@ def uk_affecting_act_missing_current_enacted_source_selected(
             SourceLaneAttempt(
                 lane="current_xml",
                 locator=current_locator,
-                status="missing_same_provision_source",
+                lane_attempt_status="missing_same_provision_source",
                 detail={"source_size": int(current_source_size)},
             ),
             SourceLaneAttempt(
                 lane="enacted_xml",
                 locator=enacted_locator,
-                status="selected",
+                lane_attempt_status="selected",
                 detail={"source_size": int(enacted_source_size), "text_preview": enacted_text_preview},
             ),
         ),
@@ -744,12 +744,12 @@ def uk_affecting_act_single_amendment_child_source_selected(
             SourceLaneAttempt(
                 lane="source_container_context",
                 locator=f"{locator}#{source_container_id}",
-                status="context_selected_not_payload",
+                lane_attempt_status="context_selected_not_payload",
             ),
             SourceLaneAttempt(
                 lane="single_amendment_child_payload",
                 locator=f"{locator}#{selected_child_id}",
-                status="selected",
+                lane_attempt_status="selected",
                 detail={
                     "selected_child_label": selected_child_label,
                     "selected_child_text_preview": selected_child_text_preview,
@@ -907,13 +907,13 @@ def uk_affecting_act_article_schedule_payload_source_extracted(
             SourceLaneAttempt(
                 lane="article_source_context",
                 locator=f"{locator}#{article_element_id}",
-                status="context_selected_not_payload",
+                lane_attempt_status="context_selected_not_payload",
                 detail={"article_ref": article_ref, "article_text_preview": article_text_preview},
             ),
             SourceLaneAttempt(
                 lane="attached_schedule_payload",
                 locator=f"{locator}#{schedule_element_id}",
-                status="selected",
+                lane_attempt_status="selected",
                 detail={"schedule_element_id": schedule_element_id},
             ),
         ),
@@ -1047,7 +1047,7 @@ def uk_affecting_act_enacted_schedule_table_row_source_extracted(
             SourceLaneAttempt(
                 lane="enacted_schedule_table_row_payload",
                 locator=selected_locator,
-                status="selected",
+                lane_attempt_status="selected",
                 detail={
                     "schedule_label": schedule_label,
                     "part_label": part_label,
@@ -1101,13 +1101,13 @@ def uk_affecting_act_compound_payload_only_block_amendment_selected(
             SourceLaneAttempt(
                 lane="numbered_source_row_context",
                 locator=f"{locator}#{source_row_id}",
-                status="context_selected_not_payload",
+                lane_attempt_status="context_selected_not_payload",
                 detail={"source_row_tag": source_row_tag, "source_row_label": source_row_label},
             ),
             SourceLaneAttempt(
                 lane="block_amendment_payload_container",
                 locator=f"{locator}#{source_row_id}/payload",
-                status="selected",
+                lane_attempt_status="selected",
                 detail={
                     "payload_container_tag": payload_container_tag,
                     "payload_text_preview": payload_text_preview,

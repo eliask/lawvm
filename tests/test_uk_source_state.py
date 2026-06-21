@@ -277,14 +277,14 @@ def test_article_schedule_payload_source_observation_is_typed_source_diagnostic(
     assert observation["source_lane_attempts"] == (
         {
             "lane": "article_source_context",
-            "status": "context_selected_not_payload",
+            "lane_attempt_status": "context_selected_not_payload",
             "locator": "https://www.legislation.gov.uk/uksi/2003/3076/data.xml#article-2",
             "article_ref": "art. 2",
             "article_text_preview": "For Part 1 of Schedule 3A, substitute the text set out in the Schedule.",
         },
         {
             "lane": "attached_schedule_payload",
-            "status": "selected",
+            "lane_attempt_status": "selected",
             "locator": "https://www.legislation.gov.uk/uksi/2003/3076/data.xml#schedule",
             "schedule_element_id": "schedule",
         },
@@ -342,7 +342,7 @@ def test_single_amendment_child_source_selection_uses_shared_source_lane_evidenc
     assert observation["selected_source_locator"] == (
         "https://www.legislation.gov.uk/uksi/2003/3076/enacted/data.xml#article-2-2"
     )
-    assert [attempt["status"] for attempt in observation["source_lane_attempts"]] == [
+    assert [attempt["lane_attempt_status"] for attempt in observation["source_lane_attempts"]] == [
         "context_selected_not_payload",
         "selected",
     ]
@@ -366,7 +366,7 @@ def test_enacted_schedule_table_row_source_selection_uses_shared_source_lane_evi
 
     assert observation["rule_id"] == "uk_affecting_act_enacted_schedule_table_row_source_extracted"
     assert observation["selected_source_lane"] == "enacted_schedule_table_row_payload"
-    assert observation["source_lane_attempts"][0]["status"] == "selected"
+    assert observation["source_lane_attempts"][0]["lane_attempt_status"] == "selected"
     assert observation["source_lane_attempts"][0]["target_label"] == "32b"
     assert observation["part_label"] == "4"
     assert observation["source_row_text"] == "32B NHS Health Scotland"
@@ -416,14 +416,14 @@ def test_current_shell_enacted_source_selection_uses_shared_source_lane_evidence
     assert observation["source_lane_attempts"] == (
         {
             "lane": "current_xml",
-            "status": "rejected_non_substantive_shell",
+            "lane_attempt_status": "rejected_non_substantive_shell",
             "locator": "current.xml",
             "source_size": 123,
             "text_preview": "...",
         },
         {
             "lane": "enacted_xml",
-            "status": "selected",
+            "lane_attempt_status": "selected",
             "locator": "enacted.xml",
             "source_size": 456,
             "text_preview": "substantive amendment text",
@@ -449,6 +449,6 @@ def test_missing_current_enacted_source_selection_uses_shared_source_lane_eviden
     assert observation["rule_id"] == "uk_affecting_act_missing_current_enacted_source_selected"
     assert observation["family"] == "source_lane_selection"
     assert observation["selected_source_lane"] == "enacted_xml"
-    assert observation["source_lane_attempts"][0]["status"] == "missing_same_provision_source"
-    assert observation["source_lane_attempts"][1]["status"] == "selected"
+    assert observation["source_lane_attempts"][0]["lane_attempt_status"] == "missing_same_provision_source"
+    assert observation["source_lane_attempts"][1]["lane_attempt_status"] == "selected"
     assert observation["blocking"] is False

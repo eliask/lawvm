@@ -401,7 +401,7 @@ def _ee_rt_xml_source_lane_detail(
             SourceLaneAttempt(
                 lane="riigi_teataja_xml",
                 locator=locator,
-                status=attempt_status,
+                lane_attempt_status=attempt_status,
             ),
         ),
         blocking=blocking,
