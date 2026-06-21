@@ -1185,6 +1185,13 @@ _TEMPORARY_SECTION_EXPIRY_RE = re.compile(
     rf"(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
     re.IGNORECASE,
 )
+_TEMPORARY_ADDED_SECTION_EXPIRY_RE = re.compile(
+    rf"(?:Lakiin|Asetukseen|Päätökseen)\s+väliaikaisesti\s+(?:lisätty|lisätyt)\s+"
+    rf"({_TEMPORARY_SECTION_CHARS}+?)\s*§\s+"
+    rf"(?:ovat|on)\s+voimassa\s+"
+    rf"(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
+    re.IGNORECASE,
+)
 _TEMPORARY_SUBSECTION_EXPIRY_RE = re.compile(
     rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§:n\s+"
     rf"\d+\s+momentti\s+(?:ovat|on)\s+voimassa\s+"
@@ -1199,6 +1206,12 @@ _TEMPORARY_CHAINED_SECTION_EXPIRY_RE = re.compile(
 )
 _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE = re.compile(
     rf"(?:ja|sekä)\s+({_TEMPORARY_SINGLE_SECTION_CHARS}+?)\s*§\s+(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
+    re.IGNORECASE,
+)
+_TEMPORARY_CHAINED_PROVISION_EXPIRY_TAIL_RE = re.compile(
+    r"(?:ja|sekä)\s+"
+    r"(?P<subject>[^.]+?§:n\s+[^.]+?)\s+"
+    r"(?P<datetail>\d{1,2}\s+päivään\s+[a-zäöå]+\s+\d{4})",
     re.IGNORECASE,
 )
 _TEMPORARY_SECTION_YEAR_END_EXPIRY_RE = re.compile(
@@ -1234,7 +1247,8 @@ _LEADING_CHAPTER_CONTEXT_RE = re.compile(r"^\s*(?:[\d\w]+\s+)*luvun\s+", re.IGNO
 # The ``päivästä`` start-of-range arm before the date is tolerated and skipped so
 # the bound is read from the terminal date, exactly as before.
 _TEMPORARY_EXPIRY_SENTENCE_RE = re.compile(
-    r"(?:Lain|Asetuksen|Päätöksen|Sen)\s+"
+    r"(?:(?:Lain|Asetuksen|Päätöksen|Sen)\s+|"
+    r"(?:Lakiin|Asetukseen|Päätökseen)\s+väliaikaisesti\s+(?:lisätty|lisätyt)\s+)"
     r"(?P<subject>[^.]+?)\s+"
     r"(?:ovat|on)\s+voimassa\s+"
     r"(?:\d{1,2}\s+päivästä\s+[a-zäöå]+\s+)?"
@@ -1275,15 +1289,11 @@ def _temporary_provision_expiry_overrides(
     overrides: list[TemporaryProvisionExpiryOverride] = []
     seen: set[tuple[str, str, int | None, str | None, str]] = set()
 
-    for sunset in _TEMPORARY_EXPIRY_SENTENCE_RE.finditer(text):
-        subject = sunset.group("subject")
+    def _append_subject_overrides(subject: str, expiry: dt.date) -> None:
         # DATE: delegate to the canonical temporal-family expiry-date extractor.
         # The anchor constrained the tail to ``NN päivään Kkkuuta YYYY`` so the
         # extractor reads exactly that bound (no earlier essive date can shadow).
-        iso_expiry = _extract_expiry_date_from_text(sunset.group("datetail"))
-        if not iso_expiry:
-            continue
-        expiry = dt.date.fromisoformat(iso_expiry)
+        #
         # SUBJECT: split into per-section ``N §:n …`` clauses (the facet scope),
         # then delegate the section + momentti structure of each clause to the
         # shared sub-ref grammar. Only ``§:n``-bodied facets are owned here
@@ -1333,9 +1343,69 @@ def _temporary_provision_expiry_overrides(
                         rule_id="fi_temporary_exact_provision_expiry",
                     )
                 )
+
+    for sunset in _TEMPORARY_EXPIRY_SENTENCE_RE.finditer(text):
+        iso_expiry = _extract_expiry_date_from_text(sunset.group("datetail"))
+        if not iso_expiry:
+            continue
+        expiry = dt.date.fromisoformat(iso_expiry)
+        _append_subject_overrides(sunset.group("subject"), expiry)
+        tail_start = sunset.end()
+        tail_end = text.find(".", tail_start)
+        if tail_end == -1:
+            tail_end = len(text)
+        sentence_tail = text[tail_start:tail_end]
+        for chained in _TEMPORARY_CHAINED_PROVISION_EXPIRY_TAIL_RE.finditer(sentence_tail):
+            chained_iso_expiry = _extract_expiry_date_from_text(chained.group("datetail"))
+            if not chained_iso_expiry:
+                continue
+            _append_subject_overrides(
+                chained.group("subject"),
+                dt.date.fromisoformat(chained_iso_expiry),
+            )
     result = tuple(overrides)
     _temporary_provision_expiry_cache[cache_key] = result
     return result
+
+
+def _whole_section_labels_from_body_ref_text(raw: str) -> Set[str]:
+    """Return only bare whole-section refs from a Finnish body-reference span."""
+    labels: Set[str] = set()
+    for target in parse_body_provision_tail(raw):
+        if (
+            target.subsection_num is None
+            and target.item_label is None
+            and target.subitem_label is None
+        ):
+            labels.add(target.section_label)
+    return labels
+
+
+def _source_section_direct_subsection_labels(
+    tree: "etree._Element",
+    section_label: str,
+) -> set[int]:
+    """Return direct subsection labels present in a source payload section."""
+    wanted = _norm_num_token(section_label)
+    if not wanted:
+        return set()
+    for section in tree.findall(".//{*}body//{*}section"):
+        if _norm_num_token(_section_label_for_source_ref(section)) != wanted:
+            continue
+        labels: set[int] = set()
+        for index, subsection in enumerate(section.findall("./{*}subsection"), start=1):
+            num_el = subsection.find("./{*}num")
+            if num_el is None:
+                labels.add(index)
+                continue
+            num_text = _normalize_fi_parse_text(
+                etree.tostring(num_el, method="text", encoding="unicode")
+            )
+            num_match = re.search(r"\d+", num_text)
+            if num_match is not None:
+                labels.add(int(num_match.group(0)))
+        return labels
+    return set()
 
 
 def _temporary_section_expiry_overrides(
@@ -1403,6 +1473,20 @@ def _temporary_section_expiry_overrides(
             if m.group(2):
                 labels |= _parse_section_list_labels(m.group(2))
             _append_override(target_mid_from_cited, labels, expiry)
+
+        for m_added in _TEMPORARY_ADDED_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
+            expiry = parse_fi_day_month_year(
+                m_added.group(2),
+                m_added.group(3),
+                m_added.group(4),
+            )
+            if expiry is None:
+                continue
+            _append_override(
+                target_mid_from_cited,
+                _whole_section_labels_from_body_ref_text(f"{m_added.group(1)} §"),
+                expiry,
+            )
 
         # Section/subsection-scoped sunset, e.g.
         # "Lain 51 §:n 5 momentti on voimassa 31 päivään joulukuuta 2023."
@@ -1479,6 +1563,34 @@ def _temporary_section_expiry_overrides(
             expiry = cessation_date - dt.timedelta(days=1)
             labels = _parse_section_list_labels(m_lakkaa.group(1))
             _append_override(source_statute_id, labels, expiry)
+
+    if target_mid_from_cited == source_statute_id:
+        whole_section_labels = {
+            label
+            for _target_mid, labels, _expiry in overrides
+            for label in labels
+        }
+        by_section: dict[str, dict[int, dt.date]] = {}
+        for override in _temporary_provision_expiry_overrides(
+            tree,
+            source_statute_id,
+            raw_text=raw_text,
+        ):
+            if override.subsection is None or override.special is not None:
+                continue
+            by_section.setdefault(override.section, {})[override.subsection] = override.expiry
+        for section, subsection_expiries in by_section.items():
+            if section in whole_section_labels:
+                continue
+            if re.fullmatch(r"\d+[a-zäöå]+", section) is None:
+                continue
+            source_subsections = _source_section_direct_subsection_labels(tree, section)
+            if source_subsections and source_subsections <= set(subsection_expiries):
+                _append_override(
+                    source_statute_id,
+                    {section},
+                    max(subsection_expiries[sub] for sub in source_subsections),
+                )
 
     title_el = tree.find(".//{*}docTitle")
     title_text = (

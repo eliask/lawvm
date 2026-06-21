@@ -238,6 +238,26 @@ def test_temporary_provision_expiry_overrides_do_not_cross_sentence_boundaries()
     }
 
 
+def test_temporary_provision_expiry_overrides_parse_added_mixed_clause() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2009. "
+        "Lakiin väliaikaisesti lisätty 43 a § on voimassa 31 päivään joulukuuta 2009. "
+        "Lakiin väliaikaisesti lisätyt 43 b §:n 1 momentti ja 43 c § ovat voimassa "
+        "31 päivään joulukuuta 2011 sekä 43 b §:n 2 ja 3 momentti "
+        "31 päivään joulukuuta 2013."
+    )
+
+    overrides = _temporary_provision_expiry_overrides(tree, "2008/1085")
+
+    got = {
+        (override.section, override.subsection, override.special, override.expiry.isoformat())
+        for override in overrides
+    }
+    assert ("43b", 1, None, "2011-12-31") in got
+    assert ("43b", 2, None, "2013-12-31") in got
+    assert ("43b", 3, None, "2013-12-31") in got
+
+
 def test_temporary_section_expiry_overrides_collect_multiple_clauses() -> None:
     tree = _tree(
         "Tämä laki tulee voimaan 1 päivänä toukokuuta 2020. "
@@ -249,6 +269,48 @@ def test_temporary_section_expiry_overrides_collect_multiple_clauses() -> None:
         ("2020/292", {"90a"}, dt.date(2020, 7, 31)),
         ("2020/292", {"99a"}, dt.date(2021, 5, 31)),
     )
+
+
+def test_temporary_section_expiry_overrides_parse_added_sections() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2009. "
+        "Lakiin väliaikaisesti lisätty 43 a § on voimassa 31 päivään joulukuuta 2009. "
+        "Lakiin väliaikaisesti lisätyt 43 b §:n 1 momentti ja 43 c § ovat voimassa "
+        "31 päivään joulukuuta 2011 sekä 43 b §:n 2 ja 3 momentti "
+        "31 päivään joulukuuta 2013."
+    )
+
+    overrides = _temporary_section_expiry_overrides(tree, "2008/1085")
+
+    assert ("2008/1085", {"43a"}, dt.date(2009, 12, 31)) in overrides
+    assert ("2008/1085", {"43c"}, dt.date(2011, 12, 31)) in overrides
+    assert all(labels != {"43b"} for _target_mid, labels, _expiry in overrides)
+
+
+def test_temporary_section_expiry_overrides_aggregate_added_section_subsections() -> None:
+    tree = etree.fromstring(
+        """
+        <act>
+          <body>
+            <section><num>43 b §</num>
+              <subsection><content><p>Ensimmäinen.</p></content></subsection>
+              <subsection><content><p>Toinen.</p></content></subsection>
+              <subsection><content><p>Kolmas.</p></content></subsection>
+            </section>
+          </body>
+          <hcontainer name="entryIntoForce"><content>
+            <p>Tämä laki tulee voimaan 1 päivänä tammikuuta 2009.</p>
+            <p>Lakiin väliaikaisesti lisätyt 43 b §:n 1 momentti ovat voimassa
+            31 päivään joulukuuta 2011 sekä 43 b §:n 2 ja 3 momentti
+            31 päivään joulukuuta 2013.</p>
+          </content></hcontainer>
+        </act>
+        """.encode()
+    )
+
+    overrides = _temporary_section_expiry_overrides(tree, "2008/1085")
+
+    assert ("2008/1085", {"43b"}, dt.date(2013, 12, 31)) in overrides
 
 
 def test_infer_expiry_date_from_temporary_payload_text_plural_tax_years() -> None:
