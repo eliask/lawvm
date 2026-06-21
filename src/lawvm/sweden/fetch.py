@@ -754,6 +754,33 @@ def _normalize_compare_text(text: str) -> str:
     return " ".join(normalized.split())
 
 
+# Editorial repeal-stub convention Svensk författningssamling carries vs the
+# section's true (absent) post-state after a repeal: the current-text oracle
+# keeps a one-line stub "Har upphävts genom <förordning|lag> (YEAR:N)." in
+# place of the repealed section text, while the replay-fold (correctly)
+# produces an empty/absent section because the section was structurally
+# repealed. Treating the two as a content mismatch inflates the
+# genuine-mismatch rate without telling LawVM anything about replay quality —
+# the auditor just sees a stub-vs-empty diff for a section the official
+# consolidation decided to keep as a tombstone.
+_SE_REPEAL_STUB_RE = re.compile(
+    r"^\s*Har\s+upphävts\s+genom\s+(?:förordning|lag)\s+\(\d{4}:\d+\)\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_oracle_repeal_stub(text: str) -> bool:
+    """True when ``text`` is an editorial repeal-stub (SFS tombstone convention).
+
+    The replay-fold produces an empty post-section because the section is
+    structurally repealed; the official oracle keeps the title set with a
+    one-line ``Har upphävts genom <förordning|lag> (YEAR:N).`` tombstone in
+    its place. Classify the diff as an editorial-stub match rather than a
+    genuine content disagreement.
+    """
+    return bool(_SE_REPEAL_STUB_RE.match(text or ""))
+
+
 def _classify_replay_row(replay_text: str, post_text: str) -> str:
     replay_editorial = " ".join(re.sub(r"\s*Förordning\s+\(\d{4}:\d+\)\.\s*$", "", replay_text.strip()).split())
     post_editorial = " ".join(re.sub(r"\s*Förordning\s+\(\d{4}:\d+\)\.\s*$", "", post_text.strip()).split())
@@ -3103,6 +3130,19 @@ def check_se_official_replay(
             post_canonical = canonicalize_se_table_section_text(current_raw_text)
             match = replay_canonical == post_canonical
             classification = "table_rows_match" if match else "table_layout_mismatch"
+        elif (
+            op.action is StructuralAction.REPEAL
+            and (replay_text or "").strip() == ""
+            and _is_oracle_repeal_stub(post_text)
+        ):
+            # Editorial repeal-stub convention: the replay correctly produced an
+            # empty post-section (the section was structurally repealed), but
+            # the current-text oracle preserves a "Har upphävts genom
+            # <förordning|lag> (YEAR:N)." tombstone. The two surfaces agree
+            # on the fact of repeal — this is an editorial-stub match, not a
+            # genuine content disagreement. Real witness: 2002:12 §17.
+            match = True
+            classification = "repeal_stub_oracle_only"
         else:
             match = _normalize_compare_text(replay_text) == _normalize_compare_text(post_text)
             classification = (
@@ -3173,7 +3213,7 @@ SE_GENUINE_CONTENT_MATCH_CLASSIFICATIONS = frozenset(
 # Classifications that the replay marks as match=True but which are editorial /
 # presentation drift, not genuine content equality.
 SE_EDITORIAL_MATCH_CLASSIFICATIONS = frozenset(
-    {"editorial_attribution_only", "inline_numbering_only"}
+    {"editorial_attribution_only", "inline_numbering_only", "repeal_stub_oracle_only"}
 )
 # Classifications that match=True only because replay fell back to the official
 # act text as an oracle (the current surface diverged or was missing).

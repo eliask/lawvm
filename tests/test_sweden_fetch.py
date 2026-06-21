@@ -25,6 +25,7 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.sweden.fetch import (
     _ArchiveLike,
+    _is_oracle_repeal_stub,
     _migrate_legacy_se_ir_blob,
     _normalize_compare_text,
     _se_oracle_version_relation,
@@ -3618,6 +3619,112 @@ def test_check_se_official_replay_matches_table_section() -> None:
 
     assert result["match_count"] == 1
     assert result["rows"][0]["classification"] == "table_rows_match"
+
+
+def test_check_se_official_replay_repeal_section_classifies_oracle_stub_as_match() -> None:
+    """Editorial repeal-stub vs empty replay is an editorial-stub match, not mismatch.
+
+    The SFS current-text oracle keeps a one-line tombstone "Har upphävts genom
+    <förordning|lag> (YEAR:N)." in place of a repealed section, while the
+    replay-fold (correctly) produces no section text after a structural
+    REPEAL — the section is gone. Classifying this as a ``content_mismatch``
+    inflates the genuine-mismatch rate without flagging any replay defect; the
+    two surfaces agree on the fact of the repeal.
+
+    Real-corpus witness: SFS 2002:12 §17 (the section was repealed by 2002:12
+    itself, and the official consolidation carries the section's title set
+    populated with the repeal-stub line). Previously misclassified as
+    ``content_mismatch`` (genuine_mismatch bucket); now classified as
+    ``repeal_stub_oracle_only`` (genuine_match bucket).
+
+    Regression (synthetic; mirrors the witness shape so it does not depend on
+    the archived corpus): the row MUST be match=True, classification MUST be
+    ``repeal_stub_oracle_only``, and the row's ``bucket_*`` aggregation MUST
+    count it as a genuine_match (not a genuine_mismatch).
+    """
+    base_payload = {
+        "beteckning": "2026:106",
+        "rubrik": "Förordning (2026:106) om något",
+        "ikraftDateTime": "2026-04-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2026-02-26T00:00:00",
+            "andringInford": None,
+            # The current-text oracle's post-amendment state carries a repeal-stub
+            # for §17 (SFS editorial convention: the section's tombstone line).
+            "forfattningstext": "17 § Har upphävts genom förordning (2026:286).\n",
+        },
+        "publiceradDateTime": "2026-03-23T12:17:32",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        # Repeal enacting clause — compiles to ``REPEAL section:17`` op, so the
+        # replay-fold produces no §17 in the post-materialized tree.
+        "enacting_clause": (
+            "Regeringen föreskriver att 17 § förordningen (2026:106) om något "
+            "skall upphöra att gälla."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["17"],
+        "provisions": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2026:106/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2026:286")
+
+    assert result["match_count"] == 1
+    section_row = result["rows"][0]
+    assert section_row["section"] == "17"
+    assert section_row["match"] is True
+    assert section_row["classification"] == "repeal_stub_oracle_only"
+    # The replay produced no text for §17 (the section was structurally repealed)
+    # and the oracle's post-state carries the "Har upphävts genom..." tombstone.
+    assert (section_row["replay_text"] or "").strip() == ""
+    assert "Har upphävts genom förordning (2026:286)" in section_row["post_text"]
+
+    # Aggregated bucket assignments honor the editorial-stub classification:
+    # it MUST count toward the genuine_match bucket, not the genuine_mismatch
+    # bucket.
+    summary = scan_se_official_replay_act(archive, "2026:286")
+    assert summary["bucket_genuine_match_count"] == 1
+    assert summary["bucket_genuine_mismatch_count"] == 0
+
+
+def test_check_se_official_replay_repeal_stub_pattern_is_narrow() -> None:
+    """The repeal-stub matcher MUST NOT fire on adjacent-but-different phrasings.
+
+    The classification is shape-specific: only the bare "Har upphävts genom
+    <förordning|lag> (YEAR:N)." tombstone matches. A neighboring phrasing that
+    mentions a repeal but carries additional sentence content (`Har upphävts
+    i sin helhet genom förordning (2026:286).` or a sentence describing the
+    repeal as part of a broader paragraph) does NOT match — those remain
+    content_mismatch candidates for the regular classifier to handle.
+    """
+    assert _is_oracle_repeal_stub("Har upphävts genom förordning (2026:286).") is True
+    assert _is_oracle_repeal_stub("Har upphävts genom lag (1999:353).") is True
+    assert _is_oracle_repeal_stub("Har upphävts genom förordning (2026:286)") is True  # tolerant of missing trailing period
+    # Phrasings that mention a repeal but are NOT the bare tombstone convention.
+    assert _is_oracle_repeal_stub("Har upphävts i sin helhet genom förordning (2026:286).") is False
+    assert _is_oracle_repeal_stub("Avsd Kristen paragrafen har upphävts genom förordning (2026:286).") is False
+    assert _is_oracle_repeal_stub("") is False
+    assert _is_oracle_repeal_stub("Vanlig lydelse som inte är en upphävst stub.") is False
 
 
 def test_check_se_official_replay_collects_skipped_replay_ops_as_adjudications() -> None:
