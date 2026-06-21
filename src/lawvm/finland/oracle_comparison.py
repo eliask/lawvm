@@ -325,6 +325,9 @@ _PROMULGATION_CLOSURE_TAILS = (
     "Tätä kaikki asianomaiset noudattakoot.",
     "Tätä kaikki asianomaiset noudattakoot",
 )
+_STANDALONE_SUBSECTION_ORDINAL_RE = re.compile(
+    r"(?:(?<=\s)|^)(?:[1-9]\d?)\.\s+(?=[A-ZÅÄÖ])"
+)
 
 
 def strip_legacy_roman_division_heading_prefix(text: str) -> str:
@@ -366,6 +369,20 @@ def strip_promulgation_closure_tail(text: str) -> str:
         if stripped.endswith(tail):
             return stripped[: -len(tail)].rstrip()
     return text
+
+
+def strip_standalone_subsection_ordinals(text: str) -> str:
+    """Drop Finlex-rendered subsection ordinal prefixes for comparison.
+
+    AKN structure already carries subsection identity. Some Finlex consolidated
+    text projections additionally include prose prefixes such as ``1.`` before
+    each subsection body, while replay renders the same subsection text without
+    that display ordinal. Callers must self-validate the stripped text against
+    replay before treating the difference as editorial.
+    """
+    if "." not in text:
+        return text
+    return _STANDALONE_SUBSECTION_ORDINAL_RE.sub("", text)
 
 
 def strip_non_substantive_source_projection_residue(text: str) -> str:

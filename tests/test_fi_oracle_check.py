@@ -199,6 +199,26 @@ def test_diagnose_treats_legacy_numbered_section_heading_as_editorial_convention
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_oracle_subsection_ordinals_as_editorial_convention() -> None:
+    # Real shape: 1992/1702 §5. Finlex projects subsection ordinals ("1.",
+    # "2.", "3.") into the paragraph text; LawVM carries subsection identity as
+    # structure and renders the same body without those display prefixes.
+    replay = (
+        "5 § Ajoneuvon, järjestelmän, osan tai teknisen yksikön valmistaja ja valmistajan edustaja "
+        "Ajoneuvon valmistajalla tarkoitetaan valmistajaa. "
+        "Ajoneuvovalmistajan edustajalla tarkoitetaan edustajaa. "
+        "Piensarjatyyppikatsastuksessa valmistajaksi rinnastetaan muuttaja."
+    )
+    oracle = (
+        "5 § Ajoneuvon, järjestelmän, osan tai teknisen yksikön valmistaja ja valmistajan edustaja "
+        "1. Ajoneuvon valmistajalla tarkoitetaan valmistajaa. "
+        "2. Ajoneuvovalmistajan edustajalla tarkoitetaan edustajaa. "
+        "3. Piensarjatyyppikatsastuksessa valmistajaksi rinnastetaan muuttaja."
+    )
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
 def test_diagnose_treats_promulgation_closure_as_editorial_convention() -> None:
     # Real shape: 1922/148 §26. The final promulgation closure is source-side
     # formula text, not consolidated provision body text.

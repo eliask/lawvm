@@ -59,6 +59,7 @@ from lawvm.finland.oracle_comparison import (
     strip_editorial_annotations,
     strip_kumottu_attribution,
     strip_non_substantive_source_projection_residue,
+    strip_standalone_subsection_ordinals,
     strip_temporary_residue_annotations,
 )
 from lawvm.tools.section_keys import (
@@ -518,6 +519,15 @@ def _diagnose(
             return (
                 "EDITORIAL_CONVENTION",
                 "replay carries non-substantive source heading/promulgation residue absent from oracle",
+            )
+
+    o_without_subsection_ordinals = strip_standalone_subsection_ordinals(o_text)
+    if o_without_subsection_ordinals != o_text:
+        c_o_ordinals = _clean(strip_editorial_annotations(o_without_subsection_ordinals))
+        if r_c and c_o_ordinals and Levenshtein.ratio(r_c, c_o_ordinals) >= 0.999:
+            return (
+                "EDITORIAL_CONVENTION",
+                "oracle carries subsection ordinal prefixes already represented by structure",
             )
 
     if not blame_op and high_overlap_unblamed_text_corruption(r_text, o_text):

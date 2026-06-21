@@ -40,6 +40,7 @@ from lawvm.finland.oracle_comparison import (
     strip_figure_legend_paragraphs,
     strip_kumottu_attribution,
     strip_non_substantive_source_projection_residue,
+    strip_standalone_subsection_ordinals,
     strip_temporary_residue_annotations,
 )
 from lawvm.tools.divergence_heuristics import blame_title_indicates_temporary_amendment
@@ -893,6 +894,12 @@ def _diagnose(
     if r_source_residue_stripped != r_text:
         c_r_residue = _clean(strip_editorial_annotations(r_source_residue_stripped))
         if c_r_residue and c_o and Levenshtein.ratio(c_r_residue, c_o) >= 0.999:
+            return "EDITORIAL_CONVENTION"
+
+    o_without_subsection_ordinals = strip_standalone_subsection_ordinals(o_text)
+    if o_without_subsection_ordinals != o_text:
+        c_o_ordinals = _clean(strip_editorial_annotations(o_without_subsection_ordinals))
+        if c_r and c_o_ordinals and Levenshtein.ratio(c_r, c_o_ordinals) >= 0.999:
             return "EDITORIAL_CONVENTION"
 
     if not blame_op and high_overlap_unblamed_text_corruption(r_text, o_text):

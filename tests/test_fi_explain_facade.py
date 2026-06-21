@@ -618,6 +618,26 @@ def test_explain_diagnose_treats_numbered_source_heading_residue_as_editorial() 
     assert "source heading/promulgation residue" in explanation
 
 
+def test_explain_diagnose_treats_oracle_subsection_ordinals_as_editorial() -> None:
+    replay = (
+        "5 § Ajoneuvon, järjestelmän, osan tai teknisen yksikön valmistaja ja valmistajan edustaja "
+        "Ajoneuvon valmistajalla tarkoitetaan valmistajaa. "
+        "Ajoneuvovalmistajan edustajalla tarkoitetaan edustajaa. "
+        "Piensarjatyyppikatsastuksessa valmistajaksi rinnastetaan muuttaja."
+    )
+    oracle = (
+        "5 § Ajoneuvon, järjestelmän, osan tai teknisen yksikön valmistaja ja valmistajan edustaja "
+        "1. Ajoneuvon valmistajalla tarkoitetaan valmistajaa. "
+        "2. Ajoneuvovalmistajan edustajalla tarkoitetaan edustajaa. "
+        "3. Piensarjatyyppikatsastuksessa valmistajaksi rinnastetaan muuttaja."
+    )
+
+    diagnosis, explanation = _diagnose(replay, oracle, None)
+
+    assert diagnosis == "EDITORIAL_CONVENTION"
+    assert "subsection ordinal prefixes" in explanation
+
+
 def test_explain_source_pathology_demotes_absent_subsection_target() -> None:
     master = SimpleNamespace(
         findings=(),
