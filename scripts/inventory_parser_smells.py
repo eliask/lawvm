@@ -17,6 +17,7 @@ un-waived semantic-plane count may never increase, only fall.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 from collections import Counter
@@ -156,10 +157,230 @@ _RE_REGEX_USE_SITE = re.compile(
 # file is the highest-severity class. An un-waived hit of this shape is reported
 # as ``legacy_escape_hatch`` so the rank-1/2/3/15 raw-text reach-back sites cannot
 # be added to without an explicit waiver naming a leak-ledger rank.
+#
+# Two ways a use-site touches raw text:
+#   (1) line-local: the call line itself names a raw-text accessor (the original,
+#       UNSOUND-on-its-own heuristic — kept for module-const calls like
+#       ``_X_RE.finditer(raw_text)`` and for calls inside comprehensions/exprs).
+#   (2) renamed-local (added here): the searched string is a local variable that
+#       was assigned — directly or transitively, within the same function — from a
+#       raw-text accessor expression. This is the common evading shape
+#       (``txt = op.source.raw_text`` then ``re.search(pat, txt)``). An AST taint
+#       pass (``raw_text_tainted_call_lines``) recovers these so the detector is
+#       sound-leaning: it prefers honest over-flagging (→ explicit waivers) to
+#       silently missing a reach-back.
+_RAW_TEXT_ACCESSOR_ATTRS = frozenset({"raw_text", "source_text", "description"})
+_RAW_TEXT_ACCESSOR_FUNCS = frozenset({"irnode_to_text"})
+# A bare variable literally named like a raw-text accessor token is itself a
+# raw-text string by convention (the line-local heuristic already flags any line
+# containing the word ``raw_text``). Seeding taint with such parameter/local names
+# recovers the inter-procedural case where a helper takes a ``raw_text`` parameter
+# (assigned from ``*.raw_text`` at the call site) and regexes a local derived from
+# it, e.g. ``merge.py`` ``_source_targets_plain_subsection(raw_text, ...)``.
+_RAW_TEXT_SEED_NAMES = frozenset({"raw_text", "source_text"})
 _RE_RAW_TEXT_ACCESSOR = re.compile(
     r"\b(raw_text|source_text|irnode_to_text|\.description)\b"
 )
 _RE_LEAK_LEDGER_RANK = re.compile(r"\brank[\s_-]*\d+\b", re.IGNORECASE)
+
+
+def _expr_is_raw_text_accessor(node: ast.AST, tainted: set[str]) -> bool:
+    """True if ``node`` is (or transitively contains) a raw-text reach-back source.
+
+    Conservative / sound-leaning: returns True if anywhere inside the expression
+    there is
+
+      * an attribute access ending in ``.raw_text`` / ``.source_text`` /
+        ``.description`` (``op.lo.source.raw_text``, ``x.description`` …),
+      * a call to ``irnode_to_text(...)`` (bare or dotted), or
+      * a reference to a name already known to be raw-text tainted in this scope.
+
+    Walking the whole sub-tree means ``a = (op.source.raw_text or "")``,
+    ``b = " ".join(raw.split())``, and ``c = f(tainted)`` all stay tainted — the
+    taint cannot be laundered through wrapping/normalization without the detector
+    seeing it.
+    """
+    for child in ast.walk(node):
+        if isinstance(child, ast.Attribute) and child.attr in _RAW_TEXT_ACCESSOR_ATTRS:
+            return True
+        if isinstance(child, ast.Call):
+            func = child.func
+            fname = ""
+            if isinstance(func, ast.Name):
+                fname = func.id
+            elif isinstance(func, ast.Attribute):
+                fname = func.attr
+            if fname in _RAW_TEXT_ACCESSOR_FUNCS:
+                return True
+        if isinstance(child, ast.Name) and child.id in tainted:
+            return True
+    return False
+
+
+def _assignment_targets(node: ast.AST) -> list[str]:
+    """Bare local names bound by an assignment / for / with / walrus target."""
+    names: list[str] = []
+    targets: list[ast.AST] = []
+    if isinstance(node, ast.Assign):
+        targets = list(node.targets)
+    elif isinstance(node, ast.AnnAssign) and node.value is not None:
+        targets = [node.target]
+    elif isinstance(node, (ast.AugAssign, ast.NamedExpr)):
+        targets = [node.target]
+    elif isinstance(node, (ast.For, ast.AsyncFor)):
+        targets = [node.target]
+    for target in targets:
+        for sub in ast.walk(target):
+            if isinstance(sub, ast.Name):
+                names.append(sub.id)
+    return names
+
+
+def _scope_value_nodes(node: ast.AST) -> list[tuple[list[str], ast.AST]]:
+    """(target-names, value-expr) pairs for binding statements in a scope body."""
+    pairs: list[tuple[list[str], ast.AST]] = []
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+        value = node.value
+        if value is not None:
+            pairs.append((_assignment_targets(node), value))
+    elif isinstance(node, (ast.For, ast.AsyncFor)):
+        # `for name in <iter>:` taints `name` if the iterable is raw text.
+        pairs.append((_assignment_targets(node), node.iter))
+    return pairs
+
+
+def _function_scopes(tree: ast.AST) -> Iterable[ast.AST]:
+    """Yield every function/module scope (each is a separate taint universe)."""
+    yield tree  # module scope catches top-level binds + bare expressions
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            yield node
+
+
+def _nodes_owned_by_scope(scope: ast.AST) -> Iterable[ast.AST]:
+    """Walk ``scope`` but do NOT descend into nested function/lambda bodies.
+
+    Each function is its own taint universe (a local in an inner function must not
+    taint a same-named local of the enclosing one). Comprehensions and class/if/
+    for/with blocks ARE part of the scope and are descended into.
+    """
+    def _push(seq: Iterable[ast.AST]) -> None:
+        for child in seq:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue  # a nested scope; handled by its own _function_scopes pass
+            stack.append(child)
+
+    stack: list[ast.AST] = []
+    body = getattr(scope, "body", None)
+    if isinstance(body, list):
+        _push(reversed(body))
+    elif body is not None:
+        _push([body])  # Lambda: single expression body
+    while stack:
+        node = stack.pop()
+        yield node
+        _push(ast.iter_child_nodes(node))
+
+
+def _scope_param_names(scope: ast.AST) -> set[str]:
+    """Parameter names of a function/lambda scope (empty for module scope)."""
+    args = getattr(scope, "args", None)
+    if not isinstance(args, ast.arguments):
+        return set()
+    names: set[str] = set()
+    for group in (args.posonlyargs, args.args, args.kwonlyargs):
+        names.update(a.arg for a in group)
+    if args.vararg is not None:
+        names.add(args.vararg.arg)
+    if args.kwarg is not None:
+        names.add(args.kwarg.arg)
+    return names
+
+
+def _call_arg_names(call: ast.Call) -> set[str]:
+    """Bare names that appear anywhere inside a call's positional/keyword args."""
+    names: set[str] = set()
+    for arg in list(call.args) + [kw.value for kw in call.keywords]:
+        for sub in ast.walk(arg):
+            if isinstance(sub, ast.Name):
+                names.add(sub.id)
+    return names
+
+
+def _is_regex_call(call: ast.Call) -> bool:
+    """True if ``call`` is a targeted regex use-site (``re.<m>(`` or ``*_RE.<m>(``).
+
+    Mirrors ``_RE_REGEX_USE_SITE``: receiver is the ``re`` module or an identifier
+    following the ``*_RE`` / ``*_PATTERN`` / ``*_re`` / ``*_pattern`` convention;
+    method is search / finditer / findall / match.
+    """
+    func = call.func
+    if not isinstance(func, ast.Attribute) or func.attr not in _REGEX_METHODS:
+        return False
+    receiver = func.value
+    if isinstance(receiver, ast.Name):
+        rid = receiver.id
+        if rid == "re":
+            return True
+        return bool(
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:_RE|_PATTERN|_re|_pattern)", rid)
+        )
+    return False
+
+
+def raw_text_tainted_call_lines(text: str) -> set[int]:
+    """Line numbers of regex use-sites whose searched string is raw-text tainted.
+
+    Per function/module scope, iterate a fixpoint over binding statements: a local
+    name becomes tainted when it is bound from an expression that is (or
+    transitively contains) a raw-text accessor or an already-tainted name. A regex
+    call whose arguments reference any tainted name is a renamed-local reach-back;
+    its ``lineno`` is returned.
+
+    The fixpoint (repeat to convergence) makes the analysis order-independent and
+    transitive across an arbitrary number of rename hops within a scope; treating
+    the whole expression as tainted (no kill on re-bind) is the conservative,
+    sound-leaning choice — we never untaint, so we never silently lose a hit.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        # Conservative: if we cannot parse, claim no AST-derived hits (the
+        # line-local heuristic still applies in the caller). Scanned source files
+        # are valid Python, so this only guards malformed test fixtures.
+        return set()
+
+    hit_lines: set[int] = set()
+    for scope in _function_scopes(tree):
+        owned = list(_nodes_owned_by_scope(scope))
+        bind_pairs: list[tuple[list[str], ast.AST]] = []
+        for stmt in owned:
+            bind_pairs.extend(_scope_value_nodes(stmt))
+
+        # Seed: parameters / locals literally named like a raw-text accessor token
+        # (``raw_text`` / ``source_text``) are raw-text strings by convention.
+        tainted: set[str] = set(_scope_param_names(scope) & _RAW_TEXT_SEED_NAMES)
+        for names, _value in bind_pairs:
+            tainted.update(n for n in names if n in _RAW_TEXT_SEED_NAMES)
+        changed = True
+        while changed:
+            changed = False
+            for names, value in bind_pairs:
+                if not names:
+                    continue
+                if any(n in tainted for n in names):
+                    continue
+                if _expr_is_raw_text_accessor(value, tainted):
+                    tainted.update(names)
+                    changed = True
+
+        if not tainted:
+            continue
+        for node in owned:
+            if isinstance(node, ast.Call) and _is_regex_call(node):
+                if _call_arg_names(node) & tainted:
+                    hit_lines.add(node.lineno)
+    return hit_lines
 
 
 _BOUND_COVERAGE_NEARBY_LINES = 80
@@ -703,6 +924,10 @@ def scan_file_regex_use_sites(
     ``legacy_escape_hatch`` shape.
     """
     lines = text.splitlines()
+    # AST taint pass: line numbers of regex use-sites whose searched string is a
+    # local transitively assigned from a raw-text accessor (the renamed-local
+    # reach-back the line-local heuristic alone misses, e.g. merge.py:2542/2544).
+    tainted_call_lines = raw_text_tainted_call_lines(text)
     records: list[dict[str, Any]] = []
     for idx, line in enumerate(lines):
         stripped = line.lstrip()
@@ -710,7 +935,9 @@ def scan_file_regex_use_sites(
             continue  # a commented-out call is not a live use-site
         for use_site in _RE_REGEX_USE_SITE.finditer(line):
             waived, waiver_category = _line_is_waived(lines, idx)
-            is_raw_text = bool(_RE_RAW_TEXT_ACCESSOR.search(line))
+            line_local_raw = bool(_RE_RAW_TEXT_ACCESSOR.search(line))
+            renamed_local_raw = (idx + 1) in tainted_call_lines
+            is_raw_text = line_local_raw or renamed_local_raw
             records.append(
                 {
                     "file": rel_path,
@@ -720,6 +947,13 @@ def scan_file_regex_use_sites(
                     "waived": waived,
                     "waiver_category": waiver_category,
                     "raw_text_accessor": is_raw_text,
+                    "raw_text_via": (
+                        "line_local"
+                        if line_local_raw
+                        else "renamed_local"
+                        if renamed_local_raw
+                        else ""
+                    ),
                     "snippet": stripped,
                 }
             )
