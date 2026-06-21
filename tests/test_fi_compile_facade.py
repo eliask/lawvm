@@ -1822,6 +1822,8 @@ class TestWireArtifact:
                 "expiry_convention": "exclusive_cutoff",
                 "temporal_event": None,
                 "executable": False,
+                "intended_lifecycle_kind": "",
+                "intended_relation_kind": "",
                 "detail": {"projection": "effect_relation_signal"},
             },
         )

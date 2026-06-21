@@ -259,9 +259,13 @@ def test_effect_lifecycle_carriers_reject_untyped_identity_fields() -> None:
         effect=effect,
         relation=relation,
         expires=" 2021-12-31 ",
+        intended_lifecycle_kind=_runtime_input(" change_effect_expiry "),
+        intended_relation_kind=_runtime_input(" extends_effect_expiry "),
     )
     assert lifecycle.lifecycle_event_id == "lifecycle:1"
     assert lifecycle.expires == "2021-12-31"
+    assert lifecycle.intended_lifecycle_kind == "change_effect_expiry"
+    assert lifecycle.intended_relation_kind == "extends_effect_expiry"
 
     with pytest.raises(TypeError, match="lifecycle_event_id"):
         EffectLifecycleEvent(
@@ -291,6 +295,26 @@ def test_effect_lifecycle_carriers_reject_untyped_identity_fields() -> None:
             relation=relation,
             expires="2021-12-31",
             executable=cast(Any, "true"),
+        )
+    with pytest.raises(ValueError, match="intended_lifecycle_kind"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:bad-intended-kind",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2021-12-31",
+            intended_lifecycle_kind=cast(Any, "not-a-lifecycle-kind"),
+        )
+    with pytest.raises(ValueError, match="intended_relation_kind"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:bad-intended-relation",
+            kind="change_effect_expiry",
+            source_provision=witness,
+            effect=effect,
+            relation=relation,
+            expires="2021-12-31",
+            intended_relation_kind=cast(Any, "not-a-relation-kind"),
         )
 
 
@@ -719,6 +743,8 @@ def test_effect_graph_wire_projects_typed_lifecycle_graph() -> None:
                     "group_id": "g:2024/1:op-1",
                 },
                 "executable": True,
+                "intended_lifecycle_kind": "",
+                "intended_relation_kind": "",
                 "detail": {"converted": ("projection",)},
             },
         ),

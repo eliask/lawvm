@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Literal, Mapping, Optional
+from typing import Any, Callable, Iterable, Literal, Mapping, Optional, get_args
 
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.ir import LegalAddress
@@ -37,6 +37,8 @@ EffectLifecycleEventKind = Literal[
     "repeal_effect",
     "unresolved_effect_target",
 ]
+EFFECT_RELATION_KINDS = frozenset(get_args(EffectRelationKind))
+EFFECT_LIFECYCLE_EVENT_KINDS = frozenset(get_args(EffectLifecycleEventKind))
 
 EffectExpiryConvention = Literal["exclusive_cutoff", "inclusive_valid_until"]
 EffectRelationTargetResolutionKind = Literal[
@@ -383,6 +385,8 @@ class EffectLifecycleEvent:
     expiry_convention: EffectExpiryConvention = "exclusive_cutoff"
     temporal_event: Optional[TemporalEvent] = None
     executable: bool = True
+    intended_lifecycle_kind: Optional[EffectLifecycleEventKind] = None
+    intended_relation_kind: Optional[EffectRelationKind] = None
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -420,11 +424,35 @@ class EffectLifecycleEvent:
             raise ValueError(f"unsupported EffectLifecycleEvent.expiry_convention: {self.expiry_convention!r}")
         if not isinstance(self.executable, bool):
             raise TypeError("EffectLifecycleEvent.executable must be a bool")
+        intended_lifecycle_kind = self.intended_lifecycle_kind
+        if intended_lifecycle_kind is not None:
+            intended_lifecycle_kind = _normalized_source_ref_string(
+                "EffectLifecycleEvent.intended_lifecycle_kind",
+                intended_lifecycle_kind,
+            )
+            if intended_lifecycle_kind not in EFFECT_LIFECYCLE_EVENT_KINDS:
+                raise ValueError(
+                    "unsupported EffectLifecycleEvent.intended_lifecycle_kind: "
+                    f"{self.intended_lifecycle_kind!r}"
+                )
+        intended_relation_kind = self.intended_relation_kind
+        if intended_relation_kind is not None:
+            intended_relation_kind = _normalized_source_ref_string(
+                "EffectLifecycleEvent.intended_relation_kind",
+                intended_relation_kind,
+            )
+            if intended_relation_kind not in EFFECT_RELATION_KINDS:
+                raise ValueError(
+                    "unsupported EffectLifecycleEvent.intended_relation_kind: "
+                    f"{self.intended_relation_kind!r}"
+                )
         if self.expiry_convention == "inclusive_valid_until" and expires:
             dt.date.fromisoformat(expires)
         object.__setattr__(self, "lifecycle_event_id", lifecycle_event_id)
         object.__setattr__(self, "effective", effective)
         object.__setattr__(self, "expires", expires)
+        object.__setattr__(self, "intended_lifecycle_kind", intended_lifecycle_kind)
+        object.__setattr__(self, "intended_relation_kind", intended_relation_kind)
         if self.temporal_event is not None and not self.executable:
             raise ValueError("non-executable EffectLifecycleEvent cannot carry temporal_event")
         if self.executable and self.kind == "unresolved_effect_target":
@@ -829,6 +857,8 @@ def effect_lifecycle_event_wire(
         "expiry_convention": event.expiry_convention,
         "temporal_event": temporal_event_ref_wire(event.temporal_event),
         "executable": event.executable,
+        "intended_lifecycle_kind": event.intended_lifecycle_kind or "",
+        "intended_relation_kind": event.intended_relation_kind or "",
         "detail": detail_converter(event.detail),
     }
 

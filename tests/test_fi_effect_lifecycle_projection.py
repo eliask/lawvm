@@ -697,7 +697,8 @@ def test_finland_commencement_expiry_override_without_effect_stays_unresolved() 
     assert lifecycle.kind == "unresolved_effect_target"
     assert lifecycle.effect is None
     assert lifecycle.relation == relations[0]
-    assert lifecycle.detail["intended_lifecycle_kind"] == "change_effect_expiry"
+    assert lifecycle.intended_lifecycle_kind == "change_effect_expiry"
+    assert "intended_lifecycle_kind" not in lifecycle.detail
     assert lifecycle.executable is False
 
 
