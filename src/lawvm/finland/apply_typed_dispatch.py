@@ -1006,10 +1006,12 @@ def _apply_intent_container(
     *,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
+    findings_out: Optional[List[Finding]] = None,
     path_hint: Optional[Path] = None,
     standalone_section_targets: StandaloneSectionTargetsInput = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     migration_ledger: Optional[MigrationLedger] = None,
+    strict_profile: Optional[StrictProfile] = None,
     write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
     base_ir = ctx.base_ir
@@ -1035,6 +1037,8 @@ def _apply_intent_container(
         migration_ledger=migration_ledger,
         write_receipts_out=write_receipts,
         replay_history_ops=replay_history_ops,
+        findings_out=findings_out,
+        strict_profile=strict_profile,
     )
     if container_result is not None:
         # Receipt-first declaration (apply contract §4): when the container
@@ -1104,6 +1108,7 @@ def _apply_intent_replace(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     strict_profile: Optional[StrictProfile] = None,
     path_hint: Optional[Path] = None,
     standalone_section_targets: StandaloneSectionTargetsInput = None,
@@ -1125,10 +1130,12 @@ def _apply_intent_replace(
                 ctx_label,
                 muutos_ir,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
+                strict_profile=strict_profile,
                 write_audits_out=write_audits_out,
             )
         case FacetTarget(facet=FacetKind.HEADING | FacetKind.INTRO):
@@ -1195,10 +1202,12 @@ def _apply_intent_replace(
                 ctx_label,
                 muutos_ir,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
+                strict_profile=strict_profile,
                 write_audits_out=write_audits_out,
             )
         case _:
@@ -1242,6 +1251,7 @@ def _apply_intent_insert(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     strict_profile: Optional[StrictProfile] = None,
     path_hint: Optional[Path] = None,
     standalone_section_targets: StandaloneSectionTargetsInput = None,
@@ -1299,10 +1309,12 @@ def _apply_intent_insert(
                 ctx_label,
                 muutos_ir,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
+                strict_profile=strict_profile,
                 write_audits_out=write_audits_out,
             )
         case _:
@@ -1345,6 +1357,7 @@ def _apply_intent_repeal(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     strict_profile: Optional[StrictProfile] = None,
     path_hint: Optional[Path] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
@@ -1399,9 +1412,11 @@ def _apply_intent_repeal(
                 ctx_label,
                 muutos_ir,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
+                strict_profile=strict_profile,
                 write_audits_out=write_audits_out,
             )
         case _:
@@ -2158,6 +2173,7 @@ def _apply_canonical_intent(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 replay_history_ops=replay_history_ops,
@@ -2179,6 +2195,7 @@ def _apply_canonical_intent(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 replay_history_ops=replay_history_ops,
@@ -2199,6 +2216,7 @@ def _apply_canonical_intent(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 strict_profile=strict_profile,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,

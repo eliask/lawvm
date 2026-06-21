@@ -17,10 +17,13 @@ the canonical ``StageResult[IRNode]`` (Pro §2 stage contract). What is pinned:
 5.  Evidence — a receipt ``source_anchor`` projects into a ``DigestWitness``.
 6.  Consumer fire-drill — the FI apply consumer (``_apply_container_op`` via
     ``_emit_container_insert_receipt``) RUNS the staged read on the live write
-    path and produces a clean (non-blocking) account on a well-formed container
-    INSERT (0-delta on the green case), and the consumer source READS the typed
-    residual account (``structural_stage_result`` / ``has_blocking_residual``),
-    not the bare ``divergence_explained`` bool.
+    path. On a well-formed container INSERT it produces a clean (non-blocking)
+    account (0-delta on the green case). When an UNEXPLAINED mutation-boundary
+    divergence is driven through the production consumer under a strict profile,
+    the typed StageResult residual (``has_blocking_residual``) becomes a BLOCKING
+    apply-boundary finding on the verdict surface (``findings_out``) — proving
+    #3's incompleteness can block a clean claim through the typed account and
+    is not severed into a log-only sink.
 
 Run:
     uv run pytest tests/test_tree_ops_stage.py -v
@@ -28,11 +31,9 @@ Run:
 
 from __future__ import annotations
 
-import ast
-from pathlib import Path
-
 from lawvm.core import tree_ops as _tops
 from lawvm.core.ir import IRNode
+from lawvm.core.phase_result import Finding
 from lawvm.core.provenance import compute_source_anchor
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.source_witness import DigestWitness, SourceWitness
@@ -333,26 +334,125 @@ def test_apply_container_consumer_runs_staged_read_clean_on_well_formed_insert()
     assert receipt.divergence_explained is True
 
 
-def test_apply_consumer_reads_typed_staged_account_not_bare_bool() -> None:
-    # The consumer must drive its divergence decision off the typed StageResult
-    # account, not a bare receipt.divergence_explained read (the load-bearing
-    # rule: a field only tests read = FAIL).
-    source = Path("src/lawvm/finland/apply_structure_ops.py").read_text(encoding="utf-8")
-    tree = ast.parse(source)
+def _strict_container_insert(
+    findings_out: list,
+    *,
+    force_unexplained_divergence: bool,
+    monkeypatch,
+):
+    """Drive the production container-INSERT consumer under a strict profile.
 
-    reads_structural_stage_result = False
-    reads_blocking_residual = False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and node.attr == "structural_stage_result":
-            reads_structural_stage_result = True
-        if isinstance(node, ast.Attribute) and node.attr == "has_blocking_residual":
-            reads_blocking_residual = True
+    Runs the real ``_apply_container_op`` live write path (the same path the
+    apply boundary verdict uses). When ``force_unexplained_divergence`` is set,
+    the landed ``WriteReceipt.divergence_explained`` is forced ``False`` —
+    simulating the genuine production bug the WAIST #3 contract forbids (a
+    bound→landed mutation-boundary divergence with no named rule). The wiring
+    under test is: the typed StageResult residual (``has_blocking_residual``)
+    must, under a strict profile, become a blocking Finding on ``findings_out``.
+    """
+    from lawvm.finland.apply_structure_ops import _apply_container_op
+    from lawvm.finland.ops import AmendmentOp as _AmendmentOp, get_replay_profile
+    from lawvm.finland.statute import ReplayState as _ReplayState
+    from lawvm.core.compile_result import StrictProfile
 
-    assert reads_structural_stage_result, (
-        "apply_structure_ops.py must call _tops.structural_stage_result on the "
-        "live write path"
+    if force_unexplained_divergence:
+        # The genuine failure mode: a landed container write whose declared
+        # bound target diverges from the landed primary path with NO named rule
+        # explaining it. Production always carries a recovery rule on this path
+        # (the 0-delta guarantee), so we force the receipt's divergence verdict
+        # to the unexplained state to exercise the strict apply boundary.
+        monkeypatch.setattr(
+            WriteReceipt, "divergence_explained", property(lambda self: False)
+        )
+
+    state = _ReplayState(
+        ir=_body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="1 luku"),
+                    _sec("1", "chapter 1"),
+                ),
+            ),
+        )
     )
-    assert reads_blocking_residual, (
-        "apply_structure_ops.py must READ the typed StageResult residual account "
-        "(has_blocking_residual), not only the bare divergence bool"
+    op = _AmendmentOp(
+        op_id="insert_chapter_2",
+        op_type="INSERT",
+        target_unit_kind="chapter",
+        target_section="2",
+        source_statute="2020/1",
     )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="2",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+            _sec("1", "chapter 2"),
+        ),
+    )
+
+    receipts: list[WriteReceipt] = []
+    result = _apply_container_op(
+        state,
+        op,
+        muutos_ir,
+        get_replay_profile("legal_pit"),
+        "[2020/1] INSERT 2 luku",
+        write_receipts_out=receipts,
+        findings_out=findings_out,
+        strict_profile=StrictProfile(name="test_strict", allows_target_guessing=False),
+    )
+    assert result is not None and result is not state
+    assert len(receipts) == 1
+    return result, receipts[0]
+
+
+def test_apply_consumer_unexplained_divergence_blocks_via_typed_residual(monkeypatch) -> None:
+    # FIRE DRILL (WAVE2 WAIST #3 §6(d)): an unexplained mutation-boundary
+    # divergence driven through the PRODUCTION apply consumer must produce a
+    # BLOCKING finding on the verdict surface, derived from the typed StageResult
+    # residual — not merely a log line. This is what makes #3's incompleteness
+    # able to block a clean claim THROUGH THE TYPED ACCOUNT.
+    findings: list[Finding] = []
+    _strict_container_insert(
+        findings, force_unexplained_divergence=True, monkeypatch=monkeypatch
+    )
+
+    # The typed residual reached the verdict surface as a blocking finding.
+    boundary = [
+        f
+        for f in findings
+        if f.kind == "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
+    ]
+    assert len(boundary) == 1, (
+        "an unexplained mutation-boundary divergence must surface a blocking "
+        "apply-boundary finding on the verdict surface (the typed residual must "
+        "not be severed into a log-only sink)"
+    )
+    finding = boundary[0]
+    assert finding.role == "violation"
+    assert finding.blocking is True
+    assert finding.stage == "apply"
+    assert finding.source_statute == "2020/1"
+    # The finding is DERIVED FROM the typed residual, not the undeclared-touch
+    # cross-check: it carries the structural residual reason/scope.
+    assert (
+        finding.detail["residual_reason"]
+        == "unexplained_mutation_boundary_divergence"
+    )
+
+
+def test_apply_consumer_explained_divergence_is_clean_no_finding(monkeypatch) -> None:
+    # 0-delta guard: the SAME production consumer on the SAME well-formed
+    # container INSERT (divergence explained by a named recovery rule, as on the
+    # green corpus) emits NO blocking finding — the residual is empty and the
+    # strict apply boundary stays clean. If this fired, routing the residual
+    # would have moved bench.
+    findings: list[Finding] = []
+    _result, receipt = _strict_container_insert(
+        findings, force_unexplained_divergence=False, monkeypatch=monkeypatch
+    )
+    assert receipt.divergence_explained is True
+    assert findings == []
