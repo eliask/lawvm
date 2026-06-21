@@ -2550,11 +2550,13 @@ def emit_insertion_nodes(parsed: ParsedInsertion) -> list[SurfaceNode]:
         sub_target = None
         if node.sub_target is not None:
             st = node.sub_target
-            # Insertion sub-targets mirror the incumbent surface_parse insertion path,
-            # which leaves `special` empty (the HEADING/INTRO facet itself carries the
-            # heading/intro role); only the muutetaan/replace path populates `special`.
+            special = ""
+            if st.facet == FacetKind.HEADING:
+                special = "otsikko"
+            elif st.facet == FacetKind.INTRO:
+                special = "johd"
             sub_target = SurfaceSubRef(
-                momentti=st.momentti, item=st.item, subitem=st.subitem, facet=st.facet, special=""
+                momentti=st.momentti, item=st.item, subitem=st.subitem, facet=st.facet, special=special
             )
         out.append(
             SurfaceInsertion(

@@ -51,13 +51,11 @@ IN_SCOPE_EXAMPLES = [
     "lisätään 3 lukuun uusi 12 § seuraavasti:",
     # Momentti sub-target insert into a section (Pattern A, §:ILL).
     "lisätään 5 §:ään uusi 3 momentti seuraavasti:",
-    # Heading plus subsection insert into the same section.
-    "lisätään 8 §:ään uusi otsikko ja uusi 4 momentti seuraavasti:",
-    # NOTE: the heading's-``uusi``-omitted variant ("lisätään 8 §:ään otsikko ja uusi
-    # 4 momentti …") is intentionally NOT a zero-delta example: the grammar recognizes
-    # it (a deliberate capability) but the incumbent surface_parse §:ILL arm requires a
-    # leading ``uusi`` and yields no node, so it is a grammar-ahead-of-incumbent case,
-    # covered by the dedicated unit tests below, not by parity.
+    # NOTE: heading-plus-subsection inserts are intentionally NOT zero-delta examples:
+    # the incumbent surface_parse insertion arm leaves ``sub_target.special`` empty
+    # for heading facets, but the grammar emitter preserves the legacy "otsikko" bridge
+    # used by downstream FI replay/payload preservation. They are covered by dedicated
+    # operational-shape tests below instead of byte parity.
     # Nominative momentti sub-target insert (Pattern B3, §:GEN uusi).
     "lisätään 4 §:n uusi 2 momentti seuraavasti:",
     # The headline kohta-into-momentti insert (Pattern B2,
@@ -105,6 +103,7 @@ def test_heading_and_momentti_insert_continuation_emits_both_sub_targets() -> No
     assert heading.label == "8"
     assert heading.sub_target is not None
     assert heading.sub_target.facet is FacetKind.HEADING
+    assert heading.sub_target.special == "otsikko"
     assert momentti.label == "8"
     assert momentti.sub_target is not None
     assert momentti.sub_target.momentti == 4
@@ -120,6 +119,7 @@ def test_heading_insert_without_repeated_uusi_is_lisata_only() -> None:
     assert len(insertions) == 2
     assert insertions[0].sub_target is not None
     assert insertions[0].sub_target.facet is FacetKind.HEADING
+    assert insertions[0].sub_target.special == "otsikko"
 
     with pytest.raises(OutOfScope):
         parse_text_with(
