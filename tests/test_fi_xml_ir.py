@@ -52,6 +52,43 @@ def test_fi_xml_to_ir_node_preserves_table_rows_as_paragraphs() -> None:
     assert paragraphs[1].attrs["row_anchor"] == "tampere"
 
 
+def test_fi_xml_to_ir_node_splits_paragraph_wrapped_numbered_table_items() -> None:
+    xml = etree.fromstring(
+        """
+        <subsection>
+          <intro>
+            <p>Pyyntilupamaksu on kustakin kaadetusta hirvieläimestä:</p>
+          </intro>
+          <paragraph>
+            <content>
+              <table>
+                <tr>
+                  <td><p>1) aikuinen hirvi</p></td>
+                  <td><p>120 euroa</p></td>
+                </tr>
+                <tr>
+                  <td><p>2) hirvenvasa</p></td>
+                  <td><p>50 euroa</p></td>
+                </tr>
+              </table>
+            </content>
+          </paragraph>
+        </subsection>
+        """
+    )
+
+    subsection = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    assert subsection.kind == IRNodeKind.SUBSECTION
+    assert subsection.children[0].kind == IRNodeKind.INTRO
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs] == ["1", "2"]
+    assert [irnode_to_text(paragraph) for paragraph in paragraphs] == [
+        "1) aikuinen hirvi 120 euroa",
+        "2) hirvenvasa 50 euroa",
+    ]
+
+
 def test_fi_xml_to_ir_node_preserves_terminal_omission_inside_content_wrapper() -> None:
     xml = etree.fromstring(
         """

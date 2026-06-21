@@ -1056,52 +1056,19 @@ def _row_marker_and_body(row: IRNode) -> Optional[tuple[str, str]]:
     return label, body
 
 
-def _apply_fi_split_inline_table_kohta_list(children: List[IRNode]) -> List[IRNode]:
-    """Split an inline ``N)`` kohta list table inside one moment's CONTENT.
-
-    Source witness family (1991/248 §45, 2002/1126 §6): a single moment whose
-    content is an intro sentence ending in ``:`` followed by a table that
-    serializes a genuine ``1) … N)`` kohta enumeration — each row's first cell
-    carries the ``N)`` marker and the remaining cells the item body.  The raw
-    parse leaves this as one flat CONTENT node with a nested TABLE and zero
-    item children, so item-target resolution (``… mom K kohta``) fails.
-
-    This rewrites the moment to the canonical kohta shape — an ``INTRO`` node
-    carrying the lead-in sentence followed by one ``PARAGRAPH`` per kohta — so
-    that item targets resolve exactly as for a properly-parsed kohta list.
-
-    Conservative trigger: fires only when the moment has a single CONTENT child
-    whose text ends with ``:``, that CONTENT has exactly one TABLE child, every
-    table row begins with a ``N)`` marker, and the markers form the exact
-    sequential series ``1, 2, …, N`` with ``N >= 2``.  Anything else is left
-    untouched so prose that merely contains an incidental ``1)`` is not split.
-
-    Formula matrices (rows carrying LaTeX math, ``$ … $``) are genuine tabular
-    data — a category paired with a pricing/computation formula — rather than a
-    pure enumeration layout, so they are deliberately left as a table for the
-    structured table projection to model and are never split here.
-    """
-    semantic_children = [c for c in children if c.kind != IRNodeKind.NUM]
-    if len(semantic_children) != 1:
-        return children
-    content = semantic_children[0]
-    if content.kind != IRNodeKind.CONTENT:
-        return children
-    intro_text = (content.text or "").strip()
-    if not intro_text or not intro_text.endswith(":"):
-        return children
+def _table_kohta_items(content: IRNode) -> List[tuple[str, str]] | None:
     tables = [c for c in content.children if c.kind == IRNodeKind.TABLE]
     if len(tables) != 1:
-        return children
+        return None
     if any(c.kind != IRNodeKind.TABLE for c in content.children):
-        return children
+        return None
     table = tables[0]
     rows = [c for c in table.children if c.kind == IRNodeKind.ROW]
     if len(rows) != len(table.children):
-        return children
+        return None
     if "$" in irnode_to_text(table):
         # LaTeX-bearing formula/data table — preserve as a table, do not split.
-        return children
+        return None
 
     # Group rows into kohta items: a row beginning with the next expected
     # ``N)`` marker opens a new item; following marker-less rows are
@@ -1119,7 +1086,7 @@ def _apply_fi_split_inline_table_kohta_list(children: List[IRNode]) -> List[IRNo
         elif parsed is not None:
             # A marker that breaks the expected sequence (e.g. an out-of-order
             # or restarted ``N)``) is ambiguous — decline rather than guess.
-            return children
+            return None
         elif not row_text:
             continue
         elif items:
@@ -1129,16 +1096,19 @@ def _apply_fi_split_inline_table_kohta_list(children: List[IRNode]) -> List[IRNo
             items[-1] = (prev_label, joined)
         else:
             # Non-marker, non-empty row before any item — not a kohta list.
-            return children
+            return None
 
     if len(items) < 2:
-        return children
+        return None
     if any(not body for _label, body in items):
-        return children
+        return None
+    return items
 
-    new_children: List[IRNode] = [IRNode(kind=IRNodeKind.INTRO, text=intro_text)]
+
+def _kohta_item_paragraphs(items: List[tuple[str, str]]) -> List[IRNode]:
+    paragraphs: List[IRNode] = []
     for label, body in items:
-        new_children.append(
+        paragraphs.append(
             IRNode(
                 kind=IRNodeKind.PARAGRAPH,
                 label=label,
@@ -1148,7 +1118,82 @@ def _apply_fi_split_inline_table_kohta_list(children: List[IRNode]) -> List[IRNo
                 ),
             )
         )
-    return new_children
+    return paragraphs
+
+
+def _paragraph_table_content(para: IRNode) -> IRNode | None:
+    if para.kind != IRNodeKind.PARAGRAPH:
+        return None
+    if para.text and para.text.strip():
+        return None
+    if any(child.kind == IRNodeKind.NUM for child in para.children):
+        return None
+    semantic_children = [child for child in para.children if child.kind != IRNodeKind.NUM]
+    if len(semantic_children) != 1:
+        return None
+    content = semantic_children[0]
+    if content.kind != IRNodeKind.CONTENT:
+        return None
+    if content.text and content.text.strip():
+        return None
+    return content
+
+
+def _apply_fi_split_inline_table_kohta_list(children: List[IRNode]) -> List[IRNode]:
+    """Split an inline ``N)`` kohta list table inside one moment's CONTENT.
+
+    Source witness family (1991/248 §45, 2002/1126 §6): a single moment whose
+    content is an intro sentence ending in ``:`` followed by a table that
+    serializes a genuine ``1) … N)`` kohta enumeration — each row's first cell
+    carries the ``N)`` marker and the remaining cells the item body.  The raw
+    parse leaves this as one flat CONTENT node with a nested TABLE and zero
+    item children, so item-target resolution (``… mom K kohta``) fails.
+
+    This rewrites the moment to the canonical kohta shape — an ``INTRO`` node
+    carrying the lead-in sentence followed by one ``PARAGRAPH`` per kohta — so
+    that item targets resolve exactly as for a properly-parsed kohta list.
+
+    Conservative trigger: fires only when the moment has either a single
+    CONTENT child whose text ends with ``:`` or an explicit INTRO followed by an
+    otherwise-empty paragraph/content table carrier.  The table must be the
+    only child of the content carrier, every table row must begin with a ``N)``
+    marker, and the markers must form the exact sequential series ``1, 2, …,
+    N`` with ``N >= 2``.  Anything else is left untouched so prose that merely
+    contains an incidental ``1)`` is not split.
+
+    Formula matrices (rows carrying LaTeX math, ``$ … $``) are genuine tabular
+    data — a category paired with a pricing/computation formula — rather than a
+    pure enumeration layout, so they are deliberately left as a table for the
+    structured table projection to model and are never split here.
+    """
+    semantic_children = [c for c in children if c.kind != IRNodeKind.NUM]
+
+    if len(semantic_children) == 1:
+        content = semantic_children[0]
+        if content.kind != IRNodeKind.CONTENT:
+            return children
+        intro_text = (content.text or "").strip()
+        if not intro_text or not intro_text.endswith(":"):
+            return children
+        items = _table_kohta_items(content)
+        if items is None:
+            return children
+        return [IRNode(kind=IRNodeKind.INTRO, text=intro_text), *_kohta_item_paragraphs(items)]
+
+    if len(semantic_children) == 2 and semantic_children[0].kind == IRNodeKind.INTRO:
+        intro = semantic_children[0]
+        intro_text = (intro.text or "").strip()
+        if not intro_text or not intro_text.endswith(":"):
+            return children
+        content = _paragraph_table_content(semantic_children[1])
+        if content is None:
+            return children
+        items = _table_kohta_items(content)
+        if items is None:
+            return children
+        return [intro, *_kohta_item_paragraphs(items)]
+
+    return children
 
 
 def _apply_hoist_trailing_wrapup_paragraph(children: List[IRNode]) -> List[IRNode]:
