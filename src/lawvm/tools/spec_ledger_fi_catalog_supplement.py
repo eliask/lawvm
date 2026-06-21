@@ -310,6 +310,12 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "Timeline materialization deduplicates semantically equivalent same-source "
         "versions without hiding competing legal content."
     ),
+    "fi.timeline.restructure_relabel_snapshot_shadow_collapse": (
+        "Timeline materialization drops restructure-relabel snapshots from a "
+        "same-source version group when at least one real-payload version of the "
+        "same provision survives; the snapshot is an editing shadow, not competing "
+        "legal content."
+    ),
     "fi_flat_body_replace_scope_from_bracketing_live_siblings": (
         "A flat-body whole-section replacement infers its chapter from live sibling "
         "sections bracketing the replaced label."

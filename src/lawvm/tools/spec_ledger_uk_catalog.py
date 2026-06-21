@@ -494,8 +494,6 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A metadata-carried at-end insert appends a carried quoted-words payload at the provision end.",
     "uk_effect_metadata_carried_at_end_substitute_insert_text_patch":
         "A metadata-carried at-end substitute insert appends the substituted payload at the end.",
-    "uk_effect_metadata_carried_at_end_insert_quoted_text_patch":
-        "A metadata-carried at-end insert appends the explicitly quoted payload at the provision end.",
     "uk_effect_metadata_carried_range_insert_substitution_text_patch":
         "A metadata-carried range insert/substitution rewrites the spanned text with the carried payload.",
     "uk_effect_metadata_carried_substituting_words_text_patch":
@@ -530,8 +528,6 @@ _UK_RULE_SPECS: Dict[str, str] = {
     # -- Payload eID / label / kind normalization -------------------------------
     "uk_payload_descendant_eid_synthesis":
         "Inserted payload descendants are assigned synthesized eIDs derived from the target address.",
-    "uk_payload_foreign_source_id_retargeted":
-        "A payload node carrying a foreign physical source id has its identity retargeted to the affected act's address space.",
     "uk_whole_schedule_payload_descendant_eid_synthesis":
         "A whole-schedule inserted payload has its descendant eIDs synthesized from the schedule address.",
     "uk_effect_payload_kind_realigned_to_target_leaf":
