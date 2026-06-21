@@ -320,6 +320,7 @@ def _collect_op_write_receipt(
     # apply_op). With no classification hint, receipt_from_diff records every
     # observed changed path as a replaced path, so the declared footprint equals
     # the observed footprint by construction.
+    _rop_source = rop.resolved_op_source
     receipt = receipt_from_diff(
         prev_state.ir,
         new_state.ir,
@@ -327,6 +328,7 @@ def _collect_op_write_receipt(
         helper=FI_APPLY_OP_WRITE_HELPER,
         action=str(rop.resolved_action_type or "").lower(),
         bound_target_path=None,
+        source_anchor=_rop_source.source_anchor if _rop_source is not None else None,
     )
     audit = build_observed_write_audit(prev_state.ir, new_state.ir, receipt)
     sinks.write_receipts_out.append(receipt)

@@ -7,6 +7,7 @@ from typing import Optional, Sequence
 import lxml.etree as etree
 
 from lawvm.core.compile_result import StrictProfile
+from lawvm.core.provenance import SourceAnchor, compute_source_anchor
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.finland.citation_routing import (
     OP_KEYWORDS,
@@ -90,6 +91,10 @@ class AmendmentAcquisitionResult:
     rejected_lanes: tuple[tuple[str, str], ...]
     diagnostics: tuple[AcquisitionDiagnostic, ...]
     decision: OperativeLaneDecision
+    # Byte span of the johtolause clause in the RAW amendment source bytes, when
+    # it is present verbatim. None (fail-loud) when no contiguous verbatim span
+    # exists. The clause selected here is the operative lane's chosen text.
+    source_anchor: SourceAnchor | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -583,7 +588,20 @@ def build_amendment_acquisition_result(
     if body_repeal_candidate and selected_lane != "body_repeal_candidate":
         rejected_lanes.append(("body_repeal_candidate", "preamble_selected" if selected_lane == "preamble" else selected_reason))
 
+    # Byte-level source anchoring (certified-transition trace spec §5.1/§7):
+    # try to locate the chosen operative clause verbatim in the RAW amendment
+    # source bytes. compute_source_anchor returns None (fail-loud, never
+    # fabricated) whenever the lane text is not a single contiguous verbatim
+    # byte substring — the common case after text-flattening across XML tag
+    # boundaries. ``working_text`` is the lane's raw (un-normalized) text.
+    source_anchor = compute_source_anchor(
+        source_artifact_id=amendment_id,
+        raw_bytes=xml_bytes,
+        clause_text=working_text or "",
+    )
+
     return AmendmentAcquisitionResult(
+        source_anchor=source_anchor,
         preamble_text=preamble_text,
         preamble_normalized=preamble_normalized,
         sec1_text=sec1_text,

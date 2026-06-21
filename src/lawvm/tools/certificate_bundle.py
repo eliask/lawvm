@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from lawvm.core.observation_registry import FINDING_REGISTRY, FindingSpec
+from lawvm.core.provenance import SourceAnchor
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 from lawvm.tools.export_transition_graph import (
     DEFAULT_GRANULARITY,
@@ -975,6 +976,67 @@ def build_certificate_bundle(
                 op_transitions.setdefault(op.op_id, []).append(transition_id)
         prev_state = cur_state
 
+    # --- byte-level source anchoring (trace spec §5.1/§7) ---
+    # Promote genuine source anchors carried by landed receipts onto the
+    # transition rows that the receipts drove. The anchor is RE-VERIFIED against
+    # the bundle's own source bytes before it is certified: a certified anchor
+    # must satisfy source_blobs[aid][off:off+len] == quote bytes AND match the
+    # recorded quote_hash. Any anchor that fails this independent re-derivation
+    # (e.g. the receipt anchored a corrigendum-corrected byte stream that
+    # differs from the bundled raw source) is dropped — the transition then
+    # keeps its fail-loud SOURCE_ANCHOR_UNAVAILABLE residual. Anchors are never
+    # fabricated and never trusted blindly. ``anchored_refs`` records the
+    # (transition_id, source_ref) pairs that earned a certified anchor so the
+    # residual loop can suppress only those.
+    #
+    # The join is on the SOURCE ARTIFACT, not on op_id: a receipt's anchor names
+    # the amendment clause (source_artifact_id) whose verbatim source bytes drove
+    # the write. Receipt op_ids and the engine's lo_op op_ids live in different
+    # id spaces (the receipt boundary mints its own), so an op_id join would
+    # never fire. Anchoring a transition to its driving source artifact is the
+    # sound relation: the certified anchor is that artifact's clause provenance,
+    # and the transition declares that artifact in ``source_refs``.
+    def _verified_anchor_json(anchor: "SourceAnchor", artifact_id: str) -> Optional[Dict[str, Any]]:
+        blob = source_blobs.get(artifact_id)
+        if blob is None:
+            return None
+        end = anchor.byte_offset + anchor.byte_len
+        if end > len(blob):
+            return None
+        quoted = blob[anchor.byte_offset:end]
+        if "sha256:" + hashlib.sha256(quoted).hexdigest() != anchor.quote_hash:
+            return None
+        return anchor.as_jsonable()
+
+    # One verified anchor per source artifact, keyed by bundle artifact_id.
+    verified_anchor_by_artifact: Dict[str, Dict[str, Any]] = {}
+    for _receipt in bundle.result.write_receipts:
+        anchor = _receipt.source_anchor
+        if anchor is None:
+            continue
+        artifact_id = artifact_id_by_engine_sid.get(
+            _engine_statute_id(anchor.source_artifact_id)
+        )
+        if artifact_id is None or artifact_id in verified_anchor_by_artifact:
+            continue
+        verified = _verified_anchor_json(anchor, artifact_id)
+        if verified is None:
+            continue
+        verified_anchor_by_artifact[artifact_id] = verified
+
+    anchored_refs: set[Tuple[str, str]] = set()
+    for row in transition_rows:
+        transition_id = row["transition_id"]
+        anchors_for_row: Dict[str, Dict[str, Any]] = {}
+        for ref in row["source_refs"]:
+            verified = verified_anchor_by_artifact.get(ref)
+            if verified is None:
+                continue
+            anchors_for_row[ref] = verified
+            anchored_refs.add((transition_id, ref))
+        if anchors_for_row:
+            row["source_anchors"] = [anchors_for_row[aid] for aid in sorted(anchors_for_row)]
+
     transition_leaves = [leaf_hash(D_TRANSITION, _certified_core(r)) for r in transition_rows]
     certified_tree_transition_root = list_root(D_TRACE, transition_leaves)
 
@@ -1194,10 +1256,16 @@ def build_certificate_bundle(
             )
         )
 
-    # Trace spec §7: every source_ref without an anchor needs a
+    # Trace spec §7: every source_ref WITHOUT a certified byte anchor needs a
     # kind=source_anchor_unavailable residual naming the transition and ref.
+    # When a (transition, ref) pair earned a re-verified byte anchor above, it
+    # is omitted from the unavailable ledger — the certified anchor on the
+    # transition row's certified core IS its provenance. The fail-loud residual
+    # remains for every ref that genuinely could not be anchored.
     for row in transition_rows:
         for ref in row["source_refs"]:
+            if (row["transition_id"], ref) in anchored_refs:
+                continue
             _add_residual(
                 _residual_row(
                     kind="source_anchor_unavailable",

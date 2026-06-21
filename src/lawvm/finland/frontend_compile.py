@@ -36,6 +36,7 @@ _LETTER_SUFFIX_CONTINUATION_PREVIOUS_RE = re.compile(r"(\d+)([a-z]?)", flags=re.
 _LETTER_SUFFIX_CONTINUATION_CURRENT_RE = re.compile(r"(\d+)([a-z])", flags=re.I)
 
 if TYPE_CHECKING:
+    from lawvm.core.provenance import SourceAnchor
     from lawvm.finland.johtolause import ClauseParseResult
     from lawvm.finland.source_model import AmendmentSourceModel
 
@@ -2167,6 +2168,10 @@ class _AmendmentTreeMetadata:
     expiry_date: date | None
     provision_expiry_overrides: tuple[TemporaryProvisionExpiryOverride, ...]
     section_expiry_overrides: tuple[tuple[str, set[str], date], ...]
+    # Byte-level anchor of the source clause in the raw amendment bytes, when a
+    # verbatim contiguous span exists; None (fail-loud) otherwise. Stamped by
+    # the acquisition stage, which owns the raw bytes + chosen operative text.
+    source_anchor: "SourceAnchor | None" = None
 
 
 def _amendment_tree_metadata(
@@ -2233,6 +2238,7 @@ def _enrich_ops_from_amendment_tree(
         enacted=source_issue_date.isoformat() if source_issue_date else "",
         effective=eff_date.isoformat() if eff_date else "",
         raw_text=johto.strip(),
+        source_anchor=metadata.source_anchor,
         # _amendment_expiry_date returns the prose-inclusive last in-force day;
         # the kernel `expires` field is an exclusive cutoff, so convert here.
         expires=(
