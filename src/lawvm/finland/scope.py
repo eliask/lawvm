@@ -20,6 +20,7 @@ from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.johto_scope_mentions import collect_johto_chapter_scope_mentions
 from lawvm.finland.ops import (
     ScopeConfidence,
     ScopeResolutionConfidence,
@@ -253,6 +254,10 @@ def _same_label_move_sections_for_chapter(johto: str, chapter: str) -> Set[str]:
     cleaned = re.sub(r"\s+", " ", johto or "").lower()
     wanted_chapter = _norm_num_token(str(chapter)).removesuffix("luku")
     matches: Set[str] = set()
+    mentions = collect_johto_chapter_scope_mentions(johto or "")
+    for moved in mentions.moved_section_destinations:
+        if _norm_num_token(moved.destination_chapter_label).removesuffix("luku") == wanted_chapter:
+            matches.add(_norm_num_token(moved.section_label))
     for labels_text, dest_chapter in _SAME_LABEL_MOVE_CLAUSE_RE.findall(cleaned):
         if _norm_num_token(dest_chapter).removesuffix("luku") != wanted_chapter:
             continue

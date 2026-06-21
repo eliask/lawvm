@@ -1203,6 +1203,18 @@ def _lo_to_whole_section_insert(lo: "LegalOperation") -> "LegalOperation":
     )
 
 
+def _lo_to_declared_move_replace(lo: "LegalOperation") -> "LegalOperation":
+    """Rewrite an identity-renumber residue into a source-declared move replace."""
+    return dc_replace(
+        lo,
+        action=StructuralAction.REPLACE,
+        destination=None,
+        move_clause_target_unit_kind="chapter",
+        provenance_tags=tuple(lo.provenance_tags)
+        + ("identity_renumber_declared_move_to_replace",),
+    )
+
+
 def _source_body_has_flat_whole_section(
     *,
     muutos_tree: etree._Element,
@@ -2483,16 +2495,33 @@ def _enrich_ops_from_amendment_tree(
                 source_model=source_model,
             )
         ):
+            declared_move_destination = (
+                scoped_op.target_chapter is not None
+                and _norm_num_token(scoped_op.target_section)
+                in _same_label_move_sections_for_chapter(johto, scoped_op.target_chapter)
+            )
+            rewritten_lo = scoped_op.lo
+            if scoped_op.lo is not None:
+                rewritten_lo = (
+                    _lo_to_declared_move_replace(scoped_op.lo)
+                    if declared_move_destination
+                    else _lo_to_whole_section_insert(scoped_op.lo)
+                )
             scoped_op = dc_replace(
                 scoped_op,
-                op_type="INSERT",
-                scope_provenance_tags=tuple(scoped_op.scope_provenance_tags)
-                + ("identity_renumber_absent_target_to_insert",),
-                lo=(
-                    _lo_to_whole_section_insert(scoped_op.lo)
-                    if scoped_op.lo is not None
-                    else scoped_op.lo
+                op_type="REPLACE" if declared_move_destination else "INSERT",
+                move_clause_target_unit_kind=(
+                    "chapter" if declared_move_destination else scoped_op.move_clause_target_unit_kind
                 ),
+                scope_provenance_tags=tuple(scoped_op.scope_provenance_tags)
+                + (
+                    (
+                        "identity_renumber_declared_move_to_replace"
+                        if declared_move_destination
+                        else "identity_renumber_absent_target_to_insert"
+                    ),
+                ),
+                lo=rewritten_lo,
             )
         enriched.append(
             dc_replace(

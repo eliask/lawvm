@@ -112,6 +112,7 @@ def _scope_recovered_ops_for_shadow_pruning(
     *,
     inserted_chapter_labels: set[str],
     source_model: AmendmentSourceModel,
+    johto: str,
     strict_profile: Optional[StrictProfile],
 ) -> list[AmendmentOp]:
     recovered_ops: list[AmendmentOp] = []
@@ -127,6 +128,7 @@ def _scope_recovered_ops_for_shadow_pruning(
                 group_ops=group_ops,
                 inserted_chapter_labels=inserted_chapter_labels,
                 source_model=source_model,
+                johto=johto,
                 strict_profile=strict_profile,
             )
         )
@@ -169,6 +171,7 @@ def compile_amendment_ops(
         section_groups,
         inserted_chapter_labels=inserted_chapter_labels,
         source_model=source_model,
+        johto=johto,
         strict_profile=strict_profile,
     )
     sparse_omission_tail_claims = build_sparse_omission_tail_claims(

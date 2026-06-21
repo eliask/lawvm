@@ -3298,6 +3298,78 @@ def test_compile_group_reports_body_chapter_replace_to_insert_move_recovery() ->
     assert finding.detail["strict_disposition"] == "block"
 
 
+def test_compile_group_preserves_declared_body_chapter_move_as_replace() -> None:
+    def _section(label: str, text: str = "") -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
+
+    def _chapter(label: str, *sections: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.CHAPTER, label=label, children=tuple(sections))
+
+    master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=(_chapter("6", _section("25", "live")),)))
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <hcontainer>
+              <section><num>6 a luku</num><heading>Sopimukset</heading></section>
+              <section><num>25 §</num><content><p>payload</p></content></section>
+            </hcontainer>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="replace25",
+        op_type="REPLACE",
+        target_section="25",
+        target_unit_kind="section",
+        target_chapter="6",
+        source_statute="1999/466",
+        lo=LegalOperation(
+            op_id="replace25",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "6"), ("section", "25"))),
+            payload=None,
+        ),
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "25",
+        "6",
+        None,
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "lisätään lakiin uusi 6 a luku, johon samalla siirretään muutettu 25 §",
+        get_replay_profile("legal_pit"),
+        None,
+        None,
+    )
+
+    assert len(result.output) == 1
+    rop = result.output[0]
+    assert rop.op.op_type == "REPLACE"
+    assert rop.op.target_chapter == "6a"
+    assert rop.op.move_clause_target_unit_kind == "chapter"
+    assert rop.op.body_chapter_move_from == "6"
+    assert rop.op.lo is not None
+    assert rop.op.lo.action is StructuralAction.REPLACE
+    finding = next(
+        finding
+        for finding in result.findings()
+        if finding.kind == "LOWER.BODY_CHAPTER_DECLARED_MOVE_REPLACE"
+    )
+    assert finding.detail["family"] == "action_family_recovery"
+    assert finding.detail["original_action"] == "REPLACE"
+    assert finding.detail["lowered_action"] == "REPLACE"
+    assert finding.detail["body_chapter"] == "6a"
+    assert finding.detail["strict_disposition"] == "allow"
+
+
 def test_compile_group_strict_rejects_body_chapter_replace_to_insert_move_recovery() -> None:
     def _section(label: str, text: str = "") -> IRNode:
         return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
@@ -15035,6 +15107,19 @@ def test_collect_johto_chapter_mentions_accepts_luvun_otsikko_form() -> None:
     )
 
     assert {"1", "3", "4"} <= set(mentions.new_chapter_labels)
+
+
+def test_collect_johto_chapter_mentions_anaphoric_new_chapter_move_tail() -> None:
+    mentions = _collect_johto_chapter_scope_mentions(
+        "lisätään lakiin uusi 6 a luku, johon samalla siirretään "
+        "muutettu 25, 26 ja 27 §, seuraavasti:"
+    )
+
+    assert mentions.new_chapter_labels == frozenset({"6a"})
+    assert {
+        (moved.section_label, moved.destination_chapter_label)
+        for moved in mentions.moved_section_destinations
+    } == {("25", "6a"), ("26", "6a"), ("27", "6a")}
 
 
 def test_replay_xml_2001_101_preserves_section_24_sparse_item_tail_from_2017_169() -> None:

@@ -60,6 +60,7 @@ def compile_group_typed(
             group_ops=group_ops,
             inserted_chapter_labels=inserted_chapter_labels,
             source_model=source_model,
+            johto=johto,
             strict_profile=strict_profile,
         )
     )
