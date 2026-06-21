@@ -80,6 +80,43 @@ _KUMOTTU_STUBS_RE = re.compile(
 )
 _KUMOTTU_STUB_SURFACE_RE = re.compile(r"\b(?:on|ovat)\s+kumottu\b|:ll[äa]\b", re.IGNORECASE)
 
+_OLD_CODE_REFERENCE_MARKER_RE = re.compile(
+    r"^\s*(?:\d+\s*[a-zäöå]?\s*§\s+)?\d+\s*[a-zäöå]?\s*§:n\s+sijasta\s+ks\.\s+\S",
+    re.IGNORECASE,
+)
+_DASH_PLACEHOLDER_RE = re.compile(r"^\s*(?:[-–—]\s*){3,}$")
+
+
+def is_old_code_reference_marker(text: str) -> bool:
+    """Return True for Finlex old-code substitution-reference notices.
+
+    Historical codes sometimes render an obsolete provision as editorial text
+    like ``5 §:n sijasta ks. L ...`` instead of source wording. That marker is a
+    comparison/adjudication surface, not replayed legal text.
+    """
+    return _OLD_CODE_REFERENCE_MARKER_RE.match(text.strip()) is not None
+
+
+def _is_replay_obsolete_placeholder_or_bracketed_text(text: str) -> bool:
+    stripped = text.strip()
+    if _DASH_PLACEHOLDER_RE.match(stripped) is not None:
+        return True
+    return stripped.startswith("[") and stripped.endswith("]") and len(stripped) > 2
+
+
+def _is_old_code_reference_marker_diff(events: list[dict[str, Any]]) -> bool:
+    if len(events) != 1:
+        return False
+    event = events[0]
+    if event.get("kind") != "wording_text_changed":
+        return False
+    left_text = str(event.get("left_text") or "")
+    right_text = str(event.get("right_text") or "")
+    return (
+        _is_replay_obsolete_placeholder_or_bracketed_text(left_text)
+        and is_old_code_reference_marker(right_text)
+    )
+
 _EMBEDDED_FIVE_AS_I_OCR_RE = re.compile(
     r"(?<=[A-Za-zÄÖÅäöå]{2})5(?=[A-Za-zÄÖÅäöå]{2})"
 )
@@ -818,6 +855,8 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
     if _is_wrapup_shifted_subsection_projection_diff(events):
         return True
     if _is_wrapup_subitem_owner_projection_diff(events):
+        return True
+    if _is_old_code_reference_marker_diff(events):
         return True
     if _is_intro_owner_projection_diff(events):
         return True

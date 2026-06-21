@@ -35,6 +35,7 @@ from lxml import etree
 from lawvm.core.semantic_types import IRNodeKind
 
 from lawvm.finland.oracle_comparison import (
+    is_old_code_reference_marker,
     strip_editorial_annotations,
     strip_figure_legend_paragraphs,
     strip_kumottu_attribution,
@@ -824,6 +825,19 @@ def _diagnose(
     o_stripped = strip_editorial_annotations(o_text)
     if Levenshtein.ratio(_clean(r_stripped), _clean(o_stripped)) >= 0.999:
         return "EDITORIAL_CONVENTION"
+
+    if is_old_code_reference_marker(o_text):
+        replay_marker = re.sub(
+            r"^\s*\d+\s*[a-zäöå]?\s*§\s*",
+            "",
+            r_text.strip(),
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        if re.fullmatch(r"(?:[-–—]\s*){3,}", replay_marker) or (
+            replay_marker.startswith("[") and replay_marker.endswith("]")
+        ):
+            return "EDITORIAL_CONVENTION"
 
     # Kumottu attribution: replay says "X § on kumottu." oracle says
     # "X § on kumottu L:lla DD.MM.YYYY/NNN." — strip attribution and compare

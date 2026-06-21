@@ -115,6 +115,40 @@ def test_diagnose_treats_bare_oracle_stub_as_editorial_convention() -> None:
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_old_code_reference_marker_as_editorial() -> None:
+    replay = "5 § - - - - - - - - - - - - - -"
+    oracle = "5 § 5 §:n sijasta ks. L velkojien maksunsaantijärjestyksestä 1578/1992."
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_old_code_reference_marker_structural_diff_is_presentation_only() -> None:
+    events = [
+        {
+            "kind": "wording_text_changed",
+            "left_text": (
+                "[Jos jollakulla on sellainen piilukirja, kuin Merilaissa on "
+                "selitetty, olkoon hänellä etuoikeus laivaan ja tavaraan.]"
+            ),
+            "right_text": "7 §:n sijasta ks. MeriL 674/1994 4 luku 4 §.",
+        }
+    ]
+
+    assert is_presentation_structural_diff({"label": 0}, events) is True
+
+
+def test_old_code_reference_marker_requires_obsolete_replay_shape() -> None:
+    events = [
+        {
+            "kind": "wording_text_changed",
+            "left_text": "Pantinhaltija saa myydä pantin ja ottaa saatavansa kauppahinnasta.",
+            "right_text": "2 §:n sijasta ks. L velkojien maksunsaantijärjestyksestä 1578/1992.",
+        }
+    ]
+
+    assert is_presentation_structural_diff({"label": 0}, events) is False
+
+
 def test_diagnose_treats_multiline_aiempi_change_note_as_editorial() -> None:
     replay = (
         "5 § Turvallinen miehitys Alus on miehitettävä siten, ettei alusta, "
