@@ -138,6 +138,9 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/profile/normalize.py": "lexer",
     # --- lexer (B): johtolause tokenizer (raw johto fragment -> Token) ---
     "src/lawvm/finland/johtolause/lexer.py": "lexer",
+    # Shared FI date lexer (E1c): pure day-month-year/year-end token recognizer
+    # over already-located clause text; returns value+form, mints no legal state.
+    "src/lawvm/finland/fi_dates.py": "lexer",
     # --- owning parser (B): the canonical parser for a construction family ---
     "src/lawvm/finland/johtolause/api.py": "owning_parser",
     "src/lawvm/finland/johtolause/clause_patterns.py": "owning_parser",
@@ -167,6 +170,10 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/references/elliptical_resolve.py": "owning_parser",
     "src/lawvm/finland/references/resolve.py": "owning_parser",
     "src/lawvm/finland/references/shared_reference_orchestrator.py": "owning_parser",
+    # Cited-version item-clause recognizer (E1b): owns the item-cited-version parse
+    # over its own clause text, routes the cited statute id to the references id
+    # constructor; the snapshot-drop it informs is witnessed (CitedVersionSnapshotDrop).
+    "src/lawvm/finland/references/cited_version.py": "owning_parser",
     # references/ tail owning recognizers (C6 triage: surface-fact recognizers, each
     # the owning parser for its family — temporal H3, treaty/SopS, modal actor,
     # sanction, vague targetless-phrase selector — over their own input `text`).

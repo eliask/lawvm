@@ -422,7 +422,7 @@ def _iter_sections(node: IRNode) -> tuple[IRNode, ...]:
 
 def _chapter_label_from_section_eid(node: IRNode) -> str:
     e_id = str(node.attrs.get("eId") or "")
-    match = _FI_CHAPTER_SECTION_EID_RE.match(e_id)
+    match = _FI_CHAPTER_SECTION_EID_RE.match(e_id)  # lawvm-regex: prefilter fixed-shape eId chapter/section locator parse (structural id, mints no legal state)
     if match is None:
         return ""
     return match.group("chapter").replace("_", " ")
