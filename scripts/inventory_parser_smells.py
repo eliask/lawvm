@@ -106,6 +106,12 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/transparent_store.py": "source_plane",
     "src/lawvm/finland/finlex_api.py": "source_plane",
     "src/lawvm/finland/xml_ir.py": "source_plane",
+    # eId / locator / AKN-component / version-suffix parsers (no legal prose):
+    "src/lawvm/finland/section_text_extractor.py": "source_plane",
+    "src/lawvm/finland/section_resolver.py": "source_plane",
+    "src/lawvm/finland/provision_ref_locator.py": "source_plane",
+    "src/lawvm/finland/interlink_targets.py": "source_plane",
+    "src/lawvm/finland/editorial_adjudication.py": "source_plane",
     # --- lexer (B): label / numeric-token normalization only ---
     "src/lawvm/core/tree_ops.py": "lexer",
     "src/lawvm/finland/labels.py": "lexer",

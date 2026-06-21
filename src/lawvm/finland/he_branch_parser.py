@@ -328,6 +328,7 @@ def _is_enactment_section(element: etree._Element, text_sample: str) -> bool:
             return True
 
     # Text sample heuristic
+    # lawvm-regex: prefilter enactment-vs-rationale routing guard on a bounded text sample; clause parse delegated to johtolause/api.parse_clause
     if text_sample and _EHDOTETAAN_RE.search(text_sample[:200]):
         return True
 
@@ -393,6 +394,7 @@ def _extract_proposed_voimaantulo(full_body_text: str) -> Optional[date]:
 
     Returns None when no date can be extracted (common: "when needed" proposals).
     """
+    # lawvm-regex: owning_parser this module is the HE-source branch owning parser; voimaantulo date extraction is its own production
     m = _VOIMAANTULO_RE.search(full_body_text)
     if m is None:
         return None
@@ -421,6 +423,7 @@ def _strip_preamble(clause_text: str) -> tuple[str, str]:
     Returns (preamble, inner_text).
     Per HEClauseRecognizer grammar: preamble is up to the first statute citation.
     """
+    # lawvm-regex: owning_parser HE owning parser strips its own clause preamble before delegating inner clause to parse_clause
     m = _PREAMBLE_RE.match(clause_text)
     if m and m.end() > 0:
         preamble = clause_text[:m.end()].strip()
@@ -436,6 +439,7 @@ def _extract_statute_citation(clause_text: str) -> Optional[tuple[str, str]]:
     statute_id is in the form 'NUMBER/YEAR', e.g. '711/2022'.
     Finnish statute IDs use NUMBER/YEAR format (not YEAR/NUMBER).
     """
+    # lawvm-regex: owning_parser HE branch owning parser extracts the statute citation from its own clause text
     m = _STATUTE_CITE_RE.search(clause_text)
     if m is None:
         return None
@@ -452,6 +456,7 @@ def _is_proposal_relative_address(clause_text: str) -> bool:
     not exist in the current enacted statute state; we mark the op and emit
     BranchTargetResolutionFinding rather than failing.
     """
+    # lawvm-regex: owning_parser HE owning parser flags a proposal-relative address in its own clause text; emits BranchTargetResolutionFinding
     return _PROPOSAL_RELATIVE_RE.search(clause_text) is not None
 
 

@@ -134,6 +134,7 @@ def _consolidate_kumottu_range(ir: IRNode) -> IRNode:
         ]
         if len(p_nodes) != 1 or not p_nodes[0].text:
             return None
+        # lawvm-regex: owning_parser fixed Finlex editorial placeholder match on owned post-apply node text, not source-plane mint
         m = _SECTION_KUMOTTU_PLACEHOLDER_RE.match(p_nodes[0].text)
         if not m:
             return None
@@ -308,6 +309,7 @@ def _consolidate_kumottu_range(ir: IRNode) -> IRNode:
                 if c.kind == IRNodeKind.P
             ]
             if len(p_nodes) == 1 and p_nodes[0].text:
+                # lawvm-regex: owning_parser fixed editorial kumottu-placeholder match on owned post-apply node text, not source-plane mint
                 m = _KUMOTTU_PLACEHOLDER_RE.match(p_nodes[0].text)
                 if m:
                     sec_prefix = m.group(1)
