@@ -1533,6 +1533,7 @@ def assign_scope_from_renumber_destinations(
     """
 
     result = list(los)
+    _assign_jolloin_renumber_scope_from_companion_targets(result)
     pending_section_destination: tuple[str, Optional[str], Optional[str]] | None = None
 
     for i, lo in enumerate(los):
@@ -1596,6 +1597,98 @@ def assign_scope_from_renumber_destinations(
                 )
 
     return result
+
+
+def _assign_jolloin_renumber_scope_from_companion_targets(
+    los: List[_LegalOperation],
+) -> None:
+    """Repair ``jolloin`` companion renumber scope from its resolved insert.
+
+    A clause such as ``2 lukuun uusi 7 a ja 9 a § ja 47 §:ään uusi 1 momentti,
+    jolloin nykyinen 1 momentti siirtyy 2 momentiksi`` can leave the synthetic
+    ``fi.jolloin_renumber`` companion with the chapter of the previous list
+    while later scope/payload elaboration resolves the actual insert to the
+    correct live section.  Use that same-batch exact leaf witness for the
+    companion; do not consult raw prose or global live uniqueness here.
+    """
+
+    source_counts: dict[tuple[object | None, Optional[str]], int] = {}
+    for lo in los:
+        if lo.action is StructuralAction.RENUMBER and lo.witness_rule_id == "fi.jolloin_renumber":
+            key = (lo.source, lo.group_id)
+            source_counts[key] = source_counts.get(key, 0) + 1
+
+    for i, lo in enumerate(tuple(los)):
+        if lo.action is not StructuralAction.RENUMBER:
+            continue
+        if lo.witness_rule_id != "fi.jolloin_renumber":
+            continue
+        if source_counts.get((lo.source, lo.group_id), 0) != 1:
+            continue
+        if "chapter_scope_from_unique_live_section" in lo.provenance_tags:
+            continue
+        target_pd = _lo_path_dict(lo)
+        section = target_pd.get("section")
+        subsection = target_pd.get("subsection")
+        if not section or not subsection:
+            continue
+        current_chapter = target_pd.get("chapter")
+        current_part = target_pd.get("part")
+
+        companion_scope = _jolloin_companion_scope(
+            los[i + 1 :],
+            section=section,
+            subsection=subsection,
+            current_chapter=current_chapter,
+            current_part=current_part,
+            source=lo.source,
+            group_id=lo.group_id,
+        )
+        if companion_scope is None:
+            continue
+        chapter, part = companion_scope
+        scoped = _lo_with_path_update(lo, chapter=chapter, part=part)
+        los[i] = lo_with_added_scope_tag(
+            scoped,
+            "jolloin_renumber_scope_from_companion_target",
+        )
+
+
+def _jolloin_companion_scope(
+    later_ops: Sequence[_LegalOperation],
+    *,
+    section: str,
+    subsection: str,
+    current_chapter: Optional[str],
+    current_part: Optional[str],
+    source: object | None,
+    group_id: Optional[str],
+) -> tuple[Optional[str], Optional[str]] | None:
+    """Return the same-source same-leaf insert container scope for a jolloin pair."""
+
+    matches: list[tuple[Optional[str], Optional[str]]] = []
+    for candidate in later_ops:
+        if source is not None and candidate.source is not None and candidate.source != source:
+            break
+        if group_id and candidate.group_id and candidate.group_id != group_id:
+            continue
+        pd = _lo_path_dict(candidate)
+        if pd.get("section") != section or pd.get("subsection") != subsection:
+            continue
+        if candidate.action is not StructuralAction.INSERT:
+            return None
+        candidate_chapter = pd.get("chapter")
+        candidate_part = pd.get("part")
+        if candidate_chapter == current_chapter and candidate_part == current_part:
+            return None
+        if candidate_chapter is None and candidate_part is None:
+            continue
+        scope = (candidate_chapter, candidate_part)
+        if scope not in matches:
+            matches.append(scope)
+    if len(matches) != 1:
+        return None
+    return matches[0]
 
 
 def restrict_sec1_fallback_to_parent(sec1_text: str, parent_id: str) -> str:
