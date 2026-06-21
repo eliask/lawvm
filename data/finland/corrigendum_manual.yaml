@@ -229,6 +229,59 @@
   notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): enacted SD source XML has an empty section 9 shell; consolidated Finlex section 9 is tagged finlex:vsId='1161/1991', so the missing Voimaantulo body is source-owned by the base act."
   verified: "2026-06-21"
 
+# 1208/1991 (Metsäveroasetus) — enacted base SD source XML has several
+# still-live OCR/spacing defects in ordinary prose. No official corrigendum was
+# harvested; cached consolidated XML fin@20061451 carries the corrected visible
+# text. Each row is an exact text-node patch, bounded to the faulty phrase.
+- amendment_id: "1208/1991"
+  wrong_text: "koko naan luovuttu"
+  correct_text: "kokonaan luovuttu"
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §2 text has OCR split 'koko naan'; cached consolidated XML fin@20061451 has 'kokonaan'. Minimal body_text patch applies only when the exact faulty phrase is present."
+  verified: "2026-06-21"
+
+- amendment_id: "1208/1991"
+  wrong_text: "Taajamaalueilla luokitus"
+  correct_text: "Taajama-alueilla luokitus"
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §8 text has missing compound hyphen 'Taajamaalueilla'; cached consolidated XML fin@20061451 has 'Taajama-alueilla'. Minimal body_text patch applies only when the exact faulty phrase is present."
+  verified: "2026-06-21"
+
+- amendment_id: "1208/1991"
+  wrong_text: "rantaalueiden tuulisuus"
+  correct_text: "ranta-alueiden tuulisuus"
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §7 text has missing compound hyphen 'rantaalueiden'; cached consolidated XML fin@20061451 has 'ranta-alueiden'. Minimal body_text patch applies only when the exact faulty phrase is present."
+  verified: "2026-06-21"
+
+- amendment_id: "1208/1991"
+  wrong_text: "varustet tujen rakennettujen teiden"
+  correct_text: "varustettujen rakennettujen teiden"
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §5 text has OCR split 'varustet tujen'; cached consolidated XML fin@20061451 has 'varustettujen'. Minimal body_text patch applies only when the exact faulty phrase is present."
+  verified: "2026-06-21"
+
+- amendment_id: "1208/1991"
+  wrong_text: "vastaava pätevyys(<i>veroluokittaja</i>)"
+  correct_text: "vastaava pätevyys (<i>veroluokittaja</i>)"
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §12 XML is missing a visible space before the italicized parenthetical term; cached consolidated XML fin@20061451 has the space. Minimal body_text patch applies only when the exact faulty inline-markup fragment is present."
+  verified: "2026-06-21"
+
+- amendment_id: "1208/1991"
+  wrong_text: "vuodelta 1991 toimirerravassa verotuksessa. Asetuksen 17§:ää sovelletan"
+  correct_text: "vuodelta 1991 toimitettavassa verotuksessa. Asetuksen 17 §:ää sovelletaan"
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §25 text has OCR 'toimirerravassa', missing space in '17§:ää', and OCR 'sovelletan'; cached consolidated XML fin@20061451 has the corrected visible text. Minimal body_text patch applies only when the exact faulty phrase is present."
+  verified: "2026-06-21"
+
+- amendment_id: "1208/1991"
+  wrong_text: "maatilaatalouden tuloveroastesus"
+  correct_text: "maatilatalouden tuloveroasetus"
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §25 text has OCR 'maatilaatalouden tuloveroastesus'; cached consolidated XML fin@20061451 has 'maatilatalouden tuloveroasetus'. Minimal body_text patch applies only when the exact faulty phrase is present."
+  verified: "2026-06-21"
+
 # 1578/1992 (Laki velkojien maksunsaantijärjestyksestä) — enacted base SD
 # source XML has a one-letter typo in 3 §. No official corrigendum was
 # harvested; the consolidated Finlex witness corrects the legal term.

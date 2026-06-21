@@ -378,6 +378,71 @@ def test_replay_xml_1991_1161_applies_owned_section_9_source_defect() -> None:
     assert "täytäntöönpanon edellyttämiin toimenpiteisiin" in section_9
 
 
+def test_manual_base_source_patch_1991_1208_corrects_owned_ocr_defects() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrongs = [
+        "koko naan luovuttu",
+        "Taajamaalueilla luokitus",
+        "rantaalueiden tuulisuus",
+        "varustet tujen rakennettujen teiden",
+        "vastaava pätevyys(<i>veroluokittaja</i>)",
+        "vuodelta 1991 toimirerravassa verotuksessa. Asetuksen 17§:ää sovelletan",
+        "maatilaatalouden tuloveroastesus",
+    ]
+    corrects = [
+        "kokonaan luovuttu",
+        "Taajama-alueilla luokitus",
+        "ranta-alueiden tuulisuus",
+        "varustettujen rakennettujen teiden",
+        "vastaava pätevyys (<i>veroluokittaja</i>)",
+        "vuodelta 1991 toimitettavassa verotuksessa. Asetuksen 17 §:ää sovelletaan",
+        "maatilatalouden tuloveroasetus",
+    ]
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<akomaNtoso><act><body>"
+        + "".join(f"<section><content><p>{wrong}</p></content></section>" for wrong in wrongs)
+        + "</body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "1991/1208")
+
+    assert applied == [f"body_patch/1991/1208/{idx}" for idx in range(7)]
+    for wrong, correct in zip(wrongs, corrects, strict=True):
+        assert wrong.encode("utf-8") not in patched
+        assert correct.encode("utf-8") in patched
+
+
+def test_replay_xml_1991_1208_applies_owned_ocr_defects() -> None:
+    replay = replay_xml_for_test(
+        "1991/1208",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    joined = {
+        key: " ".join(irnode_to_text(sections[key]).split())
+        for key in ("section:2", "section:5", "section:7", "section:8", "section:12", "section:25")
+    }
+
+    assert "kokonaan luovuttu" in joined["section:2"]
+    assert "koko naan luovuttu" not in joined["section:2"]
+    assert "varustettujen rakennettujen teiden" in joined["section:5"]
+    assert "varustet tujen rakennettujen teiden" not in joined["section:5"]
+    assert "ranta-alueiden tuulisuus" in joined["section:7"]
+    assert "rantaalueiden tuulisuus" not in joined["section:7"]
+    assert "Taajama-alueilla luokitus" in joined["section:8"]
+    assert "Taajamaalueilla luokitus" not in joined["section:8"]
+    assert "pätevyys (veroluokittaja)" in joined["section:12"]
+    assert "pätevyys(veroluokittaja)" not in joined["section:12"]
+    assert "toimitettavassa verotuksessa" in joined["section:25"]
+    assert "17 §:ää sovelletaan" in joined["section:25"]
+    assert "maatilatalouden tuloveroasetus" in joined["section:25"]
+    assert "toimirerravassa" not in joined["section:25"]
+    assert "tuloveroastesus" not in joined["section:25"]
+
+
 def test_manual_source_patches_1992_1578_correct_base_and_amendment_typos() -> None:
     table = corr.CorrigendumPatchTable.load_from_source()
     base_wrong = "konkursissa varojen tilittämiseen"
