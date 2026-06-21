@@ -422,6 +422,7 @@ def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
     range can expire unrelated ``70a``/``70f`` sections in later chapters.
     """
     text = johto.lower()
+    # lawvm-regex: owning_parser clause-boundary segmenter (same family as kumotaan.py); op injection itself is witnessed (PureKumotaanInjected* + witness_rule_id)
     kumotaan_match = re.search(
         r"kumotaan\b(.*?)(?:muutetaan|lisätään|seuraavasti|sekä\s+muutetaan|sekä\s+lisätään|$)",
         text,
@@ -431,6 +432,7 @@ def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
         return {}
 
     kumotaan_text = kumotaan_match.group(1)
+    # lawvm-regex: owning_parser chapter-marker lexer for scoped numeric-range live-suffix expansion
     markers = list(re.finditer(r"(\d+(?:\s*[a-z])?)\s+luvun\b", kumotaan_text))
     blocks: list[tuple[Optional[str], str]] = []
     if markers and markers[0].start() > 0:
@@ -491,6 +493,7 @@ def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
     for chapter, block in blocks:
         ranges = [
             (int(match.group(1)), int(match.group(2)))
+            # lawvm-regex: owning_parser whole-section numeric-range site for the live letter-suffix absorption guard
             for match in re.finditer(r"\b(\d+)\s*[–—―\-]\s*(\d+)\s*§(?!:)", block)
             if int(match.group(1)) <= int(match.group(2))
         ]

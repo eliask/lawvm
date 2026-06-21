@@ -96,6 +96,7 @@ _CONTINGENT_PATTERNS = re.compile(
 
 
 def _lower_voimaantulo(raw: str) -> Optional[EffectIntent]:
+    # lawvm-regex: owning_parser expiry-tail recognizer inside a COMMENCEMENT-classified MetaClause; produces a typed Expiry, no silent drop
     expiry_match = re.search(
         r"on\s+voimassa\s+.{0,60}?(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})",
         raw,
@@ -109,6 +110,7 @@ def _lower_voimaantulo(raw: str) -> Optional[EffectIntent]:
         )
         return Expiry(expiry_date=expiry_date, raw_text=raw)
 
+    # lawvm-regex: owning_parser commencement-vs-other discriminator over the already-classified MetaClause text
     is_commencement = bool(re.search(r"tulee\s+voimaan", raw, re.IGNORECASE))
     if not is_commencement:
         eff_date = _extract_fi_date(raw)

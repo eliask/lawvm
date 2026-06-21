@@ -203,6 +203,7 @@ def _combined_root_insert_range_owns_section(
     preamble = source_model.preamble_text()
     if "luku" not in preamble or "§" not in preamble:
         return False
+    # lawvm-regex: owning_parser recognizes the combined chapter-range + section-range source formula to decide range-ownership; produces a typed scope verdict + Finding, mints no op
     for match in _COMBINED_ROOT_INSERT_CHAPTER_SECTION_RANGE_RE.finditer(preamble):
         if not _label_in_closed_range(
             body_chapter,
