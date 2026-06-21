@@ -857,18 +857,42 @@ def _edge_to_cite_kind(
     return CiteKind.CROSS_STATUTE
 
 
-def _edge_to_confidence(edge: CrossRefEdge) -> CiteConfidence:
-    """Assign confidence to a CrossRefEdge.
+def _edge_to_confidence(
+    edge: CrossRefEdge,
+    target_ref: ProvisionRef,
+) -> CiteConfidence:
+    """Assign a resolution-status-driven confidence to a CrossRefEdge.
 
-    For edges derived from explicit AKN <ref> elements or metadata, the
-    confidence is EXACT — the structured markup names the target.
+    The status records *how far* the structural markup pinned the target, per
+    the resolution-status ladder (``FI_REFERENCE_CATALOGUE.md`` §0.1). It is
+    driven by the ACTUAL resolution outcome — never hardcoded:
 
-    Target resolution against the statute graph is deferred to the projection
-    phase. At extraction time, existence of the AKN href → EXACT.
-    BROKEN detection requires the consolidated statute store; handled separately.
+    - **Metadata / amendment edges** (``REPEALS`` / ``ISSUED_UNDER`` /
+      ``ISSUES`` / ``AMENDS``) target the *whole act* by construction: the
+      ``finlex:`` metadata names an act, not a provision, so act-level
+      resolution is *complete*, not pending → ``EXACT``.
+    - **CITES `<ref>` edges with a resolved provision** (the AKN href carries a
+      ``#sec_N`` fragment, so ``target_ref`` has a ``section_label``) name both
+      act and provision unambiguously → ``EXACT``.
+    - **CITES `<ref>` edges that name only an act** (bare statute href, no
+      provision fragment → empty ``section_label``) have a known act but a
+      *pending* provision target → ``STATUTE_ONLY``. Per tag-don't-guess the
+      provision is not silently widened to "the whole act as if exact".
+
+    Target *re-validation* against the consolidated statute graph (``BROKEN``)
+    is a separate bitemporal projection-phase pass (``broken_detection``), not
+    an extraction-time concern.
     """
-    # All CrossRefEdge sources are structural (AKN element or finlex: metadata),
-    # so confidence is EXACT at extraction time.
+    if edge.edge_type == "CITES":
+        # A CITES <ref> resolves to EXACT only when the AKN href pinned a
+        # provision (#sec_N → section_label). A bare act href leaves the
+        # in-act provision pending → STATUTE_ONLY (not a guessed whole-act).
+        if target_ref.section_label:
+            return CiteConfidence.EXACT
+        return CiteConfidence.STATUTE_ONLY
+    # REPEALS / ISSUED_UNDER / ISSUES / AMENDS: the finlex metadata / johtolause
+    # <affectedDocument> names the WHOLE act as the target by construction, so
+    # act-level resolution is complete → EXACT (no pending provision).
     return CiteConfidence.EXACT
 
 
@@ -900,9 +924,11 @@ def _edge_to_mention(
 ) -> ReferenceMention:
     """Lift one CrossRefEdge to a ReferenceMention."""
     cite_kind = _edge_to_cite_kind(edge, source_statute_id)
-    confidence = _edge_to_confidence(edge)
     src_ref = _source_provision_ref(edge, source_statute_id)
     tgt_ref = _target_provision_ref(edge)
+    # Resolution-status-driven: a CITES <ref> with no resolved provision
+    # (bare act href) is STATUTE_ONLY, not a guessed whole-act EXACT.
+    confidence = _edge_to_confidence(edge, tgt_ref)
 
     # For CITES edges, phrase_lemma is "ref_element" (AKN <ref> element).
     # AMENDS edges come from the johtolause <affectedDocument> element, so carry

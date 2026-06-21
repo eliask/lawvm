@@ -70,10 +70,45 @@ def post_process_tree(ir: IRNode, normalize_replay_text: bool = True) -> IRNode:
         skip_heading_prefixes=["voimaantulo"],
     )
     ir = _tops.hoist_trailing_into_container(ir, "part", "chapter")
+    ir = _canonicalize_section_shell_order(ir)
     # Normalize text
     if normalize_replay_text:
         ir = _tops.normalize_text(ir)
     return ir
+
+
+def _canonicalize_section_shell_order(ir: IRNode) -> IRNode:
+    """Keep section ``num`` before section ``heading``.
+
+    Finnish heading insertions can rebase against older source snapshots whose
+    XML encoded ``heading`` before ``num``.  The legal section identity marker is
+    the ``num``; a section's own heading renders after it.
+    """
+
+    rewritten_children = tuple(_canonicalize_section_shell_order(child) for child in ir.children)
+    changed = rewritten_children != ir.children
+    if ir.kind is not IRNodeKind.SECTION:
+        if not changed:
+            return ir
+        return IRNode(kind=ir.kind, label=ir.label, text=ir.text, attrs=ir.attrs, children=rewritten_children)
+
+    first_heading_index = next(
+        (idx for idx, child in enumerate(rewritten_children) if child.kind is IRNodeKind.HEADING),
+        None,
+    )
+    first_num_index = next(
+        (idx for idx, child in enumerate(rewritten_children) if child.kind is IRNodeKind.NUM),
+        None,
+    )
+    if first_heading_index is None or first_num_index is None or first_num_index < first_heading_index:
+        if not changed:
+            return ir
+        return IRNode(kind=ir.kind, label=ir.label, text=ir.text, attrs=ir.attrs, children=rewritten_children)
+
+    children = list(rewritten_children)
+    num = children.pop(first_num_index)
+    children.insert(first_heading_index, num)
+    return IRNode(kind=ir.kind, label=ir.label, text=ir.text, attrs=ir.attrs, children=tuple(children))
 
 
 def _consolidate_kumottu_range(ir: IRNode) -> IRNode:

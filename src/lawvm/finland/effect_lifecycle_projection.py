@@ -276,6 +276,44 @@ def _disambiguate_colliding_effect_ids(ids: Sequence[str | None]) -> tuple[str |
     return tuple(resolved)
 
 
+def _same_source_effect_claim(left: EffectRef, right: EffectRef) -> bool:
+    """Return True when two effect refs name the same source-backed mutation.
+
+    Replay products may already carry an operation effect whose source
+    instrument metadata reflects the raw amendment effective date, while compile
+    projection derives the same operation after a subsection-level commencement
+    override has adjusted contextual metadata.  Those are not two effects: the
+    identity-bearing source statute, target, and source-provision witness are the
+    same.  Keep true conflicts visible by requiring target and witness equality.
+    """
+    if left.source_provision is None or right.source_provision is None:
+        return False
+    left_source = left.source_provision
+    right_source = right.source_provision
+    return (
+        left.source_instrument.instrument_id == right.source_instrument.instrument_id
+        and left.target_statute == right.target_statute
+        and left.target_address == right.target_address
+        and left_source.instrument.instrument_id == right_source.instrument.instrument_id
+        and left_source.path == right_source.path
+        and left_source.span_id == right_source.span_id
+        and left_source.rule_id == right_source.rule_id
+        and left_source.text_excerpt == right_source.text_excerpt
+    )
+
+
+def _known_equivalent_effect(
+    effect: EffectRef,
+    known_source_effects: Sequence[EffectRef],
+) -> EffectRef | None:
+    for known in known_source_effects:
+        if known.effect_id != effect.effect_id:
+            continue
+        if _same_source_effect_claim(known, effect):
+            return known
+    return None
+
+
 def _source_effects_from_ops_and_temporal_events(
     *,
     target_statute: str,
@@ -326,6 +364,8 @@ def _source_effects_from_ops_and_temporal_events(
             effect_id=effect_id if source is not None and source.statute_id else None,
         )
         if effect is not None:
+            if _known_equivalent_effect(effect, known_effects) is not None:
+                continue
             append_unique_effect_ref(
                 effects,
                 effect,

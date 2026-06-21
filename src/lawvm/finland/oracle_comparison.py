@@ -81,10 +81,17 @@ _KUMOTTU_STUBS_RE = re.compile(
 _KUMOTTU_STUB_SURFACE_RE = re.compile(r"\b(?:on|ovat)\s+kumottu\b|:ll[äa]\b", re.IGNORECASE)
 
 _OLD_CODE_REFERENCE_MARKER_RE = re.compile(
-    r"^\s*(?:\d+\s*[a-zäöå]?\s*§\s+)?\d+\s*[a-zäöå]?\s*§:n\s+sijasta\s+ks\.\s+\S",
+    r"^\s{0,8}+\d{1,4}+\s{0,4}+[a-zäöå]?\s{0,4}+§:n"
+    r"\s{1,4}+sijasta\s{1,4}+ks\.\s{1,4}+\S",
     re.IGNORECASE,
 )
-_DASH_PLACEHOLDER_RE = re.compile(r"^\s*(?:[-–—]\s*){3,}$")
+_OLD_CODE_REFERENCE_MARKER_WITH_LEAD_RE = re.compile(
+    r"^\s{0,8}+\d{1,4}+\s{0,4}+[a-zäöå]?\s{0,4}+§\s{1,4}+"
+    r"\d{1,4}+\s{0,4}+[a-zäöå]?\s{0,4}+§:n"
+    r"\s{1,4}+sijasta\s{1,4}+ks\.\s{1,4}+\S",
+    re.IGNORECASE,
+)
+_DASH_PLACEHOLDER_RE = re.compile(r"^\s{0,8}+[-–—](?:\s{0,8}+[-–—]){2,}\s{0,8}+$")
 
 
 def is_old_code_reference_marker(text: str) -> bool:
@@ -94,7 +101,11 @@ def is_old_code_reference_marker(text: str) -> bool:
     like ``5 §:n sijasta ks. L ...`` instead of source wording. That marker is a
     comparison/adjudication surface, not replayed legal text.
     """
-    return _OLD_CODE_REFERENCE_MARKER_RE.match(text.strip()) is not None
+    stripped = text.strip()
+    return (
+        _OLD_CODE_REFERENCE_MARKER_RE.match(stripped) is not None
+        or _OLD_CODE_REFERENCE_MARKER_WITH_LEAD_RE.match(stripped) is not None
+    )
 
 
 def _is_replay_obsolete_placeholder_or_bracketed_text(text: str) -> bool:
@@ -313,13 +324,13 @@ def strip_kumottu_attribution(text: str) -> str:
 
 
 _LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE = re.compile(
-    r"^(\s*\d+\s*[a-zäöå]?\s*§\s*)"
-    r"(?:[IVXLCDM]{1,8}\.\s+[A-ZÅÄÖ][^.]{1,120}\.\s+)",
+    r"^(\s{0,8}+\d{1,4}+\s{0,4}+[a-zäöå]?\s{0,4}+§\s{0,8}+)"
+    r"(?:[IVXLCDM]{1,8}+\.\s{1,4}+[A-ZÅÄÖ][^.]{1,120}+\.\s{1,4}+)",
     re.IGNORECASE,
 )
 _LEGACY_NUMBERED_SECTION_HEADING_PREFIX_RE = re.compile(
-    r"^(\s*\d+\s*[a-zäöå]?\s*§\s*)"
-    r"(?:\d{1,2}\.\s+[A-ZÅÄÖ][^.]{1,120}\.\s+)",
+    r"^(\s{0,8}+\d{1,4}+\s{0,4}+[a-zäöå]?\s{0,4}+§\s{0,8}+)"
+    r"(?:\d{1,2}+\.\s{1,4}+[A-ZÅÄÖ][^.]{1,120}+\.\s{1,4}+)",
 )
 _PROMULGATION_CLOSURE_TAILS = (
     "Tätä kaikki asianomaiset noudattakoot.",
