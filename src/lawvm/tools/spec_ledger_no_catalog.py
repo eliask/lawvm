@@ -395,4 +395,11 @@ _NO_RULE_SPECS: Dict[str, str] = {
         "specific divergence takes priority); the suppression is recorded as a "
         "filtered divergence with a receipt."
     ),
+    "no_verify_source_signal_base_year_unresolved": (
+        "A Norway base_id does not carry the canonical no/lov/YYYY-MM-DD-N "
+        "form, so the source-signal inference cannot use an enactment year "
+        "and falls through the sparse-indexed-history branch unconditionally. "
+        "Recorded so the malformed base_id surfaces in verify diagnostics "
+        "rather than silently behaving as 'year unknown'."
+    ),
 }

@@ -188,6 +188,12 @@ class NOVerifyResult:
     source_signal: str | None = None
     replay: Optional[NOReplayResult] = None
     error: str | None = None
+    # Typed finding (or ``None`` when the base_id had a canonical year) emitted
+    # when :func:`_no_base_year` could not extract a year from the result's
+    # ``base_id``. Replaces the silent ``base_year = 0`` sentinel that used to
+    # swallow ``IndexError`` / ``ValueError`` on undocumented base_id shapes
+    # (§1.10 invisible-heuristic smell). ``None`` is the steady-state.
+    source_signal_diagnostic: Optional[dict[str, Any]] = None
 
 
 _NO_RELATION_CONTAINER_KINDS = {"part", "chapter"}
@@ -238,6 +244,43 @@ def _is_no_self_section_lead_shell(section_label: str | None, text: str) -> bool
         or "skal ny endring lyde :" in lowered
         or "skal nye endringer lyde :" in lowered
     )
+
+
+def _no_base_year(base_id: str) -> tuple[int, dict | None]:
+    """Extract the enactment year from a Norway ``base_id`` with a typed finding.
+
+    A Norway ``base_id`` has the canonical form ``no/lov/YYYY-MM-DD-N`` (per
+    :func:`lawvm.norway.grafter.lovdata_path_to_address`). The enactment year
+    lives in the third ``/``-separated segment, first 4 chars. Returns ``(year,
+    None)`` on the canonical shape; ``(0, finding)`` when the shape is
+    unrecognized, with a typed ``rule_id=no_verify_source_signal_base_year_unresolved``
+    finding so the caller (or downstream JSON consumer) sees the
+    unmappable ``base_id`` rather than the bare ``0`` silent sentinel
+    previously produced by ``except (IndexError, ValueError): base_year = 0``,
+    which (per AGENTS.md §1.10) is exactly the kind of invisible heuristic
+    the spec forbids.
+
+    The finding carries the offending ``base_id`` so a triager can find the
+    malformed id without re-running extraction.
+    """
+    segments = base_id.split("/")
+    if len(segments) < 3 or len(segments[2]) < 4 or not segments[2][:4].isdigit():
+        return 0, {
+            "rule_id": "no_verify_source_signal_base_year_unresolved",
+            "phase": "verify",
+            "family": "source_pathology",
+            "reason": (
+                "Norway base_id does not carry a canonical no/lov/YYYY-MM-DD-N form; "
+                "source-signal inference cannot use an enactment year, falling through "
+                "the sparse-indexed-history branch unconditionally."
+            ),
+            "base_id": base_id,
+            "base_year": 0,
+            "blocking": False,
+            "strict_disposition": "warn",
+            "quirks_disposition": "record",
+        }
+    return int(segments[2][:4]), None
 
 
 def _infer_no_source_signal(
@@ -965,11 +1008,9 @@ def verify_no_against_current(
     result.compare_projection_rule_counts = dict(Counter(projection.rule_id for projection in compare_projections))
     result.compare_projections = compare_projections
     result.divergences = primary
-    base_year = 0
-    try:
-        base_year = int(result.base_id.split("/")[2][:4])
-    except (IndexError, ValueError):
-        base_year = 0
+    base_year, base_year_finding = _no_base_year(result.base_id)
+    if base_year_finding is not None:
+        result.source_signal_diagnostic = base_year_finding
     result.source_signal = _infer_no_source_signal(
         divergence_count=result.divergence_count,
         indexed_amendment_count=result.indexed_amendment_count,

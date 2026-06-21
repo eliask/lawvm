@@ -23,6 +23,7 @@ from lawvm.norway.verify import (
     NO_VERIFY_COMPARE_SELF_SECTION_SHELL_BLANKED,
     NO_VERIFY_COMPARE_SENTENCE_CHILDREN_COLLAPSED,
     _infer_no_source_signal,
+    _no_base_year,
     _no_compare_child_path,
     _no_kind_value,
     _normalize_no_compare_tree,
@@ -328,6 +329,63 @@ def test_infer_no_source_signal_leaves_real_two_amendment_case_unclassified() ->
         )
         is None
     )
+
+
+# --- §1.10: _no_base_year converts silent try/except into a typed finding ---
+#
+# Before this fix, verify_no_against_current had:
+#     try:
+#         base_year = int(result.base_id.split("/")[2][:4])
+#     except (IndexError, ValueError):
+#         base_year = 0
+# which (per AGENTS.md §1.10) was the canonical invisible-heuristic smell — a
+# malformed base_id silently became "year unknown" with no evidence trail.
+# _no_base_year returns (0, finding) for malformed shapes and (year, None)
+# for the canonical ``no/lov/YYYY-MM-DD-N`` form. verify_no_against_current
+# now attaches the finding as result.source_signal_diagnostic so a triager
+# can see the unparseable base_id without re-running extraction.
+
+
+def test_no_base_year_extracts_canonical_norway_base_id_year() -> None:
+    year, finding = _no_base_year("no/lov/2024-01-12-1")
+
+    assert year == 2024
+    assert finding is None
+
+
+def test_no_base_year_emits_typed_finding_for_malformed_segments() -> None:
+    year, finding = _no_base_year("no/lov")
+
+    assert year == 0
+    assert finding is not None
+    assert finding["rule_id"] == "no_verify_source_signal_base_year_unresolved"
+    assert finding["phase"] == "verify"
+    assert finding["family"] == "source_pathology"
+    assert finding["base_id"] == "no/lov"
+    assert finding["base_year"] == 0
+    # §1.10: the offending base_id is embedded in the finding so triage does
+    # not need to re-run extraction to find the malformed id.
+    assert "no/lov" in str(finding)
+
+
+def test_no_base_year_emits_typed_finding_for_non_numeric_year_segment() -> None:
+    year, finding = _no_base_year("no/nonexistent/xyz-1")
+
+    assert year == 0
+    assert finding is not None
+    assert finding["rule_id"] == "no_verify_source_signal_base_year_unresolved"
+    assert finding["base_id"] == "no/nonexistent/xyz-1"
+
+
+def test_no_base_year_emits_typed_finding_for_short_year_segment() -> None:
+    # A 3-char or shorter year segment is treated as unresolvable (canonical
+    # form is 4-digit year). The bare try/except previously set base_year=0
+    # silently; the typed finding now carries the offending base_id.
+    year, finding = _no_base_year("no/lov/2-01-01-1")
+
+    assert year == 0
+    assert finding is not None
+    assert finding["rule_id"] == "no_verify_source_signal_base_year_unresolved"
 
 
 def test_no_kind_value_coerces_enum_kind() -> None:
