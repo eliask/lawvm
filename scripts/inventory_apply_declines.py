@@ -20,9 +20,18 @@ to ``source_pathologies_out`` / ``findings_out`` / ``failed_ops_out`` BEFORE the
 
 What the detector flags (Part 1)
 --------------------------------
-Every ``return state`` statement in a scanned apply file, where ``state`` is the
-bare ReplayState parameter of the enclosing function (an op-handler) — i.e. the
-handler returns the input tree UNCHANGED. Each such decline is classified:
+Every ``return <p>`` statement in a scanned apply file, where ``p`` is a
+ReplayState parameter of the enclosing op-handler — i.e. the handler returns the
+input tree UNCHANGED. ``p`` is recognized either by the universal convention name
+``state`` OR by its ``ReplayState`` ANNOTATION (so an op-handler that names its
+ReplayState parameter something else — e.g. ``result`` / ``after_state`` — is no
+longer invisible; this closes the E5 hole). A renamed-ReplayState handler counts
+only when it is a GENUINE op-handler — wired to a typed witness SINK parameter
+(``source_pathologies_out`` / ``findings_out`` / ``failed_ops_out`` /
+``mutation_events_out``); a pure state-transform helper that takes a ReplayState
+but no witness sink (e.g. ``_maybe_update_section_heading``) is NOT an op-handler
+and its ``return result`` no-ops are out of scope (no false positive). Each
+decline is classified:
 
   - ``witnessed``   — a typed witness sink ``*_out.append(...)`` (one of
     ``source_pathologies_out`` / ``findings_out`` / ``failed_ops_out``) appears
@@ -127,6 +136,19 @@ WAIVER_MARKER = "lawvm-apply-decline:"
 
 RATCHET_BASELINE_PATH = Path("tests/data/apply_decline_ratchet_baseline.json")
 
+# An op-handler that can silently drop an authored op is, by construction, wired
+# into the production accounting ledger: it receives one of these typed witness
+# SINK parameters (the list it would ``.append(...)`` a pathology / finding /
+# failed-op to, or the mutation-event list a disposition is stamped on). This is
+# the discriminator that keeps a renamed-ReplayState parameter in scope ONLY when
+# the function is a genuine op-handler, and excludes pure state-transform helpers
+# (e.g. ``_maybe_update_section_heading``, which takes a ReplayState named
+# ``result`` and an op but NO witness sink — it cannot account for an op, so a
+# ``return result`` there is a side-effect no-op, not an un-witnessed op drop).
+WITNESS_SINK_PARAM_NAMES: frozenset[str] = WITNESS_SINK_NAMES | frozenset(
+    {"mutation_events_out"}
+)
+
 
 def _rel_posix(path: Path, repo_root: Path) -> str:
     try:
@@ -135,30 +157,93 @@ def _rel_posix(path: Path, repo_root: Path) -> str:
         return path.as_posix()
 
 
-def _is_bare_state_return(node: ast.Return) -> bool:
-    """True iff the statement is ``return state`` (the bare ReplayState name).
+def _annotation_is_replaystate(annotation: ast.expr | None) -> bool:
+    """True iff a parameter annotation denotes ``ReplayState``.
+
+    Recognizes the plain name (``ReplayState``), the forward-ref string
+    (``"ReplayState"``), and an attribute access (``module.ReplayState``).
+    Optional / union wrappers (``Optional[ReplayState]`` / ``ReplayState | None``)
+    are also matched — any annotation that mentions ``ReplayState`` as a name,
+    constant string, or attribute counts. This is what lets a ReplayState-TYPED
+    parameter be recognized by annotation even when it is NOT named ``state``.
+    """
+    if annotation is None:
+        return False
+    for sub in ast.walk(annotation):
+        if isinstance(sub, ast.Name) and sub.id == "ReplayState":
+            return True
+        if isinstance(sub, ast.Attribute) and sub.attr == "ReplayState":
+            return True
+        if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+            # forward-ref string, e.g. "ReplayState" or "Optional[ReplayState]".
+            if "ReplayState" in sub.value:
+                return True
+    return False
+
+
+def _state_param_names(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """Names of this function's ReplayState-typed parameters.
+
+    Two signals make a parameter a ReplayState parameter (the *input* tree a
+    decline would return unmodified):
+
+      - the literal name ``state`` — the universal apply-handler convention; kept
+        even when unannotated (every op-handler names its ReplayState param this
+        way), and
+      - any parameter whose ANNOTATION denotes ``ReplayState`` (closes the E5
+        hole: a handler that names its ReplayState param something other than
+        ``state`` — e.g. ``result`` / ``after_state`` — is no longer invisible).
+
+    Returning the *set* of such names lets the decline shape become
+    ``return <any-ReplayState-param>``, not just ``return state``.
+    """
+    args = fn.args
+    params = [*args.posonlyargs, *args.args, *args.kwonlyargs]
+    if args.vararg is not None:
+        params.append(args.vararg)
+    names: set[str] = set()
+    for p in params:
+        if p.arg == "state" or _annotation_is_replaystate(p.annotation):
+            names.add(p.arg)
+    return names
+
+
+def _function_has_witness_sink_param(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    """True iff the function receives a typed witness-SINK parameter.
+
+    A genuine apply op-handler — the only place an authored op can be silently
+    dropped — is wired into the production accounting ledger: it takes one of the
+    ``*_out`` witness sink lists (or ``mutation_events_out``) it would append the
+    op's disposition to. This is the op-handler discriminator that prevents false
+    positives when widening to renamed ReplayState parameters: a pure
+    state-transform helper that takes a ReplayState (named ``result`` etc.) but no
+    witness sink — e.g. ``_maybe_update_section_heading`` — cannot account for an
+    op and is therefore NOT an op-handler, so its ``return result`` no-ops are out
+    of scope.
+    """
+    args = fn.args
+    names = {a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)}
+    if args.vararg is not None:
+        names.add(args.vararg.arg)
+    return bool(names & WITNESS_SINK_PARAM_NAMES)
+
+
+def _is_state_param_return(node: ast.Return, state_param_names: set[str]) -> bool:
+    """True iff the statement is ``return <p>`` where ``p`` is a ReplayState
+    parameter of the enclosing function (the handler returns the input tree
+    UNCHANGED — a decline).
 
     ``return state.with_ir(...)`` (a real IR change) is an ``ast.Call`` /
     ``ast.Attribute`` value, not an ``ast.Name``, so it is excluded. ``return
-    None`` (dispatch) has a ``Constant`` / no value. Only the literal name
-    ``state`` counts as the decline shape.
+    None`` (dispatch) has a ``Constant`` / no value. Only the bare ReplayState
+    parameter name counts as the decline shape.
     """
-    return isinstance(node.value, ast.Name) and node.value.id == "state"
-
-
-def _function_has_state_param(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True iff ``state`` is a parameter of the function (it is an op-handler).
-
-    Restricting to functions that take ``state`` as a parameter ensures a
-    ``return state`` returns the *input* tree (a decline), not a freshly built
-    local also named ``state`` (which would be a real result). In practice every
-    apply op-handler takes ``state: ReplayState`` as its first parameter.
-    """
-    args = fn.args
-    names = [a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)]
-    if args.vararg is not None:
-        names.append(args.vararg.arg)
-    return "state" in names
+    return (
+        isinstance(node.value, ast.Name)
+        and node.value.id in state_param_names
+    )
 
 
 def _call_is_witness(call: ast.Call) -> bool:
@@ -319,14 +404,54 @@ def _scan_function(
     rel_path: str,
     lines: list[str],
     records: list[dict[str, Any]],
+    inherited_state_params: frozenset[str] = frozenset(),
+    inherited_is_op_handler: bool = False,
 ) -> None:
-    if not _function_has_state_param(fn):
+    own_state_params = _state_param_names(fn)
+    # The literal ``state`` parameter is the universal apply op-handler convention
+    # and is in scope on its own (no extra discriminator) — this preserves the
+    # original gate exactly. A ReplayState param under any OTHER name is the E5
+    # widening: it only counts as an op-handler decline site when the function is
+    # also wired to a witness sink (the op-handler discriminator), which excludes
+    # pure state-transform helpers (e.g. ``_maybe_update_section_heading``).
+    has_literal_state = "state" in own_state_params
+    has_renamed_replaystate = bool(own_state_params - {"state"})
+    widened_op_handler = has_renamed_replaystate and _function_has_witness_sink_param(
+        fn
+    )
+    is_op_handler = (
+        has_literal_state or widened_op_handler or inherited_is_op_handler
+    )
+
+    # ReplayState parameter names eligible as a decline (``return <name>``):
+    #   - the literal ``state`` whenever present,
+    #   - renamed ReplayState params only when this function qualifies as an
+    #     op-handler (via the witness-sink discriminator or inherited context),
+    #   - any names inherited from an enclosing op-handler (a closure that closes
+    #     over the outer ``state`` / ``result`` and returns it).
+    state_param_names: set[str] = set(inherited_state_params)
+    if has_literal_state:
+        state_param_names.add("state")
+    if widened_op_handler or inherited_is_op_handler:
+        state_param_names |= own_state_params
+
+    if not (is_op_handler and state_param_names):
+        # Not an op-handler at this level. Still descend into nested defs: a
+        # witness-bearing closure could live inside a non-handler wrapper, and its
+        # own ReplayState params must be scanned. Inherited state params do NOT
+        # propagate past a non-handler boundary.
+        for node in fn.body:
+            for sub in ast.walk(node):
+                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    _scan_function(sub, rel_path, lines, records)
         return
 
     def _walk(block: list[ast.stmt], stack: list[list[ast.stmt]]) -> None:
         next_stack = stack + [block]
         for stmt in block:
-            if isinstance(stmt, ast.Return) and _is_bare_state_return(stmt):
+            if isinstance(stmt, ast.Return) and _is_state_param_return(
+                stmt, state_param_names
+            ):
                 witnessed = _return_is_witnessed(stmt, next_stack)
                 waived = _line_waived(lines, stmt.lineno)
                 records.append(
@@ -346,7 +471,7 @@ def _scan_function(
                         "snippet": (
                             lines[stmt.lineno - 1].strip()
                             if 0 <= stmt.lineno - 1 < len(lines)
-                            else "return state"
+                            else "return <state>"
                         ),
                     }
                 )
@@ -362,13 +487,23 @@ def _scan_function(
 
     _walk(fn.body, [])
 
-    # Nested function defs (closures) inside this handler are also op-handlers if
-    # they take / close over ``state``; visit them so closure declines count.
+    # Nested function defs (closures) inside this handler are also op-handlers: a
+    # closure that closes over the enclosing ``state`` / witness sinks inherits
+    # this handler's ReplayState param names and op-handler status, so a closure
+    # ``return state`` counts even when ``state`` is not re-declared as a closure
+    # param. Visit only the DIRECT nested defs (each recurses into its own).
     for node in ast.walk(fn):
         if node is fn:
             continue
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            _scan_function(node, rel_path, lines, records)
+            _scan_function(
+                node,
+                rel_path,
+                lines,
+                records,
+                frozenset(state_param_names),
+                True,
+            )
 
 
 def discover_apply_files(repo_root: Path | None = None) -> list[str]:

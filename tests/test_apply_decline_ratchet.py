@@ -349,6 +349,73 @@ class TestApplyDeclineGuardLiveness:
         assert records[0]["line"] == 3
         assert records[0]["status"] == "unwitnessed"
 
+    def test_renamed_replaystate_param_op_handler_decline_is_detected(self) -> None:
+        # E5 regression lock (widening): an op-handler whose ReplayState param is
+        # named something OTHER than `state` (here `st`, recognized by its
+        # `ReplayState` annotation) and which is wired to a witness sink IS an
+        # op-handler — a bare `return st` decline must be detected. Keying on the
+        # literal name `state` alone (the old behavior) made this invisible.
+        src = (
+            "def _apply_op(st: 'ReplayState', op, source_pathologies_out=None):\n"
+            "    if op is None:\n"
+            "        return st\n"
+        )
+        records = self._records(src)
+        assert len(records) == 1, (
+            "a `return <renamed-ReplayState-param>` op-handler decline must be "
+            "detected by annotation, not only the literal name `state` (E5)"
+        )
+        assert records[0]["status"] == "unwitnessed"
+        assert records[0]["function"] == "_apply_op"
+
+    def test_renamed_replaystate_param_handler_witness_reads_witnessed(self) -> None:
+        # The witness dominance check must work for a renamed ReplayState param
+        # too: a typed witness emit before `return st` reads as witnessed.
+        src = (
+            "def _apply_op(st: 'ReplayState', op, source_pathologies_out=None):\n"
+            "    if op is None:\n"
+            "        source_pathologies_out.append(build_x_pathology())\n"
+            "        return st\n"
+        )
+        records = self._records(src)
+        assert len(records) == 1
+        assert records[0]["status"] == "witnessed"
+
+    def test_replaystate_helper_without_witness_sink_is_not_flagged(self) -> None:
+        # E5 false-positive guard: a function that takes a ReplayState (named
+        # `result`) and an op but NO witness-sink parameter is a pure
+        # state-transform HELPER, not an op-handler. Returning its ReplayState
+        # param is a side-effect no-op, NOT an un-witnessed op drop — it must be
+        # OUT of scope. This is the shape of `_maybe_update_section_heading`.
+        src = (
+            "def _maybe_update_heading(\n"
+            "    result: 'ReplayState', dispatch_op, muutos_ir=None\n"
+            "):\n"
+            "    if muutos_ir is None:\n"
+            "        return result\n"
+            "    return _rebuilt(result)\n"
+        )
+        records = self._records(src)
+        assert records == [], (
+            "a ReplayState-typed helper with an op param but no witness sink is "
+            "not an op-handler and must not be flagged as an un-witnessed decline "
+            "(E5 false-positive guard; the _maybe_update_section_heading shape)"
+        )
+
+    def test_real_maybe_update_section_heading_is_excluded(self) -> None:
+        # End-to-end lock against the actual production function: the live
+        # `_maybe_update_section_heading` (ReplayState param `result`, op param
+        # `dispatch_op`, NO witness sink) must NOT appear in the scan records.
+        state = _INV.scan_apply_declines(_REPO_ROOT)
+        offenders = [
+            r for r in state["records"]
+            if r["function"] == "_maybe_update_section_heading"
+        ]
+        assert offenders == [], (
+            "_maybe_update_section_heading is a state-transform helper (no witness "
+            f"sink), not an op-handler; it must be excluded, got {offenders!r}"
+        )
+
     def test_g1_bare_return_state_inside_case_arm_is_detected(self) -> None:
         # G1 regression lock: a bare `return state` inside a `match`/`case` arm
         # must be VISIBLE to the detector (the original walkers never descended
