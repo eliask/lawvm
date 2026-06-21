@@ -26,7 +26,12 @@ Currently handled corrections
     sequence.  This handles base XML that split one momentti's kohdat across
     two sibling ``subsection`` elements.
 
-1c. **SUSPICIOUS_SHAPE / PROFILE_INVALID** -- a section-scoped item-style
+1c. **PROFILE_INVALID** -- an unlabelled ``subsection`` carrying only
+    letter-labelled paragraph children and an omission marker may be folded into
+    the preceding comma-ended subsection.  This handles amendment XML that
+    splits one changed momentti's intro/content from its item list.
+
+1d. **SUSPICIOUS_SHAPE / PROFILE_INVALID** -- a section-scoped item-style
     ``<subsection num="9)">`` that cannot be safely folded is preserved as a
     subsection container, and a typed witness is emitted. This keeps the
     suspicious source shape visible while avoiding an illegal
@@ -1038,6 +1043,117 @@ def _fold_section_scoped_item_style_subsections(
             )
         )
         changed = True
+
+    return rewritten if changed else children
+
+
+def _is_lettered_paragraph(node: IRNode) -> bool:
+    if node.kind != IRNodeKind.PARAGRAPH:
+        return False
+    label = _norm_num_token(str(node.label or ""))
+    if _LETTER_LABEL_RE.match(label):
+        return True
+    num_child = next((child for child in node.children if child.kind == IRNodeKind.NUM), None)
+    if num_child is None:
+        return False
+    raw = _norm_num_token((num_child.text or "").strip().rstrip(")"))
+    return bool(_LETTER_LABEL_RE.match(raw))
+
+
+def _subsection_paragraph_list_payload(node: IRNode) -> tuple[tuple[IRNode, ...], tuple[IRNode, ...]] | None:
+    if node.kind != IRNodeKind.SUBSECTION:
+        return None
+    if any(child.kind == IRNodeKind.NUM for child in node.children):
+        return None
+    paragraphs: list[IRNode] = []
+    omissions: list[IRNode] = []
+    for child in node.children:
+        if child.kind == IRNodeKind.PARAGRAPH and _is_lettered_paragraph(child):
+            paragraphs.append(child)
+            continue
+        if child.kind == IRNodeKind.OMISSION:
+            omissions.append(child)
+            continue
+        return None
+    if len(paragraphs) < 2:
+        return None
+    labels = [_norm_num_token(str(paragraph.label or "")) for paragraph in paragraphs]
+    if labels and labels[0] and labels[0] != "a":
+        return None
+    return tuple(paragraphs), tuple(omissions)
+
+
+def _fold_unlabelled_paragraph_list_subsection_wrappers(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold an unlabelled paragraph-list wrapper into a preceding momentti.
+
+    Finlex amendment XML sometimes splits one changed subsection into a
+    content-only subsection followed by an unlabelled subsection carrying the
+    ``a)``/``b)`` list and a section-level omission marker. The latter is not a
+    valid peer momentti; the lettered paragraphs complete the preceding
+    comma-ended moment while the omission remains section-local sparse context.
+    """
+    if len(children) < 2:
+        return children
+
+    rewritten: list[IRNode] = []
+    changed = False
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if child.kind != IRNodeKind.SUBSECTION or i + 1 >= len(children):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        payload = _subsection_paragraph_list_payload(children[i + 1])
+        child_text = irnode_to_text(child).strip()
+        if payload is None or not child_text.endswith(","):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        paragraphs, omissions = payload
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(child.children) + paragraphs,
+            )
+        )
+        rewritten.extend(omissions)
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_SECTION_ITEM_SUBSECTION_FOLD,
+                basis=SourceNormalizationBasis.PROFILE_INVALID,
+                before=(
+                    f"unlabelled paragraph-list wrapper {_node_path_label(children[i + 1])} "
+                    f"after comma-ended {_node_path_label(child)}"
+                ),
+                after=(
+                    f"folded paragraphs {[paragraph.label for paragraph in paragraphs]!r} "
+                    f"into {_node_path_label(child)}; kept {len(omissions)} omission marker(s) section-local"
+                ),
+                explanation=(
+                    "The source split one subsection replacement across two "
+                    "subsection wrappers: the first carries comma-ended prose and "
+                    "the second carries only letter-labelled kohdat plus omission "
+                    "context. The wrapper is therefore transport shape, not a peer "
+                    "momentti."
+                ),
+                path=parent_path + (_node_path_label(children[i + 1]),),
+                confidence=0.97,
+            )
+        )
+        changed = True
+        i += 2
 
     return rewritten if changed else children
 
@@ -3481,6 +3597,9 @@ def normalize_source_ir(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_scoped_item_style_subsections(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_unlabelled_paragraph_list_subsection_wrappers(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_table_note_subsections_into_previous_moment(
