@@ -911,7 +911,7 @@ def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None
     assert "Pudasjärvi (st)" not in section_1_text
     assert any(
         isinstance(row, dict)
-        and row.get("kind") == "ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL"
+        and row.get("kind") == "ELAB.SPARSE_PARTIAL_SCOPE_ROW_OMISSION_REPEAL"
         and row.get("source_statute") == "1999/77"
         for row in observations
     )

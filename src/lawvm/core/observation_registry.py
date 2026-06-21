@@ -324,7 +324,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "info", "payload_elaboration",
                 "single non-table companion subsection bound to an explicit numbered-table moment target after sparse omission alignment",
                 ("provenance", "ambiguity_resolution", "preservation"), role="observation"),
-    FindingSpec("ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL", "frontend_extraction",
+    FindingSpec("ELAB.SPARSE_PARTIAL_SCOPE_ROW_OMISSION_REPEAL", "frontend_extraction",
                 "recovery", "warn", "frontend_compile",
                 "sparse osalta amendment lowered from source modify verb to explicit named paragraph-row repeal",
                 ("parse_witness", "preservation", "strictness"), role="observation"),

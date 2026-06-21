@@ -12715,7 +12715,7 @@ def test_supplement_sparse_osalta_row_omission_repeals_owns_action_recovery() ->
     ]
     assert got[0].witness_rule_id == "fi.sparse_osalta_row_omission_repeal.v1"
     assert got[0].extraction_provenance_tags == ("sparse_osalta_row_omission_repeal",)
-    assert [finding.kind for finding in findings] == ["ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL"]
+    assert [finding.kind for finding in findings] == ["ELAB.SPARSE_PARTIAL_SCOPE_ROW_OMISSION_REPEAL"]
     assert findings[0].detail["source_verb"] == "muutetaan"
     assert findings[0].detail["lowered_action"] == "REPEAL"
 
