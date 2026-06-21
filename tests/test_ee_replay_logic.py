@@ -4136,3 +4136,81 @@ def test_replay_ee_to_pit_handles_imperative_section_insert_in_paasteteenistujad
     assert result.error is None
     assert result.oracle_id == "110042025009"
     assert result.divergences == []
+
+
+def test_ee_precompose_pending_amendment_text_patches_emits_adjudication_when_parse_crashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Guard-liveness for ``_ee_precompose_pending_amendment_text_patches``:
+    a parser crash during the metapass must surface as a typed adjudication
+    (``ee_pending_amendment_metapass_parse_failed``), not as an empty list.
+
+    Pre-fix the broad ``except Exception: parsed = []`` swallowed real
+    ``LegalOperation`` construction crashes (e.g. the META-relabel-with-
+    text_patch violation corpus-fixed together with this guard), and there
+    was no way to distinguish a parse failure from a benign empty result.
+    """
+    earlier_xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <aktinimi><nimi><pealkiri>Varasema seaduse muutmine</pealkiri></nimi></aktinimi>
+      <sisu>
+        <sisuTekst>
+          <tavatekst>Varasema seaduse muutmise määrus muudetakse järgmiselt.</tavatekst>
+        </sisuTekst>
+        <sisuTekst>
+          <HTMLKonteiner><![CDATA[
+            <p><b>1)</b> paragrahvi 1 lõige 1 sõnastatakse järgmiselt:</p>
+            <p>„(1) Test.</p>
+          ]]></HTMLKonteiner>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.strip().encode("utf-8")
+    later_xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <aktinimi><nimi><pealkiri>Hilisema seaduse muutmine</pealkiri></nimi></aktinimi>
+      <sisu>
+        <sisuTekst>
+          <tavatekst>Varasema seaduse muutmise määruses asendatakse sõna „X” sõnaga „Y”.</tavatekst>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.strip().encode("utf-8")
+
+    refs = (
+        _ref("109012025001", "2025-06-18", "2025-09-01"),
+        _ref("101072025001", "2025-12-03", "2026-01-01"),
+    )
+    amendment_xml_by_ref = {
+        "109012025001": earlier_xml,
+        "101072025001": later_xml,
+    }
+
+    real_parse = ee_replay_module.parse_ee_amendment_ops
+
+    def fake_parse(xml_bytes, source_id="", target_title="", ref_effective="", **kw):
+        if source_id == "ee/101072025001":
+            raise ValueError("simulated LegalOperation invariant violation")
+        return real_parse(xml_bytes, source_id=source_id, target_title=target_title, ref_effective=ref_effective)
+
+    monkeypatch.setattr(ee_replay_module, "parse_ee_amendment_ops", fake_parse)
+    # Force the surface-may-target prefilter to admit the later_xml against
+    # the earlier_title so the metapass reaches ``parse_ee_amendment_ops``.
+    monkeypatch.setattr(
+        ee_replay_module, "_ee_source_surface_may_target_title", lambda *a, **kw: True
+    )
+
+    updated_ops, adjudications = _ee_precompose_pending_amendment_text_patches(
+        ops=[],
+        refs=refs,
+        amendment_xml_by_ref=amendment_xml_by_ref,
+    )
+    kinds = [adjudication.kind for adjudication in adjudications]
+    assert "ee_pending_amendment_metapass_parse_failed" in kinds
+    failure = next(a for a in adjudications if a.kind == "ee_pending_amendment_metapass_parse_failed")
+    assert failure.detail["ref_amendment"] == "101072025001"
+    assert failure.detail["reason"] == "metapass_parse_failed"
+    assert failure.detail["exception_type"] == "ValueError"
+    assert "simulated LegalOperation invariant violation" in failure.detail["exception"]
+    assert failure.detail["phase"] == "parse"
+    assert failure.detail["blocking"] is False

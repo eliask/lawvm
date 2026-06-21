@@ -377,6 +377,7 @@ _EE_AMENDMENT_SOURCE_FETCH_FAILED_RULE = "ee_amendment_source_fetch_failed"
 _EE_AMENDMENT_PARSE_FAILED_RULE = "ee_amendment_parse_failed"
 _EE_TEMPORAL_SOURCE_SCAN_FAILED_RULE = "ee_temporal_source_scan_failed"
 _EE_PENDING_SOURCE_ACT_COMMENCEMENT_FETCH_FAILED_RULE = "ee_pending_source_act_commencement_source_fetch_failed"
+_EE_PENDING_AMENDMENT_METAPASS_PARSE_FAILED_RULE = "ee_pending_amendment_metapass_parse_failed"
 
 
 def _ee_rt_xml_source_lane_detail(
@@ -902,8 +903,48 @@ def _ee_precompose_pending_amendment_text_patches(
                         ref_effective=later_ref.joustumine,
                         adjudications_out=adjudications,
                     )
-                except Exception:
+                except Exception as e:
+                    # Per AGENTS.md §1.10 / §1.8: do not silently swallow a
+                    # parser crash during the pending-amendment metapass that
+                    # re-reads future-oracle amendments to live-update
+                    # still-targeted text. A real parser crash here (e.g. a
+                    # new ``LegalOperation.__post_init__`` violation surfacing
+                    # only on this omnibus shape) used to be swallowed as
+                    # ``parsed = []``, hiding the bug behind an empty result.
+                    # Emit a typed adjudication so the failure is accounted
+                    # for, then treat the parse as empty (the metapass must
+                    # still continue without crashing the whole replay).
                     parsed = []
+                    adjudications.append(
+                        _ee_orchestration_adjudication(
+                            kind=_EE_PENDING_AMENDMENT_METAPASS_PARSE_FAILED_RULE,
+                            message=(
+                                "Estonia pending-amendment metapass skipped a "
+                                "later amendment because operation parsing "
+                                "failed during text-patch precomposition."
+                            ),
+                            source_statute=f"ee/{later_ref.aktViide}",
+                            detail={
+                                "ref_amendment": later_ref.aktViide,
+                                "target_title": earlier_title,
+                                "reason": "metapass_parse_failed",
+                                "exception_type": type(e).__name__,
+                                "exception": str(e),
+                                "source_lane_selection": _ee_rt_xml_source_lane_detail(
+                                    rule_id=_EE_PENDING_AMENDMENT_METAPASS_PARSE_FAILED_RULE,
+                                    phase="parse",
+                                    reason="metapass_parse_failed",
+                                    akt_viide=later_ref.aktViide,
+                                    attempt_status="selected_parse_failed",
+                                    selected_lane="riigi_teataja_xml",
+                                    selected=True,
+                                ),
+                            },
+                            phase="parse",
+                            family="source_lane_failure",
+                            blocking=False,
+                        )
+                    )
                 parsed_meta_ops[meta_key] = tuple(parsed)
             for meta_op in parsed_meta_ops[meta_key]:
                 if meta_op.text_patch is None:

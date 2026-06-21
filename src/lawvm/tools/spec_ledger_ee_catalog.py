@@ -255,6 +255,7 @@ _EE_RULE_SPECS: Dict[str, str] = {
     # --- Source-acquisition / parse failure provenance (failed-op lanes) --------------
     "ee_amendment_source_fetch_failed": "A failure to fetch an amendment's source is recorded as a visible failed-op, not a silent skip.",
     "ee_amendment_parse_failed": "A failure to parse a fetched amendment is recorded as a visible failed-op.",
+    "ee_pending_amendment_metapass_parse_failed": "A parse failure during the pending-amendment metapass that re-reads future-oracle amendments to live-update still-targeted text is recorded as a visible non-blocking adjudication rather than silently swallowed.",
     "ee_temporal_source_scan_failed": "A failure to scan an act for temporal/commencement data is recorded as a visible failed-op.",
     "ee_cancelled_pending_ref_source_fetch_failed": "A failure to fetch a cancelled-pending reference's source is recorded as a visible failed-op.",
     "ee_cancelled_pending_ref_metadata_parse_failed": "A failure to parse cancelled-pending reference metadata is recorded as a visible failed-op.",
