@@ -294,10 +294,7 @@ def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentio
     """
 
     from lawvm.core.bench_aggregate import render_summary
-    from lawvm.core.bench_contract import BenchUnitResult
-    from lawvm.core.bench_comparator_registry import run_bench_comparator
     from lawvm.norway.sources import resolve_no_source_path
-    from lawvm.norway.verify import verify_no_against_current
 
     corpus_path = _resolve_corpus_path(getattr(args, "corpus", None))
     # ``args.data_dir`` is optional; passing None lets
@@ -330,30 +327,121 @@ def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentio
     label = getattr(args, "label", None) or "no-bench"
 
     rows = _load_corpus_rows(corpus_path)
-    results: list[BenchUnitResult] = []
-    for base_id, as_of, _note in rows:
-        try:
-            verify_result = verify_no_against_current(
-                base_id,
-                as_of=as_of,
-                data_dir=data_dir,
-            )
-            mapped = run_bench_comparator("no", verify_result)
-        except Exception as exc:  # noqa: BLE001 — pin the crash with witnesses
-            # Surface the per-statute failure as a typed CRASH row so the
-            # bench does not silently drop a corpus member; the sync sweep
-            # never re-raises into the CLI. Non-scored and CRASH stays visible
-            # in the partition-by-status breakdown the summary renders.
-            mapped = BenchUnitResult(
-                unit_id=base_id,
-                status=BenchStatus.CRASH,
-                witnesses=(f"{type(exc).__name__}: {exc}",),
-            )
-        results.append(mapped)
+
+    # --parallel N defaults to a small worker pool (mirrors EE bench). The
+    # default is conservative (min(8, cpu_count)) and gated by the user
+    # passing ``--parallel 1`` to force sequential: useful for debugging and
+    # for environments where fork() is unavailable (e.g. macOS-from-thread).
+    par = getattr(args, "parallel", None)
+    if par is None:
+        import os
+
+        workers = min(8, os.cpu_count() or 4)
+    else:
+        workers = max(1, int(par))
+
+    results = _run_bench_sweep(rows, data_dir, workers)
 
     summary = render_summary(results, label, jurisdiction="no")
     print("\n".join(summary))
     print()
     print(f"  Corpus     : {corpus_path}")
     print(f"  Rows run   : {len(results)}")
+    print(f"  Workers    : {workers}")
     return 0
+
+
+# Module-level worker config (set before spawning ProcessPoolExecutor).
+# Mirrors the lawvm.tools.ee_bench pattern: each worker process resolves the
+# data_dir from this global so ProcessPoolExecutor batches do not need to
+# pickle the (heavy) archive connection per task.
+_WORKER_DATA_DIR: "Path | None" = None
+
+
+def _no_bench_score_one_worker(row: tuple[str, str, str]) -> BenchUnitResult:
+    """Top-level picklable worker for the parallel bench sweep.
+
+    Each worker process opens its own farchive connection (sqlite is safe for
+    read-only concurrent access). The verify+map+catch sequence mirrors the
+    in-process body so a serial run and a parallel run produce the same
+    ``BenchUnitResult`` rows.
+
+    Row: ``(base_id, as_of, note)`` — only the first two are used in scoring;
+    ``note`` is preserved so future per-statute reporting can carry it through.
+    """
+    base_id, as_of, _note = row
+    from lawvm.core.bench_comparator_registry import run_bench_comparator
+    from lawvm.norway.sources import resolve_no_source_path
+    from lawvm.norway.verify import verify_no_against_current
+
+    data_dir = resolve_no_source_path(_WORKER_DATA_DIR) if _WORKER_DATA_DIR is not None else None
+    try:
+        verify_result = verify_no_against_current(
+            base_id,
+            as_of=as_of,
+            data_dir=data_dir,
+        )
+        mapped = run_bench_comparator("no", verify_result)
+    except Exception as exc:  # noqa: BLE001 — pin the crash with witnesses
+        # Surface the per-statute failure as a typed CRASH row so the
+        # bench does not silently drop a corpus member; the sync loop
+        # never re-raises into the CLI. Non-scored and CRASH stay visible
+        # in the partition-by-status breakdown the summary renders.
+        mapped = BenchUnitResult(
+            unit_id=base_id,
+            status=BenchStatus.CRASH,
+            witnesses=(f"{type(exc).__name__}: {exc}",),
+        )
+    return mapped
+
+
+def _run_bench_sweep(
+    rows: list[tuple[str, str, str]],
+    data_dir: "Path",
+    workers: int,
+) -> list[BenchUnitResult]:
+    """Run the verify-no sweep over ``rows`` and return ``BenchUnitResult`` per row.
+
+    Sequential when ``workers == 1`` (the debugging / forkless fallback path);
+    parallel via ``ProcessPoolExecutor`` otherwise, mirroring
+    :func:`lawvm.tools.ee_bench._run_bench`. Order is preserved by index so the
+    corpus CSV's row order maps directly to the result order, even though
+    :class:`~concurrent.futures.ProcessPoolExecutor` completes tasks
+    non-deterministically.
+    """
+    global _WORKER_DATA_DIR
+
+    import time
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from typing import Optional, cast
+
+    _WORKER_DATA_DIR = data_dir
+    try:
+        if workers <= 1:
+            return [_no_bench_score_one_worker(row) for row in rows]
+
+        total = len(rows)
+        results: list[Optional[BenchUnitResult]] = [None] * total
+        t0 = time.time()
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            future_to_idx = {
+                pool.submit(_no_bench_score_one_worker, row): idx
+                for idx, row in enumerate(rows)
+            }
+            done = 0
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                results[idx] = future.result()
+                done += 1
+                if done % 4 == 0 or done == total:
+                    elapsed = time.time() - t0
+                    rate = done / elapsed if elapsed > 0 else 0
+                    import sys
+
+                    print(
+                        f"  [{done}/{total}] {elapsed:.0f}s  {rate:.1f}/s",
+                        file=sys.stderr,
+                    )
+        return cast(list[BenchUnitResult], results)
+    finally:
+        _WORKER_DATA_DIR = None
