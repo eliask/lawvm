@@ -191,6 +191,7 @@ def collect_johto_numbered_table_targets(johto_text: str) -> tuple[NumberedTable
     """Return explicit ``N §:n taulukko M`` table targets from a Finnish johtolause."""
     targets: list[NumberedTableTarget] = []
     seen: set[tuple[str, str]] = set()
+    # lawvm-regex: owning_parser bounded table-target lexer for explicit johtolause scope mentions
     for match in _NUMBERED_TABLE_TARGET_RE.finditer(johto_text or ""):
         section = _norm_num_token(match.group("section"))
         table = _norm_num_token(match.group("table"))
