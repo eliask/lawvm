@@ -1850,6 +1850,8 @@ def _fold_intro_list_continuation_subsection_before_omission(
             continue
         intro_list_shape = _is_intro_list_subsection_ir(child)
         intro_single_item_tail_shape = _is_intro_single_item_subsection_ir(child) and continuation_text[:1].islower()
+        if intro_single_item_tail_shape and not _single_item_tail_matches_explicit_target(child, group_ops or []):
+            intro_single_item_tail_shape = False
         if omission_follows:
             if not intro_list_shape and not intro_single_item_tail_shape:
                 new_children.append(child)
@@ -1898,11 +1900,25 @@ def _fold_intro_list_continuation_subsection_before_omission(
             # moment followed by a terminal omission rather than a continuation
             # block. Do not erase that live moment.
             if len(plain_subsection_targets) != 1:
-                new_children.append(child)
-                i += 1
-                continue
+                child_label = _norm_num_token(child.label or "")
+                item_targets_same_subsection = (
+                    intro_single_item_tail_shape
+                    and child_label.isdigit()
+                    and item_subsection_targets == {int(child_label)}
+                )
+                if not item_targets_same_subsection:
+                    new_children.append(child)
+                    i += 1
+                    continue
 
-        merged_children = list(child.children) + [IRNode(kind=IRNodeKind.CONTENT, text=continuation_text)]
+        if (
+            intro_single_item_tail_shape
+            and _single_item_tail_paragraph_label(child) != "1"
+            and continuation_text.rstrip().endswith(";")
+        ):
+            merged_children = _append_tail_to_single_item_subsection(child, continuation_text)
+        else:
+            merged_children = list(child.children) + [IRNode(kind=IRNodeKind.CONTENT, text=continuation_text)]
         new_children.append(
             IRNode(
                 kind=IRNodeKind.SUBSECTION,
@@ -2606,6 +2622,69 @@ def _collapse_intro_list_subsections_inside_section_ir(
     return _tops._with_children(muutos_ir, new_children)
 
 
+def _append_tail_to_single_item_subsection(sub: IRNode, continuation_text: str) -> list[IRNode]:
+    paragraphs = [child for child in sub.children if child.kind is IRNodeKind.PARAGRAPH]
+    if len(paragraphs) != 1:
+        return list(sub.children) + [IRNode(kind=IRNodeKind.CONTENT, text=continuation_text)]
+    target = paragraphs[0]
+    target_index = list(sub.children).index(target)
+    paragraph_children = list(target.children)
+    content_indexes = [
+        idx for idx, child in enumerate(paragraph_children) if child.kind is IRNodeKind.CONTENT
+    ]
+    if content_indexes:
+        content_index = content_indexes[-1]
+        content = paragraph_children[content_index]
+        paragraph_children[content_index] = IRNode(
+            kind=content.kind,
+            label=content.label,
+            text=f"{(content.text or '').rstrip()} {continuation_text}".strip(),
+            attrs=dict(content.attrs),
+            children=tuple(content.children),
+        )
+    else:
+        paragraph_children.append(IRNode(kind=IRNodeKind.CONTENT, text=continuation_text))
+    merged = list(sub.children)
+    merged[target_index] = IRNode(
+        kind=target.kind,
+        label=target.label,
+        text=target.text,
+        attrs=dict(target.attrs),
+        children=tuple(paragraph_children),
+    )
+    return merged
+
+
+def _single_item_tail_paragraph_label(sub: IRNode) -> str:
+    paragraph_labels = [
+        _norm_num_token(child.label or "")
+        for child in sub.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    ]
+    if len(paragraph_labels) != 1:
+        return ""
+    return paragraph_labels[0]
+
+
+def _single_item_tail_matches_explicit_target(
+    sub: IRNode,
+    group_ops: List[AmendmentOp],
+) -> bool:
+    child_label = _norm_num_token(sub.label or "")
+    if not child_label.isdigit():
+        return False
+    paragraph_label = _single_item_tail_paragraph_label(sub)
+    if not paragraph_label:
+        return False
+    return any(
+        op.target_paragraph == int(child_label)
+        and bool(op.target_item)
+        and leaf_label_identity_key(str(op.target_item), "item") == leaf_label_identity_key(paragraph_label, "item")
+        and op.op_type in ("REPLACE", "INSERT")
+        for op in group_ops
+    )
+
+
 def _is_intro_list_subsection_ir(sub: IRNode) -> bool:
     """Return True when a subsection looks like intro + numbered list payload."""
     has_intro = any(child.kind is IRNodeKind.INTRO for child in sub.children)
@@ -2621,7 +2700,7 @@ def _is_intro_single_item_subsection_ir(sub: IRNode) -> bool:
     para_labels = [
         _norm_num_token(child.label or "") for child in sub.children if child.kind is IRNodeKind.PARAGRAPH and child.label
     ]
-    return has_intro and para_labels == ["1"]
+    return has_intro and len(para_labels) == 1
 
 
 def _subsection_numbered_paragraph_labels(sub: IRNode) -> tuple[str, ...]:

@@ -1689,6 +1689,77 @@ def test_fold_intro_list_continuation_folds_lowercase_tail_artifact_with_later_r
     assert "Laiminlyöntien olennaisuutta" in irnode_to_text(subs[1])
 
 
+def test_fold_intro_list_continuation_folds_single_nonfirst_item_tail() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="1 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.INTRO,
+                        text="Kansainvälisen mittayksikköjärjestelmän perusyksiköt määritellään seuraavasti:",
+                    ),
+                    IRNode(kind=IRNodeKind.OMISSION),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="5",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="5)"),
+                            IRNode(
+                                kind=IRNodeKind.CONTENT,
+                                text=(
+                                    "lämpötilan yksikkö kelvin, termodynaamisen "
+                                    "lämpötilan yksikkö, on 1/273,16 veden"
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="kolmoispisteen termodynaamisesta lämpötilasta;",
+                    ),
+                ),
+            ),
+            IRNode(kind=IRNodeKind.OMISSION),
+        ),
+    )
+    ops = [
+        AmendmentOp(
+            op_type="REPLACE",
+            target_kind=TargetKind.SECTION,
+            target_section="1",
+            target_paragraph=1,
+            target_item="5",
+        )
+    ]
+
+    got = _fold_intro_list_continuation_subsection_before_omission("section", ops, muutos_ir)
+
+    assert got is not None
+    subs = [c for c in got.children if c.kind == IRNodeKind.SUBSECTION]
+    assert [c.label for c in subs] == ["1"]
+    assert (
+        "1/273,16 veden kolmoispisteen termodynaamisesta lämpötilasta"
+        in irnode_to_text(subs[0])
+    )
+    paragraphs = [child for child in subs[0].children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs] == ["5"]
+    assert (
+        "1/273,16 veden kolmoispisteen termodynaamisesta lämpötilasta"
+        in irnode_to_text(paragraphs[0])
+    )
+
+
 def test_elaborate_payload_rebinds_plain_moment_after_lowercase_tail_fold() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,
