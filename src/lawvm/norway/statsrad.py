@@ -176,7 +176,11 @@ def _local_listing_container(anchor: Any) -> Any:
 def _local_time_date(container: Any) -> str | None:
     try:
         time_nodes = container.xpath(".//time[1]")
-    except Exception:
+    except AttributeError:
+        # The container is not an lxml-tree node and lacks ``.xpath``; there is no
+        # ``<time>`` element to read. Narrow catch (was ``except Exception``) so a
+        # structural mistake on a non-lxml container surfaces rather than silently
+        # behaving as "no time found".
         time_nodes = []
     for node in time_nodes:
         datetime_value = _normalize_space(str(node.get("datetime") or ""))
@@ -271,12 +275,20 @@ def _archive_fetch(
             archive.store(url, data, storage_class=storage_class)
         return data
     try:
+        import urllib.error
         import urllib.request
 
         req = urllib.request.Request(url, headers={"User-Agent": "LawVM-NO/1.0 (+https://lawvm.org)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
-    except Exception:
+    except (urllib.error.URLError, TimeoutError):
+        # Network / HTTP / timeout failure on this URL. The next layer up
+        # (``fetch_no_statsrad_index_page``) raises a typed RuntimeError carrying
+        # the URL when the cache misses; surface that rather than swallowing
+        # anything else broadly. Narrow catch (was ``except Exception``) so a
+        # structural mistake (AttributeError, KeyError, ...) inside urllib or
+        # the Request construction propagates instead of being masked as
+        # "network error".
         return None
     if data:
         archive.store(url, data, storage_class=storage_class)
