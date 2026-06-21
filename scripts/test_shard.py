@@ -138,6 +138,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "finland_sources": (
         "test_fi_amendment_index.py",
         "test_fi_amendment_selection_residuals.py",
+        "test_fi_lane_c_filter_conservation.py",
         "test_fi_source_xml_label_policy_audit.py",
         "test_fi_audit_verified_finlex_yaml.py",
         "test_fi_backfill_finlex_consolidated_versions.py",
