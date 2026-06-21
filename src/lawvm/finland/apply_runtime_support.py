@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, List, Optional, cast
 
-from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir_helpers import _kind_str, irnode_to_text
@@ -30,7 +29,12 @@ from lawvm.finland.apply_payload_ops import _find_amend_paragraph
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause.clause_surface import parse_item_shift_clauses
 from lawvm.finland.labels import leaf_label_identity_key
-from lawvm.finland.scope import _unique_section_chapter, infer_letter_suffix_section_chapter_from_stem_host
+from lawvm.finland.scope import (
+    SourceDescendantScopeResult,
+    _unique_section_chapter,
+    infer_letter_suffix_section_chapter_from_stem_host,
+    source_names_descendant_scope_below_section,
+)
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
 from lawvm.finland.replay_capture import ReplayLegalOperationCaptureList
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
@@ -39,6 +43,7 @@ from lawvm.finland.source_normalization_kinds import HEADING_BODY_SUBSECTION_SPL
 from lawvm.finland.source_pathology import (
     build_container_replace_target_absent_pathology,
     build_destructive_shape_loss_risk_pathology,
+    build_unresolved_descendant_scope_cue_pathology,
 )
 if TYPE_CHECKING:
     from lawvm.core.compile_result import SourcePathology
@@ -88,13 +93,6 @@ class _TimelinePayloadTargetIndex:
     indexed_len: int
 
 
-_SECTION_SOURCE_DESCENDANT_SCOPE_RE = compile_classifier_regex(
-    r"\b(?P<section>\d+[a-z]?)\s*§:n\b.{0,240}?\b"
-    r"(?:moment[a-zåäö]{0,20}|koht[a-zåäö]{0,20}|alakoht[a-zåäö]{0,20})\b",
-    re.IGNORECASE,
-    classifier_id="fi.section_source_descendant_scope",
-)
-
 _PROVISION_INDEXED_KINDS = frozenset({"part", "chapter", "section"})
 
 
@@ -115,17 +113,20 @@ def _normalize_snapshot_item_label(label: str | None) -> str:
     return normalized_label_key(label or "")
 
 
-def _section_source_names_descendant_scope(rop: "ResolvedOp", target_norm: str) -> bool:
-    """Return whether the parsed source formula names descendant scope below a section."""
+def _section_source_names_descendant_scope(
+    rop: "ResolvedOp", target_norm: str
+) -> SourceDescendantScopeResult:
+    """Return whether the parsed source formula names descendant scope below a section.
+
+    Routes through scope.py, the canonical owner of the
+    ``N §:n ... moment/kohta/alakohta`` descendant-scope grammar, instead of a
+    duplicate inline ``raw_text`` regex (AGENTS.md §1.12 reach-back). Returns the
+    typed result so the caller witnesses the unparsed-cue residual rather than
+    swallowing it as a silent ``False``.
+    """
     source = rop.resolved_op_source
     raw_text = source.raw_text if source is not None else ""
-    if not raw_text or "§:n" not in raw_text:
-        return False
-    target_label = _norm_num_token(target_norm)
-    for match in _SECTION_SOURCE_DESCENDANT_SCOPE_RE.finditer(raw_text):
-        if _norm_num_token(match.group("section")) == target_label:
-            return True
-    return False
+    return source_names_descendant_scope_below_section(raw_text, target_norm)
 
 
 def _legacy_target_section_for_scope(scope: "ResolvedTargetScopeView", unit_kind: TargetUnitKind) -> str:
@@ -1377,8 +1378,21 @@ def _emit_section_snapshot(
                 continue
             if str(completeness.tail_policy or "").strip() != "replace_if_target_scope_requires":
                 continue
-            if _section_source_names_descendant_scope(rop, normalized_target_norm):
+            descendant_scope = _section_source_names_descendant_scope(rop, normalized_target_norm)
+            if descendant_scope.matched:
                 descendant_scoped_candidates += 1
+            elif descendant_scope.unparsed_cue is not None and source_pathologies_out is not None:
+                # The source named a section-genitive descendant-scope cue that did
+                # not resolve to this target. Witness it instead of swallowing the
+                # silent negative (does not change the snapshot drop decision).
+                source_pathologies_out.append(
+                    build_unresolved_descendant_scope_cue_pathology(
+                        source_statute=op_source.statute_id,
+                        target_section=target_norm,
+                        target_chapter=target_chapter or "",
+                        unparsed_cue=descendant_scope.unparsed_cue,
+                    )
+                )
             candidates.append(_stamp_exact_section_snapshot_payload(source_payload))
         if len(candidates) == 1 and descendant_scoped_candidates == 1:
             if source_pathologies_out is not None:
