@@ -25,6 +25,15 @@ _CLEAN_NUM_PREFIX_RE = re.compile(
 )
 _CLEAN_NUM_TRAILING_PUNCT_RE = re.compile(r"[().]+$")
 _DOT_OR_SPACE_ONLY_RE = re.compile(r"^[.\s]+$")
+# A label (after cleaning) that contains no alphanumerics at all — e.g. a
+# consolidated-XML curly-quote Pnumber like "\u201c" — cannot be a structural
+# label.  Disambiguating such a sibling must NOT pick a fallback like "\u201c-1"
+# because the shared core label normalizer strips non-alphanumeric chars and the
+# synthesized label would collide with the real sibling "1".  Match the
+# consolidated oracle EID convention ("section-322B-n1") by synthesizing an
+# alphanumeric "n{N}" suffix instead.  See
+# uk_quoted_substitution_payload_sibling_synthesized_label.
+_LABEL_NO_ALNUM_RE = re.compile(r"^[^a-zA-Z0-9]+$")
 _GROUNDING_NON_WORD_SPACE_RE = re.compile(r"[^\w\s]")
 _EID_SPLIT_RE = re.compile(r"[-_]+")
 _LEADING_DIGITS_RE = re.compile(r"([0-9]+)")
@@ -1452,7 +1461,20 @@ def _disambiguate_duplicate_labels(
                 new_label = after_parent
         if not new_label:
             seen[canonical] = seen.get(canonical, 0) + 1
-            new_label = f"{canonical}-{seen[canonical]}"
+            if _LABEL_NO_ALNUM_RE.match(canonical):
+                # Quoted-substitution bodies consolidated-XML unwraps as orphan
+                # P2 siblings carry only a curly-quote Pnumber (no alphanumerics).
+                # Synthesize an "n{N}" suffix to match the consolidated oracle EID
+                # convention ("section-322B-n1") and avoid normalization
+                # collision with the real numbered sibling of the same kind
+                # (e.g. "\u201c-1" would normalize to "1" and clash with subsection 1).
+                new_label = f"n{seen[canonical]}"
+                child.attrs.setdefault(
+                    "source_rule_id",
+                    "uk_quoted_substitution_payload_sibling_synthesized_label",
+                )
+            else:
+                new_label = f"{canonical}-{seen[canonical]}"
         child.label = new_label
     return children
 
