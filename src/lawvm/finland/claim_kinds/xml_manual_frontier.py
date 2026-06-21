@@ -145,7 +145,6 @@ _SOURCE_CHAIN = _XmlClaimSpec(
         "source_chain_basis",
     ),
     allowed_pathology_codes=(
-        "BASE_MISSING_CHAPTER_SPAN",
         "RECODIFICATION_SOURCE_CHAIN_GAP",
     ),
     semantic=True,
@@ -170,6 +169,7 @@ _SOURCE_PATHOLOGY = _XmlClaimSpec(
         "EMPTY_OPERATIVE_BODY",
         "SECTION_REPLACE_BOOTSTRAP_PARENT_MISSING",
         "CONTAINER_REPLACE_TARGET_ABSENT",
+        "CONTAINER_OP_TARGET_ABSENT",
     ),
     semantic=True,
 )

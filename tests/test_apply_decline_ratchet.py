@@ -25,14 +25,17 @@ typed witness sinks (``source_pathologies_out`` / ``findings_out`` /
 ``failed_ops_out`` appends and the mutation-event emit helpers). See the script
 docstring for the full scope rationale.
 
-The committed baseline carries the current recorded debt:
-  - apply_structure_ops.py:1234 (_apply_container_op): a container REPEAL/RENUMBER
-    whose chapter/part target is absent returns state with only a replay_print —
-    a silent decline that should witness a typed pathology.
-  - BASE_MISSING_CHAPTER_SPAN: registered (and consumer-declared in an
-    allowed_pathology_codes claim spec) but never CONSTRUCTED in production.
-This debt is RECORDED, not hidden: the gate fails if it grows, and demands the
-baseline be lowered when it shrinks.
+The committed baseline carries zero recorded debt: both the apply-decline count
+and the producerless-code set ratchet at zero. The two original debt items were:
+  - apply_structure_ops.py (_apply_container_op): a container REPEAL/RENUMBER
+    whose chapter/part target is absent returned state with only a replay_print —
+    now witnessed by a typed CONTAINER_OP_TARGET_ABSENT pathology.
+  - BASE_MISSING_CHAPTER_SPAN: a registry-only code never CONSTRUCTED in
+    production whose real condition (an abridged base omitting a chapter span) is
+    already witnessed by fi_chapter_seed_abridged_base_chapter_unreconstructable —
+    removed as dead code (registry entry + consumer declaration).
+The ratchet still enforces both invariants: the gate fails if either grows, and
+demands the baseline be lowered if it ever shrinks again.
 """
 from __future__ import annotations
 
@@ -168,8 +171,10 @@ class TestApplyDeclineRatchet:
                 f"apply_item_ops.py:{line} should read as a witnessed decline "
                 f"(got {status!r}); the detector regressed into a false positive."
             )
-        # apply_structure_ops.py container-otsikko witnessed sites.
-        for line in (1250, 1281, 1308):
+        # apply_structure_ops.py witnessed sites: the REPLACE-target-absent arm
+        # (1253), the container REPEAL/RENUMBER-target-absent arm (1269), and the
+        # container-otsikko no-heading / fall-through arms (1300, 1327).
+        for line in (1253, 1269, 1300, 1327):
             status = by_loc.get(("apply_structure_ops.py", line))
             assert status == "witnessed", (
                 f"apply_structure_ops.py:{line} should read as a witnessed "

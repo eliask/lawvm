@@ -167,6 +167,7 @@ def build_same_effective_container_repeal_shadowed_pathology(
 
 __all__ = [
     "build_container_replace_target_absent_pathology",
+    "build_container_op_target_absent_pathology",
     "build_container_otsikko_payload_absent_pathology",
     "build_section_insert_scoped_parent_absent_pathology",
     "build_unhandled_structure_op_pathology",
@@ -560,6 +561,48 @@ def build_container_replace_target_absent_pathology(
             "target_item": target_item,
             "target_special": target_special,
             "has_payload": has_payload,
+        },
+    )
+
+
+def build_container_op_target_absent_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    op_type: str,
+    target_chapter: str = "",
+    target_paragraph: str | int = "",
+    target_item: str = "",
+    target_special: str = "",
+) -> SourcePathology:
+    """Build a typed record for a non-INSERT/REPLACE container op whose target is absent.
+
+    A container (chapter/part) REPEAL/RENUMBER (any op that is neither INSERT nor
+    REPLACE) named an explicit live target that could not be resolved in the live
+    state. The authored op therefore applies nothing. Rather than vanish as a
+    silent ``return state`` no-op (which leaves the dropped op unaccounted-for on
+    every production surface), the absent-target condition is witnessed: a repeal
+    or renumber of a container that is not present is a dropped edit, not a
+    satisfied no-op. (LAWVM_PIPELINE_CONTRACT §1.1 no silent drop.) This is the
+    REPEAL/RENUMBER sibling of ``CONTAINER_REPLACE_TARGET_ABSENT``.
+    """
+    return SourcePathology.from_scope(
+        code="CONTAINER_OP_TARGET_ABSENT",
+        message=(
+            "Container operation could not be applied because the targeted live "
+            "chapter/part was absent."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "target_paragraph": target_paragraph,
+            "target_item": target_item,
+            "target_special": target_special,
+            "op_type": op_type,
         },
     )
 

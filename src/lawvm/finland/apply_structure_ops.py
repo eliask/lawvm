@@ -51,6 +51,7 @@ from lawvm.finland.standalone_targets import (
     normalize_standalone_section_targets,
 )
 from lawvm.finland.source_pathology import (
+    build_container_op_target_absent_pathology,
     build_container_otsikko_payload_absent_pathology,
     build_container_replace_target_absent_pathology,
     build_destructive_shape_loss_risk_pathology,
@@ -1230,6 +1231,24 @@ def _apply_container_op(
         return (_kind_str(payload.kind), payload.label or "")
 
     if path is None and _op_type not in ("INSERT", "REPLACE"):
+        # A non-INSERT/REPLACE container op (REPEAL/RENUMBER/…) named an explicit
+        # live target that did not resolve. The authored op applies nothing;
+        # witness the dropped op on the source-pathology ledger before declining
+        # rather than vanish as a silent no-op. (LAWVM_PIPELINE_CONTRACT §1.1 no
+        # silent drop — the REPEAL/RENUMBER sibling of the REPLACE arm below.)
+        if source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_container_op_target_absent_pathology(
+                    source_statute=view.source_statute or "",
+                    target_unit_kind=_target_unit_kind,
+                    target_section=_target_section or "",
+                    op_type=_op_type or "",
+                    target_chapter=view.target_chapter or "",
+                    target_paragraph=_target_paragraph or "",
+                    target_item=_target_item or "",
+                    target_special=_target_special or "",
+                )
+            )
         replay_print(f"  {ctx_label} → FAILED (master {kind}:{section_label} not found)")
         return state
     if path is None and _op_type == "REPLACE" and muutos_ir is not None:

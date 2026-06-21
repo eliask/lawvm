@@ -6351,6 +6351,48 @@ class TestContainerPartRomanRepeal:
         result = _apply_container_op(state, op, None, _LEGAL_PIT, "[test] REPEAL X osa")
         assert _unchanged(state, result)
 
+    def test_repeal_nonexistent_part_witnesses_absent_target_pathology(self):
+        """A REPEAL of an absent container declines (state unchanged) but
+        witnesses a typed CONTAINER_OP_TARGET_ABSENT pathology rather than
+        dropping the authored op silently."""
+        state = self._make_state_with_parts()
+        op = self._part_op("X")  # part 10 doesn't exist
+        source_pathologies: list[SourcePathology] = []
+        result = _apply_container_op(
+            state,
+            op,
+            None,
+            _LEGAL_PIT,
+            "[test] REPEAL X osa",
+            source_pathologies_out=source_pathologies,
+        )
+        assert _unchanged(state, result)
+        assert len(source_pathologies) == 1
+        assert source_pathologies[0].code == "CONTAINER_OP_TARGET_ABSENT"
+        assert source_pathologies[0].detail["op_type"] == "REPEAL"
+        assert source_pathologies[0].detail["target_section"] == "X"
+
+    def test_repeal_present_part_emits_no_absent_target_pathology(self):
+        """A REPEAL whose container target IS present applies and emits no
+        absent-target pathology (the witness is quiet on a resolved target)."""
+        state = self._make_state_with_parts()
+        op = self._part_op("3")
+        source_pathologies: list[SourcePathology] = []
+        result = _apply_container_op(
+            state,
+            op,
+            None,
+            _LEGAL_PIT,
+            "[test] REPEAL 3 osa",
+            source_pathologies_out=source_pathologies,
+        )
+        result = _modified(state, result)
+        parts = [c for c in result.ir.children if c.kind == IRNodeKind.PART]
+        assert [p.label for p in parts] == ["1", "5"]
+        assert all(
+            p.code != "CONTAINER_OP_TARGET_ABSENT" for p in source_pathologies
+        )
+
 
 class TestSameEffectiveContainerRepealShadow:
     def _state_with_chapter_9(self) -> ReplayState:
