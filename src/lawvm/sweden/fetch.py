@@ -2147,9 +2147,23 @@ def _reverse_patch_se_available_later_chain(
     reverse_adjudications: list[CompileAdjudication] = []
     for source in later_sources:
         ops_json = load_se_official_ops_from_archive(archive, source)
-        if ops_json is None and load_se_official_act_from_archive(archive, source) is not None:
+        if ops_json is None:
+            loaded_act = load_se_official_act_from_archive(archive, source)
+            if loaded_act is None:
+                continue
             try:
-                ops_json = compile_se_official_ops_to_archive(archive, source)
+                # Persist typed waists/ops only when the archive accepts writes;
+                # the readonly-path branch inlines the compile via the pure
+                # ``compile_se_official_act_ops`` so coverage-scan workers
+                # (shared readonly Farchive) do not crash with
+                # ``sqlite3.OperationalError: attempt to write a readonly database``.
+                if _se_archive_is_writable(archive):
+                    ops_json = compile_se_official_ops_to_archive(archive, source)
+                else:
+                    ops_json = [
+                        se_legal_operation_to_dict(op)
+                        for op in compile_se_official_act_ops(loaded_act, source_id=source)
+                    ]
             except (FileNotFoundError, NotImplementedError, ValueError):
                 ops_json = None
         if not ops_json:
@@ -2246,9 +2260,22 @@ def _has_se_noninvertible_placeholder_blocker(
             continue
         label = str(item.get("label") or "")
         ops_json = load_se_official_ops_from_archive(archive, source_sfs_id)
-        if ops_json is None and load_se_official_act_from_archive(archive, source_sfs_id) is not None:
+        if ops_json is None:
+            loaded_act = load_se_official_act_from_archive(archive, source_sfs_id)
+            if loaded_act is None:
+                continue
             try:
-                ops_json = compile_se_official_ops_to_archive(archive, source_sfs_id)
+                # Same readonly-archive bridge as above: persist via the
+                # archive-mutating path only when the archive accepts writes,
+                # otherwise inline through ``compile_se_official_act_ops`` so
+                # readonly scan workers do not crash mid-stream.
+                if _se_archive_is_writable(archive):
+                    ops_json = compile_se_official_ops_to_archive(archive, source_sfs_id)
+                else:
+                    ops_json = [
+                        se_legal_operation_to_dict(op)
+                        for op in compile_se_official_act_ops(loaded_act, source_id=source_sfs_id)
+                    ]
             except (FileNotFoundError, NotImplementedError, ValueError):
                 ops_json = None
         if not ops_json:
@@ -2572,7 +2599,8 @@ def plan_se_older_base_rebuild(
     ):
         sfs_id = str(item["sfs_id"])
         _ensure_official_artifacts(sfs_id)
-        official_act_available = load_se_official_act_from_archive(archive, sfs_id) is not None
+        loaded_act = load_se_official_act_from_archive(archive, sfs_id)
+        official_act_available = loaded_act is not None
         pdf_available = has_valid_se_official_pdf(archive, sfs_id)
         doc_available = archive.get(se_official_doc_locator(sfs_id)) is not None
         ops_status = "missing_official_act"
@@ -2582,7 +2610,17 @@ def plan_se_older_base_rebuild(
             ops_json = load_se_official_ops_from_archive(archive, sfs_id)
             if ops_json is None:
                 try:
-                    ops_json = compile_se_official_ops_to_archive(archive, sfs_id)
+                    # Same readonly-archive bridge as above: persist the typed
+                    # waists/ops via the mutating path only when the archive
+                    # accepts writes; the coverage-scan worker opens the shared
+                    # ``sweden.farchive`` readonly.
+                    if _se_archive_is_writable(archive):
+                        ops_json = compile_se_official_ops_to_archive(archive, sfs_id)
+                    else:
+                        ops_json = [
+                            se_legal_operation_to_dict(op)
+                            for op in compile_se_official_act_ops(loaded_act, source_id=sfs_id)
+                        ]
                 except FileNotFoundError as exc:
                     error = str(exc)
                     ops_status = "missing_official_act"
@@ -2675,7 +2713,25 @@ def rebuild_se_older_base_from_official_chain(
             raise NotImplementedError(f"older-base chain for {amending_sfs_id} is not fully compiled")
         ops_json = load_se_official_ops_from_archive(archive, sfs_id)
         if ops_json is None:
-            ops_json = compile_se_official_ops_to_archive(archive, sfs_id)
+            # Same readonly-archive bridge as the analyze path uses: persist
+            # the typed waists/ops only when the archive accepts writes (CLI
+            # compile / hydrate paths). The coverage-scan worker opens the
+            # shared ``sweden.farchive`` readonly; an unconditional
+            # ``compile_se_official_ops_to_archive`` here would crash with
+            # ``sqlite3.OperationalError: attempt to write a readonly database``
+            # whenever a chain step's ops cache was missing.
+            if _se_archive_is_writable(archive):
+                ops_json = compile_se_official_ops_to_archive(archive, sfs_id)
+            else:
+                act_payload = load_se_official_act_from_archive(archive, sfs_id)
+                if act_payload is None:
+                    raise FileNotFoundError(
+                        f"no archived official act surface for chain step {sfs_id}"
+                    )
+                ops_json = [
+                    se_legal_operation_to_dict(op)
+                    for op in compile_se_official_act_ops(act_payload, source_id=sfs_id)
+                ]
         statute = apply_se_ops(
             statute,
             [se_legal_operation_from_dict(op) for op in ops_json],
