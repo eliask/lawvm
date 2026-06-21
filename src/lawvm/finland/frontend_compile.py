@@ -4480,6 +4480,139 @@ def normalize_and_compile_ops(
     )
 
 
+# ---------------------------------------------------------------------------
+# normalize_and_compile_ops_staged — WAIST #6 canonical-op StageResult adapter
+# ---------------------------------------------------------------------------
+
+
+def phase_result_to_canonical_op_stage(
+    phase_result: "PhaseResult[List[AmendmentOp]]",
+) -> "StageResult[List[AmendmentOp]]":
+    """Adapt the canonical-op ``PhaseResult`` onto the typed ``StageResult`` account.
+
+    WAIST #6 (canonical-operation / normalize / effect-lowering). The existing
+    ``normalize_and_compile_ops`` producer already returns the rich typed
+    ``PhaseResult`` carrier; this is an ADAPTER, not a from-scratch carrier — it
+    PROJECTS that carrier onto the canonical ``StageResult[list[AmendmentOp]]``:
+
+      * ``value``     — ``phase_result.output`` (the emitted ops, unchanged).
+      * ``findings``  — the OBSERVATION-role findings (informational; they do not
+        block). The blocking OBLIGATION/VIOLATION findings become typed
+        ``Residual`` records instead, so blocking lives in exactly one typed
+        account (the §LEDGER's "incompleteness can block a clean claim" home).
+      * ``residuals`` — one ``Residual(kind="unowned_violation", blocking=True)``
+        per blocking obligation/violation finding (a strict-rejected candidate op
+        / source pathology that must block). The reason/scope are sourced verbatim
+        from the finding so the residual is self-evidencing.
+      * ``coverage``  — ESCALATE-3D RESOLVED: ``total = #emitted ops + #rejected
+        candidate ops`` where the rejected lane is the producer's own typed
+        rejection findings (each blocking obligation = one rejected candidate op),
+        i.e. reuse the existing typed partition rather than a synthetic source
+        recount. ``owned`` = emitted ops; ``violation`` = rejected (blocking)
+        candidates. ``is_partition()`` holds.
+      * ``evidence``  — ``EMPTY_EVIDENCE`` (ops cite source downstream via the
+        apply ``WriteReceipt.source_anchor``, not here).
+      * ``authority`` — ``NEUTRAL_AUTHORITY`` (Pro §8): a canonical op is NOT yet
+        execution-authorized; authorization attaches at the apply waist (#7).
+    """
+    from lawvm.core.stage_result import (
+        EMPTY_EVIDENCE,
+        NEUTRAL_AUTHORITY,
+        CoverageCertificate,
+        Residual,
+        StageResult,
+    )
+
+    ops = phase_result.output
+    observations: List[Finding] = []
+    residuals: List[Residual] = []
+    for finding in phase_result.findings():
+        if finding.role == "observation":
+            observations.append(finding)
+            continue
+        # obligation / violation — the blocking decline channel. Project each
+        # onto a typed blocking residual; the reason/scope are self-evidencing.
+        detail = finding.detail
+        message = str(detail.get("message", "") or "")
+        target = str(
+            detail.get("target_section", "")
+            or detail.get("reason", "")
+            or ""
+        )
+        residuals.append(
+            Residual(
+                kind="unowned_violation",
+                reason=(
+                    message
+                    or f"{finding.kind}: strict-rejected canonical operation"
+                ),
+                scope=finding.kind,
+                source_unit_id=finding.source_statute,
+                text=target,
+                blocking=bool(finding.blocking),
+            )
+        )
+
+    emitted = len(ops)
+    rejected = len(residuals)
+    coverage = CoverageCertificate(
+        unit="candidate_ops",
+        total=emitted + rejected,
+        owned=emitted,
+        violation=rejected,
+        totality_claimed=True,
+    )
+    return StageResult(
+        value=ops,
+        evidence=EMPTY_EVIDENCE,
+        residuals=tuple(residuals),
+        findings=tuple(observations),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def normalize_and_compile_ops_staged(
+    johto: str,
+    muutos_tree: "etree._Element",
+    master: "ReplayState",
+    amendment_id: str,
+    source_title: str,
+    used_preamble_body_fallback: bool,
+    parent_id: str = "",
+    strict_profile: Optional[StrictProfile] = None,
+    parse_result: "ClauseParseResult | None" = None,
+    regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None,
+    base_ir: IRNode | None = None,
+    amendment_metadata: "_AmendmentTreeMetadata | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
+) -> "StageResult[List[AmendmentOp]]":
+    """StageResult-carried form of :func:`normalize_and_compile_ops` (WAIST #6).
+
+    Calls the existing producer and adapts its ``PhaseResult`` onto the typed
+    ``StageResult`` account via :func:`phase_result_to_canonical_op_stage`. The
+    ops + observation findings are byte-identical; the blocking decline becomes a
+    typed ``Residual`` (the single load-bearing blocking channel).
+    """
+    phase_result = normalize_and_compile_ops(
+        johto,
+        muutos_tree,
+        master,
+        amendment_id,
+        source_title,
+        used_preamble_body_fallback,
+        parent_id=parent_id,
+        strict_profile=strict_profile,
+        parse_result=parse_result,
+        regex_recognition_coverage_out=regex_recognition_coverage_out,
+        base_ir=base_ir,
+        amendment_metadata=amendment_metadata,
+        source_model=source_model,
+    )
+    return phase_result_to_canonical_op_stage(phase_result)
+
+
 if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState
     from lawvm.core.phase_result import PhaseResult
+    from lawvm.core.stage_result import StageResult
