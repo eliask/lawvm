@@ -11,6 +11,13 @@ from lawvm.contracts import ArtifactEnvelope, ProcessingStatus
 from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline
 from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE
 from lawvm.core.provenance import MigrationEvent
+from lawvm.core.stage_result import (
+    EMPTY_EVIDENCE,
+    NEUTRAL_AUTHORITY,
+    CoverageCertificate,
+    Residual,
+    StageResult,
+)
 
 Timelines = dict[LegalAddress, ProvisionTimeline]
 _LINEAGE_PLAN_MODES = frozenset(
@@ -334,6 +341,96 @@ class MaterializationResult:
             },
             processing_status=status,
         )
+
+
+def materialization_result_to_stage_account(
+    result: MaterializationResult,
+) -> StageResult[IRStatute]:
+    """Project a :class:`MaterializationResult` onto the canonical stage contract.
+
+    This is the StageResult-endgame adapter for the timeline/materialization
+    waist (program spine ``notes_internal/STAGERESULT_ENDGAME.md``). The PIT
+    materialization already computes the rich account
+    (:class:`MaterializationCoverage` + typed :class:`TimelineIssue` issues +
+    ambiguous addresses); this surfaces that account on a
+    ``StageResult[IRStatute]`` instead of discarding everything but
+    ``result.statute``.
+
+    The four-class coverage partition (``unit="addresses"``):
+
+      * ``owned`` = selected (cleanly materialized) addresses;
+      * ``residual`` = ambiguous addresses (a typed frontier, not a failure);
+      * ``violation`` = BLOCKING timeline issues + (1 when the status is
+        ``degraded_missing_scope``) — the genuine unowned-signal failure class.
+        A ``degraded_missing_scope`` status (which carries ``required_dimensions``)
+        is itself a violation: a PIT selection the engine could not resolve
+        without explicit scope.
+      * ``total`` = ``owned + residual + violation`` so the four classes
+        partition exactly (``is_partition`` holds); ``totality_claimed`` is True.
+
+    The blocking signal is carried REDUNDANTLY in ``coverage.violation`` (the
+    branch the certificate dossier asserts) AND a blocking ``unowned_violation``
+    residual, so a consumer can branch on either without re-deriving it.
+
+    Residuals: one blocking ``unowned_violation`` residual when the status is
+    ``degraded_missing_scope`` (so the incompleteness forbids a clean claim, per
+    the §LEDGER requirement), plus one non-blocking ``typed_residual`` per
+    ambiguous address (the tag-don't-guess frontier). Findings reuse the ready
+    :func:`timeline_issues_to_findings` projection. Evidence/authority stay at
+    the identity defaults — materialization mints no new source identity and
+    carries no replay authority (Pro §3.A / §8 authority firewall).
+    """
+
+    certificate = result.certificate
+    selected = certificate.selected_address_count if certificate is not None else 0
+    ambiguous = len(result.ambiguous_addresses)
+    blocking_issue_count = sum(1 for issue in result.issues if issue.blocking)
+    degraded_missing_scope = result.materialization_status == "degraded_missing_scope"
+    # A missing-scope degradation is itself an unowned-signal violation even when
+    # it emits no blocking timeline issue (the missing dimension is the signal).
+    violation = blocking_issue_count + (1 if degraded_missing_scope else 0)
+
+    coverage = CoverageCertificate(
+        unit="addresses",
+        total=selected + ambiguous + violation,
+        owned=selected,
+        residual=ambiguous,
+        violation=violation,
+        totality_claimed=True,
+    )
+
+    residuals: list[Residual] = []
+    if degraded_missing_scope:
+        residuals.append(
+            Residual(
+                kind="unowned_violation",
+                reason="materialization_degraded_missing_scope",
+                scope=result.statute.statute_id,
+                text=(
+                    "PIT selection degraded by missing scope: "
+                    f"{', '.join(result.required_dimensions)}"
+                ),
+                blocking=True,
+            )
+        )
+    for address in result.ambiguous_addresses:
+        residuals.append(
+            Residual(
+                kind="typed_residual",
+                reason="ambiguous_address",
+                scope=str(address),
+                blocking=False,
+            )
+        )
+
+    return StageResult(
+        value=result.statute,
+        evidence=EMPTY_EVIDENCE,
+        residuals=tuple(residuals),
+        findings=timeline_issues_to_findings(result.issues),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
 
 
 @dataclass(frozen=True)

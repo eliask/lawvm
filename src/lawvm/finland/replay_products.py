@@ -71,6 +71,7 @@ from lawvm.finland.tree_invariant_allowances import (
 )
 
 if TYPE_CHECKING:
+    from lawvm.core.stage_result import StageResult
     from lawvm.finland.replay_fold_timeline_backfill import FoldTimelineBackfillRecord
     from lawvm.finland.timeline_version_dedupe import TimelineVersionDedupeRecord
     from lawvm.finland.statute import ReplayState, StatuteContext
@@ -170,6 +171,11 @@ class ReplayProducts:
     cited_version_parse_residuals: tuple["CitedVersionParseResidual", ...] = ()
     materialization_issues: tuple[TimelineIssue, ...] = ()
     materialization_coverage: Optional[MaterializationCoverage] = None
+    # StageResult-endgame: the full typed materialization account (coverage +
+    # residuals + findings), carried so the certificate dossier routes it into a
+    # per-stage account subroot instead of discarding it. ``None`` only on the
+    # full-products-skipped path.
+    materialization_stage: Optional["StageResult[IRStatute]"] = None
 
     def __post_init__(self) -> None:
         temporal_events = tuple(self.temporal_events)
@@ -1771,6 +1777,7 @@ def build_replay_products(
         )
 
     from lawvm.core.timeline import compile_timelines, materialize_pit_ex
+    from lawvm.core.timeline_results import materialization_result_to_stage_account
 
     base_ir = IRStatute(
         statute_id=statute_id,
@@ -1981,6 +1988,11 @@ def build_replay_products(
         expires_as_of=expires_as_of,
         lineage_plan=lineage_decision.lineage_plan,
     )
+    # StageResult-endgame: surface the materialization coverage account as the
+    # canonical typed carrier so the certificate dossier can ROUTE it (instead of
+    # the plain path discarding everything but the statute). Built from the SAME
+    # MaterializationResult — no re-materialization, byte-identical value path.
+    materialization_stage = materialization_result_to_stage_account(materialization_result)
     if materialization_result.materialization_status == "degraded_missing_scope":
         # Preserve the historical materialize_pit() contract: missing PIT scope is
         # a hard error, not a silently degraded materialization. The explicit
@@ -2045,6 +2057,7 @@ def build_replay_products(
         cited_version_parse_residuals=cited_version_parse_residuals,
         materialization_issues=materialization_result.issues,
         materialization_coverage=materialization_result.certificate,
+        materialization_stage=materialization_stage,
         materialization_spec=MaterializationSpec(
             as_of=as_of,
             query_type=query_type,

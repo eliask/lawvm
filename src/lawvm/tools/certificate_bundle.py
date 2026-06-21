@@ -109,6 +109,9 @@ D_STAGE_COVERAGE = "lawvm.stage_coverage.v0"
 D_STAGE_ACCOUNT = "lawvm.stage_account.v0"
 D_STAGE_ACCOUNTS = "lawvm.stage_accounts.v0"
 
+# Stage ids for the per-stage account ledger (WAIST #8/#9 live feeders).
+STAGE_TIMELINE_MATERIALIZATION = "fi.timeline.materialization"
+
 # Certificate spec §3.5: bundle-local certificate-layer code (CERT.
 # namespace) carried by kind=source_anchor_unavailable residuals (§5.4,
 # trace spec §7).
@@ -362,6 +365,108 @@ def _verify_stage_accounts(account_rows: Sequence[Mapping[str, Any]]) -> str:
             f"stage {row['stage']!r} stage_account_root does not recompute from its subroots",
         )
     return stage_accounts_root(account_rows)
+
+
+def _fi_materialization_stage(bundle: Any, as_of: str) -> "StageResult[Any]":
+    """Return the FI PIT materialization `StageResult` for one boundary date.
+
+    Mirrors `materialize_fi_transition_graph_tree` but keeps the FULL replay
+    products so the carried `materialization_stage` (StageResult endgame WAIST #8)
+    reaches the dossier instead of being discarded with everything-but-`.ir`. The
+    coverage is the FI replay's own account (same materialization the rest of the
+    bundle is built from) — no independent re-materialization that could diverge.
+    """
+    from lawvm.finland.replay_products import build_replay_products
+
+    result = bundle.result
+    products = build_replay_products(
+        ctx=result.ctx,
+        statute_id=bundle.engine_id,
+        replay_fold_state=result.products.replay_fold_state,
+        lo_ops_out=bundle.lo_ops,
+        as_of=as_of,
+        expires_as_of=as_of,
+        synthesize_repeal_placeholders=True,
+        temporal_events=result.products.temporal_events,
+        migration_events=result.products.migration_events,
+        fold_backfill_preview_cache=bundle.materialization_cache,
+    )
+    stage = products.materialization_stage
+    if stage is None:
+        raise BundleSpecError(
+            "FI replay produced no materialization StageResult account for the "
+            f"certificate date {as_of!r}; the materialization coverage cannot be "
+            "routed into the dossier (the experimental writer requires the "
+            "StageResult-carried materialization, not the discarding path)"
+        )
+    return stage
+
+
+def _materialization_coverage_violation(coverage_row: Mapping[str, Any]) -> int:
+    """The committed unowned-signal violation count for a materialization stage."""
+    return int(coverage_row.get("violation", 0))
+
+
+def _require_clean_materialization_stage(stage: "StageResult[Any]") -> None:
+    """Self-check: a degraded/violating materialization forbids a clean cert.
+
+    The load-bearing branch (WAIST #8): the certificate claims totality over a
+    fully-materialized work. If the materialization coverage carries an
+    unowned-signal violation (e.g. `degraded_missing_scope`) or a blocking
+    residual, the writer MUST refuse to emit a clean dossier. RED if the
+    coverage is severed back to the plain discarding path (the account would be
+    the identity-clean default and this guard could never fire).
+    """
+    _require(
+        stage.coverage.violation == 0,
+        "materialization coverage carries "
+        f"{stage.coverage.violation} unowned-signal violation(s); a clean "
+        "certificate cannot be claimed over a degraded materialization",
+    )
+    _require(
+        not stage.has_blocking_residual,
+        "materialization stage carries a blocking residual; a clean certificate "
+        "cannot be claimed over a degraded materialization",
+    )
+
+
+def _verify_materialization_stage_clean(stage_account_rows: Sequence[Mapping[str, Any]]) -> None:
+    """`verify_bundle` consumer: re-assert the materialization branch from rows.
+
+    The writer-side recompute of :func:`_require_clean_materialization_stage` over
+    the COMMITTED stage-account rows. A clean certificate MUST carry the
+    materialization stage account with a clean coverage (no unowned-signal
+    violation, no blocking residual). If the materialization coverage was severed
+    before the dossier (the discarding path), the account is absent — also a
+    failure here, so the un-sever cannot regress silently.
+    """
+    materialization_account = next(
+        (
+            row
+            for row in stage_account_rows
+            if row.get("stage") == STAGE_TIMELINE_MATERIALIZATION
+        ),
+        None,
+    )
+    _require(
+        materialization_account is not None,
+        "clean certificate is missing the "
+        f"{STAGE_TIMELINE_MATERIALIZATION!r} stage account (the materialization "
+        "coverage was not routed into the dossier)",
+    )
+    assert materialization_account is not None
+    coverage_row = materialization_account["coverage_row"]
+    _require(
+        _materialization_coverage_violation(coverage_row) == 0,
+        "clean certificate carries a materialization coverage with "
+        f"{_materialization_coverage_violation(coverage_row)} unowned-signal "
+        "violation(s); a degraded materialization cannot be certified clean",
+    )
+    _require(
+        not any(bool(r.get("blocking")) for r in materialization_account["residual_rows"]),
+        "clean certificate carries a blocking materialization residual; a "
+        "degraded materialization cannot be certified clean",
+    )
 
 
 def projection_hash_view(payload: Mapping[str, Any], excluded_members: Sequence[str]) -> Dict[str, Any]:
@@ -1028,6 +1133,22 @@ def build_certificate_bundle(
     stage_account_rows.append(
         build_stage_account_row("fi.legal_surface.source_unit", surface_stage)
     )
+
+    # The FI timeline/materialization stage (StageResult endgame WAIST #8): the
+    # PIT materialization coverage account that the plain `materialize_pit` path
+    # used to DISCARD. The FI replay carries it on `ReplayProducts` as a typed
+    # `StageResult[IRStatute]`; we route it into the dossier as a per-stage
+    # account here, and `verify_bundle` BRANCHES on its `coverage.violation` so a
+    # degraded/violating materialization makes a CLEAN certificate impossible.
+    materialization_stage = _fi_materialization_stage(bundle, boundary[-1])
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_TIMELINE_MATERIALIZATION, materialization_stage)
+    )
+    # The cert claims totality over a fully-materialized work; a materialization
+    # whose coverage carries an unowned-signal violation cannot be silently
+    # certified clean (the §LEDGER "incompleteness blocks a clean claim").
+    _require_clean_materialization_stage(materialization_stage)
+
     stage_accounts_root_value = stage_accounts_root(stage_account_rows)
 
     # --- trace: covering-state evolution per boundary date (§10 carve-out) ---
@@ -1929,6 +2050,18 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
     roots: Dict[str, str] = envelope["roots"]
     artifacts = envelope["artifacts"]
     recomputed: Dict[str, str] = {}
+
+    # WAIST #8 load-bearing branch (FIRST content self-check, before any root
+    # recompute): the materialization stage account's coverage must be CLEAN for a
+    # clean certificate. A degraded/violating materialization (`coverage.violation
+    # > 0` or a blocking residual) makes a clean dossier impossible —
+    # `verify_bundle` re-asserts it from the COMMITTED rows so the
+    # discarded-coverage failure class cannot be silently certified. Placed first
+    # so this branch's specific diagnostic fires before unrelated guards.
+    if envelope["certificate_status"] == "clean":
+        _verify_materialization_stage_clean(
+            _read_jsonl(bundle_path / artifacts["stage_accounts"]["locator"])
+        )
 
     # sources
     identities = json.loads(
