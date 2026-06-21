@@ -64,6 +64,7 @@ from lawvm.finland.process_runtime import build_process_runtime
 from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareContext
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
+from lawvm.finland.payload_realization_audit import payload_realization_findings
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
@@ -638,6 +639,13 @@ def process_muutoslaki_resolved(
             runtime.source_effects,
             source_effects,
             subject="process canonical operation projection",
+        )
+        process_findings.extend(
+            payload_realization_findings(
+                source_model=source_model,
+                after_ir=final_state.ir,
+                amendment_id=amendment_id,
+            )
         )
         project_transition_detector_findings(
             before_ir=before_apply_ir,
