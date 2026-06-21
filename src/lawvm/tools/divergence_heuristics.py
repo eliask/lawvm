@@ -48,6 +48,8 @@ def high_overlap_unblamed_text_corruption(
     min_abs_delta: int = 25,
     small_delta_min_ratio: float = 0.97,
     small_delta_min_abs_delta: int = 8,
+    tiny_edit_min_ratio: float = 0.995,
+    tiny_edit_max_distance: int = 3,
     min_shorter_fraction: float = 0.60,
 ) -> bool:
     """Return True for unblamed same-section text corruption/truncation.
@@ -67,6 +69,11 @@ def high_overlap_unblamed_text_corruption(
     if shorter / longer < min_shorter_fraction:
         return False
     ratio = Levenshtein.ratio(replay_clean, oracle_clean)
+    if (
+        ratio >= tiny_edit_min_ratio
+        and Levenshtein.distance(replay_clean, oracle_clean) <= tiny_edit_max_distance
+    ):
+        return True
     if delta >= min_abs_delta:
         return ratio >= min_ratio
     return delta >= small_delta_min_abs_delta and ratio >= small_delta_min_ratio

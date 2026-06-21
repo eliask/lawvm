@@ -112,6 +112,35 @@ def test_diagnose_treats_unblamed_high_overlap_truncation_as_source_pathology() 
     assert _diagnose(replay, oracle, None) == "SOURCE_PATHOLOGY"
 
 
+def test_diagnose_treats_unblamed_tiny_base_text_corruption_as_source_pathology() -> None:
+    # Real shape: 1966/232 chapter 4 section 14. The base XML witness has two
+    # tiny OCR/source corruptions ("12 a 13", "toiston") while the oracle has
+    # the coherent legal text ("12 ja 13", "toisten"). No amendment touches
+    # the section, so this is source pathology, not replay mutation drift.
+    replay = (
+        "Tiedoksianto muulle julkisoikeudelliselle yhdyskunnalle kuin 12 a 13 "
+        "§:ssä mainitulle on toimitettava sen hallinnon puheenjohtajalle tai "
+        "sille, jolla on oikeus edustaa yhdyskuntaa. Tiedoksianto yhtiölle, "
+        "osuuskunnalle, yhdistykselle tai muulle yhtymälle taikka laitokselle "
+        "tai säätiölle toimitetaan henkilölle, jolla yksin tai yhdessä toiston "
+        "kanssa on oikeus sitä edustaa, taikka, jos edustajaa ei ole, "
+        "yleistiedoksiannolla. Tiedoksianto kuolinpesälle voidaan toimittaa "
+        "myös toimitsijalle, jonka hallussa pesä on."
+    )
+    oracle = (
+        "Tiedoksianto muulle julkisoikeudelliselle yhdyskunnalle kuin 12 ja 13 "
+        "§:ssä mainitulle on toimitettava sen hallinnon puheenjohtajalle tai "
+        "sille, jolla on oikeus edustaa yhdyskuntaa. Tiedoksianto yhtiölle, "
+        "osuuskunnalle, yhdistykselle tai muulle yhtymälle taikka laitokselle "
+        "tai säätiölle toimitetaan henkilölle, jolla yksin tai yhdessä toisten "
+        "kanssa on oikeus sitä edustaa, taikka, jos edustajaa ei ole, "
+        "yleistiedoksiannolla. Tiedoksianto kuolinpesälle voidaan toimittaa "
+        "myös toimitsijalle, jonka hallussa pesä on."
+    )
+
+    assert _diagnose(replay, oracle, None) == "SOURCE_PATHOLOGY"
+
+
 def test_diagnose_keeps_replay_missing_when_drop_exceeds_figure_legend() -> None:
     # A genuine mid-text drop beyond the trailing legend must stay flagged: the
     # self-validating gate only reclassifies when replay matches oracle minus
@@ -252,6 +281,14 @@ def test_classify_statute_1979_130_unblamed_base_text_gap_is_source_pathology() 
     assert result is not None
     by_section = {item["section"]: item for item in result.section_results}
     assert by_section["section:6"]["diagnosis"] == "SOURCE_PATHOLOGY"
+
+
+def test_classify_statute_1966_232_unblamed_base_text_typo_is_source_pathology() -> None:
+    result = _classify_statute("1966/232", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+    assert by_section["chapter:4/section:14"]["diagnosis"] == "SOURCE_PATHOLOGY"
 
 
 def test_source_pathology_diagnosis_maps_recodification_omission_shell_to_source_incomplete() -> None:
