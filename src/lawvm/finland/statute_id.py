@@ -99,6 +99,36 @@ def canonical_statute_id(statute_id: str) -> str:
     return f"{num}/{year}"
 
 
+def require_year_major(statute_id: str) -> str:
+    """Strict year-major gate for user-facing entry points (CLI/exporter boundary).
+
+    Accepts ONLY the engine ``year/num`` ordering where the FIRST ``/``-component
+    is a plausible 4-digit year (``1734..2200``): e.g. ``"2004/301"``, ``"1889/39"``.
+    A sub-numbered tail is permitted as long as the year is still first:
+    ``"1889/39-001"`` is accepted. The id is returned stripped and unchanged.
+
+    Raises :class:`StatuteIdError` (carrying a ``FI_STATUTE_ID_NOT_YEAR_MAJOR``
+    marker in its message) for anything whose first component is not a plausible
+    year — the Finnish ``num/year`` citation form (``"301/2004"``), a bare number,
+    or junk. This boundary **never silently swaps** ``num/year`` to ``year/num``;
+    the auto-swap in :func:`split_year_num` is reserved for engine-internal
+    resolution where the ordering hazard is already understood.
+    """
+    raw = statute_id.strip()
+    parts = raw.split("/")
+    first = parts[0].strip() if parts else ""
+    if len(parts) >= 2 and _is_plausible_year(first):
+        return raw
+    raise StatuteIdError(
+        f"FI_STATUTE_ID_NOT_YEAR_MAJOR: statute id {statute_id!r} is not year-major. "
+        "Use the engine year/num form where the FIRST component is a 4-digit year "
+        f"({_MIN_PLAUSIBLE_YEAR}..{_MAX_PLAUSIBLE_YEAR}), e.g. '2004/301' or '1889/39' "
+        "(sub-numbered '1889/39-001' is also allowed). The Finnish num/year citation "
+        "form (e.g. '301/2004') and bare numbers are rejected here so the id is never "
+        "silently swapped."
+    )
+
+
 def looks_like_statute_id(statute_id: str) -> bool:
     """True iff the id is a recognizable two-component ``year``/``num`` säädös id.
 

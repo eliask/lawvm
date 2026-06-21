@@ -11969,7 +11969,11 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     pack_work_p.add_argument(
         "work_id",
         metavar="WORK_ID",
-        help="work id in the jurisdiction's canonical form (e.g. 301/2004)",
+        help=(
+            "work id in strict year-major year/num form (e.g. 2004/301, 1889/39; "
+            "sub-numbered 1889/39-001 ok). The Finnish num/year citation form "
+            "(301/2004) is rejected — never silently swapped"
+        ),
     )
     pack_work_p.add_argument(
         "--out",
@@ -13773,6 +13777,13 @@ def _main_impl() -> None:
         from lawvm.substrate.exporter import export_work_pack
 
         _juris = str(getattr(args, "jurisdiction", "fi") or "fi")
+        if _juris == "fi":
+            # Strict year-major gate at the CLI boundary: reject the Finnish
+            # num/year citation form (e.g. 301/2004) rather than silently
+            # swapping it. See lawvm.finland.statute_id.require_year_major.
+            from lawvm.finland.statute_id import require_year_major
+
+            require_year_major(args.work_id)
         _result = export_work_pack(
             args.work_id,
             args.out,
