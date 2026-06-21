@@ -656,6 +656,7 @@ def _part_scaffold_from_cross_heading_marker(
     if payload is None or payload.kind is not IRNodeKind.CROSS_HEADING:
         return payload
     marker_text = irnode_to_text(payload).strip()
+    # lawvm-regex: owning_parser own-subtree (irnode_to_text(payload)) part-marker shape on the apply operator's own muutos_ir, not source-plane mint
     match = _PART_HEADING_MARKER_RE.match(" ".join(marker_text.split()))
     if match is None:
         return payload

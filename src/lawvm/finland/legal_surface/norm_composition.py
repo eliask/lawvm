@@ -1447,7 +1447,7 @@ class SanctionReferencePass:
             #     POSTPOSITION immediately AFTER the reference.
             gap_text = raw_text[marker_hi : rref.char_start]
             post_text = raw_text[rref.char_end : min(sent_hi, rref.char_end + 24)]
-            if _DEFERRAL_CUE_RE.search(gap_text) or _DEFERRAL_CUE_RE.search(post_text):
+            if _DEFERRAL_CUE_RE.search(gap_text) or _DEFERRAL_CUE_RE.search(post_text):  # lawvm-regex: owning_parser closed deferral-cue predicate over gap_text/post_text slices of the SanctionReferencePass's OWN bundle unit.raw_text (the §D4 lens surface plane, not the apply/replay legal-state plane); drives the witnessed EDGE_SANCTION_DEFERS edge / typed UnattachedSanction diagnostic
                 targets.append((rid, rref))
 
         if not targets:

@@ -125,6 +125,7 @@ class UncoveredRecoveryRun:
             return True
         if label in self.johto_mentioned_labels:
             return True
+        # lawvm-regex: prefilter numeric base-label extraction from a section label for the johto-allowlist check; pure label-token lex, no source text
         base_label = re.match(r"^(\d+)", label)
         return bool(base_label and base_label.group(1) in self.johto_mentioned_labels)
 

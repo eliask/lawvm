@@ -224,12 +224,14 @@ def _extract_tlc_org_id(element: ET.Element[str]) -> Optional[str]:
     """
     href = element.get("href", "")
     if href:
+        # lawvm-regex: owning_parser AKN TLCOrganization href attribute parse to ontology id, structured attribute not prose
         m = _TLC_ORG_HREF_RE.search(href)
         if m:
             return m.group(1)
 
     eid = element.get("eId", "")
     if eid:
+        # lawvm-regex: owning_parser AKN eId attribute parse to organization id, structured attribute not prose
         m2 = _TLC_ORG_EID_RE.search(eid)
         if m2:
             return m2.group(1)
@@ -350,6 +352,7 @@ def _section_provision_ref(section_el: ET.Element[str], statute_id: str) -> str:
     ns_num = f"{{{_AKN_NS}}}num"
     num_el = section_el.find(ns_num)
     if num_el is not None and num_el.text:
+        # lawvm-regex: owning_parser section label parse from already-extracted AKN <num> element text, not legal prose
         m = _SECTION_NUM_RE.search(num_el.text)
         if m:
             return f"{statute_id}/{m.group(1)}"

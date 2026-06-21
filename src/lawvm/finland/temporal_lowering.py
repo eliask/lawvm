@@ -93,6 +93,7 @@ def activation_rule_from_commencement(intent: Commencement) -> ActivationRule:
         return ActivationRule(kind="immediate", raw_text=raw)
 
     # Contingent: distinguish pending_decree vs pending_condition
+    # lawvm-regex: owning_parser contingent-class discriminator over already-commencement-classified Commencement.raw_text; mints only the rule kind
     if _SIMULTANEOUS_PATTERN.search(raw):
         # Extract condition reference from text (best-effort)
         condition_ref = _extract_simultaneous_ref(raw)
@@ -115,6 +116,8 @@ def _extract_simultaneous_ref(raw: str) -> str:
     Example: "tulee voimaan samanaikaisesti kuin laki X" → "laki X"
     This is a heuristic — returns the raw text tail after the pattern match.
     """
+    # State-free reach-back the intra-procedural detector misses (binding `raw = intent.raw_text` lives in the caller). condition_ref is a best-effort opaque reference STRING, not a resolved address; mints no date/op/scope/lifecycle.
+    # lawvm-regex: owning_parser discriminator + opaque-tail slice over already-commencement-classified text; produces only the condition_ref payload string
     m = _SIMULTANEOUS_PATTERN.search(raw)
     if m is None:
         return ""
@@ -378,6 +381,7 @@ def activation_rules_from_meta_clauses_with_findings(
             continue
         text = clause.text
 
+        # lawvm-regex: owning_parser contingent-class discriminator over COMMENCEMENT-classified SurfaceMetaClause text; mints only the rule kind
         if _DECREE_SET_PATTERN.search(text):
             rules.append(ActivationRule(
                 kind="pending_decree",
@@ -385,6 +389,7 @@ def activation_rules_from_meta_clauses_with_findings(
             ))
             continue
 
+        # lawvm-regex: owning_parser contingent-class discriminator over COMMENCEMENT-classified SurfaceMetaClause text; mints only the rule kind
         if _SIMULTANEOUS_PATTERN.search(text):
             condition_ref = _extract_simultaneous_ref(text)
             rules.append(ActivationRule(

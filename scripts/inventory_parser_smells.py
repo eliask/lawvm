@@ -106,23 +106,107 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/transparent_store.py": "source_plane",
     "src/lawvm/finland/finlex_api.py": "source_plane",
     "src/lawvm/finland/xml_ir.py": "source_plane",
+    # eId / locator / AKN-component / version-suffix parsers (no legal prose):
+    "src/lawvm/finland/section_text_extractor.py": "source_plane",
+    "src/lawvm/finland/section_resolver.py": "source_plane",
+    "src/lawvm/finland/provision_ref_locator.py": "source_plane",
+    "src/lawvm/finland/interlink_targets.py": "source_plane",
+    "src/lawvm/finland/editorial_adjudication.py": "source_plane",
+    # PDF/XML corrigendum corrector: parses corrigendum PDF text + AKN XML and
+    # emits CORRECTED XML bytes (text_replace on bytes) consumed pre-parse; the
+    # derived LegalAddress is metadata only (not a patch-lookup target). No
+    # timeline op / legal-state is minted from these regexes (C4 triage).
+    "src/lawvm/finland/corrigendum.py": "source_plane",
+    # finlex:// locator + FRBR/AKN identity-byte parsing for canonical artifact
+    # identity / version derivation. Plane A throughout (C4 triage).
+    "src/lawvm/finland/consolidated_artifacts.py": "source_plane",
+    # Source-fact amendment->parent edge discovery over consolidated oracle
+    # metadata; johtolause gating is delegated to the owning citation router, not
+    # local regex. Index/identity layer, not a timeline producer (C4 triage).
+    "src/lawvm/finland/amendment_index.py": "source_plane",
+    # HTML/RSC oracle ingest: regex heading fallback when JSON parse fails. Plane
+    # A byte/HTML ingest (C4 triage).
+    "src/lawvm/finland/finlex_html.py": "source_plane",
+    # Own-source structural normalization between raw XML parse and body-pairing:
+    # every regex reads an IRNode label/text/irnode_to_text of the node being
+    # normalized (plane-A source-IR, the module's own input); every rewrite emits
+    # a witnessed SourceNormalizationFact reaching production (RB-C triage).
+    "src/lawvm/finland/source_normalize.py": "source_plane",
     # --- lexer (B): label / numeric-token normalization only ---
     "src/lawvm/core/tree_ops.py": "lexer",
     "src/lawvm/finland/labels.py": "lexer",
     "src/lawvm/finland/profile/normalize.py": "lexer",
+    # --- lexer (B): johtolause tokenizer (raw johto fragment -> Token) ---
+    "src/lawvm/finland/johtolause/lexer.py": "lexer",
     # --- owning parser (B): the canonical parser for a construction family ---
     "src/lawvm/finland/johtolause/api.py": "owning_parser",
     "src/lawvm/finland/johtolause/clause_patterns.py": "owning_parser",
     "src/lawvm/finland/johtolause/clause_surface.py": "owning_parser",
+    "src/lawvm/finland/johtolause/affected_statute.py": "owning_parser",
+    "src/lawvm/finland/johtolause/surface_parse.py": "owning_parser",
+    "src/lawvm/finland/johtolause/grammar/sections.py": "owning_parser",
+    "src/lawvm/finland/johtolause_supplements.py": "owning_parser",
+    "src/lawvm/finland/claim_kinds/inline_statute_resolution.py": "owning_parser",
     "src/lawvm/finland/legal_surface/delegation_parse.py": "owning_parser",
     "src/lawvm/finland/legal_surface/modal_parse.py": "owning_parser",
     "src/lawvm/finland/references/by_name.py": "owning_parser",
     "src/lawvm/finland/references/sections.py": "owning_parser",
     "src/lawvm/finland/amendment_payload_lookup.py": "owning_parser",
+    # references/ core owning recognizers (C5 triage: each OWNS a reference family
+    # per notes/FI_REFERENCE_CATALOGUE.md §4; regex feeds the family parser over the
+    # module's OWN prose / AKN-id surface — mirrors the by_name / sections preclear).
+    "src/lawvm/finland/references/ref_mention_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/internal_refs.py": "owning_parser",
+    "src/lawvm/finland/references/inline_citation_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/cross_refs.py": "owning_parser",
+    "src/lawvm/finland/references/eu_reference.py": "owning_parser",
+    "src/lawvm/finland/references/eu_directive.py": "owning_parser",
+    "src/lawvm/finland/references/preparatory_reference_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/freetext_addresses.py": "owning_parser",
+    "src/lawvm/finland/references/anaphora.py": "owning_parser",
+    "src/lawvm/finland/references/elliptical_resolve.py": "owning_parser",
+    "src/lawvm/finland/references/resolve.py": "owning_parser",
+    "src/lawvm/finland/references/shared_reference_orchestrator.py": "owning_parser",
+    # references/ tail owning recognizers (C6 triage: surface-fact recognizers, each
+    # the owning parser for its family — temporal H3, treaty/SopS, modal actor,
+    # sanction, vague targetless-phrase selector — over their own input `text`).
+    "src/lawvm/finland/references/actor_modal.py": "owning_parser",
+    "src/lawvm/finland/references/sanction.py": "owning_parser",
+    "src/lawvm/finland/references/temporal.py": "owning_parser",
+    "src/lawvm/finland/references/treaty.py": "owning_parser",
+    "src/lawvm/finland/references/treaty_article.py": "owning_parser",
+    "src/lawvm/finland/references/vague.py": "owning_parser",
+    # legal_surface owning construction parsers / lenses (C6 triage: each reads its
+    # own scoped surface text / segment — the §1.12 owning-parser-input carve-out).
+    "src/lawvm/finland/legal_surface/case_frame.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/condition_exception_parse.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/delegation_canonical.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/sentence_parse.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/temporal_parse.py": "owning_parser",
+    # legal_surface source-structure normalizers (C6 triage: parse AKN <num>/eId
+    # surface + already-typed provision_path into labels — source-structure plane).
+    "src/lawvm/finland/legal_surface/provision_index.py": "source_plane",
+    "src/lawvm/finland/legal_surface/reference_projection.py": "source_plane",
+    # THE owning voimaantulosäännös (transitional-provision) cross-statute repeal
+    # extractor: reads its OWN amendment source XML (xml_bytes) and mints REPEAL
+    # ops via the §1.12-sanctioned owning rail; address parse already delegated to
+    # the shared scan_legal_addresses grammar driver; fails closed (records
+    # VtsSkippedTarget/VtsSourceDiagnostic). Local regexes are the citation/title
+    # lexer + fragment-boundary truncation feeding it (C4 triage).
+    "src/lawvm/finland/vts.py": "owning_parser",
+    # scope.py is the canonical chapter/part-scope assignment parser: it
+    # consumes its OWN johtolause + already-typed los to assign/strip scope and
+    # mints no ops. Mirrors johto_scope_mentions / references/sections (both
+    # precleared owning_parser). No reach-back site (none of its 44 regexes read
+    # raw_text/source_text/irnode_to_text/.description). Whole-file preclear.
+    "src/lawvm/finland/scope.py": "owning_parser",
     # --- diagnostic (D/E): audit / oracle-comparison rendering, no authority ---
     "src/lawvm/core/ir_helpers.py": "diagnostic",
     "src/lawvm/finland/inline_repeal_stub.py": "diagnostic",
     "src/lawvm/finland/oracle_comparison.py": "diagnostic",
+    # pure measurement module, explicitly off the replay/apply path
+    # ("changes no production behaviour"); cheap-signal proxy is corroboration only.
+    "src/lawvm/finland/references/annotation_independence_census.py": "diagnostic",
 }
 
 # Inline waiver vocabulary (a use-site is waived if its line, or the line above,

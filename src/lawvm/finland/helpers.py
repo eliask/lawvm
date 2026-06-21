@@ -77,6 +77,7 @@ def _normalize_source_section_num(raw: str) -> str:
     stripped = raw.strip()
     if stripped.startswith("§"):
         return _norm_num_token(stripped)
+    # lawvm-regex: prefilter source <num> label normalization (sign-first `§ 1.` shape); pure label-token shape, mints no legal state
     suffix_match = _SOURCE_SECTION_SIGN_SUFFIX_LETTER_RE.match(stripped)
     if suffix_match is not None:
         return _norm_num_token(f"{suffix_match.group('base')}{suffix_match.group('suffix')}")
@@ -125,6 +126,7 @@ def _section_sort_key(text: str) -> Tuple[int, str]:
     Labels that cannot be parsed return ``(-1, token)``.
     """
     token = _norm_num_token(text).replace("luku", "").replace("osa", "")
+    # lawvm-regex: prefilter numeric+letter split of a normalized label for sort ordering; pure label-token shape, mints no legal state
     m = _SECTION_SORT_RE.match(token)
     if m:
         return (int(m.group(1)), m.group(2))
@@ -197,10 +199,15 @@ def classify_rangaistussaannos(node: IRNode) -> Literal["yes", "no", "unknown"]:
     heading_text = _direct_child_text(node, (IRNodeKind.HEADING,)).lower()
     intro_text = _direct_child_text(node, (IRNodeKind.INTRO, IRNodeKind.CONTENT)).lower()
 
+    # lawvm-regex: prefilter conservative penal-shape evidence over a node's own normalized text; tri-state drafting-shape classifier, mints/drops no legal state
     has_sentencing_command = bool(_RANGAISTUS_SENTENCING_RE.search(text))
+    # lawvm-regex: prefilter conservative penalty-expression evidence over the node's own normalized text; classifier only
     has_penalty_expression = bool(_RANGAISTUS_PENALTY_RE.search(text))
+    # lawvm-regex: prefilter conservative offence-formula prefix evidence over the node's own normalized text; classifier only
     has_offence_formula = bool(_RANGAISTUS_OFFENCE_PREFIX_RE.match(text))
+    # lawvm-regex: prefilter conservative offence-name evidence over the node's own heading/intro text; classifier only
     has_offence_name = bool(_RANGAISTUS_HEADING_NAME_RE.search(heading_text or intro_text))
+    # lawvm-regex: prefilter conservative admin-sanction-term evidence over the node's own normalized text; classifier only
     has_admin_sanction_terms = bool(_RANGAISTUS_ADMIN_SANCTION_RE.search(text))
     has_colon_intro_list = _has_colon_intro_signal(node)
 
@@ -227,6 +234,7 @@ def _previous_item_token(item_norm: str) -> Optional[str]:
     Examples: ``"3"`` → ``"2"``, ``"3a"`` → ``"3"``, ``"3b"`` → ``"3a"``, ``"c"`` → ``"b"``.
     Returns ``None`` when there is no predecessor (base=1, no suffix, or ``"a"``).
     """
+    # lawvm-regex: prefilter predecessor-label split of a normalized item label; pure label-sequence shape, mints no legal state
     m = _PREVIOUS_ITEM_NUM_SUFFIX_RE.match(item_norm)
     if m:
         base = int(m.group(1))
@@ -267,6 +275,7 @@ def _roman_label_to_arabic(token: str) -> Optional[str]:
     parts) and delegates the actual parse — including non-canonical
     rejection — to ``lawvm.roman``.
     """
+    # lawvm-regex: prefilter I/V/X charset gate before delegating the parse to lawvm.roman; pure label-token shape, mints no legal state
     if not token or not _FI_ROMAN_RE.match(token):
         return None
     value = _roman_to_arabic_shared(token)

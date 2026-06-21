@@ -273,6 +273,8 @@ def _empty_run(
         johto_mentioned_labels=johto_mentioned_labels or set(),
         johto_moment_targets={},
         johto_numbered_table_targets={},
+        johto_whole_section_targets=set(),
+        johto_insert_subsection_section_targets=set(),
         johto_mentioned_replaced_chapters=johto_mentioned_replaced_chapters or set(),
         moved_section_destinations={},
         owned_chapter_labels=owned_chapter_labels or set(),

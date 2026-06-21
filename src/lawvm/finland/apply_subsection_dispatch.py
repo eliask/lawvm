@@ -588,6 +588,7 @@ def _apply_deterministic_subsection_op(
     _target_chapter = routing.target_chapter
     _target_part = routing.target_part
 
+    # lawvm-regex: owning_parser N-M range parse on the already-resolved routing target (_target_item), not source text
     if _target_item and (range_m := _ITEM_RANGE_TARGET_RE.match(_target_item)):
         start, end = int(range_m.group(1)), int(range_m.group(2))
         if start < end:

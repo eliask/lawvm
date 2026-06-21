@@ -187,6 +187,7 @@ def _find_muutos_node_uncached(
     def _part_label_from_cross_heading(el: "etree._Element") -> str:
         if _localname(el) != "crossHeading":
             return ""
+        # lawvm-regex: prefilter part-label lexer over a crossHeading in the compiler's own muutos_tree source XML; pure label-token shape, mints no legal state
         match = _PART_CROSS_HEADING_RE.match(_direct_text(el))
         if match is None:
             return ""
@@ -414,6 +415,7 @@ def _find_muutos_node_uncached(
             return node
     # Letter-suffix fallback: 5a → try base 5
     if target_unit_kind_text == "section":
+        # lawvm-regex: prefilter letter-suffix split of an already-normalized target label (5a -> base 5 fallback); pure label-token shape, mints no legal state
         m = _LETTER_SUFFIX_TARGET_RE.match(target_norm)
         if m:
             for node in nodes:
@@ -450,8 +452,10 @@ def _johtolause_mentions_section(johto: str, section_label: str) -> bool:
         label_pat = rf"{re.escape(m.group(1))}\s*{re.escape(m.group(2))}" if m.group(2) else re.escape(m.group(1))
     else:
         label_pat = re.escape(section_label)
+    # lawvm-regex: prefilter §-label membership predicate over owned (Zs-normalized) johto with dynamic re.escape'd label (cannot be hoisted); answers yes/no, mints no legal state
     if re.search(rf"(?<!\d){label_pat}\s*§", text, flags=re.I) is not None:
         return True
+    # lawvm-regex: prefilter §-label list-continuation membership predicate over owned johto with dynamic re.escape'd label; answers yes/no, mints no legal state
     m2 = re.search(rf"(?<!\d){label_pat}\s*(?:[,;—–\-]|\bja\b|\bsekä\b)", text, flags=re.I)
     if m2 and "§" in text[m2.start() :]:
         return True
@@ -1070,6 +1074,7 @@ def _c_internal_list_update_not_whole_section_replace(
         return True, ""
     johto = (ctx.johto or "").lower().replace("\xa0", " ")
     section_pat = re.escape(str(op.target_section))
+    # lawvm-regex: prefilter `N §:ssä olevaa ... luetteloa` clause-shape guard over owned johto with dynamic re.escape'd label; conservative drop guard, mints no legal state
     if re.search(rf"(?<!\d){section_pat}\s*§\s*:ssä\s+olevaa\b", johto) and "luetteloa" in johto:
         return False, "internal section list update is not a safe whole-section replace"
     return True, ""

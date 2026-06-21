@@ -187,6 +187,7 @@ def should_use_sec1_fallback_pre_routing(johto: Optional[str]) -> bool:
 def should_use_sec1_fallback_post_routing(johto: str, sec1_text: str) -> bool:
     if any(kw in johto.lower() for kw in OP_KEYWORDS):
         return False
+    # lawvm-regex: prefilter has-subprovision routing predicate over loaded sec1 text; picks the fallback lane, mints no op/target
     has_subprov = re.search(
         r"§:?n?\s+(?:\d[\d.]*\s+)?(?:kohta|kohdan|momentti|momentin|johdantokappale)",
         sec1_text.lower(),
@@ -194,6 +195,7 @@ def should_use_sec1_fallback_post_routing(johto: str, sec1_text: str) -> bool:
     pure_repeal_subprov = (
         has_subprov
         and "kumotaan" in sec1_text.lower()
+        # lawvm-regex: prefilter operative-verb absence routing predicate; boolean gate, no op
         and not re.search(r"\b(muutetaan|lisätään|korvataan|otetaan)\b", sec1_text.lower())
     )
     return bool(any(kw in sec1_text.lower() for kw in OP_KEYWORDS) and (not has_subprov or pure_repeal_subprov))
@@ -216,11 +218,13 @@ def _sec1_numbered_repeal_list_has_foreign_statute_items(sec1_text: str, parent_
     lowered = sec1_text.lower()
     if "kumotaan" not in lowered:
         return False
+    # lawvm-regex: prefilter numbered-list presence guard (paragraphized repeal list?); ownership guard, mints no op/target
     if _NUMBERED_LIST_ITEM_RE.search(sec1_text) is None:
         return False
     parent_spans = set(fi_statute_citation_spans(sec1_text, parent_id))
     if not parent_spans:
         return False
+    # lawvm-regex: prefilter generic statute-citation span GUARD; counts foreign-statute citations outside parent spans to refuse cross-statute replay, mints no op
     for match in _GENERIC_FI_STATUTE_CITATION_RE.finditer(sec1_text):
         if (match.start(), match.end()) not in parent_spans:
             return True
