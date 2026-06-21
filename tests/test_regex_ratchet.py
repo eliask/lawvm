@@ -280,3 +280,196 @@ class TestRatchetGuardLiveness:
         records = _INV.scan_file_regex_use_sites(self._SCANNED_FILE, text)
         assert len(records) == 1
         assert records[0]["raw_text_accessor"] is True
+
+
+# ---------------------------------------------------------------------------
+# Renamed-local reach-back: the line-local heuristic alone is UNSOUND — it only
+# sees raw-text accessors named on the call line. The hardened detector follows
+# intra-procedural assignment so a regex over a local that was (transitively)
+# assigned from a raw_text/source_text/irnode_to_text/.description accessor is
+# still flagged as a legacy_escape_hatch. Each fixture is driven through the
+# REAL scan path (scan_file_regex_use_sites) — guard-liveness (AGENTS.md §2.9).
+# ---------------------------------------------------------------------------
+
+
+class TestRenamedLocalReachBack:
+    _SCANNED_FILE = "src/lawvm/finland/normalize.py"
+
+    def _scan(self, text: str) -> list[Any]:
+        return _INV.scan_file_regex_use_sites(self._SCANNED_FILE, text)
+
+    # ---- POSITIVES: the OLD line-local heuristic would MISS these ----
+
+    def test_one_hop_renamed_local_from_raw_text_is_flagged(self) -> None:
+        """`txt = op.source.raw_text` then `re.search(pat, txt)` — the exact
+        evading shape (merge.py:2542). Line-local `_RE_RAW_TEXT_ACCESSOR` would
+        not fire on the call line; the AST taint pass must."""
+        text = (
+            "def f(op):\n"
+            "    txt = op.source.raw_text\n"
+            "    return re.search(PAT, txt)\n"
+        )
+        records = self._scan(text)
+        call = [r for r in records if r["method"] == "search"]
+        assert len(call) == 1
+        assert call[0]["raw_text_accessor"] is True
+        assert call[0]["raw_text_via"] == "renamed_local"
+        # And the line-local regex genuinely does NOT see it (proves we added value):
+        line = next(ln for ln in text.splitlines() if "re.search" in ln)
+        assert _INV._RE_RAW_TEXT_ACCESSOR.search(line) is None
+
+    def test_multi_hop_transitive_rename_is_flagged(self) -> None:
+        """Taint must survive an arbitrary number of rename hops within a scope."""
+        text = (
+            "def f(node):\n"
+            "    a = irnode_to_text(node)\n"
+            "    b = a.strip()\n"
+            "    c = ' '.join(b.split())\n"
+            "    return _CUE_RE.finditer(c)\n"
+        )
+        records = self._scan(text)
+        call = [r for r in records if r["method"] == "finditer"]
+        assert len(call) == 1
+        assert call[0]["raw_text_accessor"] is True
+        assert call[0]["raw_text_via"] == "renamed_local"
+
+    def test_wrapped_normalizer_call_preserves_taint(self) -> None:
+        """Taint cannot be laundered through a wrapping helper call whose argument
+        is itself an accessor (fixed_term_expiry shape:
+        `normalized = _normalize(irnode_to_text(x))`)."""
+        text = (
+            "def f(v):\n"
+            "    normalized = _normalize(irnode_to_text(v.content))\n"
+            "    return _EXPIRY_RE.search(normalized)\n"
+        )
+        records = self._scan(text)
+        call = [r for r in records if r["method"] == "search"]
+        assert len(call) == 1
+        assert call[0]["raw_text_accessor"] is True
+
+    def test_raw_text_named_parameter_is_seeded(self) -> None:
+        """A helper taking a `raw_text` parameter, normalizing it into a local,
+        then regexing the local (merge.py `_source_targets_plain_subsection`)."""
+        text = (
+            "def f(raw_text, n):\n"
+            "    text = ' '.join(raw_text.split())\n"
+            "    return re.search(PAT, text)\n"
+        )
+        records = self._scan(text)
+        call = [r for r in records if r["method"] == "search"]
+        assert len(call) == 1
+        assert call[0]["raw_text_accessor"] is True
+
+    def test_for_loop_target_from_accessor_is_tainted(self) -> None:
+        text = (
+            "def f(node):\n"
+            "    for chunk in irnode_to_text(node).split():\n"
+            "        if re.match(PAT, chunk):\n"
+            "            return chunk\n"
+        )
+        records = self._scan(text)
+        call = [r for r in records if r["method"] == "match"]
+        assert len(call) == 1
+        assert call[0]["raw_text_accessor"] is True
+
+    # ---- NEGATIVES: must NOT over-flag (false positives become wasted waivers) ----
+
+    def test_local_from_non_raw_text_source_is_not_flagged(self) -> None:
+        """A local assigned from a NON-accessor field (`child.text`, not
+        `.raw_text`/`.description`) regexed must NOT be flagged."""
+        text = (
+            "def f(child):\n"
+            "    text = (child.text or '').lstrip()\n"
+            "    return re.match(PAT, text)\n"
+        )
+        records = self._scan(text)
+        call = [r for r in records if r["method"] == "match"]
+        assert len(call) == 1
+        assert call[0]["raw_text_accessor"] is False
+        assert call[0]["raw_text_via"] == ""
+
+    def test_plain_parameter_not_named_raw_text_is_not_flagged(self) -> None:
+        text = (
+            "def f(s):\n"
+            "    return re.search(PAT, s)\n"
+        )
+        records = self._scan(text)
+        call = [r for r in records if r["method"] == "search"]
+        assert len(call) == 1
+        assert call[0]["raw_text_accessor"] is False
+
+    def test_taint_does_not_leak_across_function_scopes(self) -> None:
+        """A tainted local in one function must not flag a same-named local in a
+        sibling function that has a clean source."""
+        text = (
+            "def dirty(op):\n"
+            "    text = op.source.raw_text\n"
+            "    return re.search(PAT, text)\n"
+            "def clean(s):\n"
+            "    text = s.upper()\n"
+            "    return re.search(PAT, text)\n"
+        )
+        records = self._scan(text)
+        by_line = {r["line"]: r for r in records if r["method"] == "search"}
+        assert by_line[3]["raw_text_accessor"] is True  # dirty()
+        assert by_line[6]["raw_text_accessor"] is False  # clean()
+
+    def test_nested_function_local_does_not_taint_enclosing(self) -> None:
+        """An inner function's tainted local must not taint a same-named local of
+        the enclosing function (each function is its own taint universe)."""
+        text = (
+            "def outer(s):\n"
+            "    text = s.lower()\n"
+            "    def inner(op):\n"
+            "        text = op.source.raw_text\n"
+            "        return re.search(PAT, text)\n"
+            "    return re.search(PAT, text)\n"
+        )
+        records = self._scan(text)
+        by_line = {r["line"]: r for r in records if r["method"] == "search"}
+        assert by_line[5]["raw_text_accessor"] is True   # inner(): tainted
+        assert by_line[6]["raw_text_accessor"] is False  # outer(): clean
+
+    def test_module_scope_does_not_pull_in_function_locals(self) -> None:
+        """Module-scope taint must not absorb function-body locals (regression:
+        an early version descended into function bodies from module scope)."""
+        text = (
+            "def f(op):\n"
+            "    raw = op.source.raw_text\n"
+            "def g(t):\n"
+            "    return re.search(PAT, t)\n"
+        )
+        records = self._scan(text)
+        call = [r for r in records if r["method"] == "search"]
+        assert len(call) == 1
+        assert call[0]["raw_text_accessor"] is False
+
+    def test_unparseable_text_falls_back_to_line_local_only(self) -> None:
+        """If the file does not parse, the AST pass yields no hits but the
+        line-local heuristic still applies (no crash, no silent over-claim)."""
+        text = "def f(  # syntactically broken\n    re.search(PAT, raw_text)\n"
+        # raw_text_tainted_call_lines must not raise:
+        assert _INV.raw_text_tainted_call_lines(text) == set()
+        records = self._scan(text)
+        # The line-local accessor on the call line is still detected.
+        call = [r for r in records if r["method"] == "search"]
+        assert len(call) == 1
+        assert call[0]["raw_text_accessor"] is True
+        assert call[0]["raw_text_via"] == "line_local"
+
+    def test_known_live_blind_spot_merge_py_is_now_caught(self) -> None:
+        """End-to-end on real source: the confirmed live blind spot
+        (merge.py:2542/2544, `_source_targets_plain_subsection`) must now be
+        flagged as raw-text reach-back through the real file scan."""
+        merge_path = _REPO_ROOT / "src/lawvm/finland/merge.py"
+        if not merge_path.exists():  # pragma: no cover - defensive
+            pytest.skip("merge.py not present in this checkout")
+        text = merge_path.read_text(encoding="utf-8")
+        records = _INV.scan_file_regex_use_sites("src/lawvm/finland/merge.py", text)
+        hatch_lines = {
+            r["line"] for r in records if r["raw_text_accessor"]
+        }
+        assert {2542, 2544} <= hatch_lines, (
+            "hardened detector must catch merge.py renamed-local reach-back; "
+            f"got {sorted(hatch_lines)}"
+        )
