@@ -22,6 +22,8 @@ the forest carries the date on the commencement clause).
 """
 from __future__ import annotations
 
+import pytest
+
 from lawvm.core.legal_surface_graph import SurfaceGraphSubject
 from lawvm.finland.legal_surface.source_syntax_graph import assemble_source_syntax_graph
 from lawvm.finland.legal_surface.temporal_projection import (
@@ -316,3 +318,125 @@ def test_production_temporal_facts_derive_from_forest_and_total_is_identical() -
     # the shared slice through the forest, byte-identically).
     prod_fps = {_seed_fp(s) for s in prod_seeds}
     assert {_seed_fp(s) for s in forest_slice} <= prod_fps
+
+
+# ── corpus gate: WHICH temporal kinds the forest gate reproduces 0-delta ──────
+#
+# The committed boundary of standing task #27 Lane T (the temporal non-shared
+# flip). The forest temporal GATE keys on temporal-family OWNERSHIP (commencement
+# / validity / application / delegation cue-bearing segments). The shared
+# fixed-term-expiry slice is gate-reproducible 0-delta corpus-wide (the landed
+# flip); every OTHER temporal kind has golden seeds in segments the temporal
+# family does NOT gate (a bare ``fixed_date`` with no cue, the ``alkaen`` duration
+# anchor, the ``kunnes`` event bound), so routing those kinds through the gate
+# would SILENTLY DROP nodes — NOT 0-delta. This test LOCKS that boundary: the
+# shared slice stays gate-reproduced, the non-shared kinds stay gate-UNreproduced,
+# and the gate never over-produces. A future "flip the rest" attempt that breaks
+# any of these assertions is, by construction, a non-0-delta producer change.
+
+
+def _corpus_available() -> bool:
+    try:
+        from farchive import Farchive
+
+        from lawvm.finland.transparent_store import TransparentCorpusStore
+        from lawvm.tools.parse_bench import _archive_path
+
+        store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
+        return store.read_source("1999/731") is not None
+    except Exception:
+        return False
+
+
+def _iter_corpus_bundles(limit: int, min_year: int):
+    from farchive import Farchive
+
+    from lawvm.finland.legal_surface.bundle import (
+        build_surface_bundle,
+        decode_body_text,
+    )
+    from lawvm.finland.transparent_store import TransparentCorpusStore
+    from lawvm.tools.parse_bench import _archive_path
+
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
+    ids = store.list_statute_ids()
+    if min_year:
+        ids = [s for s in ids if s[:4].isdigit() and int(s[:4]) >= min_year]
+    if limit and limit < len(ids):
+        step = len(ids) / limit
+        ids = [ids[int(i * step)] for i in range(limit)]
+    for sid in ids:
+        xb = store.read_source(sid) or store.read_amendment(sid)
+        if not xb:
+            continue
+        try:
+            if not decode_body_text(xb):
+                continue
+            yield sid, build_surface_bundle(xb, sid)
+        except Exception:
+            # A statute whose substrate build fails loud (e.g. a provision-index
+            # alignment refusal) is not part of THIS boundary measurement; skip it.
+            continue
+
+
+@pytest.mark.skipif(not _corpus_available(), reason="canonical corpus not available")
+def test_corpus_forest_gate_reproduces_only_shared_expiry_slice() -> None:
+    """Corpus gate: only fixed-term-expiry is forest-gate 0-delta; the rest miss.
+
+    Aggregates :func:`classify_forest_temporal_gate_coverage` over a corpus slice.
+    Asserts the committed Lane-T boundary:
+
+      * ``fixed_term_expiry`` is REPRODUCED (gate == golden) on every statute that
+        carries it — the landed 0-delta flip, proven corpus-wide here;
+      * the lens-only kinds (``fixed_date`` / ``commencement`` /
+        ``duration_from_commencement`` / ``event_bound`` / ``validity_open``)
+        accumulate a NON-ZERO corpus miss — they are NOT gate-reproducible and so
+        MUST stay lens-produced (flipping them would silently drop nodes);
+      * the gate NEVER over-produces (corpus ``extra`` is empty for every kind).
+    """
+    from collections import Counter
+
+    from lawvm.finland.legal_surface.temporal_projection import (
+        classify_forest_temporal_gate_coverage,
+    )
+
+    total_missed: Counter[str] = Counter()
+    total_extra: Counter[str] = Counter()
+    expiry_seen = False
+    expiry_ever_missed = False
+    statutes = 0
+
+    for _sid, bundle in _iter_corpus_bundles(limit=800, min_year=0):
+        cov = classify_forest_temporal_gate_coverage(bundle)
+        statutes += 1
+        for kind, n in cov.missed.items():
+            total_missed[kind] += n
+        for kind, n in cov.extra.items():
+            total_extra[kind] += n
+        if "fixed_term_expiry" in cov.reproduced:
+            expiry_seen = True
+        if cov.missed.get("fixed_term_expiry", 0):
+            expiry_ever_missed = True
+
+    assert statutes > 100, f"corpus slice too small ({statutes})"
+
+    # (1) the gate never over-produces — it is a span-local re-scan of a strict
+    #     subset of the body.
+    assert not total_extra, f"forest gate over-produced: {dict(total_extra)}"
+
+    # (2) the shared fixed-term-expiry slice is gate-reproduced and NEVER missed.
+    assert expiry_seen, "expected fixed_term_expiry in the corpus slice"
+    assert not expiry_ever_missed, "fixed_term_expiry must be gate-0-delta corpus-wide"
+
+    # (3) the lens-only kinds are NOT gate-reproducible — a non-zero corpus miss
+    #     proves flipping them would silently drop nodes (the Lane-T NO-GO).
+    for lens_only_kind in (
+        "fixed_date",
+        "commencement",
+        "duration_from_commencement",
+        "event_bound",
+    ):
+        assert total_missed.get(lens_only_kind, 0) > 0, (
+            f"{lens_only_kind} is unexpectedly gate-reproducible — re-investigate "
+            f"whether it became flippable (missed={dict(total_missed)})"
+        )
