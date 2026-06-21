@@ -30,6 +30,7 @@ def _sort_label_key(label: Optional[str]) -> Tuple[Tuple[int, int, str], ...]:
         try:
             result.append((0, int(p), ""))
         except ValueError:
+            # lawvm-regex: prefilter numeric+letter split of an already-typed structural label for sort ordering; not an IR/raw_text read
             m = _LETTER_SUFFIX_LABEL_RE.match(p)
             if m:
                 result.append((0, int(m.group(1)), m.group(2).lower()))

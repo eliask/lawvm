@@ -136,10 +136,17 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/core/tree_ops.py": "lexer",
     "src/lawvm/finland/labels.py": "lexer",
     "src/lawvm/finland/profile/normalize.py": "lexer",
+    # --- lexer (B): johtolause tokenizer (raw johto fragment -> Token) ---
+    "src/lawvm/finland/johtolause/lexer.py": "lexer",
     # --- owning parser (B): the canonical parser for a construction family ---
     "src/lawvm/finland/johtolause/api.py": "owning_parser",
     "src/lawvm/finland/johtolause/clause_patterns.py": "owning_parser",
     "src/lawvm/finland/johtolause/clause_surface.py": "owning_parser",
+    "src/lawvm/finland/johtolause/affected_statute.py": "owning_parser",
+    "src/lawvm/finland/johtolause/surface_parse.py": "owning_parser",
+    "src/lawvm/finland/johtolause/grammar/sections.py": "owning_parser",
+    "src/lawvm/finland/johtolause_supplements.py": "owning_parser",
+    "src/lawvm/finland/claim_kinds/inline_statute_resolution.py": "owning_parser",
     "src/lawvm/finland/legal_surface/delegation_parse.py": "owning_parser",
     "src/lawvm/finland/legal_surface/modal_parse.py": "owning_parser",
     "src/lawvm/finland/references/by_name.py": "owning_parser",

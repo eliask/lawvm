@@ -372,6 +372,7 @@ def _parenthesized_payload_labels_for_section(
             continue
         for paragraph in section.findall(".//{*}p"):
             text = etree.tostring(paragraph, method="text", encoding="unicode").strip()
+            # lawvm-regex: prefilter leading (N) label lexer over the amendment's own body <p> text payload; pure label-token shape, mints no legal state
             match = _PARENTHESIZED_LEADING_LABEL_RE.match(text)
             if match is not None:
                 labels.add(_norm_num_token(match.group(1)))
@@ -405,6 +406,7 @@ def _postposed_kohta_labels_for_section(johto: str, *, section_label: str) -> se
     tail = normalized[start + len(needle) : start + len(needle) + 240]
     tail = re.split(r"\b(?:lisätään|kumotaan|siirretään)\b|[.;]", tail, maxsplit=1, flags=re.IGNORECASE)[0]
     labels: set[str] = set()
+    # lawvm-regex: owning_parser postposed-kohta label recognizer over a bounded slice of the FI-owned normalized johto surface; not a cross-plane raw_text read
     for match in _POSTPOSED_KOHTA_LABELS_RE.finditer(tail):
         labels.update(_parse_section_list_labels(match.group(1)))
     return {_norm_num_token(label) for label in labels if _norm_num_token(label).isdigit()}
@@ -758,6 +760,7 @@ def _reinstatement_match_has_local_chapter_insert_scope(
     match_start: int,
 ) -> bool:
     prefix = normalized_johto[max(0, match_start - 180) : match_start]
+    # lawvm-regex: prefilter bounded local-chapter-insert scope disambiguation on owned normalized johto prefix; mints no legal state
     return _LOCAL_CHAPTER_INSERT_SCOPE_BEFORE_REINSTATEMENT_RE.search(prefix) is not None
 
 
@@ -819,6 +822,7 @@ def _cited_repealed_section_scope_for_replacement(
     normalized = _normalize_fi_parse_text(johto)
     if not normalized or "kumot" not in normalized or "tilalle" not in normalized:
         return None
+    # lawvm-regex: owning_parser substring-guarded (kumot/tilalle) single-pass reinstatement recognizer over the FI-owned normalized johto; not a cross-plane raw_text read
     for match in _CITED_REPEALED_SECTION_REPLACEMENT_RE.finditer(normalized):
         if _reinstatement_match_has_local_chapter_insert_scope(normalized, match.start()):
             continue
@@ -1521,6 +1525,7 @@ def _johto_says_repealed_section_replaced_by_new_section(johto: str, section_nor
             match.group("old"),
             match.group("new"),
         )
+        # lawvm-regex: owning_parser reinstatement-list recognizer over the FI-owned normalized johto; not a cross-plane raw_text read
         for match in _REPEALED_SECTION_REPLACEMENT_LIST_RE.finditer(normalized)
     )
 
@@ -1532,6 +1537,7 @@ def _johto_says_statute_level_repealed_section_replaced_by_new_section(
     normalized = _normalize_fi_parse_text(johto)
     if not normalized or "kumot" not in normalized or "tilalle" not in normalized:
         return False
+    # lawvm-regex: owning_parser reinstatement-list recognizer over the FI-owned normalized johto; not a cross-plane raw_text read
     for match in _REPEALED_SECTION_REPLACEMENT_LIST_RE.finditer(normalized):
         if _reinstatement_match_has_local_chapter_insert_scope(normalized, match.start()):
             continue
@@ -2902,14 +2908,17 @@ def _infer_temporary_targets_from_preceding_section_context(
     but the host section is still explicit in the immediately preceding clause.
     """
     lookahead = after_vaali[:80]
+    # lawvm-regex: prefilter bounded `uusi N moment...` modifier-shape gate over owned johto lookahead; mints no legal state
     if _TEMPORARY_MOMENT_SCOPE_RE.match(lookahead) is None:
         return frozenset()
 
+    # lawvm-regex: owning_parser host-section label scan over the owned johto preceding väliaikaisesti; not a cross-plane raw_text read
     preceding_matches = list(_SECTION_REF_RE.finditer(johto[:vaali_start]))
     if not preceding_matches:
         return frozenset()
 
     candidate = _norm_num_token(preceding_matches[-1].group(1))
+    # lawvm-regex: prefilter valid section-label shape gate on a normalized token; mints no legal state
     if not candidate or _VALID_SECTION_LABEL_RE.match(candidate) is None:
         return frozenset()
 
@@ -2955,10 +2964,12 @@ def _extract_temporary_targets_from_johtolause(
         "muutetaan X lain 5 § ja lisätään väliaikaisesti uusi 6 §"
         # fragment = "6" → {"6"} valid → frozenset({"6"})
     """
+    # lawvm-regex: prefilter väliaikaisesti adverb presence guard over owned johto; mints no legal state
     if _VAALIAIKAISESTI_RE.search(johto) is None:
         return None  # caller already checked, but guard anyway
 
     all_valid_labels: set[str] = set()
+    # lawvm-regex: prefilter per-occurrence väliaikaisesti adverb scan over owned johto; mints no legal state
     for m_vaali in _VAALIAIKAISESTI_RE.finditer(johto):
         after_vaali = johto[m_vaali.end():]
 
@@ -2975,6 +2986,7 @@ def _extract_temporary_targets_from_johtolause(
             # Filter: keep only labels that look like valid Finnish section identifiers.
             # "testilain5", "xlain5", etc. are statute-name artifacts → discard.
             valid_labels = frozenset(
+                # lawvm-regex: prefilter valid section-label shape filter on normalized tokens; mints no legal state
                 lbl for lbl in raw_labels if _VALID_SECTION_LABEL_RE.match(lbl)
             )
 
@@ -3003,6 +3015,11 @@ _LETTER_SUFFIX_NUM_RE = re.compile(r"^\d+\s+[a-z]\s*§", re.IGNORECASE)
 _PLAIN_SECTION_NUM_RE = re.compile(r"^\d+\s*§", re.IGNORECASE)
 _OPERATIVE_VERB_RE = re.compile(r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b", re.IGNORECASE)
 _BODY_ONLY_ITEM_LABEL_RE = re.compile(r"^\s*(\d+[a-z]?)\)")
+# Structural-target marker in a johtolause (hoisted per §1.11 from the act-wide
+# body-recovery fallback guard); presence means the johto already names a target.
+_JOHTO_STRUCTURAL_TARGET_MARKER_RE = re.compile(
+    r"\b(?:§|luku|luvun|osa|osan|liite|liitteen)\b"
+)
 
 
 def _body_direct_sections(muutos_tree: "etree._Element") -> "list[etree._Element]":
@@ -3048,6 +3065,7 @@ def _body_section_groups(muutos_tree: "etree._Element") -> "list[tuple[etree._El
 def _is_body_only_amendment_surface(johto: str, source_title: str) -> bool:
     cleaned_johto = _WHITESPACE_RE.sub(" ", johto or "").strip().lower()
     cleaned_title = _WHITESPACE_RE.sub(" ", source_title or "").strip().lower()
+    # lawvm-regex: prefilter operative-verb presence guard over owned johto (any verb -> not a body-only surface); mints no legal state
     if not cleaned_johto or _OPERATIVE_VERB_RE.search(cleaned_johto):
         return False
     if "muuttamisesta" not in cleaned_title or "kumoamisesta" in cleaned_title:
@@ -3088,6 +3106,7 @@ def _body_section_item_labels(
         p_elements.extend(orphan.findall(".//{*}p"))
     for p_el in p_elements:
         text = _WHITESPACE_RE.sub(" ", etree.tostring(p_el, method="text", encoding="unicode")).strip()
+        # lawvm-regex: prefilter leading item-label lexer over the amendment's own body <p> text payload; pure label-token shape, mints no legal state
         match = _BODY_ONLY_ITEM_LABEL_RE.match(text)
         if match:
             labels.append(_norm_num_token(match.group(1)))
@@ -3127,6 +3146,7 @@ def _section_direct_payload_paragraph_count(
         if _direct_child_localname(child) != "subsection":
             continue
         text = _WHITESPACE_RE.sub(" ", etree.tostring(child, method="text", encoding="unicode")).strip()
+        # lawvm-regex: prefilter item-label lexer over the amendment's own body subsection text payload (excludes item-labelled subsections from the count); mints no legal state
         if text and not _BODY_ONLY_ITEM_LABEL_RE.match(text):
             count += 1
     return count
@@ -3249,6 +3269,7 @@ def _extract_enacting_formula_body_insert_ops_fallback(
         if num_el is None:
             continue
         num_text = (num_el.text or "").strip()
+        # lawvm-regex: prefilter letter-suffix num-shape lexer over the amendment's own body <num> payload (gates INSERT fallback); pure label-token shape, mints no legal state
         if not _LETTER_SUFFIX_NUM_RE.match(num_text):
             continue  # plain-number sections handled elsewhere
         label = _norm_num_token(num_text)
@@ -3297,7 +3318,9 @@ def _enacting_formula_body_insert_unowned_section_findings(
             label = _norm_num_token(num_text)
             if label in accepted_targets:
                 continue
+            # lawvm-regex: prefilter letter-suffix num-shape lexer over the amendment's own body <num> payload (diagnostic reason_code); pure label-token shape, mints no legal state
             if not _LETTER_SUFFIX_NUM_RE.match(num_text):
+                # lawvm-regex: prefilter plain-num shape classification over the amendment's own body <num> payload (diagnostic reason_code); mints no legal state
                 if _PLAIN_SECTION_NUM_RE.match(num_text):
                     reason_code = "plain_number_not_owned_by_insert_fallback"
                 else:
@@ -3364,6 +3387,7 @@ def _extract_enacting_formula_body_replace_ops_fallback(
     if num_el is None:
         return []
     num_text = (num_el.text or "").strip()
+    # lawvm-regex: prefilter plain-num shape gate over the amendment's own body <num> payload (ceremonial-formula REPLACE fallback); pure label-token shape, mints no legal state
     if not _PLAIN_SECTION_NUM_RE.match(num_text):
         return []
     label = _norm_num_token(num_text)
@@ -3482,7 +3506,8 @@ def _extract_act_wide_body_section_replace_ops_fallback(
         return []
     if "muuttamisesta" not in cleaned_title or "kumoamisesta" in cleaned_title:
         return []
-    if re.search(r"\b(?:§|luku|luvun|osa|osan|liite|liitteen)\b", cleaned_johto):
+    # lawvm-regex: prefilter structural-target marker guard over owned johto (refuses act-wide body recovery when the johto already names a structural target); mints no legal state
+    if _JOHTO_STRUCTURAL_TARGET_MARKER_RE.search(cleaned_johto):
         return []
     if muutos_tree.find(".//{*}chapter") is not None or muutos_tree.find(".//{*}part") is not None:
         return []

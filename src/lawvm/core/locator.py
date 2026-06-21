@@ -70,6 +70,7 @@ def parse_locator_string(s: str) -> HierarchicalLocator | None:
         kind, label = raw_segment.split(":", 1)
         kind = kind.strip().lower()
         label = label.strip()
+        # lawvm-regex: owning_parser kind/label shape gate on parse_locator_string's own locator-string input (this file is the canonical locator-string parser); not an IR/raw_text read
         if not _KIND_TOKEN_RE.match(kind) or not _LABEL_TOKEN_RE.match(label):
             return None
         segments.append(LocatorSegment(kind=kind, label=label))

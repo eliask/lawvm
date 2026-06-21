@@ -234,9 +234,11 @@ def collect_johto_insert_subsection_section_targets(johto_text: str) -> frozense
     if "§:" not in johto_text or "moment" not in johto_text:
         return frozenset()
     targets: set[str] = set()
+    # lawvm-regex: owning_parser bounded illative subsection-insert anchor over owned johto, supplementing the scan_legal_addresses grammar driver; not a cross-plane raw_text read
     for match in _ILLATIVE_SECTION_SUBSECTION_INSERT_RE.finditer(johto_text):
         targets.update(_expand_section_label_run(match.group("labels")))
         prefix = johto_text[max(0, match.start() - 80) : match.start()]
+        # lawvm-regex: owning_parser bounded preceding-section sibling anchor over owned johto window; not a cross-plane raw_text read
         sibling = _PRECEDING_ILLATIVE_SECTION_SIBLING_RE.search(prefix)
         if sibling:
             section = _norm_num_token(sibling.group("section"))
@@ -324,6 +326,7 @@ def collect_johto_mentioned_section_labels_frozenset(johto_text: str) -> frozens
 
     # Anchor supplement: § sites the grammar declined/could-not-lex. Capturing
     # the flat number-run before the § keeps these mentioned sections in scope.
+    # lawvm-regex: owning_parser bounded §-site anchor floor over owned johto for sites the grammar declined/could-not-lex (proven strict superset of legacy); not a cross-plane raw_text read
     for match in _SECTION_SITE_ANCHOR_RE.finditer(johto_text):
         labels.update(_expand_section_label_run(match.group(1)))
 
@@ -338,6 +341,7 @@ def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMe
     moved_section_destinations: list[MovedSectionDestination] = []
     seen_moved_destinations: set[tuple[str, str]] = set()
 
+    # lawvm-regex: owning_parser bounded new-chapter ownership-clue anchor over owned johto; not a cross-plane raw_text read
     for match in _NEW_CHAPTER_RE.finditer(johto_text):
         start_label = _norm_num_token(match.group(1)).removesuffix("luku")
         end_label = _norm_num_token(match.group(2)).removesuffix("luku") if match.group(2) else None
@@ -348,11 +352,13 @@ def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMe
         elif start_label:
             new_chapter_labels.add(start_label)
 
+    # lawvm-regex: owning_parser bounded move-destination chapter anchor over owned johto; not a cross-plane raw_text read
     for match in _MOVE_DESTINATION_CHAPTER_RE.finditer(johto_text):
         dest_chapter = _norm_num_token(match.group(1)).removesuffix("luku")
         if dest_chapter:
             moved_destination_chapter_labels.add(dest_chapter)
 
+    # lawvm-regex: owning_parser bounded section->chapter move-pairing anchor over owned johto; not a cross-plane raw_text read
     for match in _MOVE_SECTION_TO_CHAPTER_RE.finditer(johto_text):
         source_label = _norm_num_token(match.group(1))
         dest_chapter = _norm_num_token(match.group(2)).removesuffix("luku")
@@ -366,6 +372,7 @@ def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMe
 
     if len(new_chapter_labels) == 1:
         (new_chapter_label,) = tuple(new_chapter_labels)
+        # lawvm-regex: owning_parser bounded anaphor anchor over owned johto; the section list itself is parsed by scan_legal_addresses (grammar), regex only ties it to the declared new-chapter antecedent; not a cross-plane raw_text read
         for match in _ANAPHORIC_NEW_CHAPTER_MOVE_TAIL_RE.finditer(johto_text):
             for addr in scan_legal_addresses(match.group("section_tail")):
                 if (
@@ -383,12 +390,16 @@ def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMe
                     destination_chapter_label=new_chapter_label,
                 )
 
+    # lawvm-regex: owning_parser muutetaan keyword presence guard over owned johto; not a cross-plane raw_text read
     if _MUUTETAAN_RE.search(johto_text):
+        # lawvm-regex: owning_parser bounded `luku` anchor windowing over owned johto; not a cross-plane raw_text read
         for luku_match in _LUKU_RE.finditer(johto_text):
             start = max(0, luku_match.start() - 200)
             prefix = johto_text[start : luku_match.start()]
+            # lawvm-regex: owning_parser chapter-number anchor lexer over the bounded prefix window of owned johto; not a cross-plane raw_text read
             for range_match in _CHAPTER_NUMBER_RE.finditer(prefix):
                 between = prefix[range_match.end() :]
+                # lawvm-regex: owning_parser §/luvun disambiguation guard within the owned johto window; not a cross-plane raw_text read
                 if _SECTION_OR_GENITIVE_CHAPTER_RE.search(between):
                     continue
                 start_chapter = _norm_num_token(range_match.group(1)).removesuffix("luku")

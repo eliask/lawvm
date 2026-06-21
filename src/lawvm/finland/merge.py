@@ -63,6 +63,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Leading item-label lexers over an owned IR node's intro/content text (hoisted
+# per §1.11 from _item_label_from_intro_like_ir / _letter_label_from_intro_like_ir).
+_INTRO_NUMERIC_ITEM_LABEL_RE = re.compile(r"^(\d+[a-z]?)\s*[\).]", re.I)
+_INTRO_LETTER_ITEM_LABEL_RE = re.compile(r"^([a-z])\s*[\).]")
+
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _LEADING_OMISSION_ANCHOR_PREFIX_MERGE_RULE = "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE"
 
@@ -832,6 +837,7 @@ def _strip_leading_text_prefix(text: str, prefix: str) -> Optional[str]:
     if not norm_prefix:
         return None
     pattern = r"^\s*" + r"\s+".join(re.escape(part) for part in norm_prefix.split())
+    # lawvm-regex: owning_parser whitespace-flexible exact-prefix strip on the merger's own payload text (dynamic re.escape'd prefix, cannot be hoisted); not a cross-plane raw_text read
     match = re.match(pattern, text, flags=re.IGNORECASE | re.DOTALL)
     if not match:
         return None
@@ -1466,7 +1472,8 @@ def _item_label_from_intro_like_ir(node: IRNode) -> Optional[str]:
             continue
         text = (child.text or "").lstrip()
         compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", text, flags=re.I)
-        m = re.match(r"^(\d+[a-z]?)\s*[\).]", compact, flags=re.I)
+        # lawvm-regex: owning_parser leading numeric item-label lexer over the merger's own IR node intro/content text; not a cross-plane raw_text read
+        m = _INTRO_NUMERIC_ITEM_LABEL_RE.match(compact)
         if m:
             return normalized_label_key(m.group(1))
     return None
@@ -1478,7 +1485,8 @@ def _letter_label_from_intro_like_ir(node: IRNode) -> Optional[str]:
         if child.kind not in {IRNodeKind.INTRO, IRNodeKind.CONTENT}:
             continue
         text = (child.text or "").lstrip()
-        m = re.match(r"^([a-z])\s*[\).]", text)
+        # lawvm-regex: owning_parser leading single-letter item-label lexer over the merger's own IR node intro/content text; not a cross-plane raw_text read
+        m = _INTRO_LETTER_ITEM_LABEL_RE.match(text)
         if m:
             return normalized_label_key(m.group(1))
     return None
@@ -1601,6 +1609,7 @@ def _sparse_item_section_replace_merge_ir(
             for lbl in missing_from_amend:
                 if lbl.isdigit():
                     continue  # Pure integers outside max are a genuine sparse signal
+                # lawvm-regex: owning_parser a-suffix label classifier on an already-normalized structural label string; not an IR/raw_text read
                 m = _a_suffix_re.match(lbl)
                 if m and int(m.group(1)) <= max_amend_int:
                     # An "a-suffix" item (e.g. "2a") inside the amendment's integer
@@ -2214,10 +2223,12 @@ def _merge_letter_item_into_content_only_subsection_ir(
         rf"(?<!\w){re.escape(label)}\.\s.*?(?=(?:\s+[A-ZÅÄÖ]\.)|$)",
         re.S,
     )
+    # lawvm-regex: owning_parser locates the letter row to splice in the merge operator's OWN live subsection subtree text (irnode_to_text(sub)); own-subtree predicate, not a cross-plane amendment-source read; no-match -> None (caller falls back to normal merge, no silent legal drop)
     if not row_re.search(master_text):
         return None
 
     replacement = amend_text
+    # lawvm-regex: owning_parser aligns the replacement row start in the merge operator's OWN amend-paragraph subtree text (irnode_to_text(amend_para)); own-subtree alignment, not a cross-plane raw_text read
     row_start = re.search(rf"(?<!\w){re.escape(label)}\.\s", replacement)
     if row_start is not None:
         replacement = replacement[row_start.start() :]
