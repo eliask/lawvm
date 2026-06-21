@@ -460,6 +460,21 @@ class TestJolloinRangeExpansion:
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
         assert pairs == [("10", "10a", "P")]
 
+    def test_same_number_letter_suffix_range(self):
+        """Section suffix range: 32 e-32 h expands to 32e, 32f, 32g, 32h."""
+        tokens = tokenize(
+            "jolloin osaksi muutettu 32 c \u00a7, nykyinen 32 d \u00a7, "
+            "muutettu 32 e \u00a7 ja osaksi muutettu 32 f \u00a7 siirtyy "
+            "32 e\u201532 h \u00a7:ksi"
+        )
+        pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
+        assert pairs == [
+            ("32c", "32e", "P"),
+            ("32d", "32f", "P"),
+            ("32e", "32g", "P"),
+            ("32f", "32h", "P"),
+        ]
+
     def test_mismatched_range_sizes_returns_empty(self):
         """Mismatched expanded range sizes (3\u20135 \u2192 4\u20138) returns empty."""
         tokens = tokenize("jolloin nykyinen 3\u20135 \u00a7 siirtyv\u00e4t 4\u20138 \u00a7:ksi")

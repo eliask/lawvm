@@ -1157,6 +1157,29 @@ def _extract_renumber_pairs_from_jolloin_tokens(
         Returns a list of groups, where each group is a list of labels.
         A single number → ["5"].  A range 3–5 → ["3", "4", "5"].
         """
+
+        def _expand_same_number_suffix_range(
+            start_label: str,
+            start_suffix: str,
+            end_label: str,
+            end_suffix: str,
+        ) -> list[str] | None:
+            """Expand ``32e-32h``-style section-label ranges conservatively."""
+            if start_label != end_label or not start_suffix or not end_suffix:
+                return None
+            if len(start_suffix) != 1 or len(end_suffix) != 1:
+                return None
+            start_ch = start_suffix.lower()
+            end_ch = end_suffix.lower()
+            if not ("a" <= start_ch <= "z" and "a" <= end_ch <= "z"):
+                return None
+            if start_ch > end_ch:
+                return None
+            return [
+                f"{start_label}{chr(code)}"
+                for code in range(ord(start_ch), ord(end_ch) + 1)
+            ]
+
         groups: list[list[str]] = []
         n_group = len(group_tokens)
         i = 0
@@ -1193,6 +1216,17 @@ def _extract_renumber_pairs_from_jolloin_tokens(
                     # Non-integer range — treat as two separate labels
                     groups.append([label + letter])
                     i = next_pos  # will pick up end_label on next iteration
+                    continue
+
+                suffix_range = _expand_same_number_suffix_range(
+                    label,
+                    letter,
+                    end_label,
+                    end_letter,
+                )
+                if suffix_range is not None:
+                    groups.append(suffix_range)
+                    i = range_end_pos + 1 + (1 if end_letter else 0)
                     continue
 
                 # Expand the numeric range; letter suffixes only on first/last

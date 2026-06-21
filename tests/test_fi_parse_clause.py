@@ -1853,6 +1853,28 @@ def test_jolloin_renumber_followed_by_main_verb_group():
     assert siirtaa_idx == 0, f"SIIRTAA (jolloin) must be first verb group, got index {siirtaa_idx}"
 
 
+def test_jolloin_section_suffix_range_renumber_emits_each_pair() -> None:
+    """A final-label range like ``32 e-32 h`` owns each section relabel."""
+    text = (
+        "muutetaan 7 päivänä kesäkuuta 1978 annetun merimieslain (423/1978) "
+        "32 ja 32 b §, 32 c §:n 1 momentti, 32 e §, 32 f §:n 1 momentti "
+        "sekä 40 §:n 1 ja 4 momentti, lisätään lakiin uusi 32 c ja 32 d §, "
+        "jolloin osaksi muutettu 32 c §, nykyinen 32 d §, muutettu 32 e § "
+        "ja osaksi muutettu 32 f § siirtyy 32 e-32 h §:ksi, seuraavasti:"
+    )
+    result = parse_clause(text)
+    assert result.surface_clause is not None
+
+    renumber_ops = [op for op in result.parsed_ops if op.verb == "S" and op.kind == "P"]
+    assert [(op.number, op.renumber_dest) for op in renumber_ops] == [
+        ("32c", "32e"),
+        ("32d", "32f"),
+        ("32e", "32g"),
+        ("32f", "32h"),
+    ]
+    assert result.surface_clause.verb_groups[0].verb.name == "SIIRTAA"
+
+
 def test_jolloin_renumber_not_enriched_in_api_phase1b():
     """Jolloin renumber must NOT appear in enriched_surface_clause (Phase 1b is a no-op).
 
