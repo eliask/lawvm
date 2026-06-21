@@ -393,6 +393,7 @@ def dispatch_apply_intent(
         failed_ops_out=failed_ops_out,
         source_pathologies_out=source_pathologies_out,
         mutation_events_out=mutation_events_out,
+        findings_out=findings_out,
         path_hint=path_hint,
         replay_history_ops=replay_history_ops,
         standalone_section_targets=standalone_section_targets,

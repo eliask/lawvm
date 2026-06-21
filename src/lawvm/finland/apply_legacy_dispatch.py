@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, List, Literal, Optional
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
+from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, normalized_label_key
@@ -115,6 +116,7 @@ def _apply_legacy_dispatch(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     path_hint: Path | None = None,
     standalone_section_targets: StandaloneSectionTargetsInput = None,
     rop: Optional[ResolvedOp] = None,
@@ -248,6 +250,8 @@ def _apply_legacy_dispatch(
         migration_ledger=migration_ledger,
         write_receipts_out=write_receipts,
         replay_history_ops=replay_history_ops,
+        findings_out=findings_out,
+        strict_profile=strict_profile,
     )
     if container_result is not None:
         # Receipt-first declaration (apply contract §4): the chapter/part

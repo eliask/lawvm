@@ -9,7 +9,8 @@ import re
 from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, List, Optional, cast
 
-from lawvm.core.compile_result import SourcePathology
+from lawvm.core.compile_result import SourcePathology, StrictProfile
+from lawvm.core.phase_result import Finding
 from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.ir import IRNode
@@ -102,6 +103,16 @@ from lawvm.finland.merge import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Strict-mode blocking code for an unexplained bound→landed mutation-boundary
+# divergence surfaced by the structural StageResult account. Reuses the
+# registered apply-boundary code rather than minting a new one: the registry
+# spec for REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET already covers an applied
+# replay op whose landed write diverged from its declared/bound target without a
+# named rule (the undeclared-touch cross-check is the sibling signal of the same
+# boundary violation). The blocking VERDICT is derived from the typed residual
+# (StageResult.has_blocking_residual), not from a bare divergence_explained read.
+CONTAINER_BOUNDARY_DIVERGENCE_FINDING_CODE = "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
 
 _PART_HEADING_MARKER_RE = re.compile(
     r"^(?P<label>(?:[IVXLCDM]{1,12}|\d{1,4}[a-z]?))\s{1,8}(?P<unit>osa|osasto)\b"
@@ -1023,6 +1034,8 @@ def _apply_container_op(
     resolver_bindings_out: Optional[List[ResolverBinding]] = None,
     write_receipts_out: Optional[List[WriteReceipt]] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
+    findings_out: Optional[List[Finding]] = None,
+    strict_profile: Optional[StrictProfile] = None,
 ):
     """Apply container (chapter/part) operation via tree_ops."""
     view = _coerce_structure_apply_view(op)
@@ -1224,12 +1237,21 @@ def _apply_container_op(
         # account and DRIVE the divergence decision off its typed
         # mutation-boundary residual (WAIST #3 — the structural-mutation account
         # is type-carried, not a strict-mode-only bool read of the receipt). A
-        # blocking unowned_violation residual marks an unexplained bound→landed
-        # divergence; the carrying receipt is then routed to ``write_receipts_out``
-        # where the strict apply verdict (apply_resolved_op) consumes it and
-        # promotes it to a blocking REPLAY_APPLY_BOUNDARY finding. Reading the
-        # typed residual here is what makes the account, not the bare bool, the
-        # decision input at the apply boundary.
+        # blocking ``unowned_violation`` residual marks an unexplained bound→landed
+        # divergence. Reading the typed residual here is what makes the account,
+        # not the bare ``divergence_explained`` bool, the decision input at the
+        # apply boundary.
+        #
+        # The blocking residual must reach a VERDICT surface, not a log line: a
+        # strict profile (the same profile that refuses to guess targets must
+        # refuse an unexplained landed-write divergence) promotes the typed
+        # residual into a blocking REPLAY_APPLY_BOUNDARY finding on
+        # ``findings_out`` — the same registry-governed channel the apply
+        # boundary verdict (apply_resolved_op) emits the sibling undeclared-touch
+        # violation on. On the green corpus every container write is bound==landed
+        # or carries a named recovery rule, so ``divergence_explained`` is True
+        # and no residual fires (0-delta); the finding only fires on a genuinely
+        # unexplained divergence.
         staged = _tops.structural_stage_result(post_ir, receipt)
         if staged.has_blocking_residual:
             blocking = next(r for r in staged.residuals if r.blocking)
@@ -1241,6 +1263,42 @@ def _apply_container_op(
                 receipt.landed_primary_path,
                 blocking.scope,
             )
+            strict = (
+                strict_profile is not None
+                and not strict_profile.allows_target_guessing
+            )
+            if strict and findings_out is not None:
+                findings_out.append(
+                    Finding(
+                        kind=CONTAINER_BOUNDARY_DIVERGENCE_FINDING_CODE,
+                        role="violation",
+                        stage="apply",
+                        blocking=True,
+                        source_statute=view.source_statute or "",
+                        detail={
+                            "message": (
+                                "Apply landed a container write whose bound target "
+                                "diverged from the landed primary path with no named "
+                                "recovery rule explaining the divergence."
+                            ),
+                            "barrier_code": CONTAINER_BOUNDARY_DIVERGENCE_FINDING_CODE,
+                            "op_id": receipt.op_id,
+                            "helper": receipt.helper,
+                            "residual_reason": blocking.reason,
+                            "residual_scope": blocking.scope,
+                            "bound_target_path": (
+                                receipt_address_string(receipt.bound_target_path)
+                                if receipt.bound_target_path is not None
+                                else ""
+                            ),
+                            "landed_primary_path": (
+                                receipt_address_string(receipt.landed_primary_path)
+                                if receipt.landed_primary_path is not None
+                                else ""
+                            ),
+                        },
+                    )
+                )
         write_receipts_out.append(receipt)
 
     def _payload_leaf(payload: IRNode) -> tuple[str, str]:
