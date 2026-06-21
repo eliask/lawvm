@@ -14,6 +14,11 @@ from lawvm.core.phase_result import Finding, PhaseBuilder, PhaseResult
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.helpers import _is_omission_ir, _norm_num_token
 from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.sparse_tail_claims import (
+    SPARSE_OMISSION_TAIL_CLAIM_RULE,
+    SparseOmissionTailClaim,
+    sparse_tail_claim_for_target,
+)
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.source_normalize import normalize_source_ir
 from lawvm.finland.source_pathology import (
@@ -116,6 +121,7 @@ class BuildGroupSurfaceRequest:
     target_chapter: Optional[str]
     target_part: Optional[str]
     source_model: AmendmentSourceModel
+    sparse_omission_tail_claims: tuple[SparseOmissionTailClaim, ...] = ()
 
 
 def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupSurface]:
@@ -147,6 +153,31 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
     )
     muutos_ir = source_payload.payload_ir
     cross_ir = source_payload.cross_heading_ir
+    sparse_tail_claim = sparse_tail_claim_for_target(
+        request.sparse_omission_tail_claims,
+        target_norm=target_norm,
+        target_chapter=target_chapter,
+        target_part=target_part,
+    )
+    if muutos_ir is None and target_unit_kind == "section" and sparse_tail_claim is not None:
+        muutos_ir = sparse_tail_claim.payload_section_ir()
+        cross_ir = None
+        surface_findings.append(
+            Finding(
+                kind=SPARSE_OMISSION_TAIL_CLAIM_RULE,
+                role="observation",
+                stage="_build_group_surface",
+                detail={
+                    "message": (
+                        "Explicit descendant target uses the unique post-omission "
+                        "subsection payload carried by another claimed source section."
+                    ),
+                    **sparse_tail_claim.detail(),
+                },
+                source_statute=source_statute,
+                blocking=False,
+            )
+        )
     if target_unit_kind == "section":
         destination_section = _renumber_destination_section_label(group_ops)
         has_same_group_relabel = any(op.op_type == "RENUMBER" for op in group_ops)

@@ -51,6 +51,11 @@ from lawvm.finland.merge import (
     _pre_resolve_omissions,
 )
 from lawvm.finland.ops import AmendmentOp, FailedOp, _lo_with_path_update, _op_target_subsection_label
+from lawvm.finland.sparse_tail_claims import (
+    SPARSE_OMISSION_TAIL_PRUNE_RULE,
+    SparseOmissionTailClaim,
+    prune_sparse_tail_claims_from_carrier,
+)
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
 from lawvm.finland.table_target_merge import mentioned_numbered_table_labels
@@ -5773,6 +5778,7 @@ def elaborate_payload_against_live(
         frozenset[StandaloneSectionTarget] | None
     ) = None,
     recodification_transfer_context: bool = False,
+    sparse_omission_tail_claims: tuple[SparseOmissionTailClaim, ...] = (),
     surface: Optional[PayloadSurface] = None,
 ) -> GroupPayloadNormalizationResult:
     """Normalize one group's payload and target ops against live state.
@@ -5864,6 +5870,24 @@ def elaborate_payload_against_live(
         if extra_pathologies:
             source_pathologies = list(source_pathologies) + extra_pathologies
         rejected_ops.extend(partial_subsection_shell_rejected_ops)
+    muutos_ir, pruned_sparse_tail_claims = prune_sparse_tail_claims_from_carrier(
+        muutos_ir,
+        sparse_omission_tail_claims,
+        target_norm=target_norm,
+        target_chapter=target_chapter,
+        target_part=ctx.target_part,
+    )
+    if pruned_sparse_tail_claims:
+        observations.append(
+            _obs(
+                SPARSE_OMISSION_TAIL_PRUNE_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_chapter=target_chapter or "",
+                pruned_claims=[claim.detail() for claim in pruned_sparse_tail_claims],
+            )
+        )
     if not group_ops:
         return GroupPayloadNormalizationResult(
             muutos_ir=muutos_ir,

@@ -23,6 +23,7 @@ from lawvm.finland.group_plan import (
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
+from lawvm.finland.sparse_tail_claims import build_sparse_omission_tail_claims
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
     group_shadow_pruning_foreign_scoped_descendant_section_targets,
@@ -170,6 +171,10 @@ def compile_amendment_ops(
         source_model=source_model,
         strict_profile=strict_profile,
     )
+    sparse_omission_tail_claims = build_sparse_omission_tail_claims(
+        shadow_pruning_ops,
+        source_model,
+    )
     resolved: list[ResolvedOp] = []
     all_findings: list[Finding] = []
 
@@ -237,6 +242,7 @@ def compile_amendment_ops(
                     foreign_scoped_descendant_section_targets=foreign_scoped_descendant_section_targets,
                     foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
                     foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
+                    sparse_omission_tail_claims=sparse_omission_tail_claims,
                     inserted_chapter_labels=inserted_chapter_labels,
                     source_model=source_model,
                     johto=johto,

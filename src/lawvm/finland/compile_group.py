@@ -47,6 +47,7 @@ def compile_group_typed(
     foreign_scoped_replace_section_target_scopes = frozenset(
         request.foreign_scoped_replace_section_target_scopes
     )
+    sparse_omission_tail_claims = request.sparse_omission_tail_claims
     compiled_ops_out = sinks.compiled_ops_out
 
     recovery_result = resolve_compile_group_scope_recovery(
@@ -85,6 +86,7 @@ def compile_group_typed(
             target_chapter=recovery.surface_target_chapter,
             target_part=recovery.surface_target_part,
             source_model=source_model,
+            sparse_omission_tail_claims=sparse_omission_tail_claims,
         )
     )
 
@@ -104,6 +106,7 @@ def compile_group_typed(
             johto=johto,
             profile=profile,
             strict_profile=strict_profile,
+            sparse_omission_tail_claims=sparse_omission_tail_claims,
         )
     )
     elaborated = elab_result.output

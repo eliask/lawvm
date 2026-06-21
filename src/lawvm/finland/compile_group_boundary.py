@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Set
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import ReplayLookups, TargetUnitKind
 from lawvm.finland.ops import AmendmentOp, ReplayProfile
+from lawvm.finland.sparse_tail_claims import SparseOmissionTailClaim
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.statute import ReplayState
@@ -33,6 +34,7 @@ class CompileGroupRequest:
     foreign_scoped_replace_section_targets: Set[str]
     foreign_scoped_descendant_section_targets: Set[str] = field(default_factory=set)
     foreign_scoped_replace_section_target_scopes: frozenset[StandaloneSectionTarget] = frozenset()
+    sparse_omission_tail_claims: tuple[SparseOmissionTailClaim, ...] = ()
     lookups: Optional[ReplayLookups] = None
 
 
