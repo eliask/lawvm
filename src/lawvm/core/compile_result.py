@@ -243,7 +243,7 @@ class SourcePathology:
                 target_label=target_label,
                 detail=detail_payload,
             )
-        if code == "EMPTY_OPERATIVE_BODY":
+        if code in {"EMPTY_OPERATIVE_BODY", "fi_amendment_selection_source_artifact_missing"}:
             return cls(
                 code=code,
                 message=message,

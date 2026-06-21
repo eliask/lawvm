@@ -1995,6 +1995,48 @@ def test_compile_fi_surfaces_source_pathology_with_neutral_target_unit_kind(
     assert _source_pathology_rows(facade)[0]["target_unit_kind"] == "chapter"
 
 
+def test_compile_fi_surfaces_targetless_acquisition_source_pathology(
+    monkeypatch,
+) -> None:
+    def fake_replay_xml(
+        parent_id: str,
+        *,
+        mode: str = "legal_pit",
+        compiled_ops_out=None,
+        replay_meta_out=None,
+        lo_ops_out=None,
+        failed_ops_out=None,
+        _adjudications_out=None,
+        strict_profile=None,
+        strict_johto_temporal: bool = False,
+    ):
+        assert parent_id == "1990/1295"
+        assert mode == "legal_pit"
+        if replay_meta_out is not None:
+            replay_meta_out["lineage"] = []
+            replay_meta_out["source_pathologies"] = [
+                {
+                    "code": "fi_amendment_selection_source_artifact_missing",
+                    "message": "source XML bytes missing",
+                    "source_statute": "1990/1295",
+                    "amendment_id": "1974/974",
+                    "target_unit_kind": "",
+                }
+            ]
+        return _replay_result_stub()
+
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
+
+    facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
+
+    source_pathologies = [a for a in _projection_rows(facade) if a["kind"] == "APPLY.SOURCE_PATHOLOGY_DETECTED"]
+    assert len(source_pathologies) == 1
+    detail = cast(dict[str, Any], source_pathologies[0]["detail"])
+    assert detail["code"] == "fi_amendment_selection_source_artifact_missing"
+    assert detail.get("target_unit_kind", "") == ""
+    assert _source_pathology_rows(facade)[0]["target_unit_kind"] == ""
+
+
 @pytest.mark.slow
 def test_compile_fi_surfaces_recodification_source_chain_gap_for_2017_320() -> None:
     facade = compile_fi_facade("2017/320", replay_mode="legal_pit")
