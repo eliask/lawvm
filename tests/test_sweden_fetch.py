@@ -3926,6 +3926,277 @@ def test_check_se_official_replay_repeal_stub_pattern_is_narrow() -> None:
     assert _is_oracle_repeal_stub("Vanlig lydelse som inte är en upphävst stub.") is False
 
 
+def test_check_se_official_replay_regenerates_cached_ops_with_truncated_payload_text() -> None:
+    """Stale cached ops with truncated REPLACE payloads MUST force a recompile.
+
+    Real-corpus witness: SFS 2001:606 §72 — the cached ``official.ops.json`` was
+    built before the parser learned to fold wrapped cross-reference
+    continuations back into their host section. The cached §72 REPLACE op's
+    payload carried only the truncated provision body (``child_text_len=148``,
+    the snapshot stopped mid-sentence at ``...avses in``) while the runtime-
+    coerced official act's §72 provision now carries the full text
+    (``len=995``, including the folded wrap-continuation ``första stycket och
+    67 §. Införingen av uppgifter...``).
+
+    Without a recompile trigger the replay-vs-oracle lookup returned the
+    truncated text and the row was misclassified as ``content_mismatch``
+    (genuine_mismatch bucket). After the staleness fix, the cached-ops
+    material-text shortfall against the coerced provision fires an in-memory
+    recompile; the fresh compile uses the coerced act's folded provisions and
+    produces the full-body §72 payload; the replay-vs-oracle lookup now
+    matches the post-state via the official-act oracle and classifies the row
+    as ``official_oracle_version_mismatch`` match=True.
+
+    Regression (synthetic; mirrors the witness shape). The fixture carries a
+    §72 REPLACE op with a deliberately truncated payload; the
+    ``apply_se_states``-equivalent runtime path used by ``check_se_official_replay``
+    MUST detect the staleness, force a fresh in-memory compile against the
+    coerced act's full-body §72 text, and apply the full payload.
+    """
+    full_body = (
+        "Sedan en underrättelse som avses i 74 § har kommit in, skall "
+        "Lantmäteriverket snarast möjligt i fastighetsregistret föra in de "
+        "uppgifter som avses i första stycket och 67 §. Införingen av "
+        "uppgifter från beskattningsdatabasen skall med beaktande av 64 § "
+        "andra stycket ske senast i samband med årsskifte."
+    )
+    truncated_body = (
+        "Sedan en underrättelse som avses i 74 § har kommit in, skall "
+        "Lantmäteriverket snarast möjligt i fastighetsregistret föra in de "
+        "uppgifter som avses in"
+    )
+    base_payload = {
+        "beteckning": "2000:308",
+        "rubrik": "Förordning (2000:308) om fastighetsregister",
+        "ikraftDateTime": "2000-05-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Finansdepartementet", "namnOchEnhet": "Finansdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2001-08-16T00:00:00",
+            # Later-consolidation stamp so the replay-vs-cached-official
+            # fallback path can fire after the staleness-triggered recompile.
+            "andringInford": "t.o.m. SFS 2003:500",
+            "forfattningstext": (
+                # §72 was repealed-and-replaced at 2001:606's effective date
+                # and stayed in the same shape through 2003:500.
+                "72 § /Upphör att gälla U:2001-10-01/\n"
+                f"{truncated_body}\n\n"
+                "72 § /Träder i kraft I:2001-10-01/\n"
+                f"{full_body}\n"
+                "Förordning (2001:606)."
+            ),
+        },
+        "publiceradDateTime": "2001-08-31T12:00:00",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2001:606",
+        "title": "Förordning om ändring i förordningen (2000:308) om fastighetsregister",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2000:308",
+        "is_amending_act": True,
+        "published_date": "2001-09-01",
+        "issued_date": "2001-08-16",
+        "enacting_clause": (
+            "Regeringen föreskriver att 72 § förordningen (2000:308) om "
+            "fastighetsregister skall ha följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 1 oktober 2001.",
+        "affected_section_labels": ["72"],
+        # The coerced-provision §72 text carries the FULL body — the
+        # runtime coercion folds the wrap-continuation back into §72's text.
+        "provisions": [{"label": "72", "text": full_body}],
+        "inserted_headings": [],
+        "appendices": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+    # Stale cached ops built before the parser fix: the cached §72 REPLACE
+    # op's payload carries the truncated body the pre-fix parser left at the
+    # wrap break (the rest folded away into a duplicate-label ghost).
+    stale_cached_op = {
+        "op_id": "se_official_2001:606_72",
+        "sequence": 1,
+        "action": "replace",
+        "target": {"path": [["section", "72"]], "special": None},
+        "targets": [{"path": [["section", "72"]], "special": None}],
+        "payload": {
+            "kind": "section",
+            "label": "72",
+            "text": "",
+            "attrs": {},
+            # Truncated to the half before the wrap; the cross-reference
+            # continuation was never folded into this cached payload.
+            "children": [{"kind": "subsection", "label": "1", "text": truncated_body, "attrs": {}, "children": []}],
+        },
+        "anchor": None,
+        "destination": None,
+        "source": {
+            "statute_id": "2001:606",
+            "title": official_act["title"],
+            "enacted": "2001-08-16",
+            "effective": "2001-10-01",
+            "expires": "",
+            "raw_text": official_act["enacting_clause"],
+            "corrected_by": "",
+            "commencement_source": "",
+            "commencement_title": "",
+        },
+        "applicability": [],
+        "provenance_tags": [],
+        "text_match": None,
+        "text_replacement": None,
+        "text_occurrence": 0,
+        "group_id": None,
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2000:308/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2001:606/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2001:606/official.ops.json": json.dumps([stale_cached_op], ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2001:606")
+
+    # The §72 row MUST now match: the cached ops' truncated-payload staleness
+    # was detected and a fresh in-memory compile filled the §72 replacement
+    # with the full body. After applying the fresh REPLACE op, the replayed
+    # §72 text equals the official-act oracle (the cached raw provision's
+    # full body), and the current-surface disagreement is a strictly later
+    # consolidation (oracle_version_mismatch), NOT a ``content_mismatch``
+    # (the pre-fix behavior where the truncated replay was diffed against
+    # the full oracle text).
+    assert result["match_count"] == 1
+    section_row = result["rows"][0]
+    assert section_row["section"] == "72"
+    assert section_row["match"] is True, section_row
+    assert section_row["classification"] != "content_mismatch", section_row["classification"]
+    # And the replayed §72 text now contains the wrap-continuation fragment,
+    # proving the cached truncated-payload was replaced by the fresh full-body
+    # compile rather than silently reused.
+    assert "första stycket och 67 §" in section_row["replay_text"]
+    assert "Införingen av uppgifter" in section_row["replay_text"]
+
+
+def test_check_se_official_replay_regenerates_cached_ops_with_duplicate_target() -> None:
+    """Stale cached ops with a duplicate (kind, label) REPLACE MUST force a recompile.
+
+    Real-corpus witness: SFS 2001:606 — the cached ``official.ops.json`` was
+    built before the parser learned to fold duplicate-label wrapped cross-
+    reference continuations back into their host section. The cached ops file
+    contained TWO REPLACE §64 ops (one for the legitimate §64 text, one for
+    the wrap-continuation ghost whose label collided with §64). The current
+    compiler no longer emits duplicate-target REPLACE ops — the runtime
+    coercion folds the wrap-continuation silently — so a cached duplicate
+    is a strong staleness signal.
+
+    Regression (synthetic; mirrors the witness shape). The fixture carries
+    two cached REPLACE §1 ops; re-running ``check_se_official_replay``
+    forces a fresh compile that emits a single REPLACE §1 op whose payload
+    carries the legitimate provision body.
+    """
+    base_payload = {
+        "beteckning": "2026:106",
+        "rubrik": "Förordning (2026:106) om något",
+        "ikraftDateTime": "2026-04-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2026-02-26T00:00:00",
+            "andringInford": "t.o.m. SFS 2027:999",  # later consolidation -> version_mismatch
+            "forfattningstext": (
+                "1 § /Upphör att gälla U:2026-04-15/\n"
+                "Gammal lydelse.\n\n"
+                "1 § /Träder i kraft I:2026-04-15/\n"
+                "Ny lydelse för §1."
+            ),
+        },
+        "publiceradDateTime": "2026-03-23T12:17:32",
+        "andringsforfattningar": [],
+    }
+    new_section_text = "Ny lydelse för §1."
+    official_act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": "Regeringen föreskriver att 1 § förordningen (2026:106) om något ska ha följande lydelse.",
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["1"],
+        "provisions": [{"label": "1", "text": new_section_text}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    # TWO cached REPLACE §1 ops — pre-fix compiler emitted one per cached
+    # duplicate-label provision. Both carry the same payload text because
+    # the pre-fix lower function did a `next()` lookup-by-label that always
+    # returned the first matching cached provision.
+    def cached_op(seq: int) -> dict:
+        return {
+            "op_id": f"se_official_replace_2026:286_1_{seq}",
+            "sequence": seq,
+            "action": "replace",
+            "target": {"path": [["section", "1"]], "special": None},
+            "targets": [{"path": [["section", "1"]], "special": None}],
+            "payload": {
+                "kind": "section",
+                "label": "1",
+                "text": "",
+                "attrs": {},
+                "children": [{"kind": "subsection", "label": "1", "text": new_section_text, "attrs": {}, "children": []}],
+            },
+            "anchor": None,
+            "destination": None,
+            "source": {
+                "statute_id": "2026:286",
+                "title": official_act["title"],
+                "enacted": "2026-03-19",
+                "effective": "2026-04-15",
+                "expires": "",
+                "raw_text": official_act["enacting_clause"],
+                "corrected_by": "",
+                "commencement_source": "",
+                "commencement_title": "",
+            },
+            "applicability": [],
+            "provenance_tags": [],
+            "text_match": None,
+            "text_replacement": None,
+            "text_occurrence": 0,
+            "group_id": None,
+        }
+
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2026:106/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.ops.json": json.dumps([cached_op(1), cached_op(2)], ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2026:286")
+
+    # The duplicate-target cached ops triggered a fresh in-memory recompile;
+    # the replay produced exactly one REPLACE §1 op row, the material §1
+    # text matches the official-provision oracle (modulo whatever editorial
+    # presentation drift the regular classifier falls back to), and NO row
+    # carries a stale-cache-only artifact. Pre-fix behavior was two §1 rows
+    # (one per duplicate cached op); post-fix the duplicate is folded
+    # silently at the source, surfaced as a single cohesive replay.
+    section_rows = [row for row in result["rows"] if row.get("section") == "1"]
+    assert len(section_rows) == 1, section_rows
+    assert section_rows[0]["match"] is True, section_rows[0]
+    assert section_rows[0]["classification"] != "content_mismatch", section_rows[0]
+
+
 def test_check_se_official_replay_collects_skipped_replay_ops_as_adjudications() -> None:
     base_payload = {
         "beteckning": "2026:777",

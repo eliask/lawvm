@@ -2808,6 +2808,18 @@ def analyze_se_official_replay_feasibility(
         coerced_provision_labels = {p.label for p in coerced_act.provisions}
         coerced_heading_labels = {h.before_label for h in coerced_act.inserted_headings}
         coerced_appendix_labels = {a.label for a in coerced_act.appendices}
+        # Per-op coerced-text lookup: the cached op's payload text (sum of
+        # the section IRNode child texts, mirroring how the runtime
+        # ``_parse_se_official_provision_payload`` shapes the payload) MUST
+        # agree with the coerced official_act's provision text length within
+        # a small editorial tail allowance. A materially shorter payload
+        # means the cached op was built before the runtime coercion learned
+        # to fold wrapped cross-reference continuations back into the host
+        # section, so the cached §72 REPLACE carries the truncated half that
+        # the parser left before the wrap break (real witness: 2001:606 §72
+        # — cached payload child-text-len=148 vs coerced provision text-len=995).
+        coerced_provision_text_by_label = {p.label: p.text for p in coerced_act.provisions}
+        seen_target_keys: set[tuple[str, str]] = set()
         for cached_op in ops_json:
             target_path = cached_op.get("target", {}).get("path", []) if isinstance(cached_op, dict) else []
             if not target_path:
@@ -2816,10 +2828,56 @@ def analyze_se_official_replay_feasibility(
             if not (isinstance(leaf, list) and len(leaf) >= 1):
                 continue
             kind, label = str(leaf[0]), str(leaf[-1])
+            target_key = (kind, label)
+            # Duplicate-target cached ops: the current compiler no longer
+            # emits duplicate (kind, label) REPLACE/INSERT ops for a single
+            # amending act (the runtime coercion folds duplicate-label
+            # provisions into the prior host). Cached archaeic ops built
+            # before that fix can carry the same target twice — once for
+            # the legitimate provision and once for the wrap-leftover ghost
+            # (real witness: 2001:606 §64 — two REPLACE §64 cached ops).
+            # Either recompile fresh, or accept that one of the duplicates
+            # was a no-op ghost. Either way the staleness check fires here
+            # so the cached controller does not silently pick the wrong
+            # half of a split-section payload when the duplicate's second
+            # occurrence is rendered.
+            if target_key in seen_target_keys:
+                return True
+            seen_target_keys.add(target_key)
             if kind == "section" and label and label not in coerced_provision_labels and label not in coerced_heading_labels:
                 return True
             if kind == "appendix" and label and label not in coerced_appendix_labels:
                 return True
+            # Payload-text length staleness: if the cached op's section IRNode
+            # payload carries substantially less text than the coerced
+            # provision (more than a small drift threshold), the cached op
+            # was built from the pre-coercion truncated text. Recompile so
+            # the fresh compile uses the coerced (cross-ref-folded) act's
+            # provisions and produces the full-body payload.
+            if (
+                kind == "section"
+                and label in coerced_provision_text_by_label
+                and cached_op.get("action") in {"replace", "insert"}
+            ):
+                cached_text_len = 0
+                payload = cached_op.get("payload") if isinstance(cached_op, dict) else None
+                if isinstance(payload, dict):
+                    cached_text_len = sum(
+                        len(str(child.get("text") or ""))
+                        for child in payload.get("children", [])
+                        if isinstance(child, dict)
+                    )
+                coerced_text_len = len(coerced_provision_text_by_label[label])
+                # Editorially-trimmed trailing whitespace / wrapping could
+                # leave a small length offset; flag only a substantial
+                # material shortfall (the cached op is missing >25% of the
+                # coerced body text, with at least a 50-char absolute gap
+                # so a one-character artifact does not trigger a refresh).
+                if (
+                    coerced_text_len - cached_text_len > 50
+                    and cached_text_len < coerced_text_len * 0.75
+                ):
+                    return True
         return False
 
     if _stale_cache_needs_refresh():
