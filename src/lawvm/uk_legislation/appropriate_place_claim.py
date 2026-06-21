@@ -240,7 +240,7 @@ class AppropriatePlaceInsertClaim:
       (one is set per the matching ``position_kind``).
     - ``alphabetical_index``: the explicit 0-based slot index into the target list
       (set when ``position_kind == alphabetical_index``).
-    - ``claimant`` / ``status``: provenance and lifecycle.
+    - ``claimant`` / ``claim_status``: provenance and lifecycle.
     """
 
     claim_id: str
@@ -258,7 +258,7 @@ class AppropriatePlaceInsertClaim:
     container_kind: str = CONTAINER_LIST_ENTRY
     relating_column_index: int = 1
     claimant: str = ""
-    status: str = "proposed"
+    claim_status: str = "proposed"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -277,7 +277,7 @@ class AppropriatePlaceInsertClaim:
             "container_kind": self.container_kind,
             "relating_column_index": self.relating_column_index,
             "claimant": self.claimant,
-            "status": self.status,
+            "claim_status": self.claim_status,
         }
 
 
@@ -343,7 +343,7 @@ def claim_from_dict(row: Any) -> AppropriatePlaceInsertClaim:
         container_kind=str(get("container_kind") or CONTAINER_LIST_ENTRY),
         relating_column_index=relating_column_index,
         claimant=str(get("claimant") or ""),
-        status=str(get("status") or "proposed"),
+        claim_status=str(get("claim_status") or "proposed"),
     )
 
 

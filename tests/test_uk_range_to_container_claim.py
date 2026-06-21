@@ -71,7 +71,7 @@ def _claim(**overrides: Any) -> RangeToContainerClaim:
         resolution_basis=BASIS_CONTIGUOUS_CONTAINER_SPAN,
         renumbering_program_id="",
         claimant="reviewer",
-        status="proposed",
+        claim_status="proposed",
     )
     return replace(base, **overrides)
 
@@ -107,7 +107,7 @@ def test_claim_from_dict_defaults() -> None:
         }
     )
     assert claim.renumbering_program_id == ""
-    assert claim.status == "proposed"
+    assert claim.claim_status == "proposed"
     assert claim.resolved_member_eids == _RESOLVED_SPAN
 
 

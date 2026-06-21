@@ -164,7 +164,7 @@ class SourceFeedReconciliationClaim:
       validator rejects the claim if this is not a real child-qualified
       word-omission source.
     - ``rationale``: free-form provenance note for the decision (not validated).
-    - ``claimant`` / ``status``: provenance and lifecycle.
+    - ``claimant`` / ``claim_status``: provenance and lifecycle.
     """
 
     claim_id: str
@@ -179,7 +179,7 @@ class SourceFeedReconciliationClaim:
     source_snippet: str
     rationale: str = ""
     claimant: str = ""
-    status: str = "proposed"
+    claim_status: str = "proposed"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -195,7 +195,7 @@ class SourceFeedReconciliationClaim:
             "source_snippet": self.source_snippet,
             "rationale": self.rationale,
             "claimant": self.claimant,
-            "status": self.status,
+            "claim_status": self.claim_status,
         }
 
 
@@ -248,7 +248,7 @@ def claim_from_dict(row: Any) -> SourceFeedReconciliationClaim:
         source_snippet=str(get("source_snippet") or ""),
         rationale=str(get("rationale") or ""),
         claimant=str(get("claimant") or ""),
-        status=str(get("status") or "proposed"),
+        claim_status=str(get("claim_status") or "proposed"),
     )
 
 

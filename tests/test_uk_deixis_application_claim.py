@@ -62,7 +62,7 @@ def _claim(**overrides: Any) -> DeixisInApplicationClaim:
         inserting_amendment_ref="reg. 5(3)",
         inserting_program_snippet=_INSERTING_SNIPPET,
         claimant="reviewer",
-        status="proposed",
+        claim_status="proposed",
     )
     return replace(base, **overrides)
 
@@ -99,7 +99,7 @@ def test_claim_from_dict_defaults() -> None:
         }
     )
     assert claim.inserting_instrument_id == ""
-    assert claim.status == "proposed"
+    assert claim.claim_status == "proposed"
 
 
 # ── validator: accept ────────────────────────────────────────────────────────
