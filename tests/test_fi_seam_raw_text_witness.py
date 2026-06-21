@@ -168,15 +168,15 @@ def test_cited_version_ancestor_snapshot_drop_emits_residual() -> None:
     result = _drop_cited_version_item_ancestor_snapshots([cited, stale])
 
     # Conservation: every input op is accounted for (accepted or rejected).
-    assert len(result.accepted_items) + len(result.rejected_items) == 2
-    accepted_ids = {op.op_id for op in result.accepted_items}
+    assert len(result.filtered.accepted_items) + len(result.filtered.rejected_items) == 2
+    accepted_ids = {op.op_id for op in result.filtered.accepted_items}
     # The cited (broader) snapshot is kept; the stale ancestor is dropped.
     assert "snapshot_section_5_cited" in accepted_ids
     assert "snapshot_section_5_stale" not in accepted_ids
-    assert [rej.item.op_id for rej in result.rejected_items] == [
+    assert [rej.item.op_id for rej in result.filtered.rejected_items] == [
         "snapshot_section_5_stale"
     ]
-    rejected = result.rejected_items[0]
+    rejected = result.filtered.rejected_items[0]
     assert rejected.reason_code == FI_CITED_VERSION_SNAPSHOT_DROP_RULE_ID
     assert rejected.reason  # non-empty human reason
     assert rejected.blocking is False
@@ -199,8 +199,8 @@ def test_cited_version_snapshot_no_drop_keeps_all_ops() -> None:
 
     result = _drop_cited_version_item_ancestor_snapshots([plain])
 
-    assert [op.op_id for op in result.accepted_items] == ["snapshot_section_9"]
-    assert result.rejected_items == ()
+    assert [op.op_id for op in result.filtered.accepted_items] == ["snapshot_section_9"]
+    assert result.filtered.rejected_items == ()
 
 
 # ---------------------------------------------------------------------------
