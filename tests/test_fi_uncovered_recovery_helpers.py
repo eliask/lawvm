@@ -80,6 +80,22 @@ def test_part_label_from_path_finds_part() -> None:
     assert _part_label_from_path(path) == "2"
 
 
+def test_uncovered_context_treats_named_subprovision_as_non_whole_section_scope() -> None:
+    ctx = build_uncovered_recovery_context(
+        preamble_text=(
+            "muutetaan tieliikenneasetuksen (182/1982) 16 §:n merkkiä 317 "
+            "koskeva kohta ja 18 §:n merkkejä 416, 417 ja 426 koskevat kohdat, "
+            "sellaisina kuin ne ovat asetuksessa 328/1994, seuraavasti:"
+        ),
+        ops=[],
+        new_chapter_labels=None,
+    )
+
+    assert "16" in ctx.johto_mentioned_labels
+    assert "16" in ctx.johto_named_subprovision_section_targets
+    assert "16" not in ctx.johto_whole_section_targets
+
+
 def test_part_label_from_path_none_when_absent() -> None:
     assert _part_label_from_path((("chapter", "3"), ("section", "5"))) is None
     assert _part_label_from_path(None) is None
@@ -255,6 +271,7 @@ def _empty_run(
     johto_mentioned_replaced_chapters: set[str] | None = None,
     owned_chapter_labels: set[str] | None = None,
     part_insert_labels: set[str] | None = None,
+    johto_named_subprovision_section_targets: set[str] | None = None,
 ) -> _UncoveredRecoveryRun:
     rstate = _empty_state(None)
     return _UncoveredRecoveryRun(
@@ -274,6 +291,7 @@ def _empty_run(
         johto_moment_targets={},
         johto_numbered_table_targets={},
         johto_whole_section_targets=set(),
+        johto_named_subprovision_section_targets=johto_named_subprovision_section_targets or set(),
         johto_insert_subsection_section_targets=set(),
         johto_mentioned_replaced_chapters=johto_mentioned_replaced_chapters or set(),
         moved_section_destinations={},

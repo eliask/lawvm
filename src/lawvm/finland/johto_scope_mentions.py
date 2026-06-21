@@ -223,6 +223,61 @@ def collect_johto_whole_section_targets(johto_text: str) -> frozenset[str]:
     return frozenset(targets)
 
 
+@functools.lru_cache(maxsize=8192)
+def collect_johto_named_subprovision_section_targets(johto_text: str) -> frozenset[str]:
+    """Return sections whose johtolause target is a named sub-provision.
+
+    Drafting such as ``16 §:n merkkiä 317 koskeva kohta`` names a row-like
+    sub-provision by description, not the host section as a whole. These labels
+    are negative evidence for uncovered-body omission merge: until LawVM has a
+    typed address for the named row, recovery must not widen the target to a
+    whole-section replacement.
+    """
+    if "§" not in johto_text or "koht" not in johto_text:
+        return frozenset()
+
+    from lawvm.finland.johtolause.lexer import tokenize
+    from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs
+    from lawvm.finland.johtolause.surface_model import (
+        SurfaceScopeBlock,
+        SurfaceTargetRef,
+        TargetKind,
+    )
+    from lawvm.finland.parser_facade import parse_tokens_production
+
+    raw_tokens = tokenize(johto_text)
+    tokens, jolloin_pairs = apply_annotations_with_jolloin_pairs(raw_tokens)
+    parsed = parse_tokens_production(
+        tokens,
+        jolloin_renumber_pairs=jolloin_pairs if jolloin_pairs else None,
+    )
+
+    labels: set[str] = set()
+
+    def visit_node(node: object) -> None:
+        if isinstance(node, SurfaceScopeBlock):
+            for child in node.targets:
+                visit_node(child)
+            return
+        if not isinstance(node, SurfaceTargetRef):
+            return
+        if node.kind is not TargetKind.SECTION:
+            return
+        if not any(
+            sub.special and sub.facet is None and not sub.momentti and not sub.item
+            for sub in node.sub_refs
+        ):
+            return
+        label = _norm_num_token(node.label)
+        if label:
+            labels.add(label)
+
+    for group in parsed.clause.verb_groups:
+        for node in group.nodes:
+            visit_node(node)
+    return frozenset(labels)
+
+
 def collect_johto_insert_subsection_section_targets(johto_text: str) -> frozenset[str]:
     """Return sections targeted by ``N §:ään uusi M momentti`` insertions.
 

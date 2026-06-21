@@ -9631,6 +9631,70 @@ def test_uncovered_body_omission_merge_requires_scoped_target_witness() -> None:
     assert skipped[0].detail.get("target_section") == "13"
 
 
+def test_uncovered_body_omission_merge_rejects_named_subprovision_scope() -> None:
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="16",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="16 §"),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="live section"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <preamble>muutetaan asetuksen 16 §:n merkkiä 317 koskeva kohta seuraavasti:</preamble>
+          <body>
+            <chapter>
+              <num>3 luku</num>
+              <section>
+                <num>16 §</num>
+                <hcontainer name="omission"/>
+                <subsection><content><p>Merkki 317</p></content></subsection>
+              </section>
+            </chapter>
+          </body>
+        </akn>
+        """
+    )
+    findings_out: list[Finding] = []
+
+    rops = _recover_uncovered_body_ops(
+        state,
+        ctx,
+        [],
+        muutos_tree,
+        "2018/1311",
+        failed_ops_out=[],
+        findings_out=findings_out,
+    )
+
+    assert rops == []
+    skipped = [
+        f
+        for f in findings_out
+        if f.kind == "APPLY.UNCOVERED_BODY_SPECIAL_SUBPROVISION_SCOPE"
+    ]
+    assert len(skipped) == 1
+    assert skipped[0].detail.get("reason") == "omission_merge_special_subprovision_scope"
+    assert skipped[0].detail.get("target_section") == "16"
+
+
 def test_uncovered_body_omission_merge_allows_explicit_section_johto_witness() -> None:
     state = ReplayState(
         ir=IRNode(

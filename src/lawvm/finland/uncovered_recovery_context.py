@@ -10,6 +10,7 @@ from lawvm.finland.johto_scope_mentions import (
     collect_johto_insert_subsection_section_targets,
     collect_johto_mentioned_section_labels,
     collect_johto_moment_targets,
+    collect_johto_named_subprovision_section_targets,
     collect_johto_numbered_table_targets_by_section,
     collect_johto_whole_section_targets,
 )
@@ -32,6 +33,7 @@ class UncoveredRecoveryContext:
     source_owned_insert_chapter_labels: frozenset[str]
     part_insert_labels: frozenset[str]
     johto_whole_section_targets: frozenset[str]
+    johto_named_subprovision_section_targets: frozenset[str]
     johto_insert_subsection_section_targets: frozenset[str]
     johto_moment_targets: dict[str, frozenset[int]]
     johto_numbered_table_targets: dict[str, frozenset[str]]
@@ -63,6 +65,7 @@ def build_uncovered_recovery_context(
     """
     johto_mentioned_labels: set[str] = set()
     johto_whole_section_targets: frozenset[str] = frozenset()
+    johto_named_subprovision_section_targets: frozenset[str] = frozenset()
     johto_insert_subsection_section_targets: frozenset[str] = frozenset()
     johto_moment_targets: dict[str, frozenset[int]] = {}
     johto_numbered_table_targets: dict[str, frozenset[str]] = {}
@@ -110,6 +113,12 @@ def build_uncovered_recovery_context(
     if johto_text:
         johto_mentioned_labels.update(collect_johto_mentioned_section_labels(johto_text))
         johto_whole_section_targets = collect_johto_whole_section_targets(johto_text)
+        johto_named_subprovision_section_targets = (
+            collect_johto_named_subprovision_section_targets(johto_text)
+        )
+        johto_whole_section_targets = (
+            johto_whole_section_targets - johto_named_subprovision_section_targets
+        )
         johto_insert_subsection_section_targets = (
             collect_johto_insert_subsection_section_targets(johto_text)
         )
@@ -136,6 +145,7 @@ def build_uncovered_recovery_context(
         source_owned_insert_chapter_labels=frozenset(johto_mentioned_new_chapters),
         part_insert_labels=_part_insert_labels_from_ops(ops),
         johto_whole_section_targets=johto_whole_section_targets,
+        johto_named_subprovision_section_targets=johto_named_subprovision_section_targets,
         johto_insert_subsection_section_targets=johto_insert_subsection_section_targets,
         johto_moment_targets=johto_moment_targets,
         johto_numbered_table_targets=johto_numbered_table_targets,

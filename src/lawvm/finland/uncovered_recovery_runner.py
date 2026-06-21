@@ -88,6 +88,7 @@ class UncoveredRecoveryRun:
     source_owned_insert_chapter_labels: Set[str]
     part_insert_labels: Set[str]
     johto_whole_section_targets: Set[str]
+    johto_named_subprovision_section_targets: Set[str]
     johto_insert_subsection_section_targets: Set[str]
 
     def record_skip(
@@ -477,6 +478,13 @@ class UncoveredRecoveryRun:
                 and not self.label_has_whole_section_johto_target(label)
                 and not self.label_has_subsection_insert_johto_target(label)
             ):
+                if _norm_num_token(label) in self.johto_named_subprovision_section_targets:
+                    self.record_skip(
+                        "omission_merge_special_subprovision_scope",
+                        label,
+                        amend_chapter_label,
+                    )
+                    return
                 self.record_skip("omission_merge_missing_scope", label, amend_chapter_label)
                 return
             merge_result = merge_section_with_omission_invariants(
