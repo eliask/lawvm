@@ -2349,6 +2349,32 @@ def test_parse_clause_uusi_otsikko_ja_momentti():
     assert m.witness.rule_id == "fi.insertion_sub_target"
 
 
+def test_parse_clause_uusi_otsikko_ja_uusi_momentti():
+    """Repeated ``uusi`` in the continuation keeps both heading and subsection."""
+    ops = parse_clause("lisätään 8 §:ään uusi otsikko ja uusi 4 momentti").parsed_ops
+    assert len(ops) == 2
+
+    heading_ops = [op for op in ops if op.facet is FacetKind.HEADING]
+    subsection_ops = [op for op in ops if op.momentti == 4]
+    assert len(heading_ops) == 1
+    assert len(subsection_ops) == 1
+    assert heading_ops[0].number == "8"
+    assert subsection_ops[0].number == "8"
+
+
+def test_parse_clause_lisata_otsikko_without_uusi_after_target():
+    """``lisätään N §:ään otsikko`` is an explicit heading insertion."""
+    ops = parse_clause("lisätään 8 §:ään otsikko ja uusi 4 momentti").parsed_ops
+    assert len(ops) == 2
+
+    heading_ops = [op for op in ops if op.facet is FacetKind.HEADING]
+    subsection_ops = [op for op in ops if op.momentti == 4]
+    assert len(heading_ops) == 1
+    assert len(subsection_ops) == 1
+    assert heading_ops[0].verb == "L"
+    assert heading_ops[0].number == "8"
+
+
 def test_parse_clause_skips_temporal_modifier_before_insert_targets() -> None:
     """Leading ``väliaikaisesti`` must not swallow the real insert targets.
 

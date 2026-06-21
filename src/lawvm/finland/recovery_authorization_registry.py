@@ -75,6 +75,11 @@ RECOVERY_AUTHORIZATION_RULES: dict[str, FinlandRecoveryAuthorizationRule] = {
         owner_phase="payload_elaboration",
         family="payload_completeness_recovery",
     ),
+    "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET": FinlandRecoveryAuthorizationRule(
+        kind="ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET",
+        owner_phase="typed_elaboration",
+        family="payload_ownership_recovery",
+    ),
     "ELAB.SPARSE_PAYLOAD_LEFTOVER": FinlandRecoveryAuthorizationRule(
         kind="ELAB.SPARSE_PAYLOAD_LEFTOVER",
         owner_phase="typed_elaboration",

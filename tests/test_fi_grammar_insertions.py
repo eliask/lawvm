@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import pytest
 
+from lawvm.core.semantic_types import FacetKind
 from lawvm.finland.johtolause import surface_parse
 from lawvm.finland.johtolause.grammar import parser as new_parser
 from lawvm.finland.johtolause.grammar.diff import (
@@ -50,6 +51,10 @@ IN_SCOPE_EXAMPLES = [
     "lisätään 3 lukuun uusi 12 § seuraavasti:",
     # Momentti sub-target insert into a section (Pattern A, §:ILL).
     "lisätään 5 §:ään uusi 3 momentti seuraavasti:",
+    # Heading plus subsection insert into the same section.
+    "lisätään 8 §:ään uusi otsikko ja uusi 4 momentti seuraavasti:",
+    # Same, with the heading's ``uusi`` omitted after an explicit LISATA verb.
+    "lisätään 8 §:ään otsikko ja uusi 4 momentti seuraavasti:",
     # Nominative momentti sub-target insert (Pattern B3, §:GEN uusi).
     "lisätään 4 §:n uusi 2 momentti seuraavasti:",
     # The headline kohta-into-momentti insert (Pattern B2,
@@ -83,6 +88,55 @@ def test_kohta_into_momentti_emits_sub_target_insertion() -> None:
     assert node.sub_target.item == "4a"
     assert node.witness is not None
     assert node.witness.rule_id == "fi.insertion_sub_target"
+
+
+def test_heading_and_momentti_insert_continuation_emits_both_sub_targets() -> None:
+    model = parse_text_with(
+        "lisätään 8 §:ään uusi otsikko ja uusi 4 momentti seuraavasti:",
+        new_parser.parse,
+    )
+    (vg,) = model.verb_groups
+    insertions = [_as_insertion(node) for node in vg.nodes]
+    assert len(insertions) == 2
+    heading, momentti = insertions
+    assert heading.label == "8"
+    assert heading.sub_target is not None
+    assert heading.sub_target.facet is FacetKind.HEADING
+    assert momentti.label == "8"
+    assert momentti.sub_target is not None
+    assert momentti.sub_target.momentti == 4
+
+
+def test_heading_insert_without_repeated_uusi_is_lisata_only() -> None:
+    model = parse_text_with(
+        "lisätään 8 §:ään otsikko ja uusi 4 momentti seuraavasti:",
+        new_parser.parse,
+    )
+    (vg,) = model.verb_groups
+    insertions = [_as_insertion(node) for node in vg.nodes]
+    assert len(insertions) == 2
+    assert insertions[0].sub_target is not None
+    assert insertions[0].sub_target.facet is FacetKind.HEADING
+
+    with pytest.raises(OutOfScope):
+        parse_text_with(
+            "muutetaan 8 §:ään otsikko ja uusi 4 momentti seuraavasti:",
+            new_parser.parse,
+        )
+
+
+def test_doc_insert_then_section_heading_continuation_stays_reachable() -> None:
+    model = parse_text_with(
+        "lisätään lakiin uusi 8 a §, 9 §:ään otsikko ja uusi 3 momentti seuraavasti:",
+        new_parser.parse,
+    )
+    (vg,) = model.verb_groups
+    insertions = [_as_insertion(node) for node in vg.nodes]
+    assert [node.label for node in insertions] == ["8a", "9", "9"]
+    assert insertions[1].sub_target is not None
+    assert insertions[1].sub_target.facet is FacetKind.HEADING
+    assert insertions[2].sub_target is not None
+    assert insertions[2].sub_target.momentti == 3
 
 
 def test_conj_before_uusi_after_citation_is_owned() -> None:

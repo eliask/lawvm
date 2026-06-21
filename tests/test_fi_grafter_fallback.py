@@ -15687,6 +15687,22 @@ def test_inspect_amendment_1962_420_2024_247_keeps_heading_insert_out_of_subsect
     )
 
 
+def test_inspect_amendment_1990_656_2021_652_keeps_source_heading_facet() -> None:
+    """Explicit heading op survives sparse projection when raw source has heading."""
+    bundle = build_amendment_bundle("1990/656", "2021/652", mode="legal_pit")
+    group12 = next(group for group in bundle["groups"] if group["target_norm"] == "12")
+
+    assert group12["ops_final"] == [
+        "REPLACE 12 § 1 mom",
+        "INSERT 12 § otsikko",
+    ]
+    assert group12["rejected_ops_post_constraints"] == []
+    assert any(
+        observation["kind"] == "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET"
+        for observation in group12["elaboration_observations"]
+    )
+
+
 def test_inspect_amendment_1993_81_1994_495_recovers_short_pykala_illative_typo() -> None:
     """The source typo `§:än` must not drop an explicit subsection insertion."""
     bundle = build_amendment_bundle("1993/81", "1994/495", mode="legal_pit")

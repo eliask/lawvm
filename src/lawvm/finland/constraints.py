@@ -534,6 +534,27 @@ class _FilterCtx:
             self._has_heading = self.muutos_ir is not None and any(c.kind == IRNodeKind.HEADING for c in self.muutos_ir.children)
         return self._has_heading
 
+    def has_source_heading_for(self, op: AmendmentOp) -> bool:
+        """Return whether the original source payload for *op* carries a heading.
+
+        Sparse subsection projection may remove a section heading from
+        ``muutos_ir`` before heading-facet ops are filtered.  For that case, use
+        the source model's typed payload lookup for the same target rather than
+        treating the prepared sparse payload as proof that no heading exists.
+        """
+        if self.source_model is None or not op.target_section:
+            return False
+        lookup = self.source_model.lookup_payload_ir(
+            op.target_unit_kind,
+            _norm_num_token(op.target_section),
+            target_chapter=op.target_chapter,
+            target_part=op.target_part,
+        )
+        payload = lookup.payload_ir
+        return payload is not None and any(
+            child.kind == IRNodeKind.HEADING for child in payload.children
+        )
+
     @property
     def is_lang_variant(self) -> bool:
         if self._is_lang_variant is None:
@@ -594,11 +615,13 @@ def _c_no_heading_payload(op: AmendmentOp, all_ops: List[AmendmentOp], ctx: _Fil
     """Drop heading ops when amendment section has no <heading>."""
     if not ctx.has_amendment_section:
         return True, ""
+    if ctx.has_heading:
+        return True, ""
     if (
         op.target_unit_kind == "section"
         and op.op_type in ("REPLACE", "INSERT")
         and op.target_special == "otsikko"
-        and not ctx.has_heading
+        and not ctx.has_source_heading_for(op)
     ):
         return False, "no heading payload"
     return True, ""

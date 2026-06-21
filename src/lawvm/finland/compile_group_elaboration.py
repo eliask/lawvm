@@ -15,6 +15,7 @@ from lawvm.core.elaboration_context import (
 from lawvm.core.ir import IRNode
 from lawvm.core.payload_surface import GroupSurface, PayloadSurface, build_payload_surface
 from lawvm.core.phase_result import Finding, PhaseBuilder, PhaseResult
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.constraints import _FilterCtx, _filter_ops_by_constraints
 from lawvm.finland.elaborated_group import ElaboratedGroup, build_elaborated_group
 from lawvm.finland.group_ops import (
@@ -41,6 +42,7 @@ from lawvm.finland.payload_normalize import (
 from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
 
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
+_RESTORE_HEADING_FOR_EXPLICIT_FACET = "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET"
 
 
 def _has_recodification_transfer_context(
@@ -95,6 +97,81 @@ def _internal_elaboration_observation_row(
             target_norm=target_norm,
             target_chapter=target_chapter,
         ),
+    }
+
+
+def _restore_source_heading_for_explicit_heading_facet(
+    *,
+    source_model: AmendmentSourceModel | None,
+    prepared_muutos_ir: IRNode | None,
+    group_ops: list[AmendmentOp],
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_chapter: str | None,
+    target_part: str | None,
+) -> tuple[IRNode | None, dict[str, object] | None]:
+    """Keep a typed source heading available for an explicit heading-facet op.
+
+    Sparse subsection preparation may project a section payload down to the
+    targeted subsection and remove the heading. When the johtolause also names
+    the same section's ``otsikko``, the heading is source-owned by that explicit
+    facet op; copy it from the typed source-model payload rather than guessing
+    from prose or widening the subsection payload.
+    """
+    if (
+        target_unit_kind != "section"
+        or source_model is None
+        or prepared_muutos_ir is None
+        or prepared_muutos_ir.kind is not IRNodeKind.SECTION
+    ):
+        return prepared_muutos_ir, None
+    if any(child.kind is IRNodeKind.HEADING for child in prepared_muutos_ir.children):
+        return prepared_muutos_ir, None
+
+    has_heading_op = any(
+        op.target_unit_kind == "section"
+        and _norm_num_token(str(op.target_section or target_norm or ""))
+        == _norm_num_token(str(target_norm or ""))
+        and str(op.target_special or "") == "otsikko"
+        for op in group_ops
+    )
+    if not has_heading_op:
+        return prepared_muutos_ir, None
+
+    lookup = source_model.lookup_payload_ir(
+        target_unit_kind,
+        target_norm,
+        target_chapter=target_chapter,
+        target_part=target_part,
+    )
+    source_payload = lookup.payload_ir
+    if source_payload is None:
+        return prepared_muutos_ir, None
+    source_heading = next(
+        (child for child in source_payload.children if child.kind is IRNodeKind.HEADING),
+        None,
+    )
+    if source_heading is None:
+        return prepared_muutos_ir, None
+
+    children = list(prepared_muutos_ir.children)
+    insert_at = 1 if children and children[0].kind is IRNodeKind.NUM else 0
+    children.insert(insert_at, source_heading)
+    restored = IRNode(
+        kind=prepared_muutos_ir.kind,
+        label=prepared_muutos_ir.label,
+        text=prepared_muutos_ir.text,
+        attrs={
+            **dict(prepared_muutos_ir.attrs),
+            _PAYLOAD_NORMALIZATION_RULE_ATTR: _RESTORE_HEADING_FOR_EXPLICIT_FACET,
+        },
+        children=tuple(children),
+    )
+    return restored, {
+        "target_unit_kind": target_unit_kind,
+        "target_norm": target_norm,
+        "source_payload_status": lookup.status,
+        "heading_text_chars": len(str(source_heading.text or "")),
     }
 
 
@@ -320,6 +397,16 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
                 target_chapter=target_chapter,
             )
         )
+    heading_restore_observation: dict[str, object] | None = None
+    muutos_ir, heading_restore_observation = _restore_source_heading_for_explicit_heading_facet(
+        source_model=source_model,
+        prepared_muutos_ir=muutos_ir,
+        group_ops=group_ops,
+        target_unit_kind=target_unit_kind,
+        target_norm=target_norm,
+        target_chapter=target_chapter,
+        target_part=target_part,
+    )
     prepared_payload_observations = _payload_normalization_observation_rows(
         muutos_ir,
         source_statute=observation_source_statute,
@@ -422,6 +509,18 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         if str(observation.kind or "").strip()
         ],
     ]
+    if heading_restore_observation is not None:
+        local_elaboration_observations.append(
+            _internal_elaboration_observation_row(
+                kind=_RESTORE_HEADING_FOR_EXPLICIT_FACET,
+                stage="group_payload_normalization",
+                detail=heading_restore_observation,
+                source_statute=observation_source_statute,
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_chapter=target_chapter,
+            )
+        )
     slot_assignment = payload_norm.slot_assignment
     local_payload_completeness: list[dict[str, object]] = (
         [

@@ -2502,7 +2502,7 @@ def _parse_verb_group(
                 continue
         more_batch_start = scan.pos
         try:
-            more, more_kind = _recognize_one_target(scan, chapter, part)
+            more, more_kind = _recognize_one_target(scan, chapter, part, verb)
         except OutOfScope:
             # An anaphoric-determiner insert arm (``sanottuun pykälään uusi 5
             # momentti`` / ``sanottuun lakiin uusi 4 §`` / ``mainittuun lukuun uusi

@@ -9,7 +9,7 @@ amendment verb group lists after its verb — clauses that ADD new structure:
     [N osan]           N OSA:ILL            uusi numlist (§ | luku)
                        DOC:ILL N LUKU:ILL   uusi numlist §        (prefix-chapter)
                        DOC:ILL (NUM/YY)     uusi N [letter]       (bare-section)
-                       numlist §:ILL        uusi sub_target       (momentti / kohta)
+                       numlist §:ILL        [uusi] sub_target     (otsikko / momentti / kohta)
                        numlist §:GEN        uusi sub_target
                        numlist §:GEN  M MOMENTTI:ILL/GEN  uusi sub_target
                                            uusi numlist (§ | luku | osa)   (cite-stripped)
@@ -387,8 +387,8 @@ def _skip_doc_reinst_preamble(scan: _Scan) -> None:
 # ---------------------------------------------------------------------------
 # Sub-target recognition (faithful narrowing of _insertion_sub_target).
 #
-# Only the clean momentti / kohta arms are recognized. The heading arm
-# (``uusi otsikko``) and the letter-only / archaic arms are out of scope.
+# Only the clean heading / momentti / kohta arms are recognized. The letter-only
+# and archaic arms remain intentionally narrow.
 # ---------------------------------------------------------------------------
 
 
@@ -397,19 +397,28 @@ def _recognize_sub_target(scan: _Scan, sec: str, chapter: str, part: str, mom_ct
 
     Faithful to ``_insertion_sub_target`` restricted to the in-scope arms:
 
+      * ``uusi otsikko``             (section heading facet insert)
       * ``uusi N momentin M kohta``  (genitive momentti container + kohta)
       * ``uusi N momentti``          (nominative momentti insert)
       * ``uusi N kohta``             (kohta insert, defaulting momentti to ctx or 1)
 
-    Heading (``uusi otsikko``) and any reading that needs reinstatement is
-    declined (returns None). An archaic ``näin kuuluva`` lead-in between ``uusi``
-    and the sub-target is skipped (faithful to the old parser, line 1891).
+    Any reading that needs reinstatement is declined (returns None). An archaic
+    ``näin kuuluva`` lead-in between ``uusi`` and the sub-target is skipped
+    (faithful to the old parser, line 1891).
     """
     _skip_optional_comma_nain_kuuluva(scan)
 
     if _at(scan, "OTSIKKO"):
-        # Heading insertion is out of scope for this slice.
-        return None
+        scan.advance()
+        return [
+            InsNode(
+                kind=TargetKind.SECTION,
+                label=sec,
+                chapter=chapter,
+                part=part,
+                sub_target=InsSubTarget(facet=FacetKind.HEADING),
+            )
+        ]
 
     nums = _number_list(scan)
     if not nums:
@@ -1487,7 +1496,13 @@ def _dispatch(
     if nums:
         t = scan.peek()
         if t is not None and t.cat == "PYKALA" and t.case == "ILL":
-            sub = _try_section_ill_sub_target(scan, nums, effective_chapter, effective_part)
+            sub = _try_section_ill_sub_target(
+                scan,
+                nums,
+                effective_chapter,
+                effective_part,
+                verb=verb,
+            )
             if sub is not None:
                 return sub
             return None  # §:ILL committed to a sub-target arm; clean form only
@@ -1594,6 +1609,7 @@ def _dispatch(
                 luvun_nums,
                 inherited_chapter,
                 inherited_part,
+                verb=verb,
             )
             if luvun_nodes is not None:
                 return luvun_nodes
@@ -1749,14 +1765,20 @@ def _consume_sub_target_continuation(
 
 
 def _try_section_ill_sub_target(
-    scan: _Scan, nums: list[NumSuffix], chapter: str, part: str
+    scan: _Scan,
+    nums: list[NumSuffix],
+    chapter: str,
+    part: str,
+    *,
+    verb: Optional[SourceVerb] = None,
 ) -> Optional[list[InsNode]]:
-    """``numlist §:ILL [,] uusi sub_target`` — momentti/kohta insertion.
+    """``numlist §:ILL [,] [uusi] sub_target`` — heading/momentti/kohta insertion.
 
     The §:ILL has already been peeked (not consumed). Consumes it, the old
     parser's reinstatement preamble (``[, REINST] [N kohdan tilalle] uusi``),
-    then requires ``uusi``. Absorbs the anaphoric ``ja/sekä <bare sub-target>``
-    chain that the old parser keeps in the same batch.
+    then requires ``uusi`` except for explicit ``lisätään N §:ään otsikko``
+    heading inserts. Absorbs the anaphoric ``ja/sekä <bare sub-target>`` chain
+    that the old parser keeps in the same batch.
     """
     saved = scan.pos
     scan.advance()  # consume §:ILL
@@ -1764,7 +1786,8 @@ def _try_section_ill_sub_target(
     # An archaic ``näin kuuluva`` lead-in can sit between the §:ään target (and
     # its skipped provenance) and ``uusi`` (old _insertion line 2421).
     _skip_optional_comma_nain_kuuluva(scan)
-    if not _consume_uusi(scan):
+    had_uusi = _consume_uusi(scan)
+    if not had_uusi and not (verb == SourceVerb.LISATA and _at(scan, "OTSIKKO")):
         scan.goto(saved)
         return None
     sec_nums = [n + sf for n, sf in nums]
@@ -2071,6 +2094,19 @@ def _fold_doc_section_continuation(scan: _Scan, out_nodes: list[InsNode]) -> boo
                 for n, sf in more_nums
             )
             continue
+
+        if more_nums and nxt is not None and nxt.cat == "PYKALA" and nxt.case in {"ILL", "GEN"}:
+            # A fresh section sub-target arm (``9 §:ään otsikko`` /
+            # ``9 §:n 2 momentti``) belongs to the outer target-list loop, not to
+            # the DOC-level whole-section insertion fold.  The target-first
+            # heading-placement form ``9 §:n edelle ...`` is the old folded
+            # heading arm and remains out of scope here.
+            after = scan.peek(1)
+            if nxt.case == "GEN" and after is not None and after.cat == "EDELLA":
+                scan.goto(cont_saved)
+                return False
+            scan.goto(cont_saved)
+            return True
 
         # Not a plain NOM-section arm. If this arm carries a heading-facet /
         # postfix / appendix marker (which the old parser folds into THIS batch),
