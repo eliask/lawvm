@@ -25,6 +25,9 @@ from lawvm.finland.oracle_comparison import (
     strip_editorial_annotations,
     strip_figure_legend_paragraphs,
     strip_kumottu_attribution,
+    strip_legacy_roman_division_heading_prefix,
+    strip_non_substantive_source_projection_residue,
+    strip_promulgation_closure_tail,
     strip_temporary_residue_annotations,
 )
 
@@ -38,5 +41,8 @@ __all__ = [
     "strip_editorial_annotations",
     "strip_figure_legend_paragraphs",
     "strip_kumottu_attribution",
+    "strip_legacy_roman_division_heading_prefix",
+    "strip_non_substantive_source_projection_residue",
+    "strip_promulgation_closure_tail",
     "strip_temporary_residue_annotations",
 ]

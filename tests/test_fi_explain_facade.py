@@ -592,6 +592,43 @@ def test_explain_diagnose_does_not_treat_substantive_high_similarity_as_editoria
     assert "different content" in explanation
 
 
+def test_explain_diagnose_treats_source_projection_residue_as_editorial() -> None:
+    replay = (
+        "26 § Tämä laki tulee voimaan 1 päivänä tammikuuta 1923. "
+        "Tätä kaikki asianomaiset noudattakoot."
+    )
+    oracle = "26 § Tämä laki tulee voimaan 1 päivänä tammikuuta 1923."
+
+    diagnosis, explanation = _diagnose(replay, oracle, None)
+
+    assert diagnosis == "EDITORIAL_CONVENTION"
+    assert "source heading/promulgation residue" in explanation
+
+
+def test_explain_source_pathology_demotes_absent_subsection_target() -> None:
+    master = SimpleNamespace(
+        findings=(),
+        source_pathology_rows=lambda: [
+            {
+                "source_statute": "1975/10",
+                "code": "SUBSECTION_TARGET_ABSENT",
+                "target_label": "7 § 2 mom",
+                "detail": {"target_section": "7", "target_paragraph": "2"},
+            }
+        ],
+    )
+    blame_op = {
+        "source_statute": "1975/10",
+        "target_norm": "7",
+        "target_paragraph": "2",
+    }
+
+    diagnosis, explanation = _source_pathology_diagnosis_for_blame(master, blame_op)
+
+    assert diagnosis == "SOURCE_PATHOLOGY"
+    assert "SUBSECTION_TARGET_ABSENT" in explanation
+
+
 @pytest.mark.slow
 def test_explain_sync_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -> None:
     _explain_sync(

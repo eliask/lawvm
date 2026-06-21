@@ -312,6 +312,52 @@ def strip_kumottu_attribution(text: str) -> str:
     return _KUMOTTU_ATTRIBUTION_RE.sub('on kumottu.', text)
 
 
+_LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE = re.compile(
+    r"^(\s*\d+\s*[a-zäöå]?\s*§\s*)"
+    r"(?:[IVXLCDM]{1,8}\.\s+[A-ZÅÄÖ][^.]{1,120}\.\s+)",
+    re.IGNORECASE,
+)
+_PROMULGATION_CLOSURE_TAILS = (
+    "Tätä kaikki asianomaiset noudattakoot.",
+    "Tätä kaikki asianomaiset noudattakoot",
+)
+
+
+def strip_legacy_roman_division_heading_prefix(text: str) -> str:
+    """Drop old FI division headings accidentally attached to section text.
+
+    Some early source witnesses encode a Roman-numbered division heading such as
+    ``I. Yleisiä säännöksiä.`` as the heading/text prefix of the following
+    section. Consolidated Finlex comparison surfaces often omit that division
+    heading from the section text. This helper is comparison-only; callers must
+    self-validate by comparing the stripped text against the oracle.
+    """
+    if "." not in text:
+        return text
+    return _LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE.sub(r"\1", text, count=1)
+
+
+def strip_promulgation_closure_tail(text: str) -> str:
+    """Drop old FI promulgation closure formula from comparison text.
+
+    The source formula ``Tätä kaikki asianomaiset noudattakoot.`` is a
+    promulgation closure, not a provision body sentence. We only expose this as
+    a comparison helper; replay/source state remains unchanged.
+    """
+    stripped = text.rstrip()
+    for tail in _PROMULGATION_CLOSURE_TAILS:
+        if stripped.endswith(tail):
+            return stripped[: -len(tail)].rstrip()
+    return text
+
+
+def strip_non_substantive_source_projection_residue(text: str) -> str:
+    """Remove FI source-side presentation/promulgation residue for comparison."""
+    return strip_promulgation_closure_tail(
+        strip_legacy_roman_division_heading_prefix(text)
+    )
+
+
 # A figure-legend entry: a bare ordinal (1–2 digits) naming one numbered marking
 # in a road-sign / technical diagram...
 _FIGURE_LEGEND_ENTRY = (

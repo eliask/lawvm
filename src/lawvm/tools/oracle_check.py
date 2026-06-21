@@ -39,6 +39,7 @@ from lawvm.finland.oracle_comparison import (
     strip_editorial_annotations,
     strip_figure_legend_paragraphs,
     strip_kumottu_attribution,
+    strip_non_substantive_source_projection_residue,
     strip_temporary_residue_annotations,
 )
 from lawvm.tools.divergence_heuristics import blame_title_indicates_temporary_amendment
@@ -199,6 +200,8 @@ def _source_pathology_diagnosis_for_blame(
         "RECODIFICATION_SOURCE_CHAIN_GAP",
     }:
         return "SOURCE_INCOMPLETE"
+    if "SUBSECTION_TARGET_ABSENT" in matched_codes:
+        return "SOURCE_PATHOLOGY"
 
     findings = tuple(getattr(master, "findings", ()) or ())
     has_degraded_coverage = any(
@@ -874,6 +877,12 @@ def _diagnose(
     if o_legend_stripped != o_text:
         c_o_legend = _clean(o_legend_stripped)
         if c_r and c_o_legend and Levenshtein.ratio(c_r, c_o_legend) >= 0.95:
+            return "EDITORIAL_CONVENTION"
+
+    r_source_residue_stripped = strip_non_substantive_source_projection_residue(r_text)
+    if r_source_residue_stripped != r_text:
+        c_r_residue = _clean(strip_editorial_annotations(r_source_residue_stripped))
+        if c_r_residue and c_o and Levenshtein.ratio(c_r_residue, c_o) >= 0.999:
             return "EDITORIAL_CONVENTION"
 
     if not blame_op and high_overlap_unblamed_text_corruption(r_text, o_text):

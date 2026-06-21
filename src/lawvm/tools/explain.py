@@ -58,6 +58,7 @@ from lawvm.finland.replay_products import fi_label_norm
 from lawvm.finland.oracle_comparison import (
     strip_editorial_annotations,
     strip_kumottu_attribution,
+    strip_non_substantive_source_projection_residue,
     strip_temporary_residue_annotations,
 )
 from lawvm.tools.section_keys import (
@@ -175,6 +176,11 @@ def _source_pathology_diagnosis_for_blame(
     )
     if not matched_codes:
         return None
+    if "SUBSECTION_TARGET_ABSENT" in matched_codes:
+        return (
+            "SOURCE_PATHOLOGY",
+            f"blamed amendment {blame_source} already carries SUBSECTION_TARGET_ABSENT",
+        )
     if not has_degraded_coverage and not has_failed_no_deterministic:
         return None
 
@@ -490,6 +496,15 @@ def _diagnose(
             "ORACLE_STALE",
             "oracle duplicates one same-section sentence fragment beyond the replay/source-backed text",
         )
+
+    r_source_residue_stripped = strip_non_substantive_source_projection_residue(r_text)
+    if r_source_residue_stripped != r_text:
+        c_r_residue = _clean(strip_editorial_annotations(r_source_residue_stripped))
+        if c_r_residue and o_c and Levenshtein.ratio(c_r_residue, o_c) >= 0.999:
+            return (
+                "EDITORIAL_CONVENTION",
+                "replay carries non-substantive source heading/promulgation residue absent from oracle",
+            )
 
     if not blame_op and high_overlap_unblamed_text_corruption(r_text, o_text):
         return (

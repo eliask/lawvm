@@ -170,6 +170,58 @@ def test_diagnose_treats_bare_oracle_stub_as_editorial_convention() -> None:
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_legacy_roman_division_heading_as_editorial_convention() -> None:
+    # Real shape: 1922/148 §1. The source witness projects the division title
+    # "I. Yleisiä säännöksiä." into the following section; Finlex's consolidated
+    # section text omits that presentation heading.
+    replay = (
+        "1 § I. Yleisiä säännöksiä. Tuomioistuimissa ja muissa valtion "
+        "viranomaisissa on käytettävä maan kansalliskieltä."
+    )
+    oracle = (
+        "1 § Tuomioistuimissa ja muissa valtion viranomaisissa on käytettävä "
+        "maan kansalliskieltä."
+    )
+
+    assert _diagnose(replay, oracle, {"action": "INSERT", "source_statute": "1991/517"}) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_treats_promulgation_closure_as_editorial_convention() -> None:
+    # Real shape: 1922/148 §26. The final promulgation closure is source-side
+    # formula text, not consolidated provision body text.
+    replay = (
+        "26 § Tämä laki tulee voimaan 1 päivänä tammikuuta 1923. "
+        "Tätä kaikki asianomaiset noudattakoot."
+    )
+    oracle = "26 § Tämä laki tulee voimaan 1 päivänä tammikuuta 1923."
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_source_pathology_demotes_absent_subsection_target_without_failed_op() -> None:
+    # Real family: 1922/148 §7. Base XML collapsed the historical second moment
+    # into subsection 1; 1975/10 explicitly repeals 7 §:n 2 momentti, so replay
+    # has source-pathology ownership even when no coarse failed-op row is present.
+    master = SimpleNamespace(
+        findings=(),
+        source_pathology_rows=lambda: [
+            {
+                "source_statute": "1975/10",
+                "code": "SUBSECTION_TARGET_ABSENT",
+                "target_label": "7 § 2 mom",
+                "detail": {"target_section": "7", "target_paragraph": "2"},
+            }
+        ],
+    )
+    blame_op = {
+        "source_statute": "1975/10",
+        "target_norm": "7",
+        "target_paragraph": "2",
+    }
+
+    assert _source_pathology_diagnosis_for_blame(master, blame_op) == "SOURCE_PATHOLOGY"
+
+
 def test_diagnose_treats_old_code_reference_marker_as_editorial() -> None:
     replay = "5 § - - - - - - - - - - - - - -"
     oracle = "5 § 5 §:n sijasta ks. L velkojien maksunsaantijärjestyksestä 1578/1992."
