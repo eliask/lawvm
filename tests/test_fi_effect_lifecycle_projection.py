@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from typing import Any, cast
 
-from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, StructuralAction
+from lawvm.core.ir import IRNode, IRNodeKind, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
     EffectRef,
@@ -227,6 +227,41 @@ def test_duplicate_operation_ids_use_full_effect_discriminator() -> None:
         "fi-effect:2020/1:snapshot_section_1:seq-2:target-chapter:2/section:1",
     )
     assert tuple(effect.target_address for effect in source_effects) == (first.target, second.target)
+
+
+def test_colliding_operation_effect_ids_use_occurrence_discriminator() -> None:
+    source = OperationSource(statute_id="1994/1486")
+    target = LegalAddress(path=(("part", "1"), ("chapter", "6"), ("section", "70"), ("subsection", "1")))
+    first = LegalOperation(
+        op_id="snapshot_subsection_1_from_section_70",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=target,
+        source=source,
+        payload=IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Myynniksi ulkomaille katsotaan:"),
+    )
+    second = LegalOperation(
+        op_id="snapshot_subsection_1_from_section_70",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=target,
+        source=source,
+        payload=IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Veroa ei suoriteta seuraavista myynneistä:"),
+    )
+
+    source_effects, _relations, _lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1993/1501",
+        canonical_ops=(first, second),
+        temporal_events=(),
+    )
+
+    assert tuple(effect.effect_id for effect in source_effects) == (
+        "fi-effect:1994/1486:snapshot_subsection_1_from_section_70:"
+        "seq-0:target-part:1/chapter:6/section:70/subsection:1:occ-1",
+        "fi-effect:1994/1486:snapshot_subsection_1_from_section_70:"
+        "seq-0:target-part:1/chapter:6/section:70/subsection:1:occ-2",
+    )
+    assert tuple(effect.target_address for effect in source_effects) == (target, target)
 
 
 def test_duplicate_temporal_group_ids_use_event_and_target_discriminator() -> None:

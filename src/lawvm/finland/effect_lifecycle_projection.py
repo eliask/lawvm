@@ -258,6 +258,24 @@ def _duplicated_temporal_effect_keys(
     return frozenset(key for key, count in counts.items() if count > 1)
 
 
+def _disambiguate_colliding_effect_ids(ids: Sequence[str | None]) -> tuple[str | None, ...]:
+    counts: dict[str, int] = {}
+    for effect_id in ids:
+        if effect_id is None:
+            continue
+        counts[effect_id] = counts.get(effect_id, 0) + 1
+    ordinals: dict[str, int] = {}
+    resolved: list[str | None] = []
+    for effect_id in ids:
+        if effect_id is None or counts.get(effect_id, 0) == 1:
+            resolved.append(effect_id)
+            continue
+        ordinal = ordinals.get(effect_id, 0) + 1
+        ordinals[effect_id] = ordinal
+        resolved.append(f"{effect_id}:occ-{ordinal}")
+    return tuple(resolved)
+
+
 def _source_effects_from_ops_and_temporal_events(
     *,
     target_statute: str,
@@ -269,24 +287,43 @@ def _source_effects_from_ops_and_temporal_events(
     known_effects = tuple(known_source_effects)
     duplicated_op_keys = _duplicated_operation_effect_keys(canonical_ops)
     duplicated_temporal_keys = _duplicated_temporal_effect_keys(temporal_events)
-    for op in canonical_ops:
-        source = op.source
-        duplicated_op_key = (
-            source is not None
-            and bool(source.statute_id)
-            and (source.statute_id, str(op.op_id or op.sequence)) in duplicated_op_keys
+    operation_effect_ids = _disambiguate_colliding_effect_ids(
+        tuple(
+            _legal_operation_effect_id(
+                op,
+                duplicated_op_key=(
+                    source is not None
+                    and bool(source.statute_id)
+                    and (source.statute_id, str(op.op_id or op.sequence)) in duplicated_op_keys
+                ),
+            )
+            if (source := op.source) is not None and source.statute_id
+            else None
+            for op in canonical_ops
         )
+    )
+    temporal_effect_ids = _disambiguate_colliding_effect_ids(
+        tuple(
+            _temporal_event_effect_id(
+                event,
+                duplicated_event_key=(
+                    source is not None
+                    and bool(source.statute_id)
+                    and (source.statute_id, str(event.group_id or event.event_id))
+                    in duplicated_temporal_keys
+                ),
+            )
+            if (source := event.source) is not None and source.statute_id
+            else None
+            for event in temporal_events
+        )
+    )
+    for op, effect_id in zip(canonical_ops, operation_effect_ids, strict=True):
+        source = op.source
         effect = _effect_ref_for_legal_operation(
             op,
             target_statute=target_statute,
-            effect_id=(
-                _legal_operation_effect_id(
-                    op,
-                    duplicated_op_key=duplicated_op_key,
-                )
-                if source is not None and source.statute_id
-                else None
-            ),
+            effect_id=effect_id if source is not None and source.statute_id else None,
         )
         if effect is not None:
             append_unique_effect_ref(
@@ -294,25 +331,13 @@ def _source_effects_from_ops_and_temporal_events(
                 effect,
                 subject="operation-derived source effects",
             )
-    for event in temporal_events:
+    for event, effect_id in zip(temporal_events, temporal_effect_ids, strict=True):
         source = event.source
-        duplicated_temporal_key = (
-            source is not None
-            and bool(source.statute_id)
-            and (source.statute_id, str(event.group_id or event.event_id)) in duplicated_temporal_keys
-        )
         effect = _effect_ref_for_temporal_event(
             event,
             target_statute=target_statute,
             source_effects=(*known_effects, *effects),
-            effect_id=(
-                _temporal_event_effect_id(
-                    event,
-                    duplicated_event_key=duplicated_temporal_key,
-                )
-                if source is not None and source.statute_id
-                else None
-            ),
+            effect_id=effect_id if source is not None and source.statute_id else None,
         )
         if effect is not None:
             if effect in known_effects:
