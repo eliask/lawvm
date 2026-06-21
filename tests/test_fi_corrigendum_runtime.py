@@ -331,6 +331,45 @@ def test_replay_xml_1991_1161_applies_owned_section_9_source_defect() -> None:
     assert "täytäntöönpanon edellyttämiin toimenpiteisiin" in section_9
 
 
+def test_manual_source_patches_1992_1578_correct_base_and_amendment_typos() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    base_wrong = "konkursissa varojen tilittämiseen"
+    amendment_wrong = "ei saada sen vakuutema olevasta pantista"
+
+    base_patched, base_applied = table.patch_source_body_xml(
+        f"<body><p>{base_wrong}</p></body>".encode("utf-8"),
+        "1992/1578",
+    )
+    amendment_patched, amendment_applied = table.patch_source_body_xml(
+        f"<body><p>{amendment_wrong}</p></body>".encode("utf-8"),
+        "1995/1776",
+    )
+
+    assert base_applied == ["body_patch/1992/1578/0"]
+    assert amendment_applied == ["body_patch/1995/1776/0"]
+    assert base_wrong.encode("utf-8") not in base_patched
+    assert amendment_wrong.encode("utf-8") not in amendment_patched
+    assert "konkurssissa varojen tilittämiseen".encode("utf-8") in base_patched
+    assert "ei saada sen vakuutena olevasta pantista".encode("utf-8") in amendment_patched
+
+
+def test_replay_xml_1992_1578_applies_owned_source_typos() -> None:
+    replay = replay_xml_for_test(
+        "1992/1578",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_3 = " ".join(irnode_to_text(sections["section:3"]).split())
+    section_9 = " ".join(irnode_to_text(sections["section:9"]).split())
+
+    assert "konkurssissa varojen tilittämiseen" in section_3
+    assert "konkursissa varojen tilittämiseen" not in section_3
+    assert "ei saada sen vakuutena olevasta pantista" in section_9
+    assert "ei saada sen vakuutema olevasta pantista" not in section_9
+
+
 def test_patch_table_keeps_johtolauseen_jalkeen_in_body_patch_lane(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
     manual_path = tmp_path / "corrigendum_manual.yaml"

@@ -229,6 +229,26 @@
   notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): enacted SD source XML has an empty section 9 shell; consolidated Finlex section 9 is tagged finlex:vsId='1161/1991', so the missing Voimaantulo body is source-owned by the base act."
   verified: "2026-06-21"
 
+# 1578/1992 (Laki velkojien maksunsaantijärjestyksestä) — enacted base SD
+# source XML has a one-letter typo in 3 §. No official corrigendum was
+# harvested; the consolidated Finlex witness corrects the legal term.
+- amendment_id: "1578/1992"
+  wrong_text: "konkursissa varojen tilittämiseen"
+  correct_text: "konkurssissa varojen tilittämiseen"
+  correction_type: body_text
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): enacted base §3 has 'konkursissa'; consolidated Finlex has the grammatically and legally correct 'konkurssissa'."
+  verified: "2026-06-21"
+
+# 1776/1995 (Laki velkojien maksunsaantijärjestyksestä annetun lain 9 §:n
+# muuttamisesta) — amendment body has a typo in the new 9 § 3 mom 2 kohta.
+# No official corrigendum was harvested; the consolidated witness corrects it.
+- amendment_id: "1776/1995"
+  wrong_text: "ei saada sen vakuutema olevasta pantista"
+  correct_text: "ei saada sen vakuutena olevasta pantista"
+  correction_type: body_text
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): amendment §9 payload has 'vakuutema'; consolidated Finlex has 'vakuutena'."
+  verified: "2026-06-21"
+
 # Family A — "kumotun NN§:n tilalle uusi näin kuuluva NN§:" glued-§ shape.
 # The pykälä symbol § is glued to the section number with no space ("18§"); the
 # canonical drafting form is "18 §". Each johtolause has two occurrences (the
