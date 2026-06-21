@@ -16,7 +16,9 @@ from lxml import etree
 
 from lawvm.finland.helpers import _norm_num_token
 
+# lawvm-regex: diagnostic Finlex eId version suffix parser for oracle dedup
 _ORACLE_VERSION_SUFFIX_RE = re.compile(r"v(?P<version>\d{8})$")
+# lawvm-regex: diagnostic Finlex editorial prior-wording note classifier
 _PRIOR_WORDING_RE = re.compile(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE)
 
 
@@ -86,7 +88,8 @@ def _has_following_next_slot_child(
 def _element_clean_text(el: etree._Element) -> str:
     """Return cleaned alphanumeric-only text content of an element."""
     raw = etree.tostring(el, method="text", encoding="unicode")
-    return re.sub(r"[^a-z0-9äöå]", "", raw.lower())
+    allowed = frozenset("abcdefghijklmnopqrstuvwxyz0123456789äöå")
+    return "".join(ch for ch in raw.lower() if ch in allowed)
 
 
 def _sequence_ratio_at_least(left: str, right: str, threshold: float) -> bool:
@@ -107,6 +110,7 @@ def strip_prior_wording_sibling(note: etree._Element) -> bool:
     oracle projection counts stale text as current law.
     """
     note_text = etree.tostring(note, method="text", encoding="unicode")
+    # lawvm-regex: diagnostic Finlex editorial prior-wording note classifier
     if not _PRIOR_WORDING_RE.search(note_text):
         return False
     previous = note.getprevious()
