@@ -87,6 +87,7 @@ def _make_sub_ref(op: ParsedOp) -> SurfaceSubRef | None:
         return SurfaceSubRef(
             momentti=op.momentti,
             item=op.item,
+            subitem=op.subitem,
             facet=facet,
             special=special,
         )

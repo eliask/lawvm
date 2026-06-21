@@ -457,19 +457,24 @@ class TestRenamedLocalReachBack:
         assert call[0]["raw_text_accessor"] is True
         assert call[0]["raw_text_via"] == "line_local"
 
-    def test_known_live_blind_spot_merge_py_is_now_caught(self) -> None:
+    def test_former_merge_blind_spot_reach_back_is_migrated_out(self) -> None:
         """End-to-end on real source: the confirmed live blind spot
-        (merge.py:2542/2544, `_source_targets_plain_subsection`) must now be
-        flagged as raw-text reach-back through the real file scan."""
+        (the old merge.py `_source_targets_plain_subsection` renamed-local reach-back)
+        has been MIGRATED into scope.py's owning descendant-scope recognizer, so
+        merge.py must no longer carry any raw-text-accessor regex use-site.
+
+        The detector's renamed-local taint logic itself remains exercised by the
+        synthetic fixtures above (`test_raw_text_named_parameter_is_seeded`)."""
         merge_path = _REPO_ROOT / "src/lawvm/finland/merge.py"
         if not merge_path.exists():  # pragma: no cover - defensive
             pytest.skip("merge.py not present in this checkout")
         text = merge_path.read_text(encoding="utf-8")
-        records = _INV.scan_file_regex_use_sites("src/lawvm/finland/merge.py", text)
-        hatch_lines = {
-            r["line"] for r in records if r["raw_text_accessor"]
-        }
-        assert {2542, 2544} <= hatch_lines, (
-            "hardened detector must catch merge.py renamed-local reach-back; "
-            f"got {sorted(hatch_lines)}"
+        # The migrated reach-back was the source-plane `N momentti` / `N momentin
+        # johdanto` subsection predicate; it now lives in scope.py. merge.py must
+        # no longer contain those source-plane patterns.
+        assert "momentin\\s+johdanto" not in text and "momentti\\b" not in text, (
+            "merge.py still carries the migrated source-plane momentti regex; the "
+            "predicate must route through scope.source_targets_plain_subsection_moment"
         )
+        # The renamed-local taint shape (`_source_targets_plain_subsection`) is gone.
+        assert "_source_targets_plain_subsection" not in text

@@ -884,6 +884,89 @@ def _chapter_chunk_mentions_lo(chunk: str, lo: _LegalOperation) -> bool:
     return _section_in_chunk(sec_label)
 
 
+# --- shared source-plane descendant-scope recognizer (scope.py owner) ---------
+#
+# The "a parsed amendment formula names scope BELOW a section" predicate is owned
+# here, next to the chapter-chunk scope grammar above (``_section_in_chunk`` /
+# ``_genitive_reference_is_whole_section`` / ``_moment_in_chunk`` /
+# ``_item_in_chunk``). Apply (``apply_runtime_support._section_source_names_descendant_scope``)
+# and the merge subsection-shell guard (``merge._source_targets_plain_subsection``)
+# previously each owned their own inline ``raw_text`` regex of this same grammar
+# (an AMENDMENT-SOURCE → legal-state reach-back per AGENTS.md §1.12). They now call
+# the single owner below; scope.py is the canonical parser for this construction
+# family, so the regexes live here behind ``owning_parser`` waivers and the callers
+# pass the already-typed source text as a plain ``text`` argument.
+_SECTION_GENITIVE_DESCENDANT_SCOPE_RE = re.compile(
+    r"\b(?P<section>\d+[a-z]?)\s*§:n\b.{0,240}?\b"
+    r"(?:moment[a-zåäö]{0,20}|koht[a-zåäö]{0,20}|alakoht[a-zåäö]{0,20})\b",
+    re.IGNORECASE,
+)
+# Subsection/moment target templates: the target label is escaped and
+# interpolated per call (mirrors the original merge guard exactly).
+_SUBSECTION_MOMENT_INTRO_TPL = r"\b{target}\s+momentin\s+johdanto\w*"
+_SUBSECTION_PLAIN_MOMENT_TPL = r"\b{target}\s+momentti\b"
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDescendantScopeResult:
+    """Typed outcome of the source descendant-scope predicate.
+
+    ``matched`` is the legal-state-driving boolean (does the source formula name
+    descendant scope below ``section_label``).  ``unparsed_cue`` is set when the
+    source carried the section-genitive cue (``N §:n``) yet no descendant-scope
+    formula for the requested section could be resolved — the residual the apply
+    path used to swallow with a silent ``return False``.  It is observability
+    only and never changes ``matched``.
+    """
+
+    matched: bool
+    unparsed_cue: str | None = None
+
+
+def source_names_descendant_scope_below_section(
+    text: str, section_label: str
+) -> SourceDescendantScopeResult:
+    """Whether a parsed source formula names scope below ``section_label``.
+
+    Reproduces the ``N §:n ... moment/kohta/alakohta`` descendant-scope grammar.
+    Returns a typed result so callers can witness the unparsed-cue residual
+    instead of conflating it with a clean negative.
+    """
+    if not text or "§:n" not in text:
+        return SourceDescendantScopeResult(matched=False)
+    target = _norm_num_token(section_label)
+    saw_cue = False
+    # lawvm-regex: owning_parser scope.py is the canonical descendant-scope parser
+    for match in _SECTION_GENITIVE_DESCENDANT_SCOPE_RE.finditer(text):
+        saw_cue = True
+        if _norm_num_token(match.group("section")) == target:
+            return SourceDescendantScopeResult(matched=True)
+    # The source named a section-genitive descendant-scope formula, but for no
+    # section matching the target. Surface it as a typed residual rather than a
+    # silent ``False`` so the apply caller can witness the unhandled cue.
+    if saw_cue:
+        return SourceDescendantScopeResult(matched=False, unparsed_cue=text)
+    return SourceDescendantScopeResult(matched=False)
+
+
+def source_targets_plain_subsection_moment(text: str, target_paragraph: int) -> bool:
+    """Whether the source formula targets the plain ``N momentti`` subsection.
+
+    The moment-INTRO (``N momentin johdanto``) is an explicit negative: targeting
+    the intro is not targeting the plain subsection. Reproduces the merge
+    subsection-shell guard predicate.
+    """
+    normalized = " ".join(text.casefold().split())
+    if not normalized:
+        return False
+    target = re.escape(str(target_paragraph))
+    # lawvm-regex: owning_parser scope.py owns the subsection/moment scope grammar
+    if re.search(_SUBSECTION_MOMENT_INTRO_TPL.format(target=target), normalized):
+        return False
+    # lawvm-regex: owning_parser scope.py owns the subsection/moment scope grammar
+    return re.search(_SUBSECTION_PLAIN_MOMENT_TPL.format(target=target), normalized) is not None
+
+
 def _johtolause_explicitly_binds_chapter_section(johto: str, chapter: str, section: str) -> bool:
     def _chapter_pat(label: str) -> str:
         norm = _norm_num_token(str(label))
@@ -1594,4 +1677,7 @@ __all__ = [
     "assign_scope_from_renumber_destinations",
     "fi_statute_citation_spans",
     "restrict_sec1_fallback_to_parent",
+    "SourceDescendantScopeResult",
+    "source_names_descendant_scope_below_section",
+    "source_targets_plain_subsection_moment",
 ]

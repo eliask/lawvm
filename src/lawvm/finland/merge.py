@@ -51,9 +51,11 @@ from lawvm.finland.helpers import (
 )
 from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile, ResolvedOp, _op_target_subsection_label
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.scope import source_targets_plain_subsection_moment
 from lawvm.finland.source_pathology import (
     build_malformed_broad_replace_body_pathology,
     build_partial_whole_section_payload_pathology,
+    build_subsection_shell_replace_kept_pathology,
 )
 
 if TYPE_CHECKING:
@@ -2454,8 +2456,17 @@ def _drop_suspicious_partial_subsection_shell_replaces(
     amend_subsections = [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
     if live_heading is None or amend_heading is None or live_heading.text == amend_heading.text:
         return group_ops, [], []
-    if _has_explicit_heading_and_plain_subsection_replace_source(group_ops):
-        return group_ops, [], []
+    kept_shell_clause = _explicit_heading_and_plain_subsection_replace_source_clause(group_ops)
+    if kept_shell_clause is not None:
+        keep_witness = build_subsection_shell_replace_kept_pathology(
+            source_statute=next(
+                (op.source_statute for op in group_ops if op.source_statute), ""
+            ),
+            target_section=target_norm,
+            target_chapter=target_chapter or "",
+            source_clause=kept_shell_clause,
+        )
+        return group_ops, [keep_witness], []
     if len(amend_subsections) != 1:
         return group_ops, [], []
 
@@ -2515,10 +2526,21 @@ def _drop_suspicious_partial_subsection_shell_replaces(
     return filtered, pathologies, rejected_ops
 
 
-def _has_explicit_heading_and_plain_subsection_replace_source(group_ops: List["AmendmentOp"]) -> bool:
+def _explicit_heading_and_plain_subsection_replace_source_clause(
+    group_ops: List["AmendmentOp"],
+) -> Optional[str]:
+    """Return the source clause that targets a plain subsection, else ``None``.
+
+    A non-``None`` return means the group carries an explicit otsikko op AND a
+    plain-subsection-targeted replace whose source text names the plain
+    ``N momentti``; the whole-section shell is then legitimate and must be KEPT.
+    The returned clause is the witness text for the keep decision. The plain-
+    subsection predicate is owned by ``scope.source_targets_plain_subsection_moment``
+    rather than an inline ``raw_text`` regex (AGENTS.md §1.12 reach-back).
+    """
     has_heading_op = any(str(op.target_special or "").strip() == "otsikko" for op in group_ops)
     if not has_heading_op:
-        return False
+        return None
     for op in group_ops:
         if (
             op.op_type != "REPLACE"
@@ -2529,19 +2551,9 @@ def _has_explicit_heading_and_plain_subsection_replace_source(group_ops: List["A
             continue
         source = getattr(getattr(op, "lo", None), "source", None)
         raw_text = str(getattr(source, "raw_text", "") or "")
-        if _source_targets_plain_subsection(raw_text, op.target_paragraph):
-            return True
-    return False
-
-
-def _source_targets_plain_subsection(raw_text: str, target_paragraph: int) -> bool:
-    text = " ".join(raw_text.casefold().split())
-    if not text:
-        return False
-    target = re.escape(str(target_paragraph))
-    if re.search(rf"\b{target}\s+momentin\s+johdanto\w*", text):
-        return False
-    return re.search(rf"\b{target}\s+momentti\b", text) is not None
+        if source_targets_plain_subsection_moment(raw_text, op.target_paragraph):
+            return raw_text
+    return None
 
 
 def _is_compact_first_subsection_replace_shell_ir(

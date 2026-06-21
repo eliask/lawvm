@@ -7,7 +7,6 @@ from dataclasses import dataclass, replace as dc_replace
 from functools import lru_cache
 from typing import TYPE_CHECKING, Callable, Literal, Optional, cast
 
-from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
     EffectRef,
@@ -62,6 +61,10 @@ from lawvm.finland.apply_ir_ops import (
     _strip_standalone_subsection_item_prefixes_ir,
 )
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.references.cited_version import (
+    CitedVersionParseResidual,
+    recognize_item_cited_version_clause,
+)
 from lawvm.finland.post_process import _canonicalize_section_shell_order
 from lawvm.finland.tree_invariant_allowances import (
     is_terminal_fi_commencement_section_violation,
@@ -164,6 +167,7 @@ class ReplayProducts:
         "EditorialRepealNoticeSubstringWitness", ...
     ] = ()
     dropped_cited_version_snapshots: tuple["CitedVersionSnapshotDrop", ...] = ()
+    cited_version_parse_residuals: tuple["CitedVersionParseResidual", ...] = ()
     materialization_issues: tuple[TimelineIssue, ...] = ()
     materialization_coverage: Optional[MaterializationCoverage] = None
 
@@ -1137,50 +1141,12 @@ def _mark_detached_horizon_future_repeals(
     return marked
 
 
-_FI_CITED_VERSION_ID_RE = re.compile(
-    r"\bsellais[ei][a-zäöå]*\s+kuin\b.{0,120}?\b(?:laissa|asetuksessa)\s+(\d{1,5})/(\d{4})",
-    flags=re.I | re.S,
-)
-_FI_LOCAL_ITEM_TARGET_RE_TEMPLATE = r"(?<!\d){label}\s*§\s*:\s*n"
-_FI_LOCAL_ITEM_WORD_RE = compile_classifier_regex(
-    r"\bkoht[a-zäöå]*\b",
-    flags=re.I | re.S,
-    classifier_id="fi.local_item_cited_version.item_word",
-)
-_FI_CITED_VERSION_SELLAISENA_RE = compile_classifier_regex(
-    r"\bsellais[ei][a-zäöå]*\s+kuin\b",
-    flags=re.I | re.S,
-    classifier_id="fi.local_item_cited_version.cited_version_cue",
-)
-
-
-@lru_cache(maxsize=512)
-def _local_item_target_re(target_label: str):
-    return compile_classifier_regex(
-        _FI_LOCAL_ITEM_TARGET_RE_TEMPLATE.format(label=re.escape(target_label)),
-        flags=re.I | re.S,
-        classifier_id="fi.local_item_cited_version.target",
-    )
-
-
-@lru_cache(maxsize=8192)
-def _raw_text_has_local_item_cited_version(raw_text: str, target_label: str) -> bool:
-    for match in _local_item_target_re(target_label).finditer(raw_text):
-        tail = raw_text[match.end() : match.end() + 220]
-        comma_index = tail.find(",")
-        semicolon_index = tail.find(";")
-        if comma_index < 0:
-            continue
-        if 0 <= semicolon_index < comma_index:
-            continue
-        item_window = tail[:comma_index]
-        if len(item_window) > 160:
-            continue
-        if _FI_LOCAL_ITEM_WORD_RE.search(item_window) is None:
-            continue
-        if _FI_CITED_VERSION_SELLAISENA_RE.search(tail[comma_index : comma_index + 100]) is not None:
-            return True
-    return False
+# The item-scoped cited-version clause grammar (target window + item-word cue +
+# ``sellaisena kuin`` cited-version cue + ``laissa/asetuksessa N/YYYY`` statute
+# id) is owned by the references lane (``references.cited_version``). The replay
+# layer no longer parses the amendment source language itself; it passes the
+# text in and consumes a typed ``ItemCitedVersionClause`` result (the
+# cited-statute-id sub-parse is routed to the references statute-id constructor).
 
 
 def _payload_shape_counts(payload: IRNode) -> Counter[tuple[IRNodeKind, str]]:
@@ -1248,14 +1214,33 @@ class CitedVersionSnapshotDrop:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _CitedVersionDropResult:
+    """Drop filter result plus the unparsed-cue residuals it accounted for.
+
+    ``filtered`` is the lossless op filter (accepted + typed-rejected). ``residuals``
+    records every item-cited-version clause whose ``sellaisena kuin`` cue matched
+    the target but yielded no parseable cited statute id, so an unparsed cue is
+    surfaced rather than silently passed through.
+    """
+
+    filtered: FilterResult[LegalOperation]
+    residuals: tuple[CitedVersionParseResidual, ...]
+
+
 def _drop_cited_version_item_ancestor_snapshots(
     lo_ops: list[LegalOperation],
-) -> FilterResult[LegalOperation]:
+) -> _CitedVersionDropResult:
     """Filter ancestor snapshots from item-scoped cited-version clauses.
 
-    Returns a lossless ``FilterResult``: accepted ops plus a rejected record per
-    dropped op, so a covered ancestor snapshot is removed from the replay stream
-    with a typed receipt rather than vanishing silently.
+    Returns a lossless filter (accepted ops plus a rejected record per dropped op)
+    so a covered ancestor snapshot is removed from the replay stream with a typed
+    receipt rather than vanishing silently, plus the typed residuals for any
+    cited-version cue whose statute id did not parse.
+
+    The item-cited-version clause grammar (target window + item-word + cited-version
+    cue + cited statute id) is owned by ``references.cited_version``; this function
+    consumes its typed result instead of parsing the amendment source language.
     """
     cited_parent_snapshots: dict[
         tuple[str, str, tuple[tuple[str, str], ...]], LegalOperation
@@ -1270,6 +1255,7 @@ def _drop_cited_version_item_ancestor_snapshots(
 
     accepted: list[LegalOperation] = []
     rejected: list[RejectedItem[LegalOperation]] = []
+    residuals: list[CitedVersionParseResidual] = []
     for op in lo_ops:
         source = op.source
         raw_text = source.raw_text if source is not None else ""
@@ -1286,16 +1272,19 @@ def _drop_cited_version_item_ancestor_snapshots(
         target_label = op.target.path[-1][1]
         if op.target.path[-1][0] == "subsection" and len(op.target.path) >= 2:
             target_label = op.target.path[-2][1]
-        if not _raw_text_has_local_item_cited_version(raw_text, target_label):
+        clause = recognize_item_cited_version_clause(raw_text, target_label)
+        if not clause.matched:
             accepted.append(op)
             continue
-        cited_ids = {
-            f"{match.group(2)}/{int(match.group(1))}"
-            for match in _FI_CITED_VERSION_ID_RE.finditer(raw_text)
-        }
+        if clause.residual is not None:
+            # Cited-version cue without a parseable statute id: keep the op (no
+            # cited snapshot to drop against) and surface the unparsed cue.
+            residuals.append(clause.residual)
+            accepted.append(op)
+            continue
         cited_snapshots = tuple(
             cited_parent_snapshots.get((cited_id, source.effective, tuple(op.target.path)))
-            for cited_id in cited_ids
+            for cited_id in clause.cited_statute_ids
         )
         if not any(
             cited_snapshot is not None
@@ -1319,7 +1308,12 @@ def _drop_cited_version_item_ancestor_snapshots(
                 blocking=False,
             )
         )
-    return FilterResult(accepted_items=tuple(accepted), rejected_items=tuple(rejected))
+    return _CitedVersionDropResult(
+        filtered=FilterResult(
+            accepted_items=tuple(accepted), rejected_items=tuple(rejected)
+        ),
+        residuals=tuple(residuals),
+    )
 
 
 def _cited_version_snapshot_drops(
@@ -1785,7 +1779,9 @@ def build_replay_products(
     )
     original_lo_ops = lo_ops_out or []
     static_prepared: tuple[
-        tuple[LegalOperation, ...], tuple[CitedVersionSnapshotDrop, ...]
+        tuple[LegalOperation, ...],
+        tuple[CitedVersionSnapshotDrop, ...],
+        tuple[CitedVersionParseResidual, ...],
     ] | None = None
     if fold_backfill_preview_cache is not None:
         prepared_cache_key = (
@@ -1795,10 +1791,12 @@ def build_replay_products(
             len(original_lo_ops),
         )
         cached_prepared = fold_backfill_preview_cache.get(prepared_cache_key)
-        if isinstance(cached_prepared, tuple) and len(cached_prepared) == 2:
+        if isinstance(cached_prepared, tuple) and len(cached_prepared) == 3:
             static_prepared = cast(
                 tuple[
-                    tuple[LegalOperation, ...], tuple[CitedVersionSnapshotDrop, ...]
+                    tuple[LegalOperation, ...],
+                    tuple[CitedVersionSnapshotDrop, ...],
+                    tuple[CitedVersionParseResidual, ...],
                 ],
                 cached_prepared,
             )
@@ -1806,13 +1804,15 @@ def build_replay_products(
             prepared = _normalize_repeal_op_sources(list(original_lo_ops))
             drop_result = _drop_cited_version_item_ancestor_snapshots(prepared)
             static_prepared = (
-                drop_result.accepted_items,
-                _cited_version_snapshot_drops(drop_result),
+                drop_result.filtered.accepted_items,
+                _cited_version_snapshot_drops(drop_result.filtered),
+                drop_result.residuals,
             )
             fold_backfill_preview_cache[prepared_cache_key] = static_prepared
     if static_prepared is not None:
         lo_ops = list(static_prepared[0])
         cited_version_snapshot_drops = static_prepared[1]
+        cited_version_parse_residuals = static_prepared[2]
         lo_ops = _mark_detached_horizon_future_repeals(
             lo_ops,
             as_of=as_of,
@@ -1822,8 +1822,9 @@ def build_replay_products(
         lo_ops = list(original_lo_ops)
         lo_ops = _normalize_repeal_op_sources(lo_ops)
         drop_result = _drop_cited_version_item_ancestor_snapshots(lo_ops)
-        cited_version_snapshot_drops = _cited_version_snapshot_drops(drop_result)
-        lo_ops = list(drop_result.accepted_items)
+        cited_version_snapshot_drops = _cited_version_snapshot_drops(drop_result.filtered)
+        cited_version_parse_residuals = drop_result.residuals
+        lo_ops = list(drop_result.filtered.accepted_items)
         lo_ops = _mark_detached_horizon_future_repeals(
             lo_ops,
             as_of=as_of,
@@ -2041,6 +2042,7 @@ def build_replay_products(
             editorial_repeal_notice_substring_witnesses
         ),
         dropped_cited_version_snapshots=cited_version_snapshot_drops,
+        cited_version_parse_residuals=cited_version_parse_residuals,
         materialization_issues=materialization_result.issues,
         materialization_coverage=materialization_result.certificate,
         materialization_spec=MaterializationSpec(
