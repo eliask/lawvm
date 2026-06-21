@@ -703,8 +703,18 @@ _SE_COMPARE_NORMALIZATION_RULES = (
         name="se_compare_inline_list_numbering",
         rule_class="presentation_cleanup",
         kind="regex",
-        description="Ignore inline list numbering inserted after whitespace before lowercase text.",
-        pattern=re.compile(r"(?<=\s)\d+\.\s+(?=[a-zåäö])"),
+        description=(
+            "Ignore inline list numbering inserted after whitespace before lower- or "
+            "uppercase body text. Replaying turns a provision body into IR ITEM "
+            "children whose rendered text omits the leading '<N>. ' enumerator; the "
+            "cached official-act raw provision text preserves it as plain "
+            "'<N>. <Body>'. Without ignoring the enumerator the replay-vs-cached-"
+            "oracle fallback mismatches any section whose body enumerates items "
+            "(real witness: SFS 1999:1134 §2 of 2001:1004 — the §2 enumerated-items "
+            "body replayed as 'Väg En sådan väg...' while cached text kept "
+            "'Väg 1. En sådan väg...')."
+        ),
+        pattern=re.compile(r"(?<=\s)\d+\.\s+(?=[a-zåäöA-ZÅÄÖ])"),
     ),
     # Mirror of the Förordning trailing-attribution rule for the Lag counterpart.
     # A consolidated RK surface tags each amended provision with the amending

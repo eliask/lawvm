@@ -4261,6 +4261,117 @@ def test_check_se_official_replay_matches_inline_numbering_only_difference() -> 
     assert result["rows"][0]["classification"] == "inline_numbering_only"
 
 
+def test_check_se_official_replay_matches_inline_numbering_before_capital_letter() -> None:
+    """Inline list markers before capital-letter body text MUST normalize.
+
+    Real-corpus witness: SFS 1999:1134 (2001:1004 amended by it) §2 carries an
+    enumerated list "...Väg 1. En sådan väg, gata, torg..." whose body begins
+    with a capital letter. The replay IR-walk renderer (``se_section_text_map``)
+    parses the provision body into IR ITEM children whose ``.text`` drops the
+    leading ``1.`` enumerator prefix. The cached official-act ``provisions`` raw
+    text (from ``parse_se_official_act_text``) keeps that prefix verbatim
+    because it is the raw provision text. The existing
+    ``se_compare_inline_list_numbering`` normalization rule matched enumerators
+    only before lowercase body text. Markers followed by capital-letter body
+    fell through, so the replay-vs-cached-official fallback classified the row
+    as ``content_mismatch`` even when the replayed body matched the post-stock
+    consolidation exactly (real witness: 2001:1004 §2 was ``content_mismatch``
+    pre-fit, now ``official_oracle_version_mismatch`` match=True).
+
+    Regression: the normalization MUST now accept capital-letter body too, so
+    a section body containing inline ``<N>. <Capital>`` enumerators matches the
+    cached official text.
+    """
+    from lawvm.sweden.fetch import _normalize_compare_text
+
+    # The comparison-time normalization pairs the cached provision text
+    # (markers preserved as plain text) with the replay-rendered text (markers
+    # stripped). Both should normalize to the same canonical form.
+    cached_official = "Väg 1. En sådan väg, gata, torg och annan allmän plats."
+    replay_rendered = "Väg En sådan väg, gata, torg och annan allmän plats."
+    assert _normalize_compare_text(cached_official) == _normalize_compare_text(replay_rendered), (
+        "the replayed text (markers stripped) MUST equal the cached official text "
+        "(markers preserved) after the inline-list-numbering normalization fires "
+        "for capital-letter body"
+    )
+
+    # And the broader end-to-end replay-vs-cached-oracle check matches the
+    # capital-letter enumerator case (no trailing attribution so the
+    # ``editorial_attribution_only`` classifier branch does not steal the row).
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/1999:1134/rk.current.json": json.dumps(
+                {
+                    "beteckning": "1999:1134",
+                    "rubrik": "Förordning (1999:1134) om belastningsregister",
+                    "ikraftDateTime": "1999-01-01T00:00:00",
+                    "ikraftOvergangsbestammelse": False,
+                    "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+                    "forfattningstypNamn": "Förordning",
+                    "register": {"forarbeten": None},
+                    "fulltext": {
+                        "utfardadDateTime": "1999-01-01T00:00:00",
+                        "andringInford": "t.o.m. SFS 2003:500",  # later consolidation -> version_mismatch
+                        "forfattningstext": (
+                            "2 § /Upphör att gälla U:2002-01-01/\n"
+                            "Gammal lydelse.\n\n"
+                            "2 § /Träder i kraft I:2002-01-01/\n"
+                            "Väg 1. En sådan väg, gata, torg och annan allmän plats."
+                        ),
+                    },
+                    "publiceradDateTime": "2001-12-31T12:00:00",
+                    "andringsforfattningar": [],
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            "se://sfs/2001:1004/official.act.json": json.dumps(
+                {
+                    "sfs_id": "2001:1004",
+                    "title": "Förordning om ändring i förordningen (1999:1134) om belastningsregister",
+                    "act_type": "förordning",
+                    "amended_act_sfs_id": "1999:1134",
+                    "is_amending_act": True,
+                    "published_date": "2001-09-01",
+                    "issued_date": "2001-08-15",
+                    "enacting_clause": "Regeringen föreskriver att 2 § förordningen (1999:1134) om belastningsregister skall ha följande lydelse.",
+                    "effective_clause": "Denna förordning träder i kraft den 1 januari 2002.",
+                    "affected_section_labels": ["2"],
+                    "provisions": [
+                        {
+                            "label": "2",
+                            "text": (
+                                "Väg 1. En sådan väg, gata, torg och annan allmän plats."
+                            ),
+                        }
+                    ],
+                    "inserted_headings": [],
+                    "appendices": [],
+                    "signatories": [],
+                    "footnotes": [],
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2001:1004")
+
+    assert result["match_count"] == 1
+    section_row = result["rows"][0]
+    assert section_row["section"] == "2"
+    # The replay reproduced the §2 replace body and that state equals the
+    # cached official text (modulo the inline-list-numbering normalization).
+    # The current surface carries a strictly later consolidation stamp
+    # ("t.o.m. SFS 2003:500") -> ``official_oracle_version_mismatch`` match=True,
+    # NOT a ``content_mismatch``.
+    assert section_row["match"] is True
+    # After normalization both surfaces match exactly -- ``exact`` is the strongest
+    # match classification. The key assertion: this row is NOT a ``content_mismatch``
+    # (the bug that previously fired when inline ``<N>. <Capital>`` enumerators
+    # were preserved in cached text but stripped in replay text).
+    assert section_row["classification"] != "content_mismatch", section_row["classification"]
+
+
 def test_check_se_official_replay_matches_mixed_section_heading_and_appendix_family() -> None:
     # This fixture intentionally exercises a preexisting insert-target mismatch.
     # Under the strict replay contract, that is a hard precondition block rather
