@@ -666,6 +666,26 @@ def _partition_dry_run_outcomes(
     for proof in report.proofs:
         date = amendment_date_by_op_id.get(proof.op_id, "")
         if proof.oracle_match != "agrees":
+            actual_replay_refusal_detail: dict[str, Any] = {
+                "family": family,
+                "oracle_match": proof.oracle_match,
+                "oracle_match_rule_id": proof.oracle_match_rule_id,
+                "target_address": proof.target_address,
+            }
+            # Propagate the dry-run's target-level divergence classification
+            # (AGENTS §0 — every residual resolves to deterministic-gap /
+            # manual-compilation-frontier / oracle-suspect). The dry-run proof
+            # already classified the divergence; carrying it forward to the
+            # actual-replay refusal receipt keeps the source-truth-bucket signal
+            # visible at the promotion plane rather than forcing a downstream
+            # human to re-derive it from the dry-run plane. Strict-superset
+            # additive: no rule_id change, no fail-closed behaviour change.
+            if proof.divergence_class is not None:
+                actual_replay_refusal_detail["divergence_class"] = proof.divergence_class
+            if proof.divergence_sub_families:
+                actual_replay_refusal_detail["divergence_sub_families"] = list(
+                    proof.divergence_sub_families
+                )
             blocked_by_date.setdefault(date, []).append(
                 NZActualReplayRefusal(
                     rule_id=NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
@@ -675,12 +695,7 @@ def _partition_dry_run_outcomes(
                     ),
                     amendment_date_iso=date,
                     op_ids=(proof.op_id,),
-                    detail={
-                        "family": family,
-                        "oracle_match": proof.oracle_match,
-                        "oracle_match_rule_id": proof.oracle_match_rule_id,
-                        "target_address": proof.target_address,
-                    },
+                    detail=actual_replay_refusal_detail,
                 )
             )
             continue

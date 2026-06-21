@@ -147,3 +147,25 @@ def test_replay_actual_smoke_corpus_pins_structural_invariants() -> None:
         f"smoke corpus pin: actual-replay emitted an unknown refusal rule_id "
         f"(every refusal must be one of the known named classes): {sorted(unknown_refusal_rules)}"
     )
+
+    # Invariant 8 (§0 evidence propagation, smoke ground state): the smoke corpus
+    # carries at least one actual-replay refusal where divergence_class was propagated
+    # to the actual-replay refusal receipt (the §0 source-truth-bucket signal flowing
+    # dry-run → promotion plane). The propagation contract itself (zero loss when
+    # dry-run had a class, zero fabrication when dry-run had None) is pinned by the
+    # synthetic struct test on the synthetic replay-residual shape; this smoke pin
+    # just verifies the path fires on real archived data.
+    any_divergence_propagated = any(
+        "divergence_class" in (ref.detail or {})
+        for work_id in works
+        for ref in build_archived_work_actual_replay(
+            _REAL_DB, work_id=work_id, families=NZ_ACTUAL_REPLAY_DEFAULT_FAMILIES
+        ).refusals
+        if ref.rule_id == NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID
+    )
+    assert any_divergence_propagated, (
+        "smoke corpus pin: no actual-replay residual refusal carries divergence_class. "
+        "The §0 propagation path either regressed OR the smoke corpus lost the "
+        "structural-divergence case it grounded (witness: act_public_1992_122 should "
+        "emit several residual_replacement_mismatch refusals carrying divergence_class=structural_nodeset)."
+    )
