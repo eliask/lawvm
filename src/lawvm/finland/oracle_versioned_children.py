@@ -47,6 +47,7 @@ def _oracle_eid_component_version(el: etree._Element) -> int:
     eid = el.get("eId", "")
     if not eid:
         return -1
+    # lawvm-regex: diagnostic Finlex eId version suffix parser for oracle dedup
     match = _ORACLE_VERSION_SUFFIX_RE.search(eid.split("__")[-1])
     if match is None:
         return -1
