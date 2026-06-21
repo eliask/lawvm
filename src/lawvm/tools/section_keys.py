@@ -184,6 +184,7 @@ _ORACLE_SECTION_STRIP_NAMES = {"noteAuthorial", "signatures", "conclusions", "at
 # oracle XML uses block (with outline="huomautus") in addition to hcontainer.
 _ORACLE_NOTE_BLOCK_TAGS = {"hcontainer", "block"}
 _INLINE_PRIOR_WORDING_RE = re.compile(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE)
+_SECTION_EID_VERSION_RE = re.compile(r"(?:^|__)sec_[^_]*?v(?P<version>\d{1,10})(?:__|$)")
 
 
 def _strip_inline_prior_wording_sibling(note: etree._Element) -> None:
@@ -253,6 +254,55 @@ def _is_oracle_version_shadow_section(sec: etree._Element) -> bool:
     provisions in structural comparisons.
     """
     return bool(sec.get("{http://data.finlex.fi/schema/finlex}originalVersion") or sec.get("{http://data.finlex.fi/schema/finlex}originalVersionLabel"))
+
+
+def _oracle_section_eid_version(sec: etree._Element) -> int:
+    eid = sec.get("eId", "")
+    matches = list(_SECTION_EID_VERSION_RE.finditer(eid))
+    if not matches:
+        return -1
+    return int(matches[-1].group("version"))
+
+
+def _is_future_repeal_overlay_section(sec: etree._Element) -> bool:
+    """Return True for Finlex future-repeal overlays that retain prior wording.
+
+    These sections are not ordinary expired tombstones: the source explicitly
+    says the repeal comes into force later and carries "Aiempi sanamuoto
+    kuuluu" so the previous wording can still be displayed.  They therefore
+    must remain visible to diagnostic callers, but they must not displace the
+    same-address live wording candidate during current-section selection.
+    """
+    content_text = _extract_tombstone_content_text(sec)
+    if content_text is None:
+        return False
+    return bool(
+        _KUMOTTU_NOTICE_RE.search(content_text)
+        and _FUTURE_REPEAL_RE.search(content_text)
+        and _INLINE_PRIOR_WORDING_RE.search(content_text)
+    )
+
+
+def _choose_oracle_section_candidate(secs: list[etree._Element]) -> etree._Element:
+    """Choose the current Finlex section among same-address candidates.
+
+    Finlex consolidated XML may carry both an unversioned section slot and one
+    or more section-level ``...sec_NvYYYYNNNN`` variants. For Finnish AKN, the
+    registered section resolver treats the highest section-level versioned eId
+    as the active text for that slot. Structural comparison must use the same
+    rule; otherwise it can compare replay against stale unversioned shells while
+    point lookups resolve to the correct current section.
+    """
+    versioned: list[tuple[int, int, etree._Element]] = []
+    for index, sec in enumerate(secs):
+        if _is_future_repeal_overlay_section(sec):
+            continue
+        version = _oracle_section_eid_version(sec)
+        if version >= 0:
+            versioned.append((version, index, sec))
+    if versioned:
+        return max(versioned, key=lambda item: (item[0], item[1]))[2]
+    return next((sec for sec in secs if not _is_oracle_version_shadow_section(sec)), secs[0])
 
 
 _KUMOTTU_NOTICE_RE = re.compile(
@@ -376,7 +426,7 @@ def extract_oracle_sections(
         candidates.setdefault(key, []).append(sec)
 
     for key, secs in candidates.items():
-        chosen = next((sec for sec in secs if not _is_oracle_version_shadow_section(sec)), secs[0])
+        chosen = _choose_oracle_section_candidate(secs)
         sections[key] = _normalize_oracle_section(chosen)
     return sections
 
