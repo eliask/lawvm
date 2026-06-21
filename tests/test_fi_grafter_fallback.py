@@ -12042,6 +12042,10 @@ def test_strict_replay_emits_explicit_source_pathology_rejection_for_1994_1472()
             "DESTRUCTIVE_SHAPE_LOSS_RISK",
             "MALFORMED_BROAD_REPLACE_BODY",
             "PARTIAL_WHOLE_SECTION_PAYLOAD",
+            # A section-genitive descendant-scope cue that does not resolve to the
+            # target is now witnessed (was a silent ``return False``); additive
+            # observability only — the replay/drop decisions are unchanged.
+            "UNRESOLVED_DESCENDANT_SCOPE_CUE",
         }
 
 
