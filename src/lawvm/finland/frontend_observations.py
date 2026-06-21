@@ -73,6 +73,7 @@ def _target_detail_for_op(
 def _same_label_move_clause_targets(johto: str) -> List[Tuple[str, str]]:
     """Return inline same-label move clause targets as (labels_text, dest_chapter)."""
     cleaned = re.sub(r"\s+", " ", johto or "").strip().lower()
+    # lawvm-regex: diagnostic observation-only same-label move coverage floor over owned johto; emits non-blocking findings (role=observation), no replay authority
     return _SAME_LABEL_MOVE_CLAUSE_RE.findall(cleaned)
 
 

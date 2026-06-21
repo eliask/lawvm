@@ -90,6 +90,7 @@ def parse_section_selector(s: str) -> ParsedSelector | None:
     """
     if s is None:
         return None
+    # lawvm-regex: owning_parser canonical §a:b.c.d selector grammar over this parser's own input; unparsed -> None (typed fallback), not a raw_text/IR read
     m = _SECTION_SELECTOR_RE.match(s)
     if m is None:
         return None
@@ -165,6 +166,7 @@ def to_locator_string(s: str) -> str:
         return s
     stripped = s.strip()
     # Already a structured locator (chapter:.., section:.., ...) — pass through.
+    # lawvm-regex: owning_parser input-shape discrimination on this module's own selector/locator surface; not an IR/raw_text read
     if _LEGACY_LOCATOR_RE.match(stripped) and "§" not in stripped:
         return _normalize_legacy_locator(stripped)
     # eId form — pass through.

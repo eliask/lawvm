@@ -119,6 +119,7 @@ def _looks_like_fi_meta_repeal(text: str) -> bool:
         return False
     if 'annetun' not in lo:
         return False
+    # lawvm-regex: owning_parser meta-repeal clause recognizer over this module's own johto input string (substring-guarded); not a cross-plane raw_text read
     return bool(_FI_META_REPEAL_RE.search(text))
 
 
@@ -174,6 +175,7 @@ def _single_target_amending_act_title(source_title: str) -> bool:
     if any(token in source_norm for token in ("eräiden", "väliaikais", "voimaan", "kumoamisesta")):
         return False
     return bool(
+        # lawvm-regex: owning_parser single-target amendment-title shape recognizer over this module's own normalized source_title; not a cross-plane raw_text read
         re.match(
             r"^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+"
             r".+?\s+annetun\s+(?:lain|asetuksen)\s+muuttamisesta$",
@@ -189,6 +191,7 @@ def _source_title_target_reference_variants(source_title: str) -> set[str]:
         return set()
     if any(token in source_norm for token in ("eräiden", "väliaikais", "voimaan", "kumoamisesta")):
         return set()
+    # lawvm-regex: owning_parser amendment-title target-extraction recognizer over this module's own normalized source_title; not a cross-plane raw_text read
     match = re.match(
         r"^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+(.+?)\s+muuttamisesta$",
         source_norm,
@@ -392,6 +395,7 @@ def _title_explicitly_targets_other_statute(source_title: str, parent_title: str
         return False
     if any(token in source_norm for token in ('eräiden', 'väliaikais', 'voimaan', 'kumoamisesta')):
         return False
+    # lawvm-regex: owning_parser amendment-title target-head recognizer over this module's own normalized source_title; not a cross-plane raw_text read
     m = re.match(
         r'^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+(.+?\s+annetun\s+(?:lain|asetuksen))\s+muuttamisesta$',
         source_norm,
@@ -404,8 +408,10 @@ def _title_explicitly_targets_other_statute(source_title: str, parent_title: str
 
     source_kind = 'laki' if source_norm.startswith('laki ') else 'asetus'
     parent_kind = ''
+    # lawvm-regex: owning_parser instrument-kind classifier over this module's own normalized parent_title; not a cross-plane raw_text read
     if re.search(r'(?:^|\s)laki\b|laki$', parent_norm):
         parent_kind = 'laki'
+    # lawvm-regex: owning_parser instrument-kind classifier over this module's own normalized parent_title; not a cross-plane raw_text read
     elif re.search(r'(?:^|\s)asetus\b|asetus$', parent_norm):
         parent_kind = 'asetus'
 
@@ -428,6 +434,7 @@ def _single_target_title_names_other_statute(source_title: str, parent_title: st
         return False
     if any(token in source_norm for token in ("eräiden", "väliaikais", "voimaan", "kumoamisesta")):
         return False
+    # lawvm-regex: owning_parser amendment-title target-extraction recognizer over this module's own normalized source_title; not a cross-plane raw_text read
     match = re.match(
         r"^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+(.+?)\s+muuttamisesta$",
         source_norm,
