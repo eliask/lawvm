@@ -306,6 +306,12 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "Timeline materialization collapses absent-content shadows from the same source "
         "only when the content absence is explicit and witnessed."
     ),
+    "fi.timeline.restructure_relabel_snapshot_shadow_collapse": (
+        "Timeline materialization collapses restructure/relabel snapshot shadows when a "
+        "same-source, same-effective/enacted/variant group carries both a snapshot "
+        "shadow and a real content payload — the snapshot is dropped, the payload "
+        "survives, and the collapse is witnessed."
+    ),
     "fi.timeline.same_source_semantic_version_dedupe": (
         "Timeline materialization deduplicates semantically equivalent same-source "
         "versions without hiding competing legal content."
