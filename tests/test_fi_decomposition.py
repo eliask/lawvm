@@ -1056,7 +1056,7 @@ class TestNormalizeAndCompileOps:
 
         for op in ops:
             assert op.sec1_body_johto_fallback is True
-            assert "extraction_sec1_body_johto" in op.extraction_provenance_tags
+            assert "extraction_preamble_body" in op.extraction_provenance_tags
 
     def test_body_root_replace_tag_propagated(self) -> None:
         master = _make_master(

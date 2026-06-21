@@ -4303,7 +4303,7 @@ def normalize_and_compile_ops(
         for op in ops:
             op.sec1_body_johto_fallback = True
             op.extraction_provenance_tags = tuple(
-                dict.fromkeys((*op.extraction_provenance_tags, "extraction_sec1_body_johto"))
+                dict.fromkeys((*op.extraction_provenance_tags, "extraction_preamble_body"))
             )
     if not ops:
         frontend_findings_out.append(

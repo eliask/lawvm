@@ -1246,7 +1246,7 @@ def strict_fail_reasons_from_finding_ledger(
     extraction_fallback_tags = {
         "extraction_fallback_heuristic",
         "extraction_title_fallback",
-        "extraction_sec1_body_johto",
+        "extraction_preamble_body",
         "repeal_reenact_normalized",
         "fallback_insert_supplement",
         "fallback_insert_supplement_shadowed",
