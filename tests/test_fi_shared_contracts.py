@@ -375,7 +375,7 @@ def test_ownership_closure_report_summarizes_open_slices_without_replay_claims()
     assert proof_surface["rows"][0]["row_id"] == "closure-fi-open"
     assert proof_surface["rows"][0]["subject_id"] == "fi-demo-slice"
     assert proof_surface["rows"][0]["row_kind"] == "ownership_closure_coverage"
-    assert proof_surface["rows"][0]["status"] == "open"
+    assert proof_surface["rows"][0]["proof_status"] == "open"
 
 
 def test_source_pathology_projection_is_passive_proof_surface_row() -> None:
@@ -1735,7 +1735,7 @@ def test_frontier_work_item_claim_closure_report_keeps_phase_gate_closed() -> No
     ]
     assert "frontier_claim_closure_as_replay_authorization" in row["forbidden_shortcuts"]
     assert surface["rows"][0]["row_kind"] == "frontier_work_item_claim_closure"
-    assert surface["rows"][0]["status"] == "evidence_policy_satisfied_phase_gate_required"
+    assert surface["rows"][0]["proof_status"] == "evidence_policy_satisfied_phase_gate_required"
     assert surface["rows"][0]["assertion_refs"] == ["claim-1"]
     assert surface["rows"][0]["authorization_ref"] == (
         "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION.strict"
@@ -2301,7 +2301,7 @@ def test_mutation_boundary_report_projects_to_proof_surface_rows() -> None:
     assert surface["rows"][0]["row_id"] == "proof-proved"
     assert surface["rows"][0]["subject_id"] == "op-2"
     assert surface["rows"][0]["row_kind"] == "mutation_boundary_proof"
-    assert surface["rows"][0]["status"] == "proved"
+    assert surface["rows"][0]["proof_status"] == "proved"
     assert surface["rows"][0]["proof_refs"] == ["proof-proved"]
 
 
@@ -2595,7 +2595,7 @@ def test_source_witness_evidence_report_projects_to_proof_surface() -> None:
         "replay_claims": False,
     }
     assert surface["rows"][0]["row_kind"] == "source_witness"
-    assert surface["rows"][0]["status"] == "artifact_digest"
+    assert surface["rows"][0]["proof_status"] == "artifact_digest"
     assert surface["rows"][0]["source_refs"] == [
         "fi:2024/1",
         "section:1",
@@ -2698,7 +2698,7 @@ def test_proof_surface_rows_are_queryable_without_replay_authority() -> None:
         row_id="row-1",
         subject_id="fi:2001/1234",
         row_kind="temporal_resolution_evidence",
-        status="block",
+        proof_status="block",
         source_refs=("2025/78",),
         proof_refs=("proof-1",),
         detail={"replay_authorized": False},
@@ -2715,7 +2715,7 @@ def test_proof_surface_rows_are_queryable_without_replay_authority() -> None:
 
     assert data["surface_id"] == "fi:strict:demo"
     assert data["rows"][0]["row_kind"] == "temporal_resolution_evidence"
-    assert data["rows"][0]["status"] == "block"
+    assert data["rows"][0]["proof_status"] == "block"
     assert data["rows"][0]["source_refs"] == ["2025/78"]
     assert data["rows"][0]["detail"]["replay_authorized"] is False
 
@@ -2725,7 +2725,7 @@ def test_proof_surface_rejects_duplicate_row_ids() -> None:
         row_id="duplicate-row",
         subject_id="fi:2001/1234",
         row_kind="source_witness",
-        status="reported",
+        proof_status="reported",
     )
 
     with pytest.raises(ValueError, match="unique row_id"):
@@ -2806,7 +2806,7 @@ def test_proof_surface_from_evidence_report_preserves_report_rows_as_read_model(
     }
     assert data["summary"] == {"temporal_resolution_evidence_count": 1}
     assert data["rows"][0]["row_kind"] == "temporal_resolution_evidence"
-    assert data["rows"][0]["status"] == "block"
+    assert data["rows"][0]["proof_status"] == "block"
     assert data["rows"][0]["source_refs"] == ["2025/78"]
     assert data["rows"][1]["frontier_ref"] == "fi:frontier:1"
     assert data["rows"][1]["source_refs"] == [
@@ -3360,7 +3360,7 @@ def test_candidate_set_report_projects_to_proof_surface_rows() -> None:
     assert proof_surface["rows"][0]["row_id"] == "fi:demo:source-unit-enumeration"
     assert proof_surface["rows"][0]["subject_id"] == "fi:demo:source-unit-enumeration"
     assert proof_surface["rows"][0]["row_kind"] == "candidate_set_coverage"
-    assert proof_surface["rows"][0]["status"] == "complete"
+    assert proof_surface["rows"][0]["proof_status"] == "complete"
     assert proof_surface["rows"][0]["proof_refs"] == ["fi_source_unit_enumeration_complete"]
 
 

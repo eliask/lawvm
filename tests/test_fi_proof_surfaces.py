@@ -546,7 +546,7 @@ def test_finland_he_branch_evidence_surface_keeps_proposals_non_enacted() -> Non
     assert branch_projection["status"] == "branch_projection_not_enacted_authority"
     assert branch_projection["executable"] is False
     assert branch_projection["replay_authorized"] is False
-    assert branch_projection["projection"]["status"] == "diagnostic_only"
+    assert branch_projection["projection"]["projection_status"] == "diagnostic_only"
     assert branch_projection["projection"]["branch"]["authority_layer"] == "proposal"
     assert branch_projection["projection"]["rows"][0]["edge_kind"] == "would_insert"
     assert branch_projection["projection"]["rows"][0]["target_statute_id"] == "711/2022"
