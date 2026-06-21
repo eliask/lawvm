@@ -653,6 +653,41 @@ def _all_section_paths(tree: IRNode, label: str) -> list[tuple[tuple[str, str], 
     return paths
 
 
+def _section_label_number(label: str) -> Optional[int]:
+    digits: list[str] = []
+    for char in label.strip():
+        if not char.isdigit():
+            break
+        digits.append(char)
+    if not digits:
+        return None
+    return int("".join(digits))
+
+
+def _scoped_section_has_local_numeric_siblings(
+    tree: IRNode,
+    parent_path: tuple[tuple[str, str], ...],
+    label: str,
+) -> bool:
+    target_number = _section_label_number(label)
+    if target_number is None:
+        return False
+    parent_node = _tops_resolve(tree, parent_path)
+    if parent_node is None:
+        return False
+    sibling_numbers = [
+        number
+        for child in parent_node.children
+        if child.kind is IRNodeKind.SECTION
+        and child.label != label
+        for number in (_section_label_number(child.label or ""),)
+        if number is not None
+    ]
+    if not sibling_numbers:
+        return False
+    return min(sibling_numbers) <= target_number <= max(sibling_numbers)
+
+
 def _reconcile_materialized_fold_hcontainer_sections(
     materialized: IRNode,
     replay_fold: IRNode,
@@ -713,6 +748,24 @@ def _reconcile_materialized_fold_hcontainer_sections(
                 # timeline address requires it.  Treating the child as a
                 # misplaced fold-wrapper section would destroy the materialized
                 # legal address and move the text to the end of the body.
+                continue
+            elif (
+                parent_path
+                and parent_node is not None
+                and parent_node.attrs.get("lawvm_synthesized_container") != "active_descendant"
+                and (
+                    _tops_resolve(replay_fold, section_path) is not None
+                    or _scoped_section_has_local_numeric_siblings(result, parent_path, label)
+                )
+            ):
+                # A fold-owned scoped section with the same numeric label is
+                # not a misplaced fold-wrapper child.  Moving it would erase
+                # its legal address (for example chapter:3a/section:4) and
+                # corrupt PIT export whenever the statute also has a body-level
+                # section:4.  A scoped path that is not present in replay fold
+                # is still allowed when its numeric label belongs to the local
+                # sibling run; this preserves real chapter sections after PIT
+                # projection without keeping stray collisions such as 4a/59a.
                 continue
             else:
                 misplaced_paths.append(section_path)

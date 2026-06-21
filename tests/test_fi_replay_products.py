@@ -343,6 +343,198 @@ def test_reconcile_fold_sections_does_not_split_attachments_for_mixed_chapter_wr
     assert [child.label for child in attachments.children if child.kind is IRNodeKind.SECTION] == ["38"]
 
 
+def test_reconcile_fold_sections_preserves_scoped_same_label_sections() -> None:
+    body_section_4 = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Body-level section"),),
+    )
+    chapter_section_4 = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Chapter 3a section"),),
+    )
+    chapter_3a = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="3a",
+        children=(chapter_section_4,),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(body_section_4, chapter_3a),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(body_section_4,),
+            ),
+            chapter_3a,
+        ),
+    )
+
+    reconciled = _reconcile_materialized_fold_hcontainer_sections(materialized, replay_fold)
+    sections = extract_ir_sections(reconciled)
+
+    assert "section:4" in sections
+    assert "chapter:3a/section:4" in sections
+    assert "Body-level section" in irnode_to_text(sections["section:4"])
+    assert "Chapter 3a section" in irnode_to_text(sections["chapter:3a/section:4"])
+
+
+def test_reconcile_fold_sections_preserves_unowned_scoped_section_in_local_run() -> None:
+    body_section_4 = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Body-level section"),),
+    )
+    chapter_3a = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="3a",
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="3"),
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="4",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Chapter 3a section"),),
+            ),
+            IRNode(kind=IRNodeKind.SECTION, label="5"),
+        ),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(body_section_4, chapter_3a),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(body_section_4,),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3a",
+                children=(
+                    IRNode(kind=IRNodeKind.SECTION, label="3"),
+                    IRNode(kind=IRNodeKind.SECTION, label="5"),
+                ),
+            ),
+        ),
+    )
+
+    reconciled = _reconcile_materialized_fold_hcontainer_sections(materialized, replay_fold)
+    sections = extract_ir_sections(reconciled)
+
+    assert "section:4" in sections
+    assert "chapter:3a/section:4" in sections
+    assert "Chapter 3a section" in irnode_to_text(sections["chapter:3a/section:4"])
+
+
+def test_reconcile_fold_sections_does_not_preserve_synthetic_same_label_sections() -> None:
+    body_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="59a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Body-level section"),),
+    )
+    synthetic_section_a = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="59a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Synthetic 4a section"),),
+    )
+    synthetic_section_b = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="59a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Synthetic 11 section"),),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            body_section,
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="4a",
+                attrs={"lawvm_synthesized_container": "active_descendant"},
+                children=(synthetic_section_a,),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="11",
+                attrs={"lawvm_synthesized_container": "active_descendant"},
+                children=(synthetic_section_b,),
+            ),
+        ),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(body_section,),
+            ),
+            IRNode(kind=IRNodeKind.CHAPTER, label="11"),
+        ),
+    )
+
+    reconciled = _reconcile_materialized_fold_hcontainer_sections(materialized, replay_fold)
+    sections = extract_ir_sections(reconciled)
+
+    assert "section:59a" in sections
+    assert "chapter:4a/section:59a" not in sections
+    assert "chapter:11/section:59a" not in sections
+    assert "Body-level section" in irnode_to_text(sections["section:59a"])
+
+
+def test_reconcile_fold_sections_does_not_preserve_unowned_real_scoped_collision() -> None:
+    body_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="59a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Body-level section"),),
+    )
+    collided_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="59a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Wrong chapter section"),),
+    )
+    local_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="22a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Local chapter section"),),
+    )
+    chapter_4a = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="4a",
+        children=(local_section, collided_section),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(body_section, chapter_4a),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(body_section,),
+            ),
+            IRNode(kind=IRNodeKind.CHAPTER, label="4a"),
+        ),
+    )
+
+    reconciled = _reconcile_materialized_fold_hcontainer_sections(materialized, replay_fold)
+    sections = extract_ir_sections(reconciled)
+
+    assert "section:59a" in sections
+    assert "chapter:4a/section:22a" in sections
+    assert "chapter:4a/section:59a" not in sections
+    assert "Body-level section" in irnode_to_text(sections["section:59a"])
+
+
 def test_project_materialized_provisions_wrapper_unwraps_direct_sections_without_chapters() -> None:
     section_1 = IRNode(kind=IRNodeKind.SECTION, label="1")
     section_2 = IRNode(kind=IRNodeKind.SECTION, label="2")

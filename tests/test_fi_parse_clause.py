@@ -1973,6 +1973,38 @@ def test_jolloin_moment_renumber_stops_before_following_doc_insert_clause():
     ]
 
 
+def test_jolloin_reinstatement_insert_keeps_later_chapter_insert_clause() -> None:
+    """2007/923 shape: a scoped reinstatement insert after ``jolloin`` must not
+    truncate the following law-level chapter insert and scoped section inserts.
+    """
+    ops = parse_clause(
+        "lisätään 1 luvun 1 §:ään uusi 11 momentti, lukuun uusi 3 a §, "
+        "mainitulla lailla 581/1996 kumotun 4 §:n 3 momentin tilalle uusi "
+        "3 momentti, 4 §:ään uusi 5 momentti, jolloin nykyinen 5-10 momentti "
+        "siirtyvät 6-11 momentiksi, lukuun uusi 4 b ja 4 c § ja niiden edelle "
+        "uudet väliotsikot, lakiin uusi 3 a luku, 5 lukuun uusi 5 a § ja "
+        "7 lukuun uusi 2 a § seuraavasti:"
+    ).parsed_ops
+
+    assert [(op.code(), op.renumber_dest) for op in ops] == [
+        ("S P L:1 4 5", "6"),
+        ("S P L:1 4 6", "7"),
+        ("S P L:1 4 7", "8"),
+        ("S P L:1 4 8", "9"),
+        ("S P L:1 4 9", "10"),
+        ("S P L:1 4 10", "11"),
+        ("L P L:1 1 11", ""),
+        ("L P L:1 3a", ""),
+        ("L P L:1 4 3", ""),
+        ("L P L:1 4 5", ""),
+        ("L P L:1 4b", ""),
+        ("L P L:1 4c", ""),
+        ("L L 3a", ""),
+        ("L P L:5 5a", ""),
+        ("L P L:7 2a", ""),
+    ]
+
+
 def test_genitive_moment_insert_item_arm_is_not_truncated() -> None:
     """`§:n N momentin uusi K kohta` must parse as one insert arm.
 
