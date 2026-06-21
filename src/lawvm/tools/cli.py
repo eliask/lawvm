@@ -12049,6 +12049,61 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         action="store_true",
         help="only print the cross-work content-leaf dedup measurement, do not write a pack",
     )
+
+    pack_snapshot_p = sub.add_parser(
+        "pack-snapshot",
+        help="export a sparse certified pack for one OBSERVED snapshot work (no replay)",
+        description=(
+            "Pack a static, never-amended observed-codification snapshot through "
+            "the substrate WITHOUT running the replay engine: induce the address "
+            "tree from the source's section numbering, emit one InitialStateEvent "
+            "(genesis observed_codification_snapshot), deduped content leaves, one "
+            "selection row per addressable node over a single snapshot date, and "
+            "the same self-describing PackManifest 'check-pack' verifies. The "
+            "jurisdiction-neutral counterpart to 'pack-work' for the snapshot end "
+            "of the uniform object model (the LOCUS / 'any jurisdiction' path)."
+        ),
+    )
+    pack_snapshot_p.add_argument(
+        "--source",
+        required=True,
+        choices=["locus"],
+        help="snapshot source adapter (locus = US municipal-code parquet snapshots)",
+    )
+    pack_snapshot_p.add_argument(
+        "--work",
+        required=True,
+        metavar="STATE/LOCALITY",
+        help=(
+            "work selector 'STATE/LOCALITY' (e.g. ak/kingcove, ca/san_jose). "
+            "Combine with --jurisdiction-type for counties (default: cities)"
+        ),
+    )
+    pack_snapshot_p.add_argument(
+        "--jurisdiction-type",
+        dest="jurisdiction_type",
+        default="cities",
+        choices=["cities", "counties"],
+        help="LOCUS source_jurisdiction_type (default: cities)",
+    )
+    pack_snapshot_p.add_argument(
+        "--data",
+        dest="data_glob",
+        default="<SCRATCH>/*.parquet",
+        metavar="GLOB",
+        help="LOCUS parquet glob (default: the local LOCUS snapshot set)",
+    )
+    pack_snapshot_p.add_argument(
+        "--out",
+        required=True,
+        metavar="DIR",
+        help="output pack directory",
+    )
+    pack_snapshot_p.add_argument(
+        "--no-overlay",
+        action="store_true",
+        help="exclude the analytical-score overlay layer (legal-state pack only)",
+    )
     # --- END substrate pack tooling ---
 
     # --- BEGIN us_federal jurisdiction tooling (additive, self-contained) ---
@@ -13811,11 +13866,65 @@ def _main_impl() -> None:
         print(f"  checkpoints:      {_result.n_checkpoints}", flush=True)
         print(f"  residuals:        {_result.n_residuals}", flush=True)
 
+    elif args.command == "pack-snapshot":
+        if str(getattr(args, "source", "")) != "locus":
+            parser.error("pack-snapshot only supports --source locus in v0")
+        from lawvm.substrate.locus import WorkKey, export_snapshot_pack
+
+        _state, _, _locality = str(args.work).partition("/")
+        if not _state or not _locality:
+            parser.error("--work must be 'STATE/LOCALITY' (e.g. ak/kingcove)")
+        _jtype = str(getattr(args, "jurisdiction_type", "cities"))
+        _key = (
+            WorkKey(state=_state, city=_locality, county=None, jurisdiction_type=_jtype)
+            if _jtype == "cities"
+            else WorkKey(state=_state, city=None, county=_locality, jurisdiction_type=_jtype)
+        )
+        print(f"[pack-snapshot] reading LOCUS work {_state}/{_locality} ({_jtype})...", flush=True)
+        _snap = export_snapshot_pack(
+            str(args.data_glob),
+            _key,
+            args.out,
+            emit_overlay=not bool(getattr(args, "no_overlay", False)),
+        )
+        print("", flush=True)
+        print(f"  work_id:          {_snap.work_id}", flush=True)
+        print(f"  out dir:          {_snap.out_dir}", flush=True)
+        print(f"  pack_id:          {_snap.pack_id}", flush=True)
+        print(f"  source rows:      {_snap.n_rows}", flush=True)
+        print(f"  addressable:      {_snap.n_addressable_leaves} leaves", flush=True)
+        print(f"  address_nodes:    {_snap.n_address_nodes}", flush=True)
+        print(f"  content_leaves:   {_snap.n_content_leaves}", flush=True)
+        print(f"  selection_rows:   {_snap.n_selection_rows}", flush=True)
+        print(f"  overlay_rows:     {_snap.n_overlay_rows}", flush=True)
+        print(
+            f"  residuals:        {_snap.n_residuals} typed "
+            f"({', '.join(_snap.residual_kinds) or 'none'}); "
+            f"header-parse residue {_snap.header_parse_residuals}/{_snap.n_rows}",
+            flush=True,
+        )
+
     elif args.command == "check-pack":
         from lawvm.substrate.checker import CheckMode, IntegrityVerdict, check_pack
         from lawvm.substrate.exporter import load_pack_for_check
 
-        _pack = load_pack_for_check(args.pack_dir)
+        # Route snapshot packs (pack_kind lawvm.pack.snapshot.*) through the
+        # snapshot reader (extended known-schema set for source-lineage rows);
+        # everything else uses the FI exporter reader. The two readers share the
+        # substrate Pack shape, so the checker is the same downstream.
+        import json as _json
+        from pathlib import Path as _Path
+
+        _mf = _json.loads(
+            (_Path(args.pack_dir) / "manifest.json").read_text(encoding="utf-8")
+        )
+        _mf_body = _mf.get("object", _mf)
+        if str(_mf_body.get("pack_kind", "")).startswith("lawvm.pack.snapshot"):
+            from lawvm.substrate.locus import load_snapshot_pack_for_check
+
+            _pack = load_snapshot_pack_for_check(args.pack_dir)
+        else:
+            _pack = load_pack_for_check(args.pack_dir)
         _mode = (
             CheckMode.AUDIT
             if str(getattr(args, "mode", "browse")) == "audit"
