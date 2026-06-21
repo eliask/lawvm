@@ -88,7 +88,7 @@ def _invariant_replay_self(replay: object) -> _InvariantReplaySelf:
 
 _UK_REPLAY_INVARIANT_FAMILIES: frozenset[tree_ops.TreeInvariantKind] = frozenset(
     CORE_REPLAY_DELTA_MINIMAL_FAMILIES
-) | frozenset({"unexpected_child_kind", "mixed_hierarchy_child"})
+) | frozenset[tree_ops.TreeInvariantKind]({"unexpected_child_kind", "mixed_hierarchy_child"})
 
 # Backward-compatible alias for internal callers/tests that predate the
 # structural-fidelity expansion.

@@ -9,7 +9,7 @@ observation so the consumed sibling effect is visible in the lowering census.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterable, cast
 
 from lxml import etree as ET
 
@@ -76,7 +76,7 @@ def _effect() -> UKEffectRecord:
 
 def _call(*, target_label: str, block: ET._Element, records: list[dict[str, Any]]):
     effect = _effect()
-    extracted_text = "".join(block.itertext())
+    extracted_text = "".join(cast(Iterable[str], block.itertext()))
     return _try_lower_schedule_words_before_table_substitution(
         effect=effect,
         action="substitute",
