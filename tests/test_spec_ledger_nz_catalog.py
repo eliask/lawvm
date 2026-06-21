@@ -153,3 +153,47 @@ def test_new_rule_id_introduced_unless_cataloged() -> None:
         "nz_actual_replay_refused_materialized_target_slice_diverges_from_oracle"
         in _NZ_RULE_SPECS
     )
+
+
+def test_catalog_prose_agrees_with_production_adapter_on_overlap() -> None:
+    """Parity gate (AGENTS §2.5): the production NZ spec-ledger adapter's
+    ``NZRuleCatalogEntry`` set is the AUTHORITY for the 16 dry-oracle rule_ids it
+    owns (those carry a paired *confidence tier* the broader catalog does not).
+    This catalog must:
+      - include every adapter rule_id (it is a strict superset of the adapter); and
+      - use the ADAPTER's believed_spec prose VERBATIM for the overlap (no second
+        authors' voice that could silently drift from the production-native one).
+
+    A future change that adds an adapter-owned rule_id to ``_EXTRA_NZ_RULE_SPECS``
+    with different prose fails this test — the runtime consolidation filter
+    drops extras-with-the-same-id, so the adapter's prose always wins on overlap.
+    """
+    from lawvm.new_zealand.spec_ledger_adapter import NZ_RULE_SPECS as _ADAPTER
+    from lawvm.tools.spec_ledger_nz_catalog import _EXTRA_NZ_RULE_SPECS as _EXTRAS
+
+    # 1. Strict superset: every adapter rule_id is in the composed catalog.
+    missing_from_catalog = sorted(set(_ADAPTER) - set(_NZ_RULE_SPECS))
+    assert not missing_from_catalog, (
+        f"adapter-cataloged rule_ids missing from the composed _NZ_RULE_SPECS: "
+        f"{missing_from_catalog}"
+    )
+
+    # 2. Verbatim belief agreement on overlap.
+    disagreements = sorted(
+        [(k, _ADAPTER[k][:80], _NZ_RULE_SPECS[k][:80]) for k in _ADAPTER
+         if _NZ_RULE_SPECS.get(k) != _ADAPTER[k]]
+    )
+    assert not disagreements, (
+        f"nz_* rule_ids where the tools catalog DISAGREES with the production "
+        f"adapter's believed_spec prose (the adapter is authoritative for the "
+        f"dry-oracle subset): {disagreements}"
+    )
+
+    # 3. Extras must NOT contain any adapter-owned id — the consolidation filter
+    # (module init) drops these so the adapter is the single source of truth.
+    overlap = sorted(set(_EXTRAS) & set(_ADAPTER))
+    assert not overlap, (
+        f"_EXTRA_NZ_RULE_SPECS still contains adapter-owned rule_ids after the "
+        f"runtime consolidation filter (AGENTS §2.5 single-source-per-family "
+        f"regressed — these rule_ids must come only from the adapter): {overlap}"
+    )

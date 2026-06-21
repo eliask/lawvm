@@ -76,6 +76,16 @@ enumerated here.)
 """
 from __future__ import annotations
 
+# Per AGENTS §2.5 (one source per family, typed residue): the production NZ
+# spec-ledger adapter (`lawvm.new_zealand.spec_ledger_adapter.NZRuleCatalogEntry`)
+# owns its richer ``NZ_RULE_CATALOG`` of 16 dry-oracle rule_ids with a paired
+# *confidence tier*. This catalog imports those beliefs verbatim as the single
+# source of truth for the overlap, then ADDS the broader anti-drift surface (199
+# extras across acquisition/commencement/payload/chain_replay/etc.) the adapter
+# pipeline does not consume. A parity test pins that the two catalogs MUST agree
+# on overlap (prose verbatim) — no second authors' voice may silently drift.
+from lawvm.new_zealand.spec_ledger_adapter import NZ_RULE_SPECS as _ADAPTER_RULE_SPECS
+
 from typing import Dict, FrozenSet
 
 # ``nz_*`` literals in the scoping files that are deliberately NOT believed-spec
@@ -128,10 +138,13 @@ NZ_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
     }
 )
 
-# rule_id -> believed_spec prose. Each value is a falsifiable one-line claim about
-# what the witness rule asserts (and so what an AGREES corroborates / a residual
-# contradicts / a refusal must be carried forward as).
-_NZ_RULE_SPECS: Dict[str, str] = {
+# rule_id -> believed_spec prose (the catalog this module exposes). Each value is a
+# falsifiable one-line claim about what the witness rule asserts (and so what an
+# AGREES corroborates / a residual contradicts / a refusal must be carried forward
+# as). For the 16 dry-oracle rule_ids the production adapter owns authoritatively
+# (with a paired confidence tier), this dict DEFERS to the adapter's prose — see
+# `_ADAPTER_RULE_SPECS` import above (AGENTS §2.5 single-source-per-family).
+_EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
     # --- Dry-run kernel: surface / authorization / readiness -----------------------------
     "nz_dry_run_surface_not_replay_authorized": (
         "A candidate op that is not ``replay_authorized`` may never be promoted; the "
@@ -1032,6 +1045,21 @@ _NZ_RULE_SPECS: Dict[str, str] = {
         "blocked rather than lowering one clause and dropping the others silently."
     ),
 }
+
+
+# Consolidate per AGENTS §2.5 (one parser per family, no rival recognizers without
+# a parity gate / retirement plan). The production adapter owns the dry-oracle
+# 16 authoritatively (its richer ``NZRuleCatalogEntry`` adds a confidence tier); the
+# filter below drops any adapter-owned rule_id from the extras, then the public
+# catalog composes BOTH. The parity test pins this so a future drift (an
+# adapter-owned rule_id ALSO appearing in extras with different prose) becomes
+# a failing test rather than silent drift — single source of truth for every rule.
+_EXTRA_NZ_RULE_SPECS = {
+    rule_id: believed_spec
+    for rule_id, believed_spec in _EXTRA_NZ_RULE_SPECS.items()
+    if rule_id not in _ADAPTER_RULE_SPECS
+}
+_NZ_RULE_SPECS: Dict[str, str] = {**_EXTRA_NZ_RULE_SPECS, **_ADAPTER_RULE_SPECS}
 
 
 def get(rule_id: str) -> str:
