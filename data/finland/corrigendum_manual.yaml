@@ -544,3 +544,47 @@
   correction_type: body_text
   notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): source XML has ASCII hyphen in the sign-number range '412-415'; cached consolidated witness has en dash '412–415'. Minimal body_text patch applies only when the exact faulty subsection text is present."
   verified: "2026-06-21"
+
+# 2007/491 amendment source XML publishes only the first two §2 fee rows, but
+# cached consolidated XML fin@20080137 assigns rows 3 and 4 to the same
+# sec_2v20070491 version/eId lineage. No official corrigendum row was harvested
+# for 2007/491; this bounded XML-row insertion keeps the replay source-faithful
+# to the consolidated source witness without inventing rows in apply.
+- amendment_id: "2007/491"
+  wrong_text: |-
+    <tr>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>2) hirvenvasa</p>
+                                        </td>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>50 euroa</p>
+                                        </td>
+                                    </tr>
+  correct_text: |-
+    <tr>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>2) hirvenvasa</p>
+                                        </td>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>50 euroa</p>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>3) aikuinen kuusipeura, saksanhirvi, japaninpeura, valkohäntäpeura tai metsäpeura</p>
+                                        </td>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>17 euroa</p>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>4) kuusipeuran, saksanhirven, japaninpeuran, valkohäntäpeuran tai metsäpeuran vasa</p>
+                                        </td>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>8 euroa.</p>
+                                        </td>
+                                    </tr>
+  correction_type: body_text
+  notes: "LawVM-editorial amendment-source defect fix (no_official_corrigendum_found): original 2007/491 body XML omits §2 fee rows 3 and 4, while cached consolidated XML fin@20080137 carries them under sec_2v20070491 eIds. Minimal table-row insertion applies only when the exact faulty second row is present."
+  verified: "2026-06-21"

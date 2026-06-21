@@ -297,6 +297,53 @@ def test_replay_xml_1982_182_applies_owned_section_57_source_defects() -> None:
     assert "merkkien 412–415" in section_57
 
 
+def test_manual_amendment_source_patch_2007_491_fills_missing_fee_rows() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrong_row = """<tr>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>2) hirvenvasa</p>
+                                        </td>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>50 euroa</p>
+                                        </td>
+                                    </tr>"""
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<akomaNtoso><act><body><section><subsection><paragraph><content><table>"
+        "<tr><td><p>1) aikuinen hirvi</p></td><td><p>120 euroa</p></td></tr>"
+        f"{wrong_row}"
+        "</table></content></paragraph></subsection></section></body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "2007/491")
+
+    assert applied == ["body_patch/2007/491/0"]
+    assert "3) aikuinen kuusipeura".encode("utf-8") in patched
+    assert "4) kuusipeuran, saksanhirven".encode("utf-8") in patched
+
+
+def test_replay_xml_2001_823_applies_owned_2007_491_fee_row_source_defect() -> None:
+    replay = replay_xml_for_test(
+        "2001/823",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_2 = " ".join(irnode_to_text(sections["section:2"]).split())
+
+    assert "1) aikuinen hirvi 120 euroa" in section_2
+    assert "2) hirvenvasa 50 euroa" in section_2
+    assert (
+        "3) aikuinen kuusipeura, saksanhirvi, japaninpeura, "
+        "valkohäntäpeura tai metsäpeura 17 euroa"
+    ) in section_2
+    assert (
+        "4) kuusipeuran, saksanhirven, japaninpeuran, "
+        "valkohäntäpeuran tai metsäpeuran vasa 8 euroa."
+    ) in section_2
+
+
 def test_manual_base_source_patch_1991_1161_fills_empty_section_9_shell() -> None:
     table = corr.CorrigendumPatchTable.load_from_source()
     wrong = """<section eId="sec_9">
