@@ -33,6 +33,10 @@ def _para(label: str, text: str = "") -> IRNode:
     return IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=text)
 
 
+def _subpara(label: str, text: str = "") -> IRNode:
+    return IRNode(kind=IRNodeKind.SUBPARAGRAPH, label=label, text=text)
+
+
 def _omission() -> IRNode:
     return IRNode(kind=IRNodeKind.OMISSION)
 
@@ -954,6 +958,84 @@ def test_merge_section_with_leading_omission_preserves_same_subsection_anchor_pr
         if child.kind is IRNodeKind.PARAGRAPH and child.label
     ]
     assert labeled_paragraphs == [("1", "Old 1961 substance")]
+
+
+def test_merge_section_inner_omission_replaces_unique_labelled_descendant() -> None:
+    category = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(
+            _content("HALLINNOLLISET KYSYMYKSET"),
+            _subpara("78", "Old automatic transmission text."),
+            _subpara("79", "Preserved code 79."),
+        ),
+    )
+    master_sec = _sec(
+        "4",
+        _sub(
+            "1",
+            _content("Ajokorttimerkinnöissä käytettävät koodit ovat:"),
+            category,
+        ),
+    )
+    amend_sec = _sec(
+        "4",
+        _sub(
+            "1",
+            _content("Ajokorttimerkinnöissä käytettävät koodit ovat:"),
+            _omission(),
+            _para("78.", "New no-clutch text."),
+        ),
+    )
+
+    result = _merge_section_with_omission_ir(master_sec, amend_sec)
+
+    assert result is not None
+    text = irnode_to_text(result)
+    assert "New no-clutch text." in text
+    assert "Old automatic transmission text." not in text
+    assert "Preserved code 79." in text
+    result_sub = next(child for child in result.children if child.kind is IRNodeKind.SUBSECTION)
+    assert result_sub.attrs["lawvm_payload_normalization_rule"] == (
+        "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE",
+    )
+    category_after = next(child for child in result_sub.children if child.kind is IRNodeKind.PARAGRAPH)
+    replaced = next(child for child in category_after.children if child.label == "78")
+    assert replaced.kind is IRNodeKind.SUBPARAGRAPH
+    assert replaced.attrs["lawvm_payload_normalization_rule"] == (
+        "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE",
+    )
+
+
+def test_merge_section_inner_omission_does_not_guess_duplicate_labelled_descendants() -> None:
+    master_sec = _sec(
+        "4",
+        _sub(
+            "1",
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="3",
+                children=(_subpara("78", "First old 78."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="4",
+                children=(_subpara("78", "Second old 78."),),
+            ),
+        ),
+    )
+    amend_sec = _sec(
+        "4",
+        _sub("1", _content("Context"), _omission(), _para("78.", "New text.")),
+    )
+
+    result = _merge_section_with_omission_ir(master_sec, amend_sec)
+
+    assert result is not None
+    result_sub = next(child for child in result.children if child.kind is IRNodeKind.SUBSECTION)
+    assert result_sub.attrs.get("lawvm_payload_normalization_rule") != (
+        "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE",
+    )
 
 
 def test_merge_subsection_with_omission_fails_closed_on_duplicate_paragraph_labels() -> None:

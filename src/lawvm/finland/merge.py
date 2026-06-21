@@ -70,6 +70,7 @@ _INTRO_LETTER_ITEM_LABEL_RE = re.compile(r"^([a-z])\s*[\).]")
 
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _LEADING_OMISSION_ANCHOR_PREFIX_MERGE_RULE = "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE"
+_SPARSE_DESCENDANT_LABEL_OMISSION_MERGE_RULE = "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE"
 
 
 @dataclass(frozen=True)
@@ -798,7 +799,15 @@ def _merge_section_inner_subsection_omission_ir(
                 if omission_idx is None
                 else [gc for gc in amend_sub.children[omission_idx + 1 :] if not _is_omission_ir(gc)]
             )
-            if omission_idx is not None and not trailing:
+            nested_descendant_result = _merge_sparse_labelled_descendant_omission_ir(
+                master_subsecs[j],
+                amend_sub,
+                omission_idx=omission_idx,
+                trailing=tuple(trailing),
+            )
+            if nested_descendant_result is not None:
+                result = nested_descendant_result
+            elif omission_idx is not None and not trailing:
                 # Section-shell family: subsection-level trailing omission means
                 # "preserve later subsections of the section", not "splice the
                 # old tail back into this replaced subsection". This keeps
@@ -824,6 +833,86 @@ def _merge_section_inner_subsection_omission_ir(
             new_children[idx] = amend_sub
 
     return _tops._with_children(master_sec, new_children)
+
+
+def _merge_sparse_labelled_descendant_omission_ir(
+    master_sub: IRNode,
+    amend_sub: IRNode,
+    *,
+    omission_idx: int | None,
+    trailing: tuple[IRNode, ...],
+) -> Optional[IRNode]:
+    """Replace uniquely labelled live descendants from an omission-marked slot.
+
+    Some sparse Finland payloads publish a direct numbered paragraph after an
+    omission even though the live target is a nested list row.  The source-owned
+    facts are the omission boundary plus the explicit row label; when that label
+    maps to exactly one live descendant and no direct child has the same label,
+    preserve the live subsection shape and replace only that descendant.
+    """
+    if omission_idx is None or not trailing:
+        return None
+    pre_omission = amend_sub.children[:omission_idx]
+    if not _pre_omission_is_context_carried(pre_omission):
+        return None
+    if any(child.kind is not IRNodeKind.PARAGRAPH or not normalized_label_key(child.label) for child in trailing):
+        return None
+
+    direct_labels = {
+        normalized_label_key(child.label)
+        for child in master_sub.children
+        if child.label and not _is_omission_ir(child)
+    }
+    payload_by_label: dict[str, IRNode] = {}
+    for child in trailing:
+        label_key = normalized_label_key(child.label)
+        if label_key in direct_labels or label_key in payload_by_label:
+            return None
+        payload_by_label[label_key] = child
+
+    matches: dict[str, tuple[int, ...]] = {}
+
+    def walk(node: IRNode, path: tuple[int, ...] = ()) -> None:
+        for idx, child in enumerate(node.children):
+            child_path = (*path, idx)
+            label_key = normalized_label_key(child.label)
+            if label_key in payload_by_label:
+                matches.setdefault(label_key, child_path)
+                if matches[label_key] != child_path:
+                    matches[label_key] = ()
+            walk(child, child_path)
+
+    walk(master_sub)
+    if set(matches) != set(payload_by_label) or any(not path for path in matches.values()):
+        return None
+
+    def replace_at_path(node: IRNode, path: tuple[int, ...], replacement: IRNode) -> IRNode:
+        if not path:
+            return replacement
+        idx = path[0]
+        children = list(node.children)
+        children[idx] = replace_at_path(children[idx], path[1:], replacement)
+        return _tops._with_children(node, children)
+
+    result = master_sub
+    for label_key, payload in payload_by_label.items():
+        path = matches[label_key]
+        live_node = result
+        for idx in path:
+            live_node = live_node.children[idx]
+        replacement = IRNode(
+            kind=live_node.kind,
+            label=live_node.label,
+            text=payload.text,
+            attrs={
+                **dict(payload.attrs),
+                _PAYLOAD_NORMALIZATION_RULE_ATTR: (_SPARSE_DESCENDANT_LABEL_OMISSION_MERGE_RULE,),
+            },
+            children=tuple(payload.children),
+        )
+        result = replace_at_path(result, path, replacement)
+
+    return _with_payload_normalization_rule_ir(result, _SPARSE_DESCENDANT_LABEL_OMISSION_MERGE_RULE)
 
 def _strip_leading_text_prefix(text: str, prefix: str) -> Optional[str]:
     """Strip a whitespace-flexible prefix from text if it matches exactly.

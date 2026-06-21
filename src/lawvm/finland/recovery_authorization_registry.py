@@ -70,6 +70,11 @@ RECOVERY_AUTHORIZATION_RULES: dict[str, FinlandRecoveryAuthorizationRule] = {
         owner_phase="typed_elaboration",
         family="payload_ownership_recovery",
     ),
+    "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE": FinlandRecoveryAuthorizationRule(
+        kind="ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE",
+        owner_phase="typed_elaboration",
+        family="sparse_payload_elaboration_recovery",
+    ),
     "ELAB.PAYLOAD_COMPLETENESS": FinlandRecoveryAuthorizationRule(
         kind="ELAB.PAYLOAD_COMPLETENESS",
         owner_phase="payload_elaboration",
