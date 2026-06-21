@@ -11951,6 +11951,71 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         ),
     )
 
+    # --- BEGIN substrate pack tooling (additive, self-contained) ---
+    # Jurisdiction-neutral sparse-pack exporter + offline checker (P3/P4).
+    pack_work_p = sub.add_parser(
+        "pack-work",
+        parents=_P,
+        help="export a sparse, content-addressed, certified pack for one work (use -j)",
+        description=(
+            "Run the selected jurisdiction replay engine once for one work and "
+            "emit a sparse, content-addressed, certified substrate pack: deduped "
+            "content leaves, sparse selection rows over maximal constant intervals, "
+            "certified tree transitions + checkpoints, and a self-describing "
+            "PackManifest. The offline 'check-pack' verifier validates it without "
+            "running the replay kernel."
+        ),
+    )
+    pack_work_p.add_argument(
+        "work_id",
+        metavar="WORK_ID",
+        help="work id in the jurisdiction's canonical form (e.g. 301/2004)",
+    )
+    pack_work_p.add_argument(
+        "--out",
+        required=True,
+        metavar="DIR",
+        help="output pack directory",
+    )
+    pack_work_p.add_argument(
+        "--slice",
+        dest="slice",
+        default="",
+        metavar="ADDRESS_PREFIX",
+        help="optional address-prefix slice (e.g. chapter:11); default = whole work",
+    )
+    pack_work_p.add_argument(
+        "--granularity",
+        dest="granularity",
+        default="subsection",
+        choices=["subsection", "section", "chapter"],
+        help="covering-frontier depth (default: subsection)",
+    )
+
+    check_pack_p = sub.add_parser(
+        "check-pack",
+        parents=_P,
+        help="offline-verify a substrate pack directory and print the verdict",
+        description=(
+            "Read a pack directory produced by 'pack-work' and run the offline, "
+            "deterministic substrate checker (L0 integrity + L1 finite-interval "
+            "selection algebra). Prints the two-axis verdict. Never runs the "
+            "replay engine."
+        ),
+    )
+    check_pack_p.add_argument(
+        "pack_dir",
+        metavar="DIR",
+        help="pack directory to verify",
+    )
+    check_pack_p.add_argument(
+        "--mode",
+        choices=["browse", "audit"],
+        default="browse",
+        help="check mode (default: browse; audit additionally requires source bytes)",
+    )
+    # --- END substrate pack tooling ---
+
     # --- BEGIN us_federal jurisdiction tooling (additive, self-contained) ---
     # Thin CLI shims over lawvm.us_federal.*; logic stays in those modules.
     us_import_plaw_p = sub.add_parser(
@@ -12257,6 +12322,7 @@ def _main_impl() -> None:
         "export-transition-graph",
         "export-markdown-git",
         "certificate-bundle",
+        "pack-work",
     ):
         _reject_pre_1734_fi_command_line_ids(args)
 
@@ -13670,6 +13736,66 @@ def _main_impl() -> None:
         from lawvm.tools.certificate_bundle import main as certificate_bundle_main
 
         certificate_bundle_main(args)
+
+    # --- BEGIN substrate pack dispatch (additive, self-contained) ---
+    elif args.command == "pack-work":
+        from lawvm.substrate.exporter import export_work_pack
+
+        _juris = str(getattr(args, "jurisdiction", "fi") or "fi")
+        _result = export_work_pack(
+            args.work_id,
+            args.out,
+            jurisdiction=_juris,
+            slice_prefix=getattr(args, "slice", "") or "",
+            granularity=getattr(args, "granularity", "subsection") or "subsection",
+            quiet=False,
+        )
+        print("", flush=True)
+        print(f"  work_id:          {_result.work_id}", flush=True)
+        print(f"  out dir:          {_result.out_dir}", flush=True)
+        print(f"  pack_id:          {_result.pack_id}", flush=True)
+        print(f"  change_dates:     {_result.n_change_dates}", flush=True)
+        print(
+            f"  content_leaves:   {_result.n_content_leaves} "
+            f"(of {_result.leaf_dedup_attempts} stored attempts; "
+            f"dedup ratio "
+            f"{1 - _result.n_content_leaves / max(1, _result.leaf_dedup_attempts):.1%})",
+            flush=True,
+        )
+        print(f"  node_versions:    {_result.n_node_versions}", flush=True)
+        print(f"  selection_rows:   {_result.n_selection_rows}", flush=True)
+        print(f"  address_nodes:    {_result.n_address_nodes}", flush=True)
+        print(f"  transitions:      {_result.n_transitions}", flush=True)
+        print(f"  checkpoints:      {_result.n_checkpoints}", flush=True)
+        print(f"  residuals:        {_result.n_residuals}", flush=True)
+
+    elif args.command == "check-pack":
+        from lawvm.substrate.checker import CheckMode, IntegrityVerdict, check_pack
+        from lawvm.substrate.exporter import load_pack_for_check
+
+        _pack = load_pack_for_check(args.pack_dir)
+        _mode = (
+            CheckMode.AUDIT
+            if str(getattr(args, "mode", "browse")) == "audit"
+            else CheckMode.BROWSE
+        )
+        _verdict = check_pack(_pack, mode=_mode)
+        print(f"top_line_verdict: {_verdict.top_line_verdict.value}", flush=True)
+        print(f"integrity:        {_verdict.integrity.value}", flush=True)
+        print(f"certification:    {_verdict.certification.value}", flush=True)
+        print(f"checked_levels:   {', '.join(_verdict.checked_levels)}", flush=True)
+        if _verdict.violations:
+            print(f"violations:       {len(_verdict.violations)}", flush=True)
+            for _v in _verdict.violations[:20]:
+                print(f"  - [{_v.code.value}] {_v.layer}/{_v.subject}: {_v.detail}", flush=True)
+        else:
+            print("violations:       0", flush=True)
+        _clean = _verdict.integrity in (
+            IntegrityVerdict.VALID,
+            IntegrityVerdict.VALID_WITH_UNSUPPORTED_LAYERS,
+        )
+        raise SystemExit(0 if _clean else 1)
+    # --- END substrate pack dispatch ---
 
     # --- BEGIN us_federal jurisdiction dispatch (additive, self-contained) ---
     elif args.command == "us-import-plaw":
