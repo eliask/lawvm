@@ -80,6 +80,26 @@ def _is_schedule_target(target: LegalAddress) -> bool:
     return bool(target.path) and _addr_container(target) == "schedule"
 
 
+def _synthetic_paragraph_wrapping_table(table_node: UKMutableNode) -> UKMutableNode:
+    """Wrap a bare table node in an unlabelled paragraph for schedule-p1group grouping.
+
+    ``P1group`` does not admit ``table`` children directly, but a ``P1group`` of
+    paragraphs can contain a paragraph whose sole child is a table.  This keeps
+    schedule ``Part`` payloads structurally canonical without losing the table.
+    """
+    attrs = dict(table_node.attrs)
+    attrs["source_rule_id"] = _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID
+    attrs["source_tag"] = table_node.attrs.get("source_tag", "Table")
+    attrs["promoted_from_kind"] = "table"
+    return UKMutableNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label=None,
+        text="",
+        attrs=attrs,
+        children=[table_node],
+    )
+
+
 def _normalize_inserted_schedule_part_p1group_wrapping(
     payload_node_mut: Optional[UKMutableNode],
     curr_action: str,
@@ -92,12 +112,13 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
 ) -> Optional[UKMutableNode]:
     """Wrap direct paragraph-level children of an inserted schedule part in p1group.
 
-    UK affecting XML sometimes places ``P1`` paragraphs directly inside a
-    ``<Part>`` of a schedule (e.g. ``after Part 3 insert— Part 3A ... 15A``).
-    Canonical UK schedule structure requires an intermediate ``P1group`` between
-    ``Part`` and ``paragraph``.  When a schedule-part insert payload lacks that
-    wrapper, this normalization inserts one p1group per contiguous run of
-    paragraph-level children and records the transformation.
+    UK affecting XML sometimes places ``P1`` paragraphs or tables directly inside
+    a ``<Part>`` of a schedule (e.g. ``after Part 3 insert— Part 3A ... 15A`` or
+    ``Part 4A ... table``).  Canonical UK schedule structure requires an
+    intermediate ``P1group`` between ``Part`` and ``paragraph``/``table``.  When a
+    schedule-part insert/replace payload lacks that wrapper, this normalization
+    inserts one p1group per contiguous run of paragraph/table-level children and
+    records the transformation.
     """
     if payload_node_mut is None:
         return None
@@ -110,7 +131,7 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
     if payload_node_mut.kind.value != "part":
         return payload_node_mut
 
-    children_needing_wrap = {"paragraph", "subparagraph", "item", "point"}
+    children_needing_wrap = {"paragraph", "subparagraph", "item", "point", "table"}
     existing_grouping_kinds = {"p1group", "pblock", "crossheading", "crossHeading"}
     wrapped_run_count = 0
     new_children: list[UKMutableNode] = []
@@ -120,8 +141,14 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
         nonlocal current_run, wrapped_run_count
         if not current_run:
             return
-        if len(current_run) == 1 and current_run[0].kind.value == "p1group":
-            new_children.append(current_run[0])
+        run_children: list[UKMutableNode] = []
+        for child in current_run:
+            if child.kind.value == "table":
+                run_children.append(_synthetic_paragraph_wrapping_table(child))
+            else:
+                run_children.append(child)
+        if len(run_children) == 1 and run_children[0].kind.value == "p1group":
+            new_children.append(run_children[0])
         else:
             wrapper = UKMutableNode(
                 kind=IRNodeKind.P1GROUP,
@@ -131,7 +158,7 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
                     "source_rule_id": _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
                     "source_tag": "synthetic",
                 },
-                children=list(current_run),
+                children=list(run_children),
             )
             new_children.append(wrapper)
             wrapped_run_count += 1
@@ -158,7 +185,7 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
         family="payload_normalization",
         reason_code="schedule_part_paragraph_run_wrapped_in_p1group",
         reason=(
-            "UK schedule part insert/replace payload carried paragraph-level children "
+            "UK schedule part insert/replace payload carried paragraph/table-level children "
             "directly under the part; lowering wrapped them in p1group to match "
             "canonical schedule structure."
         ),
@@ -175,6 +202,73 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
         },
     )
     return payload_node_mut
+
+
+def _normalize_inserted_schedule_part_direct_child_p1group_wrapping(
+    payload_node_mut: Optional[UKMutableNode],
+    curr_action: str,
+    target: LegalAddress,
+    effect: UKEffectRecord,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> Optional[UKMutableNode]:
+    """Wrap a paragraph/table payload inserted directly under a schedule Part.
+
+    Some schedule amendments target ``Part X/paragraph N`` but the extracted
+    payload is a bare paragraph (or table) that would be inserted as a direct
+    child of the Part.  That violates canonical schedule nesting; we wrap it in
+    an unlabelled P1group before replay.
+    """
+    if payload_node_mut is None:
+        return None
+    if curr_action not in ("insert", "replace"):
+        return payload_node_mut
+    if not _is_schedule_target(target):
+        return payload_node_mut
+    if len(target.path) < 2 or target.path[-2][0] != "part":
+        return payload_node_mut
+    child_kind = payload_node_mut.kind.value
+    if child_kind not in {"paragraph", "subparagraph", "item", "point", "table"}:
+        return payload_node_mut
+
+    inner_node = payload_node_mut
+    if child_kind == "table":
+        inner_node = _synthetic_paragraph_wrapping_table(payload_node_mut)
+
+    wrapper = UKMutableNode(
+        kind=IRNodeKind.P1GROUP,
+        label=None,
+        text="",
+        attrs={
+            "source_rule_id": _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
+            "source_tag": "synthetic",
+        },
+        children=[inner_node],
+    )
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
+        family="payload_normalization",
+        reason_code="schedule_part_direct_child_wrapped_in_p1group",
+        reason=(
+            "UK schedule part target addressed a paragraph/table child directly under the part; "
+            "lowering wrapped it in p1group to match canonical schedule structure."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "child_kind": child_kind,
+            "action": curr_action,
+            "strict_disposition": "record",
+            "quirks_disposition": "apply",
+        },
+    )
+    return wrapper
 
 
 def _normalize_schedule_subparagraph_definition_schedule_entries(
@@ -775,6 +869,16 @@ def prepare_uk_operation_payload_node(
 
     if payload_node_mut is not None and curr_action in ("insert", "replace"):
         payload_node_mut = _normalize_inserted_schedule_part_p1group_wrapping(
+            payload_node_mut,
+            curr_action=curr_action,
+            target=target,
+            effect=effect,
+            target_ref=target_ref,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        payload_node_mut = _normalize_inserted_schedule_part_direct_child_p1group_wrapping(
             payload_node_mut,
             curr_action=curr_action,
             target=target,

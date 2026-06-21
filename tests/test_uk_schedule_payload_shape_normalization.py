@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from lawvm.core.ir import IRNode, IRNodeKind, LegalAddress
+from lawvm.core.ir import IRNodeKind, LegalAddress
 from lawvm.uk_legislation.effect_payload_normalization import (
     prepare_uk_operation_payload_node,
     _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
@@ -48,6 +48,14 @@ def _minimal_effect() -> UKEffectRecord:
 
 def _target_schedule_part(schedule: str, part: str) -> LegalAddress:
     return LegalAddress(path=(("schedule", schedule), ("part", part)))
+
+
+def _target_schedule_part_paragraph(
+    schedule: str, part: str, paragraph: str
+) -> LegalAddress:
+    return LegalAddress(
+        path=(("schedule", schedule), ("part", part), ("paragraph", paragraph))
+    )
 
 
 def _target_schedule_paragraph(schedule: str, paragraph: str) -> LegalAddress:
@@ -153,6 +161,87 @@ def test_schedule_part_insert_p1group_payload_unchanged() -> None:
     assert wrapper.children[0].label == "22A"
     rule_ids = [obs.get("rule_id") for obs in observations]
     assert _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID not in rule_ids
+
+
+def test_schedule_part_insert_table_wrapped_in_paragraph_p1group() -> None:
+    """A schedule part insert payload with a direct table child is wrapped."""
+    content_ir = _node(
+        "part",
+        "4A",
+        text="Table part",
+        children=[
+            {
+                "kind": "table",
+                "label": None,
+                "text": "",
+                "attrs": {"source_tag": "Table"},
+                "children": [],
+            }
+        ],
+    )
+    observations: list[dict[str, Any]] = []
+    result = _call_prepare(
+        content_ir=content_ir,
+        target=_target_schedule_part("11", "4A"),
+        observations=observations,
+    )
+    assert result.payload_node is not None
+    assert result.payload_node.kind == IRNodeKind.PART
+    assert result.payload_node.label == "4A"
+    assert len(result.payload_node.children) == 1
+    wrapper = result.payload_node.children[0]
+    assert wrapper.kind == IRNodeKind.P1GROUP
+    assert wrapper.label is None
+    assert wrapper.children[0].kind == IRNodeKind.PARAGRAPH
+    assert wrapper.children[0].children[0].kind == IRNodeKind.TABLE
+    rule_ids = [obs.get("rule_id") for obs in observations]
+    assert _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID in rule_ids
+
+
+def test_schedule_part_direct_paragraph_payload_wrapped_in_p1group() -> None:
+    """A paragraph inserted directly under a schedule Part is wrapped in p1group."""
+    content_ir = _node("paragraph", "8", text="Paragraph text.")
+    observations: list[dict[str, Any]] = []
+    result = _call_prepare(
+        content_ir=content_ir,
+        target=_target_schedule_part_paragraph("1", "2", "8"),
+        target_ref="Sch. 1 Pt. 2 para. 8",
+        observations=observations,
+    )
+    assert result.payload_node is not None
+    assert result.payload_node.kind == IRNodeKind.P1GROUP
+    assert result.payload_node.label is None
+    assert len(result.payload_node.children) == 1
+    assert result.payload_node.children[0].kind == IRNodeKind.PARAGRAPH
+    assert result.payload_node.children[0].label == "8"
+    rule_ids = [obs.get("rule_id") for obs in observations]
+    assert _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID in rule_ids
+
+
+def test_schedule_part_direct_table_payload_wrapped_in_paragraph_p1group() -> None:
+    """A table inserted directly under a schedule Part is wrapped in paragraph+p1group."""
+    content_ir = {
+        "kind": "table",
+        "label": None,
+        "text": "",
+        "attrs": {"source_tag": "Table"},
+        "children": [],
+    }
+    observations: list[dict[str, Any]] = []
+    result = _call_prepare(
+        content_ir=content_ir,
+        target=_target_schedule_part_paragraph("1", "2", "8"),
+        target_ref="Sch. 1 Pt. 2 para. 8 table",
+        observations=observations,
+    )
+    assert result.payload_node is not None
+    assert result.payload_node.kind == IRNodeKind.P1GROUP
+    assert len(result.payload_node.children) == 1
+    para = result.payload_node.children[0]
+    assert para.kind == IRNodeKind.PARAGRAPH
+    assert para.children[0].kind == IRNodeKind.TABLE
+    rule_ids = [obs.get("rule_id") for obs in observations]
+    assert _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID in rule_ids
 
 
 # ===========================================================================

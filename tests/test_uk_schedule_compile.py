@@ -52382,10 +52382,13 @@ def test_compile_metadata_only_schedule_part_insert_uses_metadata_fallback_place
     assert ops[0].action is StructuralAction.INSERT
     assert ops[0].target.path == (("schedule", "1"), ("part", "3"), ("paragraph", "7"))
     assert ops[0].payload is not None
-    assert ops[0].payload.kind == IRNodeKind.PARAGRAPH
-    assert ops[0].payload.label == "7"
+    assert ops[0].payload.kind == IRNodeKind.P1GROUP
+    assert len(ops[0].payload.children) == 1
+    assert ops[0].payload.children[0].kind == IRNodeKind.PARAGRAPH
+    assert ops[0].payload.children[0].label == "7"
     assert (
-        ops[0].payload.text == "[inserted by metadata source only: uk_test_metadata_only_schedule_part_insert_fallback]"
+        ops[0].payload.children[0].text
+        == "[inserted by metadata source only: uk_test_metadata_only_schedule_part_insert_fallback]"
     )
     assert any(
         note.startswith(_NOTE_METADATA_SOURCE_FALLBACK + "uk_test_metadata_only_schedule_part_insert_fallback")
@@ -67798,9 +67801,11 @@ def test_compile_enacted_schedule_table_row_refines_target_to_source_part() -> N
     assert ops[0].action is StructuralAction.INSERT
     assert str(ops[0].target) == "schedule:1/part:4/paragraph:32b"
     assert ops[0].payload is not None
-    assert ops[0].payload.kind is IRNodeKind.PARAGRAPH
-    assert ops[0].payload.label == "32B"
-    assert ops[0].payload.text == "NHS Health Scotland"
+    assert ops[0].payload.kind == IRNodeKind.P1GROUP
+    assert len(ops[0].payload.children) == 1
+    assert ops[0].payload.children[0].kind == IRNodeKind.PARAGRAPH
+    assert ops[0].payload.children[0].label == "32B"
+    assert ops[0].payload.children[0].text == "NHS Health Scotland"
     refinement_record = next(
         row
         for row in lowering
