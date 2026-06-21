@@ -2762,6 +2762,22 @@ def test_compile_fi_1997_786_combines_split_preamble_body_lead_formula() -> None
     assert "muutetaan 9 § seuraavasti" in raw_text
 
 
+@pytest.mark.slow
+def test_compile_fi_2009_1698_keeps_source_body_chapter_for_56a_insert() -> None:
+    facade = compile_fi_facade("2009/1698", replay_mode="legal_pit")
+
+    inserts = [
+        op
+        for op in facade.bundle.structural_ops
+        if op.action is StructuralAction.INSERT
+        and str(op.target) == "chapter:12/section:56a"
+        and op.source is not None
+        and op.source.statute_id == "2018/1120"
+    ]
+
+    assert len(inserts) == 1
+
+
 def test_normalize_and_compile_ops_2007_473_repairs_split_muutetaan_verb() -> None:
     before = replay_xml("1984/603", stop_before="2007/473", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()

@@ -64,6 +64,7 @@ class CompileGroupScopeRecoveryRequest:
     source_model: AmendmentSourceModel
     strict_profile: Optional[StrictProfile]
     johto: str = ""
+    amendment_group_ops: tuple[AmendmentOp, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -568,13 +569,30 @@ def _maybe_apply_body_chapter_insert_correction(
         and not body_wrapper_overridden_by_scope
         and not body_wrapper_overridden_by_live_target
     )
+    source_owned_existing_chapter_with_sibling_heading = (
+        body_chapter is not None
+        and live_stem_host_scoped
+        and request.source_model.body_real_chapter_section_labels(body_chapter)
+        == (_norm_num_token(request.target_norm),)
+        and any(
+            op.target_unit_kind == "chapter"
+            and op.target_section
+            and _norm_num_token(op.target_section) == _norm_num_token(body_chapter)
+            and str(op.target_special or "").strip() == "otsikko"
+            and op.op_type in {"REPLACE", "INSERT"}
+            for op in request.amendment_group_ops
+        )
+    )
     source_owned_existing_chapter_scope = (
         body_chapter is not None
         and request.target_chapter is not None
         and body_chapter != request.target_chapter
         and not explicit_chapter_scoped
         and not carry_forward_scoped
-        and not group_has_scope_source(request.group_ops, "live_stem_host")
+        and (
+            not group_has_scope_source(request.group_ops, "live_stem_host")
+            or source_owned_existing_chapter_with_sibling_heading
+        )
         and request.source_model.body_has_real_chapter_container(body_chapter)
         and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
         and not body_wrapper_overridden_by_scope

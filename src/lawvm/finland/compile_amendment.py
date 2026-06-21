@@ -116,6 +116,7 @@ def _scope_recovered_ops_for_shadow_pruning(
     strict_profile: Optional[StrictProfile],
 ) -> list[AmendmentOp]:
     recovered_ops: list[AmendmentOp] = []
+    amendment_group_ops = tuple(op for group_ops in section_groups.values() for op in group_ops)
     for group_key, group_ops in section_groups.items():
         target_unit_kind_value = cast(TargetUnitKind, group_key.unit_kind.value)
         recovery_result = resolve_compile_group_scope_recovery(
@@ -130,6 +131,7 @@ def _scope_recovered_ops_for_shadow_pruning(
                 source_model=source_model,
                 johto=johto,
                 strict_profile=strict_profile,
+                amendment_group_ops=amendment_group_ops,
             )
         )
         recovery = recovery_result.output

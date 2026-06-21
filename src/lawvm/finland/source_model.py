@@ -811,6 +811,20 @@ class AmendmentSourceModel:
         wanted = _norm_num_token(chapter_label)
         return wanted in self._body_inventory_index().real_chapter_labels
 
+    def body_real_chapter_section_labels(self, chapter_label: str) -> tuple[str, ...]:
+        """Return section labels observed under one real source chapter wrapper."""
+        wanted = _norm_num_token(chapter_label)
+        if wanted not in self._body_inventory_index().real_chapter_labels:
+            return ()
+        labels: list[str] = []
+        for unit in self.observed_body_inventory():
+            if unit.kind != "section":
+                continue
+            if _norm_num_token(unit.chapter_label or "") != wanted:
+                continue
+            labels.append(_norm_num_token(unit.label))
+        return tuple(labels)
+
     def body_chapter_is_single_mixed_wrapper(
         self,
         chapter_label: str,
