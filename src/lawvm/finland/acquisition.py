@@ -190,6 +190,34 @@ def should_use_sec1_fallback_post_routing(johto: str, sec1_text: str) -> bool:
     return bool(any(kw in sec1_text.lower() for kw in OP_KEYWORDS) and (not has_subprov or pure_repeal_subprov))
 
 
+_GENERIC_FI_STATUTE_CITATION_RE = re.compile(r"\(\s*\d+\s*/\s*\d{2,4}\s*\)")
+_NUMBERED_LIST_ITEM_RE = re.compile(r"(?m)^\s*\d+\)\s*")
+
+
+def _sec1_numbered_repeal_list_has_foreign_statute_items(sec1_text: str, parent_id: str) -> bool:
+    """Return True when a section-1 fallback list cites this parent and other statutes.
+
+    This is an acquisition ownership guard: in a paragraphized repeal list,
+    each numbered item owns its own statute citation. Seeing the parent citation
+    before one parsed target does not authorize replaying later sibling items
+    against the parent statute.
+    """
+    if not sec1_text or not parent_id:
+        return False
+    lowered = sec1_text.lower()
+    if "kumotaan" not in lowered:
+        return False
+    if _NUMBERED_LIST_ITEM_RE.search(sec1_text) is None:
+        return False
+    parent_spans = set(fi_statute_citation_spans(sec1_text, parent_id))
+    if not parent_spans:
+        return False
+    for match in _GENERIC_FI_STATUTE_CITATION_RE.finditer(sec1_text):
+        if (match.start(), match.end()) not in parent_spans:
+            return True
+    return False
+
+
 def _sec1_parent_target_span_evidence(sec1_text: str, parent_id: str) -> Sec1ParentTargetSpanEvidence:
     """Decide whether the full sec_1 fallback is parent-owned from parser spans."""
     if not sec1_text or not parent_id:
@@ -214,6 +242,16 @@ def _sec1_parent_target_span_evidence(sec1_text: str, parent_id: str) -> Sec1Par
             parser_lane="",
             usable_full_text=False,
             reason="parent_citation_not_found",
+        )
+    if _sec1_numbered_repeal_list_has_foreign_statute_items(sec1_text, parent_id):
+        return Sec1ParentTargetSpanEvidence(
+            parent_citation_span=parent_citations[0],
+            target_token_starts=(),
+            target_char_starts=(),
+            structural_target_count=0,
+            parser_lane="",
+            usable_full_text=False,
+            reason="numbered_repeal_list_contains_foreign_statute_items",
         )
 
     from lawvm.finland.johtolause.api import parse_clause

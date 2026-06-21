@@ -60,6 +60,42 @@ def _sec1_multi_parent_repeal_xml() -> bytes:
     """.encode("utf-8")
 
 
+def _sec1_numbered_multi_statute_repeal_xml() -> bytes:
+    return """
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <formula name="enactingClause">Eduskunnan päätöksen mukaisesti säädetään:</formula>
+      <body>
+        <section eId="sec_1">
+          <num>1 §</num>
+          <subsection>
+            <intro>
+              <p>Tällä lailla kumotaan seuraavat lainkohdat:</p>
+            </intro>
+            <paragraph>
+              <num>1)</num>
+              <content>
+                <p>tasavallan presidentin kansliasta annetun lain (1382/1995) 57 §;</p>
+              </content>
+            </paragraph>
+            <paragraph>
+              <num>2)</num>
+              <content>
+                <p>valtioneuvostosta annetun lain (78/1922) 3 §:n 2 momentti;</p>
+              </content>
+            </paragraph>
+            <paragraph>
+              <num>3)</num>
+              <content>
+                <p>ulkoasiainhallintolain (204/2000) 24 §:n 1 momentti.</p>
+              </content>
+            </paragraph>
+          </subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+
+
 def _body_lead_fallback_xml() -> bytes:
     return """
     <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -173,6 +209,24 @@ def test_build_amendment_acquisition_result_still_narrows_multi_parent_sec1_repe
     assert "14 §" in result.sec1_text
     assert "(710/1982)" not in result.sec1_text
     assert "30-38 §" not in result.sec1_text
+
+
+def test_build_amendment_acquisition_result_narrows_numbered_multi_statute_sec1_repeal() -> None:
+    result = build_amendment_acquisition_result(
+        xml_bytes=_sec1_numbered_multi_statute_repeal_xml(),
+        parent_id="1995/1382",
+        amendment_id="2000/962",
+        source_title="Laki eräiden oikeuspaikkaa koskevien säännösten kumoamisesta",
+        parent_title="Laki tasavallan presidentin kansliasta",
+    )
+
+    assert result.decision.selected_lane == "sec1_fallback_pre_routing"
+    assert "(1382/1995)" in result.sec1_text
+    assert "57 §" in result.sec1_text
+    assert "(78/1922)" not in result.sec1_text
+    assert "3 §:n 2 momentti" not in result.sec1_text
+    assert "(204/2000)" not in result.sec1_text
+    assert "24 §:n 1 momentti" not in result.sec1_text
 
 
 def test_build_amendment_acquisition_result_reuses_supplied_tree(monkeypatch) -> None:
