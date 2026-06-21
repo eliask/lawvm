@@ -347,6 +347,8 @@ _PAT_NEGATIVE = [
 #
 # Bounded quantifiers (AGENTS.md §1.11): the name word is a single bounded
 # token; the section/momentti tails are bounded digit runs.
+# Clause-boundary tokenizer for the demoted legacy authority extractor.
+_NOJALLA_RE = re.compile(r'nojalla', re.IGNORECASE)
 _PAT_NOJALLA_CONJUNCT = re.compile(
     r'([A-Za-z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60})?\s*'
     r'\((\d{1,5})\s*/\s*(\d{2,4})\)\s*'
@@ -697,7 +699,8 @@ def extract_asetus_authority(
     # its own section/momentti and surface-derived kind. The original code took
     # only the conjunct adjacent to ``nojalla`` and dropped the earlier ones.
     prev_boundary = 0
-    for nm in re.finditer(r'nojalla', ptext, re.IGNORECASE):
+    # lawvm-regex: owning_parser clause-boundary tokenizer in the demoted legacy authority extractor (canonical owner is legal_surface.delegation_parse), owns the preamble-authority surface it parses
+    for nm in _NOJALLA_RE.finditer(ptext):
         window = ptext[prev_boundary:nm.start()]
         prev_boundary = nm.end()
         for m in _PAT_NOJALLA_CONJUNCT.finditer(window):

@@ -220,6 +220,7 @@ class BudgetLineRecognizer:
 
         # Guard 1: budget-line address (fastest -- check for '.')
         if _BUDGET_LINE_GUARD in text:
+            # lawvm-regex: owning_parser this module is the owning BudgetLineRecognizer; budget-line arm produces typed PoolMention candidates with rejections
             for m in _BUDGET_LINE_RE.finditer(text):
                 # Group 1 = 'momentilla NNN', group 2 = bare NNN
                 code = m.group(1) or m.group(2)
@@ -229,6 +230,7 @@ class BudgetLineRecognizer:
                 # Check surrounding context for 'vuoden'/'vuonna' within 20 chars
                 start = max(0, m.start() - 20)
                 ctx = text[start : m.end() + 20]
+                # lawvm-regex: prefilter negative guard rejecting year refs ('vuoden 2020') from budget-line addresses inside the owning recognizer
                 if _YEAR_REF_RE.search(ctx):
                     continue
                 candidates.append(
@@ -245,6 +247,7 @@ class BudgetLineRecognizer:
 
         # Guard 2: capacity cap
         if any(guard in text.lower() for guard in _CAP_GUARD_STRINGS):
+            # lawvm-regex: owning_parser capacity-cap arm of the owning BudgetLineRecognizer family
             for m in _CAP_RE.finditer(text):
                 numeric = _parse_numeric(m.group(1))
                 unit = _canonicalize_unit(m.group(2)) if m.group(2) else None
@@ -262,6 +265,7 @@ class BudgetLineRecognizer:
 
         # Guard 3: threshold
         if any(guard in text.lower() for guard in _THRESHOLD_GUARD_STRINGS):
+            # lawvm-regex: owning_parser threshold arm of the owning BudgetLineRecognizer family
             for m in _THRESHOLD_RE.finditer(text):
                 numeric = _parse_numeric(m.group(1))
                 unit = _canonicalize_unit(m.group(2)) if m.group(2) else None
@@ -367,6 +371,7 @@ def _section_provision_ref(section_el: ET.Element[str], statute_id: str) -> str:
     ns_num = f"{{{_AKN_NS}}}num"
     num_el = section_el.find(ns_num)
     if num_el is not None and num_el.text:
+        # lawvm-regex: owning_parser section label parse from already-extracted AKN <num> element text, not legal prose
         m = _SECTION_NUM_RE.search(num_el.text)
         if m:
             return f"{statute_id}/{m.group(1)}"

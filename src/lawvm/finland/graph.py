@@ -81,6 +81,7 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
 
     # Extract statute_type from base XML bytes
     statute_type = "statute"
+    # lawvm-regex: owning_parser source-plane byte-attribute scrape of statute_type from the base XML the graph builder owns, not legal prose
     m2 = re.search(rb'typeStatute[^>]+refersTo="#([^"]+)"', base_xml)
     if m2:
         statute_type = m2.group(1).decode("utf-8", errors="replace")
@@ -177,6 +178,7 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
 
     # Extract statute_type via regex
     statute_type = "statute"
+    # lawvm-regex: owning_parser source-plane byte-attribute scrape of statute_type from the base XML the graph builder owns, not legal prose
     m2 = re.search(rb'typeStatute[^>]+refersTo="#([^"]+)"', base_xml)
     if m2:
         statute_type = m2.group(1).decode("utf-8", errors="replace")

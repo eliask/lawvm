@@ -65,6 +65,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _COMPOUND_SUBPARAGRAPH_LABEL_RE = re.compile(r"^\d+[a-z]+$")
+# Splits a compound numeric+letter label token (e.g. ``12a``) into its digit and
+# letter parts. Static shape predicate on an already-normalized label token.
+_COMPOUND_LABEL_SPLIT_RE = re.compile(r"^(\d+)([a-z])$")
+# Counts capital-letter sentence markers (``A.``) in owned payload text.
+_CONTENT_ROW_MARKER_RE = re.compile(r"(?<!\w)[A-ZÅÄÖ]\.")
 
 
 def _is_lettered_subparagraph_payload(child: IRNode) -> bool:
@@ -200,6 +205,7 @@ def _reconcile_letter_item_to_digit_index(
       * the letter's ordinal falls outside the live digit range, or no live item
         actually carries that ordinal as its digit label.
     """
+    # lawvm-regex: owning_parser single-letter shape test on an already-normalized label token (item_norm), not source text
     if not _SINGLE_LETTER_ITEM_RE.match(item_norm):
         return None
     if not paras:
@@ -411,7 +417,8 @@ def _collapse_absorbed_tail_subsection_ir(
 def _count_content_row_markers(node: IRNode) -> int:
     """Approximate count of lettered content rows in content-only list text."""
     text = irnode_to_text(node)
-    return len(re.findall(r"(?<!\w)[A-ZÅÄÖ]\.", text))
+    # lawvm-regex: owning_parser own-subtree row-count over the apply path's own IRNode (irnode_to_text), no source-plane mint
+    return len(_CONTENT_ROW_MARKER_RE.findall(text))
 
 
 def _subsection_exposes_targetable_item_structure(sub: Optional[IRNode], item_norm: str) -> bool:
@@ -421,7 +428,8 @@ def _subsection_exposes_targetable_item_structure(sub: Optional[IRNode], item_no
     paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
     if not paras:
         return False
-    compound = re.match(r"^(\d+)([a-z])$", item_norm)
+    # lawvm-regex: owning_parser static shape split of an already-normalized label token (item_norm), not source text
+    compound = _COMPOUND_LABEL_SPLIT_RE.match(item_norm)
     if compound:
         para_digit, sub_label = compound.groups()
         for para in paras:
@@ -1196,6 +1204,7 @@ def _apply_item_replace(
             _has_compound_sp = any(
                 c.kind == IRNodeKind.SUBPARAGRAPH
                 and c.label
+                # lawvm-regex: owning_parser compound-label shape test on owned child.label, not source text
                 and _COMPOUND_SUBPARAGRAPH_LABEL_RE.match(normalized_label_key(c.label))
                 for c in amend_para.children
             )
@@ -1206,6 +1215,7 @@ def _apply_item_replace(
                     if not (
                         c.kind == IRNodeKind.SUBPARAGRAPH
                         and c.label
+                        # lawvm-regex: owning_parser compound-label shape test on owned child.label, not source text
                         and _COMPOUND_SUBPARAGRAPH_LABEL_RE.match(normalized_label_key(c.label))
                     )
                 )
@@ -1232,6 +1242,7 @@ def _apply_item_replace(
                                     for c in orig_children
                                     if c.kind == IRNodeKind.SUBPARAGRAPH
                                     and c.label
+                                    # lawvm-regex: owning_parser compound-label shape test on owned child.label, not source text
                                     and _COMPOUND_SUBPARAGRAPH_LABEL_RE.match(normalized_label_key(c.label))
                                 ]
                             ),
@@ -1417,7 +1428,8 @@ def _apply_item_replace(
                 logger.debug("  %s → kohta replace (unlabelled amend para)", ctx_label)
                 return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
     item_norm_cmpd = re.sub(r"[)\s.]", "", view.target_item).strip().lower()
-    m_cmpd = re.match(r"^(\d+)([a-z])$", item_norm_cmpd)
+    # lawvm-regex: owning_parser static shape split of an already-normalized label token (item_norm_cmpd), not source text
+    m_cmpd = _COMPOUND_LABEL_SPLIT_RE.match(item_norm_cmpd)
     if m_cmpd:
         para_digit = m_cmpd.group(1)
         n = view.target_paragraph - 1
@@ -1686,7 +1698,8 @@ def _apply_item_insert(
                 numeric_anchor_missing = True
 
     item_norm_ci = re.sub(r"[)\s.]", "", view.target_item).strip().lower()
-    m_ci = re.match(r"^(\d+)([a-z])$", item_norm_ci)
+    # lawvm-regex: owning_parser static shape split of an already-normalized label token (item_norm_ci), not source text
+    m_ci = _COMPOUND_LABEL_SPLIT_RE.match(item_norm_ci)
     compound_recovery_attempted = False
     compound_slot_collision_label: Optional[str] = None
     compound_slot_collision_reported = False

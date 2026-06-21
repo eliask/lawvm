@@ -169,6 +169,7 @@ def _is_content_only_continuation_fragment(
     if len(content_children) != 1:
         return False
     continuation_text = " ".join(irnode_to_text(content_children[0]).split())
+    # lawvm-regex: owning_parser own-subtree (irnode_to_text) leading-lowercase continuation shape test on owned live-section text, not source-plane mint
     if not continuation_text or not re.match(r"^[a-zåäö]", continuation_text, flags=re.I) or continuation_text[:1].upper() == continuation_text[:1]:
         return False
 
@@ -241,6 +242,7 @@ def _tail_after_first_sentence(text: str) -> str:
     stripped = text.strip()
     if not stripped:
         return ""
+    # lawvm-regex: owning_parser sentence-boundary split on owned payload text (tail-paragraph extraction), not source text
     match = re.search(r"[.!?]\s+", stripped)
     if match is None:
         return ""
