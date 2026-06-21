@@ -904,7 +904,7 @@ def _corrigendum_source_acquisition_assertion(
         artifact_id=artifact_id,
         source_lane=witness.source_lane,
         assertion_kind="finland_corrigendum_pdf_manifest_record",
-        status="source_manifest_recorded",
+        acquisition_status="source_manifest_recorded",
         witness=witness,
         detail={
             "statute_id": str(record.get("statute_id") or ""),

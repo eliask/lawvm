@@ -754,7 +754,7 @@ def test_source_bundle_policy_admission_does_not_authorize_replay() -> None:
         artifact_id="2024/1",
         source_lane="official_xml",
         assertion_kind="source_artifact_available",
-        status="observed",
+        acquisition_status="observed",
         witness=witness,
     )
     attestation = SourceAcquisitionAttestation(
@@ -762,7 +762,7 @@ def test_source_bundle_policy_admission_does_not_authorize_replay() -> None:
         assertion_id="assertion-1",
         attestation_kind="artifact_digest_verified",
         producer_id="lawvm.fetcher",
-        status="verified",
+        attestation_status="verified",
         witness=witness,
     )
     policy = SourceBundlePolicy(
@@ -776,7 +776,7 @@ def test_source_bundle_policy_admission_does_not_authorize_replay() -> None:
     authorization = admission.to_execution_authorization().to_dict()
 
     assert admission.admitted is True
-    assert admission.status == "source_bundle_admitted"
+    assert admission.admission_status == "source_bundle_admitted"
     assert authorization["executable"] is False
     assert authorization["replay_authorized"] is False
     assert authorization["authorization_status"] == "source_bundle_admitted_not_replay_authority"
@@ -793,7 +793,7 @@ def test_source_bundle_policy_blocks_missing_attestations() -> None:
         artifact_id="1917/1",
         source_lane="official_pdf",
         assertion_kind="pdf_source_atom_available",
-        status="observed",
+        acquisition_status="observed",
     )
     policy = SourceBundlePolicy(
         policy_id="fi.source_bundle.v1",
@@ -806,7 +806,7 @@ def test_source_bundle_policy_blocks_missing_attestations() -> None:
     authorization = admission.to_execution_authorization().to_dict()
 
     assert admission.admitted is False
-    assert admission.status == "source_attestation_missing"
+    assert admission.admission_status == "source_attestation_missing"
     assert admission.missing_attestation_kinds == (
         "artifact_digest_verified",
         "ocr_reviewed",
@@ -827,7 +827,7 @@ def test_source_bundle_evidence_report_projects_passive_admissions() -> None:
         artifact_id="2024/2",
         source_lane="official_xml",
         assertion_kind="source_artifact_available",
-        status="observed",
+        acquisition_status="observed",
         witness=witness,
     )
     attestation = SourceAcquisitionAttestation(
@@ -835,7 +835,7 @@ def test_source_bundle_evidence_report_projects_passive_admissions() -> None:
         assertion_id="assertion-3",
         attestation_kind="artifact_digest_verified",
         producer_id="lawvm-test",
-        status="verified",
+        attestation_status="verified",
         witness=witness,
     )
     policy = SourceBundlePolicy(

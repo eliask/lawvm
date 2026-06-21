@@ -39,7 +39,7 @@ class SourceAcquisitionAssertion:
     artifact_id: str
     source_lane: str
     assertion_kind: str
-    status: str
+    acquisition_status: str
     witness: SourceWitness | None = None
     detail: Mapping[str, Any] = field(default_factory=dict)
 
@@ -49,7 +49,7 @@ class SourceAcquisitionAssertion:
         object.__setattr__(self, "artifact_id", _required_string("artifact_id", self.artifact_id))
         object.__setattr__(self, "source_lane", _required_string("source_lane", self.source_lane))
         object.__setattr__(self, "assertion_kind", _required_string("assertion_kind", self.assertion_kind))
-        object.__setattr__(self, "status", _required_string("status", self.status))
+        object.__setattr__(self, "acquisition_status", _required_string("acquisition_status", self.acquisition_status))
         if self.witness is not None and not isinstance(self.witness, SourceWitness):
             raise ValueError("SourceAcquisitionAssertion.witness must be a SourceWitness")
         if not isinstance(self.detail, Mapping):
@@ -63,7 +63,7 @@ class SourceAcquisitionAssertion:
             "artifact_id": self.artifact_id,
             "source_lane": self.source_lane,
             "assertion_kind": self.assertion_kind,
-            "status": self.status,
+            "acquisition_status": self.acquisition_status,
             "detail": _plain_jsonable(self.detail),
         }
         if self.witness is not None:
@@ -79,7 +79,7 @@ class SourceAcquisitionAttestation:
     assertion_id: str
     attestation_kind: str
     producer_id: str
-    status: str
+    attestation_status: str
     witness: SourceWitness | None = None
     detail: Mapping[str, Any] = field(default_factory=dict)
 
@@ -88,7 +88,7 @@ class SourceAcquisitionAttestation:
         object.__setattr__(self, "assertion_id", _required_string("assertion_id", self.assertion_id))
         object.__setattr__(self, "attestation_kind", _required_string("attestation_kind", self.attestation_kind))
         object.__setattr__(self, "producer_id", _required_string("producer_id", self.producer_id))
-        object.__setattr__(self, "status", _required_string("status", self.status))
+        object.__setattr__(self, "attestation_status", _required_string("attestation_status", self.attestation_status))
         if self.witness is not None and not isinstance(self.witness, SourceWitness):
             raise ValueError("SourceAcquisitionAttestation.witness must be a SourceWitness")
         if not isinstance(self.detail, Mapping):
@@ -101,7 +101,7 @@ class SourceAcquisitionAttestation:
             "assertion_id": self.assertion_id,
             "attestation_kind": self.attestation_kind,
             "producer_id": self.producer_id,
-            "status": self.status,
+            "attestation_status": self.attestation_status,
             "detail": _plain_jsonable(self.detail),
         }
         if self.witness is not None:
@@ -115,7 +115,7 @@ class SourceBundleAdmission:
 
     assertion_id: str
     admitted: bool
-    status: str
+    admission_status: str
     policy_id: str
     source_lane: str
     missing_attestation_kinds: tuple[str, ...] = ()
@@ -126,7 +126,7 @@ class SourceBundleAdmission:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "assertion_id", _required_string("assertion_id", self.assertion_id))
-        object.__setattr__(self, "status", _required_string("status", self.status))
+        object.__setattr__(self, "admission_status", _required_string("admission_status", self.admission_status))
         object.__setattr__(self, "policy_id", _required_string("policy_id", self.policy_id))
         object.__setattr__(self, "source_lane", _required_string("source_lane", self.source_lane))
         object.__setattr__(self, "missing_attestation_kinds", _string_tuple(self.missing_attestation_kinds))
@@ -142,7 +142,7 @@ class SourceBundleAdmission:
         return {
             "assertion_id": self.assertion_id,
             "admitted": self.admitted,
-            "status": self.status,
+            "admission_status": self.admission_status,
             "policy_id": self.policy_id,
             "source_lane": self.source_lane,
             "missing_attestation_kinds": list(self.missing_attestation_kinds),
@@ -238,7 +238,7 @@ class SourceBundlePolicy:
         blocking_ids = tuple(
             attestation.attestation_id
             for attestation in relevant
-            if attestation.status in {"rejected", "retracted", "blocked"}
+            if attestation.attestation_status in {"rejected", "retracted", "blocked"}
         )
         if blocking_ids:
             return self._blocked(
@@ -250,7 +250,7 @@ class SourceBundlePolicy:
         attested_kinds = {
             attestation.attestation_kind
             for attestation in relevant
-            if attestation.status in {"accepted", "verified"}
+            if attestation.attestation_status in {"accepted", "verified"}
         }
         missing = tuple(kind for kind in self.required_attestation_kinds if kind not in attested_kinds)
         if missing:
@@ -263,7 +263,7 @@ class SourceBundlePolicy:
         return SourceBundleAdmission(
             assertion_id=assertion.assertion_id,
             admitted=True,
-            status="source_bundle_admitted",
+            admission_status="source_bundle_admitted",
             policy_id=self.policy_id,
             source_lane=assertion.source_lane,
             safe_default="admit_source_to_bundle_without_authorizing_replay",
@@ -288,7 +288,7 @@ class SourceBundlePolicy:
         return SourceBundleAdmission(
             assertion_id=assertion.assertion_id,
             admitted=False,
-            status=status,
+            admission_status=status,
             policy_id=self.policy_id,
             source_lane=assertion.source_lane,
             missing_attestation_kinds=missing_attestation_kinds,
@@ -328,7 +328,7 @@ def source_bundle_evidence_report(
         _source_acquisition_attestation_row(attestation)
         for attestation in attestations
     )
-    status_counts = _count_by(admission.status for admission in admissions)
+    status_counts = _count_by(admission.admission_status for admission in admissions)
     lane_counts = _count_by(admission.source_lane for admission in admissions)
     admitted_count = sum(1 for admission in admissions if admission.admitted)
     summary = {
