@@ -270,6 +270,14 @@ _US_RULE_SPECS: Dict[str, str] = {
         "Contradiction (missing_source): the oracle changed a section the kernel never "
         "claimed — the honest lowering/coverage gap, no op was emitted for it."
     ),
+    "us_dry_run_resdeferred_op_inflated_as_missing_source": (
+        "Reclassification: the oracle changed a section, and LawVM DID lower the "
+        "amendment that caused the change, but the amendment's statutory effective "
+        "date is after the dry-run window's after-edition cutoff so it was deferred. "
+        "The OLRC editorially pre-dated the amendment's text into the consolidation "
+        "before its effective date. NOT a missing_source gap — classified as "
+        "oracle_suspect (OLRC editorial-on-the-oracle)."
+    ),
     "us_dry_run_residual_match_text_not_found_in_before_section": (
         "Contradiction: an op's quoted match_text was not found in the before/running "
         "section text — the kernel refuses to fuzzy-match into a guess and surfaces a "

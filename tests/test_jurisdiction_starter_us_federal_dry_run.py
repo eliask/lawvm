@@ -39,6 +39,7 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_REFUSED_TARGET_NOT_TITLE_RULE_ID,
     US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID,
     US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID,
+    US_DRY_RUN_DEFERRED_OP_INFLATED_AS_MISSING_SOURCE_RULE_ID,
     US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID,
     US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID,
     US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
@@ -131,6 +132,67 @@ def test_missing_source_gap_is_carried_in_the_agreement_surface() -> None:
     families = {row["rule_id"]: row["family"] for row in surface["residuals"]}
     assert US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID in families
     assert families[US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID] == "source_footing_gap"
+
+
+def test_deferred_op_on_oracle_changed_section_reclassifies_from_missing_source() -> None:
+    # §0 guard-liveness: when LawVM lowers the right amendment but its statutory
+    # effective date is after the after-edition cutoff, the op is deferred. If the
+    # oracle's after-edition text already reflects that deferred amendment (OLRC
+    # editorial pre-dating), the section must be reclassified from
+    # missing_source → oracle_suspect, NOT left as a false-positive lowering gap.
+    #
+    # Oracle: section 10 changed between before/after editions (15-year → 19-year).
+    # PLAW: amends section 10 but with "effective 1 year after enactment" (2025-01-01
+    # > 2024-12-31 cutoff). The op is correctly deferred; section 10 is
+    # oracle-changed-but-not-claimed → must be deferred_op, not missing_source.
+    plaw_future = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<uslm xmlns="http://schemas.gpo.gov/xml/uslm"><meta>'
+        b'<congress>99</congress><docNumber>5</docNumber>'
+        b'<approvedDate>2024-01-01</approvedDate></meta><main>'
+        b'<section identifier="/us/pl/99/5/s1"><num value="1">SEC. 1. </num>'
+        b'<content>Effective on the date that is 1 year after the date of '
+        b'enactment of this Act, '
+        b'<ref href="/us/usc/t99/s10">Section 10 of title 99, United '
+        b'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        b'by <amendingAction type="delete">striking</amendingAction> '
+        b'\xe2\x80\x9c<quotedText>15-year</quotedText>\xe2\x80\x9d and '
+        b'<amendingAction type="insert">inserting</amendingAction> '
+        b'\xe2\x80\x9c<quotedText>19-year</quotedText>\xe2\x80\x9d.'
+        b'</content></section>'
+        b'</main></uslm>'
+    )
+    report = _build(plaw_blobs={"PL 99-5": plaw_future})
+
+    # The op was correctly deferred (future effective date).
+    deferred = [
+        r for r in report.refusals
+        if r.rule_id == US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID
+    ]
+    assert deferred, "expected a deferred-op refusal"
+
+    # Section 10 IS oracle-changed but NOT claimed (the only op targeting it was
+    # deferred, so no materialization was attempted).
+    ns = report.north_star()
+    assert "99:10" in report.oracle_changed_sections
+    assert "99:10" not in report.claimed_sections
+
+    # Section 10 must be reclassified as deferred_op (oracle_suspect), NOT
+    # missing_source (which would be a false-positive lowering gap).
+    assert "99:10" not in ns["missing_source_sections"]
+    assert "99:10" in ns.get("deferred_op_sections", [])
+
+    # The agreement surface carries the deferred-inflated residual, not the
+    # missing_source one.
+    surface = report.agreement_surface()
+    rule_ids = {r["rule_id"] for r in surface["residuals"]}
+    assert US_DRY_RUN_DEFERRED_OP_INFLATED_AS_MISSING_SOURCE_RULE_ID in rule_ids
+    # The missing_source residual for section 10 is NOT emitted.
+    assert "99:10" not in {
+        r["detail"].get("section_key", "")
+        for r in surface["residuals"]
+        if r["rule_id"] == US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID
+    }
 
 
 # ---------------------------------------------------------------------------

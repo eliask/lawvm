@@ -212,6 +212,18 @@ _BOUNDARY_FORBIDDEN_SHORTCUTS = (
     "oracle_changed_set_as_source_truth",
 )
 
+# The OLRC consolidation sometimes editorially incorporates a future-effective
+# amendment's text into the consolidation BEFORE its statutory effective date
+# (an editorial pre-dating). LawVM correctly defers the op against the
+# after-edition cutoff, so the section appears in oracle-changed-but-not-claimed
+# (the honest ``missing_source`` shape). This is NOT a lowering gap: the
+# amendment WAS lowered but refused on temporal grounds. Reclassify the residual
+# from ``missing_source`` to ``oracle_suspect`` (OLRC editorial-on-the-oracle)
+# so the finding type is honest and not inflated as a missing-amendment gap.
+US_DRY_RUN_DEFERRED_OP_INFLATED_AS_MISSING_SOURCE_RULE_ID = (
+    "us_dry_run_resdeferred_op_inflated_as_missing_source"
+)
+
 
 def _norm(text: str) -> str:
     return normalize_inline_comparison_text(text)
@@ -567,6 +579,35 @@ class USDryRunReport:
     def sunset_reversion_section_keys(self) -> frozenset[str]:
         return frozenset(f"{self.title}:{c.section}" for c in self.sunset_reversions)
 
+    def deferred_op_section_keys(self) -> frozenset[str]:
+        """Sections whose only on-target ops were deferred (future-effective).
+
+        These are NOT missing_source: LawVM lowered the right amendment but the
+        after-edition cutoff precedes its statutory effective date. If the OLRC's
+        after-edition text already reflects the deferred amendment, the gap is
+        OLRC editorial pre-dating, not a missing amendment.
+        """
+        keys: set[str] = set()
+        for ref in self.refusals:
+            if ref.rule_id != US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID:
+                continue
+            ta = ref.target_address
+            if "/section:" not in ta:
+                continue
+            parts = ta.split("/", 2)
+            # "title:N/section:S[/sub]" -> title=N, section=S
+            title_val = ""
+            sec_val = ""
+            for p in parts[:3]:
+                if p.startswith("title:"):
+                    title_val = p[6:]
+                elif p.startswith("section:"):
+                    sec_val = p[8:].split("/", 1)[0]
+                    break
+            if title_val and sec_val:
+                keys.add(f"{title_val}:{sec_val}")
+        return frozenset(keys)
+
     # --- agreement / residual partitions -------------------------------------
 
     def agreeing_rows(self) -> tuple[USDryRunSectionRow, ...]:
@@ -592,10 +633,12 @@ class USDryRunReport:
         # A sunset reversion (F2) is an EXPLAINED change (the temporal layer owns
         # it), so it is not a source-footing gap — exclude it from missing_source.
         sunset_keys = self.sunset_reversion_section_keys()
+        deferred_keys = self.deferred_op_section_keys()
         missing = tuple(
-            sorted((changed - set(self.claimed_sections)) - sunset_keys)
+            sorted((changed - set(self.claimed_sections) - sunset_keys - deferred_keys))
         )
         sunset = tuple(sorted(changed & sunset_keys))
+        deferred = tuple(sorted(changed & deferred_keys))
         return {
             "oracle_changed_section_count": denom,
             "sections_materialized_in_agreement": numer,
@@ -605,6 +648,8 @@ class USDryRunReport:
             "missing_source_section_count": len(missing),
             "sunset_reversion_sections": list(sunset),
             "sunset_reversion_section_count": len(sunset),
+            "deferred_op_sections": list(deferred),
+            "deferred_op_section_count": len(deferred),
         }
 
     def agreement_surface(self) -> dict[str, Any]:
@@ -658,12 +703,19 @@ class USDryRunReport:
                     )
                 )
         # The honest lowering gap: oracle changed a section we never claimed —
-        # UNLESS the temporal layer reclassifies it as a sunset reversion (F2).
+        # UNLESS the temporal layer reclassifies it as a sunset reversion (F2),
+        # or a deferred-op refusal proves the amendment was lowered but refused on
+        # temporal grounds (the OLRC editorially pre-dated a future-effective
+        # amendment's text into the consolidation before its effective date).
         claimed = set(self.claimed_sections)
         sunset_keys = self.sunset_reversion_section_keys()
         sunset_by_key = {
             f"{self.title}:{c.section}": c for c in self.sunset_reversions
         }
+        # Sections whose only on-target ops were deferred (the OLRC editorially
+        # pre-dated their future-effective text into the consolidation before
+        # the effective date). Not missing_source: reclassify to oracle_suspect.
+        deferred_sections = self.deferred_op_section_keys()
         for section_key in self.oracle_changed_sections:
             if section_key in claimed:
                 continue
@@ -696,6 +748,32 @@ class USDryRunReport:
                             "reverts_to_edition_year": witness.reverts_to_edition_year,
                             "note_head": witness.note_head,
                         },
+                    )
+                )
+                continue
+            if section_key in deferred_sections:
+                # The amendment was lowered but the after-edition cutoff preceded
+                # its statutory effective date; the OLRC editorially pre-dated the
+                # amendment's text into the consolidation anyway. Not a missing
+                # amendment — an editorial-on-the-oracle misclassification.
+                residuals.append(
+                    AgreementResidual(
+                        residual_id=f"us:{self.title}:{section_key}:deferred_inflated",
+                        jurisdiction="us",
+                        agreement_surface=_AGREEMENT_SURFACE,
+                        family="oracle_editorial_pathology",
+                        agreement_residual_status="residual",
+                        owner_phase=_OWNER_PHASE,
+                        rule_id=US_DRY_RUN_DEFERRED_OP_INFLATED_AS_MISSING_SOURCE_RULE_ID,
+                        source_artifact_id=f"{self.title}:{section_key}",
+                        replay_count=0,
+                        oracle_count=1,
+                        safe_default="classify_deferred_op_as_oracle_suspect_without_authorizing_replay",
+                        forbidden_shortcuts=(
+                            "deferred_op_as_missing_source_gap",
+                            "oracle_after_text_as_source_truth",
+                        ),
+                        detail={"section_key": section_key, "disposition": DISPOSITION_ORACLE_SUSPECT},
                     )
                 )
                 continue
