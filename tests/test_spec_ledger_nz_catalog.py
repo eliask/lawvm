@@ -275,3 +275,63 @@ def test_every_nz_rule_id_used_in_nz_tests_is_cataloged_or_non_rule() -> None:
         f"paired believed_spec hypothesis. Either catalog them or document them as "
         f"NON_RULE with a reason: {uncataloged}"
     )
+
+
+def test_runtime_emitted_rule_ids_match_their_fstring_prefix() -> None:
+    """Every runtime-concatenated rule_id (``f"nz_X_{status}"``) cataloged here
+    must have its bare prefix fragment in ``NZ_NON_RULE_LITERALS`` — otherwise
+    the AST scan on src/ would silently accept the prefix (which is the only
+    thing that appears as a literal Constant in src) AND the full runtime-emitted
+    id, leading to a duplicate-emission mask where the prefix is cataloged as
+    the rule_id and the full id (an emission that fires only at runtime) is
+    silently uncatalogued. Pinned by commit 0a18108a (AGENTS §2.9 guard-liveness:
+    the runtime f-string result lane was the gap the src-only scan missed).
+
+    Each pair: the rule_id MUST start with the prefix (stripped of trailing
+    underscore), the prefix MUST be NON_RULE, and the rule_id MUST be cataloged.
+    """
+    # Each pair: (f_string_prefix_NON_RULE, concrete_runtime_emitted_rule_id).
+    # Sourced from the catalog's "Dynamic-emitted rule_ids" section.
+    RUNTIME_BUILT_PAIRS = (
+        ("nz_target_address_hint_", "nz_target_address_hint_missing"),
+        ("nz_target_address_hint_", "nz_target_address_hint_unparsed"),
+        ("nz_target_address_hint_", "nz_target_address_hint_compound_target_unparsed"),
+        ("nz_lowering_readiness_", "nz_lowering_readiness_blocked_amending_work_resolved_unarchived"),
+        ("nz_lowering_readiness_", "nz_lowering_readiness_blocked_non_structural_facet"),
+        ("nz_lowering_readiness_", "nz_lowering_readiness_blocked_operation_missing"),
+        ("nz_lowering_readiness_", "nz_lowering_readiness_blocked_operation_unclassified"),
+        ("nz_lowering_readiness_", "nz_lowering_readiness_blocked_same_label_rebirth_duplicate"),
+        ("nz_lowering_readiness_", "nz_lowering_readiness_blocked_target_hint_compound_target_unparsed"),
+        ("nz_lowering_readiness_", "nz_lowering_readiness_blocked_target_hint_unparsed"),
+        ("nz_operation_surface_", "nz_operation_surface_missing"),
+        ("nz_operation_surface_", "nz_operation_surface_unclassified"),
+        ("nz_source_change_text_", "nz_source_change_text_observed_single_replacement"),
+        ("nz_source_change_text_", "nz_source_change_text_partial_text_change_observed"),
+        ("nz_text_replace_witness_support_", "nz_text_replace_witness_support_latest_oracle_and_source_change_observed"),
+        ("nz_text_replace_witness_support_", "nz_text_replace_witness_support_source_change_observed_target_mismatch"),
+        ("nz_effect_readiness_", "nz_effect_readiness_payload_witness_not_available"),
+        ("nz_effect_readiness_", "nz_effect_readiness_operation_not_payload_ready"),
+        ("nz_instruction_latest_oracle_text_", "nz_instruction_latest_oracle_text_oracle_new_text_only"),
+    )
+
+    for prefix, rule_id in RUNTIME_BUILT_PAIRS:
+        assert prefix in NZ_NON_RULE_LITERALS, (
+            f"f-string prefix fragment {prefix!r} must be in NZ_NON_RULE_LITERALS or "
+            f"the AST scan on src/ would silently catalog it as a rule id (the only "
+            f"Ast-visible Constant on a runtime f-string concatenation). The full "
+            f"runtime rule_id is {rule_id!r}."
+        )
+        assert rule_id in _NZ_RULE_SPECS, (
+            f"runtime-emitted rule_id {rule_id!r} from f-string template prefix "
+            f"{prefix!r} is not cataloged — the contract: a runtime f-string "
+            f"emission path anchored by a NZ test must have a paired believed_spec "
+            f"hypothesis. The src-scan cannot see it (only the prefix is an AST "
+            f"Constant); the test-files-scan pins it. (AGENTS §2.5 / §2.9)"
+        )
+        # The runtime-concatenated rule_id starts with the prefix-as-fragment
+        # (prefix with trailing underscore stripped + the status mapping).
+        assert rule_id.startswith(prefix), (
+            f"runtime rule_id {rule_id!r} does not start with prefix {prefix!r} "
+            f"(naming convention drift between the NON_RULE prefix fragment and the "
+            f"cataloged runtime rule_id)."
+        )
