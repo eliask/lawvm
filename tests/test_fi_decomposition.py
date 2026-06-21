@@ -522,7 +522,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2010/100",
             source_title="Laki muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         )
         ops = result.output
@@ -545,7 +545,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2010/100",
             source_title="Laki muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         )
 
@@ -618,7 +618,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2010/100",
             source_title="Laki muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         )
 
@@ -645,7 +645,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2010/100",
             source_title="Laki",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         )
         ops = result.output
@@ -683,7 +683,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2010/200",
             source_title="Laki muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         ).output
 
@@ -729,7 +729,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2014/883",
             source_title="Laki muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="396/2006",
         ).output
 
@@ -748,7 +748,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2010/300",
             source_title="Laki kumoamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         ).output
 
@@ -783,7 +783,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2020/575",
             source_title="Laki maksupalvelulain muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2010/290",
         ).output
 
@@ -815,7 +815,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2020/575",
             source_title="Laki testilain muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2010/290",
         ).output
 
@@ -859,7 +859,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2020/766",
             source_title="Laki testilain muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2010/290",
         ).output
 
@@ -895,7 +895,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="1994/318",
             source_title="Laki perintö- ja lahjaverolain muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="1940/378",
         ).output
 
@@ -923,7 +923,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="1994/318",
             source_title="Laki testilain muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="1940/378",
         ).output
 
@@ -951,7 +951,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="1994/318",
             source_title="Laki testilain muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="1940/378",
         ).output
 
@@ -979,7 +979,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="1994/318",
             source_title="Laki testilain muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="1940/378",
         ).output
 
@@ -1030,7 +1030,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2010/400",
             source_title="Laki",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
             strict_profile=strict,
         )
@@ -1040,7 +1040,7 @@ class TestNormalizeAndCompileOps:
         kinds = [a.kind for a in _findings(result, "obligation")]
         assert "ELAB.STRICT_REJECTED_OPERATION" in kinds
 
-    def test_used_sec1_fallback_tag_propagated(self) -> None:
+    def test_used_preamble_body_fallback_tag_propagated(self) -> None:
         master = _make_master((_section("1 §", [_subsection("1", "Teksti.")]),))
         muutos_tree = _make_muutos_tree((_section("1 §", [_subsection("1", "Uusi.")]),))
 
@@ -1050,7 +1050,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2010/500",
             source_title="Laki",
-            used_sec1_fallback=True,
+            used_preamble_body_fallback=True,
             parent_id="2000/1",
         ).output
 
@@ -1072,7 +1072,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2010/501",
             source_title="Laki",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         ).output
 
@@ -1109,7 +1109,7 @@ class TestNormalizeAndCompileOps:
                 master=master,
                 amendment_id="2021/456",
                 source_title="Laki testilain muuttamisesta",
-                used_sec1_fallback=False,
+                used_preamble_body_fallback=False,
                 parent_id="2020/1",
             )
 
@@ -1138,7 +1138,7 @@ class TestNormalizeAndCompileOps:
                 master=master,
                 amendment_id="2010/502",
                 source_title="Laki",
-                used_sec1_fallback=False,
+                used_preamble_body_fallback=False,
                 parent_id="2000/1",
             ).output
 
@@ -1157,7 +1157,7 @@ class TestNormalizeAndCompileOps:
                 master=master,
                 amendment_id="2010/503",
                 source_title="Laki 5 luvun kumoamisesta",
-                used_sec1_fallback=False,
+                used_preamble_body_fallback=False,
                 parent_id="2000/1",
             ).output
 
@@ -1197,7 +1197,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2015/42",
             source_title="Laki",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         ).output
 
@@ -1411,7 +1411,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="1979/318",
             source_title="Laki perintö- ja lahjaverolain muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="1940/378",
         ).output
 
@@ -1434,7 +1434,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2021/100",
             source_title="Laki testilain väliaikaisesta muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2010/1",
         ).output
 
@@ -1475,7 +1475,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2021/984",
             source_title="Laki testilain muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="1999/488",
         ).output
 
@@ -1513,7 +1513,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="2021/200",
             source_title="Laki testilain muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2010/1",
         ).output
 
@@ -1549,7 +1549,7 @@ class TestNormalizeAndCompileOps:
             master=master,
             amendment_id="1982/1035",
             source_title="Laki testilain väliaikaisesta muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         )
 
@@ -2506,7 +2506,7 @@ class TestApplyOpsToTree:
             master=master,
             amendment_id=amendment_id,
             source_title="Laki",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         ).output
         resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
@@ -2705,7 +2705,7 @@ class TestApplyOpsToTree:
             master=master,
             amendment_id=amendment_id,
             source_title="Laki",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         ).output
         resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
@@ -2759,7 +2759,7 @@ class TestApplyOpsToTree:
             master=master,
             amendment_id="2010/100",
             source_title="Laki",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         ).output
         resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
@@ -2854,7 +2854,7 @@ class TestApplyOpsToTree:
             master=master,
             amendment_id="2010/1",
             source_title="Laki 1",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         ).output
         resolved1 = compile_amendment_ops(master, ops1, muutos1, johto1, "official_consolidation").output
@@ -2891,7 +2891,7 @@ class TestApplyOpsToTree:
             master=master,
             amendment_id="2010/2",
             source_title="Laki 2",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         ).output
         resolved2 = compile_amendment_ops(master, ops2, muutos2, johto2, "official_consolidation").output
@@ -2951,7 +2951,7 @@ class TestRoundTrip:
             master=master,
             amendment_id=amendment_id,
             source_title="Laki",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         )
         ops = phase.output
@@ -3000,7 +3000,7 @@ class TestRoundTrip:
             master=master,
             amendment_id=amendment_id,
             source_title="Laki kumoamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         ).output
         resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
@@ -3215,7 +3215,7 @@ def test_blocking_parse_violation_carries_through_frontend() -> None:
             master=master,
             amendment_id="2010/100",
             source_title="Laki muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         )
 

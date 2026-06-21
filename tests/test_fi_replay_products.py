@@ -2074,7 +2074,7 @@ def test_normalize_and_compile_ops_1997_1339_rejects_ambiguous_unscoped_fallback
         master=base_replay.replay_fold_state,
         amendment_id="2015/1752",
         source_title=source_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1997/1339",
         strict_profile=None,
     )
@@ -2115,7 +2115,7 @@ def test_normalize_and_compile_ops_2007_626_rejects_single_payload_fallback_reus
         master=base_replay.replay_fold_state,
         amendment_id="2007/626",
         source_title=source_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1972/66",
         strict_profile=None,
     )
@@ -3084,7 +3084,7 @@ def test_replay_xml_applies_2025_1162_21c_then_22a_sequentially_without_staling_
         master=base_replay.replay_fold_state,
         amendment_id="2025/1162",
         source_title=source_title,
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1999/488",
         strict_profile=None,
     )

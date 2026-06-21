@@ -250,7 +250,7 @@ def process_muutoslaki_resolved(
         johto = acquired.johto
         source_title = acquired.source_title
         acquisition = acquired.acquisition
-        used_sec1_fallback = acquired.used_sec1_fallback
+        used_preamble_body_fallback = acquired.used_preamble_body_fallback
 
         should_apply = acquisition.decision.should_apply
         route_reason = acquisition.decision.route_reason
@@ -390,7 +390,7 @@ def process_muutoslaki_resolved(
                     base_ir=ctx.base_ir,
                     amendment_id=amendment_id,
                     source_title=source_title,
-                    used_sec1_fallback=used_sec1_fallback,
+                    used_preamble_body_fallback=used_preamble_body_fallback,
                     parent_id=parent_id,
                     strict_profile=strict_profile,
                     regex_recognition_coverage_out=regex_recognition_coverage_out,

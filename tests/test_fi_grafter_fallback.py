@@ -15295,7 +15295,7 @@ def test_normalize_amendment_1992_1243_2004_254_rehomes_section_71_from_cited_re
         base_ir=None,
         amendment_id="2004/254",
         source_title="Valtioneuvoston asetus valtion talousarviosta annetun asetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1992/1243",
         strict_profile=None,
     )

@@ -244,7 +244,7 @@ def test_fallback_minted_op_emits_witnessed_finding_on_production_lane() -> None
         base_ir=master.ir,
         amendment_id="9999/1",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="9999/0",
         strict_profile=None,
     )
@@ -275,7 +275,7 @@ def test_canonical_verb_does_not_trigger_fallback_finding() -> None:
         base_ir=master.ir,
         amendment_id="9999/1",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="9999/0",
         strict_profile=None,
     )

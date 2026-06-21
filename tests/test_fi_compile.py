@@ -854,7 +854,7 @@ def test_2020_1256_compile_keeps_vi_part_scope_for_chapter_26_28_renumbers() -> 
         quiet=True,
         build_full_products=False,
     )
-    _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
+    _muutos_tree, johto, used_preamble_body_fallback, should_apply, _route_reason = _working_johtolause(
         statute_id,
         before_master.title,
         source_id,
@@ -869,7 +869,7 @@ def test_2020_1256_compile_keeps_vi_part_scope_for_chapter_26_28_renumbers() -> 
         before_master.replay_fold_state,
         source_id,
         source_title="",
-        used_sec1_fallback=used_sec1_fallback,
+        used_preamble_body_fallback=used_preamble_body_fallback,
         parent_id=statute_id,
         strict_profile=None,
     )
@@ -2614,7 +2614,7 @@ def test_normalize_and_compile_ops_2021_1289_rehomes_reinstatement_list_to_prior
         base_ir=before.ctx.base_ir,
         amendment_id="2024/420",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2021/1289",
         strict_profile=None,
     )
@@ -2654,7 +2654,7 @@ def test_normalize_and_compile_ops_1734_4_keeps_chapter_scoped_reinstatement_in_
         base_ir=before.ctx.base_ir,
         amendment_id="2025/142",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1734/4-000",
         strict_profile=None,
     )
@@ -2684,7 +2684,7 @@ def test_normalize_and_compile_ops_1993_1054_keeps_lisataan_chapter_scoped_reins
         base_ir=before.ctx.base_ir,
         amendment_id="2021/200",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1993/1054",
         strict_profile=None,
     )
@@ -2714,7 +2714,7 @@ def test_normalize_and_compile_ops_2016_1227_scopes_flat_79_replace_from_sibling
         base_ir=before.ctx.base_ir,
         amendment_id="2022/1149",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2016/1227",
         strict_profile=None,
     )
@@ -2752,7 +2752,7 @@ def test_normalize_and_compile_ops_2004_485_scopes_flat_20a_replace_from_sibling
         base_ir=before.ctx.base_ir,
         amendment_id="2018/955",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2004/485",
         strict_profile=None,
     )
@@ -2828,7 +2828,7 @@ def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_loc
         base_ir=before.ctx.base_ir,
         amendment_id="1997/611",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1979/1062",
         strict_profile=None,
     )
@@ -2876,7 +2876,7 @@ def test_compile_amendment_ops_2004_1287_keeps_live_stem_inserts_in_chapter_2() 
         base_ir=before.ctx.base_ir,
         amendment_id="2018/1359",
         source_title="",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2004/1287",
         strict_profile=None,
         source_model=source_model,
@@ -3055,7 +3055,7 @@ def test_compile_amendment_ops_leaves_1977_18_sparse_payload_unrepaired_before_l
         master=before.state,
         mid="1977/18",
         source_title="Laki luopumiseläkelain muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1974/16",
         strict_profile=None,
     )
@@ -3102,7 +3102,7 @@ def test_1986_508_1996_755_body_only_fallback_binds_wrapper_orphan_subsections()
         master=before.state,
         mid="1996/755",
         source_title="Asetus nuorten työntekijäin suojelusta annetun asetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1986/508",
         strict_profile=None,
     )
@@ -3243,7 +3243,7 @@ def test_act_wide_body_section_replace_formula_uses_body_section_witness(
         master=master,
         amendment_id="2026/1",
         source_title="Asetus testiasetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2020/1",
         strict_profile=None,
     )
@@ -3269,7 +3269,7 @@ def test_act_wide_body_section_replace_formula_uses_body_section_witness(
         master=master,
         amendment_id="2026/1",
         source_title="Asetus testiasetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2020/1",
         strict_profile=default_finland_strict_profile(),
     )
@@ -3308,7 +3308,7 @@ def test_2023_608_2026_159_act_wide_body_section_replace_regression() -> None:
             "hyväksyttävistä yksikkökustannuksista annetun maa- ja "
             "metsätalousministeriön asetuksen muuttamisesta"
         ),
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2023/608",
         strict_profile=None,
     )
@@ -3339,7 +3339,7 @@ def test_normalize_and_compile_ops_parses_1980_1037_spaced_pykala_genitive_as_mo
         master=before.state,
         mid="1980/1037",
         source_title="Laki luopumiseläkelain muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1974/16",
         strict_profile=None,
     )
@@ -3363,7 +3363,7 @@ def test_normalize_and_compile_ops_parses_1979_1032_reinstated_subsection_insert
         master=before.state,
         mid="1979/1032",
         source_title="Laki luopumiseläkelain muuttamisesta.",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1974/16",
         strict_profile=None,
     )
@@ -3390,7 +3390,7 @@ def test_normalize_and_compile_ops_2017_571_keeps_doc_ill_subsection_insert_targ
         master=before.state,
         mid="2017/571",
         source_title="Valtioneuvoston asetus ajoneuvojen hyväksynnästä annetun valtioneuvoston asetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2002/1244",
         strict_profile=None,
     )
@@ -3414,7 +3414,7 @@ def test_normalize_and_compile_ops_2018_1330_keeps_late_grouped_insert_targets()
         master=before.state,
         mid="2018/1330",
         source_title="Laki asunto-osakeyhtiölain muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2009/1599",
         strict_profile=None,
     )
@@ -3561,7 +3561,7 @@ def test_normalize_and_compile_ops_strictly_rejects_late_fallback_chains(
         master=master,
         amendment_id="2020/1",
         source_title="Test title",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2019/1",
         strict_profile=strict_profile,
     )
@@ -3601,7 +3601,7 @@ def test_normalize_and_compile_ops_forwards_fallback_regex_coverage(
         master=master,
         amendment_id="2020/1",
         source_title="Test title",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2019/1",
         strict_profile=None,
         parse_result=cast(Any, SimpleNamespace(findings=())),
@@ -3698,7 +3698,7 @@ def test_normalize_and_compile_ops_1996_627_does_not_leak_parent_title_chapter_s
         master=before.state,
         amendment_id="2023/674",
         source_title="Valtioneuvoston asetus rikoslain 1 luvun 7 §:n soveltamisesta annetun asetuksen 1 §:n muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1996/627",
         strict_profile=None,
     )
@@ -3733,7 +3733,7 @@ def test_normalize_and_compile_ops_1968_360_2019_308_does_not_leak_heading_chapt
         master=before.state,
         amendment_id="2019/308",
         source_title="Laki elinkeinotulon verottamisesta annetun lain muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1968/360",
         strict_profile=None,
     )
@@ -3791,7 +3791,7 @@ def test_normalize_and_compile_ops_2014_120_2017_601_keeps_minus_range_subsectio
         master=master,
         amendment_id="2017/601",
         source_title="Valtioneuvoston asetus julkisen talouden suunnitelmasta annetun valtioneuvoston asetuksen muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2014/120",
         strict_profile=None,
     )
@@ -3835,7 +3835,7 @@ def test_normalize_and_compile_ops_1734_3_1973_390_keeps_chapter_reinsert_sectio
         master=master,
         amendment_id="1973/390",
         source_title="Laki kauppakaaren muuttamisesta",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="1734/3-000",
         strict_profile=None,
     )
@@ -3875,7 +3875,7 @@ def test_normalize_and_compile_ops_2011_516_2011_582_keeps_short_operative_pream
             "Oikeusministeriön asetus ulosottoperustetta koskevan tuomioistuimen "
             "ilmoitusvelvollisuuden alkamisesta annetun asetuksen muuttamisesta"
         ),
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2011/516",
         strict_profile=None,
     )
@@ -3920,7 +3920,7 @@ def test_normalize_and_compile_ops_records_empty_extraction_observation(
         master=master,
         amendment_id="2020/1",
         source_title="Test title",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2019/1",
         strict_profile=None,
     )
@@ -3975,7 +3975,7 @@ def test_normalize_and_compile_ops_records_unowned_enacting_formula_body_section
         master=master,
         amendment_id="2020/3",
         source_title="Test title",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2019/1",
         strict_profile=None,
     )
@@ -4035,7 +4035,7 @@ def test_normalize_and_compile_ops_does_not_record_unowned_body_section_for_full
         master=master,
         amendment_id="2020/4",
         source_title="Test title",
-        used_sec1_fallback=False,
+        used_preamble_body_fallback=False,
         parent_id="2019/1",
         strict_profile=None,
     )
@@ -4079,7 +4079,7 @@ def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
         master=master,
         amendment_id="2020/2",
         source_title="Test title",
-        used_sec1_fallback=True,
+        used_preamble_body_fallback=True,
         parent_id="2019/1",
         strict_profile=None,
     )
@@ -4091,7 +4091,7 @@ def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
         if finding.kind == "PARSE.GRAMMAR_SKIP_PREAMBLE_REPEAL_LIST"
     ]
     assert peg_skip
-    assert peg_skip[0].detail.get("used_sec1_fallback") is True
+    assert peg_skip[0].detail.get("used_preamble_body_fallback") is True
 
 
 def test_normalize_and_compile_ops_keeps_sec1_keeper_act_repeal_list_on_peg_path() -> None:
@@ -4112,7 +4112,7 @@ def test_normalize_and_compile_ops_keeps_sec1_keeper_act_repeal_list_on_peg_path
         master=master,
         amendment_id="2015/521",
         source_title="Laki kumotun eläintautilain voimaan jätettyjen säännösten kumoamisesta",
-        used_sec1_fallback=True,
+        used_preamble_body_fallback=True,
         parent_id="1980/55",
         strict_profile=None,
     )

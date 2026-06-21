@@ -47,7 +47,7 @@ class AmendmentCapture:
     # Step 1: amendment preamble / enacting-clause extraction.
     preamble_raw: str = ""          # from frontend preamble extraction
     preamble_normalized: str = ""   # after verb-normalization pass
-    used_sec1_fallback: bool = False
+    used_preamble_body_fallback: bool = False
 
     # Step 2: op extraction
     peg_ops: list[dict[str, object]] = field(default_factory=list)  # from PEG

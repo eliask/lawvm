@@ -32,7 +32,7 @@ class ProcessAcquisitionResult:
     johto: str
     source_title: str
     acquisition: AmendmentAcquisitionResult
-    used_sec1_fallback: bool
+    used_preamble_body_fallback: bool
     sec1_text: str
 
 
@@ -98,7 +98,7 @@ class ProcessAcquisitionContext:
             johto=acquisition.decision.chosen_normalized_text,
             source_title=source_title,
             acquisition=acquisition,
-            used_sec1_fallback=(
+            used_preamble_body_fallback=(
                 acquisition.decision.pre_routing_sec1_applied
                 or acquisition.decision.post_routing_sec1_applied
             ),

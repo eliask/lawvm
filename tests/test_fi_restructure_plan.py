@@ -137,7 +137,7 @@ def _build_live_relabel_plan(statute_id: str, source_id: str) -> tuple[ReplayRes
         quiet=True,
         build_full_products=False,
     )
-    _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
+    _muutos_tree, johto, used_preamble_body_fallback, should_apply, _route_reason = _working_johtolause(
         statute_id,
         before_master.title,
         source_id,
@@ -152,7 +152,7 @@ def _build_live_relabel_plan(statute_id: str, source_id: str) -> tuple[ReplayRes
         before_master.replay_fold_state,
         source_id,
         source_title="",
-        used_sec1_fallback=used_sec1_fallback,
+        used_preamble_body_fallback=used_preamble_body_fallback,
         parent_id=statute_id,
         strict_profile=None,
     )

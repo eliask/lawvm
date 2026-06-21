@@ -1094,7 +1094,7 @@ def test_inspect_amendment_main_prints_group_details(capsys, monkeypatch) -> Non
             "mode": mode,
             "source_title": "Test title",
             "route": {"should_apply": True, "reason": "ok"},
-            "used_sec1_fallback": False,
+            "used_preamble_body_fallback": False,
             "preamble": "Muutetaan 4 §",
             "source_payload": {
                 "raw_ir": {"kind": "section", "label": "4", "children": 1, "text": "raw source"},
@@ -1214,7 +1214,7 @@ def test_inspect_amendment_main_stage_source_omits_group_details(capsys, monkeyp
             "mode": mode,
             "source_title": "Test title",
             "route": {"should_apply": True, "reason": "ok"},
-            "used_sec1_fallback": False,
+            "used_preamble_body_fallback": False,
             "preamble": "Muutetaan 4 §",
             "source_payload": {
                 "raw_ir": {"kind": "section", "label": "4", "children": 1, "text": "raw source"},
@@ -1444,7 +1444,7 @@ def test_replay_debug_main_prints_clause_text_and_filtered_ops(capsys, monkeypat
             "source_title": "Source title",
             "preamble": "Muutetaan 4 §",
             "route": {"should_apply": True, "reason": "ok"},
-            "used_sec1_fallback": False,
+            "used_preamble_body_fallback": False,
         },
     )
     monkeypatch.setattr(

@@ -57,10 +57,10 @@ def _capture_one(statute_id: str) -> list:
         cap.preamble_raw = johto or ""
         cap.preamble_normalized = _normalize_johtolause_verbs(johto) if johto else ""
 
-        # Check if sec1 fallback would be needed
+        # Check if preamble-body fallback would be needed
         has_op_keywords = any(kw in cap.preamble_normalized.lower() for kw in OP_KEYWORDS)
         if not has_op_keywords and johto and len(johto) < 50:
-            cap.used_sec1_fallback = True
+            cap.used_preamble_body_fallback = True
 
         # Step 2: PEG extraction
         if cap.preamble_normalized:

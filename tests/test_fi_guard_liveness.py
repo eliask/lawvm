@@ -1084,7 +1084,7 @@ def drill_frontend_internal_error_finland_ingress() -> None:
             master=master,
             amendment_id="2010/100",
             source_title="Laki muuttamisesta",
-            used_sec1_fallback=False,
+            used_preamble_body_fallback=False,
             parent_id="2000/1",
         )
 
