@@ -10,6 +10,7 @@ Covers:
 
 from __future__ import annotations
 
+import datetime as dt
 from collections import Counter
 from typing import Literal, cast
 
@@ -17,6 +18,7 @@ from lxml import etree
 import pytest
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.finland.restructure_plan import (
     FI_RESTRUCTURE_RELABEL_MIGRATION_LEDGER_LOOKUP_RULE_ID,
     FI_RESTRUCTURE_RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP_RULE_ID,
@@ -35,6 +37,9 @@ from lawvm.finland.restructure_plan import (
     detect_restructure_signals,
     execute_restructure_plan,
     relabel_skip_finding,
+)
+from lawvm.finland.restructure_plan_replay import (
+    emit_restructure_plan_section_snapshot_legal_operations,
 )
 from lawvm.finland.body_pairing import (
     ClauseClaim,
@@ -1254,6 +1259,65 @@ class TestExecuteRelabel:
         part_3 = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "3")
         chapter = next(child for child in part_3.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
         assert [child.label for child in chapter.children if child.kind is IRNodeKind.SECTION] == ["139"]
+
+    def test_section_snapshot_uses_executed_relabel_payload_in_same_parent_chain(self) -> None:
+        """Snapshot emission must not rediscover a same-wave destination label from the wrong source."""
+        tree = IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="2",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.SECTION, label="6", text="source 6 text"),
+                                IRNode(kind=IRNodeKind.SECTION, label="8", text="source 8 text"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        plan = _make_plan(
+            [
+                StructuralTransformOp(
+                    kind=TransformOpKind.RELABEL,
+                    target="part:2/chapter:1/section:6",
+                    destination="part:2/chapter:1/section:8",
+                    notes=("from_amendment_op",),
+                ),
+                StructuralTransformOp(
+                    kind=TransformOpKind.RELABEL,
+                    target="part:2/chapter:1/section:8",
+                    destination="part:2/chapter:1/section:10",
+                    notes=("from_amendment_op",),
+                ),
+            ]
+        )
+
+        new_tree, executed = execute_restructure_plan(plan, tree)
+        lo_ops: list[LegalOperation] = []
+        emitted = emit_restructure_plan_section_snapshot_legal_operations(
+            lo_ops_out=lo_ops,
+            state_ir=new_tree,
+            executed_ops=executed,
+            amendment_id="2019/371",
+            source_title="",
+            amendment_issue_date=dt.date(2019, 3, 29),
+            amendment_effective_date=dt.date(2019, 4, 1),
+        )
+
+        assert emitted == 2
+        payload_by_target = {
+            str(op.target): irnode_to_text(op.payload)
+            for op in lo_ops
+            if op.payload is not None
+        }
+        assert payload_by_target["part:2/chapter:1/section:8"] == "source 6 text"
+        assert payload_by_target["part:2/chapter:1/section:10"] == "source 8 text"
 
     def test_same_parent_relabel_group_executes_safe_found_subset_when_one_source_is_missing(self) -> None:
         """A missing recodification alias must not block the proved same-parent relabel chain."""

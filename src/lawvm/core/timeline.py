@@ -44,6 +44,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.statute_facets import is_statute_title_address, statute_title_address
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.timeline_addresses import (
+    STRUCTURAL_RENUMBER_SNAPSHOT_ATTR,
     _address_prefix_matches,
     _iter_nodes_with_address,
     _iter_statute_nodes_with_address,
@@ -867,6 +868,16 @@ def compile_timelines(
                 else list(source_active.applicability)
             )
             migrated_content = _retarget_root_node(source_active.content, destination)
+            migrated_content = IRNode(
+                kind=migrated_content.kind,
+                label=migrated_content.label,
+                text=migrated_content.text,
+                attrs={
+                    **dict(migrated_content.attrs),
+                    STRUCTURAL_RENUMBER_SNAPSHOT_ATTR: "1",
+                },
+                children=migrated_content.children,
+            )
             _append_version(
                 timelines[destination],
                 ProvisionVersion(
@@ -1264,6 +1275,8 @@ def materialize_pit_ex(
         parent_addr: LegalAddress,
         child_addr: LegalAddress,
     ) -> bool:
+        if content.attrs.get(STRUCTURAL_RENUMBER_SNAPSHOT_ATTR) == "1":
+            return False
         parent_leaf = parent_addr.leaf_kind()
         if parent_leaf not in {"chapter", "part", "section"}:
             return True
