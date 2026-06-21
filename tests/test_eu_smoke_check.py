@@ -319,6 +319,8 @@ def test_run_offline_smoke_validates_expected_kind_counts(tmp_path, monkeypatch)
                         message="parent missing",
                         source_statute="2026/2",
                         op_id="insert-1",
+                        blocking=True,
+                        phase="replay",
                         detail={"parent_kind": "section", "parent_label": "7"},
                     ),
                     SimpleNamespace(
@@ -326,6 +328,8 @@ def test_run_offline_smoke_validates_expected_kind_counts(tmp_path, monkeypatch)
                         message="parent missing",
                         source_statute="2026/3",
                         op_id="insert-2",
+                        blocking=True,
+                        phase="replay",
                         detail={"parent_kind": "section", "parent_label": "8"},
                     ),
                 ],
@@ -369,6 +373,8 @@ def test_run_offline_smoke_validates_zero_expected_kind(tmp_path, monkeypatch) -
                         message="parent missing",
                         source_statute="2026/1",
                         op_id="insert-1",
+                        blocking=True,
+                        phase="replay",
                         detail={"parent_kind": "section", "parent_label": "7"},
                     )
                 ],
@@ -492,6 +498,8 @@ def test_run_offline_smoke_stabilizes_adjudication_summary(monkeypatch, tmp_path
                         message="target missing",
                         source_statute="2026/1",
                         op_id="replace-1",
+                        blocking=True,
+                        phase="replay",
                         detail={"target": "section:9"},
                     ),
                     SimpleNamespace(
@@ -499,6 +507,8 @@ def test_run_offline_smoke_stabilizes_adjudication_summary(monkeypatch, tmp_path
                         message="parent missing",
                         source_statute="2026/2",
                         op_id="insert-1",
+                        blocking=True,
+                        phase="replay",
                         detail={"parent_kind": "section", "parent_label": "7"},
                     ),
                     SimpleNamespace(
@@ -506,6 +516,8 @@ def test_run_offline_smoke_stabilizes_adjudication_summary(monkeypatch, tmp_path
                         message="target missing",
                         source_statute="2026/3",
                         op_id="replace-2",
+                        blocking=True,
+                        phase="replay",
                         detail={"target": "section:10"},
                     ),
                 ],

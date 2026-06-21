@@ -202,6 +202,7 @@ def test_real_corpus_regression_fi_refs_parquet_compile_metadata_roundtrip(
             "validator_status": "span_verified",
             "review_status": "human_reviewed",
             "replay_authorized": True,
+            "deterministic_extraction": True,
             "emit_profile": "deterministic_only",
         }
     ]

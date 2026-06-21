@@ -24,6 +24,9 @@ bridge becomes unnecessary and can be deleted.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Optional
+
 from lawvm.core.parse_witness import ParseWitness
 from lawvm.core.semantic_types import FacetKind
 from lawvm.finland.johtolause.surface_model import (
@@ -47,6 +50,44 @@ from lawvm.finland.johtolause.surface_model import (
     SurfaceWitness,
 )
 from lawvm.finland.johtolause.types import ParsedOp
+
+
+# ---------------------------------------------------------------------------
+# Unsupported-node residual (rank-17 silent-drop closure)
+# ---------------------------------------------------------------------------
+
+#: Governed finding code for surface nodes with no ParsedOp representation in
+#: this legacy bridge. Registered in core.observation_registry.
+SURFACE_NODE_UNLOWERABLE_KIND = "LOWER.SURFACE_NODE_UNLOWERABLE_TO_PARSED_OP"
+SURFACE_NODE_UNLOWERABLE_RULE_ID = "fi.lower_surface.surface_node_unlowerable.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class SurfaceLoweringResidual:
+    """Receipt for a SurfaceNode the legacy ParsedOp bridge cannot represent.
+
+    Several surface node kinds (meta clauses, text amendments, valiotsikko
+    back-references, and unresolved back-references) have no ParsedOp encoding
+    in this bridge and previously returned ``[]`` with no record. This residual
+    makes each such drop visible without granting it replay authority — it is a
+    surface-plane observation, never a mutation.
+    """
+
+    kind: str
+    rule_id: str
+    node_kind: str
+    reason: str
+    detail: str
+
+
+def _residual(node_kind: str, reason: str, detail: str) -> SurfaceLoweringResidual:
+    return SurfaceLoweringResidual(
+        kind=SURFACE_NODE_UNLOWERABLE_KIND,
+        rule_id=SURFACE_NODE_UNLOWERABLE_RULE_ID,
+        node_kind=node_kind,
+        reason=reason,
+        detail=detail,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +283,11 @@ def _lower_insertion(node: SurfaceInsertion, verb: str) -> list[ParsedOp]:
     return [op]
 
 
-def _lower_back_ref(node: SurfaceBackRef, verb: str) -> list[ParsedOp]:
+def _lower_back_ref(
+    node: SurfaceBackRef,
+    verb: str,
+    residuals_out: Optional[list[SurfaceLoweringResidual]] = None,
+) -> list[ParsedOp]:
     """Lower a SurfaceBackRef.
 
     BackRefs are unresolved at this stage.  The lowering emits placeholder
@@ -252,6 +297,15 @@ def _lower_back_ref(node: SurfaceBackRef, verb: str) -> list[ParsedOp]:
     """
     # Emit empty ops with notes — these should not appear in normal flow
     # since backrefs are resolved by the resolver before lowering.
+    if residuals_out is not None:
+        residuals_out.append(
+            _residual(
+                "SurfaceBackRef",
+                "unresolved back-reference reached the ParsedOp bridge; "
+                "the resolver should have bound it before lowering",
+                f"referent_type={node.referent_type!r} sub_refs={node.sub_refs!r}",
+            )
+        )
     ops: list[ParsedOp] = []
     for sr in node.sub_refs or (SurfaceSubRef(),):
         special = _facet_to_special(sr.facet)
@@ -294,29 +348,67 @@ def _lower_heading_placement(node: SurfaceHeadingPlacement, verb: str) -> list[P
     return [op]
 
 
-def _lower_meta_clause(_node: SurfaceMetaClause, _verb: str) -> list[ParsedOp]:
+def _lower_meta_clause(
+    node: SurfaceMetaClause,
+    _verb: str,
+    residuals_out: Optional[list[SurfaceLoweringResidual]] = None,
+) -> list[ParsedOp]:
     """Lower a SurfaceMetaClause.
 
-    Meta clauses have no ParsedOp representation.  Return empty.
+    Meta clauses have no ParsedOp representation.  Return empty, but record a
+    typed residual so the drop is visible.
     """
+    if residuals_out is not None:
+        residuals_out.append(
+            _residual(
+                "SurfaceMetaClause",
+                "meta clause has no ParsedOp representation in the legacy bridge",
+                f"kind={node.kind.value!r} text={node.text[:300]!r}",
+            )
+        )
     return []
 
 
-def _lower_text_amend(_node: SurfaceTextAmend, _verb: str) -> list[ParsedOp]:
+def _lower_text_amend(
+    node: SurfaceTextAmend,
+    _verb: str,
+    residuals_out: Optional[list[SurfaceLoweringResidual]] = None,
+) -> list[ParsedOp]:
     """Lower a SurfaceTextAmend.
 
-    Text amendments have no direct ParsedOp representation yet.
-    Return empty.
+    Text amendments have no direct ParsedOp representation yet.  Return empty,
+    but record a typed residual so the drop is visible.
     """
+    if residuals_out is not None:
+        residuals_out.append(
+            _residual(
+                "SurfaceTextAmend",
+                "text amendment has no ParsedOp representation in the legacy bridge",
+                f"old_text={node.old_text[:200]!r} new_text={node.new_text[:200]!r}",
+            )
+        )
     return []
 
 
-def _lower_valio_ref(_node: SurfaceValiotsikkoRef, _verb: str) -> list[ParsedOp]:
+def _lower_valio_ref(
+    _node: SurfaceValiotsikkoRef,
+    _verb: str,
+    residuals_out: Optional[list[SurfaceLoweringResidual]] = None,
+) -> list[ParsedOp]:
     """Lower a SurfaceValiotsikkoRef.
 
     Valio refs are unresolved at this stage and handled by the resolver.
-    Return empty.
+    Return empty, but record a typed residual so the drop is visible.
     """
+    if residuals_out is not None:
+        residuals_out.append(
+            _residual(
+                "SurfaceValiotsikkoRef",
+                "valiotsikko back-reference reached the ParsedOp bridge unresolved; "
+                "the resolver should have expanded it before lowering",
+                "valiotsikko_backref",
+            )
+        )
     return []
 
 
@@ -356,7 +448,11 @@ def _lower_descendant_coordination(
 # ---------------------------------------------------------------------------
 
 
-def _lower_node(node: SurfaceNode, verb: str) -> list[ParsedOp]:
+def _lower_node(
+    node: SurfaceNode,
+    verb: str,
+    residuals_out: Optional[list[SurfaceLoweringResidual]] = None,
+) -> list[ParsedOp]:
     """Lower a single SurfaceNode to ParsedOps."""
     if isinstance(node, SurfaceTargetRef):
         return _lower_target_ref(node, verb)
@@ -365,15 +461,15 @@ def _lower_node(node: SurfaceNode, verb: str) -> list[ParsedOp]:
     if isinstance(node, SurfaceInsertion):
         return _lower_insertion(node, verb)
     if isinstance(node, SurfaceBackRef):
-        return _lower_back_ref(node, verb)
+        return _lower_back_ref(node, verb, residuals_out)
     if isinstance(node, SurfaceHeadingPlacement):
         return _lower_heading_placement(node, verb)
     if isinstance(node, SurfaceMetaClause):
-        return _lower_meta_clause(node, verb)
+        return _lower_meta_clause(node, verb, residuals_out)
     if isinstance(node, SurfaceTextAmend):
-        return _lower_text_amend(node, verb)
+        return _lower_text_amend(node, verb, residuals_out)
     if isinstance(node, SurfaceValiotsikkoRef):
-        return _lower_valio_ref(node, verb)
+        return _lower_valio_ref(node, verb, residuals_out)
     if isinstance(node, SurfaceDescendantCoordination):
         return _lower_descendant_coordination(node, verb)
     # Unreachable for complete SurfaceNode union, but explicit for safety
@@ -385,7 +481,10 @@ def _lower_node(node: SurfaceNode, verb: str) -> list[ParsedOp]:
 # ---------------------------------------------------------------------------
 
 
-def _lower_verb_group(vg: SurfaceVerbGroup) -> list[ParsedOp]:
+def _lower_verb_group(
+    vg: SurfaceVerbGroup,
+    residuals_out: Optional[list[SurfaceLoweringResidual]] = None,
+) -> list[ParsedOp]:
     """Lower a SurfaceVerbGroup to ParsedOps.
 
     Handles move tail application: when a SurfaceMoveTail follows target
@@ -425,7 +524,7 @@ def _lower_verb_group(vg: SurfaceVerbGroup) -> list[ParsedOp]:
             continue
 
         batch_start = len(ops)
-        node_ops = _lower_node(node, verb)
+        node_ops = _lower_node(node, verb, residuals_out)
         ops.extend(node_ops)
         if node_ops:
             last_batch_start = batch_start
@@ -438,7 +537,10 @@ def _lower_verb_group(vg: SurfaceVerbGroup) -> list[ParsedOp]:
 # ---------------------------------------------------------------------------
 
 
-def lower_surface_clause_to_parsed_ops(clause: SurfaceClause) -> list[ParsedOp]:
+def lower_surface_clause_to_parsed_ops(
+    clause: SurfaceClause,
+    residuals_out: Optional[list[SurfaceLoweringResidual]] = None,
+) -> list[ParsedOp]:
     """Lower a Phase 3 SurfaceClause to a flat list of ParsedOps.
 
     This is the backward-compatibility bridge for incremental migration.
@@ -448,11 +550,16 @@ def lower_surface_clause_to_parsed_ops(clause: SurfaceClause) -> list[ParsedOp]:
 
     Args:
         clause: A SurfaceClause from the Phase 3 surface model.
+        residuals_out: When provided, collects a ``SurfaceLoweringResidual``
+            for every surface node kind this bridge cannot represent
+            (SurfaceMetaClause / SurfaceTextAmend / SurfaceValiotsikkoRef /
+            unresolved SurfaceBackRef), so those drops stay visible instead of
+            silently returning ``[]``.
 
     Returns:
         Flat list of ParsedOps, in verb-group order.
     """
     all_ops: list[ParsedOp] = []
     for vg in clause.verb_groups:
-        all_ops.extend(_lower_verb_group(vg))
+        all_ops.extend(_lower_verb_group(vg, residuals_out))
     return all_ops

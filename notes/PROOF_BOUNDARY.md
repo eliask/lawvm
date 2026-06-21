@@ -269,6 +269,14 @@ That is the right level. Not too abstract, not too implementation-bound.
 
 This is the heart of it.
 
+> Note on counts: a "boundary" here is the same concept as a **waist** — a typed
+> input/output contract between pipeline stages. The catalogue below enumerates
+> ten; other docs quote different totals (CONSTITUTION ~9, THEORY ~8) because
+> they count a coarser conceptual grouping. The canonical, named ten-waist list
+> lives in `LAWVM_PIPELINE_CONTRACT.md` §2 — defer to it for the authoritative
+> set. The numbering below is local to this catalogue and is not renumbered to
+> match.
+
 ### 1. Source artifact boundary
 
 Input:
@@ -673,7 +681,11 @@ That is the right high-assurance style for this domain.
 
 ## Concrete roadmap
 
-### Phase 1: Turn the current observation registry into an assurance registry
+These are delivery **milestones**, not compiler phases. "Phase" is reserved for
+the compiler verb-sequence (Acquire → … → Emit; canonical list in AGENTS.md
+§3.1); the steps below are an ordered work plan.
+
+### Milestone 1: Turn the current observation registry into an assurance registry
 
 Extend the existing registry to store:
 
@@ -684,13 +696,13 @@ Extend the existing registry to store:
 
 Do not add hundreds of codes yet. Start with the 30–50 already surfacing in the repo.
 
-### Phase 2: Add `Violation` to `PhaseResult`
+### Milestone 2: Add `Violation` to `PhaseResult`
 
 Keep `Observation` and `Obligation` as now.
 Add `Violation`.
 Stop overloading “obligation” for impossible states.
 
-### Phase 3: Write boundary specs, not just free-text notes
+### Milestone 3: Write boundary specs, not just free-text notes
 
 Add one `BoundarySpec` per major boundary:
 
@@ -704,7 +716,7 @@ Add one `BoundarySpec` per major boundary:
 
 These docs become the architectural center for strict mode and CI guards.
 
-### Phase 4: Build the no-loss auditors
+### Milestone 4: Build the no-loss auditors
 
 Highest-value immediate auditors:
 
@@ -714,7 +726,7 @@ Highest-value immediate auditors:
 
 These catch the “destroyed something too early” class, which is the most universal risk in the stack.
 
-### Phase 5: Harden elaboration and apply contracts
+### Milestone 5: Harden elaboration and apply contracts
 
 Make the following first-class:
 
@@ -727,7 +739,7 @@ Make the following first-class:
 
 These are the real quirks/strict frontier.
 
-### Phase 6: Temporal kernel checkers
+### Milestone 6: Temporal kernel checkers
 
 Add explicit validators for:
 
@@ -739,7 +751,7 @@ Add explicit validators for:
 
 This is where VÄLIAIKAINEN becomes principled.
 
-### Phase 7: Evidence/projection discipline
+### Milestone 7: Evidence/projection discipline
 
 Make it impossible for:
 
@@ -747,7 +759,7 @@ Make it impossible for:
 * oracle drift to be mislabeled as replay bug
 * support chains to be omitted from publication DB/cards
 
-### Phase 8: Strict mode on top of the registry
+### Milestone 8: Strict mode on top of the registry
 
 Strict mode should not be a giant hand-curated pile of `if kind in ...`.
 It should compile policy from the assurance registry:

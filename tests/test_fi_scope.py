@@ -10,7 +10,12 @@ from lawvm.finland.scope import (
     assign_scope_from_renumber_destinations,
     strip_unjustified_chapter_scope_from_unique_sections,
 )
-from lawvm.finland.ops import ScopeConfidence, lo_with_scope_confidence
+from lawvm.finland.ops import (
+    ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
+    lo_with_scope_confidence,
+)
 
 
 def test_strip_unjustified_chapter_scope_keeps_explicit_chapters_when_master_is_flat() -> None:
@@ -606,8 +611,8 @@ def test_strip_scope_keeps_explicit_chunk_whole_section_target_from_scope_confid
         ),
         ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         ),
     )

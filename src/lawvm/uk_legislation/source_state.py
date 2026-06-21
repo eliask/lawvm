@@ -16,7 +16,7 @@ from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidenc
 from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
     TARGET_RECOVERED,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 
 MIN_UK_XML_SOURCE_BYTES = 100
@@ -800,7 +800,7 @@ def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
         authority_layer=authority_layer,
         requested_part_label=requested_part_label,
         extracted_element_id=extracted_element_id,
-        target_resolution=TargetResolutionCertificate(
+        target_resolution=TargetResolutionCoverage(
             rule_id="uk_affecting_act_nonaddressable_schedule_part_context_ignored",
             phase="extraction",
             reason=(
@@ -855,7 +855,7 @@ def uk_affecting_act_single_unnumbered_schedule_context_ignored(
         schedule_element_id=schedule_element_id,
         source_instruction_id=source_instruction_id,
         extracted_element_id=extracted_element_id,
-        target_resolution=TargetResolutionCertificate(
+        target_resolution=TargetResolutionCoverage(
             rule_id="uk_affecting_act_single_unnumbered_schedule_context_ignored",
             phase="extraction",
             reason=(
@@ -959,7 +959,7 @@ def uk_affecting_act_implicit_first_subparagraph_context_ignored(
         locator=locator,
         authority_layer=authority_layer,
         extracted_element_id=extracted_element_id,
-        target_resolution=TargetResolutionCertificate(
+        target_resolution=TargetResolutionCoverage(
             rule_id="uk_affecting_act_implicit_first_subparagraph_context_ignored",
             phase="extraction",
             reason=(

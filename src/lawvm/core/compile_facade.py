@@ -43,7 +43,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping, Optional, Tuple
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
-from lawvm.core.authority import DEFAULT_ENACTED_CONTEXT
+from lawvm.core.branch_authority import DEFAULT_ENACTED_CONTEXT
 from lawvm.core.compile_metadata import build_compile_metadata
 from lawvm.core.compile_result import (
     CanonicalBundle,
@@ -62,7 +62,7 @@ from lawvm.core.timeline_results import (
 )
 
 if TYPE_CHECKING:
-    from lawvm.core.authority import BranchContext
+    from lawvm.core.branch_authority import BranchContext
     from lawvm.core.compile_metadata import CompileMetadata
     from lawvm.core.compile_result import CompileVerdict, StrictProfile
     from lawvm.core.evidence_policy import EvidencePolicyRegistry

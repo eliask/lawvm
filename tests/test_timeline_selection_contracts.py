@@ -7,7 +7,7 @@ import pytest
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline import materialize_pit_ex
-from lawvm.core.timeline_selection import VersionSelectionCertificate, VersionSelectionResult
+from lawvm.core.timeline_selection import VersionSelectionCoverage, VersionSelectionResult
 
 
 def _address() -> LegalAddress:
@@ -22,8 +22,8 @@ def _version(*, effective: str = "2024-01-01", enacted: str = "2023-12-01") -> P
     )
 
 
-def test_version_selection_certificate_normalizes_required_dimensions() -> None:
-    cert = VersionSelectionCertificate(
+def test_version_selection_coverage_normalizes_required_dimensions() -> None:
+    cert = VersionSelectionCoverage(
         address=_address(),
         as_of="2024-06-01",
         query_type="governing",
@@ -35,9 +35,9 @@ def test_version_selection_certificate_normalizes_required_dimensions() -> None:
     assert cert.required_dimensions == ("territory",)
 
 
-def test_version_selection_certificate_rejects_invalid_rail() -> None:
+def test_version_selection_coverage_rejects_invalid_rail() -> None:
     with pytest.raises(ValueError, match="selected_rail"):
-        VersionSelectionCertificate(
+        VersionSelectionCoverage(
             address=_address(),
             as_of="2024-06-01",
             query_type="governing",
@@ -45,9 +45,9 @@ def test_version_selection_certificate_rejects_invalid_rail() -> None:
         )
 
 
-def test_version_selection_certificate_rejects_negative_candidate_count() -> None:
+def test_version_selection_coverage_rejects_negative_candidate_count() -> None:
     with pytest.raises(ValueError, match="candidate_count"):
-        VersionSelectionCertificate(
+        VersionSelectionCoverage(
             address=_address(),
             as_of="2024-06-01",
             query_type="governing",
@@ -62,7 +62,7 @@ def test_version_selection_result_rejects_selected_without_version() -> None:
 
 def test_version_selection_result_rejects_certificate_version_drift() -> None:
     version = _version(effective="2024-01-01")
-    cert = VersionSelectionCertificate(
+    cert = VersionSelectionCoverage(
         address=_address(),
         as_of="2024-06-01",
         query_type="governing",

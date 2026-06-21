@@ -21,9 +21,12 @@ from lawvm.finland.ops import (
     AmendmentOp,
     FailedOp,
     ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
     normalize_scope_confidence,
     projection_scope_confidence,
     _lo_with_path_update,
+    _op_target_subsection_label,
 )
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
@@ -354,8 +357,8 @@ def _retargeted_live_section_ops(
                 scope_confidence=(
                     ScopeConfidence(
                         tag="body_container_membership_rewrite",
-                        source="explicit_scope_rewrite",
-                        confidence="rewritten",
+                        source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                        confidence=ScopeResolutionConfidence.REWRITTEN,
                         resolved_chapter=live_chapter,
                     )
                     if retarget_scope_source == "explicit_chunk"
@@ -755,6 +758,8 @@ def _maybe_apply_replace_to_insert_move(
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=request.target_chapter,
                 target_part=request.target_part,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
             for op in replacement_ops
         ]
@@ -935,6 +940,8 @@ def _maybe_retarget_live_section(
                 target_section=op.target_section or request.target_norm,
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=request.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
             for op in result.group_ops
             if (

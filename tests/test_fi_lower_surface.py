@@ -609,3 +609,106 @@ class TestEmptyClause:
         clause = SurfaceClause(verb_groups=())
         ops = lower_surface_clause_to_parsed_ops(clause)
         assert ops == []
+
+
+# ---------------------------------------------------------------------------
+# Rank-17: unsupported surface nodes get a typed residual (no silent drop)
+# ---------------------------------------------------------------------------
+
+
+class TestUnsupportedNodeResiduals:
+    """Surface node kinds with no ParsedOp encoding now emit a typed residual."""
+
+    def test_meta_clause_emits_residual(self):
+        from lawvm.core.semantic_types import MetaClauseKind
+        from lawvm.finland.johtolause.lower_surface import (
+            SURFACE_NODE_UNLOWERABLE_KIND,
+            SurfaceLoweringResidual,
+        )
+        from lawvm.finland.johtolause.surface_model import SurfaceMetaClause
+
+        clause = SurfaceClause(
+            verb_groups=(
+                SurfaceVerbGroup(
+                    verb=VerbKind.MUUTTAA,
+                    nodes=(
+                        SurfaceMetaClause(
+                            kind=MetaClauseKind.OTHER,
+                            text="Tämä laki tulee voimaan erikseen säädettävänä ajankohtana.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        residuals: list[SurfaceLoweringResidual] = []
+        ops = lower_surface_clause_to_parsed_ops(clause, residuals_out=residuals)
+
+        assert ops == []
+        assert len(residuals) == 1
+        assert residuals[0].kind == SURFACE_NODE_UNLOWERABLE_KIND
+        assert residuals[0].node_kind == "SurfaceMetaClause"
+        assert "voimaan" in residuals[0].detail
+
+    def test_text_amend_and_valio_ref_emit_residuals(self):
+        from lawvm.finland.johtolause.lower_surface import SurfaceLoweringResidual
+        from lawvm.finland.johtolause.surface_model import (
+            SurfaceTextAmend,
+            SurfaceValiotsikkoRef,
+        )
+
+        clause = SurfaceClause(
+            verb_groups=(
+                SurfaceVerbGroup(
+                    verb=VerbKind.MUUTTAA,
+                    nodes=(
+                        SurfaceTextAmend(old_text="vanha", new_text="uusi"),
+                        SurfaceValiotsikkoRef(),
+                    ),
+                ),
+            ),
+        )
+
+        residuals: list[SurfaceLoweringResidual] = []
+        ops = lower_surface_clause_to_parsed_ops(clause, residuals_out=residuals)
+
+        assert ops == []
+        assert [r.node_kind for r in residuals] == [
+            "SurfaceTextAmend",
+            "SurfaceValiotsikkoRef",
+        ]
+
+    def test_supported_node_lowers_with_no_residual(self):
+        """A supported node still lowers identically and produces no residual."""
+        from lawvm.finland.johtolause.lower_surface import SurfaceLoweringResidual
+
+        clause = SurfaceClause(
+            verb_groups=(
+                SurfaceVerbGroup(
+                    verb=VerbKind.MUUTTAA,
+                    nodes=(SurfaceTargetRef(kind=TargetKind.SECTION, label="7"),),
+                ),
+            ),
+        )
+
+        residuals: list[SurfaceLoweringResidual] = []
+        ops = lower_surface_clause_to_parsed_ops(clause, residuals_out=residuals)
+
+        assert _codes(ops) == ["M P 7"]
+        assert residuals == []
+
+    def test_residuals_out_omitted_is_backward_compatible(self):
+        """Without residuals_out the bridge behaves exactly as before."""
+        from lawvm.core.semantic_types import MetaClauseKind
+        from lawvm.finland.johtolause.surface_model import SurfaceMetaClause
+
+        clause = SurfaceClause(
+            verb_groups=(
+                SurfaceVerbGroup(
+                    verb=VerbKind.MUUTTAA,
+                    nodes=(SurfaceMetaClause(kind=MetaClauseKind.OTHER, text="x"),),
+                ),
+            ),
+        )
+        ops = lower_surface_clause_to_parsed_ops(clause)
+        assert ops == []

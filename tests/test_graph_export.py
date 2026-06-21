@@ -4,7 +4,7 @@ import csv
 import json
 import types
 
-from lawvm.core.authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
+from lawvm.core.branch_authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
 from lawvm.core.graph import CorpusGraph
 from lawvm.tools.export import export_jsonld, export_neo4j
 

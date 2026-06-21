@@ -235,6 +235,8 @@ def test_build_ee_consistency_payload_preserves_replay_adjudication_evidence(mon
         kind="ee_replay_unsupported_action",
         message="EE replay skipped unsupported action.",
         source_statute="130122025021",
+        blocking=True,
+        phase="replay",
         op_id="ee-op-1",
         detail={
             "rule_id": "ee.replay.unsupported_action",

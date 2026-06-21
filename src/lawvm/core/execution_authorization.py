@@ -41,6 +41,12 @@ class ExecutionAuthorization:
     required_proofs: tuple[str, ...] = ()
     safe_default: str = ""
     forbidden_shortcuts: tuple[str, ...] = ()
+    # Read-as-witness-only. ``detail`` carries free-form evidence (e.g. the
+    # projected EvidenceKernel result) for human/report consumption. It drives
+    # NO control flow: the executable/replay_authorized two-flag promotion plus
+    # ``forbidden_shortcuts`` are the canonical authority waist, and nothing in
+    # this module branches on ``detail`` contents. ``Mapping[str, Any]`` is the
+    # intended type here precisely because no caller may treat it as authority.
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

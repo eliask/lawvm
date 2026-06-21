@@ -98,7 +98,7 @@ from lawvm.finland.normalize import (
 from lawvm.finland.ops import AmendmentOp, FailedOp, ResolvedOp, _build_canonical_intent
 from lawvm.finland.ops import _lo_with_path_update
 from lawvm.finland.ops import get_replay_profile
-from lawvm.finland.ops import ScopeConfidence
+from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
 from lawvm.finland.replay_findings import (
     _apply_mutation_boundary_violation_finding,
     _serialize_apply_mutation_event,
@@ -1636,6 +1636,7 @@ def test_replay_xml_projects_apply_mutation_boundary_violations(monkeypatch) -> 
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1729,6 +1730,7 @@ def test_replay_xml_projects_legacy_apply_mutation_boundary_findings_without_met
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1830,6 +1832,7 @@ def test_replay_xml_projects_base_tail_prose_absorb_fact() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1896,6 +1899,7 @@ def test_replay_xml_projects_base_num_in_intro_normalization_facts() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -1984,6 +1988,7 @@ def test_replay_xml_projects_shape_rewrite_normalization_facts() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -2067,6 +2072,7 @@ def test_replay_xml_projects_editorial_and_numbering_family_facts() -> None:
         cutoff_date=None,
         oracle_version_amendment_id="",
         oracle_suspect="",
+        amendment_selection_residuals=(),
     )
 
     def fake_prepare_replay_plan(*_args, **_kwargs):
@@ -2365,8 +2371,8 @@ def test_allow_unscoped_live_section_retarget_requires_carry_forward_scope() -> 
         scope_provenance_tags=("chapter_scope_carry_forward",),
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="2",
         ),
         source_statute="2019/371",
@@ -2599,8 +2605,8 @@ def test_compile_group_retargets_duplicate_section_label_from_close_live_sibling
         target_chapter="3",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="3",
         ),
         source_statute="2021/984",
@@ -3016,8 +3022,8 @@ def test_compile_group_pure_insert_keeps_explicit_chapter_over_sibling_consensus
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="5",
         ),
         source_statute="2022/33",
@@ -3088,8 +3094,8 @@ def test_compile_group_reports_pure_insert_body_chapter_scope_correction() -> No
         target_chapter="7",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="7",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -3443,8 +3449,8 @@ def test_compile_group_retargets_explicit_scope_rewrite_live_section_to_unique_c
         target_chapter="2",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_stripped_unique_section",
-            source="explicit_scope_rewrite",
-            confidence="rewritten",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
             resolved_chapter="2",
         ),
         source_statute="2016/533",
@@ -3531,8 +3537,8 @@ def test_compile_group_retargets_explicit_chunk_section_to_body_backed_live_part
         target_chapter="7",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         ),
         source_statute="2023/497",
@@ -3630,8 +3636,8 @@ def test_compile_group_retargets_explicit_chunk_section_from_stale_part_only_sco
         target_paragraph=4,
         scope_confidence=ScopeConfidence(
             tag="part_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
         ),
         source_statute="2023/497",
         lo=LegalOperation(
@@ -3724,8 +3730,8 @@ def test_compile_group_strict_profile_blocks_explicit_chunk_body_backed_live_sec
         target_chapter="7",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         ),
         source_statute="2023/497",
@@ -3810,8 +3816,8 @@ def test_compile_group_retargets_explicit_chunk_section_to_unique_live_path_when
         target_chapter="7",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         ),
         source_statute="2023/497",
@@ -4502,8 +4508,8 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_carry_forwa
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -4515,8 +4521,8 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_carry_forwa
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -4591,8 +4597,8 @@ def test_retarget_stale_body_scope_skips_whole_section_insert_when_body_matches_
         target_chapter="25",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="25",
         ),
     )
@@ -4643,8 +4649,8 @@ def test_compile_group_keeps_explicit_chunk_insert_under_matching_body_chapter()
         target_chapter="2",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="2",
         ),
         source_statute="2023/1250",
@@ -4738,8 +4744,8 @@ def test_compile_group_retargets_inferred_body_wrapper_scope_from_live_stem() ->
         target_chapter="1",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_letter_suffix_stem_host",
-            source="live_stem_host",
-            confidence="inferred",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="1",
         ),
         source_statute="2010/661",
@@ -4835,8 +4841,8 @@ def test_compile_group_does_not_undo_live_stem_host_scope_with_body_wrapper_chap
         target_chapter="9",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_letter_suffix_stem_host",
-            source="live_stem_host",
-            confidence="inferred",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="9",
         ),
         source_statute="2010/661",
@@ -5033,8 +5039,8 @@ def test_compile_group_prefers_live_body_chapter_over_live_stem_host_scope() -> 
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_letter_suffix_stem_host",
-            source="live_stem_host",
-            confidence="inferred",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         source_statute="2025/500",
@@ -5120,8 +5126,8 @@ def test_compile_group_retargets_descendant_insert_from_body_wrapper_to_live_sec
         target_paragraph=3,
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_scope_rewrite",
-            confidence="rewritten",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
             resolved_chapter="1",
         ),
         source_statute="2010/661",
@@ -5285,8 +5291,8 @@ def test_compile_group_prefers_scoped_body_chapter_for_repeated_explicit_chunk_i
         target_chapter="6",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="6",
         ),
         source_statute="2023/1250",
@@ -5382,8 +5388,8 @@ def test_compile_group_keeps_carry_forward_insert_scope_when_body_chapter_is_new
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -5478,8 +5484,8 @@ def test_retarget_stale_body_scope_does_not_hijack_explicit_same_label_move_dest
         target_chapter="5b",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="5b",
         ),
     )
@@ -8168,8 +8174,8 @@ def test_append_compiled_group_ops_prefers_stored_scope_confidence_over_sidecar_
         scope_provenance_tags=("grouped_chapter_scope",),
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="5",
         ),
     )
@@ -10650,8 +10656,8 @@ def test_retarget_stale_body_chapter_scope_respects_stored_scope_confidence_carr
         target_chapter="4d",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="4d",
         ),
     )
@@ -10708,8 +10714,8 @@ def test_retarget_stale_body_chapter_scope_keeps_explicit_chunk_whole_section_in
         target_chapter="2",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="2",
         ),
     )
@@ -10763,8 +10769,8 @@ def test_retarget_stale_body_chapter_scope_allows_explicit_scope_rewrite_carrier
         target_chapter="4d",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_stripped_unique_section",
-            source="explicit_scope_rewrite",
-            confidence="rewritten",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
             resolved_chapter="4d",
         ),
     )
@@ -10903,8 +10909,8 @@ def test_body_chapter_scope_for_section_op_overrides_carry_forward_with_unique_e
         target_chapter="5",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -11222,8 +11228,8 @@ def test_enrich_ops_keeps_live_carry_forward_subsection_scope_over_stale_body_ch
         target_paragraph=2,
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="3",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -11277,8 +11283,8 @@ def test_enrich_ops_still_rewrites_deep_carry_forward_when_live_host_is_absent()
         target_paragraph=2,
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="5",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),

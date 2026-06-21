@@ -13,6 +13,7 @@ import re
 from typing import TYPE_CHECKING, List, Optional, cast
 
 from lawvm.core.compile_result import SourcePathology, StrictProfile
+from lawvm.core.recovery_kind import RecoveryKind, coerce_recovery_kind
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.ir_helpers import structural_subtree_hash
@@ -26,7 +27,13 @@ from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
-from lawvm.finland.ops import FailedOp, ReplayProfile, ResolvedOp, _assert_intent_compat
+from lawvm.finland.ops import (
+    FailedOp,
+    ReplayProfile,
+    ResolvedOp,
+    SectionPathResolutionReason,
+    _assert_intent_compat,
+)
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 from lawvm.finland.apply_policy import (
     _check_occupancy_policy,
@@ -98,13 +105,13 @@ _ITEM_RELABEL_MIGRATION_RULE_ID = "item_relabel_renumber"
 _CHAPTER_RELABEL_MIGRATION_RULE_ID = "chapter_relabel_renumber"
 _PART_RELABEL_MIGRATION_RULE_ID = "part_relabel_renumber"
 _MOVE_REPARENT_MIGRATION_RULE_ID = "move_reparent"
-_INTRO_LIST_MOMENT_SHAPE_RULE_ID = "intro_list_moment_shape"
-_MISSING_EXACT_SUBSECTION_LABEL_RULE_ID = "missing_exact_subsection_label"
-_SPARSE_ALAKOHTA_INSERT_MERGE_RULE_ID = "sparse_alakohta_insert_merge"
-_SPARSE_ALAKOHTA_REPLACE_MERGE_RULE_ID = "sparse_alakohta_replace_merge"
-_SPARSE_ITEM_TAIL_SUBSECTION_PRUNE_RULE_ID = "sparse_item_tail_subsection_prune"
-_SUBSECTION_REPLACE_SPARSE_GAP_INSERT_RULE_ID = "subsection_replace_sparse_gap_insert"
-_SUBSECTION_DISPATCH_LANDED_RECOVERY_RULE_IDS = (
+_INTRO_LIST_MOMENT_SHAPE_RULE_ID = RecoveryKind.INTRO_LIST_MOMENT_SHAPE
+_MISSING_EXACT_SUBSECTION_LABEL_RULE_ID = RecoveryKind.MISSING_EXACT_SUBSECTION_LABEL
+_SPARSE_ALAKOHTA_INSERT_MERGE_RULE_ID = RecoveryKind.SPARSE_ALAKOHTA_INSERT_MERGE
+_SPARSE_ALAKOHTA_REPLACE_MERGE_RULE_ID = RecoveryKind.SPARSE_ALAKOHTA_REPLACE_MERGE
+_SPARSE_ITEM_TAIL_SUBSECTION_PRUNE_RULE_ID = RecoveryKind.SPARSE_ITEM_TAIL_SUBSECTION_PRUNE
+_SUBSECTION_REPLACE_SPARSE_GAP_INSERT_RULE_ID = RecoveryKind.SUBSECTION_REPLACE_SPARSE_GAP_INSERT
+_SUBSECTION_DISPATCH_LANDED_RECOVERY_RULE_IDS: tuple[RecoveryKind, ...] = (
     _INTRO_LIST_MOMENT_SHAPE_RULE_ID,
     _MISSING_EXACT_SUBSECTION_LABEL_RULE_ID,
     _SPARSE_ALAKOHTA_REPLACE_MERGE_RULE_ID,
@@ -431,12 +438,17 @@ def _path_explained_by_effect_roots(path: TreePath, roots: TreePaths) -> bool:
 
 def _new_pathologies_include_recovery_kind(
     pathologies: tuple[SourcePathology, ...],
-    recovery_kind: str,
+    recovery_kind: RecoveryKind,
 ) -> bool:
-    return any(
-        str(pathology.detail.get("recovery_kind", "") or pathology.detail.get("rebound_kind", "")) == recovery_kind
-        for pathology in pathologies
-    )
+    for pathology in pathologies:
+        raw = pathology.detail.get("recovery_kind") or pathology.detail.get("rebound_kind")
+        if raw is None or raw == "":
+            continue
+        # Fail loud (UnregisteredRecoveryKind) rather than silently no-matching a
+        # typoed/unregistered kind: the allowance authorization keys on this value.
+        if coerce_recovery_kind(raw) == recovery_kind:
+            return True
+    return False
 
 
 def _sparse_item_tail_prune_recovery_paths(
@@ -556,6 +568,8 @@ def _apply_intent_section_level(
                     target_section=rop.resolved_target_label,
                     target_chapter=rop.resolved_target_scope_chapter_label,
                     target_part=rop.resolved_target_scope_part_label,
+                    target_subsection=rop.resolved_target_subsection_label,
+                    target_item=rop.resolved_target_item_label,
                     target_unit_kind=rop.target_unit_kind,
                 )
             )
@@ -616,12 +630,12 @@ def _apply_intent_section_level(
     if section_resolution.used_live_unique_global_fallback:
         used_fallback_tags = (
             "APPLY.SCOPE_CONFIDENCE_GLOBAL_FALLBACK",
-            section_resolution.reason_code or "live_unique_global_fallback",
+            str(section_resolution.reason_code or SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK),
         )
-    elif section_resolution.reason_code == "follow_same_wave_migration":
+    elif section_resolution.reason_code is SectionPathResolutionReason.FOLLOW_SAME_WAVE_MIGRATION:
         used_fallback_tags = (
             "APPLY.SAME_WAVE_MIGRATION_REBASE",
-            "follow_same_wave_migration",
+            str(SectionPathResolutionReason.FOLLOW_SAME_WAVE_MIGRATION),
         )
     mixed_sparse_insert = (
         rop.slot_assignment is not None
@@ -914,6 +928,8 @@ def _record_unhandled_typed_target_failed_op(
             target_section=rop.resolved_target_label,
             target_chapter=rop.resolved_target_scope_chapter_label,
             target_part=rop.resolved_target_scope_part_label,
+            target_subsection=rop.resolved_target_subsection_label,
+            target_item=rop.resolved_target_item_label,
             target_unit_kind=rop.target_unit_kind,
         )
     )
@@ -2019,6 +2035,8 @@ def _apply_canonical_intent(
                     target_section=rop.resolved_target_label,
                     target_chapter=rop.resolved_target_scope_chapter_label,
                     target_part=rop.resolved_target_scope_part_label,
+                    target_subsection=rop.resolved_target_subsection_label,
+                    target_item=rop.resolved_target_item_label,
                     target_unit_kind=rop.target_unit_kind,
                 )
             )

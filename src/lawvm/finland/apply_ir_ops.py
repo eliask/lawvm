@@ -13,6 +13,7 @@ import re
 from typing import List, Optional
 
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
@@ -380,7 +381,7 @@ def _insert_subsection_with_renumber_ir(
                 source_statute="",
                 target_unit_kind="section",
                 target_label=f"{target_paragraph} mom",
-                recovery_kind="subsection_insert_renumber",
+                recovery_kind=RecoveryKind.SUBSECTION_INSERT_RENUMBER,
                 live_sibling_count=len(subsecs),
                 payload_sibling_count=renumbered_count,
             )
@@ -500,7 +501,7 @@ def _insert_item_with_suffix_renumber_ir(
                         source_statute=source_statute,
                         target_unit_kind="section",
                         target_label=item_norm,
-                        recovery_kind="item_insert_tail_wrapup_absorb",
+                        recovery_kind=RecoveryKind.ITEM_INSERT_TAIL_WRAPUP_ABSORB,
                         live_sibling_count=1,
                         payload_sibling_count=1,
                     )
@@ -513,7 +514,7 @@ def _insert_item_with_suffix_renumber_ir(
                 source_statute=source_statute,
                 target_unit_kind="section",
                 target_label=item_norm,
-                recovery_kind="item_insert_suffix_renumber",
+                recovery_kind=RecoveryKind.ITEM_INSERT_SUFFIX_RENUMBER,
                 live_sibling_count=len(paras),
                 payload_sibling_count=renumbered_count,
             )

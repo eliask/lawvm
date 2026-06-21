@@ -436,6 +436,8 @@ def _ee_orchestration_adjudication(
         message=message,
         source_statute=source_statute,
         op_id=op_id,
+        blocking=blocking,
+        phase=phase,
         detail=normalized_detail,
     )
 

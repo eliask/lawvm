@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, normalized_label_key
@@ -184,7 +184,7 @@ def _observe_occupancy_transition(
 def _resolve_unscoped_placeholder_shadowed_by_unique_substantive(
     state: "ReplayState",
     target_norm: str,
-) -> tuple[Path | None, str | None]:
+) -> tuple[Path | None, SectionPathResolutionReason | None]:
     label_norm = normalized_label_key(target_norm)
     matches = [
         _tops._as_path(path)
@@ -204,7 +204,7 @@ def _resolve_unscoped_placeholder_shadowed_by_unique_substantive(
 
     if len(substantive_paths) != 1:
         return None, None
-    return substantive_paths[0], "live_unique_substantive_over_placeholder"
+    return substantive_paths[0], SectionPathResolutionReason.LIVE_UNIQUE_SUBSTANTIVE_OVER_PLACEHOLDER
 
 
 def _resolve_section_path_with_fallbacks(
@@ -284,7 +284,7 @@ def _resolve_section_path_with_fallbacks(
                     )
                     return SectionPathResolution(
                         path=migrated_path,
-                        reason_code="follow_same_wave_migration",
+                        reason_code=SectionPathResolutionReason.FOLLOW_SAME_WAVE_MIGRATION,
                         rung_id=RUNG_MIGRATION_LEDGER_FOLLOW,
                     )
 
@@ -306,7 +306,7 @@ def _resolve_section_path_with_fallbacks(
                 )
                 return SectionPathResolution(
                     path=substantive_path,
-                    reason_code=cast(SectionPathResolutionReason, fallback_reason),
+                    reason_code=fallback_reason,
                     rung_id=RUNG_PLACEHOLDER_SHADOW_FALLBACK,
                     global_candidate_count=len(
                         state.provision_index.get(
@@ -371,7 +371,7 @@ def _resolve_section_path_with_fallbacks(
                 if is_descendant_insert and (_target_part is None or global_part == _target_part):
                     return SectionPathResolution(
                         path=global_path,
-                        reason_code="live_unique_global_fallback",
+                        reason_code=SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK,
                         rung_id=RUNG_UNIQUE_GLOBAL_FALLBACK,
                         global_candidate_count=n_matches,
                     )
@@ -404,7 +404,7 @@ def _resolve_section_path_with_fallbacks(
                 return SectionPathResolution(
                     path=sec_path,
                     reason_code=(
-                        "live_unique_global_fallback"
+                        SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK
                         if scope_reason == "inferred_from_live_unique"
                         else None
                     ),

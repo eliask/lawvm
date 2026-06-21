@@ -589,7 +589,7 @@ class TestNormalizeAndCompileOps:
                 replacement="uusi",
             ),
         )
-        monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [lo])
+        monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result, diagnostics_out=None: [lo])
         monkeypatch.setattr(frontend_compile, "parse_johtolause_clause", lambda _johto, statute_id="": None)
         monkeypatch.setattr(
             frontend_compile,
@@ -2483,7 +2483,9 @@ def apply_ops_to_tree(
             observations_out=observations_out,
             findings_out=findings_out,
             observed_touch_results_out=observed_touch_results_out,
-            write_audits_out=write_audits_out,
+            # write_audits_out is non-Optional on ApplyOpsSinks; coerce the
+            # test helper's None default to a concrete list.
+            write_audits_out=write_audits_out if write_audits_out is not None else [],
         ),
     )
 

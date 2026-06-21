@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import pytest
 
-from lawvm.core.authority import (
+from lawvm.core.branch_authority import (
     BranchContext,
     BranchGraphEdge,
     BranchLifecycleEvent,

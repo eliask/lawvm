@@ -14,6 +14,7 @@ import re
 from typing import TYPE_CHECKING, List, Optional
 
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
@@ -789,7 +790,7 @@ def _has_colon_led_intro_list_moment_shape(subsecs: List[IRNode]) -> bool:
 def _resolve_subsection_index_with_rebound_kind(
     subsecs: List[IRNode],
     target_paragraph: int,
-) -> tuple[Optional[int], Optional[int], Optional[str], bool]:
+) -> tuple[Optional[int], Optional[int], Optional[RecoveryKind], bool]:
     """Resolve a subsection index and classify any rebound shape explicitly."""
     n, stale_fragment_idx, rebound_from_fragment = _resolve_subsection_index_with_fragment(subsecs, target_paragraph)
     exact_match = n is not None and any(
@@ -798,11 +799,11 @@ def _resolve_subsection_index_with_rebound_kind(
     if n is None:
         n = _resolve_subsection_index(subsecs, target_paragraph)
     if rebound_from_fragment:
-        return n, stale_fragment_idx, "continuation_fragment_skip", exact_match
+        return n, stale_fragment_idx, RecoveryKind.CONTINUATION_FRAGMENT_SKIP, exact_match
     if _has_colon_led_intro_list_moment_shape(subsecs) and target_paragraph >= 2 and target_paragraph < len(subsecs):
-        return target_paragraph, stale_fragment_idx, "intro_list_moment_shape", exact_match
+        return target_paragraph, stale_fragment_idx, RecoveryKind.INTRO_LIST_MOMENT_SHAPE, exact_match
     if n is not None and not exact_match:
-        return n, stale_fragment_idx, "missing_exact_subsection_label", exact_match
+        return n, stale_fragment_idx, RecoveryKind.MISSING_EXACT_SUBSECTION_LABEL, exact_match
     return n, stale_fragment_idx, None, exact_match
 
 
@@ -1036,7 +1037,7 @@ def _apply_subsection_replace(
                         source_statute=view.legacy_source_statute_id,
                         target_unit_kind="section",
                         target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                        recovery_kind="subsection_replace_predecessor_tail_extract_insert",
+                        recovery_kind=RecoveryKind.SUBSECTION_REPLACE_PREDECESSOR_TAIL_EXTRACT_INSERT,
                         live_sibling_count=len(subsecs),
                         payload_sibling_count=len(_replace_sub.children),
                     )
@@ -1068,7 +1069,7 @@ def _apply_subsection_replace(
                         source_statute=view.legacy_source_statute_id,
                         target_unit_kind="section",
                         target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                        recovery_kind="subsection_replace_sparse_gap_insert",
+                        recovery_kind=RecoveryKind.SUBSECTION_REPLACE_SPARSE_GAP_INSERT,
                         live_sibling_count=len(subsecs),
                         payload_sibling_count=len(_replace_sub.children),
                     )
@@ -1145,7 +1146,7 @@ def _apply_subsection_replace(
                 if stale_fragment_idx is not None:
                     new_sec = _tops.remove_nth(new_sec, "subsection", stale_fragment_idx)
                 next_idx = n + 1
-                recovery_kind = "subsection_replace_standalone_tail_append"
+                recovery_kind = RecoveryKind.SUBSECTION_REPLACE_STANDALONE_TAIL_APPEND
                 if (
                     next_idx < len(subsecs)
                     and _matches_standalone_tail_subsection_prune_witness(
@@ -1153,7 +1154,7 @@ def _apply_subsection_replace(
                         subsecs[next_idx],
                     )
                 ):
-                    recovery_kind = "subsection_replace_standalone_tail_sibling_prune"
+                    recovery_kind = RecoveryKind.SUBSECTION_REPLACE_STANDALONE_TAIL_SIBLING_PRUNE
                 if source_pathologies_out is not None:
                     source_pathologies_out.append(
                         build_destructive_shape_loss_risk_pathology(
@@ -1269,7 +1270,7 @@ def _apply_subsection_replace(
                         source_statute=view.legacy_source_statute_id,
                         target_unit_kind="section",
                         target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                        recovery_kind="subsection_replace_append",
+                        recovery_kind=RecoveryKind.SUBSECTION_REPLACE_APPEND,
                         live_sibling_count=len(subsecs),
                         payload_sibling_count=1,
                     )
@@ -1317,7 +1318,7 @@ def _apply_subsection_replace(
                             source_statute=view.legacy_source_statute_id,
                             target_unit_kind="section",
                             target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                            recovery_kind="subsection_replace_sparse_omission_item_merge",
+                            recovery_kind=RecoveryKind.SUBSECTION_REPLACE_SPARSE_OMISSION_ITEM_MERGE,
                             live_sibling_count=len(
                                 [
                                     child
@@ -1359,7 +1360,7 @@ def _apply_subsection_replace(
                             source_statute=view.legacy_source_statute_id,
                             target_unit_kind="section",
                             target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                            recovery_kind="omission_bracketed_single_subsection_rewrite",
+                            recovery_kind=RecoveryKind.OMISSION_BRACKETED_SINGLE_SUBSECTION_REWRITE,
                             live_sibling_count=len(subsecs),
                             payload_sibling_count=len(
                                 [
@@ -1416,7 +1417,7 @@ def _apply_subsection_replace(
                         source_statute=view.legacy_source_statute_id,
                         target_unit_kind="section",
                         target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                        recovery_kind="subsection_replace_omission_merge_fallback",
+                        recovery_kind=RecoveryKind.SUBSECTION_REPLACE_OMISSION_MERGE_FALLBACK,
                         live_sibling_count=len(subsecs[n].children),
                         payload_sibling_count=len(_replace_sub.children),
                     )
@@ -1450,7 +1451,7 @@ def _apply_subsection_replace(
                                 source_statute=view.legacy_source_statute_id,
                                 target_unit_kind="section",
                                 target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                                recovery_kind="subsection_replace_standalone_tail_sibling_prune",
+                                recovery_kind=RecoveryKind.SUBSECTION_REPLACE_STANDALONE_TAIL_SIBLING_PRUNE,
                                 live_sibling_count=len(subsecs[next_idx].children),
                                 payload_sibling_count=len(tail_source.children),
                             )
@@ -1503,7 +1504,7 @@ def _apply_subsection_replace(
                         source_statute=view.legacy_source_statute_id,
                         target_unit_kind="section",
                         target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                        recovery_kind="subsection_replace_forced_append",
+                        recovery_kind=RecoveryKind.SUBSECTION_REPLACE_FORCED_APPEND,
                         live_sibling_count=len(subsecs),
                         payload_sibling_count=1,
                     )
@@ -1618,7 +1619,7 @@ def _apply_subsection_insert(
                         source_statute=view.legacy_source_statute_id,
                         target_unit_kind="section",
                         target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                        recovery_kind="subsection_insert_repeal_placeholder_replace",
+                        recovery_kind=RecoveryKind.SUBSECTION_INSERT_REPEAL_PLACEHOLDER_REPLACE,
                         live_sibling_count=len(subsecs),
                         payload_sibling_count=len(
                             [c for c in amend_sub.children if c.kind == IRNodeKind.PARAGRAPH]
@@ -1650,7 +1651,7 @@ def _apply_subsection_insert(
                         source_statute=view.legacy_source_statute_id,
                         target_unit_kind="section",
                         target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                        recovery_kind="subsection_insert_expired_temporary_slot_replace",
+                        recovery_kind=RecoveryKind.SUBSECTION_INSERT_EXPIRED_TEMPORARY_SLOT_REPLACE,
                         live_sibling_count=len(subsecs),
                         payload_sibling_count=len(
                             [c for c in amend_sub.children if c.kind == IRNodeKind.PARAGRAPH]
@@ -1696,7 +1697,7 @@ def _apply_subsection_insert(
                         source_statute=view.legacy_source_statute_id,
                         target_unit_kind="section",
                         target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                        recovery_kind="subsection_insert_temporary_duplicate_label_replace",
+                        recovery_kind=RecoveryKind.SUBSECTION_INSERT_TEMPORARY_DUPLICATE_LABEL_REPLACE,
                         live_sibling_count=len(subsecs),
                         payload_sibling_count=len(
                             [c for c in amend_sub.children if c.kind == IRNodeKind.PARAGRAPH]

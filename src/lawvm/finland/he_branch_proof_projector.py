@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Mapping
 
-from lawvm.core.authority import (
+from lawvm.core.branch_authority import (
     UNKNOWN_STATUS,
     BranchEdgeKind,
     WOULD_AMEND_EDGE,

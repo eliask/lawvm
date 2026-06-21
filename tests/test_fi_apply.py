@@ -128,6 +128,8 @@ from lawvm.finland.ops import (
     OpType,
     ResolvedOp,
     ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
     get_replay_profile,
     scope_authority_parity_for_op,
     runtime_scope_confidence_for_op,
@@ -1400,8 +1402,8 @@ def test_legacy_dispatch_shell_for_rop_prefers_late_waist_fields() -> None:
     rop.scope_provenance_tags = ("typed_scope",)
     rop.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="2",
     )
     rop.is_temporary = False
@@ -4901,6 +4903,120 @@ def test_apply_whole_section_op_declines_item_repeal() -> None:
     )
 
     assert result is None
+
+
+def _suspicious_partial_section_replace_master() -> IRNode:
+    """A section whose single subsection has >=8 distinct paragraph signatures."""
+    return _sec(
+        "5",
+        _sub(
+            "1",
+            *[
+                _para(str(i), f"paragraph text number {i} with distinct words alpha{i}")
+                for i in range(1, 9)
+            ],
+        ),
+    )
+
+
+def test_apply_whole_section_op_witnesses_suspicious_partial_replace_decline() -> None:
+    """A suspicious partial fallback-fragment section REPLACE must be declined with a
+    typed source-pathology on the production ledger, never a bare ``return state``."""
+    master = _suspicious_partial_section_replace_master()
+    # Amend payload reproduces only a strict subset of master's paragraphs — the
+    # `subset_paragraph_signatures` suspicious-partial heuristic must fire.
+    amend = _sec(
+        "5",
+        _sub(
+            "1",
+            _para("1", "paragraph text number 1 with distinct words alpha1"),
+            _para("2", "paragraph text number 2 with distinct words alpha2"),
+        ),
+    )
+    state = _make_state(_body(master))
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="5"),
+        muutos_ir=amend,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="5",
+        target_chapter=None,
+        op_source=OperationSource(
+            statute_id="2099/1",
+            enacted="2099-01-01",
+            effective="2099-01-01",
+            expires="",
+        ),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        (("section", "5"),),
+        amend,
+        None,
+        _LEGAL_PIT,
+        "5 §",
+        base_ir=_body(master),
+        source_pathologies_out=pathologies,
+    )
+
+    # The REPLACE is declined (state unchanged) — but it must be witnessed.
+    assert result is state
+    assert len(pathologies) == 1
+    pathology = pathologies[0]
+    assert pathology.code == "PARTIAL_WHOLE_SECTION_PAYLOAD"
+    assert pathology.target_label == "5 §"
+    assert (
+        pathology.detail["diagnostic_reason"]
+        == "apply_whole_section_op:suspicious_partial_fallback_fragment_replace_declined"
+    )
+
+
+def test_apply_whole_section_op_clean_replace_stays_quiet() -> None:
+    """A well-formed whole-section REPLACE applies and emits no partial-payload witness."""
+    master = _suspicious_partial_section_replace_master()
+    # Amend payload is a full, non-suspicious replacement body.
+    amend = _sec("5", _sub("1", _content("complete new section body text")))
+    state = _make_state(_body(master))
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="5"),
+        muutos_ir=amend,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="5",
+        target_chapter=None,
+        op_source=OperationSource(
+            statute_id="2099/2",
+            enacted="2099-01-01",
+            effective="2099-01-01",
+            expires="",
+        ),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        (("section", "5"),),
+        amend,
+        None,
+        _LEGAL_PIT,
+        "5 §",
+        base_ir=_body(master),
+        source_pathologies_out=pathologies,
+    )
+
+    applied = _modified(state, result)
+    live = applied.find_section("5")
+    assert live is not None
+    assert "complete new section body text" in irnode_to_text(live)
+    assert all(
+        p.detail.get("diagnostic_reason")
+        != "apply_whole_section_op:suspicious_partial_fallback_fragment_replace_declined"
+        for p in pathologies
+    )
 
 
 def _paragraph_labels(sub: IRNode) -> List[str]:
@@ -8530,8 +8646,8 @@ def test_amendment_op_resolved_scope_confidence_prefers_stored_carrier_over_tags
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="3",
     )
 
@@ -8549,8 +8665,8 @@ def test_resolved_op_resolved_scope_confidence_prefers_stored_carrier_over_tags(
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="3",
     )
     rop = ResolvedOp.from_amendment_op(
@@ -8576,8 +8692,8 @@ def test_resolved_op_stores_projection_scope_confidence_over_runtime_tag_rail() 
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="3",
     )
     rop = ResolvedOp.from_amendment_op(
@@ -8601,8 +8717,8 @@ def test_runtime_scope_confidence_for_op_prefers_stored_carrier_for_both_shells(
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="3",
     )
     rop = ResolvedOp.from_amendment_op(
@@ -8635,8 +8751,8 @@ def test_scope_authority_parity_for_op_reports_runtime_projection_disagreement()
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
-        source="explicit_chunk",
-        confidence="explicit",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
         resolved_chapter="7",
     )
 
@@ -8767,7 +8883,7 @@ def test_resolve_section_path_with_fallbacks_allows_unique_global_descendant_ins
 def test_apply_op_uses_apply_fallback_tag_not_source_pathology_for_live_unique_scope_fallback(monkeypatch) -> None:
     from lawvm.core.canonical_intent import ExecutionContract, IntentKind, NodeTarget, OccupancyPolicy, Replace
     from lawvm.core.ir import LegalAddress
-    from lawvm.finland.ops import SectionPathResolution
+    from lawvm.finland.ops import SectionPathResolution, SectionPathResolutionReason
 
     state = _make_state(_body(_sec("23", _content("old section"))))
     op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
@@ -8785,7 +8901,10 @@ def test_apply_op_uses_apply_fallback_tag_not_source_pathology_for_live_unique_s
     mutation_events: list[ApplyMutationEvent] = []
 
     def fake_resolve(*_args, **_kwargs) -> SectionPathResolution:
-        return SectionPathResolution(path=(("section", "23"),), reason_code="live_unique_global_fallback")
+        return SectionPathResolution(
+            path=(("section", "23"),),
+            reason_code=SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK,
+        )
 
     monkeypatch.setattr(
         "lawvm.finland.apply_typed_dispatch._resolve_section_path_with_fallbacks",
@@ -10351,6 +10470,53 @@ class TestApplyItemRepeal:
         result = _apply_item_repeal(state, op, sec_path, sec, subsecs, _LEGAL_PIT, "1 § 2 mom 99 k")
         assert _unchanged(state, result)
 
+    def test_repeal_absent_item_label_witnesses_anchor_absent(self):
+        """An item REPEAL whose target label is absent from the resolved
+        subsection is structurally a no-op, but must witness the absent anchor on
+        the production source-pathology ledger rather than vanishing silently.
+        (EXIT_REAUDIT_2 V4)
+        """
+        state, sec_path, sec = self._make_sec_with_items()
+        op = _op(op_type="REPEAL", target_section="1", target_paragraph=2, target_item="99")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        result = _apply_item_repeal(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            _LEGAL_PIT,
+            "1 § 2 mom 99 k",
+            source_pathologies_out=pathologies,
+        )
+        assert _unchanged(state, result)
+        codes = [p.code for p in pathologies]
+        assert "ITEM_TARGET_ANCHOR_ABSENT" in codes, codes
+        witness = next(p for p in pathologies if p.code == "ITEM_TARGET_ANCHOR_ABSENT")
+        assert witness.detail["target_item"] == "99"
+        assert witness.detail["target_paragraph"] == "2"
+
+    def test_repeal_present_item_label_emits_no_anchor_absent_witness(self):
+        """A REPEAL whose target label IS present must stay quiet — no spurious
+        absent-anchor witness on the production ledger. (EXIT_REAUDIT_2 V4)
+        """
+        state, sec_path, sec = self._make_sec_with_items()
+        op = _op(op_type="REPEAL", target_section="1", target_paragraph=2, target_item="1")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        _apply_item_repeal(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            _LEGAL_PIT,
+            "1 § 2 mom 1 k",
+            source_pathologies_out=pathologies,
+        )
+        assert "ITEM_TARGET_ANCHOR_ABSENT" not in [p.code for p in pathologies]
+
     def test_not_applicable_for_subsection_repeal(self):
         state, sec_path, sec = self._make_sec_with_items()
         op = _op(op_type="REPEAL", target_section="1", target_paragraph=2)
@@ -10686,6 +10852,73 @@ class TestApplyItemReplace:
         sub_e = next(c for c in new_sec_e.children if c.kind == IRNodeKind.SUBSECTION)
         para5 = next(c for c in sub_e.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "5")
         assert "updated fifth item" in irnode_to_text(para5)
+
+    def test_replace_letter_item_reconcile_witnesses_positional_rebind(self):
+        """A letter→digit kohta reconcile assigns identity by ordinal position
+        (no intrinsic label match), so it must witness the positional rebind on
+        the production source-pathology ledger, not only logger.debug.
+        (EXIT_REAUDIT_2 V5)
+        """
+        sec = _sec(
+            "1",
+            _sub(
+                "1",
+                _para("1", "original first item"),
+                _para("2", "second item"),
+                _para("3", "third item"),
+                _para("4", "fourth item"),
+                _para("5", "original fifth item"),
+            ),
+        )
+        state = _make_state(_body(sec))
+        sec_path = (("section", "1"),)
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+
+        op_e = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="e")
+        amend_e = _sub("1", _para("e", "updated fifth item"))
+        muutos_e = IRNode(kind=IRNodeKind.SECTION, children=(amend_e,))
+        pathologies: list = []
+        _apply_item_replace(
+            state,
+            op_e,
+            sec_path,
+            sec,
+            subsecs,
+            amend_e,
+            muutos_e,
+            "1 § 1 mom e k",
+            source_pathologies_out=pathologies,
+        )
+        rebinds = [p for p in pathologies if p.code == "ITEM_TARGET_POSITIONAL_REBIND"]
+        assert len(rebinds) == 1, [p.code for p in pathologies]
+        detail = rebinds[0].detail
+        assert detail["source_item_label"] == "e"
+        assert detail["assigned_item_label"] == "5"
+        assert detail["ordinal"] == 5
+        assert detail["identity_basis"] == "ordinal_position"
+
+    def test_replace_item_with_explicit_label_match_emits_no_positional_rebind(self):
+        """A REPLACE whose target label matches a live item intrinsically must
+        NOT emit a positional-rebind witness. (EXIT_REAUDIT_2 V5)
+        """
+        state, sec_path, sec = self._make_sec_with_items()
+        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
+        amend_sub = _sub("1", _para("2", "updated second item"))
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "1 § 1 mom 2 k",
+            source_pathologies_out=pathologies,
+        )
+        assert "ITEM_TARGET_POSITIONAL_REBIND" not in [p.code for p in pathologies]
 
     def test_replace_letter_item_refuses_reconcile_when_labels_mix_letter_and_digit(self):
         # Conservative guard: if the live list is NOT uniformly digit-labelled
@@ -12822,6 +13055,135 @@ class TestApplySpecialTargets:
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, None, None, "1 § otsikko")
         assert _unchanged(state, result)
+
+    def test_heading_repeal_without_heading_witnesses_structure_absent(self):
+        """An otsikko REPEAL on a section that has no live HEADING is a satisfied-
+        intent no-op, but must witness the absent target on the production source-
+        pathology ledger rather than returning state silently. (EXIT_REAUDIT_3 N1)
+        """
+        sec = _sec("1", _sub("1", _content("text")))
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_special="otsikko")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        result = _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § otsikko",
+            source_pathologies_out=pathologies,
+        )
+        assert _unchanged(state, result)
+        codes = [p.code for p in pathologies]
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" in codes, codes
+        witness = next(p for p in pathologies if p.code == "ITEM_TARGET_STRUCTURE_ABSENT")
+        assert witness.detail["target_special"] == "otsikko"
+        assert witness.detail["diagnostic_reason"] == "otsikko_repeal_no_live_heading"
+
+    def test_heading_repeal_with_heading_emits_no_structure_absent_witness(self):
+        """An otsikko REPEAL that actually removes a live HEADING must stay quiet —
+        no spurious structure-absent witness on the normal apply path.
+        (EXIT_REAUDIT_3 N1)
+        """
+        heading = IRNode(kind=IRNodeKind.HEADING, text="Old heading")
+        sec = _sec("1", heading, _sub("1", _content("text")))
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_special="otsikko")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § otsikko",
+            source_pathologies_out=pathologies,
+        )
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" not in [p.code for p in pathologies]
+
+    def test_section_johd_repeal_without_intro_witnesses_structure_absent(self):
+        """A section-level johd REPEAL on a section with no live INTRO/CONTENT is a
+        satisfied-intent no-op, but must witness the absent target on the
+        production source-pathology ledger. (EXIT_REAUDIT_3 N2)
+        """
+        sec = _sec("1", _sub("1", _content("first moment")))
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_special="johd")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        result = _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § johd",
+            source_pathologies_out=pathologies,
+        )
+        assert _unchanged(state, result)
+        codes = [p.code for p in pathologies]
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" in codes, codes
+        witness = next(p for p in pathologies if p.code == "ITEM_TARGET_STRUCTURE_ABSENT")
+        assert witness.detail["target_special"] == "johd"
+        assert witness.detail["diagnostic_reason"] == "section_johd_repeal_no_live_intro"
+
+    def test_section_johd_repeal_with_intro_emits_no_structure_absent_witness(self):
+        """A section johd REPEAL that actually removes a live INTRO must stay quiet.
+        (EXIT_REAUDIT_3 N2)
+        """
+        sec = _sec("1", _intro("Section intro."), _sub("1", _content("first moment")))
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_special="johd")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § johd",
+            source_pathologies_out=pathologies,
+        )
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" not in [p.code for p in pathologies]
+
+    def test_subsection_johd_repeal_without_intro_witnesses_structure_absent(self):
+        """A subsection-level johd REPEAL on a subsection with no live INTRO/CONTENT
+        is a satisfied-intent no-op, but must witness the absent target on the
+        production source-pathology ledger. (EXIT_REAUDIT_3 N3)
+        """
+        sub1 = _sub("1", _para("1", "keep first item"), _para("2", "keep second item"))
+        sec = _sec("1", sub1)
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_special="johd")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        result = _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § 1 mom johd",
+            source_pathologies_out=pathologies,
+        )
+        assert _unchanged(state, result)
+        codes = [p.code for p in pathologies]
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" in codes, codes
+        witness = next(p for p in pathologies if p.code == "ITEM_TARGET_STRUCTURE_ABSENT")
+        assert witness.detail["target_special"] == "johd"
+        assert witness.detail["diagnostic_reason"] == "subsection_johd_repeal_no_live_intro"
+
+    def test_subsection_johd_repeal_with_intro_emits_no_structure_absent_witness(self):
+        """A subsection johd REPEAL that actually removes a live INTRO must stay
+        quiet. (EXIT_REAUDIT_3 N3)
+        """
+        sub1 = _sub(
+            "1",
+            _intro("Ministeriö voi:"),
+            _para("1", "keep first item"),
+            _para("2", "keep second item"),
+        )
+        sec = _sec("1", sub1)
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_special="johd")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list = []
+        _apply_special_targets(
+            state, op, sec_path, sec, subsecs, None, None, "1 § 1 mom johd",
+            source_pathologies_out=pathologies,
+        )
+        assert "ITEM_TARGET_STRUCTURE_ABSENT" not in [p.code for p in pathologies]
 
     def test_subsection_johd_repeal_preserves_items(self):
         sub1 = _sub(
@@ -17452,3 +17814,162 @@ def test_subsection_replace_sparse_omission_item_rows_strict_blocks_recovery() -
     assert result is None
     assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
     assert pathologies[0].detail["recovery_kind"] == "subsection_replace_sparse_omission_item_merge"
+
+
+def _otsikko_container_op(
+    *,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    op_type: OpType = "REPLACE",
+) -> AmendmentOp:
+    return AmendmentOp(
+        op_id="container_otsikko_op",
+        op_type=op_type,
+        target_section=target_section,
+        target_unit_kind=target_unit_kind,
+        target_special="otsikko",
+        source_statute="2020/1",
+        source_issue_date=_DATE,
+    )
+
+
+def test_apply_container_otsikko_replace_applies_crossheading_payload() -> None:
+    """A container heading REPLACE whose payload carries the new title as a
+    crossHeading (not a heading node) installs the new heading instead of
+    silently dropping the edit."""
+    chapter = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old chapter heading"),
+            _sec("93", _content("body")),
+        ),
+    )
+    state = _make_state(_body(chapter))
+    payload = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.CROSS_HEADING, text="New chapter heading"),
+            _sec("93", _content("body")),
+        ),
+    )
+    op = ResolvedOp.from_amendment_op(
+        _otsikko_container_op(target_unit_kind="chapter", target_section="7"),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="chapter",
+        target_norm="7",
+        target_chapter=None,
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_container_op(
+        state,
+        op,
+        payload,
+        _LEGAL_PIT,
+        "7 luku otsikko",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    new_chapter = next(c for c in result.ir.children if c.kind is IRNodeKind.CHAPTER)
+    headings = [c.text for c in new_chapter.children if c.kind is IRNodeKind.HEADING]
+    assert headings == ["New chapter heading"]
+    # crossHeading recovery is a clean apply, not a pathology.
+    assert pathologies == []
+
+
+def test_apply_container_otsikko_replace_witnesses_missing_heading_payload() -> None:
+    """A container heading REPLACE whose payload exposes no heading (nor
+    crossHeading) is witnessed rather than vanishing as a silent no-op."""
+    chapter = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old chapter heading"),
+            _sec("93", _content("body")),
+        ),
+    )
+    state = _make_state(_body(chapter))
+    payload = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            _sec("93", _content("body")),
+        ),
+    )
+    op = ResolvedOp.from_amendment_op(
+        _otsikko_container_op(target_unit_kind="chapter", target_section="7"),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="chapter",
+        target_norm="7",
+        target_chapter=None,
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_container_op(
+        state,
+        op,
+        payload,
+        _LEGAL_PIT,
+        "7 luku otsikko",
+        source_pathologies_out=pathologies,
+    )
+
+    # No-op: the live heading is untouched.
+    assert result is state
+    new_chapter = next(c for c in state.ir.children if c.kind is IRNodeKind.CHAPTER)
+    headings = [c.text for c in new_chapter.children if c.kind is IRNodeKind.HEADING]
+    assert headings == ["Old chapter heading"]
+    assert [p.code for p in pathologies] == ["CONTAINER_OTSIKKO_PAYLOAD_ABSENT"]
+    assert pathologies[0].detail["op_type"] == "REPLACE"
+    assert "heading" not in pathologies[0].detail["payload_child_kinds"]
+
+
+def test_apply_section_insert_missing_scoped_parent_is_witnessed() -> None:
+    """A scoped section INSERT whose explicit parent container is absent is
+    witnessed rather than silently declined."""
+    state = _make_state(_body())
+    payload = _sec("145a", _content("new section body"))
+    op = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="insert_145a",
+            op_type="INSERT",
+            target_section="145a",
+            target_unit_kind="section",
+            target_chapter="16a",
+            target_part="3a",
+            source_statute="2020/1",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="145a",
+        target_chapter="16a",
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        payload,
+        None,
+        _LEGAL_PIT,
+        "145a §",
+        base_ir=_body(),
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is state
+    assert [p.code for p in pathologies] == ["SECTION_INSERT_SCOPED_PARENT_ABSENT"]
+    assert pathologies[0].detail["target_part"] == "3a"
+    assert pathologies[0].detail["target_chapter"] == "16a"

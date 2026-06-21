@@ -45,6 +45,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import List, Optional
 
+from lawvm.core.filter_result import FilterResult, RejectedItem
+
 # Shared authority-basis surface helpers relocated to the neutral
 # ``authority_basis`` leaf module so the ``references`` lift can import them
 # without a backreach into this legacy module. Re-exported here for the
@@ -452,11 +454,22 @@ def extract_delegations(
     statute_id: str,
     *,
     diagnostics_out: Optional[list[DelegationDiagnostic]] = None,
-) -> List[DelegationEdge]:
+) -> FilterResult[DelegationEdge]:
     """Extract delegation clauses from a Finnish statute XML.
 
     Scans at subsection (momentti) level for precise addressing. Falls back to
     section level for statutes without subsection markup.
+
+    Conservation contract (AGENTS.md §1.8)
+    --------------------------------------
+    Returns a :class:`FilterResult[DelegationEdge]`: ``accepted_items`` are the
+    detected delegation edges; ``rejected_items`` are the regex candidates a
+    named negative filter rejected (and a whole-document rejection on XML parse
+    failure), each carrying the rejecting rule id as ``reason_code``. A caller
+    therefore cannot receive the kept edges without also receiving the reject
+    ledger — the false-positive rejections are no longer computed and silently
+    discarded behind an optional ``diagnostics_out`` sink. ``diagnostics_out``
+    remains supported for the richer typed :class:`DelegationDiagnostic` records.
 
     Demoted to typed residue / cross-check (NOT the production source)
     -----------------------------------------------------------------
@@ -478,9 +491,12 @@ def extract_delegations(
         statute_id: Canonical statute ID, e.g. "2011/646".
 
     Returns:
-        List of DelegationEdge instances, one per detected delegation clause.
-        A single provision may produce multiple edges (different patterns).
+        A :class:`FilterResult` whose ``accepted_items`` are DelegationEdge
+        instances (one per detected delegation clause; a single provision may
+        produce multiple edges) and whose ``rejected_items`` are the
+        negative-filtered regex candidates with their rejecting rule id.
     """
+    rejected: list[RejectedItem[DelegationEdge]] = []
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError:
@@ -489,7 +505,27 @@ def extract_delegations(
             statute_id=statute_id,
             phase="delegation_extraction",
         )
-        return []
+        return FilterResult(
+            accepted_items=(),
+            rejected_items=(
+                RejectedItem(
+                    item=DelegationEdge(
+                        statute_id=statute_id,
+                        section="",
+                        eid="",
+                        delegation_type="",
+                        match_text="",
+                        quote="",
+                    ),
+                    reason=(
+                        "Finnish delegation extractor skipped source XML "
+                        "because parsing failed."
+                    ),
+                    reason_code="fi_delegation_extraction_xml_parse_failed",
+                    blocking=True,
+                ),
+            ),
+        )
 
     # Build list of (element, section_num, eid) scan units.
     # Prefer subsections for fine-grained addressing.
@@ -533,14 +569,33 @@ def extract_delegations(
                 rule_id = _false_positive_rule_id(context_text)
                 if rule_id:
                     matched_spans.append((m.start(), m.end()))
+                    candidate_text = m.group(0).strip()
                     _record_false_positive_filter(
                         diagnostics_out,
                         rule_id=rule_id,
                         statute_id=statute_id,
                         section=sec_num,
                         eid=unit_eid,
-                        match_text=m.group(0).strip(),
+                        match_text=candidate_text,
                         quote=context_text[:500],
+                    )
+                    rejected.append(
+                        RejectedItem(
+                            item=DelegationEdge(
+                                statute_id=statute_id,
+                                section=sec_num,
+                                eid=unit_eid,
+                                delegation_type=_classify_delegation_type(candidate_text),
+                                match_text=candidate_text,
+                                quote=context_text[:500],
+                            ),
+                            reason=(
+                                "Finnish delegation extractor rejected a regex "
+                                "candidate using a named negative filter."
+                            ),
+                            reason_code=rule_id,
+                            blocking=False,
+                        )
                     )
                     continue
                 matched_spans.append((m.start(), m.end()))
@@ -554,7 +609,7 @@ def extract_delegations(
                     quote=unit_text[:500],
                 ))
 
-    return results
+    return FilterResult(accepted_items=tuple(results), rejected_items=tuple(rejected))
 
 
 # ---------------------------------------------------------------------------
@@ -566,19 +621,28 @@ def extract_asetus_authority(
     asetus_id: str,
     *,
     diagnostics_out: Optional[list[DelegationDiagnostic]] = None,
-) -> List[AuthorityEdge]:
+) -> FilterResult[AuthorityEdge]:
     """Parse an asetus preamble for "nojalla" references to parent law.
 
     The Finnish "nojalla" construction identifies the legal authority under
     which a decree was issued. Each reference creates an AuthorityEdge:
     asetus → parent_law_provision.
 
+    Conservation contract (AGENTS.md §1.8)
+    --------------------------------------
+    Returns a :class:`FilterResult[AuthorityEdge]`: ``accepted_items`` are the
+    parsed authority edges; ``rejected_items`` carries a whole-document
+    rejection when the source XML fails to parse, so a caller cannot receive the
+    kept edges without the reject ledger. ``diagnostics_out`` remains supported
+    for the richer typed :class:`DelegationDiagnostic` record.
+
     Args:
         xml_bytes: Raw XML bytes of the asetus (Finlex format).
         asetus_id: The decree's statute ID, e.g. "2011/500".
 
     Returns:
-        List of AuthorityEdge instances (one per parent-law citation found).
+        A :class:`FilterResult` whose ``accepted_items`` are AuthorityEdge
+        instances (one per parent-law citation found).
     """
     try:
         root = ET.fromstring(xml_bytes)
@@ -588,7 +652,26 @@ def extract_asetus_authority(
             statute_id=asetus_id,
             phase="authority_extraction",
         )
-        return []
+        return FilterResult(
+            accepted_items=(),
+            rejected_items=(
+                RejectedItem(
+                    item=AuthorityEdge(
+                        asetus_id=asetus_id,
+                        parent_statute_id="",
+                        parent_section="",
+                        parent_moment="",
+                        quote="",
+                    ),
+                    reason=(
+                        "Finnish authority extractor skipped source XML "
+                        "because parsing failed."
+                    ),
+                    reason_code="fi_authority_extraction_xml_parse_failed",
+                    blocking=True,
+                ),
+            ),
+        )
 
     # Search preamble first; fall back to first 500 chars of full text
     preamble = root.find(f'.//{NS}preamble')
@@ -646,4 +729,4 @@ def extract_asetus_authority(
                 parent_kind=_classify_authority_kind(name_word),
             ))
 
-    return results
+    return FilterResult(accepted_items=tuple(results), rejected_items=())

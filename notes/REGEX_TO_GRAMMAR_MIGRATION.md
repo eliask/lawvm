@@ -81,7 +81,7 @@ No new domain regex may enter core.
 ### Ranked Finland backlog (EV-ordered; targeted, shadow-mode, 0-delta gate)
 
 1. **`scope.py` scope-ownership** (MOVE, EV high) — answer from typed op target paths + witnesses; route address matching through `scan_legal_addresses`; extract the chapter-chunk verb-binding precedence as a policy. The canonical violation.
-2. **`normalize.py` fallback cluster → PEG3** (MOVE, high) — lowest-risk-class high-EV; the PEG exists and docstrings already ask for removal.
+2. **`normalize.py` fallback cluster → the canonical johtolause grammar** (MOVE, high) — fold the `*_FALLBACK_RE` discriminators into the token-native scan/surface parser; the grammar already exists, so this is low-risk-class, high-EV. (NB: older sections of this doc and some code comments still say "PEG3"/`peg3.py`; that parser has since been **decomposed/renamed into `johtolause/`** — read every "PEG3" reference as "the canonical surface parser".)
 3. **`johtolause_supplements` productions** (MOVE, high) — extract the `muutetaan`/`lisätään` verb-zone segmentation as a named policy; keep witnesses.
 4. **`citation_routing` amendment-title grammar** (MOVE, med) — one typed title recognizer vs 5+ variants; gates corpus routing.
 5. **`vts.py` repeal-ordering + cut-point + name-exclusion** (EXTRACT/MOVE, med) — named recognizer over typed clause spans.

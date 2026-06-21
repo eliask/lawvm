@@ -10,7 +10,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline_results import (
     MaterializationLineageDecision,
     MaterializationLineagePlan,
-    MaterializationCertificate,
+    MaterializationCoverage,
     MaterializationResult,
     TimelineCompilationResult,
     TimelineIssue,
@@ -34,8 +34,8 @@ def test_timeline_issue_rejects_unknown_kind() -> None:
         TimelineIssue(kind=cast(Any, "python_order_won"), message="unowned selection")
 
 
-def test_materialization_certificate_normalizes_required_dimensions() -> None:
-    certificate = MaterializationCertificate(
+def test_materialization_coverage_normalizes_required_dimensions() -> None:
+    certificate = MaterializationCoverage(
         as_of="2024-01-01",
         query_type="governing",
         required_dimensions=cast(Any, ["territory"]),
@@ -57,7 +57,7 @@ def test_materialization_result_rejects_missing_scope_without_dimensions() -> No
 
 
 def test_materialization_result_rejects_certificate_count_drift() -> None:
-    certificate = MaterializationCertificate(
+    certificate = MaterializationCoverage(
         as_of="2024-01-01",
         query_type="governing",
         ambiguous_address_count=2,

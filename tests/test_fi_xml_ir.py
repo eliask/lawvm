@@ -1888,3 +1888,81 @@ def test_fi_xml_to_ir_node_does_not_reclassify_unnumbered_subsection() -> None:
     node = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
 
     assert node.kind == IRNodeKind.SUBSECTION, f"Expected 'subsection', got '{node.kind}'"
+
+
+def test_production_ingest_witnesses_drops_labels_and_repairs() -> None:
+    """The XML→IR ingest witnesses must fire on the production FI path.
+
+    The witnesses (dropped childless unknown element, unknown tag, positional
+    label assignment, structural-repair re-parenting) live in ``xml_ingest`` but
+    the production FI ingest goes through ``StatuteContext.from_xml`` ->
+    ``fi_xml_to_ir_node``. This drives that real entry (not ``xml_body_to_ir``)
+    and asserts the sink surfaces every family in ``ctx.ingest_metadata``, plus a
+    valid coverage partition.
+    """
+    from lawvm.finland.statute import StatuteContext
+    from lawvm.xml_ingest import (
+        INGEST_DROPPED_CHILD,
+        INGEST_POSITIONAL_LABEL,
+        INGEST_STRUCTURAL_REPAIR,
+        INGEST_UNKNOWN_TAG,
+    )
+
+    xml = (
+        '<?xml version="1.0"?>'
+        '<act xmlns="urn:test">'
+        "<docNumber>9/9999</docNumber>"
+        "<docTitle>Sink Probe Act</docTitle>"
+        "<body>"
+        "<section>"
+        "<num>1 §</num>"
+        # No <num> on this subsection -> positional label assigned (witnessed).
+        "<subsection><content>Eka momentti.</content></subsection>"
+        # Unknown childless element collapsing to '' -> dropped + unknown-tag witness.
+        "<foobar/>"
+        "</section>"
+        # Orphaned subsection as body sibling -> structural-repair absorb witness.
+        "<subsection><content>Orpo momentti.</content></subsection>"
+        "</body>"
+        "</act>"
+    ).encode("utf-8")
+
+    ctx = StatuteContext.from_xml(xml)
+    observations = ctx.ingest_metadata["xml_ingest_observations"]
+    codes = {obs["kind"] for obs in observations}
+    assert INGEST_DROPPED_CHILD in codes
+    assert INGEST_UNKNOWN_TAG in codes
+    assert INGEST_POSITIONAL_LABEL in codes
+    assert INGEST_STRUCTURAL_REPAIR in codes
+
+    # Dropped-child witness embeds the offending tag + parent for triage.
+    dropped = next(o for o in observations if o["kind"] == INGEST_DROPPED_CHILD)
+    assert dropped["tag"] == "foobar"
+    assert dropped["parent_tag"] == "section"
+
+    # The token-partition coverage account is a checkable partition and records
+    # the dropped source unit (so it can no longer silently understate source).
+    coverage = ctx.ingest_metadata["xml_ingest_coverage"]
+    assert coverage["dropped"] == 1
+    assert coverage["total"] == coverage["owned"] + coverage["benign"] + coverage["dropped"]
+
+
+def test_production_ingest_clean_statute_has_empty_metadata() -> None:
+    """A clean parse leaves ``ingest_metadata`` empty (no dirty default)."""
+    from lawvm.finland.statute import StatuteContext
+
+    xml = (
+        '<?xml version="1.0"?>'
+        '<act xmlns="urn:test">'
+        "<docNumber>1/2026</docNumber>"
+        "<docTitle>Clean Act</docTitle>"
+        "<body>"
+        "<section><num>1 §</num>"
+        "<subsection><num>1 mom.</num><content>Selkea momentti.</content></subsection>"
+        "</section>"
+        "</body>"
+        "</act>"
+    ).encode("utf-8")
+
+    ctx = StatuteContext.from_xml(xml)
+    assert dict(ctx.ingest_metadata) == {}

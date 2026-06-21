@@ -237,7 +237,7 @@ def test_lane_filtered_items_are_non_executable_work_queue_rows(tmp_path) -> Non
     )
     assert frontier["target_witness"]["oracle_only_eid_samples"] == ["regulation-10"]
     assert frontier["compare_witness"]["n_only_in_oracle"] == 8
-    candidate_set = item["candidate_set_certificate"]
+    candidate_set = item["candidate_set_coverage"]
     assert candidate_set["scope_id"] == item["work_item_id"]
     assert (
         candidate_set["candidate_set_kind"]
@@ -484,7 +484,7 @@ def test_item_export_summary_counts_safety_gaps() -> None:
                 "replay_authorized": False,
                 "execution_authorization": {},
                 "frontier_work_item": {},
-                "candidate_set_certificate": {},
+                "candidate_set_coverage": {},
             },
             {
                 "lane_id": "effect_source_footing_gap",
@@ -494,7 +494,7 @@ def test_item_export_summary_counts_safety_gaps() -> None:
                     "authorization_status": "unexpected_authorized"
                 },
                 "frontier_work_item": {"work_item_id": "x"},
-                "candidate_set_certificate": {"scope_id": "x"},
+                "candidate_set_coverage": {"scope_id": "x"},
             },
         ],
         {
@@ -506,7 +506,7 @@ def test_item_export_summary_counts_safety_gaps() -> None:
 
     assert summary["item_safety_gap_counts"] == {
         "executable_items": 1,
-        "missing_candidate_set_certificate": 1,
+        "missing_candidate_set_coverage": 1,
         "missing_execution_authorization": 1,
         "missing_frontier_work_item": 1,
         "replay_authorized_items": 1,
@@ -529,7 +529,7 @@ def test_item_export_summary_honors_lane_filter_for_coverage() -> None:
                     "authorization_status": "non_executable_work_item"
                 },
                 "frontier_work_item": {"work_item_id": "x"},
-                "candidate_set_certificate": {"scope_id": "x"},
+                "candidate_set_coverage": {"scope_id": "x"},
             },
         ],
         {

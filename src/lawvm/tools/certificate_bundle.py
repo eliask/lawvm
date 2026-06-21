@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from lawvm.core.observation_registry import FINDING_REGISTRY, FindingSpec
+from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 from lawvm.tools.export_transition_graph import (
     DEFAULT_GRANULARITY,
     _canonical_statute_id,
@@ -97,6 +98,19 @@ D_CHANGE_DATES = "lawvm.change_dates.v0"
 # namespace) carried by kind=source_anchor_unavailable residuals (§5.4,
 # trace spec §7).
 SOURCE_ANCHOR_UNAVAILABLE_CODE = "CERT.SOURCE_ANCHOR_UNAVAILABLE"
+
+# Bundle-local certificate-layer code (CERT. namespace) for the receipt
+# consistency cross-check: a covering-state transition whose touched address
+# is attributed to one or more landed ops, yet NO attributed op's WriteReceipt
+# declares a footprint that explains the transition's target address. This is a
+# genuine divergence between the two independent derivations — the per-date
+# covering-frontier diff (what the certificate certifies) and the per-op landed
+# receipts (what the apply boundary recorded). It is a NON-BLOCKING observation:
+# it surfaces silent drift without softening the certificate or replacing either
+# producer. Legitimate zero-receipt transitions (temporary-act lapse
+# restorations, the enacted-base first materialization) carry no attributed ops
+# and are NOT flagged — they are recorded as writer notes only.
+RECEIPT_TRANSITION_DIVERGENCE_CODE = "CERT.RECEIPT_TRANSITION_DIVERGENCE"
 
 # Certificate spec §3.4 + §3.5: per-family run-provenance exclusion list.
 # The seam payload's `engine` block (git commit/dirty/repository) is
@@ -351,8 +365,162 @@ def build_diagnostic_registry_rows(profile_fields: Mapping[str, Any]) -> List[Di
             "surface_lexemes": [],
         }
     )
+    # Bundle-local cross-check code: diff-vs-receipt divergence is a
+    # non-blocking observation (role=observation -> profile permits). It never
+    # produces a residual; it only ever appears in the finding ledger when a
+    # genuine divergence is detected, so a consistent replay leaves every
+    # committed root unchanged.
+    rows.append(
+        {
+            "code": RECEIPT_TRANSITION_DIVERGENCE_CODE,
+            "canonical_semantic_code": RECEIPT_TRANSITION_DIVERGENCE_CODE,
+            "deprecated_aliases": [],
+            "introduced_in": "lawvm.certificate.v0.4",
+            "deprecated_in": None,
+            "role": "observation",
+            "allowed_residual_kinds": [],
+            "profile_disposition": {PROFILE_ID: "permits"},
+            "jurisdiction_scope": [],
+            "doctrine_scope": [],
+            "surface_language": None,
+            "surface_lexemes": [],
+        }
+    )
     rows.sort(key=lambda r: r["code"])
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Receipt consistency cross-check (diff-vs-receipt divergence detector)
+# ---------------------------------------------------------------------------
+
+# Every landed WriteReceipt footprint TreePath begins at the addressable body
+# root, whose segment renders as ``hcontainer:/`` under the receipt address
+# grammar. The certificate's covering-state ``target_address`` is rooted at the
+# same body but WITHOUT that prefix (covering_units addresses are body-relative).
+# Stripping the prefix puts both grammars in one comparable space.
+_RECEIPT_BODY_ROOT_PREFIX = "hcontainer:/"
+
+
+def _receipt_footprint_addresses(receipt: WriteReceipt) -> set[str]:
+    """Body-relative covering addresses a receipt declares as touched.
+
+    Returns the receipt's ``declared_footprint`` rendered in the certificate's
+    ``target_address`` grammar (leading ``hcontainer:/`` body-root prefix
+    stripped). Footprints that do not start at the body root are returned
+    verbatim — that itself is a shape the cross-check will report as
+    unexplained rather than silently coerce.
+    """
+    out: set[str] = set()
+    for path in receipt.declared_footprint:
+        rendered = receipt_address_string(path)
+        if rendered.startswith(_RECEIPT_BODY_ROOT_PREFIX):
+            rendered = rendered[len(_RECEIPT_BODY_ROOT_PREFIX):]
+        if rendered:
+            out.add(rendered)
+    return out
+
+
+def _address_explains(footprint_addr: str, target_addr: str) -> bool:
+    """True when a receipt footprint address explains a transition target.
+
+    A covering-unit transition at ``target_addr`` is explained by a receipt
+    footprint at ``footprint_addr`` when the two addresses are equal, or one is
+    an ancestor of the other in the slash-separated address tree — the same
+    covering relation ``_ops_for_covering`` uses to attribute ops to transitions
+    (a whole-section write explains its subsection transitions; a subsection
+    write explains the section transition it tiles).
+    """
+    if footprint_addr == target_addr:
+        return True
+    return target_addr.startswith(footprint_addr + "/") or footprint_addr.startswith(
+        target_addr + "/"
+    )
+
+
+def cross_check_transitions_against_receipts(
+    *,
+    transition_rows: Sequence[Mapping[str, Any]],
+    op_transitions: Mapping[str, Sequence[str]],
+    write_receipts: Sequence[WriteReceipt],
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Cross-check covering-state transitions against landed write receipts.
+
+    The certificate derives its transitions from per-date covering-frontier
+    state diffs; the apply boundary records per-op ``WriteReceipt`` footprints.
+    These are two independent derivations of the same landed reality. This
+    check asserts they agree WITHOUT replacing either: for every transition
+    that attributes to one or more ops, at least one attributed op's receipt
+    must declare a footprint that explains the transition's target address.
+
+    Returns ``(divergences, notes)``:
+
+    * ``divergences`` — one detail dict per genuinely divergent transition
+      (attributed ops present, but no attributed receipt footprint explains the
+      target address). The caller turns each into a NON-BLOCKING
+      ``CERT.RECEIPT_TRANSITION_DIVERGENCE`` finding.
+    * ``notes`` — human-readable accounting of the legitimate zero-receipt
+      transitions (no attributed ops: temporary-act lapse restoration, the
+      enacted-base first materialization). These are recorded, never flagged.
+
+    A consistent replay yields ``([], [<zero-receipt accounting>])`` — no
+    findings, so every committed certificate root is unchanged.
+    """
+    receipt_by_op: Dict[str, List[WriteReceipt]] = {}
+    for receipt in write_receipts:
+        receipt_by_op.setdefault(receipt.op_id, []).append(receipt)
+
+    ops_by_transition: Dict[str, List[str]] = {}
+    for op_id, transition_ids in op_transitions.items():
+        for transition_id in transition_ids:
+            ops_by_transition.setdefault(transition_id, []).append(op_id)
+
+    divergences: List[Dict[str, Any]] = []
+    zero_receipt_count = 0
+    for row in transition_rows:
+        transition_id = row["transition_id"]
+        target_addr = row["target_address"]
+        attributed_ops = ops_by_transition.get(transition_id, [])
+        if not attributed_ops:
+            # Legitimate zero-receipt transition: temporary-act lapse
+            # restoration (flags.temporary_expiry) or the enacted-base first
+            # materialization (flags.created with no attributing op). No
+            # receipt is expected; record, never flag.
+            zero_receipt_count += 1
+            continue
+
+        explaining_footprints: set[str] = set()
+        attributed_with_receipts = 0
+        for op_id in attributed_ops:
+            for receipt in receipt_by_op.get(op_id, ()):
+                attributed_with_receipts += 1
+                for footprint_addr in _receipt_footprint_addresses(receipt):
+                    if _address_explains(footprint_addr, target_addr):
+                        explaining_footprints.add(footprint_addr)
+
+        if not explaining_footprints:
+            divergences.append(
+                {
+                    "transition_id": transition_id,
+                    "target_address": target_addr,
+                    "effective_date": row["effective_date"],
+                    "attributed_op_ids": sorted(attributed_ops),
+                    "attributed_ops_with_receipts": attributed_with_receipts,
+                    "detail": (
+                        "covering-state transition attributes to ops "
+                        f"{sorted(attributed_ops)} but no attributed write "
+                        f"receipt declares a footprint explaining target "
+                        f"address {target_addr!r}"
+                    ),
+                }
+            )
+
+    notes = [
+        f"receipt cross-check: {len(transition_rows)} transitions; "
+        f"{zero_receipt_count} legitimate zero-receipt (no attributed op); "
+        f"{len(divergences)} diff-vs-receipt divergence(s)"
+    ]
+    return divergences, notes
 
 
 # ---------------------------------------------------------------------------
@@ -954,6 +1122,32 @@ def build_certificate_bundle(
             finding_for_residual.append(
                 (added, {"source_text": diagnostic.clause_text, "message": diagnostic.detail})
             )
+
+    # --- receipt consistency cross-check (diff-vs-receipt divergence) ---
+    # Assert the certificate's covering-state transitions agree with the
+    # landed WriteReceipts carried up on the ReplayResult. Divergences become
+    # NON-BLOCKING observations; legitimate zero-receipt transitions are noted,
+    # never flagged, so a consistent replay leaves every committed root
+    # unchanged.
+    receipt_divergences, receipt_notes = cross_check_transitions_against_receipts(
+        transition_rows=transition_rows,
+        op_transitions=op_transitions,
+        write_receipts=bundle.result.write_receipts,
+    )
+    notes.extend(receipt_notes)
+    for divergence in receipt_divergences:
+        _add_finding(
+            _finding_row(
+                diagnostic_code=RECEIPT_TRANSITION_DIVERGENCE_CODE,
+                role="observation",
+                blocking=False,
+                address=divergence["target_address"],
+                date_range=[divergence["effective_date"], None],
+                source_refs=[],
+                phase="receipt_cross_check",
+                detail=divergence,
+            )
+        )
 
     # --- residual ledger (§5.4, §5.6) ---
     residual_rows: List[Dict[str, Any]] = []

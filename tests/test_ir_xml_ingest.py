@@ -1,8 +1,22 @@
 from lxml import etree
 
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.core.ir_helpers import irnode_to_text
-from lawvm.xml_ingest import _collapse_text, xml_body_to_ir, xml_to_ir_node
+from lawvm.core.ir_helpers import (
+    irnode_to_text,
+    kind_for_tag,
+    kind_for_tag_or_diagnostic,
+)
+from lawvm.core.observation_registry import is_registered_finding_kind
+from lawvm.xml_ingest import (
+    INGEST_DROPPED_CHILD,
+    INGEST_POSITIONAL_LABEL,
+    INGEST_STRUCTURAL_REPAIR,
+    INGEST_UNKNOWN_TAG,
+    TokenPartitionCoverage,
+    _collapse_text,
+    xml_body_to_ir,
+    xml_to_ir_node,
+)
 
 
 def test_xml_to_ir_node_merges_split_numbered_paragraph_tail() -> None:
@@ -263,3 +277,201 @@ def test_xml_to_ir_adjacent_p_spacing_in_content() -> None:
     content_node = next(c for c in ir.children if c.kind == IRNodeKind.CONTENT)
     assert content_node.text == "nojalla, suorittaa tämän lain"
     assert irnode_to_text(ir) == "nojalla, suorittaa tämän lain"
+
+
+# ---------------------------------------------------------------------------
+# Witnessed ingest observations (no silent drop / no silent guess)
+# ---------------------------------------------------------------------------
+
+
+def _observations(statute) -> tuple:
+    return statute.metadata.get("xml_ingest_observations", ())
+
+
+def test_dropped_unknown_childless_element_is_witnessed() -> None:
+    """An unknown childless XML element whose text collapses to '' was silently
+    dropped; it must now appear as a SCAN.XML_INGEST_DROPPED_CHILD observation
+    plus an unknown-tag diagnostic, and the coverage account must record it.
+    """
+    xml = etree.fromstring(
+        """
+        <act xmlns="urn:test">
+          <docNumber>3/2026</docNumber>
+          <docTitle>Dropped Child Act</docTitle>
+          <body>
+            <section>
+              <num>1 §</num>
+              <content>Body text.</content>
+              <mysteryTag/>
+            </section>
+          </body>
+        </act>
+        """
+    )
+
+    statute = xml_body_to_ir(xml)
+    obs = _observations(statute)
+    codes = [o["kind"] for o in obs]
+    assert INGEST_DROPPED_CHILD in codes
+    assert INGEST_UNKNOWN_TAG in codes
+
+    dropped = next(o for o in obs if o["kind"] == INGEST_DROPPED_CHILD)
+    assert dropped["tag"] == "mysteryTag"
+    assert dropped["parent_tag"] == "section"
+    assert dropped["family"] == "source_pathology"
+    assert dropped["phase"] == "ingest"
+
+    coverage = statute.metadata["xml_ingest_coverage"]
+    assert coverage["dropped"] >= 1
+    assert coverage["total"] == coverage["owned"] + coverage["benign"] + coverage["dropped"]
+
+
+def test_unknown_tag_emits_distinct_named_diagnostic() -> None:
+    """kind_for_tag returns None silently; the diagnostic twin returns a
+    distinct named carrier carrying the offending tag and the fix message.
+    """
+    kind, diag = kind_for_tag_or_diagnostic("definitely_not_a_tag")
+    assert kind is None
+    assert diag is not None
+    assert diag.tag == "definitely_not_a_tag"
+    assert diag.finding_code == INGEST_UNKNOWN_TAG
+    assert "definitely_not_a_tag" in diag.message
+    # Known tag: no diagnostic.
+    kind2, diag2 = kind_for_tag_or_diagnostic("section")
+    assert kind2 is IRNodeKind.SECTION
+    assert diag2 is None
+
+
+def test_positional_label_assignment_is_witnessed() -> None:
+    """Unlabelled subsections assigned positional labels by enumeration order
+    must each emit a SCAN.XML_INGEST_POSITIONAL_LABEL observation witnessing the
+    positional (non-intrinsic) identity guess.
+    """
+    statute = xml_body_to_ir(
+        etree.fromstring(
+            """
+            <act xmlns="urn:test">
+              <docNumber>4/2026</docNumber>
+              <docTitle>Positional Label Act</docTitle>
+              <body>
+                <section>
+                  <num>1 §</num>
+                  <subsection><content>ensimmäinen momentti.</content></subsection>
+                  <subsection><content>toinen momentti.</content></subsection>
+                </section>
+              </body>
+            </act>
+            """
+        )
+    )
+    pos = [o for o in _observations(statute) if o["kind"] == INGEST_POSITIONAL_LABEL]
+    assert len(pos) == 2
+    assert [o["assigned_label"] for o in pos] == ["1", "2"]
+    assert all(o["kind"] == INGEST_POSITIONAL_LABEL for o in pos)
+    assert all(o["parent_tag"] == "section" for o in pos)
+
+
+def test_structural_repair_absorb_orphaned_subsection_is_witnessed() -> None:
+    """The absorb-orphaned-subsection repair re-parents tree shape on a guess;
+    it must emit a SCAN.XML_INGEST_STRUCTURAL_REPAIR observation naming the rule.
+    """
+    statute = xml_body_to_ir(
+        etree.fromstring(
+            """
+            <act xmlns="urn:test">
+              <docNumber>5/2026</docNumber>
+              <docTitle>Orphan Subsection Act</docTitle>
+              <body>
+                <section><num>6 §</num></section>
+                <subsection><content>orpomomentti.</content></subsection>
+              </body>
+            </act>
+            """
+        )
+    )
+    repairs = [o for o in _observations(statute) if o["kind"] == INGEST_STRUCTURAL_REPAIR]
+    assert any(
+        o["repair"] == "absorb_orphaned_subsection_into_preceding_section" for o in repairs
+    )
+
+
+def test_structural_repair_rehome_orphaned_letter_paragraph_is_witnessed() -> None:
+    """The rehome-orphaned-letter-paragraph repair must emit a structural-repair
+    observation (mirrors the 2025/1178 §2 mom.1 Finlex encoding error)."""
+    statute = xml_body_to_ir(
+        etree.fromstring(
+            """
+            <act xmlns="urn:test">
+              <docNumber>6/2026</docNumber>
+              <docTitle>Letter Paragraph Act</docTitle>
+              <body>
+                <section>
+                  <num>1 §</num>
+                  <subsection>
+                    <paragraph eId="p1">
+                      <num>1)</num>
+                      <subparagraph eId="p1_a"><num>a)</num><content>a;</content></subparagraph>
+                      <subparagraph eId="p1_b"><num>b)</num><content>b;</content></subparagraph>
+                    </paragraph>
+                    <paragraph eId="p2"><num>c)</num><content>c;</content></paragraph>
+                  </subsection>
+                </section>
+              </body>
+            </act>
+            """
+        )
+    )
+    repairs = [o for o in _observations(statute) if o["kind"] == INGEST_STRUCTURAL_REPAIR]
+    assert any(o["repair"] == "rehome_orphaned_letter_paragraph" for o in repairs)
+
+
+def test_clean_statute_emits_no_ingest_observations_or_coverage() -> None:
+    """Negative test: a well-formed statute with no dropped children, no
+    positional labelling, and no structural repair must not emit ingest
+    observations or a coverage account — the witness fires only on a real
+    drop/guess, not on every valid child.
+    """
+    statute = xml_body_to_ir(
+        etree.fromstring(
+            """
+            <act xmlns="urn:test">
+              <docNumber>7/2026</docNumber>
+              <docTitle>Clean Act</docTitle>
+              <body>
+                <section>
+                  <num>1 §</num>
+                  <subsection><num>1</num><content>momentti yksi.</content></subsection>
+                </section>
+              </body>
+            </act>
+            """
+        )
+    )
+    assert "xml_ingest_observations" not in statute.metadata
+    assert "xml_ingest_coverage" not in statute.metadata
+
+
+def test_ingest_observation_codes_are_registered() -> None:
+    for code in (
+        INGEST_DROPPED_CHILD,
+        INGEST_UNKNOWN_TAG,
+        INGEST_POSITIONAL_LABEL,
+        INGEST_STRUCTURAL_REPAIR,
+    ):
+        assert is_registered_finding_kind(code), code
+
+
+def test_token_partition_coverage_is_partition() -> None:
+    cov = TokenPartitionCoverage()
+    cov.record_owned()
+    cov.record_owned()
+    cov.record_dropped()
+    assert cov.total == 3
+    assert cov.is_partition()
+    assert cov.as_dict() == {"total": 3, "owned": 2, "benign": 0, "dropped": 1}
+
+
+def test_kind_for_tag_unknown_returns_none() -> None:
+    """The original kind_for_tag stays silent-None for benign callers."""
+    assert kind_for_tag("not_a_tag") is None
+    assert kind_for_tag("section") is IRNodeKind.SECTION

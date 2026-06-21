@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-from lawvm.core.candidate_set_certificate import CandidateSetCertificate
+from lawvm.core.candidate_set_coverage import CandidateSetCoverage
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
 
@@ -92,7 +92,7 @@ class UKRemainingWorkItem:
     forbidden_shortcuts: tuple[str, ...]
     execution_authorization: Mapping[str, Any]
     frontier_work_item: Mapping[str, Any]
-    candidate_set_certificate: Mapping[str, Any]
+    candidate_set_coverage: Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -601,8 +601,8 @@ def _item_export_summary(
             "missing_frontier_work_item": sum(
                 1 for item in items if not item.get("frontier_work_item")
             ),
-            "missing_candidate_set_certificate": sum(
-                1 for item in items if not item.get("candidate_set_certificate")
+            "missing_candidate_set_coverage": sum(
+                1 for item in items if not item.get("candidate_set_coverage")
             ),
         }.items()
         if count
@@ -712,7 +712,7 @@ def _remaining_work_item(
             replay_only_eid_samples=replay_only_eid_samples,
             oracle_only_eid_samples=oracle_only_eid_samples,
         ).to_dict(),
-        candidate_set_certificate=_candidate_set_certificate(
+        candidate_set_coverage=_candidate_set_coverage(
             spec=spec,
             row=row,
             statute_id=statute_id,
@@ -858,7 +858,7 @@ def _remaining_work_item_evidence_counters(
     }
 
 
-def _candidate_set_certificate(
+def _candidate_set_coverage(
     *,
     spec: _LaneSpec,
     row: Mapping[str, Any],
@@ -866,7 +866,7 @@ def _candidate_set_certificate(
     missing_proofs: tuple[str, ...],
     replay_only_eid_samples: tuple[str, ...],
     oracle_only_eid_samples: tuple[str, ...],
-) -> CandidateSetCertificate:
+) -> CandidateSetCoverage:
     candidate_ids = tuple(
         dict.fromkeys((*oracle_only_eid_samples, *replay_only_eid_samples))
     )
@@ -881,7 +881,7 @@ def _candidate_set_certificate(
         completeness_status = "partial"
     else:
         completeness_status = "complete"
-    return CandidateSetCertificate(
+    return CandidateSetCoverage(
         scope_id=f"uk-remaining:{spec.lane_id}:{statute_id}",
         candidate_set_kind="remaining_work_residual_eid_samples",
         phase=spec.owner_phase,

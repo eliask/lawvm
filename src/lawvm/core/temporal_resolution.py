@@ -117,11 +117,11 @@ class TemporalResolutionEvidence:
             self.status == TEMPORAL_CERTIFIED_UNTRIGGERED
             and not self.source_locator
             and not self.authority_layer
-            and not self.detail.get("trigger_coverage_certificate")
+            and not self.detail.get("trigger_coverage")
         ):
             raise ValueError(
                 "TemporalResolutionEvidence(status='certified_untriggered') "
-                "requires source_locator, authority_layer, or trigger_coverage_certificate"
+                "requires source_locator, authority_layer, or trigger_coverage"
             )
         _reject_temporal_overrides(self.detail)
 

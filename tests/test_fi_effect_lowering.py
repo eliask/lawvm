@@ -218,10 +218,12 @@ def test_extract_meta_clauses_valtuutus():
 def test_lower_johto_effects_commencement():
     """Full pipeline: commencement clause in johto → Commencement EffectIntent."""
     johto = "muutetaan 5 §. Tämä laki tulee voimaan 1 päivänä maaliskuuta 2026."
-    intents = lower_johto_effects(johto)
+    unsupported: list = []
+    intents = lower_johto_effects(johto, unsupported_out=unsupported)
     assert len(intents) == 1
     assert isinstance(intents[0], Commencement)
     assert intents[0].effective_date == dt.date(2026, 3, 1)
+    assert unsupported == []
 
 
 def test_temporal_event_from_effect_intent_commencement() -> None:
@@ -441,7 +443,8 @@ def test_lower_johto_effects_multiple():
         "Tämä laki tulee voimaan 1 päivänä tammikuuta 2025. "
         "Tätä lakia sovelletaan lain voimaantulon jälkeen vireille tulleisiin asioihin."
     )
-    intents = lower_johto_effects(johto)
+    unsupported: list = []
+    intents = lower_johto_effects(johto, unsupported_out=unsupported)
     kinds = [i.kind for i in intents]
     assert EffectKind.COMMENCEMENT in kinds
     assert EffectKind.APPLICABILITY in kinds
@@ -449,7 +452,7 @@ def test_lower_johto_effects_multiple():
 
 def test_lower_johto_effects_empty():
     """Empty johtolause → empty list."""
-    assert lower_johto_effects("") == []
+    assert lower_johto_effects("", unsupported_out=[]) == []
 
 
 # ---------------------------------------------------------------------------

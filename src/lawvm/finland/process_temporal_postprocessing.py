@@ -24,6 +24,7 @@ from lawvm.finland.kumotaan import (
     kumotaan_recycle_guard_result,
 )
 from lawvm.finland.kumotaan_replay import (
+    PureKumotaanInjectedRepeal,
     _inject_pure_kumotaan_repeal_ops,
     _inject_pure_kumotaan_subsection_repeal_ops,
     _live_suffix_section_labels_for_numeric_kumotaan_ranges,
@@ -98,16 +99,20 @@ class ProcessTemporalPostprocessContext:
     def apply_commencement_expiry_overrides(self) -> None:
         # Accepted voimaantulosäännös-only amendments may extend or expire prior
         # ops even when this amendment emitted no section-level replacement ops.
-        has_foreign_scoped_expiry = any(
-            target_mid != self.amendment_id
-            for target_mid, _labels, _expiry in self.section_expiry_overrides
+        #
+        # Legal-state authority is the typed commencement/expiry surface
+        # ``commencement_expiry_override`` (it owns the voimaantulosäännös parse
+        # and the foreign-scoped section-expiry decision), never a raw-text
+        # substring predicate (AGENTS §1.11/§1.12, leak-ledger rank 15). The
+        # former raw-text prefilter on the commencement-clause keyword could not
+        # change the result — the typed parser's own ``voimaantulosäänn`` match
+        # already implies that keyword, and the foreign-scoped branch is carried
+        # by ``section_expiry_overrides`` — so it is dropped and the typed
+        # surface is consulted unconditionally.
+        accepted = self.source_model.commencement_expiry_override(
+            self.amendment_id,
+            section_expiry_overrides=self.section_expiry_overrides,
         )
-        accepted = None
-        if has_foreign_scoped_expiry or self.source_model.source_text_contains("voimaantulos"):
-            accepted = self.source_model.commencement_expiry_override(
-                self.amendment_id,
-                section_expiry_overrides=self.section_expiry_overrides,
-            )
         if accepted is not None:
             target_mid, labels, expiry = accepted
             if target_mid != self.amendment_id:
@@ -358,7 +363,7 @@ class ProcessTemporalPostprocessContext:
             )
 
         if kumotaan_labels:
-            pure_count = _inject_pure_kumotaan_repeal_ops(
+            pure_result = _inject_pure_kumotaan_repeal_ops(
                 self.lo_ops_out,
                 amendment_id=self.amendment_id,
                 source_title=self.source_title,
@@ -369,6 +374,8 @@ class ProcessTemporalPostprocessContext:
                 state=self.state,
                 source_raw_text=self.johto,
             )
+            self._emit_pure_kumotaan_injection_findings(pure_result.injected)
+            pure_count = pure_result.injected_count
             if pure_count:
                 self.replay_print(f"  [{self.amendment_id}] pure_kumotaan_repeal_injected: {pure_count} section(s)")
 
@@ -402,11 +409,42 @@ class ProcessTemporalPostprocessContext:
                 role="observation",
                 blocking=False,
             )
+        self._emit_pure_kumotaan_injection_findings(pure_subsection_result.injected)
         pure_subsection_count = pure_subsection_result.injected_count
         if pure_subsection_count:
             self.replay_print(
                 f"  [{self.amendment_id}] pure_kumotaan_subsection_repeal_injected: "
                 f"{pure_subsection_count} subsection(s)"
+            )
+
+    def _emit_pure_kumotaan_injection_findings(
+        self,
+        injected: tuple[PureKumotaanInjectedRepeal, ...],
+    ) -> None:
+        """Record one witnessed finding per repeal reconstructed from raw johtolause.
+
+        The repeal op was minted from raw kumotaan source text because the typed
+        pipeline produced no op for the target. Each injected op carries a
+        witness_rule_id; this surfaces the matching evidence record so the mint
+        is never a silent legal-state move.
+        """
+        for record in injected:
+            self.record_finding(
+                kind="PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED",
+                message=(
+                    "Repeal reconstructed from raw kumotaan johtolause; the typed "
+                    "pipeline produced no op for this target."
+                ),
+                source_statute=self.amendment_id,
+                detail={
+                    "message": (
+                        "Repeal reconstructed from raw kumotaan johtolause; the "
+                        "typed pipeline produced no op for this target."
+                    ),
+                    **record.finding_detail(),
+                },
+                role="observation",
+                blocking=False,
             )
 
     def _commence_event(

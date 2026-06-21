@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 from lawvm.core.diagnostic_records import (
+    BLOCKING_STRICT_DISPOSITIONS,
     DIAGNOSTIC_DETAIL_ENVELOPE_KEYS,
     diagnostic_detail,
 )
@@ -22,9 +23,32 @@ def text_or_none(value: Any) -> str | None:
 class AdjudicationEvidenceInput:
     kind: str
     detail: Mapping[str, Any]
+    blocking: bool
+    phase: str
     op_id: str = ""
     source_statute: str = ""
     message: str = ""
+
+
+def _require_blocking(adjudication: Any, raw_blocking: Any, *, kind: str) -> bool:
+    if not isinstance(raw_blocking, bool):
+        raise TypeError(
+            "adjudication carrier must supply a typed bool 'blocking'; "
+            f"got {type(raw_blocking)!r} for kind={kind!r}. The emitter must "
+            "classify the finding instead of relying on a permissive default."
+        )
+    return raw_blocking
+
+
+def _require_phase(raw_phase: Any, *, kind: str) -> str:
+    phase = text_or_none(raw_phase)
+    if phase is None:
+        raise ValueError(
+            "adjudication carrier must supply a non-empty 'phase' set by the "
+            f"emitter; got {raw_phase!r} for kind={kind!r}. Phase ownership "
+            "cannot be guessed from the kind string."
+        )
+    return phase
 
 
 def _adjudication_input(
@@ -38,26 +62,41 @@ def _adjudication_input(
         raw_op_id = adjudication.get("op_id")
         raw_source_statute = adjudication.get("source_statute")
         raw_message = adjudication.get("message")
+        raw_blocking = adjudication.get("blocking")
+        raw_phase = adjudication.get("phase")
     else:
         raw_kind = getattr(adjudication, "kind", None)
         raw_detail = getattr(adjudication, "detail", None)
         raw_op_id = getattr(adjudication, "op_id", None)
         raw_source_statute = getattr(adjudication, "source_statute", None)
         raw_message = getattr(adjudication, "message", None)
+        raw_blocking = getattr(adjudication, "blocking", None)
+        raw_phase = getattr(adjudication, "phase", None)
+    kind = text_or_none(raw_kind) or default_kind
     return AdjudicationEvidenceInput(
-        kind=text_or_none(raw_kind) or default_kind,
+        kind=kind,
         detail=_mapping_or_empty(raw_detail),
+        blocking=_require_blocking(adjudication, raw_blocking, kind=kind),
+        phase=_require_phase(raw_phase, kind=kind),
         op_id=text_or_none(raw_op_id) or "",
         source_statute=text_or_none(raw_source_statute) or "",
         message=text_or_none(raw_message) or "",
     )
 
 
+def _adjudication_kind(adjudication: Any, *, default_kind: str) -> str:
+    if isinstance(adjudication, Mapping):
+        raw_kind = adjudication.get("kind")
+    else:
+        raw_kind = getattr(adjudication, "kind", None)
+    return text_or_none(raw_kind) or default_kind
+
+
 def adjudication_kind_counts(adjudications: Iterable[Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for adjudication in adjudications:
-        record = _adjudication_input(adjudication, default_kind="unknown")
-        counts[record.kind] = counts.get(record.kind, 0) + 1
+        kind = _adjudication_kind(adjudication, default_kind="unknown")
+        counts[kind] = counts.get(kind, 0) + 1
     return dict(sorted(counts.items()))
 
 
@@ -67,41 +106,38 @@ def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
     return {}
 
 
-def _adjudication_phase(kind: str, detail: Mapping[str, Any]) -> str:
-    phase = text_or_none(detail.get("phase"))
-    if phase is not None:
-        return phase
-    if kind.startswith("no_parse_"):
-        return "parse"
-    if "missing_amendment_source" in kind:
-        return "acquisition"
-    if kind == "text_duplication_warning":
-        return "replay_fold"
-    if "replay" in kind:
-        return "replay"
-    return "compile"
+def _resolve_disposition(
+    *, blocking: bool, kind: str, raw_strict: str | None
+) -> str:
+    """Resolve the strict disposition, failing loud on a blocking finding.
 
-
-def _bool_detail(value: Any, *, default: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    return default
-
-
-def adjudication_record_diagnostic_detail(
-    record: Mapping[str, Any],
-    *,
-    default_blocking: bool = True,
-) -> dict[str, Any]:
-    """Build the shared diagnostic envelope for a replay adjudication record.
-
-    This is a projection adapter only. It does not replace frontend-local
-    adjudication carriers or classify their extra detail payloads.
+    A blocking finding must carry a blocking strict disposition. We never
+    silently downgrade it to ``record`` or fabricate ``block`` over a
+    non-blocking disposition the emitter explicitly supplied.
     """
 
-    kind = text_or_none(record.get("kind")) or "compile_adjudication"
-    detail = _mapping_or_empty(record.get("detail"))
-    blocking = _bool_detail(detail.get("blocking"), default=default_blocking)
+    if raw_strict is None:
+        return "block" if blocking else "record"
+    if blocking and raw_strict not in BLOCKING_STRICT_DISPOSITIONS:
+        raise ValueError(
+            f"blocking adjudication kind={kind!r} has non-blocking "
+            f"strict_disposition={raw_strict!r}; a blocking finding must carry "
+            "a blocking disposition."
+        )
+    return raw_strict
+
+
+def _build_diagnostic_detail(
+    *,
+    kind: str,
+    blocking: bool,
+    phase: str,
+    detail: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw_strict = text_or_none(detail.get("strict_disposition"))
+    strict_disposition = _resolve_disposition(
+        blocking=blocking, kind=kind, raw_strict=raw_strict
+    )
     local_detail = {
         str(key): value
         for key, value in detail.items()
@@ -109,32 +145,47 @@ def adjudication_record_diagnostic_detail(
     }
     return diagnostic_detail(
         rule_id=text_or_none(detail.get("rule_id")) or kind,
-        phase=_adjudication_phase(kind, detail),
+        phase=phase,
         blocking=blocking,
         family=text_or_none(detail.get("family")) or "",
         reason=text_or_none(detail.get("reason")) or "",
         message=text_or_none(detail.get("message")) or "",
-        strict_disposition=text_or_none(detail.get("strict_disposition"))
-        or ("block" if blocking else "record"),
+        strict_disposition=strict_disposition,
         quirks_disposition=text_or_none(detail.get("quirks_disposition")) or "record",
         detail=local_detail,
     )
 
 
-def adjudication_diagnostic_detail(
-    adjudication: Any,
-    *,
-    default_blocking: bool = True,
-) -> dict[str, Any]:
+def adjudication_record_diagnostic_detail(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Build the shared diagnostic envelope for a replay adjudication record.
+
+    This is a projection adapter only. It does not replace frontend-local
+    adjudication carriers or classify their extra detail payloads.
+
+    ``blocking`` and ``phase`` are read from the carrier (top-level keys), not
+    inferred from ``detail`` with a permissive default nor guessed from the
+    kind string. Both are required: the emitter owns enforcement significance
+    and phase provenance.
+    """
+
+    kind = text_or_none(record.get("kind")) or "compile_adjudication"
+    detail = _mapping_or_empty(record.get("detail"))
+    blocking = _require_blocking(record, record.get("blocking"), kind=kind)
+    phase = _require_phase(record.get("phase"), kind=kind)
+    return _build_diagnostic_detail(
+        kind=kind, blocking=blocking, phase=phase, detail=detail
+    )
+
+
+def adjudication_diagnostic_detail(adjudication: Any) -> dict[str, Any]:
     """Build the shared diagnostic envelope for a CompileAdjudication-like object."""
 
     record = _adjudication_input(adjudication, default_kind="compile_adjudication")
-    return adjudication_record_diagnostic_detail(
-        {
-            "kind": record.kind,
-            "detail": record.detail,
-        },
-        default_blocking=default_blocking,
+    return _build_diagnostic_detail(
+        kind=record.kind,
+        blocking=record.blocking,
+        phase=record.phase,
+        detail=record.detail,
     )
 
 
@@ -163,11 +214,11 @@ def adjudication_finding_evidence_rows(
     rows: list[CorpusFindingEvidenceRow] = []
     for index, adjudication in enumerate(adjudications):
         record = _adjudication_input(adjudication, default_kind="compile_adjudication")
-        detail = adjudication_record_diagnostic_detail(
-            {
-                "kind": record.kind,
-                "detail": record.detail,
-            }
+        detail = _build_diagnostic_detail(
+            kind=record.kind,
+            blocking=record.blocking,
+            phase=record.phase,
+            detail=record.detail,
         )
         source_statute = record.source_statute or base_id
         rows.append(

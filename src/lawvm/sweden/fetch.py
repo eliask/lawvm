@@ -2136,6 +2136,8 @@ def _reverse_patch_se_available_later_chain(
                         message=latest.message,
                         source_statute=latest.source_statute,
                         op_id=latest.op_id,
+                        blocking=latest.blocking,
+                        phase=latest.phase,
                         detail=latest_detail,
                     )
             except (LookupError, NotImplementedError, ValueError) as exc:
@@ -2145,6 +2147,8 @@ def _reverse_patch_se_available_later_chain(
                         message="Sweden later-chain reverse patch skipped an inverse operation after replay raised.",
                         source_statute=f"se/{source}",
                         op_id=inverse_op.op_id,
+                        blocking=True,
+                        phase="replay",
                         detail=diagnostic_detail(
                             rule_id="se_later_chain_reverse_op_exception",
                             phase="replay",

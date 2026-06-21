@@ -15,7 +15,6 @@ ParsedOps are derived from ClauseAST via clause_ast_to_legal_ops.
 
 from __future__ import annotations
 
-import os as _os
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Sequence
@@ -46,6 +45,7 @@ if TYPE_CHECKING:
         SurfaceNode as _SurfaceNodeType,
     )
     from lawvm.finland.johtolause.surface_resolve import ResolvedSurfaceClause as _ResolvedSurfaceClauseType
+    from lawvm.finland.johtolause.totality import TotalityPolicy
 
 
 FINLAND_JOHTOLAUSE_FRONTEND_ID = "finland.johtolause.parse_clause"
@@ -366,7 +366,12 @@ class ClauseParseResult:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
+def parse_clause(
+    text: str,
+    *,
+    statute_id: str = "",
+    totality_policy: "TotalityPolicy | None" = None,
+) -> ClauseParseResult:
     """Parse a Finnish amendment johtolause to ClauseAST.
 
     Authority path:
@@ -378,7 +383,17 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
           -> _derive_parsed_ops_from_ast()        -> list[ParsedOp] (compat)
 
     No legacy bridge modules.  No hidden middle authority.
+
+    ``totality_policy`` controls the raw-tape no-silent-drop guard (rank 8). When
+    None, the ambient policy is resolved from the environment (production default
+    = sampled, so the guard is LIVE on the compile/replay lane without paying the
+    ~2x predicate cost on every parse). See :mod:`lawvm.finland.johtolause.totality`.
     """
+    from lawvm.finland.johtolause.totality import resolve_totality_policy
+
+    _totality_policy = (
+        totality_policy if totality_policy is not None else resolve_totality_policy()
+    )
     from lawvm.finland.parser_facade import parse_tokens_production
     from lawvm.finland.johtolause.surface_resolve import resolve_surface_clause
     from lawvm.finland.johtolause.lower_clause_ast import lower_to_clause_ast_with_diagnostics
@@ -579,11 +594,15 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # classifier.
     #
     # This is an observability overlay, not a parse step, and it roughly doubles
-    # per-parse cost (a full second annotate+parse pass), so it is OFF by default
-    # — the replay hot path calls parse_clause thousands of times.  Turn it on with
-    # LAWVM_PARSE_TOTALITY=1 for parse-bench / characterization / loud-fail
-    # inspection.  Never let the predicate break a parse.
-    if _os.environ.get("LAWVM_PARSE_TOTALITY"):
+    # per-parse cost (a full second annotate+parse pass).  It is therefore NOT run
+    # on every parse: the typed ``totality_policy`` decides.  The PRODUCTION
+    # default (resolved when no policy is passed) is ``sampled`` — the guard fires
+    # on a deterministic 1-in-N subset of clauses, so it is reachable from the
+    # live compile/replay lane without paying 2x on every parse.  parse-bench /
+    # characterization / the CI gate pass ``TOTALITY_ALWAYS`` (or set
+    # LAWVM_PARSE_TOTALITY) for full coverage.  Never let the predicate break a
+    # parse.
+    if _totality_policy.should_check(text):
         try:
             from lawvm.finland.johtolause.totality import predicate as _totality_predicate
 

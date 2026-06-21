@@ -992,3 +992,32 @@ def test_replay_timeline_accepts_path_resolved_subsection_without_address_index(
 
     assert violations == []
     assert typed == []
+
+
+def test_typed_violation_from_address_uses_typed_section_helper() -> None:
+    """_typed_violation_from_address derives section_label from the typed
+    address (via _section_label_from_address), not a str()+regex roundtrip."""
+    from lawvm.core.timeline_invariants import (
+        _section_label_from_address,
+        _typed_violation_from_address,
+    )
+
+    # Section nested under a chapter: the section-kind label is selected.
+    address = _addr(("chapter", "5"), ("section", "12"))
+    violation = _typed_violation_from_address(
+        kind="overlapping_permanent",
+        address=address,
+        message=f"{address}: ambiguous",
+    )
+    assert violation.section_label == "12"
+    assert violation.section_label == _section_label_from_address(address)
+    assert violation.address_path == str(address)
+
+    # Section descendant: still resolves to the section, not the leaf item.
+    descendant = _addr(("section", "9"), ("subsection", "1"), ("item", "3"))
+    descendant_violation = _typed_violation_from_address(
+        kind="content_mismatch",
+        address=descendant,
+        message=f"{descendant}: mismatch",
+    )
+    assert descendant_violation.section_label == "9"

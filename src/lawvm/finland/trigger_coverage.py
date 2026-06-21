@@ -1,6 +1,6 @@
 """Finland-specific trigger coverage certificates for conditional commencement.
 
-This module implements the production path for ``TriggerCoverageCertificate``
+This module implements the production path for ``TriggerCoverage``
 records that accompany every contingent ``ActivationRule`` emitted by the
 Finland frontend.
 
@@ -58,12 +58,12 @@ class CoverageStatus(Enum):
 
 
 # ---------------------------------------------------------------------------
-# TriggerCoverageCertificate
+# TriggerCoverage
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
-class TriggerCoverageCertificate:
+class TriggerCoverage:
     """Per-provision coverage certificate for a conditional commencement trigger.
 
     Produced alongside every contingent ``ActivationRule`` (kind in
@@ -101,24 +101,24 @@ class TriggerCoverageCertificate:
     def __post_init__(self) -> None:
         if not self.predicate_activation_id:
             raise ValueError(
-                "TriggerCoverageCertificate.predicate_activation_id must be non-empty"
+                "TriggerCoverage.predicate_activation_id must be non-empty"
             )
         if not isinstance(self.coverage_status, CoverageStatus):
             raise ValueError(
-                "TriggerCoverageCertificate.coverage_status must be a CoverageStatus"
+                "TriggerCoverage.coverage_status must be a CoverageStatus"
             )
         if not isinstance(self.as_of, dt.date):
             raise ValueError(
-                "TriggerCoverageCertificate.as_of must be a datetime.date"
+                "TriggerCoverage.as_of must be a datetime.date"
             )
         if self.coverage_status == CoverageStatus.SATISFIED and not self.satisfied_by:
             raise ValueError(
-                "TriggerCoverageCertificate with SATISFIED status requires a non-empty "
+                "TriggerCoverage with SATISFIED status requires a non-empty "
                 "satisfied_by field"
             )
         if self.coverage_status != CoverageStatus.SATISFIED and self.satisfied_by:
             raise ValueError(
-                "TriggerCoverageCertificate.satisfied_by must be empty when "
+                "TriggerCoverage.satisfied_by must be empty when "
                 "coverage_status is not SATISFIED"
             )
 
@@ -147,7 +147,7 @@ class TriggerCoverageSearchFailure:
     rather than swallow exceptions or return a silent error.
 
     This is not an exception; it is a typed record that allows the pipeline
-    to continue.  It is emitted alongside an UNKNOWN TriggerCoverageCertificate
+    to continue.  It is emitted alongside an UNKNOWN TriggerCoverage
     so the downstream consumer knows both (a) the search was attempted and
     (b) it failed for a specific reason.
     """
@@ -185,7 +185,7 @@ class TriggerCoverageSearchFailure:
 
 
 def assert_coverage_status_satisfies_strict_mode(
-    certificate: TriggerCoverageCertificate,
+    certificate: TriggerCoverage,
 ) -> None:
     """Raise ValueError if the certificate's coverage status is rejected by strict mode.
 
@@ -201,7 +201,7 @@ def assert_coverage_status_satisfies_strict_mode(
     """
     if certificate.coverage_status == CoverageStatus.UNKNOWN:
         raise ValueError(
-            f"Strict mode rejects TriggerCoverageCertificate with UNKNOWN coverage "
+            f"Strict mode rejects TriggerCoverage with UNKNOWN coverage "
             f"for predicate_activation_id={certificate.predicate_activation_id!r}, "
             f"target_statute_id={certificate.target_statute_id!r}. "
             f"UNKNOWN means no acquisition lane was configured; this is not the same "
@@ -333,8 +333,8 @@ def produce_certificate_for_pending_decree(
     target_statute_id: str,
     search_result: DecreeSearchResult,
     as_of: dt.date,
-) -> TriggerCoverageCertificate:
-    """Produce a TriggerCoverageCertificate from a DecreeSearchResult.
+) -> TriggerCoverage:
+    """Produce a TriggerCoverage from a DecreeSearchResult.
 
     Parameters
     ----------
@@ -349,11 +349,11 @@ def produce_certificate_for_pending_decree(
 
     Returns
     -------
-    TriggerCoverageCertificate
+    TriggerCoverage
         SATISFIED if a matching decree was found; PENDING_NEGATIVE otherwise.
     """
     if search_result.matching_decree_id is not None:
-        return TriggerCoverageCertificate(
+        return TriggerCoverage(
             predicate_activation_id=predicate_activation_id,
             target_statute_id=target_statute_id,
             coverage_status=CoverageStatus.SATISFIED,
@@ -364,7 +364,7 @@ def produce_certificate_for_pending_decree(
             satisfied_by=search_result.matching_decree_id,
             as_of=as_of,
         )
-    return TriggerCoverageCertificate(
+    return TriggerCoverage(
         predicate_activation_id=predicate_activation_id,
         target_statute_id=target_statute_id,
         coverage_status=CoverageStatus.PENDING_NEGATIVE,
@@ -380,8 +380,8 @@ def produce_unknown_certificate(
     target_statute_id: str,
     trigger_class: str,
     as_of: dt.date,
-) -> TriggerCoverageCertificate:
-    """Produce a TriggerCoverageCertificate with UNKNOWN status.
+) -> TriggerCoverage:
+    """Produce a TriggerCoverage with UNKNOWN status.
 
     Used when no acquisition lane is configured to search for the trigger.
 
@@ -396,7 +396,7 @@ def produce_unknown_certificate(
     as_of
         Observation date for the certificate.
     """
-    return TriggerCoverageCertificate(
+    return TriggerCoverage(
         predicate_activation_id=predicate_activation_id,
         target_statute_id=target_statute_id,
         coverage_status=CoverageStatus.UNKNOWN,
@@ -434,12 +434,12 @@ class CertificateProductionResult:
     Fields
     ------
     certificates
-        Tuple of TriggerCoverageCertificates, one per contingent rule.
+        Tuple of TriggerCoverages, one per contingent rule.
     search_failures
         Tuple of TriggerCoverageSearchFailures for any failed searches.
     """
 
-    certificates: tuple[TriggerCoverageCertificate, ...]
+    certificates: tuple[TriggerCoverage, ...]
     search_failures: tuple[TriggerCoverageSearchFailure, ...]
 
 
@@ -451,10 +451,10 @@ def produce_certificates_for_activation_rules(
     amendment_children: tuple[str, ...],
     as_of: dt.date,
 ) -> CertificateProductionResult:
-    """Produce TriggerCoverageCertificates for all contingent activation rules.
+    """Produce TriggerCoverages for all contingent activation rules.
 
     For every ``ActivationRule`` with kind ``pending_decree`` or
-    ``pending_condition``, produce a paired ``TriggerCoverageCertificate``.
+    ``pending_condition``, produce a paired ``TriggerCoverage``.
     Non-contingent rules (immediate, fixed_date) are skipped.
 
     This is the main integration point for the Finland frontend: call this
@@ -484,7 +484,7 @@ def produce_certificates_for_activation_rules(
         PENDING_CONDITION_KIND,
     )
 
-    certificates: list[TriggerCoverageCertificate] = []
+    certificates: list[TriggerCoverage] = []
     failures: list[TriggerCoverageSearchFailure] = []
 
     contingent_sequence = 0
@@ -537,7 +537,7 @@ __all__ = [
     "DecreeSearchResult",
     "FINLAND_DECREE_SET_TRIGGER_CLASS",
     "FINLAND_SIMULTANEOUS_TRIGGER_CLASS",
-    "TriggerCoverageCertificate",
+    "TriggerCoverage",
     "TriggerCoverageSearchFailure",
     "assert_coverage_status_satisfies_strict_mode",
     "make_predicate_activation_id",

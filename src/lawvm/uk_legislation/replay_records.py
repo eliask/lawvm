@@ -17,7 +17,7 @@ from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_FALLBACK,
     TARGET_RECOVERED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
@@ -72,11 +72,16 @@ def _build_uk_replay_adjudication(
         detail_payload.setdefault("blocking", True)
         detail_payload.setdefault("strict_disposition", "block")
         detail_payload.setdefault("quirks_disposition", "record")
+    blocking = detail_payload.get("blocking")
+    if not isinstance(blocking, bool):
+        blocking = True
     return CompileAdjudication(
         kind=str(kind),
         message=message,
         source_statute=op.source.statute_id if op.source else "",
         op_id=op.op_id,
+        blocking=blocking,
+        phase=str(detail_payload.get("phase") or "replay"),
         detail=detail_payload,
     )
 
@@ -158,7 +163,7 @@ def uk_replay_recovery_action_target_detail(
     detail["quirks_disposition"] = "apply"
     recovery_target = str(extra.get("recovery_target") or "")
     if recovery_target:
-        detail["target_resolution"] = TargetResolutionCertificate(
+        detail["target_resolution"] = TargetResolutionCoverage(
             rule_id=str(detail.get("rule_id") or family),
             phase="replay",
             reason=str(detail.get("reason") or "recovery_selected_alternate_target"),
@@ -295,6 +300,12 @@ def _uk_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
     detail = dict(finding.detail)
     message = str(detail.pop("message", "") or "")
     blocking = bool(finding.blocking)
+    phase = str(detail.get("phase") or "")
+    if not phase:
+        raise ValueError(
+            f"UK replay-lint finding kind={finding.kind!r} carries no phase; "
+            "the finding emitter must set detail['phase']."
+        )
     detail.setdefault("blocking", blocking)
     detail.setdefault("strict_disposition", "block" if blocking else "record")
     detail.setdefault("quirks_disposition", "record")
@@ -302,6 +313,8 @@ def _uk_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
         kind=str(finding.kind or ""),
         message=message,
         source_statute=str(finding.source_statute or ""),
+        blocking=blocking,
+        phase=phase,
         detail=detail,
     )
 

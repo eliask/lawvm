@@ -26,7 +26,8 @@ from dataclasses import replace as dc_replace
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Mapping, Optional, Set, Tuple
 
-from lawvm.core.compile_result import AdmissibleBindingCertificate, SourcePathology
+from lawvm.core.compile_result import AdmissibleBindingCoverage, SourcePathology
+from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.ir_helpers import structural_subtree_hash
@@ -49,7 +50,7 @@ from lawvm.finland.merge import (
     _drop_suspicious_partial_whole_section_replaces,
     _pre_resolve_omissions,
 )
-from lawvm.finland.ops import AmendmentOp, FailedOp, _lo_with_path_update
+from lawvm.finland.ops import AmendmentOp, FailedOp, _lo_with_path_update, _op_target_subsection_label
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
 from lawvm.finland.table_target_merge import mentioned_numbered_table_labels
@@ -413,7 +414,7 @@ class SubsectionSlotAssignmentResult:
     sparse_slot_bindings: tuple[SparsePayloadSlotBinding, ...]
     used_subs: tuple[int, ...]
     unassigned_payload_slots: tuple[str, ...]
-    binding_certificates: tuple[AdmissibleBindingCertificate, ...] = ()
+    binding_certificates: tuple[AdmissibleBindingCoverage, ...] = ()
     binding_observations: tuple[ElaborationObservation, ...] = ()
     binding_admissibility_by_op_id: tuple[tuple[str, str], ...] = ()
 
@@ -708,6 +709,8 @@ def _unsupported_payload_rejected_ops(
                 target_section=str(op.target_section or ""),
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=op.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
         )
     return tuple(generated)
@@ -4293,7 +4296,7 @@ def _assign_subsection_slots(
     # binding was deterministic ("single admissible"); > 1 means there were
     # competing slots with the same label ("ambiguous").  Ops assigned through
     # sequential/positional fallback (no exact label match) get "fallback".
-    binding_certificates: List[AdmissibleBindingCertificate] = []
+    binding_certificates: List[AdmissibleBindingCoverage] = []
     binding_admissibility_by_op_id: Dict[str, str] = {}
     # Pre-build label → count map across all payload slots
     label_counts: Dict[str, int] = {}
@@ -4360,7 +4363,7 @@ def _assign_subsection_slots(
                 source_statute = str(op.source_statute or "")
                 break
         binding_certificates.append(
-            AdmissibleBindingCertificate(
+            AdmissibleBindingCoverage(
                 slot_id=binding.payload_slot_index,
                 amendment_id=source_statute,
                 candidate_count=count,
@@ -4600,6 +4603,8 @@ def _drop_item_replaces_missing_from_sparse_payload(
                 target_section=str(op.target_section or ""),
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=op.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
         )
         continue
@@ -4760,6 +4765,8 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
                 target_section=str(op.target_section or ""),
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=op.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
         )
 
@@ -5746,7 +5753,7 @@ def _detect_sparse_subsection_tail_preservation_risk(
             source_statute=source_statute,
             target_unit_kind=target_unit_kind,
             target_label=f"{target_norm} §",
-            recovery_kind="sparse_subsection_tail_preserved",
+            recovery_kind=RecoveryKind.SPARSE_SUBSECTION_TAIL_PRESERVED,
             live_sibling_count=trailing_live,
             payload_sibling_count=0,
         )

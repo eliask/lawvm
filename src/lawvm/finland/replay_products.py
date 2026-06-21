@@ -36,9 +36,12 @@ from lawvm.core.timeline_lineage import (
     choose_materialization_lineage_decision,
     rekey_timelines_with_migration_events as _core_rekey_timelines_with_migration_events,
 )
+from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.timeline_results import (
+    MaterializationCoverage,
     MaterializationLineageDecision,
     MaterializationLineagePlan,
+    TimelineIssue,
     Timelines,
 )
 from lawvm.core.timeline_addresses import _retarget_version_content
@@ -88,6 +91,15 @@ _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
 _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG = (
     "lawvm:materialize_as_absent_under_detached_horizon"
 )
+# Witness rule id for the residual substring path in
+# ``_restore_replay_fold_repeal_placeholders``: an editorial repeal notice is
+# recognised by a case-insensitive "kumottu" scan of materialized text because
+# no typed marker yet exists for "the official consolidation text itself
+# declares this provision repealed" (the typed ``lawvm_repeal_placeholder`` attr
+# only covers replay-minted placeholders, which are checked first). Per
+# leak-ledger rank 15 / AGENTS §1.11–§1.12, the substring path is no longer
+# silent: each firing emits a witnessed observation reachable from ReplayProducts.
+FI_EDITORIAL_REPEAL_NOTICE_SUBSTRING_RULE_ID = "fi.replay.editorial_repeal_notice_substring"
 _FI_REPLAY_FOLD_MIXED_HIERARCHY_PROFILE = TreeInvariantProfile(
     surface="replay_fold_tree",
     families=("mixed_hierarchy_child",),
@@ -147,6 +159,12 @@ class ReplayProducts:
     source_adjudication: Optional[SourceAdjudication] = None
     fold_timeline_backfills: tuple["FoldTimelineBackfillRecord", ...] = ()
     timeline_version_dedupes: tuple["TimelineVersionDedupeRecord", ...] = ()
+    editorial_repeal_notice_substring_witnesses: tuple[
+        "EditorialRepealNoticeSubstringWitness", ...
+    ] = ()
+    dropped_cited_version_snapshots: tuple["CitedVersionSnapshotDrop", ...] = ()
+    materialization_issues: tuple[TimelineIssue, ...] = ()
+    materialization_coverage: Optional[MaterializationCoverage] = None
 
     def __post_init__(self) -> None:
         temporal_events = tuple(self.temporal_events)
@@ -243,13 +261,57 @@ def _fi_root_num_text(kind: IRNodeKind, label: str) -> str | None:
     return None
 
 
+@dataclass(frozen=True, slots=True)
+class EditorialRepealNoticeSubstringWitness:
+    """Evidence for one editorial-repeal-notice recognised by raw-text substring.
+
+    No typed marker yet owns "the materialized/oracle consolidation text itself
+    declares this provision repealed". When the typed
+    ``lawvm_repeal_placeholder`` attr is absent but the ``kumottu`` substring
+    fires, the placeholder-restoration guard keeps the substring decision and
+    records this witness so the residual surface predicate is accounted for
+    (leak-ledger rank 15; AGENTS §1.11–§1.12).
+    """
+
+    kind: str
+    label: str
+    clause_text: str
+    witness_rule_id: str = FI_EDITORIAL_REPEAL_NOTICE_SUBSTRING_RULE_ID
+
+
 def _content_is_repeal_placeholder(node: IRNode) -> bool:
     return node.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
-def _content_is_editorial_repeal_notice(node: IRNode) -> bool:
+def _content_is_editorial_repeal_notice(
+    node: IRNode,
+    *,
+    witness_sink: Optional[list["EditorialRepealNoticeSubstringWitness"]] = None,
+) -> bool:
+    """Whether ``node`` already shows an editorial repeal notice.
+
+    Typed-first: a replay-minted repeal placeholder (the typed
+    ``lawvm_repeal_placeholder`` attr) is the authoritative marker and is
+    consulted first. Only when no typed marker is present do we fall back to the
+    residual ``kumottu`` substring scan of the rendered text — and that residual
+    path is witnessed, never silent: when ``witness_sink`` is provided, each
+    firing appends an ``EditorialRepealNoticeSubstringWitness`` so the
+    surface-predicate decision is reachable from a public surface.
+    """
+    if _content_is_repeal_placeholder(node):
+        return True
     text = irnode_to_text(node).casefold()
-    return "kumottu" in text
+    if "kumottu" not in text:
+        return False
+    if witness_sink is not None:
+        witness_sink.append(
+            EditorialRepealNoticeSubstringWitness(
+                kind=str(node.kind.value if hasattr(node.kind, "value") else node.kind),
+                label=str(node.label or ""),
+                clause_text=irnode_to_text(node)[:400],
+            )
+        )
+    return True
 
 
 def fi_product_tree_invariant_violations(
@@ -684,17 +746,27 @@ def _should_restore_repeal_placeholder(node: IRNode) -> bool:
     return node.kind is IRNodeKind.PARAGRAPH and node.attrs.get("lawvm_restore_materialized_stale_item_slot") == "1"
 
 
-def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: IRNode) -> IRNode:
+def _restore_replay_fold_repeal_placeholders(
+    materialized: IRNode,
+    replay_fold: IRNode,
+    *,
+    witness_sink: Optional[list["EditorialRepealNoticeSubstringWitness"]] = None,
+) -> IRNode:
     """Carry replay-owned dotted-text placeholders through PIT export.
 
     Core materialization treats tombstones as absence. Finland's official
     consolidation export profile intentionally keeps repeal placeholders as
     visible dotted-text slots. This pass is Finland-local and copies only nodes
     that replay already marked as repeal placeholders.
+
+    ``witness_sink`` collects ``EditorialRepealNoticeSubstringWitness`` rows for
+    every node where the residual ``kumottu`` substring path (not the typed
+    ``lawvm_repeal_placeholder`` attr) decided the node was already an editorial
+    repeal notice, so that surface-predicate decision is no longer silent.
     """
     if materialized.kind is not replay_fold.kind or materialized.label != replay_fold.label:
         return materialized
-    if _content_is_editorial_repeal_notice(materialized):
+    if _content_is_editorial_repeal_notice(materialized, witness_sink=witness_sink):
         return materialized
     if _should_restore_repeal_placeholder(replay_fold):
         return replay_fold
@@ -744,7 +816,9 @@ def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: 
             existing_keys.add(key)
             source_child = source_by_key.get(key)
             if source_child is not None:
-                new_child = _restore_replay_fold_repeal_placeholders(child, source_child)
+                new_child = _restore_replay_fold_repeal_placeholders(
+                    child, source_child, witness_sink=witness_sink
+                )
                 changed = changed or new_child is not child
         new_children.append(new_child)
 
@@ -1144,8 +1218,44 @@ def _cited_snapshot_materially_covers_current(
     return len(cited_text) >= len(current_text) + 80
 
 
-def _drop_cited_version_item_ancestor_snapshots(lo_ops: list[LegalOperation]) -> list[LegalOperation]:
-    """Drop ancestor snapshots from item-scoped cited-version clauses."""
+FI_CITED_VERSION_SNAPSHOT_DROP_RULE_ID = "fi.replay.cited_version_ancestor_snapshot_drop"
+
+
+@dataclass(frozen=True, slots=True)
+class CitedVersionSnapshotDrop:
+    """Witness for a timeline op dropped as a covered cited-version ancestor snapshot.
+
+    The later amending act emitted a stale ancestor snapshot for an item-scoped
+    cited-version clause; a same-effective snapshot from the cited act structurally
+    covers it. Dropping the stale op is sound, but the drop is recorded here so it
+    is never a silent omission from the replay op stream.
+    """
+
+    rule_id: str
+    op_id: str
+    source_statute: str
+    effective: str
+    target_path: tuple[tuple[str, str], ...]
+
+    def finding_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "op_id": self.op_id,
+            "source_statute": self.source_statute,
+            "effective": self.effective,
+            "target_path": tuple(f"{kind}:{label}" for kind, label in self.target_path),
+        }
+
+
+def _drop_cited_version_item_ancestor_snapshots(
+    lo_ops: list[LegalOperation],
+) -> FilterResult[LegalOperation]:
+    """Filter ancestor snapshots from item-scoped cited-version clauses.
+
+    Returns a lossless ``FilterResult``: accepted ops plus a rejected record per
+    dropped op, so a covered ancestor snapshot is removed from the replay stream
+    with a typed receipt rather than vanishing silently.
+    """
     cited_parent_snapshots: dict[
         tuple[str, str, tuple[tuple[str, str], ...]], LegalOperation
     ] = {}
@@ -1157,7 +1267,8 @@ def _drop_cited_version_item_ancestor_snapshots(lo_ops: list[LegalOperation]) ->
             continue
         cited_parent_snapshots[(source.statute_id, source.effective, tuple(op.target.path))] = op
 
-    filtered: list[LegalOperation] = []
+    accepted: list[LegalOperation] = []
+    rejected: list[RejectedItem[LegalOperation]] = []
     for op in lo_ops:
         source = op.source
         raw_text = source.raw_text if source is not None else ""
@@ -1169,13 +1280,13 @@ def _drop_cited_version_item_ancestor_snapshots(lo_ops: list[LegalOperation]) ->
             or not op.target.path
             or op.target.path[-1][0] not in {"section", "subsection"}
         ):
-            filtered.append(op)
+            accepted.append(op)
             continue
         target_label = op.target.path[-1][1]
         if op.target.path[-1][0] == "subsection" and len(op.target.path) >= 2:
             target_label = op.target.path[-2][1]
         if not _raw_text_has_local_item_cited_version(raw_text, target_label):
-            filtered.append(op)
+            accepted.append(op)
             continue
         cited_ids = {
             f"{match.group(2)}/{int(match.group(1))}"
@@ -1193,8 +1304,41 @@ def _drop_cited_version_item_ancestor_snapshots(lo_ops: list[LegalOperation]) ->
             )
             for cited_snapshot in cited_snapshots
         ):
-            filtered.append(op)
-    return filtered
+            accepted.append(op)
+            continue
+        # Covered ancestor snapshot — dropped with a typed receipt, never silently.
+        rejected.append(
+            RejectedItem(
+                item=op,
+                reason=(
+                    "cited-version item clause emitted a stale ancestor snapshot "
+                    "structurally covered by the cited act's same-effective snapshot"
+                ),
+                reason_code=FI_CITED_VERSION_SNAPSHOT_DROP_RULE_ID,
+                blocking=False,
+            )
+        )
+    return FilterResult(accepted_items=tuple(accepted), rejected_items=tuple(rejected))
+
+
+def _cited_version_snapshot_drops(
+    result: FilterResult[LegalOperation],
+) -> tuple[CitedVersionSnapshotDrop, ...]:
+    """Project dropped cited-version snapshots into typed replay-products evidence."""
+    drops: list[CitedVersionSnapshotDrop] = []
+    for rejected in result.rejected_items:
+        op = rejected.item
+        source = op.source
+        drops.append(
+            CitedVersionSnapshotDrop(
+                rule_id=rejected.reason_code or FI_CITED_VERSION_SNAPSHOT_DROP_RULE_ID,
+                op_id=op.op_id,
+                source_statute=source.statute_id if source is not None else "",
+                effective=source.effective if source is not None else "",
+                target_path=tuple(op.target.path),
+            )
+        )
+    return tuple(drops)
 
 
 def _drop_explicitly_repealed_source_move_events(
@@ -1631,7 +1775,7 @@ def build_replay_products(
             source_adjudication=source_adjudication,
         )
 
-    from lawvm.core.timeline import compile_timelines, materialize_pit
+    from lawvm.core.timeline import compile_timelines, materialize_pit_ex
 
     base_ir = IRStatute(
         statute_id=statute_id,
@@ -1639,7 +1783,9 @@ def build_replay_products(
         body=ctx.base_ir,
     )
     original_lo_ops = lo_ops_out or []
-    static_prepared_lo_ops: tuple[LegalOperation, ...] | None = None
+    static_prepared: tuple[
+        tuple[LegalOperation, ...], tuple[CitedVersionSnapshotDrop, ...]
+    ] | None = None
     if fold_backfill_preview_cache is not None:
         prepared_cache_key = (
             "static_prepared_replay_product_lo_ops",
@@ -1648,15 +1794,24 @@ def build_replay_products(
             len(original_lo_ops),
         )
         cached_prepared = fold_backfill_preview_cache.get(prepared_cache_key)
-        if isinstance(cached_prepared, tuple):
-            static_prepared_lo_ops = cast(tuple[LegalOperation, ...], cached_prepared)
+        if isinstance(cached_prepared, tuple) and len(cached_prepared) == 2:
+            static_prepared = cast(
+                tuple[
+                    tuple[LegalOperation, ...], tuple[CitedVersionSnapshotDrop, ...]
+                ],
+                cached_prepared,
+            )
         else:
             prepared = _normalize_repeal_op_sources(list(original_lo_ops))
-            prepared = _drop_cited_version_item_ancestor_snapshots(prepared)
-            static_prepared_lo_ops = tuple(prepared)
-            fold_backfill_preview_cache[prepared_cache_key] = static_prepared_lo_ops
-    if static_prepared_lo_ops is not None:
-        lo_ops = list(static_prepared_lo_ops)
+            drop_result = _drop_cited_version_item_ancestor_snapshots(prepared)
+            static_prepared = (
+                drop_result.accepted_items,
+                _cited_version_snapshot_drops(drop_result),
+            )
+            fold_backfill_preview_cache[prepared_cache_key] = static_prepared
+    if static_prepared is not None:
+        lo_ops = list(static_prepared[0])
+        cited_version_snapshot_drops = static_prepared[1]
         lo_ops = _mark_detached_horizon_future_repeals(
             lo_ops,
             as_of=as_of,
@@ -1665,7 +1820,9 @@ def build_replay_products(
     else:
         lo_ops = list(original_lo_ops)
         lo_ops = _normalize_repeal_op_sources(lo_ops)
-        lo_ops = _drop_cited_version_item_ancestor_snapshots(lo_ops)
+        drop_result = _drop_cited_version_item_ancestor_snapshots(lo_ops)
+        cited_version_snapshot_drops = _cited_version_snapshot_drops(drop_result)
+        lo_ops = list(drop_result.accepted_items)
         lo_ops = _mark_detached_horizon_future_repeals(
             lo_ops,
             as_of=as_of,
@@ -1813,7 +1970,7 @@ def build_replay_products(
         as_of=as_of,
         bridge_classification=bridge_classification,
     )
-    pit = materialize_pit(
+    materialization_result = materialize_pit_ex(
         lineage_decision.timelines,
         as_of=as_of,
         base=base_ir,
@@ -1822,15 +1979,33 @@ def build_replay_products(
         expires_as_of=expires_as_of,
         lineage_plan=lineage_decision.lineage_plan,
     )
+    if materialization_result.status == "degraded_missing_scope":
+        # Preserve the historical materialize_pit() contract: missing PIT scope is
+        # a hard error, not a silently degraded materialization. The explicit
+        # degradation result is now carried into ReplayProducts instead of thrown
+        # away on the normal path.
+        raise ValueError(
+            "materialize_pit requires explicit scope when PIT selection is degraded "
+            f"by missing {materialization_result.required_dimensions!r}; use "
+            "materialize_pit_ex() for an explicit degradation result."
+        )
+    pit = materialization_result.statute
     materialized_state = replay_fold_state.with_ir(pit.body)
     materialized_state = materialized_state.with_ir(
         _strip_redundant_paragraph_label_prefixes_ir(
             _strip_standalone_subsection_item_prefixes_ir(materialized_state.ir)
         )
     )
+    editorial_repeal_notice_substring_witnesses: list[
+        EditorialRepealNoticeSubstringWitness
+    ] = []
     if synthesize_repeal_placeholders:
         materialized_state = materialized_state.with_ir(
-            _restore_replay_fold_repeal_placeholders(materialized_state.ir, replay_fold_state.ir)
+            _restore_replay_fold_repeal_placeholders(
+                materialized_state.ir,
+                replay_fold_state.ir,
+                witness_sink=editorial_repeal_notice_substring_witnesses,
+            )
         )
     materialized_state = materialized_state.with_ir(
         _reconcile_materialized_fold_hcontainer_sections(
@@ -1861,6 +2036,12 @@ def build_replay_products(
         effect_lifecycle_events=effect_lifecycle_events,
         fold_timeline_backfills=fold_timeline_backfills.records,
         timeline_version_dedupes=timeline_version_dedupes,
+        editorial_repeal_notice_substring_witnesses=tuple(
+            editorial_repeal_notice_substring_witnesses
+        ),
+        dropped_cited_version_snapshots=cited_version_snapshot_drops,
+        materialization_issues=materialization_result.issues,
+        materialization_coverage=materialization_result.certificate,
         materialization_spec=MaterializationSpec(
             as_of=as_of,
             query_type=query_type,

@@ -700,7 +700,7 @@ def _merge_authority_basis(
 
     if not xml_bytes:
         return
-    auth_edges = extract_asetus_authority(xml_bytes, statute_id)
+    auth_edges = extract_asetus_authority(xml_bytes, statute_id).accepted_items
     if not auth_edges:
         return
 

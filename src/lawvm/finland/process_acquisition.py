@@ -53,13 +53,16 @@ class ProcessAcquisitionContext:
     amendment_lacks_operative_structure: OperativeStructureCheck
 
     def acquire(self) -> ProcessAcquisitionResult:
-        xml_bytes = self._apply_source_corrections(self.xml_bytes)
+        pre_correction_bytes = self.xml_bytes
+        xml_bytes, source_patch_op_ids = self._apply_source_corrections(pre_correction_bytes)
         muutos_tree = etree.fromstring(xml_bytes)
         source_model = AmendmentSourceModel.from_tree(
             muutos_tree,
             source_ref=self.amendment_id,
             source_bytes=xml_bytes,
+            pre_correction_bytes=pre_correction_bytes,
         )
+        self._record_source_correction_findings(source_model, source_patch_op_ids)
         lacks_operative_structure, operative_tags = self.amendment_lacks_operative_structure(muutos_tree)
         source_title = self.tree_title(muutos_tree)
         acquisition = self._build_acquisition(
@@ -102,7 +105,7 @@ class ProcessAcquisitionContext:
             sec1_text=sec1_text,
         )
 
-    def _apply_source_corrections(self, xml_bytes: bytes) -> bytes:
+    def _apply_source_corrections(self, xml_bytes: bytes) -> tuple[bytes, tuple[str, ...]]:
         # Corrigendum patches (Population B): apply johtolause corrections in
         # both modes. The oracle already has the corrected result; applying the
         # corrigendum to the source johtolause makes PEG target the right provisions.
@@ -120,27 +123,100 @@ class ProcessAcquisitionContext:
             corrected, body_patch_ids = patch_table.patch_source_body_xml(
                 corrected, self.amendment_id
             )
-            for op_id in (*johtolause_patch_ids, *body_patch_ids):
-                self.finding_recorder.record(
-                    kind="APPLY.SOURCE_CORRECTED_BY_PATCH",
-                    message="A corrigendum patch corrected amendment source XML before parsing.",
-                    source_statute=self.amendment_id,
-                    detail={
-                        "op_id": op_id,
-                        "source_role": "amendment_source_xml",
-                        "corrected_by": "corrigendum_patch_table",
-                    },
-                    role="obligation",
-                    blocking=False,
-                )
-            return corrected
+            return corrected, (*johtolause_patch_ids, *body_patch_ids)
 
         self.record_finding(
             kind="APPLY.STRICT_REJECTED_CORRIGENDUM_PATCH",
             message="Corrigendum Population B patch rejected by strict profile",
             source_statute=self.amendment_id,
         )
-        return xml_bytes
+        return xml_bytes, ()
+
+    def _record_source_correction_findings(
+        self,
+        source_model: AmendmentSourceModel,
+        source_patch_op_ids: tuple[str, ...],
+    ) -> None:
+        """Witness corrigendum source corrections by the model's content digests.
+
+        Each ``APPLY.SOURCE_CORRECTED_BY_PATCH`` finding asserts that a patch
+        changed the amendment source bytes before parsing. That assertion is now
+        anchored to ``AmendmentSourceModel.source_digest`` /
+        ``pre_correction_digest`` — the sha256 of the actual post- and
+        pre-correction bytes — so the claimed content change travels as a content
+        hash pair rather than only an ``op_id`` name. The model is the single
+        owner of those digests; this site consumes them.
+        """
+        if not source_patch_op_ids:
+            # No patch claimed a change: the model must agree that the bytes did
+            # not change under correction. A bound pre/post pair here would mean
+            # content drifted with no patch owning it — surface it, don't hide it.
+            self._cross_check_no_silent_source_correction(source_model)
+            return
+
+        post_digest = source_model.source_digest
+        pre_digest = source_model.pre_correction_digest
+        digest_detail: dict[str, object] = {}
+        if post_digest is not None:
+            digest_detail["source_digest"] = post_digest.to_dict()
+        if pre_digest is not None:
+            digest_detail["pre_correction_digest"] = pre_digest.to_dict()
+
+        # Drift cross-check: a patch claims a content change, so the model must
+        # carry distinct pre/post digests. If the digests are absent or equal,
+        # the patch's name-based claim diverged from the actual content.
+        content_change_witnessed = (
+            pre_digest is not None
+            and post_digest is not None
+            and pre_digest.digest != post_digest.digest
+        )
+        digest_detail["content_change_witnessed"] = content_change_witnessed
+        if not content_change_witnessed:
+            digest_detail["digest_drift"] = "patch_claimed_change_without_distinct_digests"
+
+        for op_id in source_patch_op_ids:
+            self.finding_recorder.record(
+                kind="APPLY.SOURCE_CORRECTED_BY_PATCH",
+                message="A corrigendum patch corrected amendment source XML before parsing.",
+                source_statute=self.amendment_id,
+                detail={
+                    "op_id": op_id,
+                    "source_role": "amendment_source_xml",
+                    "corrected_by": "corrigendum_patch_table",
+                    **digest_detail,
+                },
+                role="obligation",
+                blocking=False,
+            )
+
+    def _cross_check_no_silent_source_correction(
+        self,
+        source_model: AmendmentSourceModel,
+    ) -> None:
+        """Flag a pre/post digest pair that no patch op owns (name-vs-content drift)."""
+        pre_digest = source_model.pre_correction_digest
+        post_digest = source_model.source_digest
+        if (
+            pre_digest is not None
+            and post_digest is not None
+            and pre_digest.digest != post_digest.digest
+        ):
+            self.finding_recorder.record(
+                kind="APPLY.SOURCE_CORRECTION_DIGEST_DRIFT",
+                message=(
+                    "Amendment source bytes changed under correction but no "
+                    "corrigendum patch op owns the change."
+                ),
+                source_statute=self.amendment_id,
+                detail={
+                    "source_role": "amendment_source_xml",
+                    "source_digest": post_digest.to_dict(),
+                    "pre_correction_digest": pre_digest.to_dict(),
+                    "digest_drift": "content_changed_without_owning_patch",
+                },
+                role="observation",
+                blocking=False,
+            )
 
     def _build_acquisition(
         self,

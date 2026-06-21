@@ -1110,7 +1110,7 @@ class TestNoLeak:
 
     def test_branch_id_not_in_enacted_materialization_context(self) -> None:
         """branch_id from HE branch must not appear in enacted LegalBranch context."""
-        from lawvm.core.authority import DEFAULT_ENACTED_CONTEXT
+        from lawvm.core.branch_authority import DEFAULT_ENACTED_CONTEXT
 
         branch = parse_he_branch(
             SINGLE_STATUTE_HE_XML,

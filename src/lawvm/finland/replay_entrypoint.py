@@ -44,6 +44,7 @@ from lawvm.finland.replay_notices import (
 )
 from lawvm.finland.replay_pipeline import (
     ReplaySignalBuffers,
+    build_amendment_selection_source_pathologies,
     build_stop_before_replay_notice,
     execute_replay_plan,
     populate_replay_meta,
@@ -110,11 +111,12 @@ def replay_xml(
             label_postprocessor=_fi_label_postprocessor,
             get_replay_profile=get_replay_profile,
             resolve_applicable_amendment_records=(
-                lambda resolved_parent_id, resolved_mode, corpus=None: resolve_applicable_amendment_records(
+                lambda resolved_parent_id, resolved_mode, corpus=None, residuals_out=None: resolve_applicable_amendment_records(
                     resolved_parent_id,
                     resolved_mode,
                     corpus=corpus,
                     selector=oracle_selector,
+                    residuals_out=residuals_out,
                 )
             ),
             get_consolidated_oracle_suspect=(
@@ -138,6 +140,12 @@ def replay_xml(
         seed_replay_base_evidence_signals(
             ReplayBaseEvidenceSeedRequest(parent_id=parent_id, ctx=plan.ctx),
             signals=signals,
+        )
+        signals.source_pathologies.extend(
+            build_amendment_selection_source_pathologies(
+                plan.amendment_selection_residuals,
+                parent_id=parent_id,
+            )
         )
         _replay_print(f"Master {parent_id} rehydrated. Title: {plan.ctx.title}")
         stop_before_notice = build_stop_before_replay_notice(stop_before, plan.amendment_records)
@@ -233,6 +241,7 @@ def replay_xml(
                 parent_id=parent_id,
                 oracle_selector=oracle_selector,
             ),
+            write_receipts=tuple(signals.write_receipts),
         )
     finally:
         _reset_replay_verbose(verbose_token)

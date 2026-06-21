@@ -88,7 +88,7 @@ def test_prepare_replay_plan_carries_base_source_body_patch_ids(monkeypatch) -> 
         stop_before="",
         label_postprocessor=lambda _sid, label: label,
         get_replay_profile=lambda _mode: SimpleNamespace(normalize_replay_text=False),
-        resolve_applicable_amendment_records=lambda _sid, _mode, corpus=None: ([], None, ""),
+        resolve_applicable_amendment_records=lambda _sid, _mode, corpus=None, residuals_out=None: ([], None, ""),
         get_consolidated_oracle_suspect=lambda _sid, corpus=None: None,
         extract_inline_corrections=lambda xml_bytes, _sid: ([], xml_bytes),
     )
@@ -692,7 +692,7 @@ def test_prepare_replay_plan_dedupes_consecutive_identical_amendment_records() -
         stop_before="",
         label_postprocessor=lambda _sid, label: label,
         get_replay_profile=lambda _mode: SimpleNamespace(normalize_replay_text=False),
-        resolve_applicable_amendment_records=lambda _sid, _mode, corpus=None: (records, None, ""),
+        resolve_applicable_amendment_records=lambda _sid, _mode, corpus=None, residuals_out=None: (records, None, ""),
         get_consolidated_oracle_suspect=lambda _sid, corpus=None: None,
         extract_inline_corrections=lambda xml_bytes, _sid: ([], xml_bytes),
     )

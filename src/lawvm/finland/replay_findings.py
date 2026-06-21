@@ -313,6 +313,130 @@ def fold_timeline_backfill_finding(
     )
 
 
+def editorial_repeal_notice_substring_finding(
+    *,
+    source_statute: str,
+    kind: str,
+    label: str,
+    clause_text: str,
+    witness_rule_id: str,
+) -> Finding:
+    """Build the observation emitted when a repeal notice is recognised by substring.
+
+    The placeholder-restoration guard preferred the typed
+    ``lawvm_repeal_placeholder`` attr but fell back to a case-insensitive
+    ``kumottu`` scan of materialized text because no typed marker yet owns
+    "the consolidation text itself declares this provision repealed"
+    (leak-ledger rank 15; AGENTS §1.11–§1.12). The clause snippet is embedded so
+    triaging the residual never requires re-running materialization.
+    """
+    return Finding(
+        kind="REPLAY.EDITORIAL_REPEAL_NOTICE_SUBSTRING",
+        role="observation",
+        stage="replay",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Replay-fold repeal-placeholder restoration skipped a node whose "
+                "materialized text already shows an editorial repeal notice. No "
+                "typed marker owns this case yet, so a residual 'kumottu' "
+                "substring scan decided it; recorded as a witness instead of a "
+                "silent surface-predicate decision."
+            ),
+            "kind": kind,
+            "label": label,
+            "clause_text": clause_text,
+            "witness_rule_id": witness_rule_id,
+        },
+    )
+
+
+def cited_version_snapshot_drop_finding(
+    *,
+    source_statute: str,
+    op_id: str,
+    drop_source_statute: str,
+    effective: str,
+    target_path: tuple[str, ...],
+    witness_rule_id: str,
+) -> Finding:
+    """Build the observation emitted when a covered cited-version snapshot op is dropped.
+
+    A later amending act emitted a stale ancestor snapshot for an item-scoped
+    cited-version clause; the cited act's same-effective snapshot structurally
+    covers it, so the stale ``REPLACE``/``INSERT`` op is removed from the
+    materialized-state op stream. The drop alters materialized text-state, so it
+    is surfaced as a typed observation rather than left silent (leak-ledger
+    rank 2; AGENTS §0/§4). The dropped op's identity is embedded so triaging the
+    drop never requires re-running materialization.
+    """
+    return Finding(
+        kind="REPLAY.CITED_VERSION_SNAPSHOT_DROP",
+        role="observation",
+        stage="replay",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "A later amending act's item-scoped cited-version clause emitted a "
+                "stale ancestor snapshot op; the cited act's same-effective snapshot "
+                "structurally covers it, so the stale op was dropped from the "
+                "materialized-state op stream. Recorded as a witness so the "
+                "legal-state op drop is never a silent omission."
+            ),
+            "op_id": op_id,
+            "drop_source_statute": drop_source_statute,
+            "effective": effective,
+            "target_path": list(target_path),
+            "witness_rule_id": witness_rule_id,
+        },
+    )
+
+
+def xml_ingest_observation_finding(
+    *,
+    source_statute: str,
+    obs_dict: Dict[str, object],
+) -> Optional[Finding]:
+    """Build a governed Finding for one witnessed XML->IR ingest event.
+
+    The base statute's XML->IR ingest can silently drop an unknown childless
+    source element, assign a positional (non-intrinsic) label, hit an unmapped
+    tag, or re-parent/merge tree shape on a structural-repair heuristic. The
+    production parse (``StatuteContext.from_xml``) witnesses these through an
+    ``_IngestSink`` and folds them into ``ingest_metadata`` -- but that channel
+    is only read by tests, so a dropped/guessed/repaired source child reached no
+    certificate or findings ledger. Each witnessed ``IngestObservation`` dict
+    (envelope ``kind``/``family``/``phase`` + witness detail) is projected here
+    into the governed SCAN.XML_INGEST_* observation finding so the ingest-boundary
+    event reaches the same production findings ledger every other base-statute
+    witness flows through. This is witness threading only: the set of
+    dropped/guessed/repaired children is unchanged.
+    """
+    obs_kind = str(obs_dict.get("kind", "")).strip()
+    if not obs_kind:
+        return None
+    spec = get_finding_spec(obs_kind)
+    if spec is None or spec.role != "observation":
+        return None
+    detail: dict[str, Any] = {
+        "message": f"XML->IR ingest observation: {obs_kind}",
+    }
+    for key, value in obs_dict.items():
+        if str(key) == "kind":
+            continue
+        detail[str(key)] = value
+    return Finding(
+        kind=obs_kind,
+        role="observation",
+        stage="xml_ingest",
+        blocking=False,
+        source_statute=source_statute,
+        detail=detail,
+    )
+
+
 def materialized_provisions_wrapper_projection_finding(
     *,
     source_statute: str,

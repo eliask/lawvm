@@ -270,19 +270,19 @@ def test_appendix_subpart_tail_recovers_coordinated_sibling_part() -> None:
     assert ("OSA", "i") not in pairs, pairs
 
 
-# --- warn-only wiring: LAWVM_PARSE_TOTALITY surfaces residuals, never raises -----
+# --- warn-only wiring: totality policy surfaces residuals, never raises ----------
 
 
-def test_parse_clause_totality_flag_emits_silent_drop_residual(monkeypatch) -> None:
+def test_parse_clause_totality_always_emits_silent_drop_residual() -> None:
     from lawvm.finland.johtolause.api import parse_clause
+    from lawvm.finland.johtolause.totality import TOTALITY_ALWAYS
 
     text = _johtolause("1967/484")
 
-    monkeypatch.setenv("LAWVM_PARSE_TOTALITY", "1")
-    result = parse_clause(text)  # must not raise
+    result = parse_clause(text, totality_policy=TOTALITY_ALWAYS)  # must not raise
 
     silent = [r for r in result.residuals if r.get("kind") == "silent_drop"]
-    assert silent, "flag-on parse should surface at least one silent_drop residual"
+    assert silent, "always-policy parse should surface at least one silent_drop residual"
     one = silent[0]
     assert one["tier"] == "uncovered_operative"
     assert one["unmatched_labels"]  # self-evidencing label|unit
@@ -290,13 +290,146 @@ def test_parse_clause_totality_flag_emits_silent_drop_residual(monkeypatch) -> N
     assert isinstance(one["position"], tuple)
 
 
-def test_parse_clause_totality_flag_off_no_silent_drop(monkeypatch) -> None:
+def test_parse_clause_totality_off_no_silent_drop() -> None:
     from lawvm.finland.johtolause.api import parse_clause
+    from lawvm.finland.johtolause.totality import TOTALITY_OFF
 
     text = _johtolause("1967/484")
 
-    monkeypatch.delenv("LAWVM_PARSE_TOTALITY", raising=False)
-    result = parse_clause(text)  # default path: predicate not run
+    result = parse_clause(text, totality_policy=TOTALITY_OFF)  # predicate not run
 
     silent = [r for r in result.residuals if r.get("kind") == "silent_drop"]
     assert silent == []
+
+
+def test_totality_policy_resolution_and_sampling(monkeypatch) -> None:
+    """Production default = sampled (guard live); env flag overrides to always/off."""
+    from lawvm.finland.johtolause.totality import (
+        TotalityPolicy,
+        resolve_totality_policy,
+    )
+
+    monkeypatch.delenv("LAWVM_PARSE_TOTALITY", raising=False)
+    assert resolve_totality_policy().mode == "sampled"
+
+    monkeypatch.setenv("LAWVM_PARSE_TOTALITY", "1")
+    assert resolve_totality_policy().mode == "always"
+
+    monkeypatch.setenv("LAWVM_PARSE_TOTALITY", "off")
+    assert resolve_totality_policy().mode == "off"
+    monkeypatch.setenv("LAWVM_PARSE_TOTALITY", "0")
+    assert resolve_totality_policy().mode == "off"
+
+    # Sampling is deterministic in the text and selects roughly 1/rate of inputs.
+    p = TotalityPolicy(mode="sampled", sample_rate=8)
+    texts = [f"Muutetaan {i} § ja korvataan taulukko sekä {i + 1} §" for i in range(400)]
+    decisions = [p.should_check(t) for t in texts]
+    # Same text → same decision (reproducible / cache-safe).
+    assert all(p.should_check(t) == d for t, d in zip(texts, decisions, strict=True))
+    n_checked = sum(decisions)
+    # Roughly 1/8 of 400 ≈ 50; allow wide bounds (hash bucketing variance).
+    assert 10 < n_checked < 120, n_checked
+
+
+def test_parse_clause_sampled_default_can_reach_guard() -> None:
+    """The PRODUCTION default (no policy passed, env unset) reaches the guard.
+
+    Proves the no-silent-drop guard is LIVE on the default path: find a known
+    drop-clause that the sampled policy selects, parse it with NO policy arg, and
+    assert the silent_drop residual fires — i.e. the guard fired from the live
+    parse_clause entrypoint without any opt-in env flag.
+    """
+    import os
+
+    from lawvm.finland.johtolause.api import parse_clause
+    from lawvm.finland.johtolause.totality import resolve_totality_policy
+
+    # Sanity: ambient policy is sampled when the env flag is unset.
+    if os.environ.get("LAWVM_PARSE_TOTALITY"):
+        import pytest
+
+        pytest.skip("ambient LAWVM_PARSE_TOTALITY set; sampled-default not active")
+    policy = resolve_totality_policy()
+    assert policy.mode == "sampled"
+
+    base = _johtolause("1967/484")  # a known drop-bearing clause
+    # The exact base text may not land in the sampled bucket; append benign
+    # whitespace until it does (whitespace does not change the parse result, only
+    # the hash bucket). This deterministically constructs an in-sample drop clause.
+    text = base
+    for pad in range(2048):
+        if policy.should_check(text):
+            break
+        text = base + (" " * (pad + 1))
+    assert policy.should_check(text), "could not find an in-sample variant"
+
+    result = parse_clause(text)  # NO totality_policy arg → ambient sampled policy
+    silent = [r for r in result.residuals if r.get("kind") == "silent_drop"]
+    assert silent, "sampled default path failed to fire the no-silent-drop guard"
+
+
+# --- production fire-drill: guard reaches the live compile lane -------------------
+
+
+def test_silent_drop_guard_fires_through_production_compile_lane(monkeypatch) -> None:
+    """Drive a KNOWN token-drop through the production compile lane (not just
+    parse_clause) and assert the silent_drop finding reaches the frontend
+    PhaseResult ledger.
+
+    This is the guard-liveness proof for rank 8: ``normalize_and_compile_ops`` is
+    the production frontend builder; it calls ``parse_clause`` internally under the
+    ambient totality policy and conserves its findings into ``frontend_findings_out``
+    (the consumer-visible PhaseResult ledger). With ``LAWVM_PARSE_TOTALITY`` forced
+    to the always-policy, a real annotation-hidden drop (1967/484) must surface a
+    ``fi-johtolause-residuals-present`` finding whose ``residual_kinds`` include
+    ``silent_drop`` — proving the no-silent-drop detector is reachable from the live
+    compile/replay lane, not only from an opt-in unit call.
+    """
+    import copy
+
+    from lxml import etree
+
+    from lawvm.finland.frontend_compile import normalize_and_compile_ops
+    from lawvm.finland.helpers import _fi_label_postprocessor
+    from lawvm.finland.statute import ReplayState, StatuteContext
+
+    # Force the always-policy so the deterministic drill always exercises the guard
+    # (the production DEFAULT is sampled; this drill must fire every run).
+    monkeypatch.setenv("LAWVM_PARSE_TOTALITY", "1")
+
+    johto = _johtolause("1967/484")  # a known annotation-hidden silent-drop clause
+
+    statute_xml = (
+        "<akomaNtoso><act>"
+        '<meta><lifecycle><eventRef date="2000-01-01"/></lifecycle></meta>'
+        "<body><section><num>3 §</num>"
+        "<subsection><num>1</num><content><p>Vanha teksti.</p></content></subsection>"
+        "</section></body></act></akomaNtoso>"
+    ).encode()
+    ctx = StatuteContext.from_xml(statute_xml, _fi_label_postprocessor)
+    master = ReplayState(ir=copy.deepcopy(ctx.base_ir))
+    muutos_tree = etree.fromstring(statute_xml.replace(b"2000-01-01", b"2010-01-01"))
+
+    result = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2010/100",
+        source_title="Laki muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="1967/484",
+    )
+
+    silent_drop_findings = [
+        f
+        for f in result.findings()
+        if f.kind == "PARSE.FRONTEND_DIAGNOSTIC"
+        and "silent_drop"
+        in tuple(
+            (f.detail.get("diagnostic_detail") or {}).get("residual_kinds", ())
+        )
+    ]
+    assert silent_drop_findings, (
+        "the no-silent-drop guard did not reach the production frontend PhaseResult "
+        "ledger; it is not live on the compile/replay lane"
+    )

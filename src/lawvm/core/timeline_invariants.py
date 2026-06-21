@@ -703,7 +703,7 @@ def _typed_violation_from_address(
     """Build a typed violation from a concrete LegalAddress."""
     return TimelineInvariantViolation(
         kind=kind,
-        section_label=_section_label_from_address_text(str(address)),
+        section_label=_section_label_from_address(address),
         address_path=str(address),
         message=message,
         detail=dict(detail or {}),

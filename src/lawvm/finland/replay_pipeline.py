@@ -18,9 +18,11 @@ from lawvm.core.compile_result import SourcePathology
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE, PhaseResult
 from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallback
 from lawvm.core.tree_ops import resort_children as _resort_children
+from lawvm.finland.amendment_selection import AmendmentSourcePathology
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
@@ -54,6 +56,7 @@ class ReplayPlan:
     oracle_version_amendment_id: str
     oracle_suspect: str
     base_source_correction_op_ids: tuple[str, ...] = ()
+    amendment_selection_residuals: tuple[AmendmentSourcePathology, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +98,7 @@ class ReplaySignalBuffers:
     mutation_events: list[ApplyMutationEvent]
     mutation_invariant_reports: list[Any]
     write_audits: list[ObservedWriteAudit]
+    write_receipts: list[WriteReceipt]
     migration_events: list[MigrationEvent]
     temporal_events: list[Any]
     source_effects: list[EffectRef]
@@ -115,6 +119,7 @@ class ReplaySignalBuffers:
             mutation_events=[],
             mutation_invariant_reports=[],
             write_audits=[],
+            write_receipts=[],
             migration_events=[],
             temporal_events=[],
             source_effects=[],
@@ -136,6 +141,7 @@ class ReplaySignalBuffers:
         commencement_expiry_overrides_out: Optional[List[EffectLifecycleOverride]] = None,
         mutation_events_out: Optional[List[Any]] = None,
         write_audits_out: Optional[List[Any]] = None,
+        write_receipts_out: Optional[List[Any]] = None,
         migration_events_out: Optional[List[MigrationEvent]] = None,
         temporal_events_out: Optional[List[Any]] = None,
         restructure_plans_out: Optional[List[Any]] = None,
@@ -167,6 +173,7 @@ class ReplaySignalBuffers:
             mutation_events=mutation_events_out if mutation_events_out is not None else [],
             mutation_invariant_reports=[],
             write_audits=write_audits_out if write_audits_out is not None else [],
+            write_receipts=write_receipts_out if write_receipts_out is not None else [],
             migration_events=(
                 migration_events_out if migration_events_out is not None else []
             ),
@@ -200,6 +207,7 @@ class ReplaySignalBuffers:
             mutation_events_out=self.mutation_events,
             mutation_invariant_reports_out=self.mutation_invariant_reports,
             write_audits_out=self.write_audits,
+            write_receipts_out=self.write_receipts,
             migration_events_out=migration_events_out,
             restructure_plans_out=self.restructure_plans,
         )
@@ -327,10 +335,12 @@ def prepare_replay_plan(
     ctx = StatuteContext.from_xml(orig_bytes, label_postprocessor)
     initial_state = ReplayState(ir=ctx.base_ir)
     replay_profile = get_replay_profile(mode)
+    amendment_selection_residuals: list[AmendmentSourcePathology] = []
     amendment_records, cutoff_date, oracle_version_amendment_id = resolve_applicable_amendment_records(
         parent_id,
         mode,
         corpus=corpus,
+        residuals_out=amendment_selection_residuals,
     )
     amendment_records = _dedupe_consecutive_amendment_records(amendment_records)
     amendment_ids = [str(rec["statute_id"]) for rec in amendment_records]
@@ -356,6 +366,7 @@ def prepare_replay_plan(
         oracle_version_amendment_id=oracle_version_amendment_id or "",
         oracle_suspect=oracle_suspect or "",
         base_source_correction_op_ids=tuple(base_source_correction_op_ids),
+        amendment_selection_residuals=tuple(amendment_selection_residuals),
     )
 
 
@@ -395,6 +406,42 @@ def build_tree_invariant_finding(
             "barrier_code": "APPLY.TREE_INVARIANT_VIOLATION",
         },
     )
+
+
+def build_amendment_selection_source_pathologies(
+    residuals: tuple[AmendmentSourcePathology, ...],
+    *,
+    parent_id: str,
+) -> list[SourcePathology]:
+    """Project amendment-selection source residuals onto the replay sink.
+
+    The selection layer records a candidate amendment dropped from the replay
+    plan for a source reason (missing source XML bytes) as an
+    ``AmendmentSourcePathology``. The backward tuple adapter used by the live
+    replay path discards the structured selection object, so without this
+    projection a missing amendment source would silently shorten the replay
+    plan with no production-visible witness. Here the residuals are converted to
+    the same ``SourcePathology`` carrier the rest of the replay pipeline already
+    surfaces (warnings + ``source_pathologies`` meta + strict findings).
+    """
+
+    pathologies: list[SourcePathology] = []
+    for residual in residuals:
+        pathologies.append(
+            SourcePathology(
+                code=residual.rule_id,
+                message=residual.reason,
+                source_statute=parent_id,
+                detail={
+                    "family": residual.family,
+                    "phase": residual.phase,
+                    "amendment_id": residual.amendment_id,
+                    "blocking": residual.blocking,
+                    "strict_disposition": residual.strict_disposition,
+                },
+            )
+        )
+    return pathologies
 
 
 def build_chapter_seed_finding(diagnostic: ChapterSeedDiagnostic) -> Finding:
@@ -526,6 +573,7 @@ def execute_replay_plan(
     commencement_expiry_overrides_out: Optional[List[EffectLifecycleOverride]] = None,
     mutation_events_out: Optional[List[Any]] = None,
     write_audits_out: Optional[List[Any]] = None,
+    write_receipts_out: Optional[List[Any]] = None,
     migration_events_out: Optional[List[MigrationEvent]] = None,
     temporal_events_out: Optional[List[Any]] = None,
     strict_profile: Any = None,
@@ -546,6 +594,7 @@ def execute_replay_plan(
         commencement_expiry_overrides_out=commencement_expiry_overrides_out,
         mutation_events_out=mutation_events_out,
         write_audits_out=write_audits_out,
+        write_receipts_out=write_receipts_out,
         migration_events_out=migration_events_out,
         temporal_events_out=temporal_events_out,
         restructure_plans_out=restructure_plans_out,

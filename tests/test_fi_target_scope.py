@@ -10,7 +10,12 @@ from lawvm.core.target_scope import (
     ResolvedTargetScope,
     resolve_internal_target_scope,
 )
-from lawvm.finland.ops import scope_resolution_witness_from_tags
+from lawvm.finland.ops import (
+    ScopeConfidence,
+    ScopeResolutionConfidence,
+    ScopeResolutionSource,
+    scope_resolution_witness_from_tags,
+)
 
 
 def test_normalize_target_unit_kind_is_strict_neutral() -> None:
@@ -118,6 +123,41 @@ def test_scope_resolution_witness_from_tags_classifies_grouped_part_scope() -> N
     assert witness.source == "grouped_part"
     assert witness.confidence == "inferred"
     assert witness.resolved_chapter == "3"
+
+
+def test_scope_confidence_rails_are_typed_strenum_members() -> None:
+    witness = scope_resolution_witness_from_tags(
+        ("chapter_scope_from_explicit_chunk",),
+        resolved_chapter="5",
+    )
+    assert witness is not None
+    # Rails are StrEnum members (rename-safe identity), not bare strings.
+    assert witness.confidence is ScopeResolutionConfidence.EXPLICIT
+    assert witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
+    # StrEnum keeps backward-compatible string equality for serialized rows.
+    assert witness.confidence == "explicit"
+    assert witness.source == "explicit_chunk"
+
+
+def test_scope_confidence_is_explicit_compares_enum_members() -> None:
+    explicit = ScopeConfidence(
+        tag="t",
+        source=ScopeResolutionSource.EXPLICIT_CHUNK,
+        confidence=ScopeResolutionConfidence.EXPLICIT,
+    )
+    rewritten = ScopeConfidence(
+        tag="t",
+        source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+        confidence=ScopeResolutionConfidence.REWRITTEN,
+    )
+    inferred = ScopeConfidence(
+        tag="t",
+        source=ScopeResolutionSource.CARRY_FORWARD,
+        confidence=ScopeResolutionConfidence.INFERRED,
+    )
+    assert explicit.is_explicit and not explicit.is_rewritten
+    assert rewritten.is_rewritten and not rewritten.is_explicit
+    assert not inferred.is_explicit and not inferred.is_rewritten
 
 
 def test_scope_resolution_witness_from_tags_classifies_section_facet_insert_scope_rewrite() -> None:

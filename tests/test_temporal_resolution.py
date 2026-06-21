@@ -121,7 +121,7 @@ def test_temporal_resolution_evidence_rejects_unknown_family() -> None:
 
 
 def test_certified_untriggered_requires_authority_or_coverage_witness() -> None:
-    with pytest.raises(ValueError, match="trigger_coverage_certificate"):
+    with pytest.raises(ValueError, match="trigger_coverage"):
         TemporalResolutionEvidence(
             rule_id="test_temporal_bad",
             phase="temporal",
@@ -136,13 +136,13 @@ def test_certified_untriggered_requires_authority_or_coverage_witness() -> None:
         reason="coverage certificate proves no trigger",
         status=TEMPORAL_CERTIFIED_UNTRIGGERED,
         as_of="2026-04-07",
-        detail={"trigger_coverage_certificate": "coverage://2026-04-07"},
+        detail={"trigger_coverage": "coverage://2026-04-07"},
     ).to_diagnostic_detail()
-    assert detail["trigger_coverage_certificate"] == "coverage://2026-04-07"
+    assert detail["trigger_coverage"] == "coverage://2026-04-07"
 
 
 def test_temporal_resolution_evidence_freezes_detail_payload() -> None:
-    mutable_detail = {"trigger_coverage_certificate": {"sources": ["coverage://2026-04-07"]}}
+    mutable_detail = {"trigger_coverage": {"sources": ["coverage://2026-04-07"]}}
 
     evidence = TemporalResolutionEvidence(
         rule_id="test_temporal_coverage",
@@ -153,13 +153,13 @@ def test_temporal_resolution_evidence_freezes_detail_payload() -> None:
         detail=mutable_detail,
     )
 
-    mutable_detail["trigger_coverage_certificate"]["sources"].append("mutated")
+    mutable_detail["trigger_coverage"]["sources"].append("mutated")
 
     assert isinstance(evidence.detail, FrozenDict)
-    assert evidence.detail["trigger_coverage_certificate"]["sources"] == (
+    assert evidence.detail["trigger_coverage"]["sources"] == (
         "coverage://2026-04-07",
     )
-    assert evidence.to_diagnostic_detail()["trigger_coverage_certificate"]["sources"] == (
+    assert evidence.to_diagnostic_detail()["trigger_coverage"]["sources"] == (
         "coverage://2026-04-07",
     )
 

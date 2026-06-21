@@ -112,7 +112,7 @@ _TRIGGER_COVERAGE_STATUSES = frozenset({
 
 
 @dataclass(frozen=True)
-class TriggerCoverageCertificate:
+class TriggerCoverage:
     """Epistemic coverage record for contingent trigger source searches."""
 
     certificate_id: str
@@ -130,7 +130,7 @@ class TriggerCoverageCertificate:
         object.__setattr__(self, "missing_sources", tuple(self.missing_sources))
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
         if not self.certificate_id:
-            raise ValueError("TriggerCoverageCertificate.certificate_id must be non-empty")
+            raise ValueError("TriggerCoverage.certificate_id must be non-empty")
         if self.status not in _TRIGGER_COVERAGE_STATUSES:
             raise ValueError(f"unsupported trigger coverage status: {self.status!r}")
         if self.status in {
@@ -139,15 +139,15 @@ class TriggerCoverageCertificate:
         }:
             if not self.as_of:
                 raise ValueError(
-                    f"TriggerCoverageCertificate(status={self.status!r}) requires as_of"
+                    f"TriggerCoverage(status={self.status!r}) requires as_of"
                 )
             if not self.checked_sources:
                 raise ValueError(
-                    f"TriggerCoverageCertificate(status={self.status!r}) requires checked_sources"
+                    f"TriggerCoverage(status={self.status!r}) requires checked_sources"
                 )
         if self.status == TRIGGER_COVERAGE_INCOMPLETE and not self.missing_sources:
             raise ValueError(
-                "TriggerCoverageCertificate(status='incomplete') requires missing_sources"
+                "TriggerCoverage(status='incomplete') requires missing_sources"
             )
 
     @property
@@ -429,7 +429,7 @@ __all__ = [
     "PENDING_DECREE_KIND",
     "PENDING_CONDITION_KIND",
     "TriggerCoverageStatus",
-    "TriggerCoverageCertificate",
+    "TriggerCoverage",
     "TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION",
     "TRIGGER_COVERAGE_COMPLETE_WITH_RESOLUTION",
     "TRIGGER_COVERAGE_INCOMPLETE",

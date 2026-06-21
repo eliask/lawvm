@@ -20,14 +20,17 @@ def test_clean_clause_has_no_uncovered_spans() -> None:
 
 
 def test_parse_totality_flag_emits_silent_drop_residual(monkeypatch) -> None:
-    """LAWVM_PARSE_TOTALITY makes parse_clause surface a silent drop as a residual.
+    """The totality policy makes parse_clause surface a silent drop as a residual.
 
-    Off by default (hot-path cost); on, an interior/trailing real drop becomes a
-    self-evidencing ``silent_drop`` residual carrying the unparsed text + the
-    unmatched section labels.  This is the parser's totality contract — the same
-    contract a future rewrite must satisfy.
+    Under TOTALITY_OFF the check never runs; under TOTALITY_ALWAYS an
+    interior/trailing real drop becomes a self-evidencing ``silent_drop``
+    residual carrying the unparsed text + the unmatched section labels.  This is
+    the parser's totality contract — the same contract a future rewrite must
+    satisfy.  The typed policy is passed explicitly so the assertion is
+    deterministic regardless of the ambient sampling decision.
     """
     from lawvm.finland.johtolause.api import parse_clause
+    from lawvm.finland.johtolause.totality import TOTALITY_ALWAYS, TOTALITY_OFF
 
     # A doubled-hyphen-free construction that genuinely drops: an unknown verb
     # construct naming a section no op covers.  (Use a clause that classify tiers
@@ -35,11 +38,10 @@ def test_parse_totality_flag_emits_silent_drop_residual(monkeypatch) -> None:
     text = "Muutetaan 17 §:n 1 momentti, 19, 20, 21 §, korvataan taulukko sekä 88 §"
 
     monkeypatch.delenv("LAWVM_PARSE_TOTALITY", raising=False)
-    off = parse_clause(text, statute_id="T").residuals
+    off = parse_clause(text, statute_id="T", totality_policy=TOTALITY_OFF).residuals
     assert not any(d.get("kind") == "silent_drop" for d in off)
 
-    monkeypatch.setenv("LAWVM_PARSE_TOTALITY", "1")
-    on = parse_clause(text, statute_id="T").residuals
+    on = parse_clause(text, statute_id="T", totality_policy=TOTALITY_ALWAYS).residuals
     drops = [d for d in on if d.get("kind") == "silent_drop"]
     # The clause may or may not drop depending on grammar coverage; assert only
     # that the flag is wired (no crash) and any drop is self-evidencing.

@@ -31,7 +31,11 @@ UNSUPPORTED_META_CLAUSE_RULE_ID = "PARSE.META_CLAUSE_UNSUPPORTED"
 UnsupportedMetaClauseReason = Literal[
     "delegation_clause_not_executable_effect",
     "unsupported_meta_clause_kind",
+    "commencement_shape_no_effect_intent",
+    "expiry_shape_no_effect_intent",
 ]
+
+COMMENCEMENT_SHAPE_NO_EFFECT_RULE_ID = "PARSE.COMMENCEMENT_SHAPE_NO_EFFECT"
 
 
 @dataclass(frozen=True)
@@ -136,13 +140,29 @@ def lower_meta_clause(clause: MetaClause) -> Optional[EffectIntent]:
 
 
 def _unsupported_meta_clause_record(clause: MetaClause) -> UnsupportedMetaClause:
-    reason_code: UnsupportedMetaClauseReason = (
-        "delegation_clause_not_executable_effect"
-        if clause.kind == MetaClauseKind.DELEGATION
-        else "unsupported_meta_clause_kind"
-    )
+    """Build a typed residual for a meta clause that lowered to no effect intent.
+
+    A clause whose kind was *recognized* (COMMENCEMENT / EXPIRY) but produced no
+    executable EffectIntent is a representation-regression risk: it would
+    otherwise vanish silently. It is recorded with a distinct reason code and the
+    commencement-shape rule id so the unrecognized-but-recognized-shape case is
+    triageable without re-running extraction.
+    """
+    rule_id = UNSUPPORTED_META_CLAUSE_RULE_ID
+    if clause.kind == MetaClauseKind.DELEGATION:
+        reason_code: UnsupportedMetaClauseReason = (
+            "delegation_clause_not_executable_effect"
+        )
+    elif clause.kind == MetaClauseKind.COMMENCEMENT:
+        reason_code = "commencement_shape_no_effect_intent"
+        rule_id = COMMENCEMENT_SHAPE_NO_EFFECT_RULE_ID
+    elif clause.kind == MetaClauseKind.EXPIRY:
+        reason_code = "expiry_shape_no_effect_intent"
+        rule_id = COMMENCEMENT_SHAPE_NO_EFFECT_RULE_ID
+    else:
+        reason_code = "unsupported_meta_clause_kind"
     return UnsupportedMetaClause(
-        rule_id=UNSUPPORTED_META_CLAUSE_RULE_ID,
+        rule_id=rule_id,
         reason_code=reason_code,
         clause_kind=clause.kind.value,
         raw_text=clause.raw_text,
@@ -206,13 +226,19 @@ def extract_meta_clauses(johto: str) -> List[MetaClause]:
 def lower_johto_effects(
     johto: str,
     *,
-    unsupported_out: Optional[List[UnsupportedMetaClause]] = None,
+    unsupported_out: List[UnsupportedMetaClause],
 ) -> List[EffectIntent]:
+    """Lower johto meta clauses to effect intents.
+
+    Every recognized meta clause that lowers to no executable EffectIntent is
+    appended to ``unsupported_out`` as a typed residual — the sink is mandatory
+    so an unrecognized commencement/expiry shape can never drop silently.
+    """
     intents: List[EffectIntent] = []
     for clause in extract_meta_clauses(johto):
         intent = lower_meta_clause(clause)
         if intent is not None:
             intents.append(intent)
-        elif unsupported_out is not None:
+        else:
             unsupported_out.append(_unsupported_meta_clause_record(clause))
     return intents

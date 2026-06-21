@@ -420,6 +420,76 @@ def test_restore_replay_fold_repeal_placeholders_preserves_editorial_notice_slot
     assert projected_parent is materialized_parent_missing
 
 
+def test_editorial_repeal_notice_substring_path_is_witnessed_not_silent() -> None:
+    from lawvm.finland.replay_products import (
+        EditorialRepealNoticeSubstringWitness,
+        FI_EDITORIAL_REPEAL_NOTICE_SUBSTRING_RULE_ID,
+        _content_is_editorial_repeal_notice,
+    )
+
+    # Typed-first: a replay-minted placeholder is recognised by the typed attr
+    # and never touches the substring path (no witness emitted).
+    typed_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3) something"),),
+    )
+    typed_sink: list[EditorialRepealNoticeSubstringWitness] = []
+    assert _content_is_editorial_repeal_notice(typed_placeholder, witness_sink=typed_sink) is True
+    assert typed_sink == []
+
+    # Residual substring path: no typed marker, but the consolidation text shows
+    # "kumottu". The decision still fires (representation parity preserved) AND a
+    # witness is recorded — the surface predicate is no longer silent.
+    notice = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3 kohta on kumottu L:lla 16.1.2026/45."),),
+    )
+    sink: list[EditorialRepealNoticeSubstringWitness] = []
+    assert _content_is_editorial_repeal_notice(notice, witness_sink=sink) is True
+    assert len(sink) == 1
+    witness = sink[0]
+    assert witness.label == "3"
+    assert "kumottu" in witness.clause_text
+    assert witness.witness_rule_id == FI_EDITORIAL_REPEAL_NOTICE_SUBSTRING_RULE_ID
+
+    # Negative: ordinary substantive text is not misfired and emits no witness.
+    plain = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="4",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="4) substantive in-force text"),),
+    )
+    plain_sink: list[EditorialRepealNoticeSubstringWitness] = []
+    assert _content_is_editorial_repeal_notice(plain, witness_sink=plain_sink) is False
+    assert plain_sink == []
+
+
+def test_restore_replay_fold_repeal_placeholders_threads_substring_witness() -> None:
+    from lawvm.finland.replay_products import EditorialRepealNoticeSubstringWitness
+
+    replay_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1", "lawvm_restore_materialized_stale_item_slot": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3)"),),
+    )
+    materialized_notice = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3 kohta on kumottu L:lla 16.1.2026/45."),),
+    )
+    sink: list[EditorialRepealNoticeSubstringWitness] = []
+    result = _restore_replay_fold_repeal_placeholders(
+        materialized_notice, replay_placeholder, witness_sink=sink
+    )
+    # Representation parity: still returns the materialized notice unchanged.
+    assert result is materialized_notice
+    assert len(sink) == 1
+    assert sink[0].label == "3"
+
+
 def test_project_materialized_provisions_wrapper_reparents_eid_sections_to_chapters() -> None:
     section_17g = IRNode(
         kind=IRNodeKind.SECTION,
@@ -1546,6 +1616,244 @@ def test_replay_xml_2013_185_cited_version_group_keeps_new_inserted_items() -> N
 
     assert "15) ilmoitetaan asianomaiselle toisen Euroopan unionin jäsenvaltion toimivaltaiselle viranomaiselle täydennysveron tietoilmoitusta koskevat tiedot" in section_2_text
     assert "11) täydennysveron tietoilmoitusta koskevien tietojen ilmoittamisen automaattisella tietojenvaihdolla" in section_3_text
+
+
+def _synthetic_cited_version_drop_products():
+    """Build replay products containing a real cited-version snapshot op-drop.
+
+    Two same-effective, same-target ops: the later amending act's item-scoped
+    cited-version clause (kept op stream removes it) and the cited act's broader
+    same-effective snapshot. ``build_replay_products`` runs the production drop
+    filter, so ``dropped_cited_version_snapshots`` is populated by the real
+    pipeline rather than constructed by hand.
+    """
+    base_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="base text for section 5"),),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="synthetic/cited-version-drop",
+        title="Synthetic cited-version drop",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+    current_payload = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="short current"),),
+    )
+    cited_payload = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=(
+                    "much longer cited snapshot text that materially covers the "
+                    "current one with extra body content"
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="extra covered subsection"),),
+            ),
+        ),
+    )
+    current_src = OperationSource(
+        statute_id="2020/9",
+        title="amend",
+        enacted="2020-01-01",
+        effective="2020-06-01",
+        raw_text="muutetaan 5 §:n 2 kohta, sellaisena kuin se on laissa 123/2019",
+    )
+    cited_src = OperationSource(
+        statute_id="2019/123",
+        title="cited",
+        enacted="2019-01-01",
+        effective="2020-06-01",
+        raw_text="muutetaan 5 §",
+    )
+    ops = [
+        LegalOperation(
+            op_id="current_cited_version_op",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "5"),)),
+            payload=current_payload,
+            source=current_src,
+        ),
+        LegalOperation(
+            op_id="cited_snapshot_op",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "5"),)),
+            payload=cited_payload,
+            source=cited_src,
+        ),
+    ]
+    products = build_replay_products(
+        ctx=ctx,
+        statute_id=ctx.id,
+        replay_fold_state=ReplayState(ir=base_body),
+        lo_ops_out=ops,
+        as_of="2021-01-01",
+    )
+    return ctx, products
+
+
+def test_cited_version_snapshot_drop_is_witnessed_through_assembly_projection_and_certificate() -> None:
+    """A dropped cited-version legal-state op reaches the certificate consumer.
+
+    Closes leak-ledger rank 2 sub-fix (a): the typed ``CitedVersionSnapshotDrop``
+    must survive ``_normalize_product_trees`` (sever-point 1), surface as a typed
+    projection finding (sever-point 2), and be readable by the certificate's
+    findings ledger (sever-point 3) so a clean certificate can never sit silently
+    over a real materialized-state op drop.
+    """
+    from lawvm.finland.replay_product_assembly import _normalize_product_trees
+    from lawvm.finland.replay_product_projection import (
+        ReplayProductProjectionRequest,
+        project_replay_products,
+    )
+    from lawvm.tools.certificate_bundle import (
+        BundleSpecError,
+        _finding_row,
+        build_diagnostic_registry_rows,
+    )
+
+    ctx, products = _synthetic_cited_version_drop_products()
+    assert len(products.dropped_cited_version_snapshots) == 1
+
+    # Sever-point 1: the assembly rebuild must NOT reset the witness to ().
+    normalized = _normalize_product_trees(products)
+    assert normalized.dropped_cited_version_snapshots == products.dropped_cited_version_snapshots
+
+    # Sever-point 2: projection surfaces the drop as a typed observation finding.
+    findings: list = []
+    project_replay_products(
+        ReplayProductProjectionRequest(
+            ctx=ctx,
+            products=normalized,
+            parent_id=ctx.id,
+            replay_findings=findings,
+            replay_meta_out=None,
+            replay_print=lambda _s: None,
+            debug_enabled=False,
+            debug_log=lambda *_a: None,
+        )
+    )
+    cited_findings = [f for f in findings if f.kind == "REPLAY.CITED_VERSION_SNAPSHOT_DROP"]
+    assert len(cited_findings) == 1
+    finding = cited_findings[0]
+    assert finding.role == "observation"
+    assert finding.detail["op_id"] == "current_cited_version_op"
+    assert tuple(finding.detail["target_path"]) == ("section:5",)
+    assert finding.detail["witness_rule_id"] == "fi.replay.cited_version_ancestor_snapshot_drop"
+
+    # Sever-point 3: the certificate's findings-ledger consumer reads it. The
+    # production loop (build_certificate_bundle, §5.7) iterates result.findings,
+    # rejects any kind not in the pinned registry, then ledgers it into a finding
+    # row. Drive that exact consumer logic over the projected finding.
+    registry_rows = build_diagnostic_registry_rows({"allows_estimated_dates": True})
+    registered_codes = frozenset(r["code"] for r in registry_rows)
+    assert finding.kind in registered_codes  # else the certificate would raise
+
+    finding_rows: list = []
+    for f in findings:
+        if f.kind not in registered_codes:
+            raise BundleSpecError(f"unexpected unregistered finding {f.kind!r}")
+        finding_rows.append(
+            _finding_row(
+                diagnostic_code=f.kind,
+                role=f.role,
+                blocking=bool(f.blocking),
+                address=None,
+                date_range=[None, None],
+                source_refs=[],
+                phase=f.stage,
+                detail=f.detail,
+            )
+        )
+    ledgered = [r for r in finding_rows if r["diagnostic_code"] == "REPLAY.CITED_VERSION_SNAPSHOT_DROP"]
+    assert len(ledgered) == 1
+    assert ledgered[0]["detail"]["op_id"] == "current_cited_version_op"
+
+
+def test_no_cited_version_drop_replay_stays_quiet() -> None:
+    """A replay with no covered ancestor snapshot emits no drop finding."""
+    from lawvm.finland.replay_product_assembly import _normalize_product_trees
+    from lawvm.finland.replay_product_projection import (
+        ReplayProductProjectionRequest,
+        project_replay_products,
+    )
+
+    base_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="base"),),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="synthetic/no-cited-version-drop",
+        title="Synthetic no drop",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+    ops = [
+        LegalOperation(
+            op_id="plain_replace",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "5"),)),
+            payload=IRNode(
+                kind=IRNodeKind.SECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="ordinary amendment"),),
+            ),
+            source=OperationSource(
+                statute_id="2020/9",
+                title="amend",
+                enacted="2020-01-01",
+                effective="2020-06-01",
+                raw_text="muutetaan 5 §",
+            ),
+        )
+    ]
+    products = build_replay_products(
+        ctx=ctx,
+        statute_id=ctx.id,
+        replay_fold_state=ReplayState(ir=base_body),
+        lo_ops_out=ops,
+        as_of="2021-01-01",
+    )
+    assert products.dropped_cited_version_snapshots == ()
+
+    normalized = _normalize_product_trees(products)
+    findings: list = []
+    project_replay_products(
+        ReplayProductProjectionRequest(
+            ctx=ctx,
+            products=normalized,
+            parent_id=ctx.id,
+            replay_findings=findings,
+            replay_meta_out=None,
+            replay_print=lambda _s: None,
+            debug_enabled=False,
+            debug_log=lambda *_a: None,
+        )
+    )
+    assert [f for f in findings if f.kind == "REPLAY.CITED_VERSION_SNAPSHOT_DROP"] == []
 
 
 def test_replay_xml_2009_862_complete_section_replace_retires_old_transition_subsections() -> None:

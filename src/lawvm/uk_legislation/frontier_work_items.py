@@ -5,16 +5,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from lawvm.core.candidate_set_certificate import (
+from lawvm.core.candidate_set_coverage import (
     CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_UNAVAILABLE,
-    CandidateSetCertificate,
+    CandidateSetCoverage,
 )
 from lawvm.core.execution_authorization import validate_execution_authorization
 from lawvm.core.frontier_work_item import FrontierWorkItem, validate_frontier_work_item
 from lawvm.core.proof_obligations import (
     PROOF_OBLIGATION_BLOCKED,
-    ProofObligationCertificate,
+    ProofObligationCoverage,
 )
 from lawvm.core.source_witness import source_witness_from_mapping
 from lawvm.core.target_resolution import (
@@ -24,7 +24,7 @@ from lawvm.core.target_resolution import (
     TARGET_RESOLVED,
     TARGET_UNRESOLVED,
     TargetResolutionCandidate,
-    TargetResolutionCertificate,
+    TargetResolutionCoverage,
 )
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_manual_frontier,
@@ -985,7 +985,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
         or ""
     )
     detail["execution_authorization"] = execution_authorization
-    detail["candidate_set_certificate"] = _candidate_target_set_certificate(
+    detail["candidate_set_coverage"] = _candidate_target_set_certificate(
         work_item_id=work_item_id,
         owner_phase=owner_phase,
         candidate_targets=candidate_targets,
@@ -1011,17 +1011,17 @@ def uk_frontier_work_item_from_manual_frontier_row(
     )
     if exclusion_scope_certificate:
         detail["exclusion_scope_certificate"] = exclusion_scope_certificate
-    proof_obligation_certificate = _proof_obligation_certificate(
+    proof_obligation_coverage = _proof_obligation_coverage(
         work_item_id=work_item_id,
         owner_phase=owner_phase,
         frontier_family=frontier_family,
-        candidate_set_certificate=detail["candidate_set_certificate"],
+        candidate_set_coverage=detail["candidate_set_coverage"],
         source_membership_certificate=source_membership_certificate,
         exclusion_scope_certificate=exclusion_scope_certificate,
     )
-    if proof_obligation_certificate:
-        detail["proof_obligation_certificate"] = proof_obligation_certificate
-    detail["target_resolution_certificate"] = _target_resolution_certificate(
+    if proof_obligation_coverage:
+        detail["proof_obligation_coverage"] = proof_obligation_coverage
+    detail["target_resolution_coverage"] = _target_resolution_coverage(
         owner_phase=owner_phase,
         target_witness=target_witness,
         candidate_targets=candidate_targets,
@@ -1061,8 +1061,8 @@ def uk_frontier_work_item_from_manual_frontier_row(
         source_witness=normalized_source_witness,
         target_witness=target_witness,
         compare_witness=compare_witness,
-        candidate_set_certificate=detail["candidate_set_certificate"],
-        target_resolution_certificate=detail["target_resolution_certificate"],
+        candidate_set_coverage=detail["candidate_set_coverage"],
+        target_resolution_coverage=detail["target_resolution_coverage"],
         owner_phase=owner_phase,
         frontier_family=frontier_family,
         frontier_status=frontier_status,
@@ -1250,7 +1250,7 @@ def _candidate_target_set_certificate(
                 "modeled_targets_not_replay_authorization": True,
             }
         )
-    certificate = CandidateSetCertificate(
+    certificate = CandidateSetCoverage(
         scope_id=f"uk-frontier-work-item:{work_item_id}",
         candidate_set_kind="uk_frontier_work_item_candidate_targets",
         phase=owner_phase or "unknown",
@@ -1319,7 +1319,7 @@ def _source_membership_certificate(
         blockers["effect_target_unavailable"] = 1
     if has_source and has_target and not membership_proved:
         blockers["source_list_membership_not_proved"] = len(effect_targets)
-    return CandidateSetCertificate(
+    return CandidateSetCoverage(
         scope_id=f"uk-frontier-work-item:{work_item_id}:source-membership",
         candidate_set_kind="uk_multi_enactment_specified_provisions_membership",
         phase=owner_phase or "unknown",
@@ -1393,7 +1393,7 @@ def _exclusion_scope_certificate(
         blockers["source_preview_unavailable"] = 1
     if source_preview and not exclusion_surfaces:
         blockers["exclusion_scope_not_proved"] = 1
-    return CandidateSetCertificate(
+    return CandidateSetCoverage(
         scope_id=f"uk-frontier-work-item:{work_item_id}:exclusion-scope",
         candidate_set_kind="uk_scoped_occurrence_exclusion_scopes",
         phase=owner_phase or "unknown",
@@ -1479,12 +1479,12 @@ def _scoped_occurrence_exclusion_scope_facts(
     return ()
 
 
-def _proof_obligation_certificate(
+def _proof_obligation_coverage(
     *,
     work_item_id: str,
     owner_phase: str,
     frontier_family: str,
-    candidate_set_certificate: Mapping[str, Any],
+    candidate_set_coverage: Mapping[str, Any],
     source_membership_certificate: Mapping[str, Any],
     exclusion_scope_certificate: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -1492,7 +1492,7 @@ def _proof_obligation_certificate(
         frontier_family
         == "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
     ):
-        proved = _proved_frontier_common_proofs(candidate_set_certificate)
+        proved = _proved_frontier_common_proofs(candidate_set_coverage)
         blockers: dict[str, int] = {}
         if _certificate_status_is_complete(source_membership_certificate):
             proved += ("source_list_membership",)
@@ -1524,7 +1524,7 @@ def _proof_obligation_certificate(
         frontier_family
         == "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate"
     ):
-        proved = _proved_frontier_common_proofs(candidate_set_certificate)
+        proved = _proved_frontier_common_proofs(candidate_set_coverage)
         blockers = {}
         if _certificate_status_is_complete(exclusion_scope_certificate):
             proved += ("source_exclusion_scope",)
@@ -1556,9 +1556,9 @@ def _proof_obligation_certificate(
 
 
 def _proved_frontier_common_proofs(
-    candidate_set_certificate: Mapping[str, Any],
+    candidate_set_coverage: Mapping[str, Any],
 ) -> tuple[str, ...]:
-    if _certificate_status_is_complete(candidate_set_certificate):
+    if _certificate_status_is_complete(candidate_set_coverage):
         return ("target_candidate_set_completeness",)
     return ()
 
@@ -1578,7 +1578,7 @@ def _blocked_proof_certificate(
     missing_proofs: tuple[str, ...],
     blocker_counts: Mapping[str, int],
 ) -> Mapping[str, Any]:
-    return ProofObligationCertificate(
+    return ProofObligationCoverage(
         scope_id=f"uk-frontier-work-item:{work_item_id}:proof-obligations",
         phase=owner_phase or "unknown",
         rule_id=rule_id,
@@ -1596,7 +1596,7 @@ def _blocked_proof_certificate(
     ).to_dict()
 
 
-def _target_resolution_certificate(
+def _target_resolution_coverage(
     *,
     owner_phase: str,
     target_witness: Mapping[str, Any],
@@ -1643,7 +1643,7 @@ def _target_resolution_certificate(
                 "modeled_targets_not_replay_authorization": True,
             }
         )
-    return TargetResolutionCertificate(
+    return TargetResolutionCoverage(
         rule_id="uk_frontier_work_item_target_resolution_projection",
         phase=owner_phase or "unknown",
         reason=(
@@ -1675,8 +1675,8 @@ def _packet_completeness(
     source_witness: Mapping[str, Any],
     target_witness: Mapping[str, Any],
     compare_witness: Mapping[str, Any],
-    candidate_set_certificate: Mapping[str, Any],
-    target_resolution_certificate: Mapping[str, Any],
+    candidate_set_coverage: Mapping[str, Any],
+    target_resolution_coverage: Mapping[str, Any],
     owner_phase: str,
     frontier_family: str,
     frontier_status: str,
@@ -1704,9 +1704,9 @@ def _packet_completeness(
             source_witness.get("digest") or source_witness.get("preview_digest")
         ),
         "has_target_witness": bool(target_witness),
-        "has_target_resolution_certificate": bool(target_resolution_certificate),
+        "has_target_resolution_coverage": bool(target_resolution_coverage),
         "has_compare_witness": bool(compare_witness),
-        "has_candidate_set_certificate": bool(candidate_set_certificate),
+        "has_candidate_set_coverage": bool(candidate_set_coverage),
         "has_candidate_operation_family": bool(candidate_operation_family),
         "has_required_claim_kind": bool(required_claim_kind),
         "has_required_validator_checks": bool(required_validator_checks),
@@ -1734,8 +1734,8 @@ def _packet_completeness(
         and checks["has_frontier_status"]
         and checks["has_source_witness"]
         and checks["has_target_witness"]
-        and checks["has_target_resolution_certificate"]
-        and checks["has_candidate_set_certificate"]
+        and checks["has_target_resolution_coverage"]
+        and checks["has_candidate_set_coverage"]
         and checks["has_candidate_operation_family"]
         and checks["has_required_claim_kind"]
         and checks["has_required_validator_checks"]

@@ -27,6 +27,7 @@ from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.core.temporal import TemporalEvent
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     build_apply_mutation_invariant_reports,
@@ -122,6 +123,7 @@ class ProcessAmendmentSinks:
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None
     mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]] = None
     write_audits_out: Optional[List[ObservedWriteAudit]] = None
+    write_receipts_out: Optional[List[WriteReceipt]] = None
     migration_events_out: Optional[List[MigrationEvent]] = None
     restructure_plans_out: Optional[List[StructuralTransformPlan]] = None
 

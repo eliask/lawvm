@@ -13,6 +13,20 @@ This document is normative where it states invariants and replay contracts.
 It is provisional where it lists unresolved Finland-specific elaboration
 questions.
 
+This document is the **canonical owner of the op/effect type model**. Vocabulary
+otherwise follows `LAWVM_PIPELINE_CONTRACT.md`; the contract names where this
+type model sits in the waist chain (it is the `canonical_op` waist, CONTRACT §2,
+on the legal-state plane). The four-way distinction is real and intentional:
+
+- **LegalOperation** — a structural canonical op (the executable contract apply
+  consumes; replace / insert / repeal / text_replace / …).
+- **CanonicalIntent** — structural intent (the typed pre-execution form of a
+  structural operation, before it is bound to an execution contract).
+- **EffectIntent** — a non-structural temporal/conditional effect (commence /
+  expire / suspend / revive / applicability), which is not a tree mutation.
+- **op / operation** — used as the umbrella term for the above; prefer the
+  specific type name in normative lines.
+
 Related design docs:
 
 - [FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md](FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md)
@@ -386,7 +400,7 @@ Not allowed after canonicalization:
 
 ## 10. Known Current Exemplars
 
-### 8.1 `1988/161` / `2008/732` / `14 §`
+### 10.1 `1988/161` / `2008/732` / `14 §`
 
 Lesson:
 
@@ -399,7 +413,7 @@ Canonical consequence:
 - `special:johd` subsection ops must consume the same elaborated subsection slot
   as sibling payload-bearing ops for that moment
 
-### 8.2 `2009/1672` / `2024/1116` / `7 luvun 14 b §`
+### 10.2 `2009/1672` / `2024/1116` / `7 luvun 14 b §`
 
 Lesson:
 
@@ -421,7 +435,7 @@ This document does not yet specify:
 
 Those belong in follow-on docs.
 
-## 10. Next Spec Dependencies
+## 12. Next Spec Dependencies
 
 The next living specs that should refine this one are:
 

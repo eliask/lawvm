@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import pytest
 
-from lawvm.core.compile_result import AdmissibleBindingCertificate
+from lawvm.core.compile_result import AdmissibleBindingCoverage
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.observation_registry import (
@@ -56,11 +56,11 @@ def test_ambiguous_binding_finding_lookup() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AdmissibleBindingCertificate type tests
+# AdmissibleBindingCoverage type tests
 # ---------------------------------------------------------------------------
 
-def test_admissible_binding_certificate_single() -> None:
-    cert = AdmissibleBindingCertificate(
+def test_admissible_binding_coverage_single() -> None:
+    cert = AdmissibleBindingCoverage(
         slot_id=1,
         amendment_id="2024/100",
         candidate_count=1,
@@ -70,8 +70,8 @@ def test_admissible_binding_certificate_single() -> None:
     assert cert.candidate_count == 1
 
 
-def test_admissible_binding_certificate_ambiguous() -> None:
-    cert = AdmissibleBindingCertificate(
+def test_admissible_binding_coverage_ambiguous() -> None:
+    cert = AdmissibleBindingCoverage(
         slot_id=2,
         amendment_id="2024/200",
         candidate_count=3,
@@ -81,8 +81,8 @@ def test_admissible_binding_certificate_ambiguous() -> None:
     assert cert.candidate_count == 3
 
 
-def test_admissible_binding_certificate_fallback() -> None:
-    cert = AdmissibleBindingCertificate(
+def test_admissible_binding_coverage_fallback() -> None:
+    cert = AdmissibleBindingCoverage(
         slot_id=1,
         amendment_id="2024/300",
         candidate_count=5,
@@ -91,8 +91,8 @@ def test_admissible_binding_certificate_fallback() -> None:
     assert cert.admissibility == "fallback"
 
 
-def test_admissible_binding_certificate_frozen() -> None:
-    cert = AdmissibleBindingCertificate(
+def test_admissible_binding_coverage_frozen() -> None:
+    cert = AdmissibleBindingCoverage(
         slot_id=1,
         amendment_id="2024/100",
         candidate_count=1,

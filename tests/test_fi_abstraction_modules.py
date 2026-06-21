@@ -42,11 +42,11 @@ from lawvm.finland.periodic_table import (
     periodic_table_summary,
     render_finland_periodic_table_markdown,
 )
-from lawvm.finland.sparse_slot_certificate_projector import sparse_slot_candidate_set_certificate_rows
+from lawvm.finland.sparse_slot_certificate_projector import sparse_slot_candidate_set_coverage_rows
 from lawvm.finland.source_witness_proof_projector import corrigendum_source_witness
 from lawvm.finland.strict_report_evidence_projector import finland_strict_report_evidence_surface
 from lawvm.finland.strict_report_proof_projector import (
-    finland_strict_report_candidate_set_certificates,
+    finland_strict_report_candidate_set_coverages,
 )
 from lawvm.finland.source_pathology_proof_registry import (
     registered_source_pathology_proof_rule_codes,
@@ -241,7 +241,7 @@ def test_agreement_residual_projector_editorial_witness_confirmed() -> None:
 
 
 def test_strict_report_proof_projector_emits_four_candidate_sets() -> None:
-    certs = finland_strict_report_candidate_set_certificates(
+    certs = finland_strict_report_candidate_set_coverages(
         {"statute_id": "1991/3", "ops": {"canonical": 0, "failed": 0, "total": 0}}
     )
     assert len(certs) == 4
@@ -250,7 +250,7 @@ def test_strict_report_proof_projector_emits_four_candidate_sets() -> None:
 
 
 def test_sparse_slot_certificate_projector_binding_row() -> None:
-    certs = sparse_slot_candidate_set_certificate_rows(
+    certs = sparse_slot_candidate_set_coverage_rows(
         (
             {
                 "kind": "ELAB.SPARSE_SLOT_BINDING",

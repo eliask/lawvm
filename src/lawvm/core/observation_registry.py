@@ -441,6 +441,19 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "warn", "grafter",
                 "materialized PIT product split fold-owned operative sections out of an attachments wrapper",
                 ("preservation", "safety_invariant"), role="observation"),
+    FindingSpec("REPLAY.CITED_VERSION_SNAPSHOT_DROP", "replay_products",
+                "recovery", "warn", "grafter",
+                "a later amending act's stale item-scoped cited-version ancestor snapshot op was "
+                "dropped from the materialized-state op stream because the cited act's same-effective "
+                "snapshot structurally covers it; recorded as a witness so the legal-state op drop is "
+                "never a silent omission",
+                ("preservation", "provenance"), role="observation"),
+    FindingSpec("REPLAY.EDITORIAL_REPEAL_NOTICE_SUBSTRING", "replay_products",
+                "recovery", "warn", "grafter",
+                "replay-fold placeholder restoration recognised an existing editorial repeal notice "
+                "by a residual 'kumottu' substring scan (no typed marker owns this case yet); "
+                "recorded as a witness rather than a silent surface predicate",
+                ("parse_witness", "provenance"), role="observation"),
     FindingSpec("REPLAY.MATERIALIZED_PROVISIONS_WRAPPER_PROJECTED", "replay_products",
                 "recovery", "warn", "grafter",
                 "materialized PIT product projected fold-owned provisions-wrapper children into legal topology",
@@ -504,6 +517,18 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
     FindingSpec("PARSE.KUMOTAAN_RECYCLE_GUARD", "process_muutoslaki",
                 "audit", "info", "kumotaan",
                 "kumotaan repeal candidate was excluded because the same source also replaces that target",
+                ("parse_witness", "preservation"), role="observation"),
+    FindingSpec("PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED", "process_muutoslaki",
+                "recovery", "warn", "repeal_clause",
+                "a repeal op was reconstructed from a raw repeal preamble clause (fi: kumotaan johtolause) because the typed pipeline produced no op for the target",
+                ("parse_witness", "provenance"), role="observation"),
+    FindingSpec("PARSE.FALLBACK_OP_FROM_RAW_TEXT", "frontend_extraction",
+                "recovery", "warn", "fallback",
+                "an executable op was minted from raw johtolause by a heuristic fallback recognizer (no typed parser owned the clause)",
+                ("parse_witness", "provenance"), role="observation"),
+    FindingSpec("PARSE.COMMENCEMENT_SHAPE_NO_EFFECT", "frontend_extraction",
+                "source_pathology", "warn", "unsupported_meta_clause",
+                "a commencement/expiry meta clause was recognized but lowered to no executable effect intent",
                 ("parse_witness", "preservation"), role="observation"),
     FindingSpec("PARSE.VTS_SKIPPED_TARGET_UNSUPPORTED", "frontend_extraction",
                 "source_pathology", "warn", "vts",
@@ -569,16 +594,42 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "info", "frontend_phase_surface",
                 "frontend phase diagnostic projected into the governed finding ledger",
                 ("parse_witness",), role="observation"),
+    # Rank-17 silent-drop closure (canonical_op plane). The clause_ast ingress
+    # seam (fi extract_legal_ops_from_parse_result) and the legacy lower_surface
+    # bridge previously dropped unsupported clause/surface nodes
+    # (MetaClause/ItemShiftClause/NamedRowClause; SurfaceMetaClause/
+    # SurfaceTextAmend/SurfaceValiotsikkoRef/unresolved SurfaceBackRef) by
+    # returning None/[] with no receipt. These observations make every such
+    # drop visible. Non-blocking by design: routing through the diagnostic twin
+    # must not change which ops replay — only add a receipt for the already-
+    # dropped node — so bench stays flat.
+    FindingSpec("LOWER.CLAUSE_AST_NODE_UNSUPPORTED_GENERIC_LOWERING", "frontend_compile",
+                "source_pathology", "warn", "extract_legal_ops_from_parse_result",
+                "clause AST node has no generic LegalOperation lowering at the ingress seam",
+                ("parse_witness", "preservation"), role="observation"),
+    FindingSpec("LOWER.SURFACE_NODE_UNLOWERABLE_TO_PARSED_OP", "lower_surface",
+                "source_pathology", "warn", "lower_surface_clause_to_parsed_ops",
+                "surface node kind has no ParsedOp representation in the legacy lowering bridge",
+                ("parse_witness", "preservation"), role="observation"),
+    # Non-blocking observations. The sole producer
+    # (tools/consistency.py:ConsistencyResult.to_phase_result) emits these as
+    # role=observation/blocking=False and is not wired into the compile/replay
+    # pipeline, so registering them at hard_fail made them blocking guards that
+    # could never be driven into their firing state from production. The
+    # enforcement is downgraded to warn to match the only real producer; the
+    # family stays "violation" (an internal-incoherence signal) as a
+    # non-blocking observation, the same shape as APPLY.OCCUPANCY_POLICY_VIOLATION
+    # and APPLY.INTENT_COMPAT_MISMATCH.
     FindingSpec("TIME.SECTION_NO_TIMELINE", "check_consistency",
-                "violation", "hard_fail", "consistency",
+                "violation", "warn", "consistency",
                 "section present in PIT-materialized replay state has no corresponding timeline entry",
                 ("safety_invariant", "comparative"), role="observation"),
     FindingSpec("TIME.TIMELINE_NO_SECTION", "check_consistency",
-                "violation", "hard_fail", "consistency",
+                "violation", "warn", "consistency",
                 "timeline entry has no corresponding section in PIT-materialized replay state",
                 ("safety_invariant", "comparative"), role="observation"),
     FindingSpec("TIME.CONTENT_DRIFT", "check_consistency",
-                "violation", "hard_fail", "consistency",
+                "violation", "warn", "consistency",
                 "section exists in both replay state and timeline but their text content differs",
                 ("safety_invariant", "comparative"), role="observation"),
     FindingSpec("text_duplication_warning", "replay_lints",
@@ -679,6 +730,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "source_pathology", "strict_fail", "compile_result",
                 "source corrected by corrigendum patch",
                 ("lineage",), role="obligation"),
+    FindingSpec("APPLY.SOURCE_CORRECTION_DIGEST_DRIFT", "process_muutoslaki",
+                "source_pathology", "info", "grafter",
+                "source bytes changed under correction with no owning patch op",
+                ("lineage",), role="observation"),
     FindingSpec("APPLY.FAILED_OPERATION", "apply",
                 "source_pathology", "strict_fail", "compile_result",
                 "one or more operations failed deterministically",
@@ -1100,6 +1155,37 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "violation", "hard_fail", "frontend_phase_surface",
                 "frontend phase diagnostic reports an internal compiler error",
                 ("safety_invariant",), role="violation"),
+    # --- XML ingest token-structure observations (self-contained block) ---
+    # Non-blocking observations that witness what the XML→IR ingest boundary
+    # does at the token_structure plane: dropping a source child element,
+    # encountering an unknown XML tag, assigning a positional label, or
+    # mutating tree shape with a structural-repair heuristic. These turn
+    # previously silent drops/guesses into witnessed ones reachable from
+    # IRStatute.metadata["xml_ingest_observations"]. They are deliberately
+    # non-blocking (role=observation) so they do not trip the guard-liveness
+    # ratchet without a dedicated fire-drill.
+    FindingSpec("SCAN.XML_INGEST_DROPPED_CHILD", "xml_ingest",
+                "source_pathology", "warn", "xml_ingest",
+                "a source XML child element was dropped during XML→IR ingest "
+                "because its tag is not a known structural/leaf/table kind and "
+                "its text collapsed to empty; detail.tag/detail.snippet witness it",
+                ("parse_witness", "comparative"), role="observation"),
+    FindingSpec("SCAN.XML_INGEST_UNKNOWN_TAG", "xml_ingest",
+                "source_pathology", "warn", "xml_ingest",
+                "an XML tag encountered during ingest has no mapped IRNodeKind; "
+                "detail.tag carries the offending tag for a class→kind mapping fix",
+                ("parse_witness",), role="observation"),
+    FindingSpec("SCAN.XML_INGEST_POSITIONAL_LABEL", "xml_ingest",
+                "recovery", "warn", "xml_ingest",
+                "an unlabelled subsection/paragraph was assigned a positional label "
+                "by enumeration order during ingest (identity is positional, not "
+                "intrinsic); detail.kind/detail.assigned_label witness the guess",
+                ("ambiguity_resolution",), role="observation"),
+    FindingSpec("SCAN.XML_INGEST_STRUCTURAL_REPAIR", "xml_ingest",
+                "recovery", "warn", "xml_ingest",
+                "an ingest structural-repair heuristic re-parented or merged tree "
+                "shape on a regex/letter-sequence guess; detail.repair names the rule",
+                ("preservation", "ambiguity_resolution"), role="observation"),
 )}
 
 

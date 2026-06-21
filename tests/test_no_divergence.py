@@ -40,7 +40,7 @@ def _fake_divergence(kind: str, path: list[tuple[str, str]], ops_text: str, cons
     )
 
 
-def test_no_divergence_json_emits_bounded_primary_divergences(monkeypatch, capsys) -> None:
+def test_no_divergence_json_emits_bounded_primary_divergences(monkeypatch, capsys, tmp_path) -> None:
     divergences = [
         _fake_divergence("MISMATCH", [("chapter", "I"), ("section", "4-2")], "ops-1", "cur-1"),
         _fake_divergence("OPS_MISSING", [("section", "7-1")], "ops-2", "cur-2"),
@@ -61,7 +61,7 @@ def test_no_divergence_json_emits_bounded_primary_divergences(monkeypatch, capsy
         base_id="no/lov/2024-01-12-1",
         as_of="2026-03-29",
         data_dir="data/norway.farchive",
-        index=".tmp/no_index_farchive.json",
+        index=str(tmp_path / "no_index_farchive.json"),
         commencement=None,
         max_divergences=1,
         json=True,
@@ -80,7 +80,7 @@ def test_no_divergence_json_emits_bounded_primary_divergences(monkeypatch, capsy
     assert payload["divergences"][0]["hint"] == "text_drift"
 
 
-def test_no_divergence_text_prints_hints_and_texts(monkeypatch, capsys) -> None:
+def test_no_divergence_text_prints_hints_and_texts(monkeypatch, capsys, tmp_path) -> None:
     divergences = [
         _fake_divergence("MISMATCH", [("chapter", "I"), ("section", "7-1")], "ops-1", "cur-1"),
         _fake_divergence("OPS_MISSING", [("section", "6")], "ops-2", "cur-2"),
@@ -101,7 +101,7 @@ def test_no_divergence_text_prints_hints_and_texts(monkeypatch, capsys) -> None:
         base_id="no/lov/2024-01-12-1",
         as_of="2026-03-29",
         data_dir="data/norway.farchive",
-        index=".tmp/no_index_farchive.json",
+        index=str(tmp_path / "no_index_farchive.json"),
         commencement=None,
         max_divergences=1,
         json=False,
@@ -118,7 +118,7 @@ def test_no_divergence_text_prints_hints_and_texts(monkeypatch, capsys) -> None:
     assert "section:6" not in output
 
 
-def test_no_divergence_json_prefers_untouched_drift_hint_when_no_touched_divergences(monkeypatch, capsys) -> None:
+def test_no_divergence_json_prefers_untouched_drift_hint_when_no_touched_divergences(monkeypatch, capsys, tmp_path) -> None:
     divergences = [
         _fake_divergence("OPS_MISSING", [("section", "28"), ("subsection", "3")], "ops-1", "cur-1"),
     ]
@@ -138,7 +138,7 @@ def test_no_divergence_json_prefers_untouched_drift_hint_when_no_touched_diverge
         base_id="no/lov/2024-01-12-1",
         as_of="2026-03-29",
         data_dir="data/norway.farchive",
-        index=".tmp/no_index_farchive.json",
+        index=str(tmp_path / "no_index_farchive.json"),
         commencement=None,
         max_divergences=1,
         json=True,

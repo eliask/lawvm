@@ -2420,7 +2420,7 @@ def test_letter_suffix_insert_uses_live_stem_host_over_stale_explicit_chunk_scop
     from lxml import etree
 
     from lawvm.finland.frontend_compile import _infer_letter_suffix_insert_chapter_from_stem_host
-    from lawvm.finland.ops import ScopeConfidence
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
 
     master = ReplayState(
         ir=_body(
@@ -2445,8 +2445,8 @@ def test_letter_suffix_insert_uses_live_stem_host_over_stale_explicit_chunk_scop
         target_chapter="7",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         ),
         scope_provenance_tags=("chapter_scope_from_explicit_chunk",),
@@ -2466,7 +2466,7 @@ def test_letter_suffix_insert_keeps_explicit_chapter_scope() -> None:
     from lxml import etree
 
     from lawvm.finland.frontend_compile import _infer_letter_suffix_insert_chapter_from_stem_host
-    from lawvm.finland.ops import ScopeConfidence
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
 
     master = ReplayState(ir=_body(_chapter("5", _sec("16")), _chapter("7")))
     muutos_tree = etree.fromstring(
@@ -2486,8 +2486,8 @@ def test_letter_suffix_insert_keeps_explicit_chapter_scope() -> None:
         target_chapter="7",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="7",
         ),
         scope_provenance_tags=("chapter_scope_from_explicit_chunk",),
@@ -2507,7 +2507,7 @@ def test_body_chapter_scope_allows_source_declared_unborn_chapter_wave() -> None
     from lxml import etree
 
     from lawvm.finland.frontend_compile import _body_chapter_scope_for_section_op
-    from lawvm.finland.ops import ScopeConfidence
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
 
     master = ReplayState(ir=_body(_chapter("2", _sec("17"))))
     muutos_tree = etree.fromstring(
@@ -2531,8 +2531,8 @@ def test_body_chapter_scope_allows_source_declared_unborn_chapter_wave() -> None
         target_chapter="2",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
-            source="carry_forward",
-            confidence="inferred",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter="2",
         ),
         scope_provenance_tags=("chapter_scope_carry_forward",),
@@ -2556,7 +2556,7 @@ def test_letter_suffix_insert_skips_multi_unborn_chapter_batch() -> None:
     from lxml import etree
 
     from lawvm.finland.frontend_compile import _infer_letter_suffix_insert_chapter_from_stem_host
-    from lawvm.finland.ops import ScopeConfidence
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
 
     master = ReplayState(ir=_body(_chapter("5", _sec("44")), _chapter("7", _sec("60"))))
     muutos_tree = etree.fromstring(
@@ -2580,8 +2580,8 @@ def test_letter_suffix_insert_skips_multi_unborn_chapter_batch() -> None:
         target_chapter="8",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="8",
         ),
         scope_provenance_tags=("chapter_scope_from_explicit_chunk",),
@@ -2601,7 +2601,7 @@ def test_letter_suffix_insert_skips_large_single_chapter_recodification_batch() 
     from lxml import etree
 
     from lawvm.finland.frontend_compile import _infer_letter_suffix_insert_chapter_from_stem_host
-    from lawvm.finland.ops import ScopeConfidence
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
 
     master = ReplayState(ir=_body(_chapter("11", _sec("71"))))
     sections = "\n".join(
@@ -2629,8 +2629,8 @@ def test_letter_suffix_insert_skips_large_single_chapter_recodification_batch() 
         target_chapter="4a",
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_from_explicit_chunk",
-            source="explicit_chunk",
-            confidence="explicit",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
             resolved_chapter="4a",
         ),
         scope_provenance_tags=("chapter_scope_from_explicit_chunk",),

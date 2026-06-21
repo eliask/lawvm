@@ -211,6 +211,9 @@ def _make_null_fi_refs_row(
         "validator_status": "span_verified",
         "review_status": "human_reviewed",
         "replay_authorized": True,
+        # Surface fact column (A1) — production deterministic rows always carry
+        # it, so the fixture must too or the pinned-schema write fails loud.
+        "deterministic_extraction": True,
         "emit_profile": profile.value,
     }
 
