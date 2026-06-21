@@ -976,6 +976,58 @@ def _fold_item_carrier_into_paragraphs(
     return consumed
 
 
+def _section_item_connector_payload(subsection: IRNode) -> tuple[IRNode, ...] | None:
+    """Return payload for a connector-only subsection inside a split item run."""
+    if subsection.kind != IRNodeKind.SUBSECTION:
+        return None
+    if any(child.kind in {IRNodeKind.NUM, IRNodeKind.HEADING, IRNodeKind.INTRO} for child in subsection.children):
+        return None
+    if any(child.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(child) for child in subsection.children):
+        return None
+    payload = tuple(child for child in subsection.children if irnode_to_text(child).strip())
+    if not payload:
+        return None
+    text = " ".join(irnode_to_text(child).strip() for child in payload).casefold()
+    if text not in {"ja", "sekä", "tai", "taikka"}:
+        return None
+    return payload
+
+
+def _subsection_can_start_item_run_at(
+    subsection: IRNode | None,
+    expected_next_value: int,
+) -> bool:
+    if subsection is None or subsection.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(subsection):
+        return False
+    if _item_num_value(subsection) == expected_next_value:
+        return True
+    return _subsection_resumes_item_run_after_dash_continuation(
+        subsection,
+        expected_next_value,
+    )
+
+
+def _subsection_can_start_item_run_after_connector(
+    subsection: IRNode | None,
+    expected_next_value: int,
+) -> bool:
+    if _subsection_can_start_item_run_at(subsection, expected_next_value):
+        return True
+    if subsection is None or subsection.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(subsection):
+        return False
+    paragraph_values = [
+        value
+        for child in subsection.children
+        for value in (_numbered_paragraph_value(child),)
+        if value is not None
+    ]
+    if paragraph_values and paragraph_values == list(
+        range(expected_next_value, expected_next_value + len(paragraph_values))
+    ):
+        return True
+    return False
+
+
 def _paragraph_labels_are_consecutive(paragraphs: list[IRNode]) -> bool:
     values = [
         value
@@ -1015,18 +1067,16 @@ def _fold_section_item_subsection_run(
 
         next_child = children[i + 1] if i + 1 < len(children) else None
         expected_next_value = max(base_values) + 1
-        if (
-            next_child is None
-            or next_child.kind != IRNodeKind.SUBSECTION
-            or (
-                _item_num_value(next_child) != expected_next_value
-                and not _subsection_resumes_item_run_after_dash_continuation(
-                    next_child,
-                    expected_next_value,
-                )
+        starts_with_next_item = _subsection_can_start_item_run_at(next_child, expected_next_value)
+        starts_with_connector_then_item = (
+            next_child is not None
+            and _section_item_connector_payload(next_child) is not None
+            and _subsection_can_start_item_run_after_connector(
+                children[i + 2] if i + 2 < len(children) else None,
+                expected_next_value,
             )
-            or _is_item_style_subsection(next_child)
-        ):
+        )
+        if not starts_with_next_item and not starts_with_connector_then_item:
             rewritten.append(child)
             i += 1
             continue
@@ -1038,6 +1088,22 @@ def _fold_section_item_subsection_run(
             candidate = children[j]
             if candidate.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(candidate):
                 break
+            connector_payload = _section_item_connector_payload(candidate)
+            if connector_payload is not None:
+                following = children[j + 1] if j + 1 < len(children) else None
+                expected_after_connector = len(folded_paragraphs) + 1
+                if not folded_paragraphs or not _subsection_can_start_item_run_after_connector(
+                    following,
+                    expected_after_connector,
+                ):
+                    break
+                folded_paragraphs[-1] = _append_item_continuation(
+                    folded_paragraphs[-1],
+                    connector_payload,
+                )
+                consumed_paths.append(_node_path_label(candidate))
+                j += 1
+                continue
             trial = list(folded_paragraphs)
             if not _fold_item_carrier_into_paragraphs(candidate, trial):
                 break

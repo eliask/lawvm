@@ -549,6 +549,117 @@ class TestTagReclassify:
         assert len(fold_facts) == 1
         assert fold_facts[0].basis_value == SourceNormalizationBasis.IMPOSSIBLE_NUMBERING.value
 
+    def test_folds_connector_wrapper_before_next_section_item_carrier(self) -> None:
+        """Connector-only wrappers may belong to a split section-level item run."""
+        xml = etree.fromstring(
+            """
+            <section>
+              <num>2 §</num>
+              <subsection>
+                <intro><p>Luettelo:</p></intro>
+                <paragraph><num>1)</num><content><p>ensimmäinen kohta;</p></content></paragraph>
+                <paragraph><num>2)</num><content><p>toinen kohta;</p></content></paragraph>
+              </subsection>
+              <subsection><content><p>sekä</p></content></subsection>
+              <subsection>
+                <paragraph><num>3)</num><content><p>kolmas kohta.</p></content></paragraph>
+              </subsection>
+              <subsection><content><p>Todellinen toinen momentti.</p></content></subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1978/380")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2"]
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3"]
+        assert "toinen kohta; sekä" in irnode_to_text(paragraphs[1])
+        assert "Todellinen toinen momentti" in irnode_to_text(subsections[1])
+        assert check_invariants(normalized) == []
+
+        fold_facts = [fact for fact in facts if fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD]
+        assert len(fold_facts) == 1
+        assert "subsection:2" in fold_facts[0].before
+        assert "subsection:3" in fold_facts[0].before
+
+    def test_preserves_connector_wrapper_without_next_section_item_carrier(self) -> None:
+        """A connector word alone is not enough to collapse a peer moment."""
+        xml = etree.fromstring(
+            """
+            <section>
+              <num>2 §</num>
+              <subsection>
+                <intro><p>Luettelo:</p></intro>
+                <paragraph><num>1)</num><content><p>ensimmäinen kohta;</p></content></paragraph>
+                <paragraph><num>2)</num><content><p>toinen kohta;</p></content></paragraph>
+              </subsection>
+              <subsection><content><p>sekä</p></content></subsection>
+              <subsection><content><p>Todellinen kolmas momentti.</p></content></subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1978/380")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+        assert not any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+
+    def test_real_1978_380_section_2_folds_connector_split_item_tail(self) -> None:
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("1978/380")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        section = next(
+            candidate
+            for candidate in root.findall(".//{*}section")
+            if _norm_num_token("".join(candidate.findtext("{*}num") or "")) == "2"
+        )
+        raw = fi_xml_to_ir_node(section, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1978/380")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1"]
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3"]
+        section_text = irnode_to_text(subsections[0])
+        assert "ristin sakaran leveys 3 mittayksikköä; sekä" in section_text
+        assert "kenttien korkeus 4" in section_text
+        assert any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+
+    def test_real_1995_361_section_4_preserves_nested_lettered_definition_order(self) -> None:
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("1995/361")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        section = next(
+            candidate
+            for candidate in root.findall(".//{*}section")
+            if _norm_num_token("".join(candidate.findtext("{*}num") or "")) == "4"
+        )
+        raw = fi_xml_to_ir_node(section, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1995/361")
+
+        text = irnode_to_text(normalized)
+        assert text.index("1) elintarvikemääräyksillä") < text.index(
+            "(a) elintarviketta, jonka tiedetään"
+        )
+        assert text.index("(a) elintarviketta, jonka tiedetään") < text.index(
+            "(b) elintarviketta, joka pilaantumisen"
+        )
+        assert text.index("(b) elintarviketta, joka pilaantumisen") < text.index(
+            "4) kuluttajalla"
+        )
+        assert not any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+
     def test_real_1998_711_dash_definition_list_preserves_all_items(self) -> None:
         """Regression: 1998/711 section 2 is a single definition-list moment."""
         from lawvm.corpus_store import get_corpus_store
