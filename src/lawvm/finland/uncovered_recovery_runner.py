@@ -87,6 +87,8 @@ class UncoveredRecoveryRun:
     owned_chapter_labels: Set[str]
     source_owned_insert_chapter_labels: Set[str]
     part_insert_labels: Set[str]
+    johto_whole_section_targets: Set[str]
+    johto_insert_subsection_section_targets: Set[str]
 
     def record_skip(
         self,
@@ -125,6 +127,14 @@ class UncoveredRecoveryRun:
             return True
         base_label = re.match(r"^(\d+)", label)
         return bool(base_label and base_label.group(1) in self.johto_mentioned_labels)
+
+    def label_has_whole_section_johto_target(self, label: str) -> bool:
+        """Whether the preamble parses this label as a whole-section target."""
+        return _norm_num_token(label) in self.johto_whole_section_targets
+
+    def label_has_subsection_insert_johto_target(self, label: str) -> bool:
+        """Whether the preamble inserts subsection(s) into this section."""
+        return _norm_num_token(label) in self.johto_insert_subsection_section_targets
 
     def is_declared_move_destination(self, label: str, chapter: Optional[str]) -> bool:
         """Whether the source preamble declares this section moved to chapter."""
@@ -461,6 +471,13 @@ class UncoveredRecoveryRun:
                 amend_part_label=amend_part_label,
                 johto_moment_targets=self.johto_moment_targets,
             )
+            if (
+                not group_ops
+                and not self.label_has_whole_section_johto_target(label)
+                and not self.label_has_subsection_insert_johto_target(label)
+            ):
+                self.record_skip("omission_merge_missing_scope", label, amend_chapter_label)
+                return
             merge_result = merge_section_with_omission_invariants(
                 existing,
                 sec_ir,

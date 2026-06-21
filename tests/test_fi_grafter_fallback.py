@@ -62,6 +62,7 @@ from lawvm.finland.group_plan import (
 )
 from lawvm.finland.johto_scope_mentions import (
     collect_johto_chapter_scope_mentions as _collect_johto_chapter_scope_mentions,
+    collect_johto_insert_subsection_section_targets,
     collect_johto_mentioned_section_labels as _collect_johto_mentioned_section_labels,
 )
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
@@ -9460,11 +9461,220 @@ def test_uncovered_body_records_peg_owned_label_collision_skip_finding() -> None
     )
 
     assert rops == []
-    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_PEG_LABEL_COLLISION"]
+    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_LABEL_COLLISION"]
     assert len(skipped) == 1
-    assert skipped[0].detail.get("reason") == "peg_owned_label_collision"
+    assert skipped[0].detail.get("reason") == "peg_owned_descendant_label_collision"
     assert skipped[0].detail.get("target_section") == "55a"
     assert skipped[0].detail.get("target_chapter") == "7a"
+
+
+def test_uncovered_body_skips_section_candidate_owned_by_descendant_op() -> None:
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="13",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="13 §"),
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="1",
+                                    children=(IRNode(kind=IRNodeKind.CONTENT, text="live text"),),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <preamble>
+            lisätään 13 §:ään uusi merkkiä 141 a koskeva kohta seuraavasti:
+          </preamble>
+          <body>
+            <section>
+              <num>13 §</num>
+              <hcontainer name="omission"/>
+              <subsection><content><p>Merkki 141 a</p></content></subsection>
+              <subsection><content><p>Merkillä voidaan varoittaa töyssystä.</p></content></subsection>
+            </section>
+          </body>
+        </akn>
+        """
+    )
+    findings_out: list[Finding] = []
+    ops = [
+        AmendmentOp(
+            op_id="insert_13_4_141a",
+            op_type="INSERT",
+            target_section="13",
+            target_chapter="3",
+            target_paragraph=4,
+            target_item="141a",
+            target_unit_kind="section",
+            source_statute="2010/625",
+        )
+    ]
+    rops = _recover_uncovered_body_ops(
+        state,
+        ctx,
+        ops,
+        muutos_tree,
+        "2010/625",
+        failed_ops_out=[],
+        findings_out=findings_out,
+    )
+
+    assert rops == []
+    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_LABEL_COLLISION"]
+    assert len(skipped) == 1
+    assert skipped[0].detail.get("reason") == "peg_owned_descendant_label_collision"
+    assert skipped[0].detail.get("target_section") == "13"
+    assert skipped[0].detail.get("target_chapter") == ""
+
+
+def test_uncovered_body_omission_merge_requires_scoped_target_witness() -> None:
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="13",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="13 §"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="live one"),
+                    ),
+                ),
+            ),
+        )
+    )
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <preamble>lisätään 13 §:ään uusi merkkiä 141 a koskeva kohta seuraavasti:</preamble>
+          <body>
+            <section>
+              <num>13 §</num>
+              <hcontainer name="omission"/>
+              <subsection><content><p>sparse addition</p></content></subsection>
+            </section>
+          </body>
+        </akn>
+        """
+    )
+
+    findings_out: list[Finding] = []
+    ops = [
+        AmendmentOp(
+            op_id="unrelated_replace_99",
+            op_type="REPLACE",
+            target_section="99",
+            target_unit_kind="section",
+            source_statute="2010/625",
+        )
+    ]
+    rops = _recover_uncovered_body_ops(
+        state,
+        ctx,
+        ops,
+        muutos_tree,
+        "2010/625",
+        failed_ops_out=[],
+        findings_out=findings_out,
+    )
+
+    assert rops == []
+    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_OMISSION_MERGE_MISSING_SCOPE"]
+    assert len(skipped) == 1
+    assert skipped[0].detail.get("reason") == "omission_merge_missing_scope"
+    assert skipped[0].detail.get("target_section") == "13"
+
+
+def test_uncovered_body_omission_merge_allows_explicit_section_johto_witness() -> None:
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="13",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="13 §"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="live one"),
+                    ),
+                ),
+            ),
+        )
+    )
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <preamble>muutetaan asetuksen 13 § seuraavasti:</preamble>
+          <body>
+            <section>
+              <num>13 §</num>
+              <hcontainer name="omission"/>
+              <subsection><content><p>sparse addition</p></content></subsection>
+            </section>
+          </body>
+        </akn>
+        """
+    )
+
+    findings_out: list[Finding] = []
+    ops = [
+        AmendmentOp(
+            op_id="unrelated_replace_99",
+            op_type="REPLACE",
+            target_section="99",
+            target_unit_kind="section",
+            source_statute="2010/625",
+        )
+    ]
+    rops = _recover_uncovered_body_ops(
+        state,
+        ctx,
+        ops,
+        muutos_tree,
+        "2010/625",
+        failed_ops_out=[],
+        findings_out=findings_out,
+    )
+
+    assert len(rops) == 1
+    assert rops[0].op_id == "uncovered_merge_13"
+    assert rops[0].op.op_type == "REPLACE"
+    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_OMISSION_MERGE_MISSING_SCOPE"]
+    assert skipped == []
+
+
+def test_johto_insert_subsection_targets_exclude_item_insertions() -> None:
+    assert collect_johto_insert_subsection_section_targets(
+        "lisätään 15 §:ään uusi 2 ja 3 momentti seuraavasti:"
+    ) == frozenset({"15"})
+    assert collect_johto_insert_subsection_section_targets(
+        "lisätään lain 20 §:ään ja 37 §:ään uusi 2 momentti seuraavasti:"
+    ) == frozenset({"20", "37"})
+    assert collect_johto_insert_subsection_section_targets(
+        "lisätä päätökseen uuden 4 a §:n sekä 2 ja 8 §:ään uuden 2 momentin"
+    ) == frozenset({"2", "8"})
+    assert collect_johto_insert_subsection_section_targets(
+        "lisätään 13 §:ään uusi merkkiä 141 a koskeva kohta seuraavasti:"
+    ) == frozenset()
 
 
 def test_uncovered_body_ignores_malformed_chapter_marker_section() -> None:
@@ -9521,6 +9731,24 @@ def test_uncovered_body_skip_helper_maps_peg_owned_same_chapter_reason() -> None
     assert finding.detail.get("target_chapter") == "7a"
 
 
+def test_uncovered_body_skip_helper_maps_peg_owned_descendant_reasons() -> None:
+    same_chapter = _uncovered_body_recovery_skipped_finding(
+        source_statute="2020/1207",
+        target_section="55a",
+        target_chapter="7a",
+        reason="peg_owned_descendant_same_chapter",
+    )
+    label_collision = _uncovered_body_recovery_skipped_finding(
+        source_statute="2020/1207",
+        target_section="55a",
+        target_chapter="8a",
+        reason="peg_owned_descendant_label_collision",
+    )
+
+    assert same_chapter.kind == "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_SAME_CHAPTER_OWNED"
+    assert label_collision.kind == "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_LABEL_COLLISION"
+
+
 @pytest.mark.parametrize(
     ("reason", "expected_kind"),
     [
@@ -9533,6 +9761,7 @@ def test_uncovered_body_skip_helper_maps_peg_owned_same_chapter_reason() -> None
         ("omission_merge_low_text_ratio", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_LOW_TEXT_RATIO"),
         ("omission_merge_duplicate_subsection_labels", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_DUPLICATE_LABELS"),
         ("omission_merge_would_lose_subsections", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_WOULD_LOSE_SUBSECTIONS"),
+        ("omission_merge_missing_scope", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_MISSING_SCOPE"),
     ],
 )
 def test_uncovered_body_skip_helper_maps_additional_typed_reasons(

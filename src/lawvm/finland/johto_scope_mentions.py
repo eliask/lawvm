@@ -83,6 +83,18 @@ _NUMBERED_TABLE_TARGET_RE = re.compile(
     r"tauluk(?:ko|on)\s+(?P<table>\d{1,4}+\s{0,3}+[a-z]?)\b",
     re.I,
 )
+_ILLATIVE_SECTION_SUBSECTION_INSERT_RE = re.compile(
+    r"(?P<labels>(?:" + _SEC_LABEL_RANGE + r")"
+    r"(?:\s{0,3}(?:,|ja|sekä)\s{0,3}(?:" + _SEC_LABEL_RANGE + r"))*)"
+    r"\s*§\s*:\s*(?:ään|aan)\b"
+    r"(?=[^§.;]{0,180}?\bmoment(?:ti|in)\b)",
+    re.I,
+)
+_PRECEDING_ILLATIVE_SECTION_SIBLING_RE = re.compile(
+    r"(?P<section>\d{1,4}+\s{0,3}+[a-z]?)\s*§\s*:\s*(?:ään|aan)\s+"
+    r"(?:ja|sekä)\s*$",
+    re.I,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +196,53 @@ def collect_johto_moment_targets(johto_text: str) -> dict[str, frozenset[int]]:
         if section:
             targets.setdefault(section, set()).add(addr.subsection)
     return {section: frozenset(moments) for section, moments in targets.items()}
+
+
+def collect_johto_whole_section_targets(johto_text: str) -> frozenset[str]:
+    """Return section labels parsed as whole-section targets in the preamble.
+
+    Unlike ``collect_johto_mentioned_section_labels``, this intentionally does
+    not use the supplemental section-site anchor. The anchor captures declined
+    item-like insertion sites such as ``13 §:ään ... uusi merkkiä 141 a koskeva
+    kohta`` for broad body-coverage guarding; those sites must not authorize a
+    section-level omission merge.
+    """
+    targets: set[str] = set()
+    for addr in scan_legal_addresses(johto_text):
+        if (
+            not addr.section
+            or addr.subsection is not None
+            or addr.item is not None
+            or addr.subitem is not None
+            or addr.special
+        ):
+            continue
+        section = _norm_num_token(addr.section)
+        if section:
+            targets.add(section)
+    return frozenset(targets)
+
+
+def collect_johto_insert_subsection_section_targets(johto_text: str) -> frozenset[str]:
+    """Return sections targeted by ``N §:ään uusi M momentti`` insertions.
+
+    This is narrower than a section mention: it authorizes sparse omission
+    merge only for subsection insertions into an existing section. Item/special
+    insertion phrases such as ``uusi merkkiä ... koskeva kohta`` deliberately do
+    not match.
+    """
+    if "§:" not in johto_text or "moment" not in johto_text:
+        return frozenset()
+    targets: set[str] = set()
+    for match in _ILLATIVE_SECTION_SUBSECTION_INSERT_RE.finditer(johto_text):
+        targets.update(_expand_section_label_run(match.group("labels")))
+        prefix = johto_text[max(0, match.start() - 80) : match.start()]
+        sibling = _PRECEDING_ILLATIVE_SECTION_SIBLING_RE.search(prefix)
+        if sibling:
+            section = _norm_num_token(sibling.group("section"))
+            if section:
+                targets.add(section)
+    return frozenset(targets)
 
 
 @functools.lru_cache(maxsize=8192)
