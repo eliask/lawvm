@@ -798,6 +798,16 @@ def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> 
     assert "kuuden kuukauden kuluessa" in sixth_text
 
 
+def test_replay_xml_1984_603_applies_2007_473_whole_section_replace_before_2015_update() -> None:
+    replay = pinned_replay("1984/603", mode="official_consolidation", quiet=True)
+    section = extract_ir_sections(replay.materialized_state.ir)["chapter:5/section:16"]
+
+    text = irnode_to_text(section)
+    assert "Tilintarkastaja voi erota toimestaan" not in text
+    assert "Tilintarkastajan voi erottaa toimestaan" not in text
+    assert "Jos tilintarkastajan toimi tulee kesken toimikautta avoimeksi" in text
+
+
 @pytest.mark.slow
 def test_replay_xml_places_2019_371_section_159_in_final_container_frame() -> None:
     """2019/371 preserves §159 text under the final replay and materialized frame."""
@@ -2750,6 +2760,34 @@ def test_compile_fi_1997_786_combines_split_preamble_body_lead_formula() -> None
     raw_text = " ".join(section9_ops[0].source.raw_text.split())
     assert "kumotaan yritystuen yleisistä ehdoista" in raw_text
     assert "muutetaan 9 § seuraavasti" in raw_text
+
+
+def test_normalize_and_compile_ops_2007_473_repairs_split_muutetaan_verb() -> None:
+    before = replay_xml("1984/603", stop_before="2007/473", mode="legal_pit", quiet=True, build_full_products=False)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2007/473")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+    assert "muute" in johto and "taan" in johto
+    from lawvm.finland.metadata import _normalize_johtolause_verbs
+
+    normalized_johto = _normalize_johtolause_verbs(johto)
+    assert "muutetaan" in normalized_johto
+
+    phase = normalize_and_compile_ops(
+        johto=normalized_johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2007/473",
+        source_title="Laki työttömyyskassalain 16 §:n muuttamisesta",
+        used_preamble_body_fallback=False,
+        parent_id="1984/603",
+        strict_profile=None,
+    )
+
+    assert [op.description() for op in phase.output] == ["REPLACE 5 luku 16 §"]
 
 
 def test_replay_xml_1996_1200_merges_sparse_omission_item_rows_in_targeted_subsection() -> None:

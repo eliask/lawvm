@@ -185,6 +185,11 @@ for _part, _pres in _VERB_NORM_TABLE:
     _VERB_NORM_PATTERNS.append((re.compile(rf'\bja\s+{_part}\b', re.I), f'ja {_pres}'))
 
 
+_SPLIT_STRUCTURAL_VERB_REPAIRS: List[Tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bmuute\s+taan\b", re.I), "muutetaan"),
+]
+
+
 # Some historical amendment XML contains a malformed section marker immediately
 # after the parent statute citation, e.g. ``(772/92) 6 ) seuraavasti:`` where
 # the section sign was lost and only a stray closing parenthesis remains.
@@ -450,6 +455,8 @@ def _normalize_johtolause_verbs(text: str) -> str:
     """
     out = _normalize_fi_parse_text(text)
     out = _repair_leading_section_marker_after_citation(out)
+    for pat, repl in _SPLIT_STRUCTURAL_VERB_REPAIRS:
+        out = pat.sub(repl, out)
     for pat, repl in _VERB_NORM_PATTERNS:
         out = pat.sub(repl, out)
     return out
