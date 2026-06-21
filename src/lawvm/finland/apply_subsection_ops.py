@@ -886,6 +886,22 @@ def _apply_subsection_repeal(
             state,
             _tops.replace_at(state.ir, sec_path, new_sec),
         )
+    # The momentti index resolved but fell outside the live subsection range: the
+    # authored REPEAL applies nothing. Witness the dropped op on the
+    # source-pathology ledger before declining rather than vanish as a silent
+    # no-op (LAWVM_PIPELINE_CONTRACT §1.1 no silent drop).
+    if source_pathologies_out is not None:
+        source_pathologies_out.append(
+            build_subsection_target_absent_pathology(
+                source_statute=view.legacy_source_statute_id,
+                target_section=view.target_section,
+                target_paragraph=view.target_paragraph or "",
+                live_has_paragraphs=any(
+                    any(child.kind == IRNodeKind.PARAGRAPH for child in sub.children)
+                    for sub in subsecs
+                ),
+            )
+        )
     replay_print(f"  {ctx_label} → FAILED (momentti {view.target_paragraph} not found)")
     return state
 

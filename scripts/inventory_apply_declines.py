@@ -66,25 +66,19 @@ from typing import Any
 
 _DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Apply-path modules whose op-handlers fold authored ops into the live tree.
-# These are the files where a bare ``return state`` is an op-handler decline.
-SCANNED_APPLY_FILES: tuple[str, ...] = (
-    "src/lawvm/finland/apply_item_ops.py",
-    "src/lawvm/finland/apply_structure_ops.py",
-    "src/lawvm/finland/apply_subsection_ops.py",
-    "src/lawvm/finland/apply_ir_ops.py",
-    "src/lawvm/finland/apply_typed_dispatch.py",
-    "src/lawvm/finland/apply_legacy_dispatch.py",
-    "src/lawvm/finland/apply_ops_executor.py",
-    "src/lawvm/finland/apply_runtime_support.py",
-    "src/lawvm/finland/apply_payload_ops.py",
-    "src/lawvm/finland/apply_supplemental_recovery.py",
-    "src/lawvm/finland/apply_subsection_dispatch.py",
-    "src/lawvm/finland/apply_resolved_op.py",
-    "src/lawvm/finland/apply_intent_facade.py",
-    "src/lawvm/finland/apply_group_replay.py",
-    "src/lawvm/finland/apply_policy.py",
-)
+# Apply-path modules whose op-handlers fold authored ops into the live tree are
+# discovered by globbing ``src/lawvm/finland/apply_*.py`` (see
+# ``discover_apply_files``) so a NEW apply file is auto-scanned — coverage cannot
+# silently shrink by adding a file the scan forgot. The glob directory:
+_APPLY_FILES_DIR = Path("src/lawvm/finland")
+_APPLY_FILES_GLOB = "apply_*.py"
+
+# Deliberate, documented exclusions from the glob. Each entry must name an
+# ``apply_*.py`` that genuinely hosts no op-handler ``return state`` decline (it
+# is an orchestrator / pure-helper module). Removing an entry only ever WIDENS
+# coverage; adding one is a conscious act recorded here. (Currently empty — every
+# discovered ``apply_*.py`` is scanned.)
+EXCLUDED_APPLY_FILES: frozenset[str] = frozenset()
 
 # Typed witness sinks: appending to one of these reaches a production-visible
 # ledger (source_pathologies -> APPLY.SOURCE_PATHOLOGY_DETECTED -> certificate;
@@ -114,6 +108,14 @@ WITNESS_EMIT_CALL_NAMES: frozenset[str] = frozenset(
         "_emit_apply_mutation_event",
         "_emit_relabel_skip",
         "_emit_legacy_dispatch_fallback_event",
+        # ``_fail`` (apply_typed_dispatch._apply_canonical_intent closure) and
+        # ``_record_unhandled_typed_target_failed_op`` both append a typed
+        # ``FailedOp`` (the latter to ``failed_ops_out``, the former additionally
+        # stamps a mutation event) — a production-visible witness for the
+        # unhandled-target / unknown-intent ``case`` arms (e.g.
+        # apply_typed_dispatch.py:2195/2207).
+        "_fail",
+        "_record_unhandled_typed_target_failed_op",
     }
 )
 
@@ -188,43 +190,102 @@ def _stmt_is_witness_emit(stmt: ast.stmt) -> bool:
     return False
 
 
-def _block_contains_witness_emit(body: list[ast.stmt]) -> bool:
-    """True iff any statement in ``body`` (recursively) is a witness emit.
+def _child_stmt_blocks(stmt: ast.stmt) -> list[list[ast.stmt]]:
+    """All nested statement-lists of ``stmt``.
 
-    Used to detect a witness emit guarded by ``if source_pathologies_out is not
-    None:`` — the production convention — which nests the append one level below
-    the return's sibling level.
+    Covers ``if``/``for``/``while``/``with`` ``body``/``orelse``/``finalbody``,
+    exception ``handler`` bodies, AND ``match`` ``case`` bodies — the last is the
+    G1 blind spot the original walkers missed (``ast.Match.cases[*].body``).
+    """
+    blocks: list[list[ast.stmt]] = []
+    for attr in ("body", "orelse", "finalbody"):
+        inner = getattr(stmt, attr, None)
+        if isinstance(inner, list):
+            blocks.append(inner)
+    for handler in getattr(stmt, "handlers", []) or []:
+        blocks.append(handler.body)
+    if isinstance(stmt, ast.Match):
+        for case in stmt.cases:
+            blocks.append(case.body)
+    return blocks
+
+
+def _block_always_exits(body: list[ast.stmt]) -> bool:
+    """True iff control NEVER falls out the bottom of ``body``.
+
+    A preceding ``if``/``match`` arm whose body always exits (returns / raises /
+    continues / breaks on every path) is control-flow DISJOINT from a later
+    return — a witness inside it must NOT count as dominating that return (G2).
+    Conversely a guard ``if ... is not None: <witness>`` that simply falls
+    through DOES reach the return and is a real dominator.
+
+    Conservative: only the unconditional terminal-statement and an
+    if/else-both-exit shape are treated as "always exits"; anything else is
+    assumed to fall through (so we never wrongly DROP a real witness — we only
+    refuse to credit a provably-disjoint branch).
+    """
+    if not body:
+        return False
+    last = body[-1]
+    if isinstance(last, (ast.Return, ast.Raise, ast.Continue, ast.Break)):
+        return True
+    if isinstance(last, ast.If) and last.orelse:
+        return _block_always_exits(last.body) and _block_always_exits(last.orelse)
+    return False
+
+
+def _block_contains_dominating_witness(body: list[ast.stmt]) -> bool:
+    """True iff a witness emit on ``body``'s own straight-line path dominates the
+    bottom of ``body`` (i.e. would dominate a ``return state`` placed after it).
+
+    Used for a *preceding sibling* statement that the return falls through from.
+    A direct witness statement dominates. A nested guard block (``if ... is not
+    None: <witness>``) dominates only when that block FALLS THROUGH back to this
+    level (``_block_always_exits`` is False) — a guard that itself returns /
+    continues is a disjoint alternative path and is NOT credited (the G2 fix).
+    ``match`` cases are always disjoint alternatives, so a witness inside a
+    *sibling* ``case`` is never credited here.
     """
     for stmt in body:
         if _stmt_is_witness_emit(stmt):
             return True
-        for child in ast.iter_child_nodes(stmt):
-            if isinstance(child, ast.stmt) and _block_contains_witness_emit([child]):
-                return True
-        # if/for/while/with bodies and orelse/finalbody
-        for attr in ("body", "orelse", "finalbody"):
-            inner = getattr(stmt, attr, None)
-            if isinstance(inner, list) and _block_contains_witness_emit(inner):
-                return True
-        for handler in getattr(stmt, "handlers", []) or []:
-            if _block_contains_witness_emit(handler.body):
+        # A ``match`` is N disjoint alternative arms; a witness in any single arm
+        # does NOT dominate the fall-through, so never descend a sibling Match.
+        if isinstance(stmt, ast.Match):
+            continue
+        for inner in _child_stmt_blocks(stmt):
+            # Only credit a witness in a nested block if that block falls through
+            # to here (an early-exit branch is a disjoint path, not a dominator).
+            if _block_always_exits(inner):
+                continue
+            if _block_contains_dominating_witness(inner):
                 return True
     return False
+
+
+def _block_contains_witness_emit(body: list[ast.stmt]) -> bool:
+    """Back-compat alias retained for the producer-side scan / self-tests:
+    whether ``body`` contains a *path-dominating* witness emit (G2-correct)."""
+    return _block_contains_dominating_witness(body)
 
 
 def _return_is_witnessed(
     return_node: ast.Return,
     block_stack: list[list[ast.stmt]],
 ) -> bool:
-    """True iff a typed witness emit dominates ``return_node`` on its AST path.
+    """True iff a typed witness emit DOMINATES ``return_node`` on its AST path.
 
     ``block_stack`` is the chain of statement-lists from the function body down
-    to the block directly containing the return. A witness emit dominates the
-    return if it appears (recursively) among the statements that precede the
-    return within ANY block on that path. This matches the production witnessing
-    convention: an ``*_out.append(...)`` (often guarded by ``if ... is not
-    None:``) placed immediately before the ``return state``, at the return's
-    block level or one block up.
+    to the block directly containing the return (each ``match``/``case`` body on
+    the path is one such block, via the G1-aware ``_walk``). Real dominance
+    requires the witness on EVERY path to the return, so for each block on the
+    path we only consider the statements STRICTLY PRECEDING the return's ancestor
+    in that block, and credit a witness only when it is on the straight-line
+    fall-through path (a direct witness statement, or a guard ``if`` that falls
+    through) — NOT inside a disjoint sibling branch / ``case`` arm that the
+    return's path never executes (the G2 fix). This matches the production
+    witnessing convention: an ``*_out.append(...)`` (often guarded by ``if ... is
+    not None:``) placed immediately before the ``return state``.
     """
     for block in block_stack:
         # Statements strictly before the return (or before the ancestor of the
@@ -232,7 +293,7 @@ def _return_is_witnessed(
         for stmt in block:
             if _stmt_contains_node(stmt, return_node):
                 break
-            if _stmt_is_witness_emit(stmt) or _block_contains_witness_emit([stmt]):
+            if _block_contains_dominating_witness([stmt]):
                 return True
     return False
 
@@ -291,15 +352,13 @@ def _scan_function(
                 )
             # Recurse into nested blocks (but NOT into nested function defs; a
             # nested closure with its own ``state`` is handled when visited as a
-            # FunctionDef below).
+            # FunctionDef below). ``_child_stmt_blocks`` includes ``match`` /
+            # ``case`` bodies so a ``return state`` inside a ``case`` arm is no
+            # longer invisible (the G1 fix).
             if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            for attr in ("body", "orelse", "finalbody"):
-                inner = getattr(stmt, attr, None)
-                if isinstance(inner, list):
-                    _walk(inner, next_stack)
-            for handler in getattr(stmt, "handlers", []) or []:
-                _walk(handler.body, next_stack)
+            for inner in _child_stmt_blocks(stmt):
+                _walk(inner, next_stack)
 
     _walk(fn.body, [])
 
@@ -312,12 +371,30 @@ def _scan_function(
             _scan_function(node, rel_path, lines, records)
 
 
+def discover_apply_files(repo_root: Path | None = None) -> list[str]:
+    """Glob every ``src/lawvm/finland/apply_*.py`` (minus documented exclusions).
+
+    Replaces the former hardcoded allowlist (G3): a NEW apply file is scanned
+    automatically, so coverage cannot silently shrink by a forgotten file. Any
+    deliberate omission must be an explicit, documented entry in
+    ``EXCLUDED_APPLY_FILES``.
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    base = root / _APPLY_FILES_DIR
+    rels = sorted(
+        _rel_posix(p, root)
+        for p in base.glob(_APPLY_FILES_GLOB)
+        if p.is_file() and not p.name.startswith("test_")
+    )
+    return [rel for rel in rels if rel not in EXCLUDED_APPLY_FILES]
+
+
 def scan_apply_declines(repo_root: Path | None = None) -> dict[str, Any]:
     """Compute the full apply-decline ratchet state across scanned apply files."""
     root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
     records: list[dict[str, Any]] = []
     scanned_files: list[str] = []
-    for rel in SCANNED_APPLY_FILES:
+    for rel in discover_apply_files(root):
         path = root / rel
         if not path.exists():
             continue
