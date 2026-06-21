@@ -8331,9 +8331,10 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
             "It FAILS CLOSED: a declared transition is materialized only when "
             "EVERY op in its change window is dry-run-verified; any unverified op "
             "blocks the whole transition with a distinct named diagnostic and "
-            "nothing is materialized for it (never a silent skip). Only the two "
-            "safest families are promotable: direct repeal and direct "
-            "single-occurrence text substitution. The output is a separate "
+            "nothing is materialized for it (never a silent skip). Only the four "
+            "safest families are promotable: direct repeal, direct "
+            "single-occurrence text substitution, structural whole-provision "
+            "replace, and structural whole-provision or nested insert. The output is a separate "
             "artifact from the official NZ XML, labeled candidate/replay/oracle; "
             "the archived oracle is what the replay is checked against, never the "
             "replay's payload authority. The actually-replayed transition count "
@@ -8354,8 +8355,9 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         metavar="SPEC",
         help=(
             "promotable families to actually replay: 'all' (default; repeal + "
-            "text_replace), or a comma-separated subset (e.g. 'repeal'). Only "
-            "repeal and text_replace are promotable; any other family is rejected."
+            "text_replace + replace + insert), or a comma-separated subset (e.g. "
+            "'repeal'). Only repeal, text_replace, replace, and insert are "
+            "promotable; any other family is rejected."
         ),
     )
     nz_replay_actual_p.add_argument(
@@ -8685,8 +8687,9 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         description=(
             "Pin the replay-coverage denominator to ground-truth amendment "
             "operation witnesses (history notes via the operation surface), run "
-            "every supported dry-run family (repeal + text_replace) over a work "
-            "population, and report the combined coverage fraction = the true "
+            "every supported dry-run family (repeal, text_replace, replace, "
+            "insert) over a work population, and report the combined coverage "
+            "fraction = the true "
             "percentage of NZ amendment operations we can replay-and-oracle-confirm. "
             "Non-executable-by-design operations (brought-into-force/editorial/"
             "expired) are reported separately, and the unsupported executable "
