@@ -3048,7 +3048,14 @@ def test_1993_615_heading_amendments_applied() -> None:
     )
 
 
-def test_2017_93_bench_comparable_first_subsection_replace_drops_stale_flattened_tail() -> None:
+def test_2017_93_bench_comparable_first_subsection_replace_materializes_flattened_list() -> None:
+    # The bench-comparable oracle for 2017/93 is the 2020-12-30 consolidation,
+    # which has commenced (effective date <= today) and is therefore accepted as
+    # the in-force comparison artifact. That consolidation carries a genuine
+    # ten-item flattened intro list in section 1 / subsection 1 (item 9 =
+    # Poliisiammattikorkeakoulu (1164/2013) was added after the 2017 promulgation,
+    # pushing Pelastusopisto to item 10). The first-subsection replace must
+    # materialize all ten list items, matching the oracle.
     replay = call_replay_xml(
         replay_xml,
         request=ReplayXmlRequest(
@@ -3069,7 +3076,7 @@ def test_2017_93_bench_comparable_first_subsection_replace_drops_stale_flattened
     )
     paragraphs = [child for child in sub1.children if child.kind is IRNodeKind.PARAGRAPH]
 
-    assert [paragraph.label for paragraph in paragraphs] == [str(idx) for idx in range(1, 10)]
+    assert [paragraph.label for paragraph in paragraphs] == [str(idx) for idx in range(1, 11)]
     assert "Pelastusopistosta annettu laki (607/2006)." in irnode_to_text(paragraphs[-1])
 
 
