@@ -1129,6 +1129,55 @@ def test_clean_se_pdf_text_drops_obvious_page_furniture() -> None:
     assert "2 § Andra paragrafen." in cleaned
 
 
+def test_clean_se_pdf_text_preserves_standalone_sfs_statute_citation_reference_line() -> None:
+    """Standalone SFS statute-citation reference lines MUST survive the cleanup.
+
+    A Swedish SFS statute citation wrapped in parentheses ("(1992:394).") or as
+    a bare bare statute-number line ("1985:1100.") is a legitimate cross-
+    reference that appears on its own wrapped line in ``pdftotext`` output. Its
+    shape (short: digits, colon, parens, period) matches the
+    ``_DIGIT_GARBAGE_RE`` page-furniture filter (lines composed exclusively of
+    digit/punctuation/whitespace, length >= 8), so the cleaner previously
+    silently stripped them as page furniture. That truncated the surrounding
+    provision's body when the citation wrapped onto its own line -- the suffix
+    line was dropped, the section's last paragraph terminated at the wrap
+    point, and downstream replay-vs-oracle comparison operated against a
+    truncated replacement text. Real-corpus witness: SFS 2001:223 §2a
+    replacement statement ends "...institut finnas i gymnasieförordningen\n
+    (1992:394)." -- the "(1992:394)." line was silently stripped.
+
+    Exempt the ``\\(?\\d{4}:\\d+\\)?\\.?`` shape from the garbage filter so the
+    citation reference survives the cleanup and stays in the section body. The
+    existing page-furniture lines (``1234567890:;``, ``Sida 2 av 3``) keep being
+    dropped because they do not look like SFS citations.
+    """
+    raw_with_paren_citation = (
+        "1 § Första stycket hänvisar här.\n"
+        "(1992:394).\n"
+        "2 § Andra paragrafens lydelse."
+    )
+    cleaned = clean_se_pdf_text(raw_with_paren_citation)
+    # The wrapped citation reference survived -- it stays part of §1's body.
+    assert "(1992:394)." in cleaned
+    # Either it sits on its own line (carried through as a separate paragraph,
+    # or the parser will fold it); either way it is NOT silently dropped.
+    # And §2 still comes through intact -- the cleanup did not eat the
+    # surrounding provision structure.
+    assert "1 § Första stycket hänvisar här." in cleaned
+    assert "2 § Andra paragrafens lydelse." in cleaned
+
+    # Bare citation reference without parens, with trailing period:
+    raw_bare_citation = "Det finns också en hänvisning.\n1985:1100.\nAvslutande rad."
+    cleaned_bare = clean_se_pdf_text(raw_bare_citation)
+    assert "1985:1100." in cleaned_bare
+
+    # Garbage-qualifying lines that are NOT statute citations stay filtered:
+    # the cleanup did not regress on its page-furniture scrub.
+    assert "1234567890:;" not in clean_se_pdf_text("Första rad.\n1234567890:;\nAndra rad.")
+    # The "Sida 2 av 3" page furniture line is still filtered:
+    assert "Sida 2 av 3" not in clean_se_pdf_text("Rad ett.\nSida 2 av 3\nRad två.")
+
+
 def test_parse_rk_issue_date_and_guess_pdf_url() -> None:
     html = '<span class="bold">Utfärdad:</span> 2025-05-22'
     issue_date = parse_se_rk_issue_date(html)

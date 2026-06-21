@@ -117,6 +117,21 @@ _PAGE_NUMBER_RE = re.compile(r"^\d+$")
 _SFS_HEADER_RE = re.compile(r"^SFS\s+\d{4}:\d+[a-zA-Z]?$", re.IGNORECASE)
 _PAGE_FURNITURE_RE = re.compile(r"^(Sida|Page)\s+\d+(\s+av\s+\d+)?$", re.IGNORECASE)
 _DIGIT_GARBAGE_RE = re.compile(r"^[0-9:;.,()\-\s]{8,}$")
+# Swedish SFS statute-citation reference line — the standard cross-reference
+# shape ``\((\d{4}:\d+)\)\.?`` as a bare standalone line: optional leading
+# opening parenthesis, the four-digit year, a colon, the running statute
+# number, optional closing parenthesis, optional trailing period. Exempts
+# legitimate short citation-reference lines from the ``_DIGIT_GARBAGE_RE``
+# page-furniture filter; without this exemption, Swedish statutory text
+# wraps that put the "(YEAR:N)." cross-reference on its own line get
+# silently stripped from the cleaned PDF text, truncating the surrounding
+# provision's body (real witness: SFS 2001:223 §2a replacement text ended
+# "...i gymnasieförordningen\n(1992:394)." — that "(1992:394)." line was
+# treated as digit garbage and dropped).
+_SE_SFS_CITATION_REFERENCE_LINE_RE = re.compile(
+    r"^\(?\d{4}:\d+\)?\.?\s*$",
+    re.IGNORECASE,
+)
 _RK_UTFARDAD_RE = re.compile(r"Utfärdad:</span>\s*([0-9]{4}-[0-9]{2}-[0-9]{2})", re.IGNORECASE)
 _SE_ATTRIBUTION_SFS_RE = re.compile(r"(?:Förordning|Lag)\s+\((\d{4}:\d+)\)\.?\s*$", re.IGNORECASE)
 _SE_RENUMBER_PLACEHOLDER_SFS_RE = re.compile(
@@ -657,7 +672,23 @@ def clean_se_pdf_text(pdf_text: str) -> str:
         if _PAGE_FURNITURE_RE.fullmatch(line):
             continue
         if _DIGIT_GARBAGE_RE.fullmatch(line):
-            continue
+            # Exempt short citation-reference lines: a Swedish SFS statute
+            # citation wrapped in parentheses ("(1992:394).") or with a
+            # trailing period ("1985:1100.") will look like pure digit
+            # garbage to the ``_DIGIT_GARBAGE_RE`` shape (matched because
+            # it is short and only digits/punctuation), but the parenthesis
+            # or trailing-period citation shape is genuinely part of the
+            # law text (the "(YEAR:N)" form is the standard SFS statute
+            # cross-reference) — NOT page furniture. Real witness: SFS
+            # 2001:223 §2a replacement statement ends "...institut finnas i
+            # gymnasieförordningen\n(1992:394)." — that "(1992:394)." line
+            # was silently stripped, truncating the §2a provision text and
+            # forcing the replay-vs-oracle lookup into a row that compared
+            # against the wrong (shorter) cached-act text vs. the
+            # full-body current consolidation. Exempt here so the citation
+            # reference survives the cleanup and stays in the section body.
+            if not _SE_SFS_CITATION_REFERENCE_LINE_RE.fullmatch(line):
+                continue
         line = _WS_RE.sub(" ", line)
         out_lines.append(line)
         previous_blank = False
