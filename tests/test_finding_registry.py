@@ -221,7 +221,7 @@ def test_unowned_body_section_registry_code_is_strict_runtime_observation() -> N
 
 
 def test_kumotaan_recycle_guard_registry_code_is_runtime_observation() -> None:
-    spec = get_finding_spec("PARSE.KUMOTAAN_RECYCLE_GUARD")
+    spec = get_finding_spec("PARSE.REPEAL_RECYCLE_GUARD")
     assert spec is not None
     assert spec.role == "observation"
     assert spec.default_enforcement == "info"

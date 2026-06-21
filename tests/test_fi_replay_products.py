@@ -3565,7 +3565,7 @@ def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010
     recycle_findings = [
         finding
         for finding in replay.findings
-        if finding.kind == "PARSE.KUMOTAAN_RECYCLE_GUARD"
+        if finding.kind == "PARSE.REPEAL_RECYCLE_GUARD"
         and finding.source_statute == "2019/1330"
     ]
     assert recycle_findings
