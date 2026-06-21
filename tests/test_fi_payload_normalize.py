@@ -1,8 +1,10 @@
 from dataclasses import replace as dc_replace
 from typing import Any, Optional
 
-from lawvm.core.ir import IRNode
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.provenance import OperationSource
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.target_kind import TargetKind
 from lawvm.core.elaboration_context import (
     PayloadElaborationContext,
@@ -4716,6 +4718,114 @@ def test_normalize_group_payload_surfaces_unassigned_sparse_payload_slots() -> N
     assert first_detail["unassigned_slots"] == ("2:2", "3:(unlabeled)")
 
 
+def test_internal_ordered_list_payload_rewrites_broad_replace_to_item_inserts() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.CONTENT, text="List I"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="Alpha"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="Delta"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="3", children=(IRNode(kind=IRNodeKind.CONTENT, text="Sigma"),)),
+                    IRNode(kind=IRNodeKind.CONTENT, text="List II"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="4", children=(IRNode(kind=IRNodeKind.CONTENT, text="Zeta"),)),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "1", live_node=live_sec)
+    lo = LegalOperation(
+        op_id="",
+        sequence=0,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress((("section", "1"),)),
+        source=OperationSource(
+            statute_id="test/1",
+            raw_text="muutetaan 1 §:ssä olevaa listan luetteloa I seuraavasti:",
+        ),
+    )
+    op = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="1", lo=lo)
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, children=(IRNode(kind=IRNodeKind.CONTENT, text="List I"),)),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(kind=IRNodeKind.SUBSECTION, children=(IRNode(kind=IRNodeKind.CONTENT, text="Beta"),)),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(kind=IRNodeKind.SUBSECTION, children=(IRNode(kind=IRNodeKind.CONTENT, text="Omega"),)),
+            IRNode(kind=IRNodeKind.OMISSION),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    assert [(item.op_type, item.target_paragraph, item.target_item) for item in got.group_ops] == [
+        ("INSERT", 1, "2"),
+        ("INSERT", 1, "4"),
+    ]
+    assert got.muutos_ir is not None
+    rewritten_sub = next(child for child in got.muutos_ir.children if child.kind is IRNodeKind.SUBSECTION)
+    assert [(child.label, irnode_to_text(child)) for child in rewritten_sub.children] == [
+        ("2", "Beta"),
+        ("4", "Omega"),
+    ]
+    assert [obs.kind for obs in _observations(got) if obs.kind == "ELAB.INTERNAL_ORDERED_LIST_INSERT_REWRITE"] == [
+        "ELAB.INTERNAL_ORDERED_LIST_INSERT_REWRITE"
+    ]
+    assert got.rejected_ops == ()
+
+
+def test_internal_ordered_list_insert_inference_ignores_leading_stereochemical_prefix() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.CONTENT, text="List I"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="Alpha"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="trans-N-[3-metyyli]"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="3", children=(IRNode(kind=IRNodeKind.CONTENT, text="Rasemorfaani"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="4", children=(IRNode(kind=IRNodeKind.CONTENT, text="Sufentaniili"),)),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "1", live_node=live_sec)
+    lo = LegalOperation(
+        op_id="",
+        sequence=0,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress((("section", "1"),)),
+        source=OperationSource(
+            statute_id="test/1",
+            raw_text="muutetaan 1 §:ssä olevaa listan luetteloa I seuraavasti:",
+        ),
+    )
+    op = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="1", lo=lo)
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="List I"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="Remifentaniili"),)),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    assert [(item.op_type, item.target_paragraph, item.target_item) for item in got.group_ops] == [
+        ("INSERT", 1, "4")
+    ]
+
+
 def test_normalize_group_payload_folds_split_target_subsection_intro_list_tail() -> None:
     """A single legal moment may be split into prefix + intro/list source slots.
 
@@ -7079,11 +7189,6 @@ def test_payload_completeness_unsupported_shape_pathology_emits_rejected_op() ->
         "UNSUPPORTED_PAYLOAD_DESTRUCTIVE_SHAPE_LOSS_RISK",
         "UNSUPPORTED_PAYLOAD_DESTRUCTIVE_SHAPE_LOSS_RISK",
     ]
-
-
-from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, StructuralAction
-from lawvm.core.ir_helpers import irnode_to_text
-
 
 def test_drop_redundant_case3_keeps_insert_when_lettered_item_not_in_live() -> None:
     """INSERT '3a' alongside REPLACE '3' must be kept when '3a' is new (not in live).

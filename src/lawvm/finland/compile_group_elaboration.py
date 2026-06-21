@@ -33,7 +33,11 @@ from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.compile_group_surface import (
     collect_recodification_omission_only_section_shell_pathologies,
 )
-from lawvm.finland.payload_normalize import elaborate_payload_against_live, prepare_payload_surface
+from lawvm.finland.payload_normalize import (
+    _rewrite_internal_ordered_list_inserts,
+    elaborate_payload_against_live,
+    prepare_payload_surface,
+)
 from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
 
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
@@ -298,6 +302,24 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         profile,
         strict_profile,
     )
+    group_ops, muutos_ir, internal_list_observation = _rewrite_internal_ordered_list_inserts(
+        payload_ctx,
+        target_unit_kind,
+        muutos_ir,
+        group_ops,
+    )
+    if internal_list_observation is not None:
+        pre_prepare_observations.append(
+            _internal_elaboration_observation_row(
+                kind=str(internal_list_observation.kind or ""),
+                stage=str(internal_list_observation.stage or ""),
+                detail=dict(internal_list_observation.detail or {}),
+                source_statute=observation_source_statute,
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_chapter=target_chapter,
+            )
+        )
     prepared_payload_observations = _payload_normalization_observation_rows(
         muutos_ir,
         source_statute=observation_source_statute,

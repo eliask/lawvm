@@ -2748,6 +2748,10 @@ def test_replay_xml_1993_1709_preserves_list_prefix_when_replacing_later_list() 
     assert text.index("Psykotrooppisia aineita koskevan yleissopimuksen luettelo I") < text.index(
         "Dietyylitryptamiini (DET)"
     )
+    assert text.index("Difenoksylaatti") < text.index("Dihydroetorfiini")
+    assert text.index("Dihydroetorfiini") < text.index("Dihydromorfiini")
+    assert text.index("Rasemorfaani") < text.index("Remifentaniili")
+    assert text.index("Remifentaniili") < text.index("Sufentaniili")
     assert "Dietyylitryptamiini (DET)" in text
     assert "Tetrahydrokannabinoli" in text
     subsection1 = next(

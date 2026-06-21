@@ -69,6 +69,8 @@ if TYPE_CHECKING:
 
 
 _NUMBERED_TABLE_XML_SUBSECTION_OFFSET_RULE = "ELAB.NUMBERED_TABLE_XML_SUBSECTION_OFFSET"
+_INTERNAL_ORDERED_LIST_INSERT_RULE = "ELAB.INTERNAL_ORDERED_LIST_INSERT_REWRITE"
+_PRESERVE_IMPLICIT_PARAGRAPH_NUMBER_ATTR = "lawvm_preserve_implicit_paragraph_numbering"
 _CONTINUATION_ROW_PREFIX_RE = re.compile(r"^(\d+)\.\s+")
 
 
@@ -5839,6 +5841,213 @@ def _rewrite_partial_whole_section_table_payload(
     return TableRowRewriteResult(tuple(preserved_ops + rewritten_ops), rebuilt_muutos_ir, True)
 
 
+def _ordered_list_key(text: str) -> str:
+    head = text.split("(", 1)[0].strip()
+    head = re.sub(r"^(?:cis|trans)\s*[-–—]\s*", "", head, flags=re.IGNORECASE)
+    return re.sub(r"[^0-9a-zåäö]+", " ", head.lower()).strip()
+
+
+def _source_targets_internal_ordered_list(op: AmendmentOp) -> bool:
+    source = getattr(getattr(op, "lo", None), "source", None)
+    raw_text = re.sub(r"\s+", " ", str(getattr(source, "raw_text", "") or "").lower()).replace("\xa0", " ")
+    return "§:ssä olevaa" in raw_text and "luetteloa" in raw_text and "seuraavasti" in raw_text
+
+
+def _single_live_subsection_with_list_window(
+    live_section: IRNode | None,
+    anchor_text: str,
+) -> tuple[IRNode, int, int] | None:
+    if live_section is None:
+        return None
+    live_subsections = [child for child in live_section.children if child.kind is IRNodeKind.SUBSECTION]
+    if len(live_subsections) != 1:
+        return None
+    live_subsection = live_subsections[0]
+    anchor_key = re.sub(r"\s+", " ", anchor_text).strip().lower()
+    if not anchor_key:
+        return None
+
+    start: int | None = None
+    children = tuple(live_subsection.children)
+    for idx, child in enumerate(children):
+        if child.kind not in {IRNodeKind.CONTENT, IRNodeKind.INTRO}:
+            continue
+        child_key = re.sub(r"\s+", " ", irnode_to_text(child)).strip().lower()
+        if child_key == anchor_key:
+            start = idx + 1
+            break
+    if start is None:
+        return None
+
+    end = start
+    while end < len(children):
+        child = children[end]
+        if child.kind is IRNodeKind.PARAGRAPH:
+            end += 1
+            continue
+        if irnode_to_text(child).strip():
+            break
+        end += 1
+    if end <= start:
+        return None
+    return live_subsection, start, end
+
+
+def _sparse_internal_list_payload_slots(muutos_ir: IRNode | None) -> tuple[str, tuple[IRNode, ...]] | None:
+    if muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return None
+    slots = [child for child in muutos_ir.children if child.kind in {IRNodeKind.SUBSECTION, IRNodeKind.OMISSION}]
+    if len(slots) < 2 or slots[0].kind is not IRNodeKind.SUBSECTION:
+        return None
+    anchor_text = re.sub(r"\s+", " ", irnode_to_text(slots[0])).strip()
+    if not anchor_text:
+        return None
+    has_omission_slot = any(slot.kind is IRNodeKind.OMISSION for slot in slots[1:])
+    source_slot_labels = tuple(str(slot.label or "") for slot in slots if slot.kind is IRNodeKind.SUBSECTION)
+    has_local_sparse_slot_labels = source_slot_labels == tuple(
+        str(idx) for idx in range(1, len(source_slot_labels) + 1)
+    )
+    if not has_omission_slot and not has_local_sparse_slot_labels:
+        return None
+    payload_slots = tuple(
+        slot
+        for slot in slots[1:]
+        if slot.kind is IRNodeKind.SUBSECTION and re.sub(r"\s+", " ", irnode_to_text(slot)).strip()
+    )
+    if not payload_slots:
+        return None
+    return anchor_text, payload_slots
+
+
+def _infer_ordered_list_insert_targets(
+    live_subsection: IRNode,
+    start: int,
+    end: int,
+    payload_slots: tuple[IRNode, ...],
+) -> tuple[str, ...] | None:
+    live_items = [
+        child
+        for child in live_subsection.children[start:end]
+        if child.kind is IRNodeKind.PARAGRAPH and child.label and str(child.label).isdigit()
+    ]
+    if len(live_items) != end - start:
+        return None
+    if not live_items:
+        return None
+
+    virtual_keys = [_ordered_list_key(irnode_to_text(item)) for item in live_items]
+    if any(not key for key in virtual_keys):
+        return None
+
+    targets: list[str] = []
+    for payload_slot in payload_slots:
+        payload_text = re.sub(r"\s+", " ", irnode_to_text(payload_slot)).strip()
+        payload_key = _ordered_list_key(payload_text)
+        if not payload_key:
+            return None
+        insertion_indexes = [idx for idx, key in enumerate(virtual_keys) if payload_key < key]
+        insert_idx = insertion_indexes[0] if insertion_indexes else len(virtual_keys)
+        prev_key = virtual_keys[insert_idx - 1] if insert_idx > 0 else ""
+        next_key = virtual_keys[insert_idx] if insert_idx < len(virtual_keys) else ""
+        if (prev_key and payload_key <= prev_key) or (next_key and payload_key >= next_key):
+            return None
+        target_label = str(insert_idx + 1)
+        targets.append(target_label)
+        virtual_keys.insert(insert_idx, payload_key)
+    return tuple(targets)
+
+
+def _rewrite_internal_ordered_list_inserts(
+    ctx: PayloadElaborationContext,
+    target_unit_kind: TargetUnitKind,
+    muutos_ir: IRNode | None,
+    group_ops: list[AmendmentOp],
+) -> tuple[list[AmendmentOp], IRNode | None, ElaborationObservation | None]:
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return group_ops, muutos_ir, None
+    if len(group_ops) != 1:
+        return group_ops, muutos_ir, None
+    [op] = group_ops
+    if (
+        op.op_type != "REPLACE"
+        or op.target_paragraph is not None
+        or op.target_item
+        or op.target_special
+        or not _source_targets_internal_ordered_list(op)
+    ):
+        return group_ops, muutos_ir, None
+
+    payload = _sparse_internal_list_payload_slots(muutos_ir)
+    if payload is None:
+        return group_ops, muutos_ir, None
+    anchor_text, payload_slots = payload
+    live_window = _single_live_subsection_with_list_window(ctx.live_node, anchor_text)
+    if live_window is None:
+        return group_ops, muutos_ir, None
+    live_subsection, start, end = live_window
+    targets = _infer_ordered_list_insert_targets(live_subsection, start, end, payload_slots)
+    if targets is None or len(targets) != len(payload_slots):
+        return group_ops, muutos_ir, None
+
+    live_subsection_label = str(live_subsection.label or "1")
+    if not live_subsection_label.isdigit():
+        return group_ops, muutos_ir, None
+    rewritten_payload_paragraphs = tuple(
+        IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label=target_label,
+            attrs={_PRESERVE_IMPLICIT_PARAGRAPH_NUMBER_ATTR: "1"},
+            children=(IRNode(kind=IRNodeKind.CONTENT, text=re.sub(r"\s+", " ", irnode_to_text(payload_slot)).strip()),),
+        )
+        for target_label, payload_slot in zip(targets, payload_slots, strict=True)
+    )
+    rewritten_subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label=live_subsection_label,
+        children=rewritten_payload_paragraphs,
+    )
+    rewritten_muutos_ir = _tops._with_children(
+        muutos_ir,
+        [
+            child
+            for child in muutos_ir.children
+            if child.kind not in {IRNodeKind.SUBSECTION, IRNodeKind.OMISSION}
+        ]
+        + [rewritten_subsection],
+    )
+    rewritten_ops = [
+        dc_replace(
+            op,
+            op_type="INSERT",
+            target_paragraph=int(live_subsection_label),
+            target_item=target_label,
+            lo=(
+                _lo_with_path_update(
+                    op.lo,
+                    subsection=live_subsection_label,
+                    item=target_label,
+                )
+                if op.lo is not None
+                else None
+            ),
+        )
+        for target_label in targets
+    ]
+    return (
+        rewritten_ops,
+        rewritten_muutos_ir,
+        _obs(
+            _INTERNAL_ORDERED_LIST_INSERT_RULE,
+            "payload_elaboration",
+            source_op=op.description(),
+            target_section=op.target_section or "",
+            target_subsection=live_subsection_label,
+            inserted_item_targets=list(targets),
+            payload_slot_count=len(payload_slots),
+        ),
+    )
+
+
 def _rewrite_named_row_table_repeals(
     ctx: PayloadElaborationContext,
     target_unit_kind: TargetUnitKind,
@@ -6095,6 +6304,14 @@ def elaborate_payload_against_live(
     )
     group_ops = list(table_row_payload.group_ops)
     muutos_ir = table_row_payload.muutos_ir
+    group_ops, muutos_ir, internal_list_observation = _rewrite_internal_ordered_list_inserts(
+        ctx,
+        target_unit_kind,
+        muutos_ir,
+        group_ops,
+    )
+    if internal_list_observation is not None:
+        observations.append(internal_list_observation)
     rejected_ops: List[FailedOp] = []
     group_ops, source_pathologies, partial_whole_section_rejected_ops = _drop_suspicious_partial_whole_section_replaces(
         ctx.live_node,
