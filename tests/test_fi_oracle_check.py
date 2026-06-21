@@ -3217,6 +3217,90 @@ def test_is_presentation_structural_diff_intro_vs_wording_owner_projection() -> 
     assert is_presentation_structural_diff(sd, changed_events) is False
 
 
+def test_is_presentation_structural_diff_lettered_subitems_flattened_to_items() -> None:
+    # 1993/91 § 4 style: source/replay nests lettered subitems under item 3,
+    # while Finlex projects the same rows as sibling lettered items.
+    sd = {"label": ""}
+    intro = (
+        "muuta omaisuusvahingon, varallisuusvahingon tai "
+        "vahingonkorvausvastuun varalle otettua vakuutusta, jos "
+        "vakuutuksenottaja täyttää ainakin kaksi seuraavasta kolmesta "
+        "tunnusmerkistä:"
+    )
+    row_a = "vakuutuksenottajan taseen loppusumma on yli 37,2 miljoonaa markkaa;"
+    row_b = "vakuutuksenottajan liikevaihto on yli 76,8 miljoonaa markkaa;"
+    events = [
+        {
+            "kind": "facet_removed",
+            "facet_kind": "intro",
+            "unit_kind": "intro",
+            "semantic_path": ["section:4", "subsection:1", "item:3", "intro"],
+            "left_text": intro,
+            "right_text": None,
+        },
+        {
+            "kind": "wording_text_changed",
+            "unit_kind": "item",
+            "unit_label": "3",
+            "semantic_path": ["section:4", "subsection:1", "item:3"],
+            "left_text": None,
+            "right_text": intro,
+        },
+        {
+            "kind": "unit_missing_right",
+            "unit_kind": "subitem",
+            "unit_label": "a",
+            "left_text": row_a,
+            "right_text": None,
+        },
+        {
+            "kind": "unit_missing_right",
+            "unit_kind": "subitem",
+            "unit_label": "b",
+            "left_text": row_b,
+            "right_text": None,
+        },
+        {
+            "kind": "unit_missing_left",
+            "unit_kind": "item",
+            "unit_label": "a",
+            "left_text": None,
+            "right_text": row_a,
+        },
+        {
+            "kind": "unit_missing_left",
+            "unit_kind": "item",
+            "unit_label": "b",
+            "left_text": None,
+            "right_text": row_b,
+        },
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_row_a = "alkuperäinen oikeudellinen vaatimus on täytettävä;"
+    changed_row_b = "muutettu oikeudellinen vaatimus on täytettävä;"
+    changed_events = [
+        {
+            **events[0],
+            "left_text": "seuraavien tunnusmerkkien perusteella:",
+        },
+        {
+            **events[1],
+            "right_text": "seuraavien tunnusmerkkien perusteella:",
+        },
+        {
+            **events[2],
+            "left_text": changed_row_a,
+        },
+        {
+            **events[4],
+            "right_text": changed_row_b,
+        },
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
 def test_is_presentation_structural_diff_negative_real_content_change() -> None:
     # A real wording change (not prefix, not artifact) must not be treated as presentation.
     sd = {"label": ""}

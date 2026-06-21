@@ -526,6 +526,95 @@ def _is_intro_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     return _normalize_for_pres_text(intro_text) == _normalize_for_pres_text(wording_text)
 
 
+def _event_unit_label(event: dict[str, Any]) -> str:
+    label = str(event.get("unit_label") or "").strip().casefold()
+    if label:
+        return label
+    path_parts = event.get("semantic_path_parts")
+    if not isinstance(path_parts, list):
+        return ""
+    for part in reversed(path_parts):
+        if not isinstance(part, dict):
+            continue
+        part_any: Any = part
+        if str(part_any.get("kind") or "") == str(event.get("unit_kind") or ""):
+            return str(part_any.get("label") or "").strip().casefold()
+    return ""
+
+
+def _one_sided_units_by_label(
+    events: list[dict[str, Any]],
+    *,
+    kind: str,
+    unit_kind: str,
+    text_field: str,
+) -> dict[str, str] | None:
+    units: dict[str, str] = {}
+    for event in events:
+        if event.get("kind") != kind or event.get("unit_kind") != unit_kind:
+            continue
+        label = _event_unit_label(event)
+        text = _normalize_for_pres_text(str(event.get(text_field) or "").strip())
+        if not label or not text or label in units:
+            return None
+        units[label] = text
+    return units
+
+
+def _is_lettered_subitem_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
+    """Detect source-backed lettered subitems projected as flat oracle items.
+
+    Provenance: 1993/91 § 4.  The enacted source nests ``a``-``c`` subitems
+    under numbered item 3, while the selected Finlex consolidated XML projects
+    the same rows as sibling ``a``-``c`` items.  This is comparison-only and
+    requires exact text conservation for the item intro and every lettered row.
+    """
+
+    allowed_kinds = {"facet_added", "facet_removed", "wording_text_changed", "unit_missing_left", "unit_missing_right"}
+    if not events or not all(event.get("kind") in allowed_kinds for event in events):
+        return False
+
+    intro_events = [event for event in events if _event_is_intro_facet_delta(event)]
+    wording_events = [event for event in events if event.get("kind") == "wording_text_changed"]
+    if len(intro_events) != 1 or len(wording_events) != 1:
+        return False
+    intro_text = _one_sided_event_text(intro_events[0])
+    wording_text = _one_sided_event_text(wording_events[0])
+    if not intro_text or not wording_text:
+        return False
+    if _normalize_for_pres_text(intro_text) != _normalize_for_pres_text(wording_text):
+        return False
+
+    left_subitems = _one_sided_units_by_label(
+        events,
+        kind="unit_missing_right",
+        unit_kind="subitem",
+        text_field="left_text",
+    )
+    right_items = _one_sided_units_by_label(
+        events,
+        kind="unit_missing_left",
+        unit_kind="item",
+        text_field="right_text",
+    )
+    if left_subitems and right_items and left_subitems == right_items:
+        return True
+
+    right_subitems = _one_sided_units_by_label(
+        events,
+        kind="unit_missing_left",
+        unit_kind="subitem",
+        text_field="right_text",
+    )
+    left_items = _one_sided_units_by_label(
+        events,
+        kind="unit_missing_right",
+        unit_kind="item",
+        text_field="left_text",
+    )
+    return bool(right_subitems and left_items and right_subitems == left_items)
+
+
 def _one_sided_event_text(event: dict[str, Any]) -> str:
     left = (event.get("left_text") or "").strip()
     right = (event.get("right_text") or "").strip()
@@ -611,6 +700,8 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
     if _is_wrapup_owner_projection_diff(events):
         return True
     if _is_intro_owner_projection_diff(events):
+        return True
+    if _is_lettered_subitem_owner_projection_diff(events):
         return True
     if _is_value_table_owner_projection_diff(events):
         return True
