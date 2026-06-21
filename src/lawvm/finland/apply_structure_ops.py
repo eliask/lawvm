@@ -1270,6 +1270,26 @@ def _apply_container_op(
 
     if _target_special == "otsikko":
         if path is None:
+            # An otsikko INSERT (or REPLACE with empty payload) named a container
+            # heading target that did not resolve in the live state. The authored
+            # heading op applies nothing; witness the dropped op on the
+            # source-pathology ledger before declining rather than vanish as a
+            # silent no-op (LAWVM_PIPELINE_CONTRACT §1.1 no silent drop — the
+            # otsikko sibling of the absent-target arms above).
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_container_op_target_absent_pathology(
+                        source_statute=view.source_statute or "",
+                        target_unit_kind=_target_unit_kind,
+                        target_section=_target_section or "",
+                        op_type=_op_type or "",
+                        target_chapter=view.target_chapter or "",
+                        target_paragraph=_target_paragraph or "",
+                        target_item=_target_item or "",
+                        target_special=_target_special or "",
+                    )
+                )
+            replay_print(f"  {ctx_label} → FAILED (master otsikko {kind}:{section_label} not found)")
             return state
         node = _tops.resolve(state.ir, path)
         assert node is not None, f"resolve failed for {path}"

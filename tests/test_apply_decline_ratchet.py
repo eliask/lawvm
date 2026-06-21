@@ -172,13 +172,31 @@ class TestApplyDeclineRatchet:
                 f"(got {status!r}); the detector regressed into a false positive."
             )
         # apply_structure_ops.py witnessed sites: the REPLACE-target-absent arm
-        # (1253), the container REPEAL/RENUMBER-target-absent arm (1269), and the
-        # container-otsikko no-heading / fall-through arms (1300, 1327).
-        for line in (1253, 1269, 1300, 1327):
+        # (1253), the container REPEAL/RENUMBER-target-absent arm (1269), the
+        # otsikko ABSENT-target arm (1293, witnessed by the G2 hardening round —
+        # was the live G2-masked drop), and the container-otsikko no-heading /
+        # fall-through arms (1320, 1347).
+        for line in (1253, 1269, 1293, 1320, 1347):
             status = by_loc.get(("apply_structure_ops.py", line))
             assert status == "witnessed", (
                 f"apply_structure_ops.py:{line} should read as a witnessed "
                 f"decline (got {status!r})."
+            )
+        # apply_subsection_ops.py: the momentti REPEAL out-of-range-target arm
+        # (906) — the second G2-masked live drop, now witnessed.
+        assert by_loc.get(("apply_subsection_ops.py", 906)) == "witnessed", (
+            "apply_subsection_ops.py:906 (momentti REPEAL out-of-range target) "
+            "should read as a witnessed decline."
+        )
+        # apply_typed_dispatch.py case-arm declines (G1): the unhandled-target /
+        # unknown-intent `case _:` arms MUST be (a) VISIBLE to the detector at
+        # all and (b) read as witnessed (each stamps a mutation event / _fail).
+        for line in (1169, 1273, 1372, 2195, 2207):
+            status = by_loc.get(("apply_typed_dispatch.py", line))
+            assert status == "witnessed", (
+                f"apply_typed_dispatch.py:{line} (a `case _:` decline) should be "
+                f"visible AND witnessed (got {status!r}); the G1 match/case walk "
+                f"or the _fail/_emit witness recognition regressed."
             )
 
 
@@ -330,6 +348,109 @@ class TestApplyDeclineGuardLiveness:
         assert len(records) == 1
         assert records[0]["line"] == 3
         assert records[0]["status"] == "unwitnessed"
+
+    def test_g1_bare_return_state_inside_case_arm_is_detected(self) -> None:
+        # G1 regression lock: a bare `return state` inside a `match`/`case` arm
+        # must be VISIBLE to the detector (the original walkers never descended
+        # into `ast.Match.cases[*].body`, so it read as 0 records).
+        src = (
+            "def _apply_op(state, op):\n"
+            "    match op:\n"
+            "        case _:\n"
+            "            return state\n"
+        )
+        records = self._records(src)
+        assert len(records) == 1, (
+            "a `return state` inside a `case` arm must be detected (G1)"
+        )
+        assert records[0]["status"] == "unwitnessed"
+
+    def test_g1_witnessed_return_state_inside_case_arm_reads_witnessed(self) -> None:
+        # A witness emit on the case arm's own path dominates the case return.
+        src = (
+            "def _apply_op(state, op, source_pathologies_out=None):\n"
+            "    match op:\n"
+            "        case _:\n"
+            "            if source_pathologies_out is not None:\n"
+            "                source_pathologies_out.append(build_x_pathology())\n"
+            "            return state\n"
+        )
+        records = self._records(src)
+        assert len(records) == 1
+        assert records[0]["status"] == "witnessed"
+
+    def test_g2_witness_in_disjoint_sibling_case_does_not_witness(self) -> None:
+        # G2 regression lock: a witness inside a DIFFERENT, control-flow-disjoint
+        # `case` arm must NOT make a later bare `return state` read as witnessed.
+        src = (
+            "def _apply_op(state, op, source_pathologies_out=None):\n"
+            "    match op:\n"
+            "        case 1:\n"
+            "            source_pathologies_out.append(build_x_pathology())\n"
+            "            return state\n"
+            "        case _:\n"
+            "            return state\n"
+        )
+        records = self._records(src)
+        by_line = {r["line"]: r["status"] for r in records}
+        # The witnessed arm (line 5) reads witnessed; the disjoint `case _:`
+        # decline (line 7) must read UN-witnessed, not credited by the sibling.
+        assert by_line.get(5) == "witnessed"
+        assert by_line.get(7) == "unwitnessed", (
+            "a witness in a disjoint sibling `case` arm must NOT dominate a "
+            "later bare `return state` (G2)"
+        )
+
+    def test_g2_witness_in_disjoint_sibling_if_does_not_witness(self) -> None:
+        # G2 regression lock for plain if-branches: a witness inside a preceding
+        # `if` arm that ITSELF returns (an early-exit, disjoint path) must NOT
+        # dominate a later fall-through bare `return state`.
+        src = (
+            "def _apply_op(state, op, source_pathologies_out=None):\n"
+            "    if op == 1:\n"
+            "        source_pathologies_out.append(build_x_pathology())\n"
+            "        return None\n"
+            "    return state\n"
+        )
+        records = self._records(src)
+        assert len(records) == 1
+        assert records[0]["line"] == 5
+        assert records[0]["status"] == "unwitnessed", (
+            "a witness inside a preceding if-arm that returns (a disjoint path) "
+            "must NOT dominate a later fall-through `return state` (G2)"
+        )
+
+    def test_g2_falls_through_guard_if_still_witnesses(self) -> None:
+        # The G2 fix must KEEP the production convention working: a preceding
+        # guard `if source_pathologies_out is not None:` that appends and FALLS
+        # THROUGH to the return is a real dominator.
+        src = (
+            "def _apply_op(state, op, source_pathologies_out=None):\n"
+            "    if source_pathologies_out is not None:\n"
+            "        source_pathologies_out.append(build_x_pathology())\n"
+            "    return state\n"
+        )
+        records = self._records(src)
+        assert len(records) == 1
+        assert records[0]["status"] == "witnessed", (
+            "a preceding fall-through guard-if witness must still dominate (G2 "
+            "must not over-correct and reject real guard-nested witnesses)"
+        )
+
+    def test_g3_discovery_globs_apply_files(self) -> None:
+        # G3 regression lock: file discovery globs apply_*.py rather than a
+        # hardcoded allowlist, so coverage auto-includes every apply file.
+        discovered = set(_INV.discover_apply_files(_REPO_ROOT))
+        for rel in (
+            "src/lawvm/finland/apply_structure_ops.py",
+            "src/lawvm/finland/apply_subsection_ops.py",
+            "src/lawvm/finland/apply_typed_dispatch.py",
+        ):
+            assert rel in discovered, f"{rel} must be auto-discovered (G3)"
+        # No discovered file may be silently dropped except via the documented
+        # explicit exclusion set.
+        for rel in discovered:
+            assert rel not in _INV.EXCLUDED_APPLY_FILES
 
     def test_inline_waiver_marks_decline_waived(self) -> None:
         src = (
