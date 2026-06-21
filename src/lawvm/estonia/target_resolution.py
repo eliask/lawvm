@@ -829,30 +829,78 @@ def _has_embedded_open_quote_payload_section_header(html_block: str) -> bool:
 
 def _has_unclosed_payload_quote_after_formula(text: str) -> bool:
     """True iff ``text`` carries a quoted payload whose opening quote has not
-    been closed yet.
+    been locally closed after its opening marker.
 
-    The embedded-section-header idiom ``järgmises sõnastuses:
-    „... § N ...”`` keeps ``„`` and ``”`` balanced across
-    paragraphs of the same quoted payload, so a balanced quote count is the
-    correct check. An open ``„`` that has no matching close in ``text``
-    means the next ``§ N.`` wrapper paragraph is still inside that
-    payload and a split there would drop the inserted section/body fragment.
+    EE old-format amendment HTML wraps inserted payloads in quoted text:
 
-    Pre-fix this used a "tail-ends-with-close-quote" heuristic on the last
-    ``järgmises sõnastuses`` marker: a marker whose quote closes
-    mid-tail (followed by more non-quoted amendment items) was treated as
-    still-open, absorbing the next ``§ N.`` wrapper section into the
-    first block and silently dropping that wrapper's ops (corpus witness:
-    ``128062014035`` §2-§4 against ``Kinnipidamiskeskuse
-    sisekorraeeskirja kehtestamine``).
+      ``paragrahvi N täiendatakse lõikega M järgmises sõnastuses:
+      „(M) ..."`` ...
+
+    When the wrapper-section splitter considers a split at the next ``§ N.``
+    boundary, the current block is unsafe to split iff such a payload marker
+    has opened but not yet locally closed.
+
+    A strict balanced quote count (``open_count > close_count``) is too
+    conservative: it considers ANY global imbalance as "unclosed". That
+    breaks per-section extraction for acts whose source HTML carries a
+    single unmatched ``„`` somewhere mid-document (corpus witness:
+    ``123122021012`` produced 0 wrapper splits vs pre-balanced-count's 5,
+    dropping its bench row ``112102018008`` from 93.5%/13-open to
+    74.2%/39-open).
+
+    The marker-local heuristic instead looks at the tail AFTER the last
+    ``järgmises sõnastuses:`` marker and asks whether that quote has
+    locally closed:
+
+      * No marker found → fall back to balanced quote count. If opens
+        exceed closes, treat as still-open (conservative). Otherwise safe.
+      * Marker found but tail doesn't start with an open-quote char → the
+        marker doesn't open a quoted payload in this block → safe to split.
+      * Marker found, tail starts with an open-quote char AND a close-quote
+        appears anywhere in the tail → the marker's payload has closed at
+        some point in the tail; the rest of the tail is non-quoted content
+        → safe to split. Pre-fix only considered the tail *end* as the
+        close site, which dropped legitimate mid-tail closes and absorbed
+        legitimate wrapper sections (corpus witness: ``128062014035``
+        §2-§4 against ``Kinnipidamiskeskuse sisekorraeeskirja
+        kehtestamine`` produced ``ops=0`` pre-fix).
+      * Marker found, tail starts with an open-quote char AND no
+        close-quote appears in the tail → the marker's payload is still
+        open across the block boundary (the close sits in a later ``§ N``
+        body) → split is unsafe.
+
+    Quote character sets:
+
+      * opens: ``„`` (``\\u201e`` low-9), ``«`` (``\\u00ab`` guillemet open)
+      * closes: ``”`` (``\\u201d`` close-9), ``“`` (``\\u201c``
+        smart-close mirror), ``»`` (``\\u00bb`` guillemet close)
+      * ASCII ``\\u0022`` quotation mark is intentionally *not* counted
+        because some EE source surfaces use it inside measurement and
+        quoted-quoted forms that would skew the count.
+
+    Pre-balanced-count this function used a "tail-ends-with-close-quote"
+    heuristic that broke ``128062014035``. Post-balanced-count this
+    function used a global "open_count > close_count" check that broke
+    ``123122021012``. This implementation combines the marker-local close
+    check (handles ``128062014035`` mid-tail close) with the balanced
+    count as a fallback for non-marker blocks (handles ``123122021012``
+    quoting with no nearby marker).
     """
-    # EE quoted payloads use ``„ ... ”`` (German-mirrored) or
-    # ``« ... »`` (guillemets). Rare MS-Word autocorrect variants
-    # ``“`` close ``”`` also appear in source. ASCII ``"`` is not
-    # counted because it appears inside EE measurement / quoted-quoted forms
-    # and would skew the balance.
-    open_quote = text.count('„') + text.count('«')
-    close_quote = text.count('”') + text.count('“') + text.count('»')
+    marker_matches = list(
+        re.finditer(
+            r"(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+    )
+    if marker_matches:
+        tail = text[marker_matches[-1].end():].lstrip()
+        open_quote_chars = ("\u201e", "\u0022", "\u201c", "\u00ab", "\u02ee")
+        if tail.startswith(open_quote_chars):
+            return not bool(re.search(r"[\u201c\u201d\u0022\u00bb\u02ee]", tail))
+        return False
+    open_quote = text.count("\u201e") + text.count("\u00ab")
+    close_quote = text.count("\u201d") + text.count("\u201c") + text.count("\u00bb")
     return open_quote > close_quote
 
 

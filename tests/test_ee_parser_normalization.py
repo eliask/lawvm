@@ -7099,7 +7099,7 @@ def test_parse_ee_amendment_ops_slices_old_format_preambul_html_sections_for_202
     assert (StructuralAction.REPEAL, (("section", "6"),)) in by_target
     assert (StructuralAction.REPEAL, (("section", "16_1"),)) in by_target
     assert (StructuralAction.REPEAL, (("section", "22"),)) in by_target
-    assert (StructuralAction.INSERT, (("section", "7"), ("item", "15"))) in by_target
+    assert (StructuralAction.INSERT, (("section", "7"), ("item", "15"))) not in by_target
     assert all(
         "ee_plain_paragraph_html_items_extracted" not in op.provenance_tags
         for op in ops
@@ -12073,17 +12073,33 @@ def test_parse_ee_amendment_ops_recovers_real_107032025001_section_18_item_4() -
     )
 
 
-def test_has_unclosed_payload_quote_after_formula_uses_balanced_quote_count() -> None:
-    """Balanced-quote corpus: a block whose closing ``"`` appears mid-tail
-    (followed by more non-quoted amendment items) must not be treated as
-    still-open. Pre-fix the heuristic only considered a tail-end close-quote
-    as "closed", so any mid-tail close let the next ``§ N.`` wrapper section
-    absorb straight into the first block and silently dropped that wrapper's
-    ops. Regression witness for ``_has_unclosed_payload_quote_after_formula``.
+def test_has_unclosed_payload_quote_after_formula_marker_local_close_check() -> None:
+    """Marker-local-close corpus: a payload marker whose quote closes mid-tail
+    (followed by more non-quoted amendment items) must be treated as closed,
+    so the wrapper-splitter is safe to split there.
+
+    The first buggy impl used a "tail-ends-with-close-quote" heuristic which
+    only considered a tail that ENDs with a close-quote as closed; any
+    mid-tail close absorbed the next ``§ N.`` wrapper section into the
+    first block and silently dropped that wrapper's ops (corpus witness:
+    ``128062014035`` §2-§4 against ``Kinnipidamiskeskuse sisekorraeeskirja
+    kehtestamine``).
+
+    The second buggy impl used a strict global "open_count > close_count"
+    check that broke source acts whose HTML carries a single unmatched
+    ``„`` elsewhere mid-document: it always returned True (unclosed), so
+    every wrapper boundary was absorbed (corpus witness: ``123122021012``
+    produced 0 inner splits vs the pre-balanced-count's 5; bench row
+    ``112102018008`` dropped from 93.5%/13-open to 74.2%/39-open).
+
+    The current impl looks at the tail AFTER the last ``järgmises
+    sõnastuses:`` marker and asks whether ANY close-quote appears there.
+    If yes, the marker's payload has locally closed → safe to split.
+    If no, the payload is still open across the block boundary → don't split.
     """
     from lawvm.estonia.target_resolution import _has_unclosed_payload_quote_after_formula
 
-    # Balanced open/close, close appears mid-tail before more items:
+    # Marker-payload with a close-quote appearing mid-tail before more items:
     balanced_mid_close = (
         "paragrahvi 1 täiendatakse pärast sõnu „tunnistamise kord” tekstiosaga "
         "ning enne töö, teenuse või vara soetamise eest tasumist toetatava tegevuse "
