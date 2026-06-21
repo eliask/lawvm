@@ -543,6 +543,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_sanction.py",
         "test_fi_sanction_reference.py",
         "test_fi_segmentation_graph.py",
+        "test_fi_source_unit_stage.py",
         "test_fi_term_use.py",
         "test_fi_treaty_article.py",
         "test_fi_treaty_vague.py",

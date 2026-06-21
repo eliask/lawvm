@@ -33,7 +33,7 @@ from lawvm.core.legal_surface_lints import (
     SurfaceLintPass,
     run_lint_passes,
 )
-from lawvm.finland.legal_surface.bundle import build_surface_bundle
+from lawvm.finland.legal_surface.bundle import build_surface_bundle_staged
 from lawvm.finland.legal_surface.annotation_compare import (
     GrammarAnnotationComparePass,
 )
@@ -226,7 +226,30 @@ def build_legal_surface_graph(
     ``statute_registry`` / ``eu_registry`` to enable reference resolution
     (by-name / EU-nickname placeholders → resolved/ambiguous/statute_only).
     """
-    bundle = build_surface_bundle(xml_bytes, statute_id, surface_time=surface_time)
+    # Token/source-unit waist (StageResult endgame row #2): consume the STAGED
+    # bundle builder and READ its returned coverage account. The segmentation
+    # partition is no longer embedded-but-unread carrier prose — it is a typed
+    # CoverageCertificate this production consumer checks. Fail loud if the body
+    # partition is not total or carries any unowned signal-bearing violation: a
+    # non-partition / violation here means the body was not fully accounted for,
+    # which must never silently flow into the assembled surface graph.
+    surface_stage = build_surface_bundle_staged(
+        xml_bytes, statute_id, surface_time=surface_time
+    )
+    coverage = surface_stage.coverage
+    if not coverage.is_partition():
+        raise ValueError(
+            "FI surface bundle coverage is not a total partition of the body "
+            f"({statute_id}): owned={coverage.owned} residual={coverage.residual} "
+            f"benign={coverage.benign} violation={coverage.violation} "
+            f"total={coverage.total}"
+        )
+    if coverage.violation > 0:
+        raise ValueError(
+            "FI surface bundle coverage carries an unowned violation for "
+            f"{statute_id}: violation={coverage.violation} chars of {coverage.total}"
+        )
+    bundle = surface_stage.value
     context = SurfaceAnalysisContext(
         surface_time=surface_time,
         options={
