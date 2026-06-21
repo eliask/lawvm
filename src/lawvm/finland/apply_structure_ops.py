@@ -29,6 +29,7 @@ from lawvm.finland.ops import (
     ContainerPathResolution,
     ReplayProfile,
     ResolvedOp,
+    ScopeResolutionSource,
     _lo_with_path_update,
     _rebind_resolved_target_address,
     runtime_scope_confidence_for_op,
@@ -2232,7 +2233,10 @@ def _apply_whole_section_op(
             if existing_path is not None:
                 existing_chapter = next((lbl for kind, lbl in existing_path if kind == "chapter"), None)
                 if not existing_chapter:
-                    if _scope_confidence is not None and _scope_confidence.source == "carry_forward":
+                    if (
+                        _scope_confidence is not None
+                        and _scope_confidence.source is ScopeResolutionSource.CARRY_FORWARD
+                    ):
                         logger.debug(
                             "  %s → rejected root move+replace for carry-forward chapter scope",
                             ctx_label,
@@ -3184,7 +3188,7 @@ def _apply_materialization(
         ]
         if len(root_matches) == 1:
             existing_path = root_matches[0]
-            if _scope_confidence is not None and _scope_confidence.source == "carry_forward":
+            if _scope_confidence is not None and _scope_confidence.source is ScopeResolutionSource.CARRY_FORWARD:
                 logger.debug(
                     "  %s → rejected section materialization via root move for carry-forward chapter scope",
                     ctx_label,

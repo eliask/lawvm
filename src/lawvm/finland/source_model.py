@@ -1417,16 +1417,26 @@ class AmendmentSourceModel:
         strict_profile: "StrictProfile | None",
         skipped_targets_out: list["VtsSkippedTarget"] | None = None,
     ) -> list["AmendmentOp"] | None:
-        """Extract cross-statute VTS repeals through the source-model byte adapter."""
-        from lawvm.finland.vts import extract_vts_cross_statute_repeals
+        """Extract cross-statute VTS repeals through the source-model byte adapter.
 
-        return extract_vts_cross_statute_repeals(
+        Conservation (Audit C): this adapter is the in-set production consumer of
+        the :class:`VtsRepealPartition`. It builds the partition, READS its
+        ``skipped_targets`` rejected lane and drains it into ``skipped_targets_out``
+        (the replay ledger sink), and returns the accepted ops — mirroring the
+        ``parent_id``/op-keyword gate the free-function wrappers apply.
+        """
+        from lawvm.finland.vts import extract_voimaantulo_repeals_partition
+
+        if not parent_id:
+            return None
+        partition = extract_voimaantulo_repeals_partition(
             self.source_xml_bytes(),
             parent_id,
-            parent_title,
-            strict_profile,
-            skipped_targets_out=skipped_targets_out,
+            parent_title=parent_title,
         )
+        if skipped_targets_out is not None:
+            skipped_targets_out.extend(partition.skipped_targets)
+        return list(partition.accepted)
 
     def extract_vts_repeals(
         self,
@@ -1438,7 +1448,14 @@ class AmendmentSourceModel:
         strict_profile: "StrictProfile | None",
         skipped_targets_out: list["VtsSkippedTarget"] | None = None,
     ) -> list["AmendmentOp"] | None:
-        """Extract VTS repeals through the source-model byte adapter."""
+        """Extract VTS repeals through the source-model byte adapter.
+
+        The ``extract_vts_repeals`` callable (default
+        ``extract_vts_repeals_fallback``) owns the johto op-keyword gate; it
+        drains the :class:`VtsRepealPartition` rejected lane into
+        ``skipped_targets_out`` internally, so the dropped targets still reach the
+        production replay ledger.
+        """
         return extract_vts_repeals(
             johto,
             self.source_xml_bytes(),

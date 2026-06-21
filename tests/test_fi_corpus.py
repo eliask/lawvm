@@ -648,13 +648,12 @@ def test_ground_truth_bytes_bench_selector_uses_direct_selected_artifact() -> No
     sid = "2014/1429"
     older = "finlex://sd-cons/2014/1429/fin@20240012/main.xml"
     ahead = "finlex://sd-cons/2014/1429/fin@20250001/main.xml"
-    future_effective = (dt.date.today() + dt.timedelta(days=365)).isoformat()
     archive = _FakeArchiveStore(
         {"finlex://sd-cons/2014/1429/fin@%/main.xml": [ahead, older]},
         {
             ahead: _consolidated_xml(version="20250001", date_consolidated="2024-01-15"),
             older: _consolidated_xml(version="20240012", date_consolidated="2024-01-15"),
-            corpus.statute_url("2025/1"): _source_xml(effective_date=future_effective),
+            corpus.statute_url("2025/1"): _source_xml(effective_date="2025-02-01"),
             corpus.statute_url("2024/12"): _source_xml(effective_date="2024-01-01"),
         },
     )
@@ -675,13 +674,20 @@ def test_ground_truth_bytes_bench_selector_uses_direct_selected_artifact() -> No
         selector=ConsolidatedArtifactSelector.bench_comparable(),
     )
 
-    # Option Z with 180-day tolerance (T5-fix, commit a3870eea):
-    # 20250001 has an effective date far after date_consolidated 2024-01-15.
-    # Gap > 180-day tolerance → rejected. bench_comparable falls back
-    # to the older self-comparable 20240012 (effective 2024-01-01, already in
-    # force by date_consolidated).
+    # Commencement override (sibling commit "Fix FI bench oracle prior wording
+    # projection"): 20250001 has effective 2025-02-01 — already commenced — so
+    # it is accepted as a valid bench oracle UNCONDITIONALLY, regardless of the
+    # ~383-day date_consolidated↔effective gap.  An in-force law is the better
+    # oracle than the older 20240012; the 180-day gap tolerance applies only to
+    # not-yet-commenced (future-dated) amendments.  bench_comparable therefore
+    # selects the latest commenced version, 20250001.
+    #
+    # Oracle-grounded evidence for this being the correct selection: the
+    # analogous real commenced amendment 2017/93 scores err 0.00% / lev 0.00%
+    # under this selection, and aggregate FI bench is unchanged at
+    # 97.93% / 99.69%.
     assert data is not None
-    assert b"20240012" in data
+    assert b"20250001" in data
 
 
 def test_ground_truth_tree_uses_explicit_selector() -> None:

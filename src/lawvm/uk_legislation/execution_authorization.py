@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.execution_authorization import ExecutionAuthorization
 
 
@@ -157,9 +157,10 @@ def uk_execution_authorization_from_compile_record(
             quirks_disposition=str(record.get("quirks_disposition") or "record"),
             validator_status=str(record.get("validator_status") or ""),
         )
-    blocking = is_blocking_compile_record(dict(record))
+    compile_record = CompileRecord.from_mapping(record)
+    blocking = is_blocking_compile_record(compile_record)
     strict_disposition = str(
-        record.get("strict_disposition") or ("block" if blocking else "record")
+        compile_record.strict_disposition or ("block" if blocking else "record")
     )
     quirks_disposition = str(record.get("quirks_disposition") or "record")
     if blocking:

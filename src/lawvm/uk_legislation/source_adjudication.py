@@ -26,7 +26,7 @@ import re
 from collections import Counter
 from typing import Any, Iterable, NamedTuple
 
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.replay_adjudication import SourceAdjudication
 from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family_for_effect_type
@@ -2559,7 +2559,7 @@ def _has_repeal_table_feed_source_target_gap(
         rule_id = str(row.get("rule_id") or "")
         if (
             rule_id == "uk_effect_repeal_table_structural_repeal"
-            and not is_blocking_compile_record(row)
+            and not is_blocking_compile_record(CompileRecord.from_mapping(row))
             and str(row.get("extent_cell") or "").strip()
             and str(row.get("row_text") or "").strip()
             and str(row.get("target_ref") or "").strip()
@@ -2572,7 +2572,7 @@ def _has_repeal_table_feed_source_target_gap(
                 "uk_effect_repeal_table_quoted_words_text_repeal_unresolved",
                 "uk_effect_repeal_table_structural_repeal_unresolved",
             }
-            and is_blocking_compile_record(row)
+            and is_blocking_compile_record(CompileRecord.from_mapping(row))
             and str(row.get("reason_code") or "")
             == "no_unique_matching_repeal_table_row"
             and str(row.get("target_ref") or "").strip()
@@ -2590,7 +2590,7 @@ def _has_deictic_amendment_program_inserted_anchor(
         if (
             str(row.get("rule_id") or "")
             == "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected"
-            and is_blocking_compile_record(row)
+            and is_blocking_compile_record(CompileRecord.from_mapping(row))
             and str(row.get("source_inserted_by") or "").strip().lower()
             == "as inserted"
         ):
@@ -2605,7 +2605,7 @@ def _has_effect_metadata_schedule_paragraph_range_to_part_renumber(
         if (
             str(row.get("rule_id") or "")
             != "uk_effect_metadata_unsupported_renumber_rejected"
-            or not is_blocking_compile_record(row)
+            or not is_blocking_compile_record(CompileRecord.from_mapping(row))
             or str(row.get("reason_code") or "")
             != "explicit_effect_metadata_unsupported_renumber_shape"
         ):
@@ -2635,7 +2635,7 @@ def _has_schedule_table_end_rows_missing_table_payload(
     for row in lowering_rows:
         if (
             str(row.get("rule_id") or "") == "uk_effect_schedule_table_end_rows_lowered"
-            and is_blocking_compile_record(row)
+            and is_blocking_compile_record(CompileRecord.from_mapping(row))
             and str(row.get("reason_code") or "")
             == "explicit_schedule_end_insert_without_table_payload"
         ):
@@ -2648,7 +2648,7 @@ def _has_broad_schedule_flat_payload_rejected(
 ) -> bool:
     return any(
         str(row.get("rule_id") or "") == "uk_effect_broad_schedule_flat_payload_rejected"
-        and is_blocking_compile_record(row)
+        and is_blocking_compile_record(CompileRecord.from_mapping(row))
         and str(row.get("reason_code") or "")
         == "broad_schedule_or_part_replace_payload_undercovered"
         for row in lowering_rows
@@ -2661,7 +2661,7 @@ def _has_effect_metadata_unsupported_renumber(
     return any(
         str(row.get("rule_id") or "")
         == "uk_effect_metadata_unsupported_renumber_rejected"
-        and is_blocking_compile_record(row)
+        and is_blocking_compile_record(CompileRecord.from_mapping(row))
         and str(row.get("reason_code") or "")
         == "explicit_effect_metadata_unsupported_renumber_shape"
         for row in lowering_rows
@@ -2674,7 +2674,7 @@ def _has_overlap_substitution_arity_unsupported(
     for row in lowering_rows:
         if (
             str(row.get("rule_id") or "") != "uk_effect_overlap_substitution_unlowered"
-            or not is_blocking_compile_record(row)
+            or not is_blocking_compile_record(CompileRecord.from_mapping(row))
             or str(row.get("reason_code") or "") != "overlap_substitution_arity_unsupported"
         ):
             continue
@@ -2806,7 +2806,7 @@ def classify_uk_manual_compile_frontier(
     blocking_rules = {
         str(rejection.get("rule_id") or "")
         for rejection in lowering_rows
-        if is_blocking_compile_record(rejection)
+        if is_blocking_compile_record(CompileRecord.from_mapping(rejection))
     }
     all_rules = {str(rejection.get("rule_id") or "") for rejection in lowering_rows}
     effect_type_norm = " ".join(str(effect_type or "").lower().split())
