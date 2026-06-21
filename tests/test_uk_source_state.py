@@ -24,18 +24,18 @@ from lawvm.uk_legislation.source_state import (
 
 def test_uk_source_state_classifies_absent_too_small_and_available() -> None:
     absent = classify_uk_source_blob(None)
-    assert absent.status is UKSourceStatus.ABSENT
+    assert absent.source_state_status is UKSourceStatus.ABSENT
     assert absent.size == 0
     assert absent.missing is True
     assert absent.available is False
 
     too_small = classify_uk_source_blob(b"<short/>")
-    assert too_small.status is UKSourceStatus.TOO_SMALL
+    assert too_small.source_state_status is UKSourceStatus.TOO_SMALL
     assert too_small.size == len(b"<short/>")
     assert too_small.missing is True
 
     available = classify_uk_source_blob(b"x" * 100)
-    assert available.status is UKSourceStatus.AVAILABLE
+    assert available.source_state_status is UKSourceStatus.AVAILABLE
     assert available.size == 100
     assert available.available is True
     assert available.missing is False
@@ -72,7 +72,7 @@ def test_uk_statute_xml_content_classifies_multiple_choices_html() -> None:
 
     state = classify_uk_statute_xml_content(blob)
 
-    assert state.status is UKStatuteXmlContentStatus.MULTIPLE_CHOICES
+    assert state.xml_content_status is UKStatuteXmlContentStatus.MULTIPLE_CHOICES
     assert state.usable_as_replay_base is False
     assert state.to_dict()["multiple_choice_candidates"] == [
         {
@@ -97,7 +97,7 @@ def test_uk_statute_xml_content_classifies_multiple_choices_any_variant() -> Non
 
     state = classify_uk_statute_xml_content(blob)
 
-    assert state.status is UKStatuteXmlContentStatus.MULTIPLE_CHOICES
+    assert state.xml_content_status is UKStatuteXmlContentStatus.MULTIPLE_CHOICES
     assert uk_multiple_choice_candidate_data_urls(blob) == (
         "https://www.legislation.gov.uk/ukpga/Geo5/12-13/3/data.xml",
         "https://www.legislation.gov.uk/ukpga/Geo5/12-13/3/enacted/data.xml",
@@ -118,7 +118,7 @@ def test_uk_source_blob_classifies_multiple_choices_after_long_html_head() -> No
         + b"</body></html>"
     )
 
-    assert classify_uk_source_blob(blob).status is UKSourceStatus.MULTIPLE_CHOICES
+    assert classify_uk_source_blob(blob).source_state_status is UKSourceStatus.MULTIPLE_CHOICES
 
 
 def test_uk_multiple_choice_candidate_data_urls_filters_non_candidate_links() -> None:
@@ -148,12 +148,12 @@ def test_uk_statute_xml_content_classifies_metadata_only_enacted_envelope() -> N
 
     state = classify_uk_statute_xml_content(blob)
 
-    assert state.status is UKStatuteXmlContentStatus.METADATA_ONLY
+    assert state.xml_content_status is UKStatuteXmlContentStatus.METADATA_ONLY
     assert state.number_of_provisions == "0"
     assert state.has_body is False
     assert state.has_schedules is False
     assert state.usable_as_replay_base is False
-    assert state.to_dict()["status"] == "metadata_only"
+    assert state.to_dict()["xml_content_status"] == "metadata_only"
 
 
 def test_uk_statute_xml_content_available_when_body_present() -> None:
@@ -165,7 +165,7 @@ def test_uk_statute_xml_content_available_when_body_present() -> None:
 
     state = classify_uk_statute_xml_content(blob)
 
-    assert state.status is UKStatuteXmlContentStatus.AVAILABLE
+    assert state.xml_content_status is UKStatuteXmlContentStatus.AVAILABLE
     assert state.number_of_provisions == "1"
     assert state.has_body is True
     assert state.usable_as_replay_base is True
@@ -181,14 +181,14 @@ def test_uk_statute_xml_content_ignores_comments_when_scanning_shape() -> None:
 
     state = classify_uk_statute_xml_content(blob)
 
-    assert state.status is UKStatuteXmlContentStatus.AVAILABLE
+    assert state.xml_content_status is UKStatuteXmlContentStatus.AVAILABLE
     assert state.has_body is True
 
 
 def test_uk_statute_xml_content_records_parse_error() -> None:
     state = classify_uk_statute_xml_content(b"<Legislation>" + b"x" * 100)
 
-    assert state.status is UKStatuteXmlContentStatus.PARSE_ERROR
+    assert state.xml_content_status is UKStatuteXmlContentStatus.PARSE_ERROR
     assert state.usable_as_replay_base is False
     assert state.parse_error
 

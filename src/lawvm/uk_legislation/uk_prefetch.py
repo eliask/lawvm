@@ -364,7 +364,7 @@ def fetch_missing_for_statute(
                 final_url = str(getattr(resp, "geturl", lambda: enacted_url)())
                 http_status = getattr(resp, "status", None)
             source_state = classify_uk_source_blob(data)
-            if source_state.status is not UKSourceStatus.AVAILABLE:
+            if source_state.source_state_status is not UKSourceStatus.AVAILABLE:
                 return _EnactedSourcePrefetchResult(
                     0,
                     0,
@@ -516,7 +516,7 @@ def fetch_missing_for_statute(
                 final_url = str(getattr(resp, "geturl", lambda url=url: url)())
                 http_status = getattr(resp, "status", None)
             source_state = classify_uk_source_blob(data)
-            if source_state.status is not UKSourceStatus.AVAILABLE:
+            if source_state.source_state_status is not UKSourceStatus.AVAILABLE:
                 print(
                     f"  WARN: suspiciously small response ({source_state.size} bytes): {url}",
                     file=sys.stderr,

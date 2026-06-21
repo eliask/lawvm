@@ -98,19 +98,19 @@ class UKStatuteXmlContentStatus(StrEnum):
 
 @dataclass(frozen=True)
 class UKSourceState:
-    status: UKSourceStatus
+    source_state_status: UKSourceStatus
     size: int
 
     @property
     def available(self) -> bool:
-        return self.status is UKSourceStatus.AVAILABLE
+        return self.source_state_status is UKSourceStatus.AVAILABLE
 
     @property
     def missing(self) -> bool:
         return not self.available
 
     def as_legacy_tuple(self) -> tuple[str, int]:
-        return self.status.value, self.size
+        return self.source_state_status.value, self.size
 
 
 @dataclass(frozen=True)
@@ -124,7 +124,7 @@ class UKMultipleChoiceCandidate:
 
 @dataclass(frozen=True)
 class UKStatuteXmlContentState:
-    status: UKStatuteXmlContentStatus
+    xml_content_status: UKStatuteXmlContentStatus
     size: int
     number_of_provisions: str
     has_body: bool
@@ -134,11 +134,11 @@ class UKStatuteXmlContentState:
 
     @property
     def usable_as_replay_base(self) -> bool:
-        return self.status is UKStatuteXmlContentStatus.AVAILABLE
+        return self.xml_content_status is UKStatuteXmlContentStatus.AVAILABLE
 
     def to_dict(self) -> dict[str, Any]:
         row: dict[str, Any] = {
-            "status": self.status.value,
+            "xml_content_status": self.xml_content_status.value,
             "size": self.size,
             "number_of_provisions": self.number_of_provisions,
             "has_body": self.has_body,
@@ -156,13 +156,13 @@ class UKStatuteXmlContentState:
 
 def classify_uk_source_blob(blob: bytes | None) -> UKSourceState:
     if blob is None:
-        return UKSourceState(status=UKSourceStatus.ABSENT, size=0)
+        return UKSourceState(source_state_status=UKSourceStatus.ABSENT, size=0)
     size = len(blob)
     if _is_uk_multiple_choices_blob(blob):
-        return UKSourceState(status=UKSourceStatus.MULTIPLE_CHOICES, size=size)
+        return UKSourceState(source_state_status=UKSourceStatus.MULTIPLE_CHOICES, size=size)
     if size < MIN_UK_XML_SOURCE_BYTES:
-        return UKSourceState(status=UKSourceStatus.TOO_SMALL, size=size)
-    return UKSourceState(status=UKSourceStatus.AVAILABLE, size=size)
+        return UKSourceState(source_state_status=UKSourceStatus.TOO_SMALL, size=size)
+    return UKSourceState(source_state_status=UKSourceStatus.AVAILABLE, size=size)
 
 
 def uk_source_state_wire_tuple(blob: bytes | None) -> tuple[str, int]:
@@ -182,25 +182,25 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
     empty enacted base is source evidence, not a deterministic replay failure.
     """
     source_state = classify_uk_source_blob(blob)
-    if source_state.status is UKSourceStatus.ABSENT:
+    if source_state.source_state_status is UKSourceStatus.ABSENT:
         return UKStatuteXmlContentState(
-            status=UKStatuteXmlContentStatus.ABSENT,
+            xml_content_status=UKStatuteXmlContentStatus.ABSENT,
             size=source_state.size,
             number_of_provisions="",
             has_body=False,
             has_schedules=False,
         )
-    if source_state.status is UKSourceStatus.TOO_SMALL:
+    if source_state.source_state_status is UKSourceStatus.TOO_SMALL:
         return UKStatuteXmlContentState(
-            status=UKStatuteXmlContentStatus.TOO_SMALL,
+            xml_content_status=UKStatuteXmlContentStatus.TOO_SMALL,
             size=source_state.size,
             number_of_provisions="",
             has_body=False,
             has_schedules=False,
         )
-    if source_state.status is UKSourceStatus.MULTIPLE_CHOICES:
+    if source_state.source_state_status is UKSourceStatus.MULTIPLE_CHOICES:
         return UKStatuteXmlContentState(
-            status=UKStatuteXmlContentStatus.MULTIPLE_CHOICES,
+            xml_content_status=UKStatuteXmlContentStatus.MULTIPLE_CHOICES,
             size=source_state.size,
             number_of_provisions="",
             has_body=False,
@@ -212,7 +212,7 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
         root = ET.fromstring(blob)
     except ET.ParseError as exc:
         return UKStatuteXmlContentState(
-            status=UKStatuteXmlContentStatus.PARSE_ERROR,
+            xml_content_status=UKStatuteXmlContentStatus.PARSE_ERROR,
             size=source_state.size,
             number_of_provisions="",
             has_body=False,
@@ -230,7 +230,7 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
     else:
         status = UKStatuteXmlContentStatus.AVAILABLE
     return UKStatuteXmlContentState(
-        status=status,
+        xml_content_status=status,
         size=source_state.size,
         number_of_provisions=number_of_provisions,
         has_body=has_body,

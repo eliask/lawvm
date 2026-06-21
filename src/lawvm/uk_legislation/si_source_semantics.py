@@ -120,7 +120,7 @@ class UKSISourceSemanticsRecord:
     statute_id: str
     rule_id: str
     source_path: str = ""
-    status: str = "record"
+    source_semantics_status: str = "record"
     text_preview: str = ""
     detail: dict[str, Any] = field(default_factory=dict)
 
@@ -129,7 +129,7 @@ class UKSISourceSemanticsRecord:
             "family": self.family,
             "statute_id": self.statute_id,
             "rule_id": self.rule_id,
-            "status": self.status,
+            "source_semantics_status": self.source_semantics_status,
         }
         if self.source_path:
             row["source_path"] = self.source_path
@@ -170,7 +170,7 @@ def scan_si_source_semantics_bytes(
                 statute_id=statute_id,
                 rule_id="uk_si_source_xml_parse_error",
                 source_path=source_path,
-                status="blocking",
+                source_semantics_status="blocking",
                 detail={"exception_type": type(exc).__name__, "exception_message": str(exc)},
             ),
         )
@@ -274,7 +274,7 @@ def _commencement_record(
         statute_id=statute_id,
         rule_id="uk_si_commencement_surface_recorded",
         source_path=source_path,
-        status=status,
+        source_semantics_status=status,
         text_preview=_preview(" | ".join(text_values)),
         detail={
             "coming_into_force_element_count": len(coming_into_force),
@@ -320,7 +320,7 @@ def _commencement_default_record(
         statute_id=statute_id,
         rule_id="uk_si_commencement_default_surface_recorded",
         source_path=source_path,
-        status=status,
+        source_semantics_status=status,
         detail={
             "made_dates": made_dates,
             "made_date_count": len(made_dates),
@@ -360,7 +360,7 @@ def _vires_record(
         statute_id=statute_id,
         rule_id="uk_si_vires_recital_surface_recorded",
         source_path=source_path,
-        status="matched" if _VIRES_RE.search(text) else "present_unclassified",
+        source_semantics_status="matched" if _VIRES_RE.search(text) else "present_unclassified",
         text_preview=_preview(text),
         detail={
             "citation_count": sum(1 for child in el.iter() if _local_name(child) == "Citation"),
@@ -399,7 +399,7 @@ def _body_clause_records(
                     statute_id=statute_id,
                     rule_id=rule_id,
                     source_path=source_path,
-                    status=status,
+                    source_semantics_status=status,
                     text_preview=_preview(text),
                     detail={
                         "provision_label": label,

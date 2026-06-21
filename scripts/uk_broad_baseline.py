@@ -576,7 +576,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 locator=enacted_locator,
                 source_lane="enacted_xml",
                 data=enacted,
-                source_status=base_source.status.value,
+                source_status=base_source.xml_content_status.value,
             )
         )
         result.update(
@@ -586,13 +586,13 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 locator=current_locator,
                 source_lane="current_xml",
                 data=current,
-                source_status=current_source.status.value,
+                source_status=current_source.xml_content_status.value,
             )
         )
-        if base_source.status.value == "metadata_only":
+        if base_source.xml_content_status.value == "metadata_only":
             source_frontier_reason = (
                 "base_and_oracle_metadata_only"
-                if current_source.status.value == "metadata_only"
+                if current_source.xml_content_status.value == "metadata_only"
                 else "base_metadata_only"
             )
             return {
@@ -600,13 +600,13 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 "score_status": "source_frontier",
                 "source_frontier_reason": source_frontier_reason,
             }
-        if base_source.status.value in {"too_small", "multiple_choices", "parse_error"}:
+        if base_source.xml_content_status.value in {"too_small", "multiple_choices", "parse_error"}:
             return {
                 **result,
                 "score_status": "source_frontier",
-                "source_frontier_reason": f"base_{base_source.status.value}",
+                "source_frontier_reason": f"base_{base_source.xml_content_status.value}",
             }
-        if current_source.status.value in {
+        if current_source.xml_content_status.value in {
             "too_small",
             "multiple_choices",
             "parse_error",
@@ -615,7 +615,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
             return {
                 **result,
                 "score_status": "source_frontier",
-                "source_frontier_reason": f"oracle_{current_source.status.value}",
+                "source_frontier_reason": f"oracle_{current_source.xml_content_status.value}",
             }
 
         oracle_data = extract_eid_map_bytes(current)
@@ -3458,7 +3458,7 @@ def _owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
 
 def _source_state_fields(prefix: str, state: Any) -> dict[str, Any]:
     fields: dict[str, Any] = {
-        f"{prefix}_source_status": state.status.value,
+        f"{prefix}_source_status": state.xml_content_status.value,
         f"{prefix}_source_number_of_provisions": state.number_of_provisions,
         f"{prefix}_source_has_body": state.has_body,
         f"{prefix}_source_has_schedules": state.has_schedules,
@@ -3552,7 +3552,7 @@ def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str
         for loc in archive.locators(f"{_LEG_BASE}/%/enacted/data.xml"):
             sid = loc[len(_LEG_BASE) + 1 : -len(suffix_enacted)]
             if _is_sampleable_uk_statute_id(sid) and (
-                classify_uk_source_blob(archive.get(loc)).status
+                classify_uk_source_blob(archive.get(loc)).source_state_status
                 is UKSourceStatus.AVAILABLE
             ):
                 enacted.add(sid)
@@ -3564,7 +3564,7 @@ def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str
                 _is_sampleable_uk_statute_id(sid)
                 and "/changes/" not in loc
                 and "/affecting/" not in loc
-                and classify_uk_source_blob(archive.get(loc)).status
+                and classify_uk_source_blob(archive.get(loc)).source_state_status
                 is UKSourceStatus.AVAILABLE
             ):
                 current.add(sid)
