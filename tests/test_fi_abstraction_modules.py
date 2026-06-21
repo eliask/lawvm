@@ -92,6 +92,10 @@ def test_process_pipeline_emits_registry_stages_on_corpus_miss() -> None:
         def read_source(self, amendment_id: str) -> None:
             return None
 
+        def read_source_staged(self, amendment_id: str) -> None:
+            # A corpus miss: the staged read preserves the None contract.
+            return None
+
     body = IRNode(kind=IRNodeKind.BODY)
     state = ReplayState(ir=body)
     ctx = SimpleNamespace(

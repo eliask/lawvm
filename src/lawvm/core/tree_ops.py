@@ -42,6 +42,15 @@ from lawvm.core.mutation_boundary import (
 )
 from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.source_witness import DigestWitness, SourceWitness
+from lawvm.core.stage_result import (
+    EMPTY_EVIDENCE,
+    NEUTRAL_AUTHORITY,
+    CoverageCertificate,
+    EvidenceBundle,
+    Residual,
+    StageResult,
+)
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
 if TYPE_CHECKING:
@@ -917,6 +926,139 @@ def insert_sorted_witnessed(
         bound_target_path=created,
         footprint_kind="create",
     )
+
+
+# ---------------------------------------------------------------------------
+# Staged structural ops — the WriteReceipt footprint account, RETURNED.
+# ---------------------------------------------------------------------------
+#
+# The ``_witnessed`` variants already build a WriteReceipt by construction, but
+# that account is only reachable by a caller that opts into a receipt list. The
+# ``_staged`` wrappers below SURFACE the same account as the canonical
+# ``StageResult[IRNode]`` (Pro §2 stage contract) so the structural-mutation
+# surface returns its footprint coverage + mutation-boundary residual type-
+# carried, not as a side channel.
+#
+# Authority firewall (Pro §8): the core tree-op surface carries value + coverage
+# + evidence ONLY. It never defaults ``replay_authorized`` on — the apply/
+# authority waist attaches an ``ExecutionAuthorization`` later. ``authority``
+# here is always the neutral surface.
+
+#: The structural-mutation stage result alias (the carrier these ops return).
+StructuralStageResult: TypeAlias = StageResult[IRNode]
+
+
+def structural_stage_result(tree: IRNode, receipt: WriteReceipt) -> StructuralStageResult:
+    """Project a landed ``WriteReceipt`` into the canonical ``StageResult[IRNode]``.
+
+    The single mapping the staged tree ops and any receipt-building apply
+    consumer share, so the footprint coverage + the mutation-boundary residual
+    are derived identically wherever a structural write lands:
+
+      * ``value``    = ``tree`` (the mutated IRNode).
+      * ``coverage`` = every declared footprint path is ``owned`` (the write
+        claimed it); ``unit="paths"``, ``residual``/``violation`` 0. The point
+        is making the footprint a RETURNED account.
+      * ``residuals`` = if ``receipt.divergence_explained is False`` exactly one
+        blocking ``unowned_violation`` residual (the §4-contract "unexplained
+        divergence becomes a blocking residual", now type-carried instead of
+        strict-mode-only); otherwise empty.
+      * ``evidence`` = a ``SourceWitness`` projecting the receipt's
+        ``source_anchor`` quote-hash into a ``DigestWitness`` when present, else
+        empty footing.
+      * ``findings``  = ``()`` (the FI apply layer owns source-pathology
+        findings; the core op surface emits none).
+      * ``authority`` = neutral (the firewall; authorization is attached later).
+    """
+    footprint = receipt.declared_footprint
+    declared = len(footprint)
+    coverage = CoverageCertificate(
+        unit="paths",
+        total=declared,
+        owned=declared,
+        residual=0,
+        violation=0,
+    )
+
+    residuals: tuple[Residual, ...] = ()
+    if not receipt.divergence_explained:
+        residuals = (
+            Residual(
+                kind="unowned_violation",
+                reason="unexplained_mutation_boundary_divergence",
+                scope=(
+                    receipt_address_string(receipt.bound_target_path)
+                    if receipt.bound_target_path is not None
+                    else ""
+                ),
+                text="",
+                blocking=True,
+            ),
+        )
+
+    evidence = EMPTY_EVIDENCE
+    anchor = receipt.source_anchor
+    if anchor is not None:
+        algorithm, _, digest = anchor.quote_hash.partition(":")
+        evidence = EvidenceBundle(
+            (
+                SourceWitness(
+                    source_role="amendment_source_clause",
+                    artifact_id=anchor.source_artifact_id,
+                    digest=DigestWitness(digest_algorithm=algorithm, digest=digest),
+                ),
+            )
+        )
+
+    return StageResult(
+        value=tree,
+        evidence=evidence,
+        residuals=residuals,
+        findings=(),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def replace_at_staged(
+    tree: IRNode,
+    path: Sequence[PathStep],
+    content: IRNode,
+    *,
+    op_id: str = "",
+    helper: str = "tree_ops.replace_at_staged",
+) -> StructuralStageResult:
+    """``replace_at`` returning the footprint account as ``StageResult[IRNode]``."""
+    outcome = replace_at_witnessed(tree, path, content, op_id=op_id, helper=helper)
+    return structural_stage_result(outcome.tree, outcome.receipt)
+
+
+def remove_at_staged(
+    tree: IRNode,
+    path: Sequence[PathStep],
+    *,
+    op_id: str = "",
+    helper: str = "tree_ops.remove_at_staged",
+) -> StructuralStageResult:
+    """``remove_at`` returning the footprint account as ``StageResult[IRNode]``."""
+    outcome = remove_at_witnessed(tree, path, op_id=op_id, helper=helper)
+    return structural_stage_result(outcome.tree, outcome.receipt)
+
+
+def insert_sorted_staged(
+    tree: IRNode,
+    parent_path: Sequence[PathStep],
+    content: IRNode,
+    sort_key_fn: Callable[[Optional[str]], Tuple[int, str, int]] = _default_sort_key,
+    *,
+    op_id: str = "",
+    helper: str = "tree_ops.insert_sorted_staged",
+) -> StructuralStageResult:
+    """``insert_sorted`` returning the footprint account as ``StageResult[IRNode]``."""
+    outcome = insert_sorted_witnessed(
+        tree, parent_path, content, sort_key_fn, op_id=op_id, helper=helper
+    )
+    return structural_stage_result(outcome.tree, outcome.receipt)
 
 
 def insert_after(

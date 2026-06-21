@@ -3,9 +3,12 @@ import logging
 from contextlib import redirect_stdout
 from io import StringIO
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+
+if TYPE_CHECKING:
+    from lawvm.core.stage_result import StageResult
 from lxml import etree
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
@@ -354,6 +357,18 @@ class _MapCorpus:
 
     def read_source(self, statute_id: str) -> bytes | None:
         return self._mapping.get(statute_id)
+
+    def read_source_staged(self, statute_id: str) -> "StageResult[bytes] | None":
+        from lawvm.corpus_store import _read_with_content_witness
+        from lawvm.core.stage_result import EvidenceBundle, StageResult
+
+        witnessed = _read_with_content_witness(
+            self._mapping.get(statute_id), statute_id, "amendment_source_xml"
+        )
+        if witnessed is None:
+            return None
+        data, witness = witnessed
+        return StageResult(value=data, evidence=EvidenceBundle((witness,)))
 
     def read_locator(self, locator: str) -> bytes | None:
         return self._mapping.get(locator)

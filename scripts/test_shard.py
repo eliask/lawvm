@@ -374,6 +374,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_downgrade_witness_lint.py",
         "test_dual_registration_completeness.py",
         "test_authority_boundary_ratchet.py",
+        "test_source_witness_liveness_ratchet.py",
     ),
     "core_ir_contracts": (
         "test_fi_address_parse.py",
@@ -443,6 +444,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_opaque_marker_boundary.py",
         "test_fi_text_amend.py",
         "test_tree_ops_ambiguity.py",
+        "test_tree_ops_stage.py",
     ),
     "core_compile_projection": (
         "test_fi_effect_lifecycle_projection.py",
@@ -543,6 +545,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_sanction.py",
         "test_fi_sanction_reference.py",
         "test_fi_segmentation_graph.py",
+        "test_fi_source_identity_stage.py",
+        "test_fi_source_unit_stage.py",
         "test_fi_term_use.py",
         "test_fi_treaty_article.py",
         "test_fi_treaty_vague.py",
@@ -617,6 +621,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_consolidated_artifacts.py",
         "test_branch_demo.py",
         "test_certificate_bundle.py",
+        "test_certificate_stage_roots.py",
         "test_fi_export_sql.py",
         "test_fi_export_transition_graph.py",
         "test_graph_export.py",
