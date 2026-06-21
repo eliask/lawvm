@@ -4545,7 +4545,7 @@ def test_strict_fail_reasons_from_finding_ledger_detect_known_recovery() -> None
             source_statute="2001/1529",
         ),
         Finding(
-            kind="ELAB.SEC1_PRE_ROUTING_FALLBACK",
+            kind="FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK",
             role="obligation",
             stage="process_muutoslaki",
             detail={
@@ -4569,7 +4569,7 @@ def test_strict_fail_reasons_from_finding_ledger_detect_known_recovery() -> None
     assert "APPLY.UNCOVERED_BODY_RECOVERY" in reasons
     assert "APPLY.FALLBACK_WHOLE_SECTION_REPLACE" in reasons
     assert "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION" in reasons
-    assert "ELAB.SEC1_PRE_ROUTING_FALLBACK" in reasons
+    assert "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK" in reasons
 
 
 def test_strict_fail_reasons_from_finding_ledger_accept_structured_scope_confidence() -> None:
@@ -4828,7 +4828,7 @@ def test_strict_fail_reasons_from_finding_ledger_respects_profile_gates() -> Non
                 source_statute="2001/1529",
             ),
             Finding(
-                kind="ELAB.SEC1_PRE_ROUTING_FALLBACK",
+                kind="FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK",
                 role="obligation",
                 stage="process_muutoslaki",
                 detail={
@@ -4845,7 +4845,7 @@ def test_strict_fail_reasons_from_finding_ledger_respects_profile_gates() -> Non
     assert "APPLY.UNCOVERED_BODY_RECOVERY" not in new
     assert "APPLY.FALLBACK_WHOLE_SECTION_REPLACE" not in new
     assert "PARSE.TARGET_GUESSING" not in new
-    assert "ELAB.SEC1_PRE_ROUTING_FALLBACK" not in new
+    assert "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK" not in new
     assert "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION" not in new
     assert "APPLY.WORD_SUBSTITUTION" not in new
 

@@ -1254,7 +1254,7 @@ def test_process_muutoslaki_observes_sec1_pre_routing_fallback(monkeypatch) -> N
     )
 
     findings = result.findings()
-    sec1 = [finding for finding in findings if finding.kind == "ELAB.SEC1_PRE_ROUTING_FALLBACK"]
+    sec1 = [finding for finding in findings if finding.kind == "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK"]
     assert len(sec1) == 1
     assert sec1[0].role == "obligation"
     assert sec1[0].blocking is True

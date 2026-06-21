@@ -54,9 +54,9 @@ class ProcessFindingRecorder:
         applied: bool,
     ) -> None:
         kind = (
-            "ELAB.SEC1_PRE_ROUTING_FALLBACK"
+            "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK"
             if stage == "pre_routing"
-            else "ELAB.SEC1_POST_ROUTING_FALLBACK"
+            else "FI.PREAMBLE_BODY_POST_ROUTING_FALLBACK"
         )
         message = (
             "Section 1 body text replaced the parsed johtolause before routing."

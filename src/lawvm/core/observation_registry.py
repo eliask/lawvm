@@ -353,11 +353,11 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "abridged base omits a whole chapter span no amendment body restates; "
                 "its delta-touched provisions diverge from the oracle by construction, not by replay fault",
                 ("negative", "comparative"), role="observation"),
-    FindingSpec("ELAB.SEC1_PRE_ROUTING_FALLBACK", "process_muutoslaki",
+    FindingSpec("FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK", "process_muutoslaki",
                 "recovery", "strict_fail", "grafter",
                 "section 1 body text replaced the parsed preamble (fi: johtolause) before routing",
                 ("parse_witness", "strictness"), role="obligation"),
-    FindingSpec("ELAB.SEC1_POST_ROUTING_FALLBACK", "process_muutoslaki",
+    FindingSpec("FI.PREAMBLE_BODY_POST_ROUTING_FALLBACK", "process_muutoslaki",
                 "recovery", "warn", "grafter",
                 "section 1 body text replaced the parsed preamble (fi: johtolause) after routing",
                 ("parse_witness", "strictness"), role="observation"),
