@@ -73,6 +73,21 @@ def _norm_anchor(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+def _image_block_ir(block: etree._Element, label: str | None) -> IRNode:
+    """Preserve an image block as inert source-surface metadata.
+
+    Source normalization decides whether to strip image blocks from semantic
+    text. Ingest must still carry the source lane far enough for that decision
+    to be witnessed.
+    """
+    attrs = {k.split("}")[-1]: v for k, v in block.attrib.items()}
+    img = next((child for child in block if _tag(child) == "img"), None)
+    if img is not None:
+        for key, value in img.attrib.items():
+            attrs[f"img_{key.split('}')[-1]}"] = value
+    return IRNode(kind=IRNodeKind.BLOCK, label=label, attrs=attrs)
+
+
 def _table_row_cells(tr_el: etree._Element) -> List[str]:
     cells: List[str] = []
     for child in tr_el:
@@ -338,15 +353,13 @@ def fi_xml_to_ir_node(
         # (_dedup_versioned_children in tools/section_keys.py).
         return IRNode(kind=IRNodeKind.OMISSION, label=label, attrs=attrs)
 
-    # Skip image blocks entirely — they appear in consolidated AKN but carry no
-    # legal text content (only img src attributes or optional caption markup).
-    # Finlex oracle consolidation omits them from text extraction.
     if tag == IRNodeKind.BLOCK and attrs.get("name") == "image":
-        return IRNode(kind=IRNodeKind.BLOCK, label=label, attrs=attrs)
+        return _image_block_ir(el, label)
 
     if tag in _TEXT_LEAF_TAGS:
         # Preserve <table> children structurally inside text-leaf elements.
-        # Skip <block name="image"> elements entirely.
+        # Preserve image blocks as inert source-surface children so explicit
+        # source normalization can strip them with an owned witness.
         has_table = any(_tag(child) == "table" for child in el)
         has_image_block = any(
             _tag(child) == "block" and child.get("name") == "image"
@@ -367,9 +380,7 @@ def fi_xml_to_ir_node(
                     # to text_parts to avoid duplication in irnode_to_text().
                     table_children.append(_xml_table_to_ir(child))
                 elif child_kind == IRNodeKind.BLOCK and child_attrs.get("name") == "image":
-                    # Skip image blocks entirely — they contain no legal text.
-                    # (Table pattern already handled above.)
-                    pass
+                    table_children.append(_image_block_ir(child, _node_label(child, child_tag, label_postprocessor)))
                 elif child_kind == IRNodeKind.P and child_attrs.get("class") == "omission":
                     omission_children.append(IRNode(kind=IRNodeKind.OMISSION, attrs=child_attrs))
                 elif child_kind == IRNodeKind.HCONTAINER and child_attrs.get("name") == "omission":

@@ -106,6 +106,33 @@ def test_fi_xml_to_ir_node_preserves_terminal_omission_inside_content_wrapper() 
     assert irnode_to_text(content) == "Raasepori Tammisaari Hanko Kirkkonummi"
 
 
+def test_fi_xml_to_ir_node_preserves_image_block_until_source_normalization() -> None:
+    xml = etree.fromstring(
+        """
+        <content>
+          <p>Merkillä varoitetaan mutkasta.</p>
+          <block name="image">
+            <img alt="" height="88" src="media/0729.gif" width="100"/>
+          </block>
+        </content>
+        """
+    )
+
+    content = fi_xml_to_ir_node(xml)
+
+    image = next(child for child in content.children if child.kind == IRNodeKind.BLOCK)
+    assert image.attrs["name"] == "image"
+    assert image.attrs["img_src"] == "media/0729.gif"
+    assert image.attrs["img_height"] == "88"
+    assert image.attrs["img_width"] == "100"
+
+    normalized, facts = normalize_source_ir(content, "1994/328")
+
+    assert all(child.kind != IRNodeKind.BLOCK for child in normalized.children)
+    assert any(fact.kind_value == "editorial_strip" and "image" in fact.before for fact in facts)
+    assert irnode_to_text(normalized) == "Merkillä varoitetaan mutkasta."
+
+
 def test_fi_xml_to_ir_node_records_inline_text_markup_on_content() -> None:
     xml = etree.fromstring(
         """
