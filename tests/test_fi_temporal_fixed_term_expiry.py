@@ -926,9 +926,9 @@ def test_inclusive_end_convention_fixtures(monkeypatch: pytest.MonkeyPatch) -> N
     dative = _timelines(
         [_voimaantulo_version(effective="2024-01-01", enacted="2023-12-01", text=_OLD_TEXT, source_statute="2099/1")]
     )
-    assert _state(dative, as_of="2025-12-31")["status"] == "selected"
+    assert _state(dative, as_of="2025-12-31")["provision_status"] == "selected"
     expired = _state(dative, as_of="2026-01-01")
-    assert expired["status"] == "expired"
+    assert expired["provision_status"] == "expired"
     assert expired["valid_until"] == "2025-12-31"
     assert expired["expires"] == "2026-01-01"
     # 1b. Duration-computed end: same inclusive convention. Commencement
@@ -947,9 +947,9 @@ def test_inclusive_end_convention_fixtures(monkeypatch: pytest.MonkeyPatch) -> N
             )
         ]
     )
-    assert _state(duration, as_of="1994-12-14")["status"] == "selected"
+    assert _state(duration, as_of="1994-12-14")["provision_status"] == "selected"
     expired_duration = _state(duration, as_of="1994-12-15")
-    assert expired_duration["status"] == "expired"
+    assert expired_duration["provision_status"] == "expired"
     assert expired_duration["valid_until"] == "1994-12-14"
     assert expired_duration["expires"] == "1994-12-15"
 
@@ -966,7 +966,7 @@ def test_seam_duration_expired_carries_arithmetic_provenance(
         [_voimaantulo_version(effective="1992-12-15", enacted="1992-12-04", text=text, source_statute="1992/1239")]
     )
     state = _state(timelines, as_of="1995-01-01", statute_id="1992/1239")
-    assert state["status"] == "expired"
+    assert state["provision_status"] == "expired"
     block = state["expiry"]
     assert block["rule_id"] == "fi_duration_year_month_corresponding_day"
     assert block["bound_kind"] == "duration_from_commencement"
@@ -1092,10 +1092,10 @@ def test_seam_live_on_valid_until_then_expired(monkeypatch: pytest.MonkeyPatch) 
     on_bound = _state(timelines, as_of="2026-12-31")
     after = _state(timelines, as_of="2027-01-01")
 
-    assert on_bound["status"] == "selected"
+    assert on_bound["provision_status"] == "selected"
     assert on_bound["version"]["content_state"] == "live"
 
-    assert after["status"] == "expired"
+    assert after["provision_status"] == "expired"
     assert after["version"] is None
     assert after["expires"] == "2027-01-01"
     assert after["valid_until"] == "2026-12-31"
@@ -1112,14 +1112,14 @@ def test_seam_extension_governs_from_effective(monkeypatch: pytest.MonkeyPatch) 
     # Before the extension takes effect (2025-07-01) the old bound governs; its
     # term (valid_until 2025-12-31) has not been reached, so the law is live.
     pre = _state(timelines, as_of="2025-06-30")
-    assert pre["status"] == "selected"
+    assert pre["provision_status"] == "selected"
     # The extension was enacted before the old term lapsed (normal Finnish
     # practice), so the law stays continuously live into 2026 under the new bound.
     post = _state(timelines, as_of="2026-06-01")
-    assert post["status"] == "selected"
+    assert post["provision_status"] == "selected"
     # Only past the EXTENDED term does it expire.
     after = _state(timelines, as_of="2027-01-01")
-    assert after["status"] == "expired"
+    assert after["provision_status"] == "expired"
     assert after["valid_until"] == "2026-12-31"
 
 
@@ -1140,10 +1140,10 @@ def test_seam_late_extension_gap_revival(monkeypatch: pytest.MonkeyPatch) -> Non
     revived = _state(timelines, as_of="2026-02-01")
     after = _state(timelines, as_of="2027-01-01")
 
-    assert gap["status"] == "expired"  # old bound lapsed 2025-12-31
-    assert revived["status"] == "selected"
+    assert gap["provision_status"] == "expired"  # old bound lapsed 2025-12-31
+    assert revived["provision_status"] == "selected"
     assert revived["version"]["content_state"] == "live"
-    assert after["status"] == "expired"
+    assert after["provision_status"] == "expired"
 
 
 def test_seam_unparseable_governing_bound_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1153,7 +1153,7 @@ def test_seam_unparseable_governing_bound_blocks(monkeypatch: pytest.MonkeyPatch
         [_voimaantulo_version(effective="2024-01-01", enacted="2023-12-01", text=text, source_statute="2099/1")]
     )
     state = _state(timelines, as_of="2024-06-01")
-    assert state["status"] == "expiry_unverified"
+    assert state["provision_status"] == "expiry_unverified"
     assert state["version"] is None
     assert state["expiry"]["diagnostic"] == DURATION_COMMENCEMENT_UNRESOLVED
     assert state["expiry"]["blocking"] is True
@@ -1187,7 +1187,7 @@ def test_seam_ambiguous_governing_bound_blocks(monkeypatch: pytest.MonkeyPatch) 
         as_of="2026-06-01",
         query_type="in_force",
     )
-    assert state["status"] == "expiry_unverified"
+    assert state["provision_status"] == "expiry_unverified"
     assert state["expiry"]["diagnostic"] == FIXED_TERM_EXPIRY_AMBIGUOUS
 
 
@@ -1210,7 +1210,7 @@ def test_seam_repeal_before_expiry_wins(monkeypatch: pytest.MonkeyPatch) -> None
         ]
     )
     state = _state(timelines, as_of="2027-01-01")
-    assert state["status"] != "expired"
+    assert state["provision_status"] != "expired"
     assert "expiry" not in state
 
 
@@ -1242,12 +1242,12 @@ def test_temporary_overlay_min_with_statute_bound(monkeypatch: pytest.MonkeyPatc
     }
     # Provision expired by its own bound: no live version -> absent, not expired.
     after_temp = _state(timelines, as_of="2025-11-01", provision="section:5")
-    assert after_temp["status"] == "absent"
+    assert after_temp["provision_status"] == "absent"
     assert "expiry" not in after_temp
     # The same temporary provision past the STATUTE bound: still no live version,
     # and the statute is expired; ordinary absence still wins for this address.
     after_statute = _state(timelines, as_of="2027-01-01", provision="section:5")
-    assert after_statute["status"] == "absent"
+    assert after_statute["provision_status"] == "absent"
 
 
 def test_temporary_overlay_outliving_statute_yields_statute_expiry(
@@ -1274,9 +1274,9 @@ def test_temporary_overlay_outliving_statute_yields_statute_expiry(
         _VOIMAANTULO: ProvisionTimeline(address=_VOIMAANTULO, versions=[voimaantulo]),
     }
     live = _state(timelines, as_of="2026-06-01", provision="section:5")
-    assert live["status"] == "selected"
+    assert live["provision_status"] == "selected"
     expired = _state(timelines, as_of="2027-01-01", provision="section:5")
-    assert expired["status"] == "expired"
+    assert expired["provision_status"] == "expired"
     assert expired["valid_until"] == "2026-12-31"
 
 
@@ -1288,7 +1288,7 @@ def test_flag_off_is_noop_identical_hash(monkeypatch: pytest.MonkeyPatch) -> Non
     # With the flag off, a past-term query must be byte-identical to the
     # unmodified default path (no expired status, no expiry block).
     after = _state(timelines, as_of="2027-01-01")
-    assert after["status"] == "selected"
+    assert after["provision_status"] == "selected"
     assert "expiry" not in after
     assert after["version"]["content_state"] == "live"
 
@@ -1304,7 +1304,7 @@ def test_flag_off_is_noop_identical_hash(monkeypatch: pytest.MonkeyPatch) -> Non
         ]
     )
     plain_state = _state(plain, as_of="2027-01-01")
-    assert plain_state["status"] == "selected"
+    assert plain_state["provision_status"] == "selected"
     assert plain_state["hashes"]["derived_state_hash"]
 
 
@@ -1325,7 +1325,7 @@ def test_non_fixed_term_noop_identical_hash_flag_on_and_off(monkeypatch: pytest.
     on = _state(plain, as_of="2027-01-01")
     # No fixed-term clause -> overlay never fires -> hashes identical with flag on/off.
     assert off["hashes"]["derived_state_hash"] == on["hashes"]["derived_state_hash"]
-    assert off["status"] == on["status"] == "selected"
+    assert off["provision_status"] == on["provision_status"] == "selected"
 
 
 # ---------------------------------------------------------------------------
@@ -1353,7 +1353,7 @@ def _corpus_state(as_of: str, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
 @_corpus_skip
 def test_corpus_482_2024_live_mid_term(monkeypatch: pytest.MonkeyPatch) -> None:
     state = _corpus_state("2026-06-01", monkeypatch)
-    assert state["status"] == "selected"
+    assert state["provision_status"] == "selected"
     assert state["version"]["content_state"] == "live"
     assert "31 päivään joulukuuta 2026" in state["text"]["rendered"]
 
@@ -1361,14 +1361,14 @@ def test_corpus_482_2024_live_mid_term(monkeypatch: pytest.MonkeyPatch) -> None:
 @_corpus_skip
 def test_corpus_482_2024_live_on_valid_until(monkeypatch: pytest.MonkeyPatch) -> None:
     state = _corpus_state("2026-12-31", monkeypatch)
-    assert state["status"] == "selected"
+    assert state["provision_status"] == "selected"
     assert state["version"]["content_state"] == "live"
 
 
 @_corpus_skip
 def test_corpus_482_2024_expired_after_term(monkeypatch: pytest.MonkeyPatch) -> None:
     state = _corpus_state("2027-01-01", monkeypatch)
-    assert state["status"] == "expired"
+    assert state["provision_status"] == "expired"
     assert state["version"] is None
     assert state["expires"] == "2027-01-01"
     assert state["valid_until"] == "2026-12-31"

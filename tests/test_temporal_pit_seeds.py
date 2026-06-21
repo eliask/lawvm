@@ -85,7 +85,7 @@ def test_case1_extension_act_2025_368_is_visible() -> None:
     """
     state = _state("2024/482", "section:7", "2026-06-01")
 
-    assert state["status"] == "selected"
+    assert state["provision_status"] == "selected"
     version = state["version"]
     # Extension act 2025/368 took effect 2025-07-01.
     assert version["effective"] == "2025-07-01"
@@ -118,11 +118,11 @@ def test_case1_whole_law_expiry_after_term_is_modeled(
     after = _state("2024/482", "section:7", "2027-01-01")
 
     # In force before the term ends.
-    assert before["status"] == "selected"
+    assert before["provision_status"] == "selected"
     assert before["version"]["content_state"] == "live"
 
     # Expired strictly after the inclusive validity end.
-    assert after["status"] == "expired"
+    assert after["provision_status"] == "expired"
     assert after["version"] is None
     assert after["valid_until"] == "2026-12-31"
     assert after["expires"] == "2027-01-01"
@@ -147,8 +147,8 @@ def test_case2_section141_boundary_2024_06_01() -> None:
     before = _state(_HANKINTALAKI, _SEC_141, "2024-05-31")
     on = _state(_HANKINTALAKI, _SEC_141, "2024-06-01")
 
-    assert before["status"] == "selected"
-    assert on["status"] == "selected"
+    assert before["provision_status"] == "selected"
+    assert on["provision_status"] == "selected"
 
     # Pre-boundary: original/background version, served from the base statute.
     assert before["version"]["effective"] == "0000-00-00"
@@ -180,8 +180,8 @@ def test_case2_section163_boundary_2021_07_01() -> None:
     before = _state(_HANKINTALAKI, _SEC_163, "2021-06-30")
     on = _state(_HANKINTALAKI, _SEC_163, "2021-07-01")
 
-    assert before["status"] == "selected"
-    assert on["status"] == "selected"
+    assert before["provision_status"] == "selected"
+    assert on["provision_status"] == "selected"
 
     # Pre-boundary: version effective 2020-01-01 from amendment 2019/844.
     assert before["version"]["effective"] == "2020-01-01"
@@ -242,8 +242,8 @@ def test_case3_2022_876_subsection_commencement_boundary(
     before = _state(_VANHUSPALVELULAKI, provision, "2027-12-31")
     on = _state(_VANHUSPALVELULAKI, provision, "2028-01-01")
 
-    assert before["status"] == "selected"
-    assert on["status"] == "selected"
+    assert before["provision_status"] == "selected"
+    assert on["provision_status"] == "selected"
 
     assert before["version"]["effective"] < "2028-01-01"
     assert before_source in before["source_locator"]["document_uri"]

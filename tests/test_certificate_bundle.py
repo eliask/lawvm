@@ -94,7 +94,7 @@ def test_duplicate_leaves_forbidden() -> None:
 def _seam_payloadish(engine: JsonObj) -> JsonObj:
     return {
         "schema": "lawvm.provision_state.v1",
-        "status": "selected",
+        "provision_status": "selected",
         "statute_id": "482/2024",
         "hashes": {"derived_state_hash": "abc", "content_hash": "def"},
         "engine": engine,
@@ -117,7 +117,7 @@ def test_projection_hash_invariant_to_engine_provenance() -> None:
 
 def test_projection_hash_sensitive_to_semantic_members() -> None:
     payload = _seam_payloadish({"git_commit": "a" * 40})
-    changed = dict(payload, status="expired")
+    changed = dict(payload, provision_status="expired")
     assert projection_payload_hash(payload, SEAM_HASH_EXCLUDED_MEMBERS) != projection_payload_hash(
         changed, SEAM_HASH_EXCLUDED_MEMBERS
     )
@@ -498,7 +498,7 @@ def test_482_certificate_status_computed_and_blocked(bundle_482: Path) -> None:
         for line in (bundle_482 / "projections/seam_rows.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    expired_rows = [w for w in wrappers if w["projection_payload"]["status"] == "expired"]
+    expired_rows = [w for w in wrappers if w["projection_payload"]["provision_status"] == "expired"]
     assert expired_rows
     assert all(w["certification_status"] == "confirmed" for w in expired_rows)
     assert all(w["projection_payload"]["version"] is None for w in expired_rows)

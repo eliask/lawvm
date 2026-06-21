@@ -78,7 +78,7 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
 
     assert payload["schema"] == "lawvm.provision_state.v1"
     assert payload["spec_version"] == "0.3"
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["resolved_address"]["text"] == "chapter:1/section:1"
     assert payload["address_match"]["mode"] == "unique_suffix"
     assert payload["text"]["rendered"] == "A provision duty."
@@ -209,7 +209,7 @@ def test_provision_state_masks_descendant_under_selected_chapter_tombstone() -> 
         query_type="in_force",
     )
 
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["resolved_address"]["text"] == "chapter:8a/section:68a"
     assert payload["version"]["content_state"] == "tombstone"
     assert payload["source"]["statute_id"] == "2024/1"
@@ -1018,7 +1018,7 @@ def test_public_resolve_provision_state_reports_unsupported_jurisdiction_without
 
     assert payload["schema"] == "lawvm.provision_state.v1"
     assert payload["spec_version"] == "0.3"
-    assert payload["status"] == "unsupported_jurisdiction"
+    assert payload["provision_status"] == "unsupported_jurisdiction"
     assert payload["supported_jurisdictions"] == ["fi"]
 
 
@@ -1031,7 +1031,7 @@ def test_build_provision_state_response_rejects_invalid_as_of() -> None:
         as_of="not-a-date",
     )
 
-    assert payload["status"] == "invalid_query"
+    assert payload["provision_status"] == "invalid_query"
     assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_AS_OF_INVALID"
     assert payload["diagnostic"]["field"] == "as_of"
     assert payload["source_locator_status"] == "unavailable_invalid_query"
@@ -1049,7 +1049,7 @@ def test_build_provision_state_response_rejects_whitespace_wrapped_as_of() -> No
         as_of=" 2021-01-01 ",
     )
 
-    assert payload["status"] == "invalid_query"
+    assert payload["provision_status"] == "invalid_query"
     assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_AS_OF_INVALID"
     assert payload["diagnostic"]["message"] == (
         "as_of must be exactly an ISO date in YYYY-MM-DD form"
@@ -1066,7 +1066,7 @@ def test_public_resolve_provision_state_rejects_invalid_as_of_before_replay() ->
         as_of="2026-99-99",
     )
 
-    assert payload["status"] == "invalid_query"
+    assert payload["provision_status"] == "invalid_query"
     assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_AS_OF_INVALID"
     assert payload["diagnostic"]["message"] == (
         "as_of must be a real calendar date in YYYY-MM-DD form"
@@ -1083,7 +1083,7 @@ def test_public_resolve_provision_state_rejects_finnish_prose_selector_before_re
         as_of="2024-06-01",
     )
 
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["spec_version"] == "0.3"
     assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_UNSUPPORTED_PROSE_NOTATION"
     assert payload["diagnostic"]["suggestions"] == ["section:127a"]
@@ -1099,7 +1099,7 @@ def test_public_resolve_provision_state_rejects_finnish_hybrid_selector_before_r
         as_of="2024-06-01",
     )
 
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_MALFORMED_HYBRID"
     assert payload["diagnostic"]["suggestions"] == ["section:127a"]
 
@@ -1112,7 +1112,7 @@ def test_public_resolve_provision_state_rejects_finnish_suffix_as_subsection() -
         as_of="2024-06-01",
     )
 
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_SUFFIX_AS_SUBSECTION"
     assert payload["diagnostic"]["suggestions"] == ["section:127a"]
 
@@ -1126,7 +1126,7 @@ def test_public_resolve_provision_state_rejects_spaced_finnish_section_label() -
         query_type="in_force",
     )
 
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == (
         "FI_PROVISION_SELECTOR_NON_CANONICAL_SECTION_LABEL"
     )
@@ -1144,7 +1144,7 @@ def test_build_provision_state_response_rejects_spaced_section_label_in_path() -
         query_type="in_force",
     )
 
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == (
         "FI_PROVISION_SELECTOR_NON_CANONICAL_SECTION_LABEL"
     )
@@ -1160,7 +1160,7 @@ def test_build_provision_state_response_rejects_noncanonical_selector_whitespace
         as_of="2021-01-01",
     )
 
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == (
         "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE"
     )
@@ -1178,7 +1178,7 @@ def test_public_resolve_provision_state_rejects_leading_trailing_selector_whites
         query_type="in_force",
     )
 
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == (
         "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE"
     )
@@ -1195,7 +1195,7 @@ def test_public_resolve_provision_state_rejects_noncanonical_selector_before_rep
         as_of="2026-06-02",
     )
 
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == (
         "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE"
     )
@@ -1222,7 +1222,7 @@ def test_provision_state_cli_invalid_selector_prints_diagnostic_and_exits_2(caps
     assert "ERROR: invalid --provision 'section:127 a §'" in captured.err
     assert "help: try 'section:127a'" in captured.err
     payload = json.loads(captured.out)
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_MALFORMED_HYBRID"
 
 
@@ -1245,7 +1245,7 @@ def test_provision_state_cli_noncanonical_selector_prints_suggestion_and_exits_2
     assert "ERROR: invalid --provision 'section: 9'" in captured.err
     assert "help: try 'section:9'" in captured.err
     payload = json.loads(captured.out)
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == (
         "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE"
     )
@@ -1270,7 +1270,7 @@ def test_provision_state_cli_spaced_section_label_exits_2(capsys) -> None:
     assert "ERROR: invalid --provision 'section:2 d'" in captured.err
     assert "help: try 'section:2d'" in captured.err
     payload = json.loads(captured.out)
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == (
         "FI_PROVISION_SELECTOR_NON_CANONICAL_SECTION_LABEL"
     )
@@ -1294,7 +1294,7 @@ def test_provision_state_cli_invalid_as_of_prints_diagnostic_and_exits_2(capsys)
     assert raised.value.code == 2
     assert "ERROR: invalid --as-of: as_of must be exactly an ISO date" in captured.err
     payload = json.loads(captured.out)
-    assert payload["status"] == "invalid_query"
+    assert payload["provision_status"] == "invalid_query"
     assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_AS_OF_INVALID"
 
 
@@ -1333,7 +1333,7 @@ def test_provision_state_cli_address_not_found_prints_nearby_help(
     captured = capsys.readouterr()
     assert "nearest materialized addresses include: chapter:6/section:127 a" in captured.err
     emitted = json.loads(captured.out)
-    assert emitted["status"] == "address_not_found"
+    assert emitted["provision_status"] == "address_not_found"
 
 
 def test_provision_state_path_parser_rejects_malformed_segments() -> None:
@@ -1345,7 +1345,7 @@ def test_provision_state_path_parser_rejects_malformed_segments() -> None:
         as_of="2021-01-01",
     )
 
-    assert payload["status"] == "invalid_address"
+    assert payload["provision_status"] == "invalid_address"
     assert payload["resolved_address"] is None
     assert payload["address_candidates"] == []
 
@@ -1362,7 +1362,7 @@ def test_provision_state_absent_finnish_section_suggests_real_nearby_address_onl
         as_of="2024-06-01",
     )
 
-    assert payload["status"] == "address_not_found"
+    assert payload["provision_status"] == "address_not_found"
     assert payload["resolved_address"] is None
     assert payload["address_candidates"] == []
     assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_ADDRESS_NOT_FOUND"
@@ -1408,7 +1408,7 @@ def test_provision_state_absent_numeric_section_suggests_close_real_sections() -
         as_of="2021-01-01",
     )
 
-    assert payload["status"] == "address_not_found"
+    assert payload["provision_status"] == "address_not_found"
     assert [
         candidate["text"]
         for candidate in payload["diagnostic"]["nearby_address_candidates"]
@@ -1613,7 +1613,7 @@ def test_selected_response_exposes_recovery_diagnostics_without_hash_change() ->
         findings=(finding, finding),
     )
 
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["text"]["available"] is True
     assert payload["diagnostics"] == [
         {
@@ -1701,7 +1701,7 @@ def test_statute_scoped_break_blocks_post_break_query() -> None:
         as_of="2021-01-01",
         timeline_breaks=(_statute_break("2020-06-01"),),
     )
-    assert payload["status"] == "timeline_unverified"
+    assert payload["provision_status"] == "timeline_unverified"
     assert payload["timeline_broken_at"] == {
         "amendment_id": "2019/500",
         "diagnostic_code": "APPLY.OCCUPANCY_POLICY_VIOLATION",
@@ -1731,7 +1731,7 @@ def test_statute_scoped_break_after_as_of_serves_with_warning_marker() -> None:
         timeline_breaks=(_statute_break("2022-01-01"),),
     )
     # The pre-break timeline is proven: serve the answer, keep the marker visible.
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["text"]["available"] is True
     assert payload["timeline_broken_at"]["amendment_id"] == "2019/500"
     assert payload["timeline_integrity"]["blocking"] is False
@@ -1755,7 +1755,7 @@ def test_undated_break_is_conservatively_blocking() -> None:
         as_of="2021-01-01",
         timeline_breaks=(_statute_break(""),),
     )
-    assert payload["status"] == "timeline_unverified"
+    assert payload["provision_status"] == "timeline_unverified"
     assert payload["timeline_integrity"]["blocking"] is True
 
 
@@ -1777,7 +1777,7 @@ def test_address_scoped_break_only_affects_matching_target() -> None:
         as_of="2021-01-01",
         timeline_breaks=(failed_op_break,),
     )
-    assert matching["status"] == "timeline_unverified"
+    assert matching["provision_status"] == "timeline_unverified"
     assert matching["timeline_broken_at"]["amendment_id"] == "2022/378"
 
     other_target = TimelineBreak(
@@ -1819,7 +1819,7 @@ def test_blocking_break_overrides_unresolved_address_status() -> None:
     )
     # "address_not_found" would read as a legal fact ("no such provision"), but
     # the breaking amendment could have created the address: block instead.
-    assert payload["status"] == "timeline_unverified"
+    assert payload["provision_status"] == "timeline_unverified"
     assert payload["timeline_integrity"]["resolution_status"] == "address_not_found"
     assert payload["timeline_broken_at"]["amendment_id"] == "2019/500"
 
@@ -1834,7 +1834,7 @@ def test_timeline_integrity_flag_off_restores_prior_behavior(monkeypatch) -> Non
         as_of="2021-01-01",
         timeline_breaks=(_statute_break("2020-06-01"),),
     )
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert "timeline_broken_at" not in payload
 
 
@@ -1910,7 +1910,7 @@ def test_provision_state_materializes_later_child_overlay_under_temporary_parent
     )
 
     rendered = payload["text"]["rendered"]
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert "temporary child 1" in rendered
     assert "older child 1" not in rendered
     assert "temporary child 2" not in rendered
@@ -1962,7 +1962,7 @@ def test_specimen_1992_1535_section_125_prefers_live_qualified_section(
         query_type="in_force",
     )
 
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["resolved_address"]["text"] == "part:6/chapter:1/section:125"
     # The bare ``section:125`` query now resolves cleanly by unique suffix to
     # the live part-qualified section.  Earlier, an injected pure-kumotaan
@@ -1992,7 +1992,7 @@ def test_specimen_1997_1412_section_11_drops_expired_temporary_items(
     )
 
     rendered = payload["text"]["rendered"]
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert "väliaikaisesta epidemiakorvauksesta" not in rendered
     assert "lapsilisälain (796/1992) 7 §:n 5 momentissa" not in rendered
 
@@ -2009,7 +2009,7 @@ def test_specimen_2009_273_section_10_drops_carried_old_subsection_text(
     )
 
     rendered = payload["text"]["rendered"]
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert "15 a §:ssä tarkoitettu seuraamuslautakunta" in rendered
     assert "15 §:ssä tarkoitettu uhkasakkolautakunta" not in rendered
     assert "hallintolainkäyttölaissa (586/1996)" not in rendered
@@ -2025,7 +2025,7 @@ def test_specimen_2016_258_section_7_exposes_child_overlay_in_parent_text(
         as_of="2021-12-31",
     )
 
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     rendered = payload["text"]["rendered"]
     assert "0,70 euroa sivulta" in rendered
     assert "1,40 euroa sivulta" in rendered
@@ -2045,7 +2045,7 @@ def test_specimen_2023_703_section_9_exposes_operation_source_witness(
         as_of="2026-06-02",
     )
 
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["source"]["statute_id"] == "2026/376"
     locator = payload["source_locator"]
     assert locator["detail"]["source_witness_status"] == (
@@ -2071,7 +2071,7 @@ def test_specimen_1972_66_injected_repeal_exposes_operation_source_witness(
         query_type="in_force",
     )
 
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["version"]["content_state"] == "tombstone"
     assert payload["source"]["statute_id"] == "1982/684"
     assert payload["source"]["title"] == "Laki kansanterveyslain muuttamisesta"
@@ -2098,7 +2098,7 @@ def test_specimen_1996_1128_subsection_repeal_placeholder_is_tombstone_with_witn
         query_type="in_force",
     )
 
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["version"]["content_state"] == "tombstone"
     assert payload["text"]["available"] is False
     assert payload["hashes"]["content_hash"] == ""
@@ -2127,7 +2127,7 @@ def test_specimen_1972_66_snapshot_repeal_placeholder_exposes_source_witness(
         query_type="in_force",
     )
 
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["version"]["content_state"] == "tombstone"
     assert payload["text"]["available"] is False
     assert payload["source"]["statute_id"] == "2010/1327"
@@ -2150,7 +2150,7 @@ def test_specimen_2023_71_chapter_insert_recovery_warning_is_visible(
         as_of="2026-07-01",
     )
 
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert payload["source"]["statute_id"] == "2025/1373"
     diagnostics = payload.get("diagnostics")
     assert isinstance(diagnostics, list)
@@ -2203,7 +2203,7 @@ def test_specimen_2014_1429_broken_timeline_is_surfaced_not_clean() -> None:
     if governing_statute_breaks:
         # Broken timeline: the answer must be typed-unprovable, never a clean
         # legal fact. (Live as of 2026-06-11: break at 2025/1382.)
-        assert payload["status"] == "timeline_unverified"
+        assert payload["provision_status"] == "timeline_unverified"
         assert payload["timeline_broken_at"]["amendment_id"] == (
             governing_statute_breaks[0].amendment_id
         )
@@ -2211,7 +2211,7 @@ def test_specimen_2014_1429_broken_timeline_is_surfaced_not_clean() -> None:
         assert payload["version"] is None
     else:
         # Replay break fixed upstream: the seam must serve cleanly again.
-        assert payload["status"] in ("selected", "absent")
+        assert payload["provision_status"] in ("selected", "absent")
         assert "timeline_broken_at" not in payload or (
             payload["timeline_integrity"]["blocking"] is False
         )
@@ -2259,7 +2259,7 @@ def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> 
         query_type="in_force",
     )
 
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert "timeline_integrity" not in payload
     assert payload["source"]["statute_id"] == "2024/910"
     assert "vuokraindeksi" not in payload["text"]["rendered"]
@@ -2398,7 +2398,7 @@ def test_specimen_1997_1412_section_11_drops_expired_temporary_render_tails(
     )
 
     rendered = payload["text"]["rendered"]
-    assert payload["status"] == "selected"
+    assert payload["provision_status"] == "selected"
     assert "20:tä prosenttia" not in rendered
     assert "lapsilisälain" not in rendered
     assert "epidemiakorvauksesta" not in rendered
@@ -2452,5 +2452,5 @@ def test_specimen_2002_1290_repealed_section_insert_occupancy_is_governed_by_sna
         query_type="in_force",
     )
 
-    assert payload["status"] in ("selected", "absent")
+    assert payload["provision_status"] in ("selected", "absent")
     assert "timeline_integrity" not in payload

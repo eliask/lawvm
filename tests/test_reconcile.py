@@ -81,7 +81,7 @@ class TestReconcileClassification:
         def fake_resolve(**kwargs):
             return {
                 "statute_id": kwargs["statute_id"],
-                "status": "selected" if available else "absent",
+                "provision_status": "selected" if available else "absent",
                 "query": {"provision": kwargs["provision"], "as_of": kwargs["as_of"],
                           "query_type": kwargs["query_type"]},
                 "version": {"effective": effective, "content_state": "live"},
@@ -195,7 +195,7 @@ class TestSubprovisionScope:
         def fake_resolve(**kwargs):
             captured.update(kwargs)
             return {
-                "statute_id": kwargs["statute_id"], "status": "selected",
+                "statute_id": kwargs["statute_id"], "provision_status": "selected",
                 "query": {"provision": kwargs["provision"], "as_of": kwargs["as_of"],
                           "query_type": kwargs["query_type"]},
                 "version": {"effective": "2026-04-14", "content_state": "live"},
