@@ -2169,6 +2169,7 @@ def _lower_instruction(
     inherited_address: LegalAddress | None = None,
     inherited_via_classification: bool = False,
     plaw_title_scope: str = "",
+    proof_title: str = "11",
 ) -> USAmendmentInstruction:
     effective = _parse_effective_date(effective_text or raw_text, enacted)
     expires = _parse_sunset_expiry(expires_text or raw_text, enacted)
@@ -2228,9 +2229,13 @@ def _lower_instruction(
             raw_text=raw_text,
         )
 
-    # Off-Title-11 targets are resolvable but out of this surface's scope; record
-    # them as needs_review rather than emit a candidate into the wrong corpus.
-    if address.path and address.path[0] == ("title", "11"):
+    # Off-proof-title targets are resolvable but out of this surface's scope; record
+    # them as needs_review rather than emit a candidate into the wrong corpus. The
+    # proof title is threaded by the caller (default "11" preserves the original
+    # Title-11-only surface; non-Title-11 benchmarks like the Title 42 ACA window
+    # pass their actual proof title so on-title ops are not mis-flagged as
+    # out-of-scope and produce misleading finding noise).
+    if address.path and address.path[0] == ("title", proof_title):
         on_title_11 = True
     else:
         on_title_11 = False
@@ -3387,7 +3392,9 @@ def _iter_instruction_units(
     )
 
 
-def lower_plaw_amendatory(data: bytes, *, statute_id: str = "", enacted: str = "") -> USAmendatoryReport:
+def lower_plaw_amendatory(
+    data: bytes, *, statute_id: str = "", enacted: str = "", proof_title: str = "11"
+) -> USAmendatoryReport:
     """Lower one Public Law's USLM amendatory text into candidate operations."""
     root = ET.fromstring(data)
     congress = (root.findtext(".//u:meta/u:congress", namespaces=_NS) or "").strip()
@@ -3527,6 +3534,7 @@ def lower_plaw_amendatory(data: bytes, *, statute_id: str = "", enacted: str = "
             inherited_address=inherited_address,
             inherited_via_classification=inherited_via_classification,
             plaw_title_scope=plaw_title_scope,
+            proof_title=proof_title,
         )
         instructions.append(instr)
         if instr.finding is not None:

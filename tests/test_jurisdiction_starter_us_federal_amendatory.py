@@ -545,6 +545,45 @@ def test_plaw_117_177_strike_insert_off_title_11_is_needs_review_with_finding():
     assert instr.finding.rule_id == NON_TITLE_TARGET_RULE_ID
 
 
+def test_proof_title_parameter_accepts_on_title_op_without_off_title_finding():
+    # §1.1 audit: lower_plaw_amendatory previously hardcoded Title 11 in the
+    # on-title-scope check, marking any op whose resolved address targeted a
+    # different title as needs_review with NON_TITLE_TARGET_RULE_ID. With the
+    # non-positive-law Title 42 ACA bench corpus that produced 1,258 spurious
+    # finding-noise rows for ops that DO target the proof title.
+    #
+    # proof_title parameter threads the proof-scope through: a Title-42 target
+    # under proof_title="42" is accepted (NO NON_TITLE_TARGET finding); under
+    # the default proof_title="11" the same op is needs_review + finding.
+    body = (
+        '<section identifier="/us/pl/117/900/s1"><num value="1">SEC. 1. </num>'
+        "<heading>Amendment.</heading>"
+        '<content><ref href="/us/usc/t42/s10403">Section 10403 of title 42, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>old</quotedText>”.</content></section>'
+    )
+    plaw = _synthetic_plaw_with_title(
+        "To amend title 42, United States Code, ...", body
+    )
+    # Default proof_title="11": the on-title-42 op is mis-flagged as off-title.
+    report_default = lower_plaw_amendatory(plaw)
+    instr_default = report_default.instructions[0]
+    assert instr_default.target_address == LegalAddress(
+        path=(("title", "42"), ("section", "10403"))
+    )
+    assert instr_default.status == "needs_review"
+    assert instr_default.finding is not None
+    assert instr_default.finding.rule_id == NON_TITLE_TARGET_RULE_ID
+
+    # proof_title="42": the SAME op is accepted on proof title, no finding.
+    report_proof_42 = lower_plaw_amendatory(plaw, proof_title="42")
+    instr_42 = report_proof_42.instructions[0]
+    assert instr_42.target_address == instr_default.target_address
+    assert instr_42.status == "accepted"
+    assert instr_42.finding is None
+
+
 # ---------------------------------------------------------------------------
 # Lowering robustness fixes (F5 action/operand, F1/F4 significant edge chars)
 # ---------------------------------------------------------------------------

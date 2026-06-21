@@ -1909,7 +1909,9 @@ def build_us_dry_run(
     section_ops: dict[str, list[LegalOperation]] = {}
     lowered_reports: list[tuple[str, str, bytes, USAmendatoryReport]] = []
     for statute_id, blob in plaw_blobs.items():
-        report = lower_plaw_amendatory(blob, statute_id=statute_id, enacted=enacted)
+        report = lower_plaw_amendatory(
+            blob, statute_id=statute_id, enacted=enacted, proof_title=str(title)
+        )
         # `report.enacted` may be absent in synthetic test doubles; fall back to the
         # statute id so the sort remains total.
         report_enacted = getattr(report, "enacted", "") or statute_id
