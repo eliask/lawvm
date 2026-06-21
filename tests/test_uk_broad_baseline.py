@@ -911,7 +911,7 @@ def test_broad_baseline_report_envelope_declares_agreement_scope(tmp_path) -> No
     assert "mutation_boundary_proof" in report["next_promotion_requires"]
     assert len(report["rows"]) == 2
     assert report["rows"][0]["agreement_residual"]["family"] == "agreement"
-    assert report["rows"][0]["agreement_residual"]["status"] == "residual"
+    assert report["rows"][0]["agreement_residual"]["agreement_residual_status"] == "residual"
     assert report["rows"][1]["agreement_residual"]["family"] == "source_footing_gap"
 
 

@@ -370,7 +370,7 @@ class NZDryRunOracleComparisonReport:
                     jurisdiction="nz",
                     agreement_surface="nz_dry_run_repeal_whole_tree",
                     family=_CORE_FAMILY.get(residual.family, "unknown"),
-                    status=status,
+                    agreement_residual_status=status,
                     owner_phase="dry_run",
                     rule_id=residual.rule_id,
                     source_artifact_id="/".join(residual.path),

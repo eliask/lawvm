@@ -2080,7 +2080,7 @@ def test_agreement_residual_classifies_without_replay_promotion() -> None:
         jurisdiction="uk",
         agreement_surface="replay_eid_set_vs_current_oracle_eid_set",
         family="non_commensurable_surface",
-        status="frontier",
+        agreement_residual_status="frontier",
         owner_phase="compare_oracle_classification",
         rule_id="uk_broad_zero_oracle_retention",
         source_artifact_id="ukpga/1938/22",
@@ -2095,7 +2095,7 @@ def test_agreement_residual_classifies_without_replay_promotion() -> None:
     data = residual.to_dict()
 
     assert data["family"] == "non_commensurable_surface"
-    assert data["status"] == "frontier"
+    assert data["agreement_residual_status"] == "frontier"
     assert data["missing_proofs"] == ["commensurable_oracle_surface"]
     assert "oracle_score_as_source_truth" in data["forbidden_shortcuts"]
 
@@ -2106,7 +2106,7 @@ def test_agreement_surface_report_projects_residuals_without_replay_claims() -> 
         jurisdiction="fi",
         agreement_surface="finlex_html_oracle_compare",
         family="non_commensurable_surface",
-        status="residual",
+        agreement_residual_status="residual",
         owner_phase="oracle_adjudication",
         rule_id="fi_finlex_html_non_commensurable_surface",
         source_artifact_id="2001/1234",
@@ -2159,7 +2159,7 @@ def test_agreement_residual_rejects_unknown_family() -> None:
             jurisdiction="uk",
             agreement_surface="surface",
             family=cast(Any, "loose_string"),
-            status="frontier",
+            agreement_residual_status="frontier",
             owner_phase="compare_oracle_classification",
             rule_id="bad_rule",
             safe_default="classify",

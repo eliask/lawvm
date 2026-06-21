@@ -1412,7 +1412,7 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "agreement_residual_status_counts": _agreement_residual_field_counts(
             agreement_residuals,
-            "status",
+            "agreement_residual_status",
         ),
         "agreement_residual_owner_phase_counts": _agreement_residual_field_counts(
             agreement_residuals,
@@ -1912,7 +1912,7 @@ def _agreement_residual_for_row(row: dict[str, Any]) -> AgreementResidual:
         jurisdiction="uk",
         agreement_surface="replay_eid_set_vs_current_oracle_eid_set",
         family=family,
-        status=status,
+        agreement_residual_status=status,
         owner_phase=_agreement_residual_owner_phase(bucket),
         rule_id=f"uk_broad_{bucket}",
         source_artifact_id=str(row.get("statute_id") or ""),

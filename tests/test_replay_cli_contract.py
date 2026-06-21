@@ -500,7 +500,7 @@ def test_build_uk_replay_payload_shape() -> None:
     assert adjudication["authorization_status"] == "replay_adjudication_replay_bug"
     assert adjudication["replay_authorized"] is False
     assert adjudication["agreement_residual"]["family"] == "replay_bug"
-    assert adjudication["agreement_residual"]["status"] == "residual"
+    assert adjudication["agreement_residual"]["agreement_residual_status"] == "residual"
     assert adjudication["agreement_residual"]["owner_phase"] == (
         "affecting_source_extraction"
     )

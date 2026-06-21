@@ -119,7 +119,7 @@ class NZAgreementReport:
                     jurisdiction="nz",
                     agreement_surface=agreement_surface,
                     family=family,
-                    status=status,
+                    agreement_residual_status=status,
                     owner_phase="agreement",
                     rule_id=f"nz_agreement_comparator_status_{row.status}",
                     source_artifact_id=path_key,
@@ -393,7 +393,7 @@ def compare_actual_replay_to_oracle(
     refusal_residuals = tuple(
         residual.to_dict()
         for residual in replay.agreement_residuals()
-        if residual.status != "agrees"
+        if residual.agreement_residual_status != "agrees"
     )
     refusal_family_counts: dict[str, int] = {}
     for residual in refusal_residuals:

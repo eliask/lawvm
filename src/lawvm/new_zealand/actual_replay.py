@@ -336,7 +336,7 @@ class NZActualReplayReport:
                 residual.family for residual in self.agreement_residuals()
             ),
             "residual_status_counts": _counts(
-                residual.status for residual in self.agreement_residuals()
+                residual.agreement_residual_status for residual in self.agreement_residuals()
             ),
             # Families requested but not attempted (e.g. structural family with no
             # operation surface). Separate from the fail-closed transition count.
@@ -375,7 +375,7 @@ class NZActualReplayReport:
                         jurisdiction="nz",
                         agreement_surface="nz_actual_replay",
                         family="agreement",
-                        status="agrees",
+                        agreement_residual_status="agrees",
                         owner_phase="actual_replay",
                         rule_id=NZ_ACTUAL_REPLAY_SLICE_AGREES_RULE_ID,
                         source_artifact_id=mutation.op_id,
@@ -1174,7 +1174,7 @@ def _refusal_residual(
         jurisdiction="nz",
         agreement_surface="nz_actual_replay",
         family=family,
-        status=status,
+        agreement_residual_status=status,
         owner_phase="actual_replay",
         rule_id=refusal.rule_id,
         source_artifact_id=op_tag,
