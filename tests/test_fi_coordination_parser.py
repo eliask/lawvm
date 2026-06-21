@@ -183,28 +183,14 @@ class TestSingleGroupCoordination:
 
 
 # ---------------------------------------------------------------------------
-# Alakohta: deliberately stripped by the scan phase
+# Alakohta: preserved in the target item label
 # ---------------------------------------------------------------------------
 
 
 class TestAlakohta:
-    """Alakohta tokens are removed by the scan phase (design decision).
+    """Alakohta tokens are preserved instead of silently broadening to kohta."""
 
-    The scan annotation phase strips ALAKOHTA and LETTER+ALAKOHTA patterns
-    as qualifiers before the parser sees them.  This is documented in
-    scan.py line 572: "Alakohta refinements -> removed".
-
-    The parser therefore treats "1 momentin 2 kohdan a alakohta" the same
-    as "1 momentin 2 kohdan" (the 'a alakohta' is consumed by scan as a
-    qualifier annotation and never reaches the parser).
-    """
-
-    def test_alakohta_stripped_to_kohta(self):
-        """1 momentin 2 kohdan a alakohta -> same as 1 momentin 2 kohdan.
-
-        The 'a alakohta' tokens are removed by scan annotations, leaving
-        only '1 momentin 2 kohdan' for the parser.
-        """
+    def test_alakohta_preserved_in_target_item_label(self):
+        """1 momentin 2 kohdan a alakohta keeps the alakohta precision."""
         codes = _ops("muutetaan 70 §:n 1 momentin 2 kohdan a alakohta")
-        # Parser sees: 1 momentin 2 kohdan (a alakohta stripped)
-        assert codes == ["M P 70 1 2"]
+        assert codes == ["M P 70 1 2a"]

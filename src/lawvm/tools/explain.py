@@ -495,12 +495,6 @@ def _diagnose(
             return ("EDITORIAL_CONVENTION",
                     "divergence is repeal attribution or aiempi-sanamuoto residue — oracle editorial choice")
 
-    if high_overlap_text_corruption(r_stripped, o_stripped):
-        return (
-            "SOURCE_PATHOLOGY",
-            "same-section source/oracle text mostly overlaps but one witness is corrupted",
-        )
-
     if (
         r_c
         and o_c
@@ -517,6 +511,12 @@ def _diagnose(
         return (
             "ORACLE_STALE",
             "oracle duplicates one same-section sentence fragment beyond the replay/source-backed text",
+        )
+
+    if high_overlap_text_corruption(r_stripped, o_stripped):
+        return (
+            "SOURCE_PATHOLOGY",
+            "same-section source/oracle text mostly overlaps but one witness is corrupted",
         )
 
     r_source_residue_stripped = strip_non_substantive_source_projection_residue(r_text)
