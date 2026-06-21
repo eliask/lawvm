@@ -444,6 +444,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_effect_lifecycle_projection.py",
         "test_fi_compile_facade.py",
         "test_compile_records.py",
+        "test_compile_record_carrier.py",
         "test_compile_result.py",
         "test_compile_views.py",
         "test_emitters_compile_metadata_required.py",
