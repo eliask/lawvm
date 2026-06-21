@@ -1021,7 +1021,7 @@ def _body_chapter_scope_for_section_op(
             and not op.target_item
             and not op.target_special
             and scope_witness is not None
-            and scope_witness.source == "carry_forward"
+            and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
         ):
             return None
 
@@ -1086,7 +1086,7 @@ def _body_chapter_scope_for_section_op(
         if not (
             op.target_chapter
             and scope_witness is not None
-            and scope_witness.source == "carry_forward"
+            and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
             and _source_declares_chapter_heading_wave(muutos_tree=muutos_tree, johto=johto)
         ):
             return None
@@ -1643,7 +1643,7 @@ def _infer_flat_reinstated_section_scope_from_base(
     explicit_absent_statute_level_reinstatement = (
         op.target_chapter is not None
         and scope_witness is not None
-        and scope_witness.source == "explicit_chunk"
+        and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
         and master.find_section_path(section_norm, op.target_chapter, op.target_part) is None
         and _johto_says_statute_level_repealed_section_replaced_by_new_section(
             johto,
@@ -1651,7 +1651,8 @@ def _infer_flat_reinstated_section_scope_from_base(
         )
     )
     if op.target_chapter is not None and (
-        scope_witness is None or scope_witness.source not in {"carry_forward", "explicit_chunk"}
+        scope_witness is None
+        or scope_witness.source not in {ScopeResolutionSource.CARRY_FORWARD, ScopeResolutionSource.EXPLICIT_CHUNK}
     ):
         if not unwitnessed_absent_statute_level_reinstatement:
             return None
@@ -1705,7 +1706,7 @@ def _infer_flat_reinstated_section_scope_from_base(
         unwitnessed_absent_statute_level_reinstatement
         or explicit_absent_statute_level_reinstatement
         or op.target_chapter is None
-        or (scope_witness is not None and scope_witness.source == "carry_forward")
+        or (scope_witness is not None and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD)
     ):
         return (base_part, base_chapter)
     if not _source_body_has_flat_whole_section(
@@ -1876,9 +1877,9 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
     if op.target_chapter is not None:
         if scope_witness is None:
             return None
-        if scope_witness.source == "carry_forward":
+        if scope_witness.source is ScopeResolutionSource.CARRY_FORWARD:
             pass
-        elif scope_witness.source == "explicit_chunk":
+        elif scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK:
             if body_scope is None:
                 return None
             body_part, body_chapter = body_scope
@@ -2156,7 +2157,12 @@ def _retarget_stale_body_scope_for_section_op(
         or not op.target_chapter
         or (
             scope_witness is not None
-            and scope_witness.source not in {"carry_forward", "explicit_scope_rewrite", "explicit_chunk"}
+            and scope_witness.source
+            not in {
+                ScopeResolutionSource.CARRY_FORWARD,
+                ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                ScopeResolutionSource.EXPLICIT_CHUNK,
+            }
         )
     ):
         return None
@@ -2186,7 +2192,7 @@ def _retarget_stale_body_scope_for_section_op(
     body_part, body_chapter = body_scope
     if (
         scope_witness is not None
-        and scope_witness.source == "explicit_chunk"
+        and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
         and op.op_type == "INSERT"
         and op.target_paragraph is None
         and not op.target_item
@@ -2346,7 +2352,7 @@ def _enrich_ops_from_amendment_tree(
                     or scoped_op.target_special is not None
                 )
                 and scope_witness is not None
-                and scope_witness.source == "carry_forward"
+                and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
             ):
                 carry_forward_host = master.find_section_path(
                     _norm_num_token(scoped_op.target_section or ""),
@@ -2387,7 +2393,8 @@ def _enrich_ops_from_amendment_tree(
                 and scoped_op.target_item is None
                 and scoped_op.target_special is None
                 and scope_witness is not None
-                and scope_witness.source in {"carry_forward", "explicit_chunk"}
+                and scope_witness.source
+                in {ScopeResolutionSource.CARRY_FORWARD, ScopeResolutionSource.EXPLICIT_CHUNK}
             ):
                 reinstated_scope = _infer_flat_reinstated_section_scope_from_base(
                     op=scoped_op,
@@ -2494,7 +2501,10 @@ def _enrich_ops_from_amendment_tree(
                     chapter=inferred_chapter,
                     rule_id=inferred_rule_id,
                 )
-            elif scope_witness is not None and scope_witness.source in {"explicit_scope_rewrite", "explicit_chunk"}:
+            elif scope_witness is not None and scope_witness.source in {
+                ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                ScopeResolutionSource.EXPLICIT_CHUNK,
+            }:
                 body_scoped = True
             if body_scoped:
                 retargeted_scope = _retarget_stale_body_scope_for_section_op(

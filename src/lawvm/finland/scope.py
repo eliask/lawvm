@@ -1175,7 +1175,7 @@ def strip_unjustified_chapter_scope_from_unique_sections(
                 "chapter_scope_from_explicit_chunk" in scope_tags
                 or (
                     isinstance(scope_confidence, ScopeConfidence)
-                    and scope_confidence.source == "explicit_chunk"
+                    and scope_confidence.source is ScopeResolutionSource.EXPLICIT_CHUNK
                 )
             )
             and lo.action is not StructuralAction.INSERT
