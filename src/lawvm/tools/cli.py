@@ -13825,6 +13825,26 @@ def _main_impl() -> None:
         print(f"top_line_verdict: {_verdict.top_line_verdict.value}", flush=True)
         print(f"integrity:        {_verdict.integrity.value}", flush=True)
         print(f"certification:    {_verdict.certification.value}", flush=True)
+        _tot = _verdict.totality
+        print(f"totality:         {_tot.verdict.value}", flush=True)
+        print(
+            f"  universe:       {_tot.owned_nodes} selected + "
+            f"{_tot.typed_non_selection_nodes} typed-reason / "
+            f"{_tot.addressable_nodes} addressable nodes",
+            flush=True,
+        )
+        if _tot.residual_count:
+            print(
+                f"  residuals:      {_tot.residual_count} typed "
+                f"({', '.join(_tot.residual_kinds) or 'untyped'})",
+                flush=True,
+            )
+        if _tot.coverage_classes:
+            print(f"  coverage:       {', '.join(_tot.coverage_classes)}", flush=True)
+        if _tot.shortfalls:
+            print(f"  shortfalls:     {len(_tot.shortfalls)}", flush=True)
+            for _s in _tot.shortfalls[:20]:
+                print(f"    - [{_s.code.value}] {_s.subject}: {_s.detail}", flush=True)
         print(f"checked_levels:   {', '.join(_verdict.checked_levels)}", flush=True)
         if _verdict.violations:
             print(f"violations:       {len(_verdict.violations)}", flush=True)

@@ -1131,4 +1131,9 @@ def _manifest_from_body(body: dict[str, Any]) -> PackManifest:
         optional_layers=tuple(body["optional_layers"]),
         provenance=provenance,
         supersedes_pack_id=body.get("supersedes_pack_id"),
+        # v0 forward-compat reservations (design §24.1) — omit-when-absent, so a
+        # manifest emitted without them round-trips to the byte-identical pack_id.
+        corpus_totality_root=body.get("corpus_totality_root"),
+        signature_attestation_root=body.get("signature_attestation_root"),
+        signatures=tuple(body.get("signatures", ())),
     )

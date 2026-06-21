@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from lawvm.substrate.canonical_json import JsonValue, wrap_row
+from lawvm.substrate.corpus_totality import IncludedMember, build_corpus_totality
 from lawvm.substrate.manifest import PackLayer, PackManifest, PackProvenance
 from lawvm.substrate.roots import leaf_hash, set_root
 
@@ -359,6 +360,22 @@ class CorpusPackResult:
     base_root: str
     edges_root: str
     corpus_version: str
+    corpus_totality_id: str = ""
+    work_universe_root: str = ""
+
+
+def _read_member_identity(pack_dir: str | Path) -> tuple[tuple[str, ...], str]:
+    """Read a member pack's ``work_ids`` + ``pack_id`` from its manifest.
+
+    Used to populate the corpus-totality work-inventory (level A): each member
+    contributes ``included`` :class:`WorkInventoryRow` rows keyed by its work_id
+    and pointing at its member ``pack_id``.
+    """
+    manifest_row = json.loads((Path(pack_dir) / "manifest.json").read_text(encoding="utf-8"))
+    body = manifest_row.get("object", manifest_row)
+    work_ids = tuple(str(w) for w in body.get("work_ids", ()))
+    pack_id = str(body.get("pack_id", ""))
+    return work_ids, pack_id
 
 
 def _sha256_file(path: Path) -> str:
@@ -406,6 +423,17 @@ def build_corpus_pack(
     out.mkdir(parents=True, exist_ok=True)
     cv = corpus_version or f"fi:corpus:{_dt.date.today().isoformat()}"
 
+    # -- corpus-totality work-inventory (level A) — read member identities --- #
+    # Each member pack contributes its work_ids → its pack_id as an ``included``
+    # WorkInventoryRow. The ``work_universe_root`` MapRoot over these makes a
+    # missing / surplus work detectable, exactly as a per-work selection_universe
+    # makes a missing row detectable (design §23.x level A, §24.1.3).
+    included_members: list[IncludedMember] = []
+    for d in member_pack_dirs.values():
+        m_work_ids, m_pack_id = _read_member_identity(d)
+        for wid in m_work_ids:
+            included_members.append(IncludedMember(work_id=wid, pack_id=m_pack_id))
+
     # -- (a) shared base content-leaf store ---------------------------------- #
     union: dict[str, dict[str, JsonValue]] = {}  # object_hash -> wrapped row
     work_ids: list[str] = []
@@ -451,6 +479,26 @@ def build_corpus_pack(
             edges_hashes.append(str(row["object_hash"]))
     edges_root = set_root(_DOMAIN_EDGES, edges_hashes)
 
+    # -- corpus-totality object (level A) ------------------------------------ #
+    # Honest v0 posture: an ``observed_crawl`` universe with
+    # ``closed_world_claim=false`` — we bundle the works we observed, NOT a signed
+    # Finlex enumeration of the jurisdiction. The object commits to the
+    # work-universe MapRoot; the manifest reserves ``corpus_totality_root``.
+    corpus_totality = build_corpus_totality(
+        corpus_id=cv,
+        jurisdiction=cv.split(":", 1)[0] if ":" in cv else "fi",
+        included=included_members,
+    )
+    ct_rel = "corpus_totality/corpus_totality.jsonl"
+    ct_path = out / ct_rel
+    ct_path.parent.mkdir(parents=True, exist_ok=True)
+    ct_row = wrap_row(corpus_totality.to_canonical_dict())
+    ct_path.write_text(
+        json.dumps(ct_row, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    corpus_totality_root = str(ct_row["object_hash"])
+
     # -- manifest ------------------------------------------------------------ #
     base_layer = PackLayer(
         kind="base",
@@ -476,6 +524,18 @@ def build_corpus_pack(
         root_fn="SetRoot",
         row_count=len(edges_hashes),
     )
+    corpus_totality_layer = PackLayer(
+        kind="corpus_totality",
+        path=ct_rel,
+        row_schema="lawvm.corpus_totality.v0",
+        codec=STORAGE_CODEC,
+        dict_id="",
+        uncompressed_sha256=_sha256_file(ct_path),
+        storage_sha256=_sha256_file(ct_path),
+        root=set_root("corpus_totality", [corpus_totality_root]),
+        root_fn="SetRoot",
+        row_count=1,
+    )
     provenance = PackProvenance(
         lawvm_git_commit=_git_commit(),
         engine_version="lawvm.engine.replay",
@@ -493,13 +553,28 @@ def build_corpus_pack(
         dict_id="",
         profiles=("lawvm.canon.semantic_text.v1",),
         selection_profiles=("lawvm.selection.governing_text.v1",),
-        schemas={"content_leaf": SCHEMA_CONTENT_LEAF, "overlay": SCHEMA_OVERLAY},
-        layers=(base_layer, edges_layer),
+        schemas={
+            "content_leaf": SCHEMA_CONTENT_LEAF,
+            "overlay": SCHEMA_OVERLAY,
+            "corpus_totality": "lawvm.corpus_totality.v0",
+        },
+        layers=(base_layer, edges_layer, corpus_totality_layer),
         roots={"base_root": base_root, "edges_root": edges_root},
         required_layers_for_browse=("base",),
         required_layers_for_audit=("base",),
-        optional_layers=("edges", "surface", "branch", "overlay", "projection", "dict"),
+        optional_layers=(
+            "edges",
+            "corpus_totality",
+            "surface",
+            "branch",
+            "overlay",
+            "projection",
+            "dict",
+        ),
         provenance=provenance,
+        # The corpus-totality root reservation now CARRIES a value (the level-A
+        # work-universe object) — the omit-when-absent manifest member is used.
+        corpus_totality_root=corpus_totality_root,
     )
     (out / "manifest.json").write_text(
         json.dumps(
@@ -519,4 +594,6 @@ def build_corpus_pack(
         base_root=base_root,
         edges_root=edges_root,
         corpus_version=cv,
+        corpus_totality_id=corpus_totality.corpus_totality_id,
+        work_universe_root=corpus_totality.work_universe_root,
     )

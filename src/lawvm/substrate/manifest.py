@@ -116,6 +116,24 @@ class PackManifest:
     provenance: PackProvenance
     supersedes_pack_id: str | None = None
     schema: str = field(default="lawvm.pack_manifest.v1")
+    # --- v0 forward-compat reservations (design §24.1) ------------------------ #
+    # Two SEPARATE axes reserved as OMIT-WHEN-ABSENT optional members so the
+    # structure exists without a schema bump and EVERY existing v0 ``pack_id``
+    # stays byte-identical when they are unset (they must NOT appear in
+    # ``_hashed_dict()`` / ``to_canonical_dict()`` when ``None`` / empty):
+    #   * ``corpus_totality_root`` — root of a ``lawvm.corpus_totality.v0`` object
+    #     committing to the corpus-level work-universe + the relativity claim
+    #     (``closed_world_claim``). Within-work totality is the checker lens; this
+    #     reserves the corpus root a future pack-corpus emits.
+    #   * ``signatures`` — a list of ``lawvm.signature_attestation.v1`` subjects
+    #     (sign roots, not rows). PKI is deferred (design §24 "do NOT require
+    #     signatures in v0"); this reserves the detached ``signatures/`` layer so
+    #     a later seal lands WITHOUT a breaking redesign. ``signature_attestation_root``
+    #     is the SetRoot over those attestations when present.
+    # A genuine break (a member that MUST be present) bumps schema → ``.v2``.
+    corpus_totality_root: str | None = None
+    signature_attestation_root: str | None = None
+    signatures: tuple[str, ...] = ()
 
     def _hashed_dict(self) -> dict[str, JsonValue]:
         """The manifest body that ``pack_id`` hashes — provenance + pack_id excluded.
@@ -123,8 +141,14 @@ class PackManifest:
         §4.1 / §2.2: ``provenance`` and ``pack_id`` are not members of the
         identity hash. Everything else (schemas, profiles, layers, roots,
         layer-requirement lists, ``supersedes_pack_id``) is.
+
+        The v0 reservations (``corpus_totality_root`` /
+        ``signature_attestation_root`` / ``signatures``) are **omit-when-absent**
+        (design §24.1): they enter the hashed body ONLY when set, so a v0 pack
+        that leaves them unset hashes to the byte-identical ``pack_id`` it had
+        before the fields existed (the pack_id-stability invariant).
         """
-        return {
+        body: dict[str, JsonValue] = {
             "schema": self.schema,
             "pack_kind": self.pack_kind,
             "work_ids": list(self.work_ids),
@@ -142,6 +166,13 @@ class PackManifest:
             "optional_layers": list(self.optional_layers),
             "supersedes_pack_id": self.supersedes_pack_id,
         }
+        if self.corpus_totality_root is not None:
+            body["corpus_totality_root"] = self.corpus_totality_root
+        if self.signature_attestation_root is not None:
+            body["signature_attestation_root"] = self.signature_attestation_root
+        if self.signatures:
+            body["signatures"] = list(self.signatures)
+        return body
 
     @property
     def pack_id(self) -> str:

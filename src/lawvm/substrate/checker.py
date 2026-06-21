@@ -54,6 +54,11 @@ from lawvm.substrate.roots import (
     seq_root,
     set_root,
 )
+from lawvm.substrate.totality import (
+    TotalityResult,
+    TotalityVerdict,
+    compute_totality,
+)
 
 # --------------------------------------------------------------------------- #
 # Verdict enums (contract §1) — two orthogonal axes + a derived top line.
@@ -213,11 +218,15 @@ class CheckerVerdict:
     violations: tuple[TypedViolation, ...] = ()
     checked_levels: tuple[str, ...] = ()
     unsupported_layers: tuple[str, ...] = ()
+    totality: TotalityResult = field(
+        default_factory=lambda: TotalityResult(verdict=TotalityVerdict.NOT_COMPUTED)
+    )
 
     def to_canonical_dict(self) -> dict[str, JsonValue]:
         return {
             "integrity": self.integrity.value,
             "certification": self.certification.value,
+            "totality": self.totality.to_canonical_dict(),
             "top_line_verdict": self.top_line_verdict.value,
             "violations": [v.to_canonical_dict() for v in self.violations],
             "checked_levels": list(self.checked_levels),
@@ -472,6 +481,12 @@ class Checker:
             else:
                 certification = CertificationVerdict.NOT_COMPUTED
 
+        # Totality — the THIRD lens (design §23), orthogonal to integrity ×
+        # certification. Computed from the pack's own rows (base address tree,
+        # state selection rows, proof residuals/coverage); it answers "is this a
+        # complete account of the work's OWN declared universe", never "all law".
+        totality = self._compute_totality(pack)
+
         top = fold_top_line(integrity, certification)
         return CheckerVerdict(
             integrity=integrity,
@@ -480,6 +495,19 @@ class Checker:
             violations=tuple(violations),
             checked_levels=tuple(checked_levels),
             unsupported_layers=tuple(unsupported_layers),
+            totality=totality,
+        )
+
+    @staticmethod
+    def _compute_totality(pack: Pack) -> TotalityResult:
+        """Run the within-work totality lens over the pack's base/state/proof rows."""
+        base = pack.layers.get("base")
+        state = pack.layers.get("state")
+        proof = pack.layers.get("proof")
+        return compute_totality(
+            base_rows=base.rows if base is not None else (),
+            state_rows=state.rows if state is not None else (),
+            proof_rows=proof.rows if proof is not None else (),
         )
 
     @staticmethod

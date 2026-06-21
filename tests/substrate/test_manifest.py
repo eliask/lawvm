@@ -112,6 +112,64 @@ def test_manifest_row_roundtrips_through_wrapper() -> None:
     assert unwrap_and_verify(row) == m.to_canonical_dict()
 
 
+def test_pack_id_byte_stable_under_absent_reservations() -> None:
+    """The v0 forward-compat reservations (design §24.1) are OMIT-WHEN-ABSENT.
+
+    The load-bearing invariant: an existing-style v0 manifest that leaves
+    ``corpus_totality_root`` / ``signature_attestation_root`` / ``signatures``
+    unset hashes to the BYTE-IDENTICAL ``pack_id`` it had before those fields
+    existed. We pin it by recomputing the pre-reservation hashed body explicitly
+    (no reservation keys) and asserting equality with the dataclass ``pack_id``.
+    """
+    m = _manifest()
+    # The reservations are absent → not present in the hashed body at all.
+    body = m._hashed_dict()
+    assert "corpus_totality_root" not in body
+    assert "signature_attestation_root" not in body
+    assert "signatures" not in body
+    # The hashed body is exactly the pre-reservation set of keys.
+    pre_reservation_keys = {
+        "schema",
+        "pack_kind",
+        "work_ids",
+        "corpus_version",
+        "identity_encoding",
+        "storage_codec",
+        "dict_id",
+        "canonicalization_profiles",
+        "selection_profiles",
+        "schemas",
+        "layers",
+        "roots",
+        "required_layers_for_browse",
+        "required_layers_for_audit",
+        "optional_layers",
+        "supersedes_pack_id",
+    }
+    assert set(body) == pre_reservation_keys
+    # pack_id over this body is the historical value (recompute independently).
+    assert m.pack_id == leaf_hash("pack_manifest", body)
+    # to_canonical_dict (the emitted row) also omits the absent reservations.
+    emitted = m.to_canonical_dict()
+    assert "corpus_totality_root" not in emitted
+    assert "signature_attestation_root" not in emitted
+    assert "signatures" not in emitted
+
+
+def test_pack_id_moves_when_reservation_is_set() -> None:
+    """Setting a reservation enters the hashed body → pack_id changes (a real v1 use)."""
+    base = _manifest()
+    with_totality = dataclasses.replace(base, corpus_totality_root="sha256:ct_root")
+    with_sig = dataclasses.replace(base, signature_attestation_root="sha256:sig_root")
+    with_sigs = dataclasses.replace(base, signatures=("sha256:att1",))
+    assert with_totality.pack_id != base.pack_id
+    assert with_sig.pack_id != base.pack_id
+    assert with_sigs.pack_id != base.pack_id
+    # And they appear in the emitted body when set.
+    assert with_totality.to_canonical_dict()["corpus_totality_root"] == "sha256:ct_root"
+    assert with_sigs.to_canonical_dict()["signatures"] == ["sha256:att1"]
+
+
 def test_layer_descriptor_is_complete() -> None:
     layer = _layer().to_canonical_dict()
     assert set(layer) == {
