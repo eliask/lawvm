@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing_extensions import override
+import sqlite3
 
 from dataclasses import dataclass, field
 import json
@@ -66,6 +67,7 @@ from lawvm.sweden.fetch import (
     plan_se_older_base_rebuild,
     probe_se_public_source_status,
     rebuild_se_older_base_from_official_chain,
+    scan_se_official_replay_act,
     search_se_legacy_pdf_url,
     se_official_act_locator,
     se_official_base_ir_locator,
@@ -276,6 +278,26 @@ class _FakeArchive(_ArchiveLike):
 
     def locators(self, pattern: str = "%") -> list[str]:
         return [k for k in self.stored if pattern.replace("%", "") in k]
+
+
+@dataclass
+class _ReadonlyFakeArchive(_FakeArchive):
+    """In-memory fake that mimics a real readonly :class:`farchive.Farchive`.
+
+    Mirrors the failure shape of the coverage-scan worker: ``store`` raises
+    ``sqlite3.OperationalError`` exactly as a SQLite-backed Farchive does when
+    opened with ``readonly=True``. The ``_readonly`` attribute is exposed so
+    production helpers that probe writability before attempting a write
+    (``_se_archive_is_writable``) can exercise the same branch against the fake.
+    """
+
+    _readonly: bool = True
+    attempted_writes: list[tuple[str, bytes, str | None]] = field(default_factory=list)
+
+    @override
+    def store(self, locator: str, data: bytes, *, storage_class: str | None = None) -> str:
+        self.attempted_writes.append((locator, data, storage_class))
+        raise sqlite3.OperationalError("attempt to write a readonly database")
 
 
 @pytest.fixture(autouse=True)
@@ -1155,6 +1177,234 @@ def test_parse_se_official_act_text_extracts_amendment_surface() -> None:
     assert [p.label for p in act.provisions] == ["2", "8", "11"]
     assert act.effective_clause == "Denna förordning träder i kraft den 15 april 2026."
     assert act.signatories == ("GUNNAR STRÖMMER", "Emelie Smiding", "(Justitiedepartementet)")
+
+
+def test_parse_se_official_act_text_extracts_publication_date_from_legacy_utkom_fran_trycket_header() -> None:
+    """Older SFS PDFs publish the date as a follow-up line under "Utkom från trycket".
+
+    The newer PDF layout uses a standalone ``Publicerad`` header followed by a date
+    line. Pre-2003 acts ship the older ``Utkom från trycket`` / ``den DD month YYYY``
+    two-line block instead; the parser previously did not recognize that header as a
+    publication-date block and folded both lines into the act title, leaving
+    ``published_date`` empty. Downstream, the analyze path then raised
+    ``ValueError("could not determine effective date for ...")`` for every older
+    act that lacked an explicit entry-into-force clause and had no amendment
+    register entry — covering a substantial slice of the 1999-2000 corpus.
+
+    Regression: the parser MUST recognize the legacy header, MUST extract
+    ``published_date`` from its follow-up line, and MUST NOT carry the header or
+    date into the act title.
+    """
+    text = (
+        "Svensk författningssamling\n"
+        "SFS 1999:1062\n\n"
+        "Lag\n"
+        "om ändring i lagen (1999:353) om rättspsykiatriskt\n"
+        "forskningsregister;\n\n"
+        "Utkom från trycket\n"
+        "den 13 december 1999\n\n"
+        "utfärdad den 2 december 1999.\n"
+        "Enligt riksdagens beslut1 föreskrivs att 5 § lagen (1999:353) om "
+        "rättspsykiatriskt forskningsregister skall ha följande lydelse.\n"
+        "5 § För varje person får uppgifter registreras.\n"
+        "På regeringens vägnar\n"
+        "LARS ENGQVIST\n"
+        "(Socialdepartementet)\n"
+    )
+
+    act = parse_se_official_act_text(text, sfs_id="1999:1062")
+
+    assert act.published_date == "1999-12-13"
+    # Header and date string must NOT leak into the title (they previously did,
+    # which masked the empty published_date field and prevented the analyze path
+    # from using it).
+    assert "Utkom" not in act.title
+    assert "13 december 1999" not in act.title
+    assert "trycket" not in act.title.lower()
+    # The title otherwise carries the original human-readable heading intact,
+    # modulo the traling semicolon stripping the parser already performs.
+    assert "rättspsykiatriskt forskningsregister" in act.title
+    # Issued-date handling unaffected: the legacy header occupies the same
+    # position as ``Publicerad`` does in the newer layout.
+    assert act.issued_date == "1999-12-02"
+
+
+def test_parse_se_official_act_text_folds_wrapped_cross_reference_continuation_into_current_section() -> None:
+    """Wrapped ``'<N> § första stycket och <M> §.'`` is a cross-reference, not a new section.
+
+    Real-corpus witness: SFS 2001:606 — Lag om ändring i förordningen (2000:308)
+    om fastighetsregister — amends sections 64, 72, 74. The officer's text of
+    section 72 wraps onto a new PDF text line that begins with ``64 § första
+    stycket och 67 §.`` (a cross-reference to two other sections inside §72's
+    prose, not a new §64). Without this guard the parser emits a duplicate
+    provision under label ``64`` — an unfalsified-looking fragment that
+    displaces the legitimate ``64`` replacement text in the per-act
+    ``official_provisions`` dict the replay-vs-oracle check consults. That made
+    a correct replay-vs-later-consolidation disagreement look like a LawVM-side
+    content_mismatch, since the lookup returned the wrong text.
+
+    Synthetic test (mirrors the original witness shape without depending on the
+    archived corpus): the parser MUST produce exactly one provision per
+    affected label, the cross-reference line MUST fold into the current
+    section's text, and the lookup for ``64`` MUST return the legitimate
+    replacement text — never the continuation fragment.
+    """
+    text = (
+        "Svensk författningssamling\n"
+        "Förordning\n"
+        "om ändring i förordningen (2000:308) om fastighetsregister\n\n"
+        "Publicerad\n"
+        "den 1 september 2001\n\n"
+        "Utfärdad den 16 augusti 2001\n"
+        "Regeringen föreskriver att 64, 72 och 74 §§ förordningen (2000:308) "
+        "om fastighetsregister skall ha följande lydelse.\n"
+        "64 § I taxeringsuppgiftsdelen skall redovisas uppgifter från "
+        "beskattningsdatabasen enligt lagen (2001:181).\n"
+        "72 § Sedan en underrättelse som avses i 74 § har kommit in, skall "
+        "Lantmäteriverket snarast möjligt i fastighetsregistret föra in de "
+        "uppgifter som avses i\n"
+        # The wrapped cross-reference continuation that previously masqueraded
+        # as a new section start.
+        "64 § första stycket och 67 §. Införingen av uppgifter från "
+        "beskattningsdatabasen skall ske senast i samband med årsskifte.\n"
+        "74 § Skattemyndigheten skall på upptagning för automatiserad behandling "
+        "underrätta Lantmäteriverket.\n"
+        "På regeringens vägnar\n"
+        "LARS ENGQVIST\n"
+        "(Finansdepartementet)\n"
+    )
+
+    act = parse_se_official_act_text(text, sfs_id="2001:606")
+
+    # Exactly one provision per affected label — the duplicate ``64`` provision
+    # MUST NOT exist.
+    labels = [p.label for p in act.provisions]
+    assert labels == ["64", "72", "74"], labels
+
+    # The wrapped cross-reference folded into §72's text, not §64's. The §64
+    # oracle text is the legitimate replacement, not the continuation fragment.
+    provisions_by_label = {p.label: p.text for p in act.provisions}
+    assert provisions_by_label["64"].startswith("I taxeringsuppgiftsdelen")
+    assert "första stycket och 67 §" in provisions_by_label["72"]
+    # And the fragment did not silently leak into §64 — the principal replay
+    # oracle lookup returns the legitimate replace text.
+    assert "Införingen av uppgifter från beskattningsdatabasen" not in provisions_by_label["64"]
+
+
+def test_coerce_se_official_act_folds_legacy_duplicate_label_provisions_into_host_section() -> None:
+    """Runtime coercion repairs legacy cached duplicate-label payloads.
+
+    Archaeic cached ``official.act.json`` rows (persisted before the parser fix
+    in :func:`parse_se_official_act_text` learned to fold wrapped cross-reference
+    continuations back into their host section) carry a duplicate provision whose
+    text begins with ``<ordinal> stycket`` — the row the live parser no longer
+    emits. The replay-vs-oracle lookup at the higher-level
+    :func:`check_se_official_replay` consults the cached ``official_act`` raw
+    dict, so without runtime coercion the duplicate label silently displaces the
+    legitimate oracle text and a correct replay-vs-later-consolidation
+    disagreement is misclassified as a LawVM-side ``content_mismatch``.
+
+    Real-corpus witnesses:
+      * SFS 2001:606 §64 — ``64 § första stycket och 67 §.`` line displaced the
+        legitimate §64 replacement text.
+      * SFS 2002:66 §14 — same wrapping idiom inside §1 of the same act.
+
+    Regression: the runtime coercion MUST fold the duplicate-label cross-reference
+    continuation into the prior provision's text and MUST NOT surface a duplicate
+    label in the coerced ``SEOfficialActText.provisions`` tuple. A second
+    duplicate label whose continuation shape is NOT recognised (e.g. two
+    non-cross-reference occurrences) stays visible as a typed
+    ``se_official_act_payload_row_duplicate_label`` diagnostic (no silent drop).
+    """
+    from lawvm.sweden.grafter import _coerce_official_act
+
+    legacy_payload = {
+        "sfs_id": "2001:606",
+        "title": "Förordning om ändring i förordningen (2000:308) om fastighetsregister",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2000:308",
+        "is_amending_act": True,
+        "published_date": "2001-09-01",
+        "issued_date": "2001-08-16",
+        "enacting_clause": (
+            "Regeringen föreskriver att 64, 72 och 74 §§ förordningen (2000:308) "
+            "om fastighetsregister skall ha följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 1 oktober 2001.",
+        "affected_section_labels": ["64", "72", "74"],
+        "provisions": [
+            {
+                "label": "64",
+                "text": (
+                    "I taxeringsuppgiftsdelen skall redovisas uppgifter från "
+                    "beskattningsdatabasen enligt lagen (2001:181)."
+                ),
+            },
+            {
+                "label": "72",
+                "text": (
+                    "Sedan en underrättelse som avses i 74 § har kommit in, skall "
+                    "Lantmäteriverket föra in de uppgifter som avses i"
+                ),
+            },
+            # Cached legacy duplicate-label payload — the wrapped cross-reference
+            # continuation that the live parser no longer emits.
+            {
+                "label": "64",
+                "text": (
+                    "första stycket och 67 §. Införingen av uppgifter från "
+                    "beskattningsdatabasen skall ske senast i samband med årsskifte."
+                ),
+            },
+            {"label": "74", "text": "Skattemyndigheten skall underrätta Lantmäteriverket."},
+        ],
+        "inserted_headings": [],
+        "appendices": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+
+    diagnostics: list[dict] = []
+    coerced = _coerce_official_act(legacy_payload, diagnostics_out=diagnostics)
+
+    # No duplicate-label entry — only one provision per affected label.
+    labels = [p.label for p in coerced.provisions]
+    assert labels == ["64", "72", "74"], labels
+
+    # The cross-reference continuation folded into the prior provision's text
+    # (the host section, not the legitimate §64 replacement).
+    provisions_by_label = {p.label: p.text for p in coerced.provisions}
+    assert "första stycket och 67 §" in provisions_by_label["72"]
+    assert "Införingen av uppgifter från beskattningsdatabasen" in provisions_by_label["72"]
+    # And the legitimate §64 replacement text is NOT displaced.
+    assert provisions_by_label["64"].startswith("I taxeringsuppgiftsdelen")
+    assert "Införingen av uppgifter från beskattningsdatabasen" not in provisions_by_label["64"]
+    # The folding rule fired silently as a benign repair — no diagnostic emitted
+    # (a cached legacy payload reconstruction, not an active parse failure).
+    duplicate_rule_diagnostics = [
+        d for d in diagnostics
+        if d.get("rule_id") == "se_official_act_payload_row_duplicate_label"
+    ]
+    assert duplicate_rule_diagnostics == [], (
+        "cross-reference-continuation fold should NOT raise a duplicate-label "
+        "diagnostic — that diagnostic is reserved for genuinely ambiguous "
+        f"duplicate-label rows. Got: {duplicate_rule_diagnostics}"
+    )
+
+    # And a non-cross-reference duplicate label stays visible as a typed
+    # diagnostic — the fold is shape-specific, never a blanket dedupe.
+    ambiguous_payload = dict(legacy_payload)
+    ambiguous_payload["provisions"] = list(legacy_payload["provisions"]) + [
+        {"label": "64", "text": "En orelaterad tredje lydelse under samma etikett."}
+    ]
+    ambiguous_diagnostics: list[dict] = []
+    _coerce_se_official_act_ambiguous = _coerce_official_act(
+        ambiguous_payload, diagnostics_out=ambiguous_diagnostics
+    )
+    assert any(
+        d.get("rule_id") == "se_official_act_payload_row_duplicate_label"
+        for d in ambiguous_diagnostics
+    ), "non-cross-reference duplicate labels MUST surface a typed diagnostic"
 
 
 def test_compile_se_official_ops_recover_base_act_id_from_enacting_clause() -> None:
@@ -3641,6 +3891,104 @@ def test_check_se_official_replay_recompiles_stale_ops_without_effective_date() 
     assert result["match_count"] == 1
     refreshed_ops = json.loads(archive.stored["se://sfs/2026:286/official.ops.json"].decode("utf-8"))
     assert refreshed_ops[0]["source"]["effective"] == "2026-04-15"
+
+
+def test_analyze_se_official_replay_feasibility_compiles_in_memory_on_readonly_archive() -> None:
+    """Regression — coverage-scan worker previously crashed writing surfaces.
+
+    The scan worker opens the shared ``sweden.farchive`` readonly (Farchive
+    default). The analyze entry point used to call
+    :func:`compile_se_official_ops_to_archive`, which writes the typed waists
+    (clause/payload/elaboration/effects-plan/ops/adjudications) — a write that
+    fails with ``sqlite3.OperationalError: attempt to write a readonly
+    database`` on every cache-miss scan. With no cached ops in the readonly
+    archive, an entire scan corpus would surface nothing but that error and a
+    single ``aggregate_se_official_coverage`` row.
+
+    The analyze path now (a) probes writability via ``_se_archive_is_writable``
+    and (b) when the archive is read-only, compiles ops in memory using the
+    existing ``compile_se_official_act_ops`` pure path instead of attempting
+    the mutating cache-refresh. This test pins the new contract against any
+    future regression: the analyze path MUST drive a readonly archive without
+    crashing, MUST still return a non-empty ops set, and MUST NOT attempt to
+    persist any cache rows that would fail.
+    """
+    base_payload = {
+        "beteckning": "2026:106",
+        "rubrik": "Förordning (2026:106) om något",
+        "ikraftDateTime": "2026-04-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2026-02-26T00:00:00",
+            "andringInford": None,
+            "forfattningstext": (
+                "11 § /Upphör att gälla U:2026-04-14/\n"
+                "Nedan angivna myndigheter ska lämna uppgifter.\n\n"
+                "1. Polismyndigheten\tBeslut i nådeärenden.\n\n"
+                "11 § /Träder i kraft I:2026-04-15/\n"
+                "Nedan angivna myndigheter ska lämna uppgifter.\n\n"
+                "1. Polismyndigheten\tBeslut i nådeärenden.\n\n"
+                "Förordning (2026:286)."
+            ),
+        },
+        "publiceradDateTime": "2026-03-23T12:17:32",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": "Regeringen föreskriver att 11 § förordningen (2026:106) om något ska ha följande lydelse.",
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["11"],
+        "provisions": [
+            {
+                "label": "11",
+                "text": "Nedan angivna myndigheter ska lämna uppgifter.\n\n1. Polismyndigheten\n\nBeslut i nådeärenden.",
+            }
+        ],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _ReadonlyFakeArchive(
+        stored={
+            "se://sfs/2026:106/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+            # No cached ops/adjudications/surfaces: the readonly path MUST be
+            # able to compile without reading a pre-existing cache.
+        }
+    )
+
+    result = analyze_se_official_replay_feasibility(archive, "2026:286")
+
+    # The cache-miss was bridged in memory: ops were computed from the official
+    # act surface even though no cache entry existed.
+    assert result["op_count"] == 1
+    assert isinstance(result["ops_json"], list)
+    assert result["ops_json"][0]["target"]["path"][0] == ["section", "11"]
+    # The persist side-effect must NOT fire on a readonly archive: no
+    # attempted writes (the prior failure mode of crashing coverage-scan
+    # workers). This signature also ratifies the writability probe is read
+    # before any store(): the exception was raised from inside the store call.
+    assert archive.attempted_writes == []
+    # And the higher-level entry that escalates the readonly scan picks up the
+    # in-memory ops set deterministically through the analysis dict (not by
+    # re-loading from the empty cache). The fixture's base carries the
+    # post-amendment text already, so the act falls into the
+    # older_base_required lane rather than replay_ok — the regression point is
+    # that the readonly scan returns a classified outcome instead of crashing
+    # on the first cache-miss `archive.store` call, not that this specific
+    # fixture produces a replay match.
+    scan_summary = scan_se_official_replay_act(archive, "2026:286")
+    assert scan_summary["outcome"] != "error"
+    assert scan_summary["outcome"] in {"replay_ok", "older_base_required"}
 
 
 def test_check_se_official_replay_matches_inline_numbering_only_difference() -> None:

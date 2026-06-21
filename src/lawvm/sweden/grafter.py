@@ -63,6 +63,19 @@ _SFS_ID_RE = re.compile(r"\b(\d{4}:\d+)\b")
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 _CHAPTER_RE = re.compile(r"^(?P<label>\d+[a-z]?|[IVXLC]+)\s{1,5}kap\.\s{0,5}(?P<title>.{0,500})$", re.IGNORECASE)
 _SECTION_RE = re.compile(r"^(?P<label>\d+\s*[a-z]?)\s*§(?P<tail>.*)$", re.IGNORECASE)
+# Cross-reference continuation idiom — a Swedish drafting shape in which one
+# section's text wraps onto a new line that begins with ``<N> § <ordinal>
+# stycket`` (e.g. ``64 § första stycket och 67 §.``). The ``<N> §`` there is a
+# cross-reference *inside* the previous paragraph, not a new section start;
+# without this guard the parser emits a duplicate provision under label ``N``
+# that silently overwrites the legitimate one in the ``official_provisions``
+# dict the replay-vs-oracle check consults (real corpus witness: 2001:606
+# §64, where the wrapping "64 § första stycket och 67 §." line displaced the
+# real §64 oracle text).
+_SE_CROSS_REFERENCE_STYCKET_RE = re.compile(
+    r"^(?:första|andra|tredje|fjärde|femte|sjätte|sjunde|åttonde|nionde|tionde)\s+stycket\b",
+    re.IGNORECASE,
+)
 _ITEM_RE = re.compile(r"^(?P<label>\d+|[a-z])[\.\)]\s{1,5}(?P<text>.{1,2000})$", re.IGNORECASE)
 _APPENDIX_RE = re.compile(r"^(Bilaga)(\s{0,5}\*\s{0,5}|\s{1,5}|)(?P<label>\d+[a-z]|\d+|[A-Z]|)\s{0,5}(?P<title>.{0,500})$", re.IGNORECASE)
 _MARKER_RE = re.compile(r"/(?P<phrase>[^/\n]{1,200}) (?P<kind>[IU]):(?P<date>\d{4}-\d{2}-\d{2})/")
@@ -1407,6 +1420,19 @@ def _is_bare_official_section_citation(text: str) -> bool:
     return bool(re.fullmatch(r"\d{4}:\d+\.?", text))
 
 
+def _is_cross_reference_continuation(tail: str) -> bool:
+    """Detect a wrapped-paragraph cross-reference of form `'<ordinal> stycket...'`.
+
+    When a section's sentence wraps onto a new line whose tail (the text after
+    the ``<N> §`` section-marker) begins with ``<ordinal> stycket`` (första / andra
+    / tredje / ...), that ``<N> §`` is a cross-reference *inside* the previous
+    paragraph, not a new section start. Folding the line back into the current
+    section's text avoids emitting a duplicate provision under label ``N`` that
+    would otherwise displace the legitimate one in the provision dict.
+    """
+    return bool(_SE_CROSS_REFERENCE_STYCKET_RE.match(_normalize_space(tail)))
+
+
 def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional[str] = None) -> IRStatute:
     """Parse Sweden current-text JSON into the shared IRStatute tree.
 
@@ -1627,7 +1653,8 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
         if not line:
             i += 1
             continue
-        if line.lower() == "publicerad" or line.lower().startswith("utfärdad den "):
+        lower = line.lower()
+        if lower == "publicerad" or lower.startswith("utfärdad den ") or lower == "utkom från trycket":
             break
         title_lines.append(line)
         i += 1
@@ -1643,6 +1670,20 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
     if i < len(lines) and lines[i].lower() == "publicerad":
         if i + 1 < len(lines):
             published_date = _parse_swedish_date_text(lines[i + 1])
+        i += 2
+    elif (
+        i < len(lines)
+        and lines[i].lower() == "utkom från trycket"
+        and i + 1 < len(lines)
+    ):
+        # Older SFS PDFs publish the date on the line following the
+        # "Utkom från trycket" header (e.g. "den 13 december 1999"). Newer
+        # layouts use a standalone "Publicerad" line instead. Recognizing the
+        # older shape keeps the publication date out of the title and lets the
+        # typed act surface carry it where downstream date inference can see it.
+        published_date = _parse_swedish_date_text(lines[i + 1]) or _parse_swedish_date_text(
+            f"{lines[i]} {lines[i + 1]}"
+        )
         i += 2
     while i < len(lines) and not lines[i]:
         i += 1
@@ -1733,6 +1774,15 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
             next_label = _label_norm(match.group("label"))
             tail = _clean_official_section_tail(line, match.group("tail") or "")
             if _is_bare_official_section_citation(tail):
+                continue
+            if _is_cross_reference_continuation(tail):
+                # The "<N> § <ordinal> stycket" idiom is a wrapped cross-reference
+                # inside the previous section's text, not a new section start:
+                # fold the line back into the current section's text instead of
+                # emitting a duplicate provision under ``next_label`` (which would
+                # otherwise displace the legitimate oracle text for that label).
+                if current_label is not None:
+                    current_lines.append(line)
                 continue
             if current_label is not None and next_label == current_label:
                 current_lines.append(line)
@@ -1847,6 +1897,7 @@ def _coerce_official_act(
     document = _coerce_document(payload)
     sfs_id = str(document.get("sfs_id") or "")
     provisions: list[SEOfficialProvisionText] = []
+    seen_labels: set[str] = set()
     for index, provision in enumerate(document.get("provisions", [])):
         if not isinstance(provision, dict):
             _record_se_official_act_payload_row_diagnostic(
@@ -1869,12 +1920,35 @@ def _coerce_official_act(
                 row_index=index,
             )
             continue
-        provisions.append(
-            SEOfficialProvisionText(
-                label=label,
-                text=str(provision.get("text") or ""),
+        text = str(provision.get("text") or "")
+        if label in seen_labels:
+            # Cached legacy payloads (built before the parser learned to fold
+            # wrapped cross-reference continuations back into their host
+            # section) carry a duplicate provision whose text starts with the
+            # ``<ordinal> stycket`` idiom — the row that the live parser no
+            # longer emits. Recognize that shape here and fold the text into
+            # the most recent provision (its original host) instead of
+            # admitting a duplicate label that would otherwise displace the
+            # legitimate oracle text for ``label`` in downstream provision dicts.
+            if _is_cross_reference_continuation(text):
+                if provisions:
+                    last = provisions[-1]
+                    provisions[-1] = SEOfficialProvisionText(
+                        label=last.label,
+                        text=_join_preserving_paragraphs([last.text, text]) if text else last.text,
+                    )
+                continue
+            _record_se_official_act_payload_row_diagnostic(
+                diagnostics_out,
+                rule_id="se_official_act_payload_row_duplicate_label",
+                reason="Sweden official act provision payload row was skipped because its label duplicates an earlier provision in the same act.",
+                sfs_id=sfs_id,
+                row_family="provisions",
+                row_index=index,
             )
-        )
+            continue
+        seen_labels.add(label)
+        provisions.append(SEOfficialProvisionText(label=label, text=text))
     inserted_headings: list[SEOfficialHeadingText] = []
     for index, heading in enumerate(document.get("inserted_headings", [])):
         if not isinstance(heading, dict):

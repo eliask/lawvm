@@ -35,6 +35,7 @@ from lawvm.sweden.grafter import (
     apply_se_ops,
     build_se_official_base_statute,
     canonicalize_se_table_section_text,
+    compile_se_official_act_ops,
     enrich_se_source_record_with_doc_page,
     extract_se_current_section_texts,
     materialize_se_statute_as_of,
@@ -79,6 +80,18 @@ class _ArchiveLike(Protocol):
 
 class _EnumerableArchiveLike(_ArchiveLike, Protocol):
     def locators(self, pattern: str = ...) -> list[str]: ...
+
+
+def _se_archive_is_writable(archive: _ArchiveLike) -> bool:
+    """Probe whether ``archive`` accepts ``store()``.
+
+    Real :class:`farchive.Farchive` instances expose ``_readonly``; in-memory
+    test doubles (``_FakeArchive``) and any other mapping-backed archive accept
+    writes by default. Used by the analyze path so the read-only scan worker
+    does not crash against the shared readonly Farchive despite the
+    cache-refresh side effect the writable CLI paths rely on.
+    """
+    return not bool(getattr(archive, "_readonly", False))
 
 
 @dataclass(frozen=True)
@@ -2672,12 +2685,40 @@ def analyze_se_official_replay_feasibility(
         raise FileNotFoundError(f"no archived RK current JSON for base statute {resolved_base_sfs_id}")
 
     ops_json = load_se_official_ops_from_archive(archive, amending_sfs_id)
-    if ops_json is None:
-        ops_json = compile_se_official_ops_to_archive(archive, amending_sfs_id)
-    elif not as_of:
-        first_source = (ops_json[0].get("source") or {}) if ops_json else {}
-        if not str(first_source.get("effective") or "") and str(official_act.get("effective_clause") or ""):
+    # Cache-load then refresh-on-miss path. When the cached ops are missing OR
+    # detected stale (no source.effective while the official act carries an
+    # effective_clause), the canonical effects plan is rebuilt and the persistable
+    # waists/ops/adjudications refreshed. Persist only when the archive is
+    # writable (CLI compile / probe paths open writable): the read-only scan
+    # worker opens the shared Farchive in readonly mode, where an
+    # archive.store() would raise `sqlite3.OperationalError: attempt to write a
+    # readonly database` (previously crashed coverage-scan).
+    def _stale_cache_needs_refresh() -> bool:
+        if ops_json is None:
+            return True
+        if not as_of:
+            first_source = (ops_json[0].get("source") or {}) if ops_json else {}
+            if not str(first_source.get("effective") or "") and str(official_act.get("effective_clause") or ""):
+                return True
+        return False
+
+    if _stale_cache_needs_refresh():
+        if _se_archive_is_writable(archive):
             ops_json = compile_se_official_ops_to_archive(archive, amending_sfs_id)
+        else:
+            # Read-only path: still answer the question with a freshly compiled
+            # in-memory ops set, surfaced as a typed adjudication so the cache-miss
+            # is observable downstream rather than silently substitution-curried.
+            ops_json = [
+                se_legal_operation_to_dict(op)
+                for op in compile_se_official_act_ops(official_act, source_id=amending_sfs_id)
+            ]
+
+    # After the refresh block ops_json is guaranteed non-None (the only None
+    # source is the cache load above; refresh fires whenever the cache yielded
+    # None). Narrow explicitly for the type checker and for readers — the
+    # downstream `ops` deserialization depends on it.
+    assert ops_json is not None
 
     effective_date = as_of
     if effective_date is None:
@@ -2685,6 +2726,26 @@ def analyze_se_official_replay_feasibility(
         effective_date = str(first_source.get("effective") or "")
     if not effective_date:
         effective_date = _infer_se_effective_date_from_base_register(current_json, amending_sfs_id)
+    effective_date_inference_rule = ""
+    if not effective_date:
+        # Manual-compilation frontier rungs: when an act carries no entry-into-force
+        # clause and the base register does not link back to it, prefer the
+        # publisher-stated ``published_date`` (i.e. "Utkom från trycket") over the
+        # issuance date. Neither is the *legal* default (the Swedish SFS default
+        # is publication + 7 days, see SFS 1976:651); the assumption is surfaced
+        # as a typed finding so the manual-compilation frontier remains visible
+        # rather than silently substituted. ``published_date`` is populated by
+        # ``parse_se_official_act_text`` (incl. the legacy ``Utkom från trycket``
+        # header path); ``issued_date`` is the conservative lower bound on the
+        # same legal fact.
+        fallback_date = str(official_act.get("published_date") or "")
+        if fallback_date:
+            effective_date_inference_rule = "se_official_effective_date_inferred_from_published_date"
+        else:
+            fallback_date = str(official_act.get("issued_date") or "")
+            effective_date_inference_rule = "se_official_effective_date_inferred_from_issued_date"
+        if fallback_date:
+            effective_date = fallback_date
     if not effective_date:
         raise ValueError(f"could not determine effective date for {amending_sfs_id}")
 
@@ -2763,8 +2824,10 @@ def analyze_se_official_replay_feasibility(
         "amending_sfs_id": amending_sfs_id,
         "base_sfs_id": resolved_base_sfs_id,
         "effective_date": effective_date,
+        "effective_date_inference_rule": effective_date_inference_rule,
         "pre_date": pre_date,
         "op_count": len(ops),
+        "ops_json": ops_json,
         "contamination": contamination,
         "replay_feasible": not contamination,
         "self_reverse_feasible": not self_reverse_residual,
@@ -2805,33 +2868,41 @@ def check_se_official_replay(
     assert official_act is not None
     current_json = archive.get(se_rk_current_json_locator(resolved_base_sfs_id))
     assert current_json is not None
-    ops_json = load_se_official_ops_from_archive(archive, amending_sfs_id)
+    # Reuse the ops an analyze() load-bearing step already computed (in-memory or
+    # cached) instead of re-fetching the archive cache — that was a read-only
+    # mismatch when the archive cache was empty (scan path).
+    ops_json = analysis.get("ops_json")
+    if ops_json is None:
+        ops_json = load_se_official_ops_from_archive(archive, amending_sfs_id)
     assert ops_json is not None
     base_current = parse_se_statute(current_json, statute_id=resolved_base_sfs_id)
     pre_statute = materialize_se_statute_as_of(base_current, pre_date)
     post_statute = materialize_se_statute_as_of(base_current, effective_date)
     current_raw_sections = extract_se_current_section_texts(current_json, effective_date)
+    # Project the per-act provision / heading / appendix oracle dicts through
+    # the typed ``SEOfficialActText`` coercion (`_coerce_official_act`). That
+    # path applies runtime repair rules (e.g. folding legacy cached
+    # duplicate-label cross-reference continuations into their host section)
+    # that the cached ``official_act`` raw dict does not, so the replay-vs-oracle
+    # lookup returns the legitimate replacement text even when the archaeic
+    # persisted ``official.act.json`` pre-dates the parser fix.
+    coerced_act = _coerce_official_act(official_act)
     official_provisions = {
-        str(provision.get("label") or ""): str(provision.get("text") or "")
-        for provision in official_act.get("provisions", [])
-        if isinstance(provision, dict)
+        provision.label: provision.text for provision in coerced_act.provisions
     }
     official_headings = {
-        str(heading.get("before_label") or ""): str(heading.get("text") or "")
-        for heading in official_act.get("inserted_headings", [])
-        if isinstance(heading, dict)
+        heading.before_label: heading.text for heading in coerced_act.inserted_headings
     }
     official_appendices = {
-        str(appendix.get("label") or ""): " ".join(
+        appendix.label: " ".join(
             part
             for part in [
-                str(appendix.get("title") or "").strip(),
-                str(appendix.get("text") or "").strip(),
+                appendix.title.strip(),
+                appendix.text.strip(),
             ]
             if part
         )
-        for appendix in official_act.get("appendices", [])
-        if isinstance(appendix, dict)
+        for appendix in coerced_act.appendices
     }
     ops = [se_legal_operation_from_dict(op) for op in ops_json]
     contamination = cast(list[Any], analysis["contamination"])
@@ -3065,6 +3136,7 @@ def check_se_official_replay(
         "amending_sfs_id": amending_sfs_id,
         "base_sfs_id": resolved_base_sfs_id,
         "effective_date": effective_date,
+        "effective_date_inference_rule": str(analysis.get("effective_date_inference_rule") or ""),
         "pre_date": pre_date,
         "recovery_mode": recovery_mode,
         "oracle_consolidation_stamp": oracle_stamp or "",
@@ -3242,6 +3314,7 @@ def scan_se_official_replay_act(
         "base_sfs_id": str(result.get("base_sfs_id") or ""),
         "outcome": "replay_ok",
         "recovery_mode": str(result.get("recovery_mode") or ""),
+        "effective_date_inference_rule": str(result.get("effective_date_inference_rule") or ""),
         "oracle_version_relation": str(result.get("oracle_version_relation") or ""),
         "oracle_consolidation_sfs_id": str(result.get("oracle_consolidation_sfs_id") or ""),
         "target_count": int(result.get("target_count") or 0),
