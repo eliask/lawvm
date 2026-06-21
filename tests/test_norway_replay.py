@@ -7,7 +7,7 @@ import tarfile
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
 from lawvm.norway.index import NOAmendmentIndex, NOAmendmentIndexEntry, build_no_amendment_index, save_no_amendment_index
-from lawvm.norway.replay import _effective_date_from_amendment, replay_no_to_pit
+from lawvm.norway.replay import _effective_date_from_amendment, _no_ref_kind_and_date, replay_no_to_pit
 from lawvm.tools.replay_payloads import build_no_replay_payload
 
 
@@ -640,3 +640,77 @@ def test_replay_no_to_pit_accepts_commencement_override(tmp_path) -> None:
     assert result.amendments_applied == ["no/lovtid/2025-02-02-5"]
     assert result.amendments_skipped_contingent == []
     assert result.n_ops == 3
+
+
+# --- §1.10: malformed base_id surfaces as a typed NOReplayResult.error ---
+#
+# Before this fix, ``_no, ref_kind, date_part = norm_base_id.split("/", 2)``
+# silently crashed with a bare ValueError when ``norm_base_id`` had fewer
+# than 3 ``/``-segments (e.g. ``no/lov``), and ``year = int(date_part[:4])``
+# crashed when the date segment did not begin with a 4-digit year. Both escaped
+# the existing try/except around ``_normalize_base_id`` and surfaced to the
+# CLI as a raw Python traceback — the §1.10 invisible-silent-failure smell,
+# just the loud side of it. The ``_no_ref_kind_and_date`` helper narrows the
+# accepted shape and the try-block in ``replay_no_to_pit`` now wraps the
+# year-parse so any malformed shape produces a typed ``NOReplayResult.error``
+# instead of a crash.
+
+
+def test_no_ref_kind_and_date_extracts_canonical_segments() -> None:
+    no, ref_kind, date_part = _no_ref_kind_and_date("no/lov/2024-01-12-1")
+
+    assert no == "no"
+    assert ref_kind == "lov"
+    assert date_part == "2024-01-12-1"
+
+
+def test_no_ref_kind_and_date_raises_typed_for_two_segment_id() -> None:
+    # ``_normalize_base_id`` accepts any ``no/...`` prefix; the helper narrows
+    # the accepted shape to ``no/<kind>/<date>`` and raises ValueError when the
+    # 3-segment canonical form is missing. The error message names the offending
+    # id so triage does not have to re-run replay to find the bad shape.
+    try:
+        _no_ref_kind_and_date("no/lov")
+    except ValueError as exc:
+        assert "no/lov" in str(exc)
+        assert "expected no/<kind>/<date>" in str(exc)
+    else:
+        raise AssertionError("expected ValueError on two-segment base_id")
+
+
+def test_replay_no_to_pit_surfaces_two_segment_base_id_as_typed_error() -> None:
+    # Before the fix, the bare ``norm_base_id.split("/", 2)`` crash escaped
+    # replay_no_to_pit and bubbled to the CLI as a raw traceback. The replay
+    # contract is that malformed inputs return NOReplayResult(error=...) —
+    # this test pins the contract end-to-end.
+    result = replay_no_to_pit("no/lov", as_of="2026-03-29")
+
+    assert result.error is not None
+    assert "expected no/<kind>/<date>" in result.error
+    assert "no/lov" in result.error
+    # The replay status (derived from the error in verify_no_against_current)
+    # collapses to "error"; the REPLAYED state is never reached.
+    assert result.replayed is None
+
+
+def test_replay_no_to_pit_surfaces_non_numeric_date_segment_as_typed_error() -> None:
+    # ``year = int(date_part[:4])`` previously crashed with a bare ValueError
+    # when ``date_part`` did not begin with a 4-digit year. The try-block now
+    # wraps the int parse so any malformed date segment produces a typed
+    # NOReplayResult.error carrying the offending id.
+    result = replay_no_to_pit("no/lov/xyz-1", as_of="2026-03-29")
+
+    assert result.error is not None
+    assert "4-digit year" in result.error
+    assert "xyz-1" in result.error
+    assert "no/lov/xyz-1" in result.error
+
+
+def test_replay_no_to_pit_surfaces_unsupported_ref_kind_as_typed_error() -> None:
+    # Pre-existing behaviour for ``ref_kind != "lov"``: typed NOReplayResult.error.
+    # Pinned here to ensure the new try-blocks above do not regress it.
+    result = replay_no_to_pit("no/forordning/2024-01-12-1", as_of="2026-03-29")
+
+    assert result.error is not None
+    assert "unsupported Norway ref kind" in result.error
+    assert "forordning" in result.error
