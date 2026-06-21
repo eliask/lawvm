@@ -773,6 +773,8 @@ def _obs(kind: str, stage: str, **detail: Any) -> ElaborationObservation:
 def _slot_ir_has_item(node: IRNode, target: str) -> bool:
     target_key = leaf_label_identity_key(target)
     compound_match = re.fullmatch(r"(\d+)([a-z])", target_key)
+    compound_parent_seen = False
+    compound_flat_subitem_seen = False
     for child in node.children:
         if child.kind is IRNodeKind.PARAGRAPH and child.label and leaf_label_identity_key(child.label) == target_key:
             return True
@@ -782,6 +784,7 @@ def _slot_ir_has_item(node: IRNode, target: str) -> bool:
             and child.label
             and leaf_label_identity_key(child.label) == compound_match.group(1)
         ):
+            compound_parent_seen = True
             subitem_key = leaf_label_identity_key(compound_match.group(2), "subitem")
             if any(
                 grandchild.kind is IRNodeKind.SUBPARAGRAPH
@@ -790,6 +793,13 @@ def _slot_ir_has_item(node: IRNode, target: str) -> bool:
                 for grandchild in child.children
             ):
                 return True
+        if (
+            compound_match
+            and child.kind is IRNodeKind.PARAGRAPH
+            and child.label
+            and leaf_label_identity_key(child.label, "subitem") == leaf_label_identity_key(compound_match.group(2), "subitem")
+        ):
+            compound_flat_subitem_seen = True
         if child.kind is IRNodeKind.PARAGRAPH:
             for grandchild in child.children:
                 if (
@@ -798,6 +808,8 @@ def _slot_ir_has_item(node: IRNode, target: str) -> bool:
                     and leaf_label_identity_key(grandchild.label, "subitem") == target_key
                 ):
                     return True
+    if compound_parent_seen and compound_flat_subitem_seen:
+        return True
     sub_text = (node.text or " ".join(child.text or "" for child in node.children)).strip()
     m = re.match(r"^(\d+[a-zA-Z]*)\)", sub_text)
     return bool(m and leaf_label_identity_key(m.group(1)) == target_key)
@@ -4688,9 +4700,35 @@ def _drop_item_replaces_missing_from_sparse_payload(
     """
 
     def _sub_has_item(sub: IRNode, item_norm: str) -> bool:
+        compound_match = re.fullmatch(r"(\d+)([a-z])", item_norm)
+        compound_parent_seen = False
+        compound_flat_subitem_seen = False
         for child in sub.children:
             if child.kind == IRNodeKind.PARAGRAPH and child.label and leaf_label_identity_key(child.label) == item_norm:
                 return True
+            if (
+                compound_match
+                and child.kind == IRNodeKind.PARAGRAPH
+                and child.label
+                and leaf_label_identity_key(child.label) == compound_match.group(1)
+            ):
+                compound_parent_seen = True
+                subitem_key = leaf_label_identity_key(compound_match.group(2), "subitem")
+                if any(
+                    grandchild.kind == IRNodeKind.SUBPARAGRAPH
+                    and grandchild.label
+                    and leaf_label_identity_key(grandchild.label, "subitem") == subitem_key
+                    for grandchild in child.children
+                ):
+                    return True
+            if (
+                compound_match
+                and child.kind == IRNodeKind.PARAGRAPH
+                and child.label
+                and leaf_label_identity_key(child.label, "subitem")
+                == leaf_label_identity_key(compound_match.group(2), "subitem")
+            ):
+                compound_flat_subitem_seen = True
             if child.kind == IRNodeKind.PARAGRAPH:
                 for grandchild in child.children:
                     if (
@@ -4699,6 +4737,8 @@ def _drop_item_replaces_missing_from_sparse_payload(
                         and leaf_label_identity_key(grandchild.label, "subitem") == item_norm
                     ):
                         return True
+        if compound_parent_seen and compound_flat_subitem_seen:
+            return True
         return False
 
     filtered: List[AmendmentOp] = []

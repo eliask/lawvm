@@ -11289,6 +11289,59 @@ class TestApplyItemReplace:
         assert "a" in sp_labels, "pure-letter subparagraph 'a' must not be stripped"
         assert "b" in sp_labels, "pure-letter subparagraph 'b' must not be stripped"
 
+    def test_replace_compound_item_target_updates_only_named_subparagraph(self):
+        master_para2 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="old item two:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(IRNode(kind=IRNodeKind.CONTENT, text="old a"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="h", children=(IRNode(kind=IRNodeKind.CONTENT, text="old h"),)),
+            ),
+        )
+        sec = _sec("1", _sub("1", _para("1", "item one"), master_para2))
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+
+        amend_sub = _sub(
+            "1",
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.INTRO, text="context:"),)),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="h", children=(IRNode(kind=IRNodeKind.CONTENT, text="new h"),)),
+        )
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list[SourcePathology] = []
+
+        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2h")
+        result = _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "1 § 1 mom 2h k",
+            source_pathologies_out=pathologies,
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        new_para2 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "2")
+        subitems = {
+            c.label: irnode_to_text(c)
+            for c in new_para2.children
+            if c.kind == IRNodeKind.SUBPARAGRAPH and c.label
+        }
+
+        assert "old item two" in irnode_to_text(new_para2)
+        assert subitems["a"].endswith("old a")
+        assert subitems["h"].endswith("new h")
+        assert len(pathologies) == 1
+        assert pathologies[0].detail["recovery_kind"] == "sparse_alakohta_replace_merge"
+
     def test_replace_item_intro_preserves_existing_subparagraphs(self):
         """Provenance: 2017/252 §2 — amendment 2021/556 replaces item 1 intro ('kohdan
         johtolause') but the amendment payload has no subparagraphs.  The master item

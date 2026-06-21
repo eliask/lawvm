@@ -1222,13 +1222,15 @@ def _skip_anaphoric_heading_residue(scan: _Scan) -> bool:
         scan.advance()
     if (t := scan.peek()) and t.cat in ("OTSIKKO", "VALIOTSIKKO"):
         scan.advance()
-        # Only the TERMINAL anaphoric heading (last arm, followed by the END
-        # sentinel / end-of-stream) is the benign consume-and-drop form. A heading
-        # trailed by more content (``, jolloin …`` renumber tail, further arms, a
-        # cross-verb-group continuation) belongs to a complex clause the new parser
-        # must still decline (1999/1001) — rewind so it is not silently swallowed.
+        # A terminal anaphoric heading is the benign consume-and-drop form. The
+        # same residue may also be followed by a list separator and another clean
+        # insertion arm (``… 9 b § ja sen edelle uusi 2 a luvun otsikko sekä
+        # asetukseen uusi 118 b §``); leave the separator for the outer loop.
+        # Other trailing content (``, jolloin …`` renumber tail, a cross-verb
+        # continuation) belongs to a complex clause the new parser must still
+        # decline (1999/1001) — rewind so it is not silently swallowed.
         nxt = scan.peek()
-        if nxt is None or nxt.cat == "END_SENTINEL_SPAN":
+        if nxt is None or nxt.cat in ("END_SENTINEL_SPAN", "COMMA", "CONJ", "SEKA"):
             return True
         scan.goto(saved)
         return False

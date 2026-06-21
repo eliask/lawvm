@@ -806,7 +806,7 @@ def annotate_qualifiers(tokens: list[Token]) -> list[Annotation]:
     Handles:
     - Language qualifiers (LANGQUAL) → removed (no sentinel)
     - Temporal modifiers (TEMPORAL) → removed
-    - Alakohta refinements (ALAKOHTA, LETTER+ALAKOHTA patterns) → removed
+    - Malformed orphan ALAKOHTA refinements → removed
     - Participial adjectives (muutettu, kumotun, ...) → removed
     - Valiotsikko-qualifier phrases → replaced with VALIOTSIKKO sentinel
 
@@ -855,39 +855,17 @@ def annotate_qualifiers(tokens: list[Token]) -> list[Annotation]:
             i += 1
             continue
 
-        # Alakohta qualifiers are stripped from target references, but
-        # ``uusi c alakohta`` is operative insertion payload and must remain
-        # visible to the grammar.
+        # Orphan alakohta words are stripped, but labeled alakohta targets
+        # (``2 kohdan h alakohta``) and ``uusi c alakohta`` insertion payloads
+        # must remain visible to the grammar.
         if (
             t.cat == "ALAKOHTA"
+            and not (i > 0 and tokens[i - 1].cat in {"LETTER", "NUM"})
             and not (i > 0 and tokens[i - 1].cat == "UUSI")
             and not (i > 1 and tokens[i - 1].cat == "LETTER" and tokens[i - 2].cat == "UUSI")
         ):
             annotations.append(Annotation(kind="qualifier", span=Span(i, i + 1), sentinel_cat=""))
             i += 1
-            continue
-
-        # "LETTER ALAKOHTA"
-        if (
-            t.cat == "LETTER"
-            and i + 1 < n
-            and tokens[i + 1].cat == "ALAKOHTA"
-            and not (i > 0 and tokens[i - 1].cat == "UUSI")
-        ):
-            annotations.append(Annotation(kind="qualifier", span=Span(i, i + 2), sentinel_cat=""))
-            i += 2
-            continue
-
-        # "LETTER CONJ LETTER ALAKOHTA" — multi-letter alakohta
-        if (
-            t.cat == "LETTER"
-            and i + 3 < n
-            and tokens[i + 1].cat == "CONJ"
-            and tokens[i + 2].cat == "LETTER"
-            and tokens[i + 3].cat == "ALAKOHTA"
-        ):
-            annotations.append(Annotation(kind="qualifier", span=Span(i, i + 4), sentinel_cat=""))
-            i += 4
             continue
 
         # Orphan letter before CONJ when alakohta pattern partially stripped

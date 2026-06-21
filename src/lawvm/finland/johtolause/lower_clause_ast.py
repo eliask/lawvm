@@ -192,6 +192,11 @@ def _supplementary_text_targets(resolved: ResolvedSurfaceClause) -> Tuple[LegalA
 # ---------------------------------------------------------------------------
 
 
+def _legacy_item_label(sr: SurfaceSubRef) -> str:
+    """Encode ``kohta`` + ``alakohta`` for the current replay item slot."""
+    return f"{sr.item}{sr.subitem}" if sr.item and sr.subitem else sr.item
+
+
 def _build_target_address(
     kind: TargetKind,
     label: str,
@@ -424,7 +429,7 @@ def _lower_resolved_target_ref(
             node.chapter,
             node.part,
             momentti=sr.momentti,
-            item=sr.item,
+            item=_legacy_item_label(sr),
             special=special_str,
         )
         notes = node.notes
@@ -438,7 +443,7 @@ def _lower_resolved_target_ref(
                 node.renumber_dest_part,
                 source_label=node.label,
                 momentti=sr.momentti,
-                item=sr.item,
+                item=_legacy_item_label(sr),
                 special=special_str,
             )
             heading_action = LabelAction.RENUMBER if verb == VerbKind.SIIRTAA else LabelAction.HEADING_REPLACE
@@ -466,7 +471,7 @@ def _lower_resolved_target_ref(
                 node.renumber_dest_part,
                 source_label=node.label,
                 momentti=sr.momentti,
-                item=sr.item,
+                item=_legacy_item_label(sr),
                 special=special_str,
             )
             result.append(
@@ -574,7 +579,7 @@ def _lower_resolved_insertion(
     special = ""
     if node.sub_target is not None:
         momentti = node.sub_target.momentti
-        item = node.sub_target.item
+        item = _legacy_item_label(node.sub_target)
         # Map FacetKind enum to legacy special string
         if node.sub_target.facet is FacetKind.HEADING:
             special = "otsikko"
@@ -738,7 +743,7 @@ def _lower_resolved_descendant_coordination(
             node.base.chapter,
             node.base.part,
             momentti=sr.momentti,
-            item=sr.item,
+            item=_legacy_item_label(sr),
             special=special_str,
         )
         notes: Tuple[str, ...] = node.base.notes

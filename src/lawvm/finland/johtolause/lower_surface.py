@@ -127,6 +127,11 @@ def _facet_to_special(facet: FacetKind | None) -> str:
     return ""
 
 
+def _legacy_item_label(sr: SurfaceSubRef) -> str:
+    """Encode ``kohta`` + ``alakohta`` for the legacy ParsedOp item slot."""
+    return f"{sr.item}{sr.subitem}" if sr.item and sr.subitem else sr.item
+
+
 # ---------------------------------------------------------------------------
 # Node lowering: each SurfaceNode type -> list[ParsedOp]
 # ---------------------------------------------------------------------------
@@ -202,7 +207,7 @@ def _lower_target_ref(node: SurfaceTargetRef, verb: str) -> list[ParsedOp]:
             chapter=chapter,
             number=node.label,
             momentti=sr.momentti,
-            item=sr.item,
+            item=_legacy_item_label(sr),
             special=special,
             facet=sr.facet,
             raw="",
@@ -261,7 +266,7 @@ def _lower_insertion(node: SurfaceInsertion, verb: str) -> list[ParsedOp]:
     facet: FacetKind | None = None
     if node.sub_target is not None:
         momentti = node.sub_target.momentti
-        item = node.sub_target.item
+        item = _legacy_item_label(node.sub_target)
         facet = node.sub_target.facet
         special = _facet_to_special(facet)
 
@@ -315,7 +320,7 @@ def _lower_back_ref(
             chapter="",
             number="",
             momentti=sr.momentti,
-            item=sr.item,
+            item=_legacy_item_label(sr),
             special=special,
             facet=sr.facet,
             raw="",
@@ -429,7 +434,7 @@ def _lower_descendant_coordination(
             chapter=node.base.chapter,
             number=node.base.label,
             momentti=sr.momentti,
-            item=sr.item,
+            item=_legacy_item_label(sr),
             special=special,
             facet=sr.facet,
             raw="",

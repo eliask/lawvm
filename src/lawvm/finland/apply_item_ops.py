@@ -73,6 +73,59 @@ def _is_lettered_subparagraph_payload(child: IRNode) -> bool:
     return not normalized_label_key(child.label)[:1].isdigit()
 
 
+def _compound_item_subitem_parts(item_norm: str) -> tuple[str, str] | None:
+    match = re.fullmatch(r"(\d+)([a-z])", item_norm)
+    if match is None:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _find_sparse_compound_subitem_payload(
+    amend_sub: IRNode,
+    parent_item_norm: str,
+    subitem_norm: str,
+) -> IRNode | None:
+    anchor = next(
+        (
+            child
+            for child in amend_sub.children
+            if child.kind is IRNodeKind.PARAGRAPH
+            and child.label
+            and normalized_label_key(child.label) == parent_item_norm
+        ),
+        None,
+    )
+    if anchor is not None:
+        nested = next(
+            (
+                child
+                for child in anchor.children
+                if child.kind is IRNodeKind.SUBPARAGRAPH
+                and child.label
+                and normalized_label_key(child.label) == subitem_norm
+            ),
+            None,
+        )
+        if nested is not None:
+            return nested
+
+    if anchor is None:
+        return None
+    flat = next(
+        (
+            child
+            for child in amend_sub.children
+            if child.kind is IRNodeKind.PARAGRAPH
+            and child.label
+            and normalized_label_key(child.label) == subitem_norm
+        ),
+        None,
+    )
+    if flat is None:
+        return None
+    return _paragraph_to_subparagraph_ir(flat, subitem_norm)
+
+
 @dataclass(frozen=True)
 class _ItemApplyView:
     op_type: str
@@ -819,6 +872,71 @@ def _apply_item_replace(
     unlabelled_relabel_attempted = False
     n = _resolve_item_subsection_index(subsecs, view.target_paragraph)
     item_norm = re.sub(r"[)\s.]", "", view.target_item).strip().lower()
+    compound_target = _compound_item_subitem_parts(item_norm)
+    if compound_target is not None and 0 <= n < len(subsecs) and amend_sub is not None:
+        parent_item_norm, subitem_norm = compound_target
+        sub = subsecs[n]
+        paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
+        flat_item_idx = next(
+            (i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == item_norm),
+            None,
+        )
+        parent_idx = next(
+            (i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == parent_item_norm),
+            None,
+        )
+        if flat_item_idx is None and parent_idx is not None:
+            master_para = paras[parent_idx]
+            existing_subitem = next(
+                (
+                    child
+                    for child in master_para.children
+                    if child.kind is IRNodeKind.SUBPARAGRAPH
+                    and child.label
+                    and normalized_label_key(child.label) == subitem_norm
+                ),
+                None,
+            )
+            replacement_subitem = _find_sparse_compound_subitem_payload(
+                amend_sub,
+                parent_item_norm,
+                subitem_norm,
+            )
+            if existing_subitem is not None and replacement_subitem is not None:
+                if source_pathologies_out is not None:
+                    source_pathologies_out.append(
+                        build_destructive_shape_loss_risk_pathology(
+                            source_statute=view.source_statute,
+                            target_unit_kind=view.target_unit_kind,
+                            target_label=f"{view.target_section} § {view.target_paragraph} mom {view.target_item} kohta",
+                            recovery_kind=RecoveryKind.SPARSE_ALAKOHTA_REPLACE_MERGE,
+                            live_sibling_count=len(
+                                [c for c in master_para.children if c.kind == IRNodeKind.SUBPARAGRAPH]
+                            ),
+                            payload_sibling_count=1,
+                        )
+                    )
+                if strict_profile is not None:
+                    return None
+                new_para = IRNode(
+                    kind=master_para.kind,
+                    label=master_para.label,
+                    text=master_para.text,
+                    attrs=dict(master_para.attrs),
+                    children=tuple(
+                        replacement_subitem if child is existing_subitem else child
+                        for child in master_para.children
+                    ),
+                )
+                new_sub = _tops.replace_nth(sub, "paragraph", parent_idx, new_para)
+                new_sec = _tops.replace_nth(sec, "subsection", n, new_sub)
+                logger.debug(
+                    "  %s → sparse compound alakohta replace (%s/%s)",
+                    ctx_label,
+                    parent_item_norm,
+                    subitem_norm,
+                )
+                return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
     if _is_item_johd and 0 <= n < len(subsecs):
         sub = subsecs[n]
         paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
