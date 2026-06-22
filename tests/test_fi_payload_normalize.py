@@ -1680,6 +1680,73 @@ def test_fold_intro_list_continuation_skips_fold_when_continuation_is_explicit_t
     assert "lisäksi kiellettävä" in irnode_to_text(subs[1])
 
 
+def test_fold_intro_list_continuation_preserves_multiple_explicit_sparse_targets() -> None:
+    """Multi-target sparse moment bodies must align before any tail folding.
+
+    `2001/807 <- 2010/6 / 9 §` targets 3, 5 and 14 mom.  The body serializes
+    the first changed moment as an intro/list, then a content-only second
+    changed moment with local label 2, then an omission and the final changed
+    moment.  The local label 2 is a sparse payload slot, not a lowercase tail
+    artifact of the first changed moment.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="9",
+        children=tuple(
+            IRNode(kind=IRNodeKind.SUBSECTION, label=str(index))
+            for index in range(1, 15)
+        ),
+    )
+    ctx = _mock_ctx("section", "9", live_node=live_sec)
+    ops = [
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="9", target_paragraph=3),
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="9", target_paragraph=5),
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="9", target_paragraph=14),
+    ]
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="9",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="9 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Päällysmerkintöjen sisältö"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Valmisteen merkintöihin tulee nimet:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="ensimmäinen raja;"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", text="toinen raja."),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Aineen nimi ilmoitetaan säädetyllä nimellä."),),
+            ),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Varoitusmerkit määrätään liitteessä."),),
+            ),
+        ),
+    )
+
+    prepared = prepare_payload_surface(ctx, ops, muutos_ir, _replay_profile_stub(), None)
+    assert prepared is not None
+    assert [child.label for child in prepared.children if child.kind is IRNodeKind.SUBSECTION] == ["1", "2", "3"]
+
+    normalized = elaborate_payload_against_live(ctx, ops, prepared, set())
+    assignment = _slot_assignment_result(normalized)
+    assert [assignment.for_op(op).label if assignment.for_op(op) is not None else None for op in ops] == [
+        "3",
+        "5",
+        "14",
+    ]
+    assert assignment.unassigned_payload_slots == ()
+
+
 def test_fold_intro_list_continuation_still_folds_when_continuation_is_not_a_target() -> None:
     """Content-only subsection that is NOT an explicit target should still be folded.
 

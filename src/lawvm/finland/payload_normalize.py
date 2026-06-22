@@ -1940,6 +1940,7 @@ def _fold_intro_list_continuation_subsection_before_omission(
             if (op.target_paragraph is not None and not op.target_item and op.op_type in ("REPLACE", "INSERT"))
         }
     )
+    subsection_payload_count = sum(1 for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION)
     item_subsection_targets = {
         int(op.target_paragraph)
         for op in (group_ops or [])
@@ -1996,6 +1997,10 @@ def _fold_intro_list_continuation_subsection_before_omission(
                 later_subsection_exists
                 and continuation_text[:1].islower()
             )
+            if len(plain_subsection_targets) >= 2 and subsection_payload_count == len(plain_subsection_targets):
+                new_children.append(child)
+                i += 1
+                continue
             if int(continuation.label) in plain_subsection_targets and not continuation_is_tail_artifact:
                 new_children.append(child)
                 i += 1
