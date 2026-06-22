@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_realization import (
@@ -72,6 +74,9 @@ def _target_scoped_payload_ir(payload_ir: IRNode, target: LegalAddress | None) -
         return payload_ir
     if target.special in _FACET_NODE_KINDS:
         return _target_scoped_facet_payload_ir(payload_ir, target.special)
+    descendant_payload = _target_scoped_descendant_payload_ir(payload_ir, target)
+    if descendant_payload is not None:
+        return descendant_payload
     terminal_kind, terminal_label = target.path[-1]
     if terminal_kind not in _TARGET_NODE_KINDS:
         return payload_ir
@@ -84,7 +89,73 @@ def _target_scoped_payload_ir(payload_ir: IRNode, target: LegalAddress | None) -
     )
     if len(matching_descendants) == 1:
         return matching_descendants[0]
+    if terminal_kind in _CHILD_TARGET_KINDS:
+        return None
     return payload_ir
+
+
+def _target_scoped_descendant_payload_ir(payload_ir: IRNode, target: LegalAddress) -> IRNode | None:
+    item_label = _path_label(target, "item")
+    subitem_label = _path_label(target, "subitem")
+    if item_label and subitem_label:
+        return _unique_payload_match(
+            payload_ir,
+            (
+                lambda node, ancestors: _node_matches_target(node, "item", item_label + subitem_label)
+                or (
+                    _node_matches_target(node, "subitem", subitem_label)
+                    and any(_node_matches_target(ancestor, "item", item_label) for ancestor in ancestors)
+                )
+            ),
+        )
+    if item_label:
+        split_item_label = _split_item_subitem_label(item_label)
+        if split_item_label is not None:
+            split_item, split_subitem = split_item_label
+            return _unique_payload_match(
+                payload_ir,
+                (
+                    lambda node, ancestors: _node_matches_target(node, "item", item_label)
+                    or (
+                        _node_matches_target(node, "subitem", split_subitem)
+                        and any(_node_matches_target(ancestor, "item", split_item) for ancestor in ancestors)
+                    )
+                ),
+            )
+    return None
+
+
+def _path_label(target: LegalAddress, kind: str) -> str:
+    for path_kind, label in reversed(target.path):
+        if path_kind == kind:
+            return label
+    return ""
+
+
+def _split_item_subitem_label(label: str) -> tuple[str, str] | None:
+    digits = ""
+    for char in label:
+        if not char.isdigit():
+            break
+        digits += char
+    suffix = label[len(digits):]
+    if not digits or len(suffix) != 1 or not suffix.isalpha():
+        return None
+    return digits, suffix
+
+
+def _unique_payload_match(
+    payload_ir: IRNode,
+    predicate: Callable[[IRNode, tuple[IRNode, ...]], bool],
+) -> IRNode | None:
+    matches = tuple(
+        node
+        for node, ancestors in _walk_ir_with_ancestors(payload_ir)
+        if node is not payload_ir and predicate(node, ancestors)
+    )
+    if len(matches) != 1:
+        return None
+    return matches[0]
 
 
 def _target_scoped_facet_payload_ir(payload_ir: IRNode, facet: FacetKind) -> IRNode | None:
@@ -106,6 +177,16 @@ def _walk_ir(node: IRNode) -> tuple[IRNode, ...]:
     return tuple(nodes)
 
 
+def _walk_ir_with_ancestors(
+    node: IRNode,
+    ancestors: tuple[IRNode, ...] = (),
+) -> tuple[tuple[IRNode, tuple[IRNode, ...]], ...]:
+    rows = [(node, ancestors)]
+    for child in node.children:
+        rows.extend(_walk_ir_with_ancestors(child, ancestors + (node,)))
+    return tuple(rows)
+
+
 _TARGET_NODE_KINDS: dict[str, frozenset[IRNodeKind]] = {
     "part": frozenset({IRNodeKind.PART}),
     "chapter": frozenset({IRNodeKind.CHAPTER}),
@@ -119,6 +200,8 @@ _FACET_NODE_KINDS: dict[FacetKind, frozenset[IRNodeKind]] = {
     FacetKind.HEADING: frozenset({IRNodeKind.HEADING}),
     FacetKind.INTRO: frozenset({IRNodeKind.INTRO}),
 }
+
+_CHILD_TARGET_KINDS = frozenset({"item", "subitem"})
 
 
 def _node_matches_target(node: IRNode, target_kind: str, target_label: str) -> bool:

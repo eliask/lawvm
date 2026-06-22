@@ -132,6 +132,135 @@ def test_payload_realization_audit_scopes_child_target_to_matching_payload_subtr
     assert findings == ()
 
 
+def test_payload_realization_audit_scopes_split_subitem_target_to_combined_payload_label() -> None:
+    carrier = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="Shared subsection intro belongs to the carrier, not this subitem.",
+            ),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="7e",
+                text="Owned subitem text appears here.",
+            ),
+        ),
+    )
+    op = ResolvedOp(
+        op=AmendmentOp(
+            op_id="op1",
+            op_type="INSERT",
+            target_section="6",
+            target_unit_kind="section",
+        ),
+        muutos_ir=None,
+        cross_ir=None,
+        amend_sub_ir=carrier,
+        target_norm="6",
+        op_id="op1",
+        _op_type_seed="INSERT",
+        _target_address_override=LegalAddress(
+            path=(("section", "6"), ("subsection", "1"), ("item", "7"), ("subitem", "e"))
+        ),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(op,),
+        after_ir=_after("The folded statute says owned subitem text appears here."),
+        amendment_id="2000/1",
+    )
+
+    assert findings == ()
+
+
+def test_payload_realization_audit_scopes_combined_item_target_to_split_payload_child() -> None:
+    carrier = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="Shared subsection intro belongs to the carrier, not this item child.",
+            ),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="6",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBPARAGRAPH,
+                        label="c",
+                        text="Owned split child text appears here.",
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.SUBPARAGRAPH,
+                        label="d",
+                        text="Sibling split child text belongs to another operation.",
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = ResolvedOp(
+        op=AmendmentOp(
+            op_id="op1",
+            op_type="REPLACE",
+            target_section="1",
+            target_unit_kind="section",
+        ),
+        muutos_ir=None,
+        cross_ir=None,
+        amend_sub_ir=carrier,
+        target_norm="1",
+        op_id="op1",
+        _op_type_seed="REPLACE",
+        _target_address_override=LegalAddress(
+            path=(("section", "1"), ("subsection", "1"), ("item", "6c"))
+        ),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(op,),
+        after_ir=_after("The folded statute says owned split child text appears here."),
+        amendment_id="2000/1",
+    )
+
+    assert findings == ()
+
+
+def test_payload_realization_audit_does_not_smuggle_carrier_text_to_unmatched_child_target() -> None:
+    op = ResolvedOp(
+        op=AmendmentOp(
+            op_id="op1",
+            op_type="INSERT",
+            target_section="6",
+            target_unit_kind="section",
+        ),
+        muutos_ir=None,
+        cross_ir=None,
+        amend_sub_ir=IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            text="Shared subsection intro must not be charged to a missing child target.",
+        ),
+        target_norm="6",
+        op_id="op1",
+        _op_type_seed="INSERT",
+        _target_address_override=LegalAddress(
+            path=(("section", "6"), ("subsection", "1"), ("item", "7"), ("subitem", "e"))
+        ),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(op,),
+        after_ir=_after("The folded statute has unrelated text."),
+        amendment_id="2000/1",
+    )
+
+    assert findings == ()
+
+
 def test_payload_realization_audit_scopes_heading_target_to_heading_facet() -> None:
     carrier = IRNode(
         kind=IRNodeKind.CHAPTER,
