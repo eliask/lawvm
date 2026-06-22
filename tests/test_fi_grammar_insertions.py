@@ -554,6 +554,16 @@ def test_section_ref_kohta_without_uusi_is_not_an_insertion() -> None:
     assert report.equal
 
 
+def test_repeated_section_ill_targets_share_inserted_subsection() -> None:
+    model = parse_text_with(
+        "lisätään lain 20 §:ään ja 37 §:ään uusi 2 momentti seuraavasti:",
+        new_parser.parse,
+    )
+    insertions = [_as_insertion(node) for node in model.verb_groups[0].nodes]
+    assert [node.label for node in insertions] == ["20", "37"]
+    assert [node.sub_target.momentti for node in insertions if node.sub_target] == [2, 2]
+
+
 # Chained-insertion continuation arms where a LATER batch carries a trailing
 # reinstatement / citation / provenance span. The arm-level out-of-scope guard
 # must inspect only the CURRENT insertion arm, not scan to the next verb — a
