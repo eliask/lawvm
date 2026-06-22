@@ -1904,6 +1904,137 @@ def test_normalize_group_payload_splits_sparse_single_subsection_across_consecut
     ]
 
 
+def test_normalize_group_payload_splits_single_target_carried_live_tail() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="6",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=(
+                            "Tietosuojavaltuutetun nimittää tasavallan presidentti "
+                            "valtioneuvoston esityksestä."
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=(
+                            "Tietosuojavaltuutetuksi nimitetty vapautuu hoitamasta muuta virkaa "
+                            "tai tointa siksi ajaksi, jonka hän toimii tietosuojavaltuutettuna."
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Tietosuojavaltuutetusta ja toimistosta säädetään asetuksella.",
+                    ),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "6", live_node=live_sec)
+    group_ops = [
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="6", target_paragraph=1),
+    ]
+    carried_second = irnode_to_text(live_sec.children[1])
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="6",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="6 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=(
+                            "Tietosuojavaltuutetun nimittää valtioneuvosto virkaa haettavaksi "
+                            f"julistamatta määräajaksi. {carried_second}"
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(kind=IRNodeKind.OMISSION),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, group_ops, muutos_ir, set())
+
+    normalized = _muutos_ir(got)
+    target_sub = next(child for child in normalized.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1")
+    target_text = irnode_to_text(target_sub)
+    assert "valtioneuvosto virkaa haettavaksi" in target_text
+    assert carried_second not in target_text
+    assert got.subsec_map[id(got.group_ops[0])] is target_sub
+    observations = _observations(got)
+    assert any(
+        obs.kind == "ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL"
+        and obs.detail is not None
+        and obs.detail["target_subsection"] == "1"
+        and obs.detail["first_carried_subsection"] == "2"
+        for obs in observations
+    )
+    completeness = _completeness(got)
+    assert completeness.kind == "sparse_certified"
+    assert completeness.tail_policy == "preserve_unstated_tail"
+
+
+def test_normalize_group_payload_does_not_split_multi_subsection_target_payload() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="10",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="Vanha 1."),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="Vanha 2."),)),
+        ),
+    )
+    ctx = _mock_ctx("section", "10", live_node=live_sec)
+    group_ops = [
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="10", target_paragraph=1),
+    ]
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="10",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="10 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Uusi 1. Vanha 2."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Uusi 2."),),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, group_ops, muutos_ir, set())
+
+    normalized = _muutos_ir(got)
+    target_sub = next(child for child in normalized.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1")
+    assert "Vanha 2." in irnode_to_text(target_sub)
+    observations = _observations(got)
+    assert not any(obs.kind == "ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL" for obs in observations)
+
+
 def test_normalize_group_payload_splits_fused_restarted_subsection_across_consecutive_replaces() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

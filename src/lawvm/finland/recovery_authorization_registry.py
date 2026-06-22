@@ -65,6 +65,11 @@ RECOVERY_AUTHORIZATION_RULES: dict[str, FinlandRecoveryAuthorizationRule] = {
         owner_phase="typed_elaboration",
         family="sparse_payload_elaboration_recovery",
     ),
+    "ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL": FinlandRecoveryAuthorizationRule(
+        kind="ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL",
+        owner_phase="typed_elaboration",
+        family="sparse_payload_elaboration_recovery",
+    ),
     "ELAB.CONTAINER_PRUNED_SHADOWED": FinlandRecoveryAuthorizationRule(
         kind="ELAB.CONTAINER_PRUNED_SHADOWED",
         owner_phase="typed_elaboration",

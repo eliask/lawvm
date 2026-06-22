@@ -642,6 +642,7 @@ def _classify_payload_completeness(
             "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
             "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
             "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
+            _SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE,
             _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
             "ELAB.CONTAINER_PRUNED_SHADOWED",
         }
@@ -656,6 +657,7 @@ def _classify_payload_completeness(
                 "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
                 "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
                 "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
+                _SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE,
                 _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
                 "ELAB.CONTAINER_PRUNED_SHADOWED",
             }
@@ -4541,6 +4543,118 @@ def _split_sparse_omission_single_subsection_across_consecutive_replaces(
     return _tops._with_children(muutos_ir, new_children), True
 
 
+_SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE = (
+    "ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL"
+)
+
+
+def _split_single_target_subsection_carried_live_tail(
+    ctx: PayloadElaborationContext,
+    target_unit_kind: TargetUnitKind,
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> tuple[Optional[IRNode], dict[str, object] | None]:
+    """Trim carried later live moments out of one explicitly targeted moment.
+
+    Some historical Finlex amendment XML wraps the changed first moment together
+    with the unchanged following moment in one source ``subsection`` even though
+    the johtolause targets only ``N §:n 1 momentti`` and the source section then
+    carries an omission marker.  After omission alignment, the following live
+    moment also appears as its own subsection.  Keeping it inside the target slot
+    makes replay duplicate that text under PIT materialization.
+
+    This rule only uses typed scope and exact live-sibling text as evidence.  It
+    does not infer from Finnish prose substrings.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return muutos_ir, None
+    if ctx.live_node is None or ctx.live_node.kind is not IRNodeKind.SECTION:
+        return muutos_ir, None
+
+    plain_targets = sorted(
+        {
+            int(op.target_paragraph)
+            for op in group_ops
+            if (
+                op.op_type in {"REPLACE", "INSERT"}
+                and op.target_paragraph is not None
+                and not op.target_item
+                and not op.target_special
+            )
+        }
+    )
+    if len(plain_targets) != 1:
+        return muutos_ir, None
+    if any(
+        op.target_paragraph is not None
+        and (
+            bool(op.target_item)
+            or bool(op.target_special)
+            or int(op.target_paragraph) != plain_targets[0]
+        )
+        for op in group_ops
+    ):
+        return muutos_ir, None
+
+    target_label = str(plain_targets[0])
+    amend_subs = [child for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION and child.label]
+    if len(amend_subs) != 1:
+        return muutos_ir, None
+    target_sub = next((child for child in amend_subs if _norm_num_token(child.label or "") == target_label), None)
+    if target_sub is None:
+        return muutos_ir, None
+    target_index = next(idx for idx, child in enumerate(muutos_ir.children) if child is target_sub)
+    if not any(child.kind is IRNodeKind.OMISSION for child in muutos_ir.children[target_index + 1 :]):
+        return muutos_ir, None
+    if len(target_sub.children) != 1 or target_sub.children[0].kind is not IRNodeKind.CONTENT:
+        return muutos_ir, None
+
+    def _collapse_ws(text: str) -> str:
+        return " ".join(text.split()).strip()
+
+    target_text = _collapse_ws(irnode_to_text(target_sub))
+    if not target_text:
+        return muutos_ir, None
+
+    live_subs = [
+        child
+        for child in ctx.live_node.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label and _norm_num_token(child.label).isdigit()
+    ]
+    live_by_label = {_norm_num_token(child.label or ""): child for child in live_subs}
+    carried_anchors: list[tuple[str, int]] = []
+    for live_label, live_sub in live_by_label.items():
+        if int(live_label) <= plain_targets[0]:
+            continue
+        live_text = _collapse_ws(irnode_to_text(live_sub))
+        if not live_text:
+            continue
+        pos = target_text.find(live_text)
+        if pos > 0:
+            carried_anchors.append((live_label, pos))
+    if not carried_anchors:
+        return muutos_ir, None
+
+    carried_label, split_pos = min(carried_anchors, key=lambda item: item[1])
+    retained_text = target_text[:split_pos].strip()
+    if not retained_text:
+        return muutos_ir, None
+
+    replacement_target = IRNode(
+        kind=target_sub.kind,
+        label=target_sub.label,
+        text=target_sub.text,
+        attrs=dict(target_sub.attrs),
+        children=(IRNode(kind=IRNodeKind.CONTENT, text=retained_text),),
+    )
+    new_children = [replacement_target if child is target_sub else child for child in muutos_ir.children]
+    return _tops._with_children(muutos_ir, new_children), {
+        "target_subsection": target_label,
+        "first_carried_subsection": carried_label,
+        "carried_subsections": [label for label, _pos in carried_anchors],
+    }
+
+
 def _build_subsection_override_map(
     muutos_ir: Optional[IRNode],
     group_ops: List[AmendmentOp],
@@ -6589,6 +6703,22 @@ def elaborate_payload_against_live(
                 "group_payload_normalization",
                 target_unit_kind=target_unit_kind,
                 target_norm=target_norm,
+            )
+        )
+    muutos_ir, carried_live_tail_detail = _split_single_target_subsection_carried_live_tail(
+        ctx,
+        target_unit_kind,
+        muutos_ir,
+        group_ops,
+    )
+    if carried_live_tail_detail is not None:
+        observations.append(
+            _obs(
+                _SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                **carried_live_tail_detail,
             )
         )
     muutos_ir, fused_restart_split = _split_fused_restarted_subsection_across_consecutive_replaces(
