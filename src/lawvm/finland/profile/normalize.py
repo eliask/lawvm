@@ -501,6 +501,10 @@ def _apply_nest_lettered_subparagraphs(children: List[IRNode]) -> List[IRNode]:
     has_mixed_compound_family = any(
         len(lbl) == 1 and cnt > 1 for lbl, cnt in para_label_counts.items() if _LOWER_ALPHA_LABEL_RE.match(lbl)
     ) and any(len(lbl) > 1 for lbl in para_label_counts if _LOWER_ALPHA_LABEL_RE.match(lbl))
+    can_nest_repeated_letters_under_dense_digits = has_dense_digit_family and any(
+        len(lbl) == 1 and _LOWER_ALPHA_LABEL_RE.match(lbl)
+        for lbl in duplicate_labels
+    )
     duplicate_roman_labels = {
         lbl for lbl, cnt in para_label_counts.items()
         if cnt > 1 and _is_roman_label(lbl)
@@ -584,6 +588,9 @@ def _apply_nest_lettered_subparagraphs(children: List[IRNode]) -> List[IRNode]:
                 sub = _make_subparagraph(child)
                 pending_parent = _attach_subs(pending_parent, [sub])
             elif has_mixed_compound_family:
+                sub = _make_subparagraph(child)
+                pending_parent = _attach_subs(pending_parent, [sub])
+            elif can_nest_repeated_letters_under_dense_digits and _is_letter_label(lbl):
                 sub = _make_subparagraph(child)
                 pending_parent = _attach_subs(pending_parent, [sub])
             elif can_nest_unique_letters_under_introducer and _is_letter_label(lbl):
@@ -1612,7 +1619,12 @@ def _apply_fi_split_intro_then_numbered_list_subsections(children: List[IRNode])
 
 
 def _apply_fi_split_inner_omission_paragraph_subsections(children: List[IRNode]) -> List[IRNode]:
-    """Split content-only paragraphs bracketed by omissions out of their enclosing subsection."""
+    """Split content-only paragraphs bracketed by omissions out of their enclosing subsection.
+
+    When the split paragraph introduces numbered peers, carry those peers into
+    the produced subsection.  The unnumbered paragraph is then intro text, not a
+    standalone subsection body.
+    """
     rewritten: List[IRNode] = []
     for child in children:
         if child.kind != IRNodeKind.SUBSECTION:
@@ -1659,9 +1671,19 @@ def _apply_fi_split_inner_omission_paragraph_subsections(children: List[IRNode])
                 children=tuple(retained_children),
             )
         )
-        for split_idx in split_paragraph_indices:
+        for split_order, split_idx in enumerate(split_paragraph_indices):
+            next_split_idx = (
+                split_paragraph_indices[split_order + 1]
+                if split_order + 1 < len(split_paragraph_indices)
+                else len(sub_children)
+            )
             para = sub_children[split_idx]
-            new_sub_children = []
+            following = list(sub_children[split_idx + 1 : next_split_idx])
+            has_numbered_following = any(
+                c.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num(c)
+                for c in following
+            )
+            new_sub_children: List[IRNode] = []
             for c in para.children:
                 if c.kind == IRNodeKind.SUBPARAGRAPH:
                     new_sub_children.append(
@@ -1673,8 +1695,15 @@ def _apply_fi_split_inner_omission_paragraph_subsections(children: List[IRNode])
                             children=c.children,
                         )
                     )
+                elif has_numbered_following and c.kind in (IRNodeKind.CONTENT, IRNodeKind.INTRO):
+                    text = irnode_to_text(c).strip()
+                    if text:
+                        new_sub_children.append(
+                            IRNode(kind=IRNodeKind.INTRO, text=text, attrs=c.attrs)
+                        )
                 else:
                     new_sub_children.append(c)
+            new_sub_children.extend(following)
             rewritten.append(
                 IRNode(
                     kind=IRNodeKind.SUBSECTION,

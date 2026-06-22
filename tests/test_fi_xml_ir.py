@@ -1761,6 +1761,60 @@ def test_fi_xml_to_ir_node_merges_split_intro_item_subsections() -> None:
     assert check_invariants(section) == []
 
 
+def test_fi_xml_to_ir_node_split_inner_omission_carries_numbered_payload() -> None:
+    """Inner omission split must not drop numbered rows following the split lead.
+
+    Real-shaped 1995/1767 §26 c carries an omitted earlier moment, then an
+    unnumbered lead sentence and numbered rows for the inserted moment inside a
+    single source subsection.  The split subsection must own the numbered rows.
+    """
+    xml = etree.fromstring(
+        """
+        <section>
+          <num>26 c §</num>
+          <subsection>
+            <intro>
+              <p>Yhteisöhankinnasta ei kuitenkaan ole kyse siltä osin kuin arvo on enintään 50 000 markkaa, jos</p>
+            </intro>
+            <hcontainer name="omission"/>
+            <paragraph>
+              <content><p>Yhteisöhankinnasta ei myöskään ole kyse, jos</p></content>
+            </paragraph>
+            <paragraph>
+              <num>1)</num>
+              <content><p>tavaran myynnistä ei olisi veroa;</p></content>
+            </paragraph>
+            <paragraph>
+              <num>2)</num>
+              <content><p>tavaran hankinta oikeuttaisi palautukseen; tai</p></content>
+            </paragraph>
+            <paragraph>
+              <num>3)</num>
+              <content><p>hankkijana on kansainvälinen järjestö.</p></content>
+            </paragraph>
+          </subsection>
+        </section>
+        """
+    )
+
+    section = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    subsections = [ch for ch in section.children if ch.kind == IRNodeKind.SUBSECTION]
+    assert len(subsections) == 2
+    assert "enintään 50 000" in irnode_to_text(subsections[0])
+    split = subsections[1]
+    intros = [ch for ch in split.children if ch.kind == IRNodeKind.INTRO]
+    paragraphs = [ch for ch in split.children if ch.kind == IRNodeKind.PARAGRAPH]
+    assert len(intros) == 1
+    assert "myöskään ole kyse" in irnode_to_text(intros[0])
+    assert [p.label for p in paragraphs] == ["1", "2", "3"]
+    assert "tavaran myynnistä" in irnode_to_text(paragraphs[0])
+    assert "palautukseen" in irnode_to_text(paragraphs[1])
+    assert "kansainvälinen järjestö" in irnode_to_text(paragraphs[2])
+
+    assert check_invariants(section) == []
+
+
 def test_fi_xml_to_ir_node_no_merge_when_next_has_intro() -> None:
     """Do not merge when the following subsection already has its own <intro>.
 
