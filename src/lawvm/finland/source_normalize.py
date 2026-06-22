@@ -3127,6 +3127,112 @@ def _detect_numbering_anomalies(
     return children
 
 
+def _item_text_ends_with_open_coordinator(node: IRNode) -> bool:
+    text = irnode_to_text(node).strip().casefold()
+    return text.endswith((" ja", " sekä", " tai", " taikka"))
+
+
+def _with_paragraph_label(node: IRNode, label: str) -> IRNode:
+    children: list[IRNode] = []
+    replaced_num = False
+    for child in node.children:
+        if child.kind == IRNodeKind.NUM and not replaced_num:
+            children.append(
+                IRNode(
+                    kind=child.kind,
+                    label=child.label,
+                    text=f"{label})",
+                    attrs=child.attrs,
+                    children=child.children,
+                )
+            )
+            replaced_num = True
+            continue
+        children.append(child)
+    attrs = dict(node.attrs)
+    attrs["lawvm_source_normalization_rule"] = "fi_terminal_duplicate_item_label_repair_v1"
+    return IRNode(
+        kind=node.kind,
+        label=label,
+        text=node.text,
+        attrs=attrs,
+        children=tuple(children),
+    )
+
+
+def _repair_terminal_duplicate_item_label(
+    node: IRNode,
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> IRNode:
+    """Relabel a terminal duplicate item when local list grammar proves a typo.
+
+    A sequence like ``1), 2), 2)`` is normally a duplicate-source pathology.
+    If the earlier ``2)`` ends with an open-list coordinator, the final duplicate
+    is locally witnessed as the next item number rather than a peer moment or a
+    duplicate to drop.
+    """
+    if node.kind != IRNodeKind.SUBSECTION:
+        return node
+    children = list(node.children)
+    paragraph_positions = [
+        idx
+        for idx, child in enumerate(children)
+        if child.kind == IRNodeKind.PARAGRAPH and _numeric_label_value(child.label) is not None
+    ]
+    if len(paragraph_positions) < 3:
+        return node
+    last_idx = paragraph_positions[-1]
+    prev_idx = paragraph_positions[-2]
+    if last_idx != len(children) - 1:
+        return node
+    last = children[last_idx]
+    prev = children[prev_idx]
+    last_value = _numeric_label_value(last.label)
+    prev_value = _numeric_label_value(prev.label)
+    if last_value is None or prev_value is None or last_value != prev_value:
+        return node
+    prior_values = [
+        value
+        for idx in paragraph_positions[:-1]
+        for value in (_numeric_label_value(children[idx].label),)
+        if value is not None
+    ]
+    if prior_values != list(range(1, len(prior_values) + 1)):
+        return node
+    if not _item_text_ends_with_open_coordinator(prev):
+        return node
+    new_label = str(prev_value + 1)
+    children[last_idx] = _with_paragraph_label(last, new_label)
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=SourceNormalizationKind.NUMBERING_REPAIR,
+            basis=SourceNormalizationBasis.MONOTONIC_LOCAL_REPAIR,
+            before=(
+                f"terminal duplicate paragraph label {last_value} after open-list "
+                f"coordinator in paragraph {prev_value}"
+            ),
+            after=f"relabelled terminal paragraph as {new_label}",
+            explanation=(
+                "The preceding item ends with an open-list coordinator, so the "
+                "terminal duplicate item is a locally witnessed next item number "
+                "rather than a duplicate sibling or a peer moment."
+            ),
+            path=parent_path + (_node_path_label(node),),
+            confidence=0.94,
+        )
+    )
+    return IRNode(
+        kind=node.kind,
+        label=node.label,
+        text=node.text,
+        attrs=node.attrs,
+        children=tuple(children),
+    )
+
+
 def _split_nonpenal_trailing_duplicate_paragraph(
     node: IRNode,
     statute_id: str,
@@ -4077,6 +4183,12 @@ def normalize_source_ir(
     # Step 6: apply node-level structural corrections.
     if _is_item_style_subsection(working):
         working = _reclassify_item_style_subsection(working, statute_id, parent_path, facts)
+    working = _repair_terminal_duplicate_item_label(
+        working,
+        statute_id,
+        current_path,
+        facts,
+    )
     working = _split_nonpenal_trailing_duplicate_paragraph(
         working,
         statute_id,
