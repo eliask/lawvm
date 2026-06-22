@@ -57,6 +57,7 @@ from lawvm.core.tree_ops import (
     resort_children as _resort_children,
 )
 from lawvm.replay_adjudication import SourceAdjudication
+from lawvm.finland.apply_tree_closure import assert_tree_authority_closure
 from lawvm.finland.apply_ir_ops import (
     _strip_redundant_paragraph_label_prefixes_ir,
     _strip_standalone_subsection_item_prefixes_ir,
@@ -260,6 +261,15 @@ class ReplayProducts:
         self.source_effects = source_effects
         self.effect_relations = effect_relations
         self.effect_lifecycle_events = effect_lifecycle_events
+        # FW-01 / OV-01 / OV-02 (wave-2 apply-authority whole-tree closure): over
+        # the finished materialized replay tree, assert no surface-origin node
+        # mints replay authority and no overlay-origin node is replay-authorized
+        # without a complete typed promotion witness. No-op on the FI corpus (the
+        # replay tree carries no surface/overlay provenance markers); fails loud
+        # the day a provider/overlay node reaches the replay tree.
+        materialized_ir = getattr(self.materialized_state, "ir", None)
+        if isinstance(materialized_ir, IRNode):
+            assert_tree_authority_closure(materialized_ir)
 
     @property
     def identity_ledger(self) -> IdentityLedger:

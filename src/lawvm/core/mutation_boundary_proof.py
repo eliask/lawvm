@@ -230,22 +230,26 @@ PerOpBoundaryStatus = Literal["within_boundary", "out_of_boundary"]
 class PerOpMutationBoundaryVerdict:
     """Typed per-op mutation-boundary verdict (LS-01).
 
-    ``status == "out_of_boundary"`` ⟺ the op landed at least one changed tree
-    path outside its declared mutation boundary
+    ``boundary_status == "out_of_boundary"`` ⟺ the op landed at least one changed
+    tree path outside its declared mutation boundary
     (target ∪ declared_migration ∪ declared_recovery ∪ declared_editorial_projection).
     That is a §1.0 per-op violation: under strict it BLOCKS the op, under quirks
     it is recorded as a non-blocking accounting finding. ``out_of_boundary_paths``
     carries the offending diagnostic-string paths (self-evidencing).
+
+    The disposition field is namespaced ``boundary_status`` (not a bare ``status``)
+    per the public-schema status-vocabulary discipline (audit-registry VOCAB-02 /
+    naming-hygiene Gate 46a).
     """
 
     op_id: str
-    status: PerOpBoundaryStatus
+    boundary_status: PerOpBoundaryStatus
     changed_paths: tuple[str, ...]
     out_of_boundary_paths: tuple[str, ...]
 
     @property
     def within_boundary(self) -> bool:
-        return self.status == "within_boundary"
+        return self.boundary_status == "within_boundary"
 
 
 def verify_per_op(
@@ -296,7 +300,7 @@ def verify_per_op(
     )
     return PerOpMutationBoundaryVerdict(
         op_id=str(op_id or ""),
-        status="out_of_boundary" if out_of_boundary else "within_boundary",
+        boundary_status="out_of_boundary" if out_of_boundary else "within_boundary",
         changed_paths=tuple(
             _cached_tree_path_to_diagnostic_string(path) for path in changed_paths
         ),
