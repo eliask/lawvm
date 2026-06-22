@@ -1804,7 +1804,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 3,2015/180,suspect,oracle_suspect,2023/551 eff 2023-09-01 > cutoff 2023-03-23,
 3,2015/315,suspect,oracle_suspect,2022/359 eff 2022-06-01 > cutoff 2022-05-20,
 3,2015/351,core,,,OK
-3,2015/364,core,,,OK
+3,2015/364,suspect,oracle_suspect,2017/1153 repeals 13 § but consolidated oracle duplicates 12 § text at 13 §,OK
 3,2015/487,suspect,oracle_suspect,2020/337 eff 2020-06-01 > cutoff 2020-05-08,
 3,2015/550,suspect,oracle_suspect,2025/1171 eff 2026-01-01 > cutoff 2025-12-11,
 3,2015/551,suspect,oracle_suspect,base_oracle_only despite amendment 2019/1088 eff 2020-01-01 <= cutoff 2022-06-30,OK

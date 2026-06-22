@@ -2625,6 +2625,8 @@ def test_classify_statute_2015_364_keeps_item_repeal_from_expiring_whole_section
     assert result is not None
     sec9 = next(sec for sec in result.section_results if sec["section"] == "section:9")
     assert sec9["diagnosis"] != "REPLAY_MISSING"
+    sec13 = next(sec for sec in result.section_results if sec["section"] == "section:13")
+    assert sec13["diagnosis"] == "ORACLE_STALE"
 
 
 def test_classify_statute_returns_live_source_pathology_codes(monkeypatch) -> None:

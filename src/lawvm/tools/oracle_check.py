@@ -1465,9 +1465,12 @@ def _classify_statute(
                     sec["oracle_version"] = oracle_version or ""
                     continue
                 if (
-                    sec["diagnosis"] == "REPLAY_MISSING"
+                    sec["diagnosis"] in ("MISSING", "REPLAY_MISSING")
                     and blame_action == "repeal"
-                    and "kumottu" in replay_text.lower()
+                    and (
+                        sec["diagnosis"] == "MISSING"
+                        or "kumottu" in replay_text.lower()
+                    )
                     and oracle_section_duplicates_adjacent_section(
                         sec["section"],
                         oracle_text,
