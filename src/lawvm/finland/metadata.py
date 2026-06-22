@@ -1638,7 +1638,12 @@ def _temporary_section_expiry_overrides(
             # coordinated section has its OWN date, so the last-date attribution
             # would be wrong; split per date and attribute each date to the
             # sections in its own segment.
+            # A span carrying more than one "… voimassa … <date>" segment means each
+            # coordinated section has its OWN date; split per date (anchor only — the
+            # dates are lexed by match_fi_date, labels by _parse_section_list_labels).
+            # lawvm-regex: owning_parser V-expiry multi-date detector — counts voimassa-date segments to decide per-date split; anchor/counter only
             if len(_TEMPORARY_SECTION_EXPIRY_DATE_SEGMENT_RE.findall(span)) > 1:
+                # lawvm-regex: owning_parser V-expiry per-date segment locator — splits span into (sections, datetail) per date; anchor only
                 for seg in _TEMPORARY_SECTION_EXPIRY_PER_DATE_RE.finditer(span):
                     seg_expiry = match_fi_date(
                         seg.group("datetail"), forms={FiDateForm.ALLATIVE}
