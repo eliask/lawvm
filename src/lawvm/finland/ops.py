@@ -99,9 +99,6 @@ class SectionPathResolutionReason(StrEnum):
     LIVE_UNIQUE_GLOBAL_FALLBACK = "live_unique_global_fallback"
     LIVE_UNIQUE_SUBSTANTIVE_OVER_PLACEHOLDER = "live_unique_substantive_over_placeholder"
     FOLLOW_SAME_WAVE_MIGRATION = "follow_same_wave_migration"
-    EXPLICIT_CHAPTER_SPARSE_DESCENDANT_CARRIED_ORIGIN = (
-        "explicit_chapter_sparse_descendant_carried_origin"
-    )
 
 
 @dataclass(frozen=True)

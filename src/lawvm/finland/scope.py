@@ -277,36 +277,20 @@ def _duplicate_section_labels(master: "ReplayState") -> Set[str]:
 def chapter_chunks_from_johtolause(johto: str) -> List[Tuple[str, str]]:
     # johto is already Zs-normalized by _normalize_fi_parse_text upstream.
     text = re.sub(r"\s+", " ", johto or "")
-    citation_cut_re = re.compile(r"\bsellais(?:ena|ina)\s+kuin\b", flags=re.I)
-
-    def _match_is_inside_prior_law_citation(match: re.Match[str]) -> bool:
-        prefix = text[: match.start()]
-        citation = None
-        for citation_match in citation_cut_re.finditer(prefix):
-            citation = citation_match
-        if citation is None:
-            return False
-        last_scope_verb_end = 0
-        for verb_match in _FI_SCOPE_VERB_RE.finditer(prefix):
-            last_scope_verb_end = verb_match.end()
-        return citation.start() >= last_scope_verb_end
-
     matches = list(
-        match
-        for match in re.finditer(
-            r"((?:\d+\s*[a-z]?\s*,\s*)*\d+\s*[a-z]?(?:\s+ja\s+\d+\s*[a-z]?)?)\s+lu(?:ku|vun)\b",
+        re.finditer(
+            r"((?:\d+\s*,\s*)*\d+(?:\s+ja\s+\d+)?)\s+lu(?:ku|vun)\b",
             text,
             flags=re.I,
         )
-        if not _match_is_inside_prior_law_citation(match)
     )
     chunks: List[Tuple[str, str]] = []
     for idx, match in enumerate(matches):
         cluster = match.group(1)
         labels = [
-            _norm_num_token(token.strip().lower())
+            token.strip().lower()
             for token in re.split(r"\s*,\s*|\s+ja\s+", cluster)
-            if re.fullmatch(r"\d+[a-z]?", _norm_num_token(token.strip()), flags=re.I)
+            if re.fullmatch(r"\d+[a-z]?", token.strip(), flags=re.I)
         ]
         if not labels:
             continue
@@ -329,9 +313,6 @@ def chapter_chunks_from_johtolause(johto: str) -> List[Tuple[str, str]]:
             )
             if verb_boundary is not None:
                 end = start + verb_boundary.start()
-        citation_boundary = citation_cut_re.search(text[start:end])
-        if citation_boundary is not None:
-            end = start + citation_boundary.start()
         chunks.append((labels[-1], text[start:end]))
     return chunks
 
@@ -344,11 +325,7 @@ def _chapter_match_is_repeal_target(text: str, match: "re.Match[str]") -> bool:
     scope) and the nearest governing amendment verb before it is ``kumotaan``,
     with no intervening scope verb (``muutetaan``/``lisätään``/``siirretään``).
     """
-    if not re.match(
-        r"\d+\s*[a-z]?(?:\s*,\s*\d+\s*[a-z]?|\s+ja\s+\d+\s*[a-z]?)*\s+luku\b",
-        text[match.start():],
-        re.I,
-    ):
+    if not re.match(r"\d+(?:\s*,\s*\d+|\s+ja\s+\d+)*\s+luku\b", text[match.start():], re.I):
         return False
     prefix = text[: match.start()]
     last_verb = None
@@ -1023,13 +1000,6 @@ def _johtolause_explicitly_binds_chapter_section(johto: str, chapter: str, secti
     chapter_pat = _chapter_pat(str(chapter))
     section_pat = _section_pat(str(section))
     section_list_pat = _section_list_pat(str(section))
-    chapter_norm = _norm_num_token(str(chapter)).removesuffix("luku")
-    for chunk_chapter, chunk in chapter_chunks_from_johtolause(text):
-        if (
-            _norm_num_token(chunk_chapter).removesuffix("luku") == chapter_norm
-            and _chapter_chunk_mentions_section_label(chunk, str(section))
-        ):
-            return True
     if (
         re.search(
             # Negative lookahead: "X luvun otsikko" means only the chapter heading

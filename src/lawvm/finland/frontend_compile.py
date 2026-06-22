@@ -79,7 +79,6 @@ from lawvm.finland.johtolause_supplements import (
     _tag_named_table_row_single_clause_ops,
 )
 from lawvm.finland.scope import (
-    _johtolause_explicitly_binds_chapter_section,
     _same_label_move_sections_for_chapter,
     _unique_section_chapter,
     infer_letter_suffix_section_chapter_from_stem_host,
@@ -2280,18 +2279,6 @@ def _retarget_stale_body_scope_for_section_op(
         return None
 
     body_part, body_chapter = body_scope
-    if (
-        scope_witness is not None
-        and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
-        and _johtolause_explicitly_binds_chapter_section(
-            johto,
-            op.target_chapter,
-            section_label,
-        )
-    ):
-        # A body wrapper may carry broad context from the amendment XML, but an
-        # explicit johtolause chapter chunk is the source-owned target.
-        return None
     if (
         scope_witness is not None
         and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK

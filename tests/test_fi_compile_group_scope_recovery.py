@@ -832,23 +832,31 @@ def test_existing_letter_run_body_chapter_overrides_live_stem_scope_guess() -> N
     ]
 
 
-def test_existing_body_chapter_overrides_live_unique_scope_for_whole_section_replace() -> None:
+def test_mixed_body_chapter_wrapper_does_not_override_whole_section_replace_live_scope() -> None:
+    """A broad source XML chapter wrapper is not scope authority for REPLACE."""
     master = ReplayState(
         ir=IRNode(
             kind=IRNodeKind.BODY,
             children=(
                 IRNode(
                     kind=IRNodeKind.CHAPTER,
-                    label="13a",
-                    children=(IRNode(kind=IRNodeKind.SECTION, label="209b"),),
+                    label="4",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="23"),),
                 ),
                 IRNode(
                     kind=IRNodeKind.CHAPTER,
-                    label="22",
-                    children=(
-                        IRNode(kind=IRNodeKind.SECTION, label="209a"),
-                        IRNode(kind=IRNodeKind.SECTION, label="209c"),
-                    ),
+                    label="6",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="47"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="10",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="67"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="12",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="80"),),
                 ),
             ),
         )
@@ -858,27 +866,35 @@ def test_existing_body_chapter_overrides_live_unique_scope_for_whole_section_rep
         <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
           <body>
             <chapter>
-              <num>22 luku</num>
-              <section><num>209 a §</num><content><p>Sibling before.</p></content></section>
-              <section><num>209 b §</num><content><p>Replacement body.</p></content></section>
-              <section><num>209 c §</num><content><p>Sibling after.</p></content></section>
+              <num>4 luku</num>
+              <section><num>23 §</num><content><p>Chapter 4 text.</p></content></section>
+              <section><num>47 §</num><content><p>Chapter 6 text.</p></content></section>
+              <section><num>67 §</num><content><p>Chapter 10 text.</p></content></section>
+              <section><num>80 §</num><content><p>Chapter 12 text.</p></content></section>
             </chapter>
           </body>
         </act>
         """
     )
     replace_op = AmendmentOp(
-        op_id="replace_209b",
+        op_id="replace_67",
         op_type="REPLACE",
         target_unit_kind="section",
-        target_section="209b",
-        target_chapter="13a",
-        source_statute="2012/399",
+        target_section="67",
+        target_chapter="4",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_carry_forward",
+            source=ScopeResolutionSource.CARRY_FORWARD,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="4",
+        ),
+        scope_provenance_tags=("chapter_scope_carry_forward",),
+        source_statute="2022/616",
         lo=LegalOperation(
-            op_id="replace_209b",
+            op_id="replace_67",
             sequence=1,
             action=StructuralAction.REPLACE,
-            target=LegalAddress(path=(("chapter", "13a"), ("section", "209b"))),
+            target=LegalAddress(path=(("chapter", "4"), ("section", "67"))),
             payload=None,
         ),
     )
@@ -887,8 +903,8 @@ def test_existing_body_chapter_overrides_live_unique_scope_for_whole_section_rep
         CompileGroupScopeRecoveryRequest(
             master=master,
             target_unit_kind="section",
-            target_norm="209b",
-            target_chapter="13a",
+            target_norm="67",
+            target_chapter="4",
             target_part=None,
             group_ops=[replace_op],
             inserted_chapter_labels=set(),
@@ -897,13 +913,12 @@ def test_existing_body_chapter_overrides_live_unique_scope_for_whole_section_rep
         )
     )
 
-    assert result.output.effective_target_chapter == "22"
-    assert result.output.group_ops[0].target_chapter == "22"
-    assert result.output.group_ops[0].body_chapter_move_from == "13a"
+    assert result.output.effective_target_chapter == "10"
+    assert result.output.group_ops[0].target_chapter == "10"
     assert result.output.group_ops[0].lo is not None
-    assert result.output.group_ops[0].lo.target.path == (("chapter", "22"), ("section", "209b"))
+    assert result.output.group_ops[0].lo.target.path == (("chapter", "10"), ("section", "67"))
     assert [finding.kind for finding in result.findings()] == [
-        "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+        "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET"
     ]
 
 

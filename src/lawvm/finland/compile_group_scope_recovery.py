@@ -29,7 +29,6 @@ from lawvm.finland.ops import (
     _lo_with_path_update,
     _op_target_subsection_label,
 )
-from lawvm.finland.scope import _johtolause_explicitly_binds_chapter_section
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 
@@ -176,6 +175,18 @@ def _group_has_live_scoped_target_path(
         if lo_chapter != target_chapter:
             return False
     return True
+
+
+def _group_has_whole_section_replace(group_ops: Sequence[AmendmentOp]) -> bool:
+    return any(
+        op.op_type == "REPLACE"
+        and op.target_unit_kind == "section"
+        and bool(op.target_section)
+        and op.target_paragraph is None
+        and not op.target_item
+        and not op.target_special
+        for op in group_ops
+    )
 
 
 def _source_body_is_single_mixed_chapter_wrapper(
@@ -694,15 +705,19 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and _live_chapter_has_no_section_children(request.master, body_chapter)
     )
-    body_wrapper_overridden_by_scope = (
+    body_chapter_is_single_mixed_wrapper = (
         body_chapter is not None
-        and request.target_chapter is not None
-        and body_chapter != request.target_chapter
         and _source_body_is_single_mixed_chapter_wrapper(
             request.source_model,
             body_chapter,
             request.master,
         )
+    )
+    body_wrapper_overridden_by_scope = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter != request.target_chapter
+        and body_chapter_is_single_mixed_wrapper
         and not (
             body_chapter_is_subchapter
             and body_chapter_is_inserted
@@ -717,11 +732,7 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and request.target_chapter is not None
         and body_chapter != request.target_chapter
-        and _source_body_is_single_mixed_chapter_wrapper(
-            request.source_model,
-            body_chapter,
-            request.master,
-        )
+        and body_chapter_is_single_mixed_wrapper
         and _group_has_live_scoped_target_path(
             request.master,
             request.group_ops,
@@ -849,6 +860,11 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and _source_body_letter_run_scope_is_corroborated(request, body_chapter)
     )
+    if (
+        _group_has_whole_section_replace(request.group_ops)
+        and not source_body_letter_run_scope_corroborated
+    ):
+        return PhaseResult(output=result)
     source_owned_existing_letter_run_scope = (
         body_chapter is not None
         and request.target_chapter is not None
@@ -1269,8 +1285,14 @@ def _maybe_retarget_live_section(
                 target_part=request.target_part,
             )
             if (
-                source_body_chapter == request.target_chapter
+                source_body_chapter is not None
+                and source_body_chapter == request.target_chapter
                 and authorized_retarget_scope_source is None
+                and not _source_body_is_single_mixed_chapter_wrapper(
+                    request.source_model,
+                    source_body_chapter,
+                    request.master,
+                )
             ):
                 scoped_path = ()
     retarget_scope_source = (
@@ -1322,18 +1344,6 @@ def _maybe_retarget_live_section(
             if sibling_consensus_live_scope is not None:
                 retarget_scope_source = "close_live_sibling_consensus"
     if retarget_scope_source is None:
-        return PhaseResult(output=result)
-    if (
-        retarget_scope_source == "explicit_chunk"
-        and request.target_chapter
-        and _johtolause_explicitly_binds_chapter_section(
-            request.johto,
-            request.target_chapter,
-            request.target_norm,
-        )
-    ):
-        # Source-owned chapter chunks beat broad amendment-body wrapper
-        # membership when they explicitly bind this section.
         return PhaseResult(output=result)
     body_scope = request.source_model.source_body_scope_for_section_target(request.target_norm)
     body_part = None
@@ -1441,14 +1451,6 @@ def _body_chapter_insert_correction_candidate(group_ops: Sequence[AmendmentOp]) 
     return all(
         op.op_type == "INSERT"
         or (op.op_type == "REPLACE" and str(op.target_special or "").strip() == "otsikko")
-        or (
-            op.op_type == "REPLACE"
-            and op.target_unit_kind == "section"
-            and bool(op.target_section)
-            and op.target_paragraph is None
-            and not op.target_item
-            and not op.target_special
-        )
         for op in group_ops
     )
 

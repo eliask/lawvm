@@ -36,7 +36,6 @@ from lawvm.finland.ops import (
     runtime_scope_confidence_for_op,
 )
 from lawvm.finland.apply_runtime_support import _valid_target_path_hint
-from lawvm.finland.helpers import _is_omission_ir
 from lawvm.finland.migration_ledger import migration_lower_bound_for_op
 from lawvm.finland.replay_notices import replay_verbose_enabled
 
@@ -208,19 +207,6 @@ def _resolve_unscoped_placeholder_shadowed_by_unique_substantive(
     return substantive_paths[0], SectionPathResolutionReason.LIVE_UNIQUE_SUBSTANTIVE_OVER_PLACEHOLDER
 
 
-def _source_payload_is_sparse_section_for_target(muutos_ir, target_norm: str) -> bool:
-    if muutos_ir is None:
-        return False
-    kind = getattr(muutos_ir, "kind", None)
-    kind_value = getattr(kind, "value", kind)
-    if kind_value != "section":
-        return False
-    label = str(getattr(muutos_ir, "label", "") or "")
-    if label and normalized_label_key(label) != normalized_label_key(target_norm):
-        return False
-    return any(_is_omission_ir(child) for child in getattr(muutos_ir, "children", ()))
-
-
 def _resolve_section_path_with_fallbacks(
     state: "ReplayState",
     rop: ResolvedOp,
@@ -304,32 +290,6 @@ def _resolve_section_path_with_fallbacks(
     target_address_has_descendant = target_address is not None and any(
         kind in {"subsection", "item"} for kind, _label in target_address.path
     )
-    if (
-        sec_path is None
-        and _target_chapter
-        and target_address_has_descendant
-        and rop.resolved_action_type == "REPLACE"
-        and _source_payload_is_sparse_section_for_target(muutos_ir, target_norm)
-        and state.find("chapter", _target_chapter) is not None
-    ):
-        label_norm = normalized_label_key(target_norm)
-        matches = [
-            _tops._as_path(path)
-            for path in state.provision_index.get(("section", label_norm), [])
-        ]
-        if len(matches) == 1:
-            origin_path = matches[0]
-            origin_chapter = _chapter_from_section_path(origin_path)
-            if origin_chapter and normalized_label_key(origin_chapter) != normalized_label_key(_target_chapter):
-                return SectionPathResolution(
-                    path=origin_path,
-                    reason_code=(
-                        SectionPathResolutionReason.EXPLICIT_CHAPTER_SPARSE_DESCENDANT_CARRIED_ORIGIN
-                    ),
-                    rung_id=RUNG_UNIQUE_GLOBAL_FALLBACK,
-                    global_candidate_count=1,
-                )
-
     if (
         sec_path is not None
         and not _target_chapter
