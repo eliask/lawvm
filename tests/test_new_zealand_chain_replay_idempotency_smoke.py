@@ -124,3 +124,89 @@ def test_chain_replay_insert_already_present_skips_are_in_final_oracle() -> None
         f"work_id, row_id, source_path, amendment_date for the offenders: "
         f"{not_in_oracle[:8]}"
     )
+
+
+@pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.skipif(not _SMOKE_CORPUS.exists(), reason="NZ smoke corpus CSV not present")
+@pytest.mark.slow
+def test_chain_replay_already_tombstoned_skips_no_section_repeal_mismatch() -> None:
+    """For every `amendment_skipped_already_tombstoned` skip whose leaf segment is
+    `prov:`, the source_path MUST NOT resolve to a substantive node in the work's
+    final archived oracle. A prov-level section repeal is structural (the section
+    body is gone); if the final oracle carries the section substantive, that
+    combination is a real replay bug (the chain-marked-tombstoned a section the
+    oracle kept live).
+
+    Verified (2026-06-22) classification of all 135 smoke-corpus already-tombstoned
+    skips: the 53 "in-oracle-and-substantive" suspects are ALL either schedule-
+    level rows (history-note "repealed" misclassified a repeal-and-substitute
+    structural replace) or part-level rows (heading-facet repeal, not body). The
+    invariant pinned here is that NONE of these substantive-in-oracle mismatches
+    are at the section level — a section-level mismatch would be a deterministic
+    gap, not honest frontier residue.
+
+    See `notes/IMPLEMENTATION_DIVERGENCE_LEDGER.md`'s
+    "amendment_skipped_already_tombstoned — classified 2026-06-22" section for the
+    full breakdown.
+
+    AGENTS §2.9: structural invariant (no fragile exact count). Raising the
+    corpus-wide already-tombstoned count is fine; introducing even one section-
+    level substantive-in-oracle mismatch fails this test precisely because that
+    would be a real §1.0 mutation-boundary regression.
+    """
+    works = [row["work_id"] for row in csv.DictReader(_SMOKE_CORPUS.open())]
+    archive = open_farchive(_REAL_DB)
+    section_mismatches: list[tuple[str, str, tuple[str, ...], str]] = []
+    try:
+        for work_id in works:
+            result = subprocess.run(
+                ["uv", "run", "lawvm", "nz-corpus", "replay-chain",
+                 "--work-id", work_id, "--json"],
+                capture_output=True, text=True, cwd=str(_REPO_ROOT),
+            )
+            if result.returncode != 0:
+                pytest.fail(
+                    f"chain-replay failed for {work_id}: stderr={result.stderr[:400]}"
+                )
+            report = json.loads(result.stdout)
+            versions = archived_xml_versions_for_work(archive, work_id)
+            if not versions:
+                continue
+            oracle_doc = _parse_archived_version(archive, versions[0], {})
+            if oracle_doc is None:
+                continue
+            for skip in report.get("skips", ()):
+                if skip.get("bucket") != "amendment_skipped_already_tombstoned":
+                    continue
+                src_path = tuple(skip.get("source_path", ()))
+                if not src_path:
+                    continue
+                # Invariant applies only to section-level (leaf `prov:`) repeals.
+                # schedule/part/subprov "repeal-and-substitute" misclassifications
+                # are honest frontier; this test EXCLUSIVELY guards the prov-level
+                # invariant because a section-tombstone with a live oracle is a
+                # structural bug, not a frontier lane.
+                if not src_path[-1].startswith("prov:"):
+                    continue
+                matches = _resolve_target_nodes(oracle_doc, src_path)
+                if not matches:
+                    continue  # final oracle removed the section entirely — honest
+                occupancy = None
+                # _occupancy returns "tombstone" / "substantive" / etc.
+                from lawvm.new_zealand.dry_run import _occupancy
+                occupancy = _occupancy(matches[0])
+                if occupancy == "substantive":
+                    section_mismatches.append(
+                        (work_id, skip.get("row_id", ""), src_path, skip.get("amendment_date_iso", ""))
+                    )
+    finally:
+        archive.close()
+
+    assert not section_mismatches, (
+        f"chain-replay idempotency pin: {len(section_mismatches)} section-level "
+        f"(`prov:`) amendment_skipped_already_tombstoned skip(s) had source_path "
+        f"matching a SUBSTANTIVE node in the work's final archived oracle (§1.0 "
+        f"mutation-boundary regression — the chain tombstoned a section the oracle "
+        f"kept live; investigation required). work_id, row_id, source_path, "
+        f"amendment_date for the offenders: {section_mismatches[:8]}"
+    )
