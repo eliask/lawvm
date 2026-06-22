@@ -411,6 +411,57 @@ def _raw_master_source_lacks_section(
     return True
 
 
+def _raw_master_source_section_matches_replay_but_not_oracle(
+    statute_id: str,
+    section_key: str,
+    replay_text: str,
+    oracle_text: str,
+) -> bool:
+    """True when replay faithfully mirrors a truncated raw master section.
+
+    This is a source-footing classifier, not replay authority. It catches base
+    XML witnesses that carry the section shell but omit descendant content that
+    appears in the consolidated oracle, with no amendment blame for that section.
+    """
+    source_clean = _raw_master_source_section_clean_text(statute_id, section_key)
+    replay_clean = _clean(replay_text)
+    oracle_clean = _clean(oracle_text)
+    if not source_clean or not replay_clean or not oracle_clean:
+        return False
+    if len(oracle_clean) <= int(len(source_clean) * 1.2):
+        return False
+    return (
+        Levenshtein.ratio(source_clean, replay_clean) >= 0.995
+        and Levenshtein.ratio(source_clean, oracle_clean) < 0.95
+    )
+
+
+def _raw_master_source_section_clean_text(
+    statute_id: str,
+    section_key: str,
+) -> str:
+    year, _, number = statute_id.partition("/")
+    if not year or not number:
+        return ""
+    xml_bytes = get_corpus().read_locator(f"finlex://sd/{year}/{number}/fin/main.xml")
+    if xml_bytes is None:
+        return ""
+    try:
+        source_tree = etree.fromstring(xml_bytes)
+    except etree.XMLSyntaxError:
+        return ""
+
+    target_label = norm_section_label(_section_label_text_from_key(section_key))
+    section_els = cast(list[etree._Element], source_tree.xpath('.//*[local-name()="section"]'))
+    for section_el in section_els:
+        num_el = section_el.find("{*}num")
+        if num_el is None:
+            continue
+        if norm_section_label(" ".join(str(num_el.xpath("string(.)")).split())) == target_label:
+            return _clean(_el_text(section_el))
+    return ""
+
+
 def _extract_attachment_info(root: etree._Element) -> tuple[int, list[str]]:
     """Return (count, [title_str]) of individual attachment hcontainers."""
     atts = cast(list[etree._Element], root.xpath('.//*[local-name()="hcontainer" and @name="attachment"]'))
@@ -1503,6 +1554,7 @@ def _classify_statute(
                 )
         empty_body_origin_cache: dict[tuple[str, str], bool] = {}
         raw_master_missing_cache: dict[str, bool] = {}
+        raw_master_truncated_cache: dict[str, bool] = {}
         pre_blame_absent_cache: dict[tuple[str, str], bool] = {}
         for sec in section_results:
             if sec["diagnosis"] not in (
@@ -1539,6 +1591,21 @@ def _classify_statute(
             if empty_body_origin_cache[cache_key]:
                 sec["diagnosis"] = "SOURCE_INCOMPLETE"
                 continue
+
+            if not blame_source and sec["diagnosis"] in ("REPLAY_MISSING", "UNKNOWN"):
+                section_key = str(sec["section"])
+                if section_key not in raw_master_truncated_cache:
+                    raw_master_truncated_cache[section_key] = (
+                        _raw_master_source_section_matches_replay_but_not_oracle(
+                            sid,
+                            section_key,
+                            str(sec.get("replay_text") or ""),
+                            str(sec.get("oracle_text") or ""),
+                        )
+                    )
+                if raw_master_truncated_cache[section_key]:
+                    sec["diagnosis"] = "SOURCE_INCOMPLETE"
+                    continue
 
             if sec["diagnosis"] not in ("MISSING", "REPLAY_MISSING", "UNKNOWN", "EXTRA"):
                 continue

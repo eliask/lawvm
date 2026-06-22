@@ -2604,7 +2604,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 7,2005/1015,suspect,oracle_suspect,2025/763 eff 2026-01-01 > cutoff 2025-06-27,
 7,2005/1171,suspect,oracle_suspect,2024/205 eff 2024-08-01 > cutoff 2024-04-18,
 7,2005/200,suspect,oracle_suspect,2023/768 eff 2025-01-01 > cutoff 2024-12-19,
-7,2005/347,core,,,OK
+7,2005/347,suspect,source_pathology,base source XML section 2 omits descendant a-g subitems present in consolidated oracle,OK
 7,2005/937,core,,,OK
 7,2006/1022,suspect,oracle_suspect,2016/1090 eff 2016-12-22 > cutoff 2016-12-08,
 7,2006/128,suspect,oracle_suspect,2015/53 eff 2015-02-01 > cutoff 2015-01-29,

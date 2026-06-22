@@ -567,6 +567,14 @@ def test_classify_statute_2015_1480_pdf_only_amendment_is_source_incomplete() ->
         assert by_section[label]["diagnosis"] == "SOURCE_INCOMPLETE"
 
 
+def test_classify_statute_2005_347_truncated_base_section_is_source_incomplete() -> None:
+    result = _classify_statute("2005/347", "official_consolidation")
+
+    assert result is not None
+    section_2 = next(item for item in result.section_results if item["section"] == "section:2")
+    assert section_2["diagnosis"] == "SOURCE_INCOMPLETE"
+
+
 def test_classify_statute_1987_322_repealed_stubs_are_editorial_convention() -> None:
     # Sections 10a-10f appear in the oracle as "kumottu" repeal stubs.
     # They are correctly absent from the replay (repealed), and the oracle
