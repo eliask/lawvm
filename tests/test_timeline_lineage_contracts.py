@@ -178,3 +178,141 @@ def test_rekey_timelines_uses_frontend_renumber_source_prefilter_for_native_spli
 
     assert prefilter_calls == 1
     assert tuple(rekeyed) == (address,)
+
+
+class TestLineageDagAcyclicity:
+    """D2 APPLY.LINEAGE_DAG_ACYCLICITY — cyclic migration_events break materialization
+    convergence. The audit must fire on any back-edge in the directed graph of
+    `from_address -> to_address` events; reflexive edges are ignored (renumber
+    to self is a benign no-op)."""
+
+    def test_assert_acyclic_fires_on_two_node_cycle(self) -> None:
+        from lawvm.core.timeline_results import LineageCycleError, assert_acyclic
+
+        e1 = MigrationEvent(
+            event_id="m1",
+            kind="renumber",
+            from_address=_address("1"),
+            to_address=_address("2"),
+            effective="2024-01-01",
+        )
+        e2 = MigrationEvent(
+            event_id="m2",
+            kind="renumber",
+            from_address=_address("2"),
+            to_address=_address("1"),
+            effective="2024-01-02",
+        )
+        with pytest.raises(LineageCycleError) as exc_info:
+            assert_acyclic((e1, e2))
+
+        assert len(exc_info.value.cycle_events) == 2
+        addresses = frozenset(
+            str(a)
+            for ev in exc_info.value.cycle_events
+            for a in (ev.from_address, ev.to_address)
+        )
+        assert str(_address("1")) in addresses
+        assert str(_address("2")) in addresses
+
+    def test_assert_acyclic_silent_on_dag_chain(self) -> None:
+        from lawvm.core.timeline_results import assert_acyclic
+
+        # 1 -> 2 -> 3 is a legitimate renumber line; must NOT fire.
+        e1 = MigrationEvent(
+            event_id="m1",
+            kind="renumber",
+            from_address=_address("1"),
+            to_address=_address("2"),
+            effective="2024-01-01",
+        )
+        e2 = MigrationEvent(
+            event_id="m2",
+            kind="renumber",
+            from_address=_address("2"),
+            to_address=_address("3"),
+            effective="2024-01-02",
+        )
+        assert_acyclic((e1, e2))  # must not raise
+
+    def test_assert_acyclic_silent_on_reflexive_event(self) -> None:
+        from lawvm.core.timeline_results import assert_acyclic
+
+        # Reflexive (from == to) is a benign identity no-op, not a cycle.
+        e = MigrationEvent(
+            event_id="m1",
+            kind="renumber",
+            from_address=_address("1"),
+            to_address=_address("1"),
+            effective="2024-01-01",
+        )
+        assert_acyclic((e,))  # must not raise
+
+    def test_assert_acyclic_silent_on_empty(self) -> None:
+        from lawvm.core.timeline_results import assert_acyclic
+
+        assert_acyclic(())  # must not raise
+
+    def test_assert_acyclic_fires_on_longer_cycle(self) -> None:
+        from lawvm.core.timeline_results import LineageCycleError, assert_acyclic
+
+        # 1 -> 2 -> 3 -> 1 forms a 3-node cycle.
+        e1 = MigrationEvent(
+            event_id="m1", kind="renumber",
+            from_address=_address("1"), to_address=_address("2"),
+            effective="2024-01-01",
+        )
+        e2 = MigrationEvent(
+            event_id="m2", kind="renumber",
+            from_address=_address("2"), to_address=_address("3"),
+            effective="2024-01-02",
+        )
+        e3 = MigrationEvent(
+            event_id="m3", kind="renumber",
+            from_address=_address("3"), to_address=_address("1"),
+            effective="2024-01-03",
+        )
+        with pytest.raises(LineageCycleError):
+            assert_acyclic((e1, e2, e3))
+
+    def test_materialization_lineage_plan_rejects_cyclic_events(self) -> None:
+        """Guard-liveness (§2.9): a cyclic migrationevents bag must be rejected at
+        typed-carrier construction (the full production path through
+        ``materialize_pit_ex``, since every caller must build a
+        ``MaterializationLineagePlan`` first)."""
+        from lawvm.core.timeline_results import MaterializationLineagePlan
+
+        e1 = MigrationEvent(
+            event_id="m1", kind="renumber",
+            from_address=_address("1"), to_address=_address("2"),
+            effective="2024-01-01",
+        )
+        e2 = MigrationEvent(
+            event_id="m2", kind="renumber",
+            from_address=_address("2"), to_address=_address("1"),
+            effective="2024-01-02",
+        )
+        with pytest.raises(ValueError, match="(?i)cycle|cyclic"):
+            MaterializationLineagePlan(
+                mode="raw_with_migrations",
+                migration_events=(e1, e2),
+            )
+
+    def test_materialization_lineage_plan_accepts_dag(self) -> None:
+        from lawvm.core.timeline_results import MaterializationLineagePlan
+
+        e1 = MigrationEvent(
+            event_id="m1", kind="renumber",
+            from_address=_address("1"), to_address=_address("2"),
+            effective="2024-01-01",
+        )
+        e2 = MigrationEvent(
+            event_id="m2", kind="renumber",
+            from_address=_address("2"), to_address=_address("3"),
+            effective="2024-01-02",
+        )
+        plan = MaterializationLineagePlan(
+            mode="raw_with_migrations",
+            migration_events=(e1, e2),
+        )
+        assert plan.migration_events == (e1, e2)

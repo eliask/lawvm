@@ -56,6 +56,113 @@ class MaterializationLineagePlan:
             raise TypeError(
                 "MaterializationLineagePlan.migration_events must contain MigrationEvent"
             )
+        # D2 APPLY.LINEAGE_DAG_ACYCLICITY (§1.6 unstated migration / §2.8 lineage
+        # identity): a cycle in the migration graph breaks materialization
+        # convergence (`lineage_segments` would silently traverse it forever, only
+        # masked by a visited-set). Reject at typed-carrier construction so the
+        # production path (`materialize_pit_ex` builds the plan) surfaces the
+        # invariant before quiet non-termination.
+        try:
+            assert_acyclic(self.migration_events)
+        except LineageCycleError as exc:
+            raise ValueError(
+                "MaterializationLineagePlan.migration_events form a directed cycle; "
+                "lineage resolution would not terminate. "
+                f"Cycle events: {tuple(ev.event_id for ev in exc.cycle_events)}"
+            ) from exc
+
+
+class LineageCycleError(Exception):
+    """Raised when migration events form a directed cycle in the lineage graph.
+
+    A back-edge in ``from_address -> to_address`` edges means
+    :func:`lineage_segments` resolution would not terminate. The audit
+    discriminates a true cycle (a directed back-edge through the resolved
+    graph) from reflexive ``from == to`` events, which are benign identity
+    no-ops.
+    """
+
+    cycle_events: tuple[MigrationEvent, ...]
+
+    def __init__(self, cycle_events: tuple[MigrationEvent, ...]) -> None:
+        if not isinstance(cycle_events, tuple):
+            raise TypeError("LineageCycleError.cycle_events must be a tuple")
+        if not cycle_events:
+            raise ValueError("LineageCycleError.cycle_events must be non-empty")
+        if any(not isinstance(ev, MigrationEvent) for ev in cycle_events):
+            raise TypeError("LineageCycleError.cycle_events must contain MigrationEvent")
+        object.__setattr__(self, "cycle_events", cycle_events)
+        super().__init__(
+            "lineage migration events form a directed cycle: "
+            + " -> ".join(ev.event_id for ev in cycle_events)
+        )
+
+
+def assert_acyclic(migration_events: tuple[MigrationEvent, ...]) -> None:
+    """Raise :class:`LineageCycleError` if the migration-event graph has a cycle.
+
+    Nodes are canonical :class:`LegalAddress` values keyed by their string form;
+    edges are non-degenerate ``MigrationEvent`` instances where
+    ``from_address != to_address``.  Reflexive events (``from == to``) are
+    ignored: a renumber-to-self is a benign identity no-op, not a cycle.
+
+    Implements §1.6 (no unstated migration) and §2.8 (lineage/identity).  A
+    cycle in the migration graph would make :func:`lineage_segments` resolution
+    non-terminating without this guard; the typed carrier
+    :class:`MaterializationLineagePlan` calls this in ``__post_init__`` so any
+    production caller that builds a lineage plan fails loud at construction.
+    """
+    adjacency: dict[str, list[MigrationEvent]] = {}
+    for event in migration_events:
+        if event.from_address == event.to_address:
+            continue  # reflexive: benign identity no-op
+        adjacency.setdefault(str(event.from_address), []).append(event)
+
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[str, int] = {}
+    parent_edge: dict[str, MigrationEvent] = {}
+
+    def _visit(root: str) -> tuple[MigrationEvent, ...] | None:
+        # Iterative DFS; returns cycle events in chronological order if found.
+        stack: list[tuple[str, int]] = [(root, 0)]
+        color[root] = GRAY
+        while stack:
+            node, idx = stack[-1]
+            edges = adjacency.get(node, [])
+            if idx < len(edges):
+                stack[-1] = (node, idx + 1)
+                edge = edges[idx]
+                target = str(edge.to_address)
+                target_color = color.get(target, WHITE)
+                if target_color == GRAY:
+                    # Back-edge: cycle.  Walk parent_edge back from `node` to
+                    # `target`, collecting the cycle edges in chronological
+                    # order: [target->...->node, node->target].
+                    cycle: list[MigrationEvent] = []
+                    walker = node
+                    while walker != target:
+                        p_edge = parent_edge.get(walker)
+                        if p_edge is None:
+                            break  # safety: should not happen, but don't hang
+                        cycle.append(p_edge)
+                        walker = str(p_edge.from_address)
+                    cycle.append(edge)  # closing back-edge
+                    return tuple(cycle)
+                if target_color == WHITE and target in adjacency:
+                    color[target] = GRAY
+                    parent_edge[target] = edge
+                    stack.append((target, 0))
+            else:
+                color[node] = BLACK
+                stack.pop()
+        return None
+
+    for root in adjacency:
+        if color.get(root, WHITE) != WHITE:
+            continue
+        cycle = _visit(root)
+        if cycle is not None:
+            raise LineageCycleError(cycle)
 
 
 @dataclass(frozen=True)

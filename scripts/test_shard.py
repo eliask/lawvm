@@ -580,6 +580,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_tokentape.py",
         "test_interlinks.py",
         "test_legal_surface_graph.py",
+        "test_reference_sets.py",
         "test_surface_lints.py",
     ),
     "tools_cli_debug_hotspot": (
