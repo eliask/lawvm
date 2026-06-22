@@ -17467,13 +17467,9 @@ def test_subsection_replace_forced_append_emits_pathology() -> None:
     result_sec = tree_resolve(result.ir, (("section", "13"),))
     assert result_sec is not None
     result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
-    assert [sub.label for sub in result_subsecs] == ["1", "2", "3", "4"]
-    assert [p.code for p in pathologies] == [
-        "DESTRUCTIVE_SHAPE_LOSS_RISK",
-        "SUBSECTION_TARGET_REBOUND",
-    ]
+    assert [sub.label for sub in result_subsecs] == ["1", "2", "3", "6"]
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
     assert pathologies[0].detail["recovery_kind"] == "subsection_replace_forced_append"
-    assert pathologies[1].detail["rebound_kind"] == "missing_exact_subsection_label"
 
 
 def test_subsection_replace_strict_blocks_forced_append() -> None:

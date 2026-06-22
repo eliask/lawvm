@@ -2069,6 +2069,31 @@ def test_compile_fi_surfaces_recodification_source_chain_gap_for_2017_320() -> N
     assert ("2 luku 7 §", "target_leaf_absent_under_existing_parent") in details
 
 
+@pytest.mark.slow
+def test_compile_fi_2017_320_preserves_sparse_subsection_target_labels() -> None:
+    facade = compile_fi_facade("2017/320", replay_mode="legal_pit")
+
+    subsection_ops = [
+        op
+        for op in facade.bundle.structural_ops
+        if op.source is not None
+        and op.source.statute_id == "2020/1256"
+        and op.target.path[:3] == (("part", "2"), ("chapter", "10"), ("section", "107"))
+        and len(op.target.path) == 4
+        and op.target.path[-1][0] == "subsection"
+    ]
+    by_label = {op.target.path[-1][1]: " ".join(irnode_to_text(op.payload).split()) for op in subsection_ops}
+
+    assert "Lisäksi pätevyyskirjan ja lisäpätevyystodistuksen myöntämisen edellytyksenä" in by_label["3"]
+    assert "Liikenne- ja viestintävirasto vahvistaa pätevyyskirjan" in by_label["5"]
+    assert not any(
+        finding.kind == "COVERAGE.PAYLOAD_REALIZATION_GAP"
+        and finding.source_statute == "2020/1256"
+        and cast(dict[str, Any], finding.detail).get("unit_id") == "op_27"
+        for finding in facade.finding_ledger
+    )
+
+
 def test_compile_fi_surfaces_apply_legacy_dispatch_fallback_as_projection_row(
     monkeypatch,
 ) -> None:
