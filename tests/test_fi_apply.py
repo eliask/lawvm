@@ -2573,6 +2573,98 @@ def test_emit_section_snapshot_sparse_chapter_replace_skips_missing_child_repeal
     ]
 
 
+def test_emit_section_snapshot_section_replace_carries_cross_chapter_sparse_history() -> None:
+    prior_section = _sec(
+        "209n",
+        _sub("1", _content("old first")),
+        _sub("2", _content("old second")),
+        _sub("3", _content("old third")),
+    )
+    sparse_child = _sec(
+        "209n",
+        IRNode(kind=IRNodeKind.OMISSION),
+        _sub("2", _content("new second")),
+        IRNode(kind=IRNodeKind.OMISSION),
+    )
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="6",
+                children=(prior_section,),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="22",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="22 luku"),
+                    IRNode(kind=IRNodeKind.HEADING, text="Laskut"),
+                ),
+            ),
+        )
+    )
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_section_209n_from_chapter_6",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "6"), ("section", "209n"))),
+            payload=prior_section,
+            source=OperationSource(
+                statute_id="2012/399",
+                effective="2013-01-01",
+            ),
+        )
+    ]
+    rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="replace_209n_2",
+            op_type="REPLACE",
+            target_section="209n",
+            target_unit_kind="section",
+            target_chapter="22",
+            target_paragraph=2,
+            source_statute="2016/773",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=sparse_child,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="209n",
+        target_chapter="22",
+        target_address=LegalAddress(path=(("chapter", "22"), ("section", "209n"), ("subsection", "2"))),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="209n",
+        target_chapter="22",
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="2016/773",
+        source_title="Chapter replace",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+    )
+
+    section_snapshots = [
+        op
+        for op in lo_ops
+        if op.target.path == (("chapter", "22"), ("section", "209n"))
+    ]
+    assert len(section_snapshots) == 1
+    assert section_snapshots[0].action is StructuralAction.INSERT
+    payload_section = section_snapshots[0].payload
+    assert payload_section is not None
+    assert [
+        irnode_to_text(child)
+        for child in payload_section.children
+        if child.kind is IRNodeKind.SUBSECTION
+    ] == ["old first", "new second", "old third"]
+
+
 def test_subsection_repeal_does_not_copy_whole_section_heading_from_muutos_ir() -> None:
     state = _make_state(
         _body(
@@ -9479,6 +9571,50 @@ def test_resolve_section_path_with_fallbacks_follows_same_wave_section_migration
 
     assert resolution.path == (("chapter", "12"), ("section", "125"))
     assert resolution.reason_code == "follow_same_wave_migration"
+
+
+def test_resolve_section_path_with_fallbacks_uses_sparse_descendant_origin_for_explicit_new_chapter() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="6",
+                children=(_sec("209n", _sub("1", _content("old first"))),),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="22",
+                children=(IRNode(kind=IRNodeKind.HEADING, text="Laskut"),),
+            ),
+        )
+    )
+    payload = _sec(
+        "209n",
+        IRNode(kind=IRNodeKind.OMISSION),
+        _sub("2", _content("new second")),
+        IRNode(kind=IRNodeKind.OMISSION),
+    )
+    op = _op(op_type="REPLACE", target_section="209n", target_chapter="22", target_paragraph=2)
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="209n",
+        target_chapter="22",
+        target_address=LegalAddress(path=(("chapter", "22"), ("section", "209n"), ("subsection", "2"))),
+    )
+
+    resolution = _resolve_section_path_with_fallbacks(
+        state,
+        rop,
+        payload,
+        None,
+        "[2016/773] REPLACE 22 luku 209n § 2 mom",
+    )
+
+    assert resolution.path == (("chapter", "6"), ("section", "209n"))
+    assert resolution.reason_code == "explicit_chapter_sparse_descendant_carried_origin"
 
 
 def test_resolve_section_path_with_fallbacks_does_not_pick_one_when_multiple_substantive_same_label_sections_exist() -> None:

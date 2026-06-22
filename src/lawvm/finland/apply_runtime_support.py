@@ -29,6 +29,7 @@ from lawvm.finland.apply_payload_ops import _find_amend_paragraph
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause.clause_surface import parse_item_shift_clauses
 from lawvm.finland.labels import leaf_label_identity_key
+from lawvm.finland.merge import _has_section_omissions_ir, _merge_section_with_omission_ir
 from lawvm.finland.scope import (
     SourceDescendantScopeResult,
     _unique_section_chapter,
@@ -1302,6 +1303,61 @@ def _emit_section_snapshot(
         if len(idx.get(("section", label_norm), [])) != 1:
             return None
         return _tops._as_path(raw_path)
+
+    def _source_section_payload_for_target() -> IRNode | None:
+        if target_unit_kind != "section":
+            return None
+        candidates: list[IRNode] = []
+        for rop in group_rops:
+            source_payload = rop.muutos_ir
+            if source_payload is None or source_payload.kind is not IRNodeKind.SECTION:
+                continue
+            if (
+                source_payload.label
+                and _norm_num_token(source_payload.label) != normalized_target_norm
+            ):
+                continue
+            candidates.append(source_payload)
+        return candidates[0] if len(candidates) == 1 else None
+
+    def _cross_chapter_section_snapshot_payload() -> tuple[Path, IRNode] | None:
+        if target_unit_kind != "section" or not target_chapter:
+            return None
+        source_payload = _source_section_payload_for_target()
+        if source_payload is None:
+            return None
+        prior_path = _unique_global_section_path(normalized_target_norm)
+        if prior_path is None:
+            return None
+        prior_chapter = next((label for kind, label in prior_path if kind == "chapter"), None)
+        if prior_chapter is None or normalized_label_key(prior_chapter) == normalized_label_key(target_chapter):
+            return None
+        target_chapter_path = state.find("chapter", target_chapter)
+        if target_chapter_path is None:
+            return None
+        target_chapter_path = _tops._as_path(target_chapter_path)
+        projected_path = _timeline_path(target_chapter_path + (("section", source_payload.label or target_norm),))
+        latest_prior = _latest_section_snapshot_payload(
+            section_path=prior_path,
+            replay_history_ops=lo_ops_out,
+        )
+        prior_payload = (
+            latest_prior.payload
+            if latest_prior is not None
+            and latest_prior.payload is not None
+            and latest_prior.payload.kind is IRNodeKind.SECTION
+            else None
+        )
+        if prior_payload is None:
+            prior_payload = _section_node_from_base_ir(base_ir, prior_path)
+        if prior_payload is None:
+            return None
+        if _has_section_omissions_ir(source_payload):
+            merged = _merge_section_with_omission_ir(prior_payload, source_payload)
+            if merged is None:
+                return None
+            return projected_path, merged
+        return projected_path, source_payload
 
     def _group_payload_kind() -> Optional[str]:
         return target_unit_kind if target_unit_kind in {"section", "chapter", "part"} else None
@@ -3144,6 +3200,11 @@ def _emit_section_snapshot(
                 raw_path = _base_resolved_path()
                 raw_path_from_timeline = False
         if not raw_path and target_chapter and not target_part:
+            cross_chapter_payload = _cross_chapter_section_snapshot_payload()
+            if cross_chapter_payload is not None:
+                resolved_path, payload = cross_chapter_payload
+                raw_path_from_timeline = True
+        if not raw_path and resolved_path is None and target_chapter and not target_part:
             # Cross-chapter/root-level unique global fallback: Finnish amendments
             # sometimes group sections under a chapter heading (e.g. "5 luku") that
             # differs from where the section actually lives in the live statute
@@ -3264,6 +3325,12 @@ def _emit_section_snapshot(
                     if _is_non_insert:
                         raw_path = _base_resolved_path()
                         raw_path_from_timeline = False
+                if not raw_path and target_chapter and not target_part:
+                    cross_chapter_payload = _cross_chapter_section_snapshot_payload()
+                    if cross_chapter_payload is not None:
+                        resolved_path, payload = cross_chapter_payload
+                        raw_path_from_timeline = True
+                        break
                 if not raw_path and target_chapter and not target_part:
                     _is_non_insert = group_rops and all(not rop.is_insert_action for rop in group_rops)
                     if _is_non_insert:
