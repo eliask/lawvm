@@ -9,6 +9,7 @@ from typing import cast
 import pytest
 
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
+from lawvm.core import tree_ops
 from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core.ir import (
@@ -3383,6 +3384,132 @@ def test_apply_se_ops_conserved_returns_typed_filter_result_partition() -> None:
     result_with_adj = apply_se_ops_conserved(statute, ops, adjudications_out=adjudications)
     assert len(adjudications) == 2  # the two skipped ops
     assert result_with_adj.applied_ops[0].op_id == result.applied_ops[0].op_id
+
+
+def test_se_observed_replay_audit_reports_clean_for_target_bounded_replace() -> None:
+    """Observed-write-audit is clean when mutations stay inside the declared target.
+
+    The audit compares actual before/after IR tree diffs against the ops'
+    declared target regions (§2.3 receipt contract, §1.0 Mutation Boundary
+    Invariant). When every changed path falls within one op's declared
+    target, the audit status is ``clean`` — no mutation-boundary violation.
+    """
+    from lawvm.sweden.grafter import se_observed_replay_audit
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om audit test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "1 § Gamla 1 §.\n\n2 § Oförändrad 2 §.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    before = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    ops = [
+        LegalOperation(
+            op_id="se_official_replace_2026:999_1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Ny 1 §."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    result = apply_se_ops(before, ops)
+    audit = se_observed_replay_audit(before, result, ops)
+
+    assert audit.op_count == 1
+    assert audit.is_clean is True
+    assert audit.status == "clean"
+    assert audit.unexplained_paths == ()
+    # The observed changed paths include the §1 section node (replace touched it).
+    assert len(audit.observed_changed_paths) > 0
+
+
+def test_se_observed_replay_audit_flags_violation_for_unexplained_mutation() -> None:
+    """Audit status is ``violation`` when a mutation falls outside the declared target.
+
+    If a REPRICE op declares target=§1 but the replay also secretly changes §2's
+    text (e.g., via an invisible heuristic that accidentally touches a sibling),
+    the audit catches it: the changed §2 path is NOT within the §1 declared
+    boundary, so ``unexplained_paths`` is non-empty and ``status == "violation"``.
+
+    Regression: simulate an off-target mutation by running the audit against
+    a before/after pair where §2 was manually altered to differ — the audit
+    MUST flag it as a violation of §1.0 Mutation Boundary Invariant.
+    """
+    from lawvm.sweden.grafter import se_observed_replay_audit
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om audit test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "1 § Gamla 1 §.\n\n2 § Oförändrad 2 §.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    before = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    ops = [
+        LegalOperation(
+            op_id="se_official_replace_2026:999_1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Ny 1 §."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    # Apply the legitimate replace (target=§1, stays in boundary)
+    result = apply_se_ops(before, ops)
+    # Simulate an invisible mutation: manually alter §2's text in the result tree
+    # so the audit catches it as an unexplained mutation outside the declared
+    # boundary (§1's target region). The audit is the independent observer that
+    # catches what the apply helper did NOT declare.
+    section2_path = tree_ops.find(result.body, "section", "2")
+    assert section2_path is not None
+    section2_node = tree_ops.resolve(result.body, section2_path)
+    assert section2_node is not None
+    mutated_section2 = IRNode(
+        kind=section2_node.kind,
+        label=section2_node.label,
+        text="Mutated 2 §.",
+        attrs=dict(section2_node.attrs),
+        children=section2_node.children,
+    )
+    contaminated_result = tree_ops.replace_at(result.body, section2_path, mutated_section2)
+    from lawvm.core.ir import IRStatute as _IS
+    contaminated_statute = _IS(
+        statute_id=result.statute_id,
+        title=result.title,
+        body=contaminated_result,
+        supplements=list(result.supplements),
+        metadata=dict(result.metadata),
+    )
+    audit = se_observed_replay_audit(before, contaminated_statute, ops)
+
+    assert audit.status == "violation"
+    assert audit.unexplained_paths != ()
+    # The unexplained path includes section:2 (which is NOT the declared §1 target)
+    assert any(
+        any(kind == "section" and label == "2" for kind, label in path)
+        for path in audit.unexplained_paths
+    ), audit.unexplained_paths
 
 
 def test_apply_se_ops_records_renumber_and_heading_skip_adjudications() -> None:

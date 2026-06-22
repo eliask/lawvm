@@ -57,6 +57,12 @@ from lawvm.core.ir import (
     TextSelector,
 )
 from lawvm.core.ir_helpers import irnode_from_dict
+from lawvm.core.mutation_boundary import (
+    TreePath,
+    TreePaths,
+    diff_ir_paths_identity_pruned,
+    unexplained_changed_paths,
+)
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
 
@@ -3787,4 +3793,99 @@ def apply_se_ops_conserved(
     return SEApplyResult(
         statute=applied,
         filter_result=FilterResult(accepted_items=tuple(accepted), rejected_items=tuple(rejected)),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Statute-level observed-write-audit (AGENTS.md §2.3 — receipt contract
+# integration, first step).
+#
+# This is the independent before/after diff that catches mutation-boundary
+# violations at the statute level. It does NOT require per-op WriteReceipts
+# (that's a larger migration); instead, it computes the actual changed paths
+# from the before/after IRStatute trees using core's identity-pruned diff,
+# then cross-checks them against the ops' declared target regions using
+# core's mutation_boundary infrastructure. Any changed path outside every
+# op's declared target region is flagged as an unexplained mutation
+# (§1.0 Mutation Boundary Invariant check).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SEObservedReplayAudit:
+    """Independent before/after audit for a Sweden replay fold (§2.3 receipt contract).
+
+    Compares the actual changed paths (from the IR tree diff) against the
+    ops' declared target regions and reports any unexplained mutations —
+    paths that changed but were NOT covered by any op's declared target.
+    This is the "ObservedWriteAudit" side of the receipt contract at the
+    statute level: the receipt (what the apply helper claimed it wrote)
+    is the ops' target regions; the audit reads the actual tree diff.
+    """
+
+    observed_changed_paths: TreePaths
+    declared_target_paths: TreePaths
+    unexplained_paths: TreePaths
+    op_count: int
+
+    @property
+    def status(self) -> str:
+        """``clean`` — no unexplained mutations. ``violation`` — paths outside boundaries."""
+        return "clean" if not self.unexplained_paths else "violation"
+
+    @property
+    def is_clean(self) -> bool:
+        return not self.unexplained_paths
+
+
+def _se_op_target_paths(ops: list[LegalOperation]) -> TreePaths:
+    """Flatten every op's declared target path into a list of allowed prefixes.
+
+    Each op's ``target.path`` is a tuple of ``(kind, label)`` pairs from
+    :class:`LegalAddress`. These become the declared mutation-boundary prefixes
+    that :func:`unexplained_changed_paths` cross-checks against the actual
+    tree diff.
+    """
+    paths: list[TreePath] = []
+    for op in ops:
+        for (kind, label) in op.target.path:
+            paths.append(((str(kind), str(label)),))
+        # RENUMBER ops also declare a destination path — include it so the
+        # destination node's relabel is also covered by the boundary.
+        if op.destination is not None:
+            for (kind, label) in op.destination.path:
+                paths.append(((str(kind), str(label)),))
+    return tuple(paths)
+
+
+def se_observed_replay_audit(
+    before: IRStatute,
+    after: IRStatute,
+    ops: list[LegalOperation],
+) -> SEObservedReplayAudit:
+    """Build an independent before/after replay audit (§2.3 receipt contract).
+
+    Computes the actual changed paths by diffing ``before.body`` against
+    ``after.body`` (identity-pruned for performance on persistent trees),
+    then cross-checks every changed path against the ops' declared target
+    regions using :func:`unexplained_changed_paths`. Unexplained paths are
+    mutations that happened outside every op's declared mutation boundary
+    — a §1.0 Mutation Boundary Invariant violation.
+
+    The audit's ``status`` field is ``clean`` when every observed changed
+    path falls within at least one op's declared target region, and
+    ``violation`` when one or more changed paths are unexplained. A clean
+    audit does NOT prove the replay is semantically correct — it only proves
+    that the mutations stayed within the declared boundary (the structural
+    invariant from §1.0). Semantic correctness is the replay-vs-oracle
+    comparison's job.
+    """
+    changed = diff_ir_paths_identity_pruned(before.body, after.body)
+    declared = _se_op_target_paths(ops)
+    unexplained = unexplained_changed_paths(changed, declared) if changed and declared else changed
+    return SEObservedReplayAudit(
+        observed_changed_paths=changed,
+        declared_target_paths=declared,
+        unexplained_paths=unexplained,
+        op_count=len(ops),
     )
