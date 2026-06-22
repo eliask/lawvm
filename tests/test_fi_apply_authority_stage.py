@@ -30,6 +30,7 @@ The real-corpus dossier tests are skipped when ``data/finlex.farchive`` is absen
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -327,6 +328,45 @@ def test_staged_wrapper_is_importable_and_typed() -> None:
     assert StageResult is not None
 
 
+def test_cert_reads_the_carried_apply_authority_not_a_re_derivation() -> None:
+    # PART 3 (2a): `_fi_apply_authority` now READS `products.apply_authority` (the
+    # type-carried surface), not a cert-side re-derivation. Prove the carrier is
+    # load-bearing: a bundle whose carrier disagrees with what re-derivation would
+    # yield returns the CARRIED value. RED if the wire reverts to re-deriving.
+    from types import SimpleNamespace
+
+    from lawvm.tools.certificate_bundle import _fi_apply_authority
+
+    sentinel = AuthoritySurface()  # neutral — distinct from an authorized derivation
+    bundle = SimpleNamespace(
+        result=SimpleNamespace(
+            products=SimpleNamespace(apply_authority=sentinel),
+            write_receipts=(),
+            findings=(),
+        )
+    )
+    assert _fi_apply_authority(bundle) is sentinel
+
+
+def test_cert_falls_back_when_carrier_absent() -> None:
+    # When the carrier is None (a replay path that never set it), fall back to the
+    # descriptive re-derivation so the writer never trusts an un-set carrier. An
+    # empty replay re-derives to an authorized surface (the trivial conjunction).
+    from types import SimpleNamespace
+
+    from lawvm.tools.certificate_bundle import _fi_apply_authority
+
+    bundle = SimpleNamespace(
+        result=SimpleNamespace(
+            products=SimpleNamespace(apply_authority=None),
+            write_receipts=(),
+            findings=(),
+        )
+    )
+    derived = _fi_apply_authority(bundle)
+    assert derived.replay_authorized is True
+
+
 # ---------------------------------------------------------------------------
 # real-corpus dossier feeder + verify_bundle branch (the production consumer)
 # ---------------------------------------------------------------------------
@@ -408,44 +448,85 @@ def test_severed_authority_fails_the_verify_consumer(bundle_482: Path) -> None:
 # asserts (by AST, in the spirit of the Wave-1 architecture ratchets) that each
 # production caller still contains the call to its authority gate. It goes RED if
 # the call site is removed — the exact anti-built-then-severed property.
-def _fn_body_calls(func_name: str, callee_name: str) -> bool:
-    import ast
+def _find_func(func_name: str) -> ast.FunctionDef:
     from pathlib import Path as _Path
 
     import lawvm.tools.certificate_bundle as _cb
 
     source = _Path(_cb.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
-    target: ast.FunctionDef | None = None
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == func_name:
-            target = node
-            break
-    assert target is not None, f"{func_name} not found in certificate_bundle.py"
-    for inner in ast.walk(target):
-        if isinstance(inner, ast.Call):
-            fn = inner.func
-            if isinstance(fn, ast.Name) and fn.id == callee_name:
-                return True
-            if isinstance(fn, ast.Attribute) and fn.attr == callee_name:
-                return True
+            return node
+    raise AssertionError(f"{func_name} not found in certificate_bundle.py")
+
+
+def _call_name(call: ast.Call) -> str | None:
+    fn = call.func
+    if isinstance(fn, ast.Name):
+        return fn.id
+    if isinstance(fn, ast.Attribute):
+        return fn.attr
+    return None
+
+
+def _is_clean_gate_test(test: ast.expr) -> bool:
+    """True iff `test` is EXACTLY `<x> == "clean"` (no AND-neutering BoolOp).
+
+    Matches both the build-side local-var compare (`certificate_status == "clean"`)
+    and the verify-side subscript compare (`envelope["certificate_status"] ==
+    "clean"`). A `BoolOp`-wrapped test (`... == "clean" and False`) is REJECTED so a
+    guard-neutering revert (`if ... and False:`) goes RED.
+    """
+    if not isinstance(test, ast.Compare):
+        return False
+    if len(test.ops) != 1 or not isinstance(test.ops[0], ast.Eq):
+        return False
+    operands = [test.left, *test.comparators]
+    return any(
+        isinstance(node, ast.Constant) and node.value == "clean" for node in operands
+    )
+
+
+def _clean_gate_body_calls(func_name: str, callee_name: str) -> bool:
+    """Whether `callee_name` is called INSIDE the `if ... == "clean":` If-body.
+
+    Tighter than "any Call in the function": the call must sit within the clean-gate
+    If node's `.body` (NOT `.orelse`, NOT the surrounding function), and the gate
+    test must be EXACTLY the clean comparison. RED if the call is removed, moved out
+    of the gate, or the gate test is adulterated (`and False`) — closing the
+    "dead call keeps it GREEN" blind spot the exit re-audit flagged.
+    """
+    target = _find_func(func_name)
+    for node in ast.walk(target):
+        if not isinstance(node, ast.If) or not _is_clean_gate_test(node.test):
+            continue
+        for inner in node.body:
+            for call in ast.walk(inner):
+                if isinstance(call, ast.Call) and _call_name(call) == callee_name:
+                    return True
     return False
 
 
 def test_build_certificate_bundle_calls_the_authority_gate() -> None:
-    # RED if the `_require_authorized_replay(apply_authority)` call site is
-    # removed from build_certificate_bundle (proven silent to the helper-level
+    # RED if the `_require_authorized_replay(apply_authority)` call site is removed
+    # from build_certificate_bundle, MOVED OUT of the `if certificate_status ==
+    # "clean":` gate, or the gate test is neutered (`and False`) — the tightened
+    # anti-built-then-severed property (proven silent to the helper-level
     # fire-drills otherwise).
-    assert _fn_body_calls("build_certificate_bundle", "_require_authorized_replay"), (
-        "build_certificate_bundle must call _require_authorized_replay so a clean "
-        "dossier cannot be built over an unauthorized replay (the firewall bite)"
+    assert _clean_gate_body_calls(
+        "build_certificate_bundle", "_require_authorized_replay"
+    ), (
+        "build_certificate_bundle must call _require_authorized_replay INSIDE the "
+        "`if certificate_status == \"clean\":` gate so a clean dossier cannot be "
+        "built over an unauthorized replay (the firewall bite)"
     )
 
 
 def test_verify_bundle_calls_the_authority_recompute() -> None:
     # RED if the `_verify_apply_authority_clean(...)` call site is removed from
-    # verify_bundle.
-    assert _fn_body_calls("verify_bundle", "_verify_apply_authority_clean"), (
-        "verify_bundle must call _verify_apply_authority_clean so a severed "
-        "authority makes the self-check raise (guard-liveness)"
+    # verify_bundle, moved out of the clean gate, or the gate is neutered.
+    assert _clean_gate_body_calls("verify_bundle", "_verify_apply_authority_clean"), (
+        "verify_bundle must call _verify_apply_authority_clean INSIDE the clean "
+        "gate so a severed authority makes the self-check raise (guard-liveness)"
     )

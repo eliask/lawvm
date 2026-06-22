@@ -116,6 +116,17 @@ D_APPLY_AUTHORITY = "lawvm.apply_authority.v0"
 
 # Stage ids for the per-stage account ledger (WAIST #8/#9 live feeders).
 STAGE_TIMELINE_MATERIALIZATION = "fi.timeline.materialization"
+# StageResult endgame Wave-5: the remaining per-stage account ids routed
+# into `stage_account_rows` so `verify_bundle` recomputes each one UNCONDITIONALLY
+# (the WAIST #9 mechanism). All additive — 0-delta on the flat residual/finding/
+# coverage roots; only `stage_accounts_root` gains members.
+STAGE_SOURCE_IDENTITY = "fi.source.identity"  # #1
+STAGE_STRUCTURE_WRITE_FOOTPRINT = "fi.structure.write_footprint"  # #3 (SEAM B)
+STAGE_SOURCE_SYNTAX_FOREST = "fi.source_syntax.forest"  # #4 (SEAM A)
+STAGE_LEGAL_SURFACE_GRAPH = "fi.legal_surface.graph"  # #5 (SEAM A)
+STAGE_CANONICAL_OP_COMPILE = "fi.canonical_op.compile"  # #6 (SEAM B)
+STAGE_PROJECTION_INTERLINKS = "fi.projection.interlinks"  # #10 (SEAM A)
+STAGE_PROJECTION_OVERLAYS = "fi.projection.overlays"  # #10 (SEAM A)
 
 # Certificate spec §3.5: bundle-local certificate-layer code (CERT.
 # namespace) carried by kind=source_anchor_unavailable residuals (§5.4,
@@ -380,6 +391,39 @@ def _verify_stage_accounts(account_rows: Sequence[Mapping[str, Any]]) -> str:
     return stage_accounts_root(account_rows)
 
 
+# StageResult endgame Wave-5 (ORCH-2): the stages whose BLOCKING residual
+# contributes to the certificate status (the (C) closure — a broken-ref #5 or a
+# dropped-universe-member #10 forces blocked). Their (D)-routed account is the
+# reachable, tamper-checkable carrier of that blocking signal.
+STATUS_CONTRIBUTING_STAGE_IDS = frozenset(
+    {
+        STAGE_LEGAL_SURFACE_GRAPH,
+        STAGE_PROJECTION_INTERLINKS,
+        STAGE_PROJECTION_OVERLAYS,
+    }
+)
+
+
+def _committed_stage_blocking_residual_count(
+    account_rows: Sequence[Mapping[str, Any]],
+) -> int:
+    """Count blocking residuals in the (C)-contributing committed stage rows.
+
+    The verify-side recompute of :func:`_stage_blocking_residual_count`: it reads
+    the COMMITTED ``residual_rows`` of the #5/#10 stage accounts (which
+    ``_verify_stage_accounts`` has already proven recompute from their subroots) and
+    counts the blocking ones. A tampered/forged #5/#10 row that drops a blocking
+    residual changes the stage subroot (caught by ``_verify_stage_accounts``); a row
+    that legitimately carries one forces ``blocked`` here — the genuine (C) bite.
+    """
+    count = 0
+    for row in account_rows:
+        if row.get("stage") not in STATUS_CONTRIBUTING_STAGE_IDS:
+            continue
+        count += sum(1 for r in row.get("residual_rows", []) if bool(r.get("blocking")))
+    return count
+
+
 def _fi_materialization_stage(bundle: Any, as_of: str) -> "StageResult[Any]":
     """Return the FI PIT materialization `StageResult` for one boundary date.
 
@@ -490,21 +534,181 @@ def _verify_materialization_stage_clean(stage_account_rows: Sequence[Mapping[str
 def _fi_apply_authority(bundle: Any) -> "AuthoritySurface":
     """The per-replay apply execution authority for this dossier (firewall input).
 
-    Re-derived DESCRIPTIVELY from ``bundle.result`` (the landed write receipts +
-    findings the cert already consumes) so the writer never trusts an un-set
-    carrier — the same conjunction the apply boundary minted on its
-    ``StageResult``: every landed receipt's mutation boundary is explained AND no
-    apply-boundary touch-outside-target violation finding fired. This is the
-    cert-side recompute of ``ReplayProducts.apply_authority`` (the carried value
-    and this recompute agree on a faithful replay).
+    READS the type-carried ``ReplayProducts.apply_authority`` (WAIST #7), which the
+    replay assembly minted via :func:`aggregate_replay_authority` over the landed
+    write receipts + findings. The carrier is load-bearing: a clean dossier's
+    firewall stands on the authority the producer carried, not a cert-side
+    re-derivation (the re-derivation duplication the exit re-audit flagged).
+
+    When the carrier is absent (a replay path that never set it — never the green
+    corpus default), FALL BACK to the descriptive re-derivation from
+    ``bundle.result`` so the writer still never trusts an un-set carrier. Both
+    compute the IDENTICAL conjunction over the same receipts/findings, so on a
+    faithful replay the carried value and the fallback agree byte-for-byte (0-delta).
     """
     from lawvm.finland.apply_replay_authorization import aggregate_replay_authority
 
     result = bundle.result
+    carried = getattr(result.products, "apply_authority", None)
+    if carried is not None:
+        return carried
     return aggregate_replay_authority(
         write_receipts=result.write_receipts,
         findings=result.findings,
     )
+
+
+# ---------------------------------------------------------------------------
+# StageResult endgame Wave-5: the SEAM-A cert-side stage feeders. Each
+# builds ONE StageResult account from artifacts the cert already holds (the
+# enacted body bytes / the corpus store) and routes it into `stage_account_rows`
+# so `_verify_stage_accounts` recomputes it UNCONDITIONALLY (checkable on the
+# BLOCKED 482/2024). All additive read-offs of accounts the value path already
+# produces — 0-delta on the flat roots.
+# ---------------------------------------------------------------------------
+
+
+def _fi_source_identity_stage(
+    source_identities: Sequence[Mapping[str, Any]],
+) -> "StageResult[None]":
+    """Source-identity stage account (WAIST #1) from the witnessed reads in hand.
+
+    Built from the SAME content-witnessed source identities the cert already read
+    + content-hashed into ``source_bundle_root`` (no second read — 0-delta). The
+    coverage is a single-class ``source_artifacts`` partition: every bundled source
+    was read and content-addressed (``owned`` = number of bundled sources, zero
+    residual/violation). The witness DIGESTS keep their unconditional content check
+    on ``source_bundle_root`` (ORCH-3: no ledger evidence extension); this stage row
+    is the per-stage checkable attribution the (D) goal demands.
+    """
+    from lawvm.core.stage_result import CoverageCertificate, StageResult
+
+    total = len(source_identities)
+    return StageResult(
+        value=None,
+        coverage=CoverageCertificate(
+            unit="source_artifacts",
+            total=total,
+            owned=total,
+            totality_claimed=True,
+        ),
+    )
+
+
+def _fi_source_syntax_stage(
+    surface_bundle: Any,
+) -> "StageResult[Any]":
+    """Source-syntax forest stage account (WAIST #4, SEAM A) over the #2 bundle.
+
+    Mirrors :func:`graph_build._gate_forest_coverage` exactly: for each unit of the
+    already-built #2 ``SourceSurfaceBundle`` assemble the forest as a typed
+    StageResult and aggregate the token-partition accounts. For the v0 single
+    whole-body unit this is a pure read-off of the SAME forest ``_gate_forest_coverage``
+    builds — 0-delta. ``violation>0`` ⟺ a silent-unowned span; on the green corpus
+    it is 0 (the residue rides as non-blocking ``typed_residual``). Per the #4 §LEDGER
+    row the forest violation is the established totality-scoped frontier (NOT a
+    clean-cert (C) gap), so this routes its account ONLY.
+    """
+    from lawvm.core.stage_result import (
+        NEUTRAL_AUTHORITY,
+        CoverageCertificate,
+        StageResult,
+    )
+    from lawvm.finland.legal_surface.source_syntax_graph import (
+        assemble_source_syntax_graph_staged,
+    )
+
+    owned = benign = residual_n = violation = 0
+    residuals: list[Any] = []
+    last_value: Any = None
+    for unit in surface_bundle.units:
+        forest_stage = assemble_source_syntax_graph_staged(
+            subject=surface_bundle.subject, unit=unit
+        )
+        cov = forest_stage.coverage
+        owned += cov.owned
+        benign += cov.benign
+        residual_n += cov.residual
+        violation += cov.violation
+        residuals.extend(forest_stage.residuals)
+        last_value = forest_stage.value
+    coverage = CoverageCertificate(
+        unit="tokens",
+        total=owned + benign + residual_n + violation,
+        owned=owned,
+        benign=benign,
+        residual=residual_n,
+        violation=violation,
+        totality_claimed=True,
+    )
+    return StageResult(
+        value=last_value,
+        residuals=tuple(residuals),
+        findings=(),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def _fi_legal_surface_graph_stage(body_bytes: bytes, statute_id: str) -> "StageResult[Any]":
+    """Legal Surface Graph stage account (WAIST #5, SEAM A) from the enacted body.
+
+    Calls the staged producer over the enacted body bytes the cert already bundled
+    (``source_blobs[base_artifact_id]``). The ``value`` is byte-identical to the
+    value-only ``build_legal_surface_graph``; the account carries the surface-node
+    four-class partition + per-non-owned-node residuals (a ``broken`` ref →
+    BLOCKING ``unowned_violation``). 0-delta D-routing; its blocking residual ALSO
+    contributes to ``compute_certificate_status`` so a broken ref forces blocked
+    (PART 2 status-contribution, reachable — NOT a clean-gated firewall).
+    """
+    from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph_staged
+
+    return build_legal_surface_graph_staged(body_bytes, statute_id)
+
+
+def _fi_projection_stage(
+    project_fn: Any, statute_id: str, corpus: Any
+) -> "StageResult[None]":
+    """Projection stage account (WAIST #10, SEAM A) wrapping a ``FiProjectionResult``.
+
+    ``project_fn`` is ``_project_interlinks_for_statute`` or
+    ``_project_overlays_for_statute``. The producer returns a ``FiProjectionResult``
+    (a ``PartitionResult`` with ``.coverage``/``.residuals``); wrap it into a
+    ``StageResult`` so ``build_stage_account_row`` can project it (ORCH-5: both
+    interlinks + overlays are routed). A silently-dropped universe member rides as a
+    BLOCKING ``projection_residual`` (``coverage.violation>0``); that blocking
+    residual ALSO contributes to ``compute_certificate_status`` (PART 2). On
+    482/2024 the statute XML is present → ``violation==0`` → 0-delta.
+    """
+    from lawvm.core.stage_result import NEUTRAL_AUTHORITY, StageResult
+
+    proj = project_fn(statute_id, corpus)
+    return StageResult(
+        value=None,
+        residuals=tuple(proj.residuals),
+        findings=(),
+        coverage=proj.coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def _stage_blocking_residual_count(stages: Sequence[Tuple[str, "StageResult[Any]"]]) -> int:
+    """Count blocking residuals across the (C)-contributing stages (#5, #10).
+
+    PART 2 status-contribution (ORCH-2): a #5 broken-ref / #10 dropped-universe-
+    member BLOCKING residual must UNCONDITIONALLY force ``certificate_status=blocked``
+    (reachable, genuine (C) — NOT a clean-gated firewall that never fires on FI). The
+    count is passed to :func:`compute_certificate_status` as EXTRA blocking residue;
+    it does NOT fold into the flat ``residual_root`` (which stays value-identical), so
+    on the green corpus (every contributing stage's ``violation==0``, no blocking
+    residual) the count is 0 → 0-delta (every FI cert is already ``blocked`` from its
+    ledger residue; a non-zero count here keeps a blocked cert blocked, never flips a
+    clean one — if it did, that is a NEW-CORRECT finding).
+    """
+    count = 0
+    for _stage_id, stage in stages:
+        count += sum(1 for r in stage.residuals if getattr(r, "blocking", False))
+    return count
 
 
 def apply_authority_row(authority: "AuthoritySurface") -> Dict[str, Any]:
@@ -964,9 +1168,20 @@ def compute_certificate_status(
     registered_codes: frozenset[str],
     profile_id: str = PROFILE_ID,
     required_artifacts_present: bool = True,
+    extra_blocking_residual_count: int = 0,
 ) -> str:
-    """Certificate spec §5.2 status algebra — computed, never author-chosen."""
+    """Certificate spec §5.2 status algebra — computed, never author-chosen.
+
+    ``extra_blocking_residual_count`` (StageResult endgame Wave-5, ORCH-2): the
+    number of BLOCKING per-stage residuals contributed by stages whose
+    incompleteness must block a clean claim but whose residue does NOT fold into the
+    flat ``residual_root`` (#5 broken refs, #10 dropped universe members). A non-zero
+    count UNCONDITIONALLY forces ``blocked`` (reachable on the blocked FI corpus,
+    genuine (C)) without perturbing the flat residual ledger (0-delta).
+    """
     if not required_artifacts_present:
+        return "blocked"
+    if extra_blocking_residual_count > 0:
         return "blocked"
     for residual in residual_rows:
         code = residual.get("diagnostic_code") or ""
@@ -1258,6 +1473,98 @@ def build_certificate_bundle(
     # whose coverage carries an unowned-signal violation cannot be silently
     # certified clean (the §LEDGER "incompleteness blocks a clean claim").
     _require_clean_materialization_stage(materialization_stage)
+
+    # --- StageResult endgame Wave-5: route the remaining 6 per-stage
+    # accounts so EVERY pipeline stage emits a checkable certificate root (the (D)
+    # deliverable). All additive read-offs of accounts the value path already
+    # produces; each lands in the UNCONDITIONAL `_verify_stage_accounts` recompute
+    # (checkable on the BLOCKED 482/2024). 0-delta on the flat roots — only
+    # `stage_accounts_root` gains members (the #2/#8 precedent).
+
+    # #1 source identity — coverage over the witnessed reads already in hand.
+    source_identity_stage = _fi_source_identity_stage(source_identities)
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_SOURCE_IDENTITY, source_identity_stage)
+    )
+
+    # #3 structure write-footprint (SEAM B) — the type-carried per-op structural
+    # account aggregated on ReplayProducts (apply already owns the divergence
+    # Finding verdict; this is the additive checkable attribution).
+    structural_stage = bundle.result.products.structural_stage
+    if structural_stage is None:
+        raise BundleSpecError(
+            "FI replay carried no structural write-footprint StageResult "
+            f"(ReplayProducts.structural_stage) for {engine_id}; the #3 account "
+            "cannot be routed into the dossier"
+        )
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_STRUCTURE_WRITE_FOOTPRINT, structural_stage)
+    )
+
+    # #4 source-syntax forest (SEAM A) — the token-partition forest account over
+    # the #2 bundle units (the same forest `_gate_forest_coverage` builds).
+    source_syntax_stage = _fi_source_syntax_stage(surface_stage.value)
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_SOURCE_SYNTAX_FOREST, source_syntax_stage)
+    )
+
+    # #5 legal-surface graph (SEAM A) — the surface-node partition from the enacted
+    # body bytes. Its BLOCKING residual (a broken ref) contributes to the cert
+    # status below (PART 2 status-contribution, reachable — NOT a clean-gated
+    # firewall).
+    surface_graph_stage = _fi_legal_surface_graph_stage(
+        source_blobs[base_artifact_id], engine_id
+    )
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_LEGAL_SURFACE_GRAPH, surface_graph_stage)
+    )
+
+    # #6 canonical-op compile (SEAM B) — the per-amendment compile partition
+    # aggregated on ReplayProducts (the decline VERDICT rides the existing #6
+    # residual/finding channel; this is the additive checkable account).
+    canonical_op_stage = bundle.result.products.canonical_op_stage
+    if canonical_op_stage is None:
+        raise BundleSpecError(
+            "FI replay carried no canonical-op compile StageResult "
+            f"(ReplayProducts.canonical_op_stage) for {engine_id}; the #6 account "
+            "cannot be routed into the dossier"
+        )
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_CANONICAL_OP_COMPILE, canonical_op_stage)
+    )
+
+    # #10 projection interlinks + overlays (SEAM A, ORCH-5: both). A
+    # silently-dropped universe member rides as a BLOCKING projection_residual; that
+    # residual contributes to the cert status below (PART 2).
+    from lawvm.tools.export_fi_interlinks import (
+        _project_interlinks_for_statute,
+        _project_overlays_for_statute,
+    )
+
+    projection_interlinks_stage = _fi_projection_stage(
+        _project_interlinks_for_statute, engine_id, corpus
+    )
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_PROJECTION_INTERLINKS, projection_interlinks_stage)
+    )
+    projection_overlays_stage = _fi_projection_stage(
+        _project_overlays_for_statute, engine_id, corpus
+    )
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_PROJECTION_OVERLAYS, projection_overlays_stage)
+    )
+
+    # PART 2 (ORCH-2): the #5/#10 BLOCKING residuals contribute to the residue
+    # `compute_certificate_status` reads so a broken-ref / dropped-universe-member
+    # UNCONDITIONALLY forces blocked (genuine (C), reachable). 0 on the green corpus.
+    status_contributing_stages: List[Tuple[str, "StageResult[Any]"]] = [
+        (STAGE_LEGAL_SURFACE_GRAPH, surface_graph_stage),
+        (STAGE_PROJECTION_INTERLINKS, projection_interlinks_stage),
+        (STAGE_PROJECTION_OVERLAYS, projection_overlays_stage),
+    ]
+    extra_blocking_residual_count = _stage_blocking_residual_count(
+        status_contributing_stages
+    )
 
     stage_accounts_root_value = stage_accounts_root(stage_account_rows)
 
@@ -1851,6 +2158,7 @@ def build_certificate_bundle(
         residual_rows=residual_rows,
         certification_statuses=certification_statuses,
         registered_codes=registered_codes,
+        extra_blocking_residual_count=extra_blocking_residual_count,
     )
 
     # WAIST #7 firewall bite: a CLEAN/authoritative dossier requires the
@@ -2497,6 +2805,11 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
     # guard-liveness property the StageResult endgame demands.
     stage_account_rows = _read_jsonl(bundle_path / artifacts["stage_accounts"]["locator"])
     recomputed["stage_accounts_root"] = _verify_stage_accounts(stage_account_rows)
+    # PART 2 status-contribution recompute (ORCH-2): re-count the #5/#10 BLOCKING
+    # per-stage residuals FROM the committed rows so the status recompute below
+    # honors them. A broken-ref/dropped-universe-member blocking residual forces
+    # `blocked` UNCONDITIONALLY (reachable on the blocked FI corpus, genuine (C)).
+    verify_extra_blocking = _committed_stage_blocking_residual_count(stage_account_rows)
 
     # policy manifest hashes
     for key, domain, envelope_hash in (
@@ -2543,6 +2856,7 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         residual_rows=residual_rows,
         certification_statuses=certification_statuses,
         registered_codes=registered_codes,
+        extra_blocking_residual_count=verify_extra_blocking,
     )
     _require(
         recomputed_status == envelope["certificate_status"],

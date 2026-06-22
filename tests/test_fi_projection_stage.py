@@ -11,6 +11,7 @@ member becomes a recorded, checkable fact.
 """
 from __future__ import annotations
 
+import ast
 import inspect
 import json
 
@@ -191,18 +192,64 @@ def test_clean_export_entrypoint_writes_clean_coverage_leaf(
 # ---------------------------------------------------------------------------
 
 
+def _coverage_return_is_consumed(func: ast.FunctionDef) -> bool:
+    """Whether the entrypoint CONSUMES the `_corpus_projection_coverage` return.
+
+    Structural (AST) replacement for the old `inspect.getsource` substring grep
+    (which a commented-out call kept GREEN). Asserts:
+      1. a `_corpus_projection_coverage(...)` Call result is BOUND to a name;
+      2. a `_write_coverage_leaf(...)` Call passes that bound name among its args
+         (the coverage return is actually written, not dropped);
+      3. a `_emit_projection_residual_branch(...)` Call exists (the residual lane
+         is read, not merely referenced).
+    RED if the coverage return is dropped or the residual branch is commented out.
+    """
+    coverage_names: set[str] = set()
+    for node in ast.walk(func):
+        if not isinstance(node, ast.Assign):
+            continue
+        value = node.value
+        if (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id == "_corpus_projection_coverage"
+        ):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    coverage_names.add(tgt.id)
+    if not coverage_names:
+        return False
+
+    written_names: set[str] = set()
+    residual_branch_read = False
+    for node in ast.walk(func):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        if node.func.id == "_write_coverage_leaf":
+            written_names |= {a.id for a in node.args if isinstance(a, ast.Name)}
+        if node.func.id == "_emit_projection_residual_branch":
+            residual_branch_read = True
+    # EVERY bound coverage return must be passed to a _write_coverage_leaf (a
+    # commented-out write of ANY coverage leaf leaves its bound name unconsumed).
+    coverage_all_written = coverage_names.issubset(written_names)
+    return coverage_all_written and residual_branch_read
+
+
 def test_entrypoint_reads_residual_and_coverage_branch() -> None:
     from lawvm.tools import export_fi_interlinks
 
     src = inspect.getsource(export_fi_interlinks.export_fi_interlinks)
-    # The entrypoint must surface the residual lane to the console AND build the
-    # coverage account into the coverage leaf.
-    assert "_emit_projection_residual_branch" in src, (
-        "export_fi_interlinks must read the residual lane and fail-loud on "
-        "blocking residue, else dropped universe members are silent again."
+    func = ast.parse(src).body[0]
+    assert isinstance(func, ast.FunctionDef)
+    # The entrypoint must CONSUME the coverage return (bind + pass to
+    # _write_coverage_leaf) AND read the residual lane via
+    # _emit_projection_residual_branch — structurally, not by substring.
+    assert _coverage_return_is_consumed(func), (
+        "export_fi_interlinks must bind the _corpus_projection_coverage return and "
+        "pass it to _write_coverage_leaf, and call _emit_projection_residual_branch "
+        "— else dropped universe members are silent again (a commented-out call "
+        "must not keep this GREEN)."
     )
-    assert "_corpus_projection_coverage" in src
-    assert "_write_coverage_leaf" in src
 
 
 def test_producers_return_projection_carrier_annotation() -> None:
