@@ -57,6 +57,8 @@ class ApplyResolvedOpAudit:
     """One visible audit record for a resolved op considered by apply."""
 
     source_statute: str
+    source_effective: str
+    source_expires: str
     op_id: str
     action_type: str
     description: str
@@ -75,6 +77,8 @@ class ApplyResolvedOpAudit:
             "source_statute": self.source_statute,
             "detail": {
                 "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
+                "source_effective": self.source_effective,
+                "source_expires": self.source_expires,
                 "op_id": self.op_id,
                 "action_type": self.action_type,
                 "description": self.description,
@@ -559,8 +563,11 @@ def _audit_for_rop(
     disposition: ApplyDisposition,
 ) -> ApplyResolvedOpAudit:
     group = request.rop.resolved_group_key_view
+    source = request.rop.resolved_op_source
     return ApplyResolvedOpAudit(
         source_statute=request.amendment_id,
+        source_effective=source.effective if source is not None else "",
+        source_expires=source.expires if source is not None else "",
         op_id=request.rop.op_id or "",
         action_type=request.rop.resolved_action_type,
         description=request.rop.description(),

@@ -374,6 +374,98 @@ def test_final_payload_gap_annotation_classifies_later_amendment_supersession() 
     assert annotated[0].detail["superseding_target"] == "section:4/subsection:3"
 
 
+def test_final_payload_gap_annotation_classifies_expired_source_window() -> None:
+    gap = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={
+            "unit_id": "op1",
+            "unit_kind": "REPLACE",
+            "observed_label": "7",
+            "parent_label": "chapter:7/heading",
+            "chunk_index": 0,
+            "chunk_excerpt": "Temporary heading",
+            "disposition": "source_payload_text_not_realized_in_post_fold_state",
+        },
+    )
+    audit = Finding(
+        kind="APPLY.RESOLVED_OP_AUDIT",
+        role=OBSERVATION_ROLE,
+        stage="apply",
+        source_statute="2000/1",
+        detail={
+            "detail": {
+                "op_id": "op1",
+                "action_type": "REPLACE",
+                "disposition": "APPLIED",
+                "target_unit_kind": "chapter",
+                "target_norm": "7",
+                "target_special": "otsikko",
+                "source_effective": "2000-01-01",
+                "source_expires": "2001-01-01",
+            }
+        },
+    )
+
+    annotated = attach_payload_gap_apply_dispositions(
+        (gap, audit),
+        materialized_as_of="2002-01-01",
+    )
+
+    assert (
+        annotated[0].kind
+        == "COVERAGE.PAYLOAD_REALIZATION_EXPIRED_SOURCE_WINDOW"
+    )
+    assert annotated[0].detail["source_expires"] == "2001-01-01"
+    assert annotated[0].detail["materialized_as_of"] == "2002-01-01"
+
+
+def test_final_payload_gap_annotation_keeps_active_temporary_window_as_gap() -> None:
+    gap = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={
+            "unit_id": "op1",
+            "unit_kind": "REPLACE",
+            "observed_label": "7",
+            "parent_label": "chapter:7/heading",
+            "chunk_index": 0,
+            "chunk_excerpt": "Temporary heading",
+            "disposition": "source_payload_text_not_realized_in_post_fold_state",
+        },
+    )
+    audit = Finding(
+        kind="APPLY.RESOLVED_OP_AUDIT",
+        role=OBSERVATION_ROLE,
+        stage="apply",
+        source_statute="2000/1",
+        detail={
+            "detail": {
+                "op_id": "op1",
+                "action_type": "REPLACE",
+                "disposition": "APPLIED",
+                "target_unit_kind": "chapter",
+                "target_norm": "7",
+                "target_special": "otsikko",
+                "source_effective": "2000-01-01",
+                "source_expires": "2001-01-01",
+            }
+        },
+    )
+
+    annotated = attach_payload_gap_apply_dispositions(
+        (gap, audit),
+        materialized_as_of="2000-06-01",
+    )
+
+    assert annotated[0].kind == "COVERAGE.PAYLOAD_REALIZATION_GAP"
+    assert annotated[0].detail["apply_disposition"] == "APPLIED"
+
+
 def test_final_payload_gap_annotation_keeps_gap_when_later_replace_failed() -> None:
     gap = Finding(
         kind="COVERAGE.PAYLOAD_REALIZATION_GAP",

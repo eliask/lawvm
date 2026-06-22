@@ -95,6 +95,8 @@ def _attach_apply_disposition(
 
 def attach_payload_gap_apply_dispositions(
     findings: tuple[Finding, ...],
+    *,
+    materialized_as_of: str = "",
 ) -> tuple[Finding, ...]:
     """Annotate payload gaps with same-amendment apply audit dispositions."""
 
@@ -130,6 +132,10 @@ def attach_payload_gap_apply_dispositions(
             )
         )
     findings = _suppress_same_amendment_shadowed_payload_gaps(tuple(annotated))
+    findings = _classify_expired_source_window_payload_gaps(
+        findings,
+        materialized_as_of=materialized_as_of,
+    )
     findings = _classify_later_amendment_superseded_payload_gaps(findings)
     return _classify_apply_failed_payload_gaps(findings)
 
@@ -170,6 +176,64 @@ def _classify_later_amendment_superseded_payload_gaps(
             continue
         classified.append(_later_supersession_finding_from_gap(finding, superseding))
     return tuple(classified)
+
+
+def _classify_expired_source_window_payload_gaps(
+    findings: tuple[Finding, ...],
+    *,
+    materialized_as_of: str,
+) -> tuple[Finding, ...]:
+    if not materialized_as_of:
+        return findings
+    apply_audits = _ordered_apply_audit_observations(findings)
+    if not apply_audits:
+        return findings
+
+    classified: list[Finding] = []
+    for finding in findings:
+        if finding.kind != "COVERAGE.PAYLOAD_REALIZATION_GAP":
+            classified.append(finding)
+            continue
+        if str(finding.detail.get("apply_disposition") or "") != "APPLIED":
+            classified.append(finding)
+            continue
+        expired_audit = _expired_source_window_audit(
+            finding,
+            apply_audits,
+            materialized_as_of=materialized_as_of,
+        )
+        if expired_audit is None:
+            classified.append(finding)
+            continue
+        classified.append(
+            _expired_source_window_finding_from_gap(
+                finding,
+                expired_audit,
+                materialized_as_of=materialized_as_of,
+            )
+        )
+    return tuple(classified)
+
+
+def _expired_source_window_audit(
+    gap: Finding,
+    apply_audits: tuple[_ApplyAuditObservation, ...],
+    *,
+    materialized_as_of: str,
+) -> _ApplyAuditObservation | None:
+    gap_source = gap.source_statute or ""
+    gap_op_id = str(gap.detail.get("unit_id") or "")
+    if not gap_source or not gap_op_id:
+        return None
+    for audit in apply_audits:
+        if audit.source_statute != gap_source:
+            continue
+        if str(audit.detail.get("op_id") or "") != gap_op_id:
+            continue
+        expires = str(audit.detail.get("source_expires") or "")
+        if expires and expires <= materialized_as_of:
+            return audit
+    return None
 
 
 def _ordered_apply_audit_observations(findings: tuple[Finding, ...]) -> tuple[_ApplyAuditObservation, ...]:
@@ -391,6 +455,28 @@ def _later_supersession_finding_from_gap(
                 for kind, label in _address_path_from_apply_audit(superseding.detail)
             ),
             "disposition": "source_payload_superseded_by_later_amendment_replace",
+        },
+    )
+
+
+def _expired_source_window_finding_from_gap(
+    gap: Finding,
+    audit: _ApplyAuditObservation,
+    *,
+    materialized_as_of: str,
+) -> Finding:
+    return Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_EXPIRED_SOURCE_WINDOW",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute=gap.source_statute,
+        blocking=False,
+        detail={
+            **gap.detail,
+            "source_effective": audit.detail.get("source_effective"),
+            "source_expires": audit.detail.get("source_expires"),
+            "materialized_as_of": materialized_as_of,
+            "disposition": "source_payload_expired_before_materialized_horizon",
         },
     )
 
