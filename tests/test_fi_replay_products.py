@@ -1881,6 +1881,41 @@ def test_replay_xml_1966_657_section_3_keeps_distinct_tail_moments() -> None:
     assert third_text != fourth_text
 
 
+def test_replay_xml_1973_692_splits_cross_paragraph_sparse_item_payload() -> None:
+    replay = replay_xml_for_test(
+        "1973/692",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+
+    section = replay.materialized_state.find_section("3")
+    assert section is not None
+
+    subsections = {
+        child.label: child
+        for child in section.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label
+    }
+    second = subsections["2"]
+    third = subsections["3"]
+
+    second_item_labels = {
+        child.label
+        for child in second.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    }
+    third_item_labels = {
+        child.label
+        for child in third.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    }
+
+    assert "6" not in second_item_labels
+    assert "10" not in second_item_labels
+    assert {"6", "10"} <= third_item_labels
+
+
 def test_replay_xml_recovers_1935_419_full_section_replace_for_1922_312_section_8() -> None:
     """Authority-citation lead-ins must not collapse 1935/419 to a fake 6 § replace."""
     replay = pinned_replay("1922/312", mode="official_consolidation", quiet=True)

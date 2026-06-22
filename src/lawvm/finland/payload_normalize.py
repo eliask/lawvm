@@ -5480,6 +5480,97 @@ def _mixed_sparse_slot_cross_paragraph_bindings(
     return observations
 
 
+def _split_mixed_sparse_slot_cross_paragraph_payloads(
+    group_ops: List[AmendmentOp],
+    assignment: SubsectionSlotAssignmentResult,
+) -> tuple[SubsectionSlotAssignmentResult, list[ElaborationObservation]]:
+    """Keep cross-paragraph item bodies out of a plain moment replacement.
+
+    A sparse Finnish amendment body can print one amendment-local subsection
+    slot that contains both:
+    - a plain moment replacement, and
+    - item bodies explicitly targeted to another moment by the preamble.
+
+    Sharing the raw slot with the plain moment would authorize the item bodies
+    to be written under that moment too. The item operations keep the original
+    slot; only the plain moment receives a pruned payload.
+    """
+
+    ops_by_slot_identity: dict[int, list[AmendmentOp]] = {}
+    slot_by_identity: dict[int, IRNode] = {}
+    for op in group_ops:
+        mapped = assignment.for_op(op)
+        if mapped is None:
+            continue
+        slot_id = id(mapped)
+        ops_by_slot_identity.setdefault(slot_id, []).append(op)
+        slot_by_identity[slot_id] = mapped
+
+    patched_map = assignment.subsec_map.copy()
+    observations: list[ElaborationObservation] = []
+    changed = False
+    for slot_id, slot_ops in sorted(
+        ops_by_slot_identity.items(),
+        key=lambda pair: str(slot_by_identity[pair[0]].label or ""),
+    ):
+        mapped = slot_by_identity[slot_id]
+        item_ops = [
+            op
+            for op in slot_ops
+            if op.target_item and op.target_paragraph is not None
+        ]
+        plain_ops = [
+            op
+            for op in slot_ops
+            if (
+                op.target_paragraph is not None
+                and not op.target_item
+                and not op.target_special
+            )
+        ]
+        if not item_ops or not plain_ops:
+            continue
+
+        for plain_op in plain_ops:
+            cross_item_labels = {
+                leaf_label_identity_key(str(item_op.target_item))
+                for item_op in item_ops
+                if item_op.target_paragraph != plain_op.target_paragraph
+            }
+            if not cross_item_labels:
+                continue
+            kept_children: list[IRNode] = []
+            removed_labels: list[str] = []
+            for child in mapped.children:
+                if (
+                    child.kind is IRNodeKind.PARAGRAPH
+                    and child.label
+                    and leaf_label_identity_key(child.label) in cross_item_labels
+                ):
+                    removed_labels.append(str(child.label))
+                    continue
+                kept_children.append(child)
+            if not removed_labels:
+                continue
+            patched_map.assign(plain_op, _tops._with_children(mapped, kept_children))
+            changed = True
+            observations.append(
+                _obs(
+                    "ELAB.SPLIT_MIXED_SPARSE_SLOT_CROSS_PARAGRAPH_PAYLOAD",
+                    "sparse_subsection_elaboration",
+                    slot_label=str(mapped.label or ""),
+                    plain_op=plain_op.description(),
+                    plain_target_paragraph=plain_op.target_paragraph,
+                    removed_item_labels=removed_labels,
+                    item_ops=[op.description() for op in item_ops],
+                )
+            )
+
+    if not changed:
+        return assignment, observations
+    return assignment.with_subsec_map(patched_map), observations
+
+
 def _elaborate_sparse_subsection_payload(
     ctx: PayloadElaborationContext,
     target_unit_kind: TargetUnitKind,
@@ -5651,6 +5742,11 @@ def _elaborate_sparse_subsection_payload(
             group_ops,
             assignment,
         )
+    assignment, split_observations = _split_mixed_sparse_slot_cross_paragraph_payloads(
+        group_ops,
+        assignment,
+    )
+    observations.extend(split_observations)
     observations.extend(assignment.binding_observations)
     observations.extend(_mixed_sparse_slot_cross_paragraph_bindings(group_ops, assignment))
     # Emit observations for ambiguous bindings (C2: admissible binding certificate)
