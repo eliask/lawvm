@@ -2874,6 +2874,98 @@ def test_fold_timeline_backfill_materializes_restructure_renumbered_sections() -
     )
 
 
+def test_fold_timeline_backfill_distinguishes_same_label_sections_across_chapters() -> None:
+    """Same section label in different chapters must each get a distinct backfill op.
+
+    Finnish chaptered statutes repeat section labels (``1 §`` exists in every
+    chapter). A bare-label op_id collides the two distinct sections, so the
+    ``existing_op_ids`` dedup drops the second and its fold-owned content
+    silently vanishes from PIT. The op_id must be keyed by the full address.
+    """
+    from lawvm.finland.replay_fold_timeline_backfill import _fold_backfill_op_id
+
+    def _section(label: str, heading: str) -> IRNode:
+        return IRNode(
+            kind=IRNodeKind.SECTION,
+            label=label,
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text=f"{label} §"),
+                IRNode(kind=IRNodeKind.HEADING, text=heading),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text=f"Body {heading}"),),
+                ),
+            ),
+        )
+
+    # Base IR is empty of these chapters: the fold carries both chapter-1
+    # sections, and timeline compilation has no authority for either.
+    base_body = IRNode(kind=IRNodeKind.BODY, children=())
+    fold_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="1 luku"),
+                    _section("1", "Chapter 1 section 1"),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                    _section("1", "Chapter 2 section 1"),
+                ),
+            ),
+        ),
+    )
+
+    addr_ch1 = LegalAddress(path=(("chapter", "1"), ("section", "1")))
+    addr_ch2 = LegalAddress(path=(("chapter", "2"), ("section", "1")))
+
+    # The OLD bare-label op_id collides the two distinct sections; the NEW
+    # address-keyed op_id distinguishes them.
+    old_op_id_ch1 = f"snapshot_section_{'1'}_fold_timeline_backfill"
+    old_op_id_ch2 = f"snapshot_section_{'1'}_fold_timeline_backfill"
+    assert old_op_id_ch1 == old_op_id_ch2  # collision the dedup acted on
+    new_op_id_ch1 = _fold_backfill_op_id(addr_ch1)
+    new_op_id_ch2 = _fold_backfill_op_id(addr_ch2)
+    assert new_op_id_ch1 != new_op_id_ch2
+    assert new_op_id_ch1.startswith("snapshot_section_")
+    assert new_op_id_ch2.startswith("snapshot_section_")
+    # Deterministic / stable.
+    assert _fold_backfill_op_id(addr_ch1) == new_op_id_ch1
+
+    ctx = StatuteContext(
+        id="synthetic/fold-backfill-collision",
+        title="Synthetic fold backfill collision",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+
+    products = build_replay_products(
+        ctx=ctx,
+        statute_id="synthetic/fold-backfill-collision",
+        replay_fold_state=ReplayState(ir=fold_body),
+        lo_ops_out=[],
+    )
+
+    # Both same-label sections survive PIT materialization with distinct
+    # timelines and distinct backfill records.
+    assert products.timelines is not None
+    assert addr_ch1 in products.timelines
+    assert addr_ch2 in products.timelines
+    assert products.materialized_state.find_section("1", "1") is not None
+    assert products.materialized_state.find_section("1", "2") is not None
+    backfilled_addresses = {record.address for record in products.fold_timeline_backfills}
+    assert str(addr_ch1) in backfilled_addresses
+    assert str(addr_ch2) in backfilled_addresses
+
+
 def test_fold_timeline_backfill_reuses_preview_timelines_when_no_backfills(monkeypatch) -> None:
     import lawvm.core.timeline as timeline_mod
     import lawvm.finland.replay_fold_timeline_backfill as backfill_mod

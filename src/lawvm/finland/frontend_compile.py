@@ -2775,7 +2775,13 @@ def _enrich_ops_from_amendment_tree(
         for op in patched:
             if (
                 op.target_unit_kind == "section"
-                and (op.target_section or "").lower() in labels
+                # Both `labels` and the target_section must pass through the
+                # SAME canonical token normalizer.  `labels` were built by
+                # `_parse_section_list_labels` (internal whitespace stripped,
+                # lowercased → e.g. "21b"); a raw ".lower()" on a spaced path
+                # label like "21 b" would miss "21b".  Normalize both sides.
+                and _norm_num_token(op.target_section or "")
+                in {_norm_num_token(label) for label in labels}
                 and op.lo is not None
                 and op.lo.source is not None
             ):
@@ -4104,7 +4110,13 @@ def normalize_and_compile_ops(
             # Section-scoped: only tag ops whose target_section is in the set
             tagged_ops: List[AmendmentOp] = []
             for op in ops:
-                if (op.target_section or "").lower() in _temporary_targets:
+                # Same root-cause asymmetry as the section_expiry_overrides
+                # stamp site above: `_temporary_targets` were normalized by
+                # `_parse_section_list_labels` (→ "21b"), so a raw ".lower()"
+                # of a spaced path label "21 b" would miss the temporary scope.
+                if _norm_num_token(op.target_section or "") in {
+                    _norm_num_token(label) for label in _temporary_targets
+                }:
                     temp_tagged, temp_events = _tag_temporary_ops(
                         [op],
                         amendment_id=amendment_id,

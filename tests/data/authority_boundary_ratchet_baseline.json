@@ -1,17 +1,5 @@
 {
   "_doc": "Monotone untyped-authority-boundary ratchet baseline. Counts raw-dict/Mapping (UNTYPED) arguments crossing is_blocking_compile_record instead of the typed CompileRecord carrier. Per-file 'untyped' counts may only fall, never rise; a fall must be committed (regenerate with `uv run python scripts/inventory_architecture_smells.py --ratchet authority --update-baseline`). See tests/test_authority_boundary_ratchet.py.",
-  "total_untyped": 34,
-  "untyped_counts": {
-    "src/lawvm/tools/evidence.py": 2,
-    "src/lawvm/tools/ops.py": 2,
-    "src/lawvm/tools/replay_payloads.py": 1,
-    "src/lawvm/tools/uk_bench.py": 10,
-    "src/lawvm/tools/uk_candidates.py": 2,
-    "src/lawvm/tools/uk_effect.py": 3,
-    "src/lawvm/tools/uk_effects.py": 2,
-    "src/lawvm/tools/uk_eids.py": 1,
-    "src/lawvm/tools/uk_misses.py": 1,
-    "src/lawvm/tools/uk_replay.py": 8,
-    "src/lawvm/tools/uk_self_consistency.py": 2
-  }
+  "total_untyped": 0,
+  "untyped_counts": {}
 }

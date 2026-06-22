@@ -348,6 +348,55 @@ def test_cert_reads_the_carried_apply_authority_not_a_re_derivation() -> None:
     assert _fi_apply_authority(bundle) is sentinel
 
 
+def test_carrier_is_single_sourced_from_filtered_findings() -> None:
+    """Bug [7] bite-proof: ``replay_xml`` mints ``products.apply_authority`` from the
+    POST-filter ``findings`` (the same set carried on ``ReplayResult`` and re-derived
+    by the cert fallback), NOT from the PRE-filter ``signals.findings``.
+
+    If the carrier were minted from ``signals.findings`` while the cert fallback
+    re-derives from ``ReplayResult.findings`` (after
+    ``drop_materialized_payload_realization_false_positives``), the two could
+    diverge whenever the filter dropped a finding. We assert by AST that the
+    ``products.apply_authority = aggregate_replay_authority(...)`` assignment passes
+    ``findings=findings`` (the filtered local), not ``findings=signals.findings``.
+    RED if the wire reverts to the pre-filter source.
+    """
+    from pathlib import Path as _Path
+
+    import lawvm.finland.replay_entrypoint as _re
+
+    source = _Path(_re.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    found_assignment = False
+    for node in ast.walk(tree):
+        # Look for: products.apply_authority = aggregate_replay_authority(...)
+        if not isinstance(node, ast.Assign):
+            continue
+        targets = node.targets
+        if not (
+            len(targets) == 1
+            and isinstance(targets[0], ast.Attribute)
+            and targets[0].attr == "apply_authority"
+        ):
+            continue
+        call = node.value
+        assert isinstance(call, ast.Call), "apply_authority must be a call result"
+        findings_kw = next(
+            (kw for kw in call.keywords if kw.arg == "findings"), None
+        )
+        assert findings_kw is not None, "aggregate must be called with findings="
+        # The argument must be the filtered local `findings` (an ast.Name), NOT
+        # `signals.findings` (an ast.Attribute on `signals`).
+        assert isinstance(findings_kw.value, ast.Name), (
+            "products.apply_authority must be minted from the filtered local "
+            "`findings`, not the pre-filter `signals.findings`"
+        )
+        assert findings_kw.value.id == "findings"
+        found_assignment = True
+    assert found_assignment, "products.apply_authority assignment not found"
+
+
 def test_cert_falls_back_when_carrier_absent() -> None:
     # When the carrier is None (a replay path that never set it), fall back to the
     # descriptive re-derivation so the writer never trusts an un-set carrier. An

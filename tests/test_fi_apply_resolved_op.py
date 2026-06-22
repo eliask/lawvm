@@ -119,6 +119,120 @@ def test_apply_resolved_op_audit_records_failed_apply_from_failed_sink(
     assert result.audit.disposition == "APPLY_FAILED"
 
 
+def test_undeclared_touch_emits_blocking_finding_with_strict_profile_none() -> None:
+    """Bug [6] bite-proof: an apply whose landed write touches a tree path its
+    declared mutation events do NOT explain emits the blocking
+    REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET finding EVEN WITH strict_profile=None.
+
+    Before the fix, surfacing this finding was gated on a non-None strict profile,
+    so a replay with strict_profile=None silently authorized a write that landed
+    outside its declared target. After the fix the finding always fires, so the
+    per-replay aggregate's no_boundary_violation conjunct trips for any caller.
+    """
+    from lawvm.finland.apply_replay_authorization import aggregate_replay_authority
+
+    state = _state()
+    # Landed write touches section 1, but NO mutation event is declared for it.
+    new_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
+    )
+
+    def fake_apply_op(current_state: ReplayState, *_args: Any, **_kwargs: Any) -> ReplayState:
+        return current_state.with_ir(new_ir)
+
+    import lawvm.finland.apply_resolved_op as _mod
+
+    findings: list[Any] = []
+    mutation_events: list[Any] = []
+    sinks = ApplyResolvedOpSinks(
+        findings_out=findings,
+        mutation_events_out=mutation_events,
+    )
+    # strict_profile is None — the previously-bypassed firewall arm.
+    request = ApplyResolvedOpRequest(
+        state=state,
+        ctx=_ctx(state),
+        rop=_rop(muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1")),
+        amendment_id="12/2015",
+        replay_mode="official_consolidation",
+        strict_profile=None,
+    )
+
+    import pytest as _pytest
+
+    with _pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_mod, "apply_op", fake_apply_op)
+        result = _mod.apply_resolved_op_with_audit(request, sinks)
+
+    assert result.disposition == "APPLIED"
+    boundary_findings = [
+        f
+        for f in findings
+        if f.kind == "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET" and f.blocking
+    ]
+    assert boundary_findings, "undeclared touch must emit a blocking finding even with strict_profile=None"
+
+    # The firewall now BITES: the per-replay aggregate un-authorizes the replay.
+    authority = aggregate_replay_authority(write_receipts=[], findings=findings)
+    assert authority.replay_authorized is False
+
+
+def test_soft_failed_op_that_landed_a_mutation_unauthorizes_replay() -> None:
+    """Bug [8] bite-proof: a soft-failed (APPLY_FAILED) op that still landed a tree
+    mutation emits the blocking boundary finding, so the per-replay aggregate
+    un-authorizes the replay (the aggregate never inspects disposition directly).
+    """
+    from lawvm.finland.apply_replay_authorization import aggregate_replay_authority
+
+    state = _state()
+    new_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
+    )
+
+    def fake_apply_op(current_state: ReplayState, *_args: Any, **kwargs: Any) -> ReplayState:
+        # Soft-fail: record a failed op AND land a tree mutation.
+        kwargs["failed_ops_out"].append(object())
+        return current_state.with_ir(new_ir)
+
+    import lawvm.finland.apply_resolved_op as _mod
+
+    findings: list[Any] = []
+    failed_ops: list[Any] = []
+    mutation_events: list[Any] = []
+    sinks = ApplyResolvedOpSinks(
+        findings_out=findings,
+        failed_ops_out=failed_ops,
+        mutation_events_out=mutation_events,
+    )
+    request = ApplyResolvedOpRequest(
+        state=state,
+        ctx=_ctx(state),
+        rop=_rop(muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1")),
+        amendment_id="12/2015",
+        replay_mode="official_consolidation",
+    )
+
+    import pytest as _pytest
+
+    with _pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_mod, "apply_op", fake_apply_op)
+        result = _mod.apply_resolved_op_with_audit(request, sinks)
+
+    assert failed_ops
+    assert result.disposition == "APPLY_FAILED"
+    blocking = [
+        f
+        for f in findings
+        if f.kind == "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET" and f.blocking
+    ]
+    assert blocking, "a soft-failed op that landed a mutation must emit a blocking finding"
+
+    authority = aggregate_replay_authority(write_receipts=[], findings=findings)
+    assert authority.replay_authorized is False
+
+
 def test_apply_resolved_op_audit_serializes_to_observation() -> None:
     state = _state()
     result = apply_resolved_op_with_audit(
@@ -131,6 +245,8 @@ def test_apply_resolved_op_audit_serializes_to_observation() -> None:
     assert observation["source_statute"] == "12/2015"
     assert observation["detail"] == {
         "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
+        "source_effective": result.audit.source_effective,
+        "source_expires": result.audit.source_expires,
         "op_id": "replace_1",
         "action_type": "REPLACE",
         "description": result.audit.description,

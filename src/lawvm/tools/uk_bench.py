@@ -56,7 +56,7 @@ if TYPE_CHECKING:
 
 import Levenshtein
 
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.ir import IRNode, LegalAddress
@@ -517,7 +517,7 @@ def _rule_counts(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
 
 
 def _blocking_source_parse_rows(rows: Sequence[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
-    return tuple(row for row in rows if is_blocking_compile_record(row))
+    return tuple(row for row in rows if is_blocking_compile_record(CompileRecord.from_mapping(row)))
 
 
 def _uk_bench_exception_observation(statute_id: str, exc: Exception) -> dict[str, Any]:
@@ -1785,7 +1785,9 @@ def _load_effect_row_counts(
         archive,
         parse_rejections_out=feed_observations,
     )
-    blocking_observations = [obs for obs in feed_observations if is_blocking_compile_record(obs)]
+    blocking_observations = [
+        obs for obs in feed_observations if is_blocking_compile_record(CompileRecord.from_mapping(obs))
+    ]
     feed_rejection_rule_counts = Counter(str(obs.get("rule_id") or "unknown") for obs in blocking_observations)
     feed_observation_rule_counts = Counter(str(obs.get("rule_id") or "unknown") for obs in feed_observations)
     return _EffectRowCounts(
@@ -2194,7 +2196,9 @@ def _score_statute(
                     )
                 )
                 source_acquisition_rejections = [
-                    row for row in source_acquisition_observations if is_blocking_compile_record(row)
+                    row
+                    for row in source_acquisition_observations
+                    if is_blocking_compile_record(CompileRecord.from_mapping(row))
                 ]
                 source_acquisition_rejection_count = len(source_acquisition_rejections)
                 source_acquisition_rejection_rule_counts = dict(
@@ -2208,7 +2212,7 @@ def _score_statute(
                     Counter(str(rejection.get("rule_id") or "unknown") for rejection in authority_rejections)
                 )
                 blocking_authority_rejections = [
-                    rejection for rejection in authority_rejections if is_blocking_compile_record(rejection)
+                    rejection for rejection in authority_rejections if is_blocking_compile_record(CompileRecord.from_mapping(rejection))
                 ]
                 uk_authority_rejection_count = len(blocking_authority_rejections)
                 uk_authority_rejection_rule_counts = dict(
@@ -2227,13 +2231,13 @@ def _score_statute(
                 lowering_rejection_count = len(lowering_rejections)
                 lowering_rejection_rule_counts = dict(lowering_observation_rule_counts)
                 blocking_lowering_rejection_count = sum(
-                    1 for rejection in lowering_rejections if is_blocking_compile_record(rejection)
+                    1 for rejection in lowering_rejections if is_blocking_compile_record(CompileRecord.from_mapping(rejection))
                 )
                 blocking_lowering_rejection_rule_counts = dict(
                     Counter(
                         str(rejection.get("rule_id") or "unknown")
                         for rejection in lowering_rejections
-                        if is_blocking_compile_record(rejection)
+                        if is_blocking_compile_record(CompileRecord.from_mapping(rejection))
                     )
                 )
 
@@ -2510,7 +2514,9 @@ def _score_statute(
                 _mark_phase("commencement_exception")
             if commencement_feed_observations:
                 commencement_blocking_feed_observations = [
-                    obs for obs in commencement_feed_observations if is_blocking_compile_record(obs)
+                    obs
+                    for obs in commencement_feed_observations
+                    if is_blocking_compile_record(CompileRecord.from_mapping(obs))
                 ]
                 effect_feed_rejection_count += len(commencement_blocking_feed_observations)
                 effect_feed_observation_count += len(commencement_feed_observations)
@@ -4929,9 +4935,9 @@ def _bench_diagnostic_rows_for_result(result: _BenchResult, label: str) -> list[
             "effect_source_pathology",
             "manual_compile_frontier",
         }:
-            return is_blocking_compile_record(record)
+            return is_blocking_compile_record(CompileRecord.from_mapping(record))
         if "blocking" in record or record.get("strict_disposition"):
-            return is_blocking_compile_record(record)
+            return is_blocking_compile_record(CompileRecord.from_mapping(record))
         return False
 
     leading_lanes: tuple[tuple[str, tuple[dict[str, Any], ...]], ...] = (
@@ -7424,7 +7430,7 @@ def _corpus_source_closure_summary(
         for observation in feed_observations:
             rule_id = str(observation.get("rule_id") or "unknown")
             feed_observation_rule_counts[rule_id] += 1
-            if is_blocking_compile_record(observation):
+            if is_blocking_compile_record(CompileRecord.from_mapping(observation)):
                 feed_rejection_count += 1
                 feed_rejection_rule_counts[rule_id] += 1
 

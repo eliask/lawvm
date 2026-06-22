@@ -8,6 +8,7 @@ from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
 from lawvm.finland.payload_realization_audit import (
+    _payload_text_chunks,
     attach_payload_gap_apply_dispositions,
     payload_realization_findings,
 )
@@ -876,3 +877,101 @@ def test_payload_realization_audit_ignores_non_realizing_actions() -> None:
     )
 
     assert findings == ()
+
+
+def _sparse_omission_section_payload() -> IRNode:
+    """Central FI sparse-omission shape: restate moment 1, ``— —`` OMISSION of an
+    unchanged moment, restate moment 3. All restated moments are owned source."""
+
+    return IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                text="Restated moment one is owned source payload.",
+            ),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                text="Restated moment three is owned source payload.",
+            ),
+        ),
+    )
+
+
+def test_collect_chunks_keeps_post_omission_owned_moment_in_section_scope() -> None:
+    # POSITIVE BITE: at section/subsection (non item/subitem) scope the post-omission
+    # restated moment IS owned source payload and must reach the chunk set, so a genuine
+    # non-realization of it can be reported. The pre-fix unconditional `break` dropped it.
+    payload = _sparse_omission_section_payload()
+
+    chunks_collected = _payload_text_chunks(payload, truncate_at_omission=False)
+    assert "Restated moment three is owned source payload." in chunks_collected
+
+    # Witness the old behavior: an unconditional truncation at the first OMISSION
+    # (what the pre-fix `break` did) drops the post-omission moment from the input.
+    chunks_truncated = _payload_text_chunks(payload, truncate_at_omission=True)
+    assert "Restated moment three is owned source payload." not in chunks_truncated
+
+
+def test_payload_realization_audit_reports_unrealized_post_omission_sparse_moment() -> None:
+    # End-to-end POSITIVE BITE: the post-omission restated moment 3 is genuinely
+    # missing from the folded product, so the audit MUST surface a finding.
+    op = ResolvedOp(
+        op=AmendmentOp(
+            op_id="op1",
+            op_type="REPLACE",
+            target_section="5",
+            target_unit_kind="section",
+        ),
+        muutos_ir=_sparse_omission_section_payload(),
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="5",
+        op_id="op1",
+        _op_type_seed="REPLACE",
+        _target_address_override=LegalAddress(path=(("section", "5"),)),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(op,),
+        after_ir=_after("Restated moment one is owned source payload."),
+        amendment_id="2000/1",
+    )
+
+    assert findings != ()
+    assert any(
+        "Restated moment three is owned source payload." in str(finding.detail)
+        for finding in findings
+    )
+
+
+def test_collect_chunks_suppresses_post_omission_carried_tail_in_item_scope() -> None:
+    # NEGATIVE BITE: at terminal item/subitem scope the post-omission sibling is
+    # carried/rejected content owned by another target (commit 4fd20d98) and must
+    # stay out of the chunk set so it is not charged as a false non-realization.
+    item_payload = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="3)"),
+            IRNode(kind=IRNodeKind.INTRO, text="Owned item text appears here."),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBPARAGRAPH,
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Carried post-omission tail belongs to a rejected sibling target.",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    chunks = _payload_text_chunks(item_payload, truncate_at_omission=True)
+    assert "Owned item text appears here." in chunks
+    assert "Carried post-omission tail belongs to a rejected sibling target." not in chunks

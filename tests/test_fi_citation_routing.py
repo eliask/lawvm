@@ -217,6 +217,36 @@ class TestRouteAmendmentNoGuard:
         result = route_amendment("muutetaan 3 §", "", "muutetaan 3 §", "2009/953", "abc/715")
         assert result == (True, "no_guard_needed")
 
+    def test_malformed_amendment_id_without_num_declines(self) -> None:
+        """An amendment id missing its NUM part (no ``/``) must decline the guard.
+
+        Regression for the swallowed-IndexError fallback: ``"2012"`` passes the
+        leading guard (truthy, ``"2012".isdigit()``) but ``split("/")[1]`` would
+        raise IndexError. The old code caught it, set the NUMs to ``""``, and ran
+        the citation match anyway — scanning the johtolause against a malformed
+        parent id. Here the johtolause cites a *different* statute (999/2020),
+        so the empty-string path would have produced a spurious
+        ``citation_mismatch_skip`` (apply=False) instead of cleanly declining.
+        The fix declines to ``no_guard_needed`` (apply=True).
+        """
+        johto_raw = "muutetaan ( 999/2020 ) 3 §"
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        # amendment_id "2012" has no NUM part → not a well-formed YEAR/NUM tuple.
+        result = route_amendment(johto_norm, "", johto_raw, "2009/953", "2012")
+        assert result == (True, "no_guard_needed")
+
+    def test_malformed_parent_id_without_num_declines(self) -> None:
+        """A parent id missing its NUM part (no ``/``) must decline the guard.
+
+        Without the fix, ``parent_num`` becomes ``""`` and the routing match runs
+        against the malformed parent id ``"2009"``; declining is the only correct
+        behavior because there is no real parent NUM to match against.
+        """
+        johto_raw = "muutetaan ( 999/2020 ) 3 §"
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        result = route_amendment(johto_norm, "", johto_raw, "2009", "2012/715")
+        assert result == (True, "no_guard_needed")
+
 
 class TestRouteAmendmentReferencesParent:
     """Cases where johtolause references the parent statute → apply."""

@@ -1217,36 +1217,70 @@ def _parse_section_list_labels(raw: str) -> Set[str]:
     applies that normalization in case it is called directly with raw XML text.
     """
     text = _normalize_fi_parse_text(raw)
-    text = text.replace("-", "\u2013").replace("\u2015", "\u2013")
-    # Strip trailing § markers and momentti/pykälä qualifiers that follow §.
-    # XXX FIXME: the negated char class `[^,;ja sekä\u2013]` is semantically
-    # confused — the author clearly intended to stop at the *words* "ja" and
-    # "sekä" (Finnish "and" / "and also"), but a char class matches
-    # individual characters, so this actually stops at any of the letters
-    # {j, a, s, e, k, ä}.  It happens to produce the right result on the
-    # section-list inputs we've seen because those inputs use comma /
-    # whitespace separators before any `ja`/`sekä`, but this is a
-    # coincidence, not a contract.  Rewrite as an alternation stop
-    # (`re.split` or a lookahead on `\b(?:ja|sekä)\b`) and drive it from
-    # real regression cases before trusting it.
-    text = re.sub(r'§[^,;ja sekä\u2013]*', ' ', text, flags=re.IGNORECASE)
-    # Split on comma, 'ja', 'sekä'
-    tokens = re.split(r'\s*(?:,|ja|sekä)\s*', text.strip(), flags=re.IGNORECASE)
+    _EN_DASH = "–"
+    text = text.replace("-", _EN_DASH).replace("―", _EN_DASH)
+
+    # The contract: a Finnish section-list is a sequence of section items
+    # separated by comma, semicolon, or the words "ja" / "sekä" ("and" /
+    # "and also"). Each item is a section number, optionally an alpha suffix,
+    # optionally an en-dash range, followed by a "§" marker and possibly a
+    # pykälä/momentti qualifier ("§:n 3 momentti"). We want the section labels
+    # only; the "§" marker and everything after it (the qualifier) is dropped.
+    #
+    # Split on the separators FIRST, then per item strip the "§" tail. This
+    # is the principled inverse of the original code, which tried to strip the
+    # "§" tail first with a single re.sub whose stop set was the negated char
+    # class [^,;ja sekä–]. That char class was a coincidence, not a
+    # contract: it negated the *characters* {j, a, s, e, k, ä, space} rather
+    # than the *words* "ja"/"sekä", and it left the post-"§" qualifier text
+    # (e.g. "3 momentti") in place to leak in as a bogus label like
+    # "793momentti". Splitting on word-boundaried separators and truncating
+    # each item at its "§" expresses the actual intent and drops the qualifier.
+    # lawvm-regex: separator tokenizer for a FI section list; \b(?:ja|sekä)\b
+    # matches the connective WORDS (not letters), [,;] the punctuation
+    # separators; ranges (en-dash) stay intra-item and are expanded below.
+    items = re.split(
+        r"\s*(?:[,;]|\bja\b|\bsekä\b)\s*", text.strip(), flags=re.IGNORECASE
+    )
     labels: Set[str] = set()
-    _EN_DASH = '\u2013'
-    for token in tokens:
-        token = token.strip()
-        if not token:
+    for item in items:
+        # Drop the "§" marker and any trailing pykälä/momentti qualifier;
+        # the section number (and any en-dash range / alpha suffix) precedes "§".
+        item = item.split("§", 1)[0].strip()
+        if not item:
             continue
         # Check for en-dash range (em-dash already normalised to en-dash above)
-        if _EN_DASH in token:
-            parts = token.split(_EN_DASH, 1)
+        if _EN_DASH in item:
+            parts = item.split(_EN_DASH, 1)
             labels.update(_expand_section_range(parts[0].strip(), parts[1].strip()))
         else:
-            norm = re.sub(r'\s+', '', token).lower()
+            norm = re.sub(r"\s+", "", item).lower()
             if norm:
                 labels.add(norm)
     return labels
+
+
+def _subsection_clause_section_labels(raw: str) -> Set[str]:
+    """Section labels for a subsection-scoped sunset clause's ``group(1)``.
+
+    The subsection anchors (``… §:n N momentti …``) capture in ``group(1)``
+    everything up to the last ``§:n``. Two shapes:
+
+    * a SINGLE owning section ("51" from "Lain 51 §:n 5 momentti …") — emit it as
+      the section-scoped granularity hint, exactly as before;
+    * a MIXED multi-provision list (``group(1)`` carries an embedded ``§``, e.g.
+      "3 §:n otsikko sekä 3 ja 4 momentti, 4 §:n …" or "1 §:n 2 momentti, … 11 §,
+      … 22 §:n 1 momentti") — emit NOTHING here. The momentti/otsikko scopes are
+      owned by the provision path + whole-section promotion guard, and any genuine
+      whole-section run in the list ("58 c–58 h ja 59 a–59 e §") is already taken
+      by the dedicated whole-section anchor (``_TEMPORARY_SECTION_EXPIRY_RE``);
+      re-deriving labels here over-expires sections that keep most of their content
+      (the bug EH1's correct section-list labels surfaced — the labels used to be
+      harmless junk) and duplicates the whole-section anchor's expiries.
+    """
+    if "§" in raw:
+        return set()
+    return _parse_section_list_labels(raw)
 
 
 _temporary_section_expiry_cache: dict[tuple[int, str, int], tuple[tuple[str, Set[str], dt.date], ...]] = {}
@@ -1283,6 +1317,38 @@ _TEMPORARY_SECTION_EXPIRY_RE = re.compile(
     rf"\s+(?:ovat|on)\s+voimassa\s+(?:\d{{1,2}}\s+päivästä\s+[a-zäöå]+\s+)?"
     rf"(?P<datetail>\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})",
     re.IGNORECASE,
+)
+# Per-date split of a `_TEMPORARY_SECTION_EXPIRY_RE` match span (group 0). The
+# anchor exposes only one ``datetail`` (its LAST date), which is correct when the
+# whole coordinated list shares one date ("59 §:n 2 momentti ja 62 § ovat voimassa
+# … 2025"). When the span instead carries MORE THAN ONE ``… (ovat|on) voimassa …
+# <date>`` segment (sections coordinated by "ja"/"sekä" but each with its OWN date,
+# e.g. "64 a §:n 3 momentti on voimassa … 2025 ja lain 127 f § on voimassa …
+# 2027"), the single last-date cannot be attributed to every section. These two
+# patterns let the override builder count the date segments and, only when >1,
+# attribute each date to the sections in ITS segment. A single-date span is left
+# to the unchanged whole-list path, so those cases stay byte-identical.
+# lawvm-regex: per-date segmenter for a multi-date temporary-expiry span; section
+# structure delegated to _parse_section_list_labels, date to the shared match_fi_date
+_TEMPORARY_SECTION_EXPIRY_DATE_SEGMENT_RE = re.compile(
+    r"(?:ovat|on)\s+voimassa\s+(?:\d{1,2}\s+päivästä\s+[a-zäöå]+\s+)?"
+    r"\d{1,2}\s+päivään\s+[a-zäöå]+\s+\d{4}",
+    re.IGNORECASE,
+)
+_TEMPORARY_SECTION_EXPIRY_PER_DATE_RE = re.compile(
+    r"(?P<sections>.+?)\s*(?:ovat|on)\s+voimassa\s+"
+    r"(?:\d{1,2}\s+päivästä\s+[a-zäöå]+\s+)?"
+    r"(?P<datetail>\d{1,2}\s+päivään\s+[a-zäöå]+\s+\d{4})",
+    re.IGNORECASE,
+)
+# Leading connective / cited-act head that a later per-date segment carries over
+# from the preceding "ja lain …"/"sekä asetuksen …" join; stripped so the section
+# tokenizer sees only the section list (e.g. "ja lain 127 f §" -> "127 f §").
+_TEMPORARY_SECTION_EXPIRY_SEGMENT_HEAD_RE = re.compile(
+    r"^\s*(?:ja|sekä|,|;)\s+", re.IGNORECASE
+)
+_TEMPORARY_SECTION_EXPIRY_SEGMENT_CITED_HEAD_RE = re.compile(
+    r"^(?:Lain|Asetuksen|Päätöksen|Sen)\s+", re.IGNORECASE
 )
 _TEMPORARY_ADDED_SECTION_EXPIRY_RE = re.compile(
     rf"(?:Lakiin|Asetukseen|Päätökseen)\s+väliaikaisesti\s+(?:lisätty|lisätyt)\s+"
@@ -1572,6 +1638,37 @@ def _temporary_section_expiry_overrides(
     if "päivään" in expiry_scan_casefold:
         # lawvm-regex: owning_parser V-expiry section-scoped sunset clause LOCATOR; date lexed by shared match_fi_date below, labels by _parse_section_list_labels — anchor only
         for m in _TEMPORARY_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
+            span = m.group(0)
+            # A coordinated list sharing one date keeps the whole-list path (the
+            # anchor's single ``datetail`` is correct for every section). A span
+            # carrying more than one ``… voimassa … <date>`` segment means each
+            # coordinated section has its OWN date, so the last-date attribution
+            # would be wrong; split per date and attribute each date to the
+            # sections in its own segment.
+            # A span carrying more than one "… voimassa … <date>" segment means each
+            # coordinated section has its OWN date; split per date (anchor only — the
+            # dates are lexed by match_fi_date, labels by _parse_section_list_labels).
+            # lawvm-regex: owning_parser V-expiry multi-date detector — counts voimassa-date segments to decide per-date split; anchor/counter only
+            if len(_TEMPORARY_SECTION_EXPIRY_DATE_SEGMENT_RE.findall(span)) > 1:
+                # lawvm-regex: owning_parser V-expiry per-date segment locator — splits span into (sections, datetail) per date; anchor only
+                for seg in _TEMPORARY_SECTION_EXPIRY_PER_DATE_RE.finditer(span):
+                    seg_expiry = match_fi_date(
+                        seg.group("datetail"), forms={FiDateForm.ALLATIVE}
+                    )
+                    if seg_expiry is None:
+                        continue
+                    sections = _TEMPORARY_SECTION_EXPIRY_SEGMENT_HEAD_RE.sub(
+                        "", seg.group("sections")
+                    )
+                    sections = _TEMPORARY_SECTION_EXPIRY_SEGMENT_CITED_HEAD_RE.sub(
+                        "", sections
+                    )
+                    _append_override(
+                        target_mid_from_cited,
+                        _parse_section_list_labels(sections),
+                        seg_expiry.value,
+                    )
+                continue
             expiry_match = match_fi_date(
                 m.group("datetail"), forms={FiDateForm.ALLATIVE}
             )
@@ -1610,7 +1707,14 @@ def _temporary_section_expiry_overrides(
             if expiry_match is None:
                 continue
             expiry = expiry_match.value
-            _append_override(target_mid_from_cited, _parse_section_list_labels(m.group(1)), expiry)
+            # Single owning section -> {N}; mixed multi-provision clause -> nothing
+            # (subsection scopes owned by the provision path; any genuine whole
+            # sections are taken by the dedicated whole-section anchor above).
+            _append_override(
+                target_mid_from_cited,
+                _subsection_clause_section_labels(m.group(1)),
+                expiry,
+            )
 
         # Chained same-sentence temporary sunset where only the first section repeats
         # "on voimassa", e.g.:
@@ -1662,9 +1766,11 @@ def _temporary_section_expiry_overrides(
             if yend_match is None:
                 continue
             expiry = yend_match.value
+            # Subsection-scoped year-end sunset: same single-owning-section /
+            # mixed-clause discipline as the päivään subsection path above.
             _append_override(
                 target_mid_from_cited,
-                _parse_section_list_labels(m_yend_moment.group(1)),
+                _subsection_clause_section_labels(m_yend_moment.group(1)),
                 expiry,
             )
 

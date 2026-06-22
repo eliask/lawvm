@@ -544,11 +544,17 @@ def route_amendment(
     if not (parent_id and amendment_id and amendment_id.split("/")[0].isdigit()):
         return True, "no_guard_needed"
 
-    try:
-        amendment_num = amendment_id.split("/")[1]
-        parent_num = parent_id.split("/")[1]
-    except IndexError:
-        amendment_num = parent_num = ""
+    # Both IDs must be well-formed ``YEAR/NUM`` so the downstream citation match
+    # runs against real identifiers. A tuple missing its NUM part (no ``/``)
+    # cannot be parsed — decline the guard rather than continuing the match with
+    # empty identifiers, which would scan the johtolause against a malformed
+    # parent id and could yield a spurious match or a wrong skip reason.
+    amendment_parts = amendment_id.split("/")
+    parent_parts = parent_id.split("/")
+    if len(amendment_parts) < 2 or len(parent_parts) < 2:
+        return True, "no_guard_needed"
+    amendment_num = amendment_parts[1]
+    parent_num = parent_parts[1]
 
     # Primary citation check: does the preamble reference the parent?
     _refs_match = (

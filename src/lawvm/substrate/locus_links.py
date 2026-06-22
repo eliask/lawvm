@@ -332,7 +332,13 @@ def measure_harmonization(
     g = f"read_parquet('{parquet_glob}')"
     wk = "(state||'|'||source_jurisdiction_type||'|'||coalesce(city,'')||'|'||coalesce(county,''))"
 
-    n_works = con.execute(f"SELECT count(DISTINCT {wk}) FROM {g}").fetchone()[0]
+    def _scalar(sql: str) -> int:
+        # Aggregate (count/sum) queries always return one row; guard the
+        # Optional fetchone() so the scalar read is type-safe.
+        row = con.execute(sql).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    n_works = _scalar(f"SELECT count(DISTINCT {wk}) FROM {g}")
 
     # -- provision-text granularity ----------------------------------------- #
     con.execute(
@@ -341,16 +347,14 @@ def measure_harmonization(
         FROM {g}
         WHERE is_substantive AND content IS NOT NULL AND length(trim(content)) > 30"""
     )
-    provisions = con.execute("SELECT count(*) FROM _prov").fetchone()[0]
+    provisions = _scalar("SELECT count(*) FROM _prov")
     con.execute(
         """CREATE TEMP TABLE _provc AS
         SELECT h, any_value(content) AS sample, count(*) nr, count(DISTINCT wk) nw
         FROM _prov GROUP BY h"""
     )
-    distinct_provisions = con.execute("SELECT count(*) FROM _provc").fetchone()[0]
-    shared_provisions = con.execute(
-        "SELECT coalesce(sum(nr),0) FROM _provc WHERE nw>=2"
-    ).fetchone()[0]
+    distinct_provisions = _scalar("SELECT count(*) FROM _provc")
+    shared_provisions = _scalar("SELECT coalesce(sum(nr),0) FROM _provc WHERE nw>=2")
     top_prov = con.execute(
         f"SELECT sample, nw, nr FROM _provc WHERE nw>=2 ORDER BY nw DESC, nr DESC LIMIT {int(top_n)}"
     ).fetchall()
@@ -366,16 +370,14 @@ def measure_harmonization(
         FROM {g}
         WHERE is_substantive AND header IS NOT NULL AND length(trim(header)) > 3"""
     )
-    titles = con.execute("SELECT count(*) FROM _ttl").fetchone()[0]
+    titles = _scalar("SELECT count(*) FROM _ttl")
     con.execute(
         """CREATE TEMP TABLE _ttlc AS
         SELECT h, any_value(title) AS sample, count(*) nr, count(DISTINCT wk) nw
         FROM _ttl GROUP BY h"""
     )
-    distinct_titles = con.execute("SELECT count(*) FROM _ttlc").fetchone()[0]
-    shared_titles = con.execute(
-        "SELECT coalesce(sum(nr),0) FROM _ttlc WHERE nw>=2"
-    ).fetchone()[0]
+    distinct_titles = _scalar("SELECT count(*) FROM _ttlc")
+    shared_titles = _scalar("SELECT coalesce(sum(nr),0) FROM _ttlc WHERE nw>=2")
     top_ttl = con.execute(
         f"SELECT sample, nw, nr FROM _ttlc WHERE nw>=2 AND length(sample)>2 "
         f"ORDER BY nw DESC, nr DESC LIMIT {int(top_n)}"

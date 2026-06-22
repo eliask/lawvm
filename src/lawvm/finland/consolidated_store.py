@@ -23,6 +23,41 @@ from lawvm.finland.consolidated_artifacts import (
 
 log = logging.getLogger(__name__)
 _SEEN_COLLAPSED_DATE_WARNINGS: set[tuple[str, str, dt.date | None, dt.date]] = set()
+
+# Run-pinned commencement reference date. A single bench run pins one ``as_of``
+# (via ``pin_selection_as_of``) so every comparability decision in that run uses
+# the same date even if the wall clock crosses midnight mid-run, and so a
+# future-dated artifact rejected today cannot become silently accepted tomorrow
+# with no code/data change. ``None`` means "use the live wall clock"
+# (``dt.date.today()``), preserving prior behaviour outside a pinned run.
+# Explicit ``as_of`` arguments always win over this pin.
+_RUN_PINNED_AS_OF: dt.date | None = None
+
+
+def pin_selection_as_of(as_of: dt.date | None) -> dt.date | None:
+    """Pin (or clear) the run-wide commencement reference date.
+
+    Returns the previous pin so callers can restore it. ``as_of=None`` clears
+    the pin (reverting to the live wall clock).
+    """
+    global _RUN_PINNED_AS_OF
+    previous = _RUN_PINNED_AS_OF
+    _RUN_PINNED_AS_OF = as_of
+    return previous
+
+
+def _resolve_as_of(as_of: dt.date | None) -> dt.date:
+    """Resolve an effective commencement reference date.
+
+    Precedence: explicit ``as_of`` > run pin > live wall clock.
+    """
+    if as_of is not None:
+        return as_of
+    if _RUN_PINNED_AS_OF is not None:
+        return _RUN_PINNED_AS_OF
+    return dt.date.today()
+
+
 _ARTIFACT_RECORD_CACHE_MAX = 4096
 _ARTIFACT_RECORD_CACHE: OrderedDict[
     tuple[str, int, bytes],
@@ -121,13 +156,22 @@ class SelectionProvenance:
 def _is_self_comparable_with_tolerance(
     artifact: CachedConsolidatedArtifact,
     archive: ConsolidatedArchiveLike,
+    *,
+    as_of: dt.date | None = None,
 ) -> tuple[bool, bool]:
     """Return ``(is_comparable, tolerance_applied)`` for bench-comparable check.
 
     ``tolerance_applied`` is True when the artifact was accepted under the
     180-day Finlex-ahead tolerance (Option Z), i.e. ordering_date is in
     ``(date_consolidated, date_consolidated + 180 days]``.
+
+    ``as_of`` is the reference date against which commencement is tested. A
+    single bench run threads one fixed ``as_of`` so selection is reproducible
+    (a future-dated artifact rejected today must not become accepted tomorrow
+    with no code/data change). Defaults to ``dt.date.today()`` only when no
+    reference date is threaded — never on the bench path.
     """
+    as_of = _resolve_as_of(as_of)
     amendment_id = _version_tag_to_amendment_id(artifact.version_tag)
     if not amendment_id:
         return False, False
@@ -164,7 +208,7 @@ def _is_self_comparable_with_tolerance(
     # effect and must not influence the accept/reject decision.
     _emit_collapsed_dates_observation_if_applicable(artifact, ordering_date)
 
-    if ordering_date <= dt.date.today():
+    if ordering_date <= as_of:
         if expiry_date is not None and expiry_date <= ordering_date:
             return False, False
         return True, False
@@ -228,11 +272,12 @@ def _select_from_cached_artifacts(
     selector: ConsolidatedArtifactSelector,
     lang: str,
     archive: ConsolidatedArchiveLike,
+    as_of: dt.date | None = None,
 ) -> CachedConsolidatedArtifact | None:
     """Select one artifact.  Use ``_select_from_cached_artifacts_with_info``
     when caller needs selection provenance."""
     artifact, _ = _select_from_cached_artifacts_with_info(
-        artifacts, selector=selector, lang=lang, archive=archive
+        artifacts, selector=selector, lang=lang, archive=archive, as_of=as_of
     )
     return artifact
 
@@ -243,6 +288,7 @@ def _select_from_cached_artifacts_with_info(
     selector: ConsolidatedArtifactSelector,
     lang: str,
     archive: ConsolidatedArchiveLike,
+    as_of: dt.date | None = None,
 ) -> tuple[CachedConsolidatedArtifact | None, SelectionProvenance]:
     """Select one artifact and return a provenance record alongside."""
     original_mode = selector.mode.value if hasattr(selector.mode, "value") else str(selector.mode)
@@ -252,15 +298,26 @@ def _select_from_cached_artifacts_with_info(
     if selector.mode == ConsolidatedSelectionMode.BENCH_COMPARABLE:
         comparable: list[CachedConsolidatedArtifact] = []
         for artifact in artifacts:
-            ok, tol = _is_self_comparable_with_tolerance(artifact, archive)
+            ok, tol = _is_self_comparable_with_tolerance(artifact, archive, as_of=as_of)
             if ok:
                 comparable.append(artifact)
                 if tol:
                     any_tolerance = True
             else:
                 rejected_tags.append(artifact.version_tag)
-        if comparable:
-            artifacts = comparable
+        if not comparable:
+            # No artifact is bench-comparable. Narrowing is unconditional: there
+            # is no honest oracle to score against, so return None rather than
+            # silently falling through to the full, unfiltered list (which would
+            # include known-INCOMPARABLE artifacts and report an ordinary score
+            # against a bad oracle). Fail loud — no silent fallback.
+            return None, SelectionProvenance(
+                selector_mode=original_mode,
+                chosen_version_tag="",
+                tolerance_applied=any_tolerance,
+                rejected_version_tags=tuple(rejected_tags),
+            )
+        artifacts = comparable
         selector = ConsolidatedArtifactSelector.latest_cached_editorial()
 
     selected = select_consolidated_record(
@@ -300,13 +357,15 @@ def _version_tag_to_amendment_id(version_tag: str) -> str:
 def _is_self_comparable_cached_artifact(
     artifact: CachedConsolidatedArtifact,
     archive: ConsolidatedArchiveLike,
+    *,
+    as_of: dt.date | None = None,
 ) -> bool:
     """Return True when an artifact is self-commensurable for bench use.
 
     Delegates to ``_is_self_comparable_with_tolerance``; callers that need
     the tolerance flag should use that function directly.
     """
-    ok, _ = _is_self_comparable_with_tolerance(artifact, archive)
+    ok, _ = _is_self_comparable_with_tolerance(artifact, archive, as_of=as_of)
     return ok
 
 
@@ -347,9 +406,10 @@ def select_cached_consolidated_artifact(
     *,
     selector: ConsolidatedArtifactSelector | None = None,
     lang: str = "fin",
+    as_of: dt.date | None = None,
 ) -> CachedConsolidatedArtifact | None:
     artifact, _ = select_cached_consolidated_artifact_with_info(
-        archive, sid, selector=selector, lang=lang
+        archive, sid, selector=selector, lang=lang, as_of=as_of
     )
     return artifact
 
@@ -360,12 +420,18 @@ def select_cached_consolidated_artifact_with_info(
     *,
     selector: ConsolidatedArtifactSelector | None = None,
     lang: str = "fin",
+    as_of: dt.date | None = None,
 ) -> tuple[CachedConsolidatedArtifact | None, SelectionProvenance]:
     """Select one artifact and return a :class:`SelectionProvenance` alongside.
 
     Use this variant when callers need to populate ``OracleSelectorInfo`` on
     ``ReplayResult`` (or any other downstream provenance carrier).
+
+    ``as_of`` is the reference date for commencement testing; thread a single
+    fixed value for one bench run so selection is reproducible. Defaults to
+    ``dt.date.today()`` only at this outermost entry when nothing is threaded.
     """
+    as_of = _resolve_as_of(as_of)
     records = list_cached_consolidated_artifacts(archive, sid, lang=lang)
     if not records:
         eff_selector = selector or ConsolidatedArtifactSelector.latest_cached_editorial()
@@ -373,7 +439,7 @@ def select_cached_consolidated_artifact_with_info(
         return None, SelectionProvenance(selector_mode=mode_str)
     eff_selector = selector or ConsolidatedArtifactSelector.latest_cached_editorial()
     return _select_from_cached_artifacts_with_info(
-        records, selector=eff_selector, lang=lang, archive=archive
+        records, selector=eff_selector, lang=lang, archive=archive, as_of=as_of
     )
 
 
@@ -391,7 +457,9 @@ def select_cached_consolidated_path_index(
     *,
     selector: ConsolidatedArtifactSelector | None = None,
     lang: str = "fin",
+    as_of: dt.date | None = None,
 ) -> dict[str, str]:
+    as_of = _resolve_as_of(as_of)
     selector = selector or ConsolidatedArtifactSelector.latest_cached_editorial()
     candidates: dict[str, list[CachedConsolidatedArtifact]] = {}
     for locator in archive.locators(
@@ -423,6 +491,7 @@ def select_cached_consolidated_path_index(
             selector=selector,
             lang=lang,
             archive=archive,
+            as_of=as_of,
         )
         if selected is not None:
             result[sid] = selected.canonical_locator

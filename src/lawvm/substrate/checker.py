@@ -54,6 +54,10 @@ from lawvm.substrate.roots import (
     seq_root,
     set_root,
 )
+from lawvm.substrate.selection import (
+    build_selection_index_roots,
+    build_state_selection_roots,
+)
 from lawvm.substrate.totality import (
     TotalityResult,
     TotalityVerdict,
@@ -153,6 +157,12 @@ class ViolationCode(enum.Enum):
 
     INVALID_HASH = "INVALID_HASH"
     INVALID_ROOT = "INVALID_ROOT"
+    # The named-root family — a ``manifest.roots`` entry (materialization_root,
+    # selection_index_root, certificate_root, source_bundle_root, …) recomputed
+    # from the committed layer rows / cert body / source refs disagrees with the
+    # value the manifest claims. Distinct from ``INVALID_ROOT`` (per-LAYER root)
+    # so a forged roots-of-roots map is self-evidencing.
+    INVALID_MANIFEST_ROOT = "INVALID_MANIFEST_ROOT"
     INVALID_MISSING_OBJECT = "INVALID_MISSING_OBJECT"
     INVALID_SELECTION_UNIVERSE = "INVALID_SELECTION_UNIVERSE"
     INVALID_SELECTION_OVERLAP = "INVALID_SELECTION_OVERLAP"
@@ -379,6 +389,28 @@ class Pack:
     source_availability: Mapping[str, str] = field(default_factory=dict)
     audited_source_refs: tuple[str, ...] = ()
     known_schemas: frozenset[str] = frozenset()
+    # The source-bundle refs the manifest's ``source_bundle_root`` commits to
+    # (``leaf_hash("source_bundle", {"source_refs": [...]})``). Carried so the
+    # checker can RE-DERIVE that root rather than trust the manifest's claim.
+    # Empty ⇒ the checker skips the ``source_bundle_root`` recompute (a synthetic
+    # fixture that does not model source lineage), recomputing the other three.
+    source_refs: tuple[str, ...] = ()
+    # When True (a real loaded pack), the checker recomputes the entire
+    # ``manifest.roots`` roots-of-roots map from the committed rows and rejects a
+    # mismatch (FIX-1). When False (a hand-built fixture whose ``roots`` are
+    # placeholders not derived from real legal-state layers), the recompute is
+    # skipped. ``load_pack_for_check`` always sets it True.
+    recompute_manifest_roots: bool = False
+    # The ``cert/certificate.json`` singleton body (FIX-3, partial). When present,
+    # the checker re-roots the cert layer: it recomputes
+    # ``set_root("certificate", [materialization_root, selection_index_root])``
+    # from the cert body's own committed legal-state roots and rejects a cert file
+    # whose internal ``certificate_root`` is inconsistent OR disagrees with the
+    # recomputed manifest roots. NOTE — this verifies cert-layer INTEGRITY; the
+    # certification AXIS verdict is still folded from selection-row ``status`` (it
+    # is asserted, not re-derived from a re-rooted cert layer); see the honest
+    # gap note on :meth:`_check_certificate_layer`.
+    certificate_body: Mapping[str, JsonValue] | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -438,6 +470,96 @@ def _intervals_overlap(
     a_before_b_end = b_end is None or a_start < b_end
     b_before_a_end = a_end is None or b_start < a_end
     return a_before_b_end and b_before_a_end
+
+
+# --------------------------------------------------------------------------- #
+# The roots-of-roots assembly — the ONE algorithm the exporter emits and the
+# checker recomputes (so a forged ``manifest.roots`` map cannot pass).
+# --------------------------------------------------------------------------- #
+
+# Schemas grouped to recompute the legal-state roots-of-roots. Kept in sync with
+# the exporter's accumulator families (it imports this map so there is no drift).
+ROOT_GROUP_SCHEMAS: dict[str, str] = {
+    "content_leaf": "lawvm.content_leaf.v1",
+    "node_version": "lawvm.node_version.v1",
+    "selection_profile": "lawvm.selection_profile.v1",
+    "selection_universe": "lawvm.selection_universe.v1",
+    "scope_predicate": "lawvm.scope_predicate.v1",
+    "applicability_fact": "lawvm.applicability_fact.v1",
+    "candidate_set": "lawvm.selection_candidate_set.v1",
+    "selection_row": "lawvm.selection_row.v1",
+}
+
+
+def assemble_manifest_roots(
+    *,
+    content_leaf_hashes: Sequence[str],
+    node_version_hashes: Sequence[str],
+    selection_profile_hashes: Sequence[str],
+    selection_universe_hashes: Sequence[str],
+    scope_predicate_hashes: Sequence[str],
+    applicability_fact_hashes: Sequence[str],
+    candidate_set_hashes: Sequence[str],
+    selection_row_hashes: Sequence[str],
+    trace_hashes: Sequence[str],
+    source_refs: Sequence[str],
+    temporal_event_hashes: Sequence[str] = (),
+    temporal_residual_hashes: Sequence[str] = (),
+    projection_hashes: Sequence[str] = (),
+) -> dict[str, str]:
+    """Re-derive the four ``manifest.roots`` entries from grouped object hashes.
+
+    This is the single authoritative algorithm (CHECKER_CONTRACT_V0.md §0 trust
+    thesis: "re-derive every committed hash from the bytes alone"). The exporter
+    imports and calls it to BUILD the roots map; the checker calls it over rows it
+    reads to RECOMPUTE and compare — guaranteeing the two agree by construction
+    rather than by parallel-maintained copies.
+
+    SetRoot families are deduped here (the on-disk SetRoot layers already collapse
+    structurally-identical objects, OBJECT_MODEL §2.1; the exporter's streaming
+    accumulators may carry a repeat the writer dropped), so both producers feed
+    ``set_root`` the same deduped collection. The trace family is a ``SeqRoot``
+    (order + uniqueness significant) and is NOT deduped.
+    """
+
+    def _dedup(seq: Sequence[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for h in seq:
+            if h not in seen:
+                seen.add(h)
+                out.append(h)
+        return out
+
+    state_roots = build_state_selection_roots(
+        selection_profile_object_hashes=_dedup(selection_profile_hashes),
+        selection_universe_object_hashes=_dedup(selection_universe_hashes),
+        scope_predicate_object_hashes=_dedup(scope_predicate_hashes),
+        applicability_fact_object_hashes=_dedup(applicability_fact_hashes),
+        candidate_set_object_hashes=_dedup(candidate_set_hashes),
+        selection_row_object_hashes=_dedup(selection_row_hashes),
+        temporal_event_object_hashes=_dedup(temporal_event_hashes),
+        temporal_residual_object_hashes=_dedup(temporal_residual_hashes),
+    )
+    index_roots = build_selection_index_roots(
+        content_leaf_root=set_root("content_leaf", _dedup(content_leaf_hashes)),
+        node_version_root=set_root("node_version", _dedup(node_version_hashes)),
+        state_selection_root=state_roots.state_selection_root,
+        projection_root=set_root("projection", _dedup(projection_hashes)),
+    )
+    materialization_root = seq_root("materialization", list(trace_hashes))
+    certificate_root = set_root(
+        "certificate", [materialization_root, index_roots.selection_index_root]
+    )
+    source_bundle_root = leaf_hash(
+        "source_bundle", {"source_refs": list(source_refs)}
+    )
+    return {
+        "materialization_root": materialization_root,
+        "selection_index_root": index_roots.selection_index_root,
+        "certificate_root": certificate_root,
+        "source_bundle_root": source_bundle_root,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -769,6 +891,166 @@ class Checker:
         # at the layer-root and row-hash level).
         _ = recomputed_pack_id
 
+        # FIX-1 — recompute the full roots-of-roots map (materialization_root,
+        # selection_index_root, certificate_root, source_bundle_root) from the
+        # committed rows and reject any manifest claim that disagrees. Without
+        # this a forged ``manifest.roots`` (bogus materialization/certificate
+        # root) passed VALID_CLEAN — the checker trusted the map it was supposed
+        # to verify.
+        if pack.recompute_manifest_roots:
+            self._check_roots_of_roots(pack, violations, record)
+        if pack.certificate_body is not None:
+            self._check_certificate_layer(pack, violations, record)
+
+    def _check_certificate_layer(
+        self, pack: Pack, violations: list[TypedViolation], record
+    ) -> None:
+        """FIX-3 (partial, honest) — re-root the ``cert/`` layer for INTEGRITY.
+
+        Recompute ``certificate_root = SetRoot("certificate",
+        [materialization_root, selection_index_root])`` from the cert body's OWN
+        committed legal-state roots and reject (a) an internally-inconsistent cert
+        file (its stated ``certificate_root`` ≠ the recompute) and (b) a cert body
+        whose roots disagree with the manifest's roots-of-roots. Previously the
+        ``cert/certificate.json`` file was never read by the checker at all, so a
+        tampered certificate (e.g. a flipped ``certification_status``) was silent.
+
+        HONEST GAP (the certification AXIS is still ASSERTED, not re-derived):
+        this verifies the cert layer's structural integrity, but the
+        ``certification`` verdict is still folded from selection-row ``status``
+        (:meth:`_fold_certification`), NOT re-derived from this re-rooted cert
+        layer. Fully sourcing the certification axis from the cert layer is the
+        remaining v0 deferral.
+        """
+        body = pack.certificate_body
+        assert body is not None
+        mat = body.get("materialization_root")
+        sel = body.get("selection_index_root")
+        claimed_cert_root = body.get("certificate_root")
+        if not (isinstance(mat, str) and isinstance(sel, str)):
+            return
+        recomputed_cert_root = set_root("certificate", [mat, sel])
+        # (a) internal consistency of the cert file itself.
+        if isinstance(claimed_cert_root, str) and claimed_cert_root != recomputed_cert_root:
+            violations.append(
+                TypedViolation(
+                    code=ViolationCode.INVALID_MANIFEST_ROOT,
+                    level="L0",
+                    layer="cert",
+                    subject="certificate.certificate_root",
+                    expected=recomputed_cert_root,
+                    actual=claimed_cert_root,
+                    detail=(
+                        "cert/certificate.json certificate_root is internally "
+                        f"inconsistent: states {claimed_cert_root}, recomputed "
+                        f"{recomputed_cert_root} from its own committed roots"
+                    ),
+                )
+            )
+            record(IntegrityVerdict.INVALID_ROOT)
+        # (b) the cert body's roots must agree with the manifest roots-of-roots.
+        for name, cert_value in (
+            ("materialization_root", mat),
+            ("selection_index_root", sel),
+        ):
+            manifest_value = pack.manifest.roots.get(name)
+            if isinstance(manifest_value, str) and manifest_value != cert_value:
+                violations.append(
+                    TypedViolation(
+                        code=ViolationCode.INVALID_MANIFEST_ROOT,
+                        level="L0",
+                        layer="cert",
+                        subject=f"certificate.{name}",
+                        expected=manifest_value,
+                        actual=cert_value,
+                        detail=(
+                            f"cert/certificate.json {name} {cert_value} disagrees with "
+                            f"manifest.roots[{name!r}] {manifest_value}"
+                        ),
+                    )
+                )
+                record(IntegrityVerdict.INVALID_ROOT)
+
+    def _check_roots_of_roots(
+        self, pack: Pack, violations: list[TypedViolation], record
+    ) -> None:
+        """Re-derive each ``manifest.roots`` entry from the committed rows.
+
+        Groups the legal-state rows by ``schema`` (the same families the exporter
+        accumulates), recomputes the four roots-of-roots via the shared
+        :func:`assemble_manifest_roots`, and compares to the manifest's claimed
+        value. ``source_bundle_root`` is only recomputed when the pack carries the
+        ``source_refs`` it commits to (else it is left as carried-but-unverified
+        and reported honestly — never silently accepted as recomputed).
+        """
+        grouped: dict[str, list[str]] = {tag: [] for tag in ROOT_GROUP_SCHEMAS}
+        schema_to_tag = {schema: tag for tag, schema in ROOT_GROUP_SCHEMAS.items()}
+        for layer in pack.layers.values():
+            for row in layer.rows:
+                body = _row_object(row)
+                oh = row.get("object_hash")
+                if body is None or not isinstance(oh, str):
+                    continue
+                schema = body.get("schema")
+                if isinstance(schema, str) and schema in schema_to_tag:
+                    grouped[schema_to_tag[schema]].append(oh)
+        trace = pack.layers.get("trace")
+        trace_hashes = (
+            [str(r["object_hash"]) for r in trace.rows if isinstance(r.get("object_hash"), str)]
+            if trace is not None
+            else []
+        )
+        try:
+            recomputed = assemble_manifest_roots(
+                content_leaf_hashes=grouped["content_leaf"],
+                node_version_hashes=grouped["node_version"],
+                selection_profile_hashes=grouped["selection_profile"],
+                selection_universe_hashes=grouped["selection_universe"],
+                scope_predicate_hashes=grouped["scope_predicate"],
+                applicability_fact_hashes=grouped["applicability_fact"],
+                candidate_set_hashes=grouped["candidate_set"],
+                selection_row_hashes=grouped["selection_row"],
+                trace_hashes=trace_hashes,
+                source_refs=pack.source_refs,
+            )
+        except RootError as exc:
+            violations.append(
+                TypedViolation(
+                    code=ViolationCode.INVALID_MANIFEST_ROOT,
+                    level="L0",
+                    layer="manifest",
+                    subject="roots",
+                    detail=f"roots-of-roots recompute failed: {exc}",
+                )
+            )
+            record(IntegrityVerdict.INVALID_ROOT)
+            return
+        claimed = pack.manifest.roots
+        # ``source_bundle_root`` is only verifiable when source_refs are present.
+        skip = set() if pack.source_refs else {"source_bundle_root"}
+        for name, recomputed_value in recomputed.items():
+            if name in skip:
+                continue
+            claimed_value = claimed.get(name)
+            if claimed_value is None:
+                continue
+            if claimed_value != recomputed_value:
+                violations.append(
+                    TypedViolation(
+                        code=ViolationCode.INVALID_MANIFEST_ROOT,
+                        level="L0",
+                        layer="manifest",
+                        subject=name,
+                        expected=recomputed_value,
+                        actual=claimed_value,
+                        detail=(
+                            f"manifest.roots[{name!r}] mismatch: claimed {claimed_value}, "
+                            f"recomputed {recomputed_value} from the committed rows"
+                        ),
+                    )
+                )
+                record(IntegrityVerdict.INVALID_ROOT)
+
     def _check_referential_closure(
         self,
         pack: Pack,
@@ -782,6 +1064,25 @@ class Checker:
                 h = row.get("object_hash")
                 if isinstance(h, str):
                     present.add(_strip(h))
+                body = _row_object(row)
+                if body is None:
+                    continue
+                # Also resolve references that point at an object's INTRINSIC
+                # identity field (the v0 leaf-hash id space) rather than its
+                # transport ``object_hash`` — content leaves, node versions and
+                # candidate sets are referenced by their content/identity hash, so
+                # closure must resolve against those too (else a legit pack would
+                # false-positive on every node_version→content_leaf ref).
+                for id_field in (
+                    "content_leaf_hash",
+                    "node_version_id",
+                    "candidate_set_id",
+                    "struct_node_id",
+                    "work_object_id",
+                ):
+                    val = body.get(id_field)
+                    if isinstance(val, str):
+                        present.add(_strip(val))
         for ref_name, ref_hash in pack.referenced_hashes.items():
             if _strip(ref_hash) not in present:
                 violations.append(

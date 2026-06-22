@@ -517,12 +517,13 @@ def _payload_realization_candidates(
             continue
         unit_id = rop.op_id or f"resolved_op_{index}"
         target = rop.resolved_target_address
+        truncate_at_omission = _is_terminal_child_target(payload_ir, rop.resolved_target_address)
         unit = PayloadRealizationUnit(
             unit_id=unit_id,
             unit_kind=action_type,
             observed_label=rop.resolved_target_label,
             parent_label=str(target or ""),
-            text_chunks=_payload_text_chunks(payload_ir),
+            text_chunks=_payload_text_chunks(payload_ir, truncate_at_omission=truncate_at_omission),
         )
         units.append(
             _RealizationCandidate(
@@ -740,21 +741,42 @@ def _node_matches_target(node: IRNode, target_kind: str, target_label: str) -> b
     return node.kind in _TARGET_NODE_KINDS[target_kind] and node.label == target_label
 
 
-def _payload_text_chunks(node: IRNode) -> tuple[str, ...]:
+def _is_terminal_child_target(payload_ir: IRNode, target: LegalAddress | None) -> bool:
+    """True when the scoped payload IS the terminal item/subitem target itself.
+
+    In that scope an OMISSION boundary separates this target's own payload from
+    later carried/rejected siblings owned by other targets, so chunk collection
+    must stop at the first OMISSION (commit 4fd20d98). For coarser scopes
+    (section/subsection sparse-omission restatements) post-omission siblings are
+    legitimately owned source payload and must be collected.
+    """
+
+    if target is None or not target.path:
+        return False
+    terminal_kind, terminal_label = target.path[-1]
+    if terminal_kind not in _CHILD_TARGET_KINDS:
+        return False
+    return _node_matches_target(payload_ir, terminal_kind, terminal_label)
+
+
+def _payload_text_chunks(node: IRNode, *, truncate_at_omission: bool = False) -> tuple[str, ...]:
     chunks: list[str] = []
-    _collect_chunks(node, chunks)
+    _collect_chunks(node, chunks, truncate_at_omission=truncate_at_omission)
     return tuple(dict.fromkeys(chunks))
 
 
-def _collect_chunks(node: IRNode, chunks: list[str]) -> None:
+def _collect_chunks(node: IRNode, chunks: list[str], *, truncate_at_omission: bool) -> None:
     if node.kind is IRNodeKind.OMISSION:
         return
     if node.text:
         chunks.append(node.text)
     for child in node.children:
-        if child.kind is IRNodeKind.OMISSION:
+        if truncate_at_omission and child.kind is IRNodeKind.OMISSION:
+            # Item/subitem scope: an OMISSION boundary marks the end of this
+            # target's own payload; later siblings are carried/rejected content
+            # belonging to other targets (commit 4fd20d98).
             break
-        _collect_chunks(child, chunks)
+        _collect_chunks(child, chunks, truncate_at_omission=truncate_at_omission)
 
 
 __all__ = [

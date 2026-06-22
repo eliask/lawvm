@@ -28,6 +28,7 @@ clean-claim predicate the certificate dossier branches on (the firewall bite).
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Optional, Sequence
 
 from lawvm.core.execution_authorization import ExecutionAuthorization
@@ -36,6 +37,8 @@ from lawvm.core.stage_result import AuthoritySurface, NEUTRAL_AUTHORITY
 if TYPE_CHECKING:
     from lawvm.core.phase_result import Finding
     from lawvm.core.write_receipt import WriteReceipt
+
+logger = logging.getLogger(__name__)
 
 
 # The registered apply-authority rule id (ESCALATE-5W: descriptive registration
@@ -63,6 +66,10 @@ _APPLY_REPLAY_SAFE_DEFAULT = "block_until_apply_replay_gate_is_satisfied"
 # already-load-bearing signal that a landed write touched outside its declared
 # footprint — i.e. the write does NOT stand under the conservative gate.
 APPLY_BOUNDARY_VIOLATION_FINDING_CODE = "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
+#: Same code under the apply-producer's name. ``apply_resolved_op`` imports this
+#: alias instead of defining its own literal, so the producer (write-receipt
+#: firewall) and the authority consumer can never silently drift apart.
+WRITE_RECEIPT_VIOLATION_FINDING_CODE = APPLY_BOUNDARY_VIOLATION_FINDING_CODE
 
 
 def mint_apply_replay_authority(
@@ -126,9 +133,31 @@ def _receipt_boundary_authorized(receipt: "WriteReceipt") -> bool:
     iff its bound→landed divergence is explained (``divergence_explained``: bound
     == landed, or a named recovery/migration/fallback rule). This is the exact
     condition the #3 structural mutation-boundary residual fires on.
+
+    HONESTY NOTE (the receipt arm is NOT yet load-bearing in production): the ONLY
+    producer that reaches the aggregated ``signals.write_receipts`` sink today is
+    the op-level ``apply_resolved_op._collect_op_write_receipt``, which hardcodes
+    ``bound_target_path=None``. The bound-target receipts that DO carry a resolver
+    binding are built inside ``apply_typed_dispatch`` / ``apply_structure_ops`` on
+    a LOCAL receipt list that is never threaded out to the aggregate. So in
+    production this branch is always ``bound_target_path is None`` → returns
+    ``True`` unconditionally, and the boundary check is carried by the blocking
+    apply-boundary finding (the ``no_boundary_violation`` conjunct in
+    :func:`aggregate_replay_authority`), NOT by this arm. The
+    ``divergence_explained`` logic below is correct and ready for the day the
+    bound-target receipts are threaded to the aggregated sink (deferred follow-up,
+    see :func:`aggregate_replay_authority`); until then it is exercised only by the
+    unit tests that construct bound receipts directly. We emit a one-shot debug log
+    if a bound receipt ever reaches this arm in production, which would signal the
+    threading has landed and the arm became live.
     """
     if receipt.bound_target_path is None:
         return True
+    logger.debug(
+        "apply replay authority: receipt %r carried a bound target to the "
+        "aggregated sink; the receipt boundary arm is now live (threading landed)",
+        receipt.op_id,
+    )
     return receipt.divergence_explained
 
 
@@ -167,6 +196,18 @@ def aggregate_replay_authority(
     finding. The descriptive gate therefore only un-authorizes on an UNEXPLAINED
     BOUND→LANDED DIVERGENCE: a receipt that bound a target and landed elsewhere
     with no named recovery rule.
+
+    DEFERRED FOLLOW-UP (the receipt arm is not yet load-bearing): the only producer
+    reaching ``write_receipts`` today is the op-level apply receipt with
+    ``bound_target_path=None`` (see
+    ``apply_resolved_op._collect_op_write_receipt``). The bound-target receipts
+    built inside ``apply_typed_dispatch`` / ``apply_structure_ops`` live on a local
+    list and are NOT threaded out to this aggregated sink. So
+    ``every_receipt_explained`` is currently always ``True`` in production and the
+    boundary check rides ``no_boundary_violation`` (the blocking finding). Threading
+    those bound receipts to the aggregated sink — which requires changes in the
+    dispatch modules — would make ``_receipt_boundary_authorized`` live; that is
+    the deferred follow-up.
     """
     every_receipt_explained = all(
         _receipt_boundary_authorized(receipt) for receipt in write_receipts

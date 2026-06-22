@@ -27,6 +27,7 @@ from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.tree_ops import receipt_from_diff
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.finland.apply_replay_authorization import (
+    WRITE_RECEIPT_VIOLATION_FINDING_CODE,
     mint_apply_replay_authority,
     op_replay_authorized,
 )
@@ -117,7 +118,8 @@ FI_APPLY_OP_WRITE_HELPER = "fi.apply.resolved_op_write"
 # "violation") or whose bound→landed divergence is unexplained. This reuses the
 # registered apply-boundary touch-outside-target violation code (coordinated
 # with the mutation-boundary guard-liveness lane) rather than minting a new one.
-WRITE_RECEIPT_VIOLATION_FINDING_CODE = "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
+# Imported from apply_replay_authorization (above) so the producer and the
+# authority consumer share one literal and cannot silently diverge.
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +211,39 @@ def _apply_required_resolved_op(
             and len(sinks.failed_ops_out) > failed_cursor
         ):
             disposition = "APPLY_FAILED"
+            # Disposition firewall: a soft-failed op (APPLY_FAILED) is NOT an
+            # authorized apply, yet it may still have landed a tree mutation
+            # before failing. The production ``aggregate_replay_authority`` never
+            # inspects disposition, so without this a non-APPLIED op that mutated
+            # the tree would silently authorize the replay. Surface the landed
+            # write as a blocking boundary-violation finding so the aggregate's
+            # ``no_boundary_violation`` conjunct trips: a write that landed under a
+            # non-authorized disposition is, by the op gate predicate
+            # (``op_replay_authorized`` requires ``disposition == "APPLIED"``), an
+            # un-authorized write.
+            if (
+                sinks.findings_out is not None
+                and prev_state.ir is not state.ir
+            ):
+                sinks.findings_out.append(
+                    Finding(
+                        kind=WRITE_RECEIPT_VIOLATION_FINDING_CODE,
+                        role="violation",
+                        stage="apply",
+                        blocking=True,
+                        source_statute=request.amendment_id,
+                        detail={
+                            "message": (
+                                "A soft-failed (APPLY_FAILED) op landed a tree "
+                                "mutation; a write under a non-authorized "
+                                "disposition cannot authorize the replay."
+                            ),
+                            "barrier_code": WRITE_RECEIPT_VIOLATION_FINDING_CODE,
+                            "op_id": rop.op_id or "",
+                            "disposition": disposition,
+                        },
+                    )
+                )
         undeclared_touch: Optional[MutationAccountingResult] = None
         if sinks.mutation_events_out is not None:
             undeclared_touch = cross_check_observed_vs_declared(
@@ -323,15 +358,18 @@ def _collect_op_write_receipt(
     and exactly one independent audit. The totality assertion enforces that the
     receipt/audit counts move in lockstep with landed writes.
 
-    Strict-mode blocking is driven by the genuine production signal: the
-    op-level observed-vs-declared cross-check (``undeclared_touch``). When that
-    cross-check sees a changed tree path the op's declared mutation events do not
-    explain, a strict profile promotes it to a BLOCKING finding instead of the
-    legacy logger.warning / serialize-only passive disposition. The op-level
-    receipt itself is built from landed reality and therefore covers its own
-    observed footprint by construction, so its audit is clean — the
-    receipt/audit are the conservation account; ``undeclared_touch`` is the
-    boundary violation.
+    Boundary blocking is driven by the genuine production signal: the op-level
+    observed-vs-declared cross-check (``undeclared_touch``). When that cross-check
+    sees a changed tree path the op's declared mutation events do not explain, it
+    is promoted to a BLOCKING finding instead of the legacy logger.warning /
+    serialize-only passive disposition — REGARDLESS of the caller's strict
+    profile, so a permissive or absent profile cannot silently authorize a write
+    that landed outside its declared target. The op-level receipt itself is built
+    from landed reality and therefore covers its own observed footprint by
+    construction, so its audit is clean — the receipt/audit are the conservation
+    account; ``undeclared_touch`` is the boundary violation. ``strict_profile`` is
+    retained on the signature for the receipt-binding context but no longer gates
+    surfacing the boundary finding.
     """
     if prev_state.ir is new_state.ir:
         # No landed write: receipts and audits must not grow for this op.
@@ -371,14 +409,18 @@ def _collect_op_write_receipt(
             f"{len(sinks.write_audits_out) - audits_before} observed-write audits (expected 1)"
         )
 
-    # Strict-mode gate: a profile that refuses to guess targets is the profile
-    # that must also refuse an un-accounted landed write. (No single boolean
-    # "strict" exists on StrictProfile; strictness is the absence of permissive
-    # allowances — mirrors the existing `strict_profile is None or allows_X`
-    # pattern used across the apply lanes.) The blocking signal is the genuine
-    # production undeclared-tree-touch cross-check, not a self-clean receipt.
-    strict = strict_profile is not None and not strict_profile.allows_target_guessing
-    if strict and sinks.findings_out is not None and undeclared_touch is not None:
+    # The blocking signal is the genuine production undeclared-tree-touch
+    # cross-check, not a self-clean receipt: when ``undeclared_touch`` is set the
+    # op's landed write touched tree paths its declared mutation events do not
+    # explain, which is a real boundary violation regardless of the caller's
+    # strict profile. Emitting the finding is DECOUPLED from strict mode — a
+    # permissive (or absent) ``strict_profile`` must not silently authorize a
+    # write that landed outside its declared target. The downstream gate
+    # (``aggregate_replay_authority``'s ``no_boundary_violation`` conjunct) then
+    # trips on this blocking finding for ANY caller profile. (Strictness on
+    # StrictProfile is the absence of permissive allowances; the firewall does not
+    # depend on it here, so a None profile no longer bypasses the arm.)
+    if sinks.findings_out is not None and undeclared_touch is not None:
         sinks.findings_out.append(
             Finding(
                 kind=WRITE_RECEIPT_VIOLATION_FINDING_CODE,

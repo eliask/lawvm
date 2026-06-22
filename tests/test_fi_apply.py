@@ -5045,6 +5045,117 @@ def test_expired_temporary_section_merge_base_case_b_fires_when_live_is_temp_sta
     assert rebase_kind == "temporary_previous_snapshot_latest_snapshot"
 
 
+def test_apply_whole_section_heading_only_replace_uses_rebased_merge_base() -> None:
+    """Heading-only mixed-sparse REPLACE must carry the rebased (clean) body.
+
+    BITE for the bug where the heading-only branch decided eligibility from the
+    rebased ``live_merge_sec`` but then rebuilt the section from ``live_sec`` (the
+    expired-temporary-contaminated live fold).  When ``merge_base_sec`` differs
+    from ``live_sec``, the heading must be swapped onto the rebased permanent
+    body, never the contaminated live body.
+    """
+    heading_old = IRNode(kind=IRNodeKind.HEADING, text="Vanha otsikko")
+    heading_new = IRNode(kind=IRNodeKind.HEADING, text="Uusi otsikko")
+    # Safe permanent snapshot: clean body.
+    perm_section = _sec("24", heading_old, _sub("1", _content("perm body")))
+    # Expired-temporary contamination living in the fold.
+    temp_section = _sec("24", heading_old, _sub("1", _content("expired temp body")))
+    current_live_section = temp_section
+    section_path = (("section", "24"),)
+    state = _make_state(_body(current_live_section))
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_section_24",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=temp_section,
+            source=OperationSource(
+                effective="2021-01-01",
+                enacted="2021-01-01",
+                expires="2022-04-30",
+                statute_id="2021/541",
+            ),
+        ),
+        LegalOperation(
+            op_id="snapshot_section_24",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=perm_section,
+            source=OperationSource(
+                effective="2022-01-01",
+                enacted="2022-01-01",
+                expires="",
+                statute_id="2022/300",
+            ),
+        ),
+    ]
+    # Confirm the rebase fires and disagrees with the live fold (BITE precondition).
+    merge_base = _expired_temporary_section_merge_base(
+        op=ResolvedOp.from_amendment_op(
+            _op(op_type="REPLACE", target_section="24"),
+            muutos_ir=None,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="24",
+            target_chapter=None,
+            op_source=OperationSource(
+                statute_id="2022/331",
+                enacted="2022-03-11",
+                effective="2022-05-01",
+                expires="",
+            ),
+        ),
+        section_path=section_path,
+        replay_history_ops=replay_history,
+        base_ir=_body(perm_section),
+        current_live_section=current_live_section,
+    )
+    assert merge_base == perm_section
+    assert merge_base != current_live_section
+
+    # Heading-only mixed-sparse REPLACE: 1 subsection each side + a new heading.
+    muutos_ir = _sec("24", heading_new, _sub("1", _content("perm body")))
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="24"),
+        muutos_ir=muutos_ir,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="24",
+        target_chapter=None,
+        op_source=OperationSource(
+            statute_id="2022/331",
+            enacted="2022-03-11",
+            effective="2022-05-01",
+            expires="",
+        ),
+    )
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        section_path,
+        muutos_ir,
+        None,
+        _LEGAL_PIT,
+        "24 §",
+        base_ir=_body(perm_section),
+        replay_history_ops=replay_history,
+        mixed_sparse_insert=True,
+    )
+
+    result = _modified(state, result)
+    live = result.find_section("24")
+    assert live is not None
+    live_text = irnode_to_text(live)
+    # New heading was swapped in.
+    assert "Uusi otsikko" in live_text
+    # Body comes from the REBASED permanent snapshot — no expired-temp carried.
+    assert "perm body" in live_text
+    assert "expired temp body" not in live_text
+
+
 def test_apply_whole_section_replace_emits_temporary_section_rebase_pathology() -> None:
     base_section = _sec(
         "3",

@@ -3116,18 +3116,18 @@ def _pre_resolve_omissions(
                     resolved = _mark_targeted_subsections_in_place(resolved, item_target_paragraphs)
                 return resolved
 
-        # Container-level: REPLACE with omissions
-        if target_unit_kind in {"chapter", "part"} and _has_whole_op("REPLACE"):
-            # For container targets (L/O), ctx.live_node IS the container
-            if ctx.live_node is not None:
-                merged = _merge_same_numbered_container_insert_ir(
-                    ctx.live_node,
-                    muutos_ir,
-                    context=MergeContainerContext(
-                        op_target=f"REPLACE {ctx.target_unit_kind}:{ctx.target_norm}",
-                        container_label=ctx.live_node.label or "",
-                    ),
-                )
-                return merged if merged is not None else ctx.live_node
+    # Container-level: REPLACE with omissions
+    if target_unit_kind in {"chapter", "part"} and _has_whole_op("REPLACE"):
+        # For container targets (L/O), ctx.live_node IS the container
+        if ctx.live_node is not None:
+            merged = _merge_same_numbered_container_insert_ir(
+                ctx.live_node,
+                muutos_ir,
+                context=MergeContainerContext(
+                    op_target=f"REPLACE {ctx.target_unit_kind}:{ctx.target_norm}",
+                    container_label=ctx.live_node.label or "",
+                ),
+            )
+            return merged if merged is not None else ctx.live_node
 
     return muutos_ir

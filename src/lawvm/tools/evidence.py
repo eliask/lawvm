@@ -21,7 +21,7 @@ from typing import Any, Dict, Iterable, List, Literal, Optional, cast
 import yaml
 from lxml import etree
 
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.compile_result import CompileFailure
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.target_scope import TargetUnitKind
@@ -287,11 +287,13 @@ def _uk_observation_field_counts(rows: Iterable[dict[str, Any]], field: str) -> 
 
 
 def _uk_blocking_rejection_rule_counts(rows: Iterable[dict[str, Any]]) -> dict[str, int]:
-    return _uk_rejection_rule_counts(row for row in rows if is_blocking_compile_record(row))
+    return _uk_rejection_rule_counts(
+        row for row in rows if is_blocking_compile_record(CompileRecord.from_mapping(row))
+    )
 
 
 def _uk_blocking_rejection_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [dict(row) for row in rows if is_blocking_compile_record(row)]
+    return [dict(row) for row in rows if is_blocking_compile_record(CompileRecord.from_mapping(row))]
 
 
 def _bundle_cache_path(

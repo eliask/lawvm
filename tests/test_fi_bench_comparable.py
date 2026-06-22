@@ -609,6 +609,48 @@ def test_selection_provenance_rejected_candidates_populated() -> None:
     assert prov.chosen_version_tag == "20211030"
 
 
+def test_select_bench_comparable_returns_none_when_all_candidates_rejected() -> None:
+    """Bug [24]: when EVERY candidate fails comparability, selection must return
+    None — NOT silently fall through to the full, unfiltered list.
+
+    Previously the BENCH_COMPARABLE branch did ``if comparable: artifacts =
+    comparable``; when ``comparable`` was empty the narrowing was skipped and
+    selection proceeded over the original (known-INCOMPARABLE) list, scoring the
+    bench against a bad oracle while reporting an ordinary score.  This test
+    pins the fail-loud contract: no honest oracle → return None.
+
+    No source XML is present in the archive for any candidate, so every artifact
+    is rejected by ``_is_self_comparable_with_tolerance``.
+    """
+    SHARED_DC = dt.date(2021, 11, 25)
+    artifacts = [
+        _make_artifact("2013/331", "20150103", SHARED_DC),
+        _make_artifact("2013/331", "20211030", SHARED_DC),
+    ]
+    # Empty archive → no amendment source bytes → every candidate rejected.
+    archive = _FixtureArchive({})
+
+    artifact, prov = _select_from_cached_artifacts_with_info(
+        artifacts,
+        selector=ConsolidatedArtifactSelector.bench_comparable(),
+        lang="fin",
+        archive=archive,
+    )
+
+    # No honest oracle: selection must be None, not the unfiltered list.
+    assert artifact is None, (
+        "BENCH_COMPARABLE must return None when all candidates are incomparable, "
+        "not fall through to the unfiltered list and score against a bad oracle"
+    )
+    # Provenance must record all rejected tags...
+    assert set(prov.rejected_version_tags) == {"20150103", "20211030"}
+    # ...and must NOT contradict itself: nothing was chosen, so the chosen tag
+    # must be empty and absent from the rejected set.
+    assert prov.chosen_version_tag == ""
+    assert prov.chosen_version_tag not in prov.rejected_version_tags
+    assert prov.selector_mode == "bench_comparable"
+
+
 def test_selection_provenance_selector_mode_for_latest_cached() -> None:
     """SelectionProvenance reflects selector_mode for non-BENCH_COMPARABLE calls."""
     SHARED_DC = dt.date(2021, 11, 25)

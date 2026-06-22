@@ -6,6 +6,11 @@ import pytest
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.elaboration_context import (
+    PayloadElaborationContext,
+    ReplayLookups,
+    TargetUnitKind,
+)
 from lawvm.finland.merge import (
     MergeContainerContext,
     _has_section_omissions_ir,
@@ -17,8 +22,9 @@ from lawvm.finland.merge import (
     _merge_subsection_with_omission_ir,
     _multi_subsection_sparse_item_section_replace_merge_ir,
     _paragraph_signatures_ir,
+    _pre_resolve_omissions,
 )
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, get_replay_profile
 
 # ---------------------------------------------------------------------------
 # IRNode fixture helpers
@@ -2200,3 +2206,143 @@ def test_heading_intro_replace_returns_none_when_intro_unchanged() -> None:
     result = _heading_intro_replace_preserve_items_ir(master_sec, amend_sec)
 
     assert result is None, "Should not match when intro text is already identical"
+
+
+# ---------------------------------------------------------------------------
+# _pre_resolve_omissions — container (chapter/part) REPLACE with omissions
+# ---------------------------------------------------------------------------
+
+
+def _container_replace_ctx(
+    live: IRNode, target_unit_kind: TargetUnitKind = "chapter"
+) -> PayloadElaborationContext:
+    """Minimal PayloadElaborationContext for a container REPLACE target.
+
+    The container branch of _pre_resolve_omissions only reads live_node,
+    target_unit_kind and target_norm, so the indexes can stay empty.
+    """
+    return PayloadElaborationContext(
+        target_unit_kind=target_unit_kind,
+        target_norm="1",
+        target_chapter=None,
+        target_part=None,
+        live_node=live,
+        parent_node=None,
+        subsection_slots=(),
+        live_subsections=(),
+        subsection_by_label={},
+        item_index={},
+        row_anchor_index={},
+        container_member_labels=None,
+        lookups=ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset(),
+        ),
+    )
+
+
+def _whole_replace_op(target_unit_kind: TargetUnitKind) -> AmendmentOp:
+    return AmendmentOp(
+        op_id=f"replace_{target_unit_kind}_1",
+        op_type="REPLACE",
+        target_unit_kind=target_unit_kind,
+        source_statute="2006/395",
+    )
+
+
+def test_pre_resolve_omissions_container_replace_routes_through_container_merge() -> None:
+    """A chapter REPLACE whose payload carries section-omission markers must be
+    routed through _merge_same_numbered_container_insert_ir so the live residue
+    the omission represents is spliced back in and the markers are resolved.
+
+    Regression guard: the container branch used to be nested under the
+    ``target_unit_kind == "section"`` block, making it unsatisfiable dead code.
+    Control fell to ``return muutos_ir`` and the omission markers survived
+    unresolved (later tripping OMISSION_SURVIVES_NON_MERGE). This pins that the
+    branch is now a function-body sibling and actually fires for chapter input.
+    """
+    live = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="1",
+        children=(
+            _sec("1", _sub("1", _content("live one"))),
+            _sec(
+                "2",
+                _sub("1", _content("live 2.1")),
+                _sub("2", _content("live 2.2")),
+                _sub("3", _content("live 2.3")),
+            ),
+        ),
+    )
+    # Compact REPLACE shell for section "2": first subsection plus an omission
+    # marker standing in for the unchanged tail (subsections 2 and 3).
+    amend = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="1",
+        children=(
+            _sec("2", _sub("1", _content("new 2.1")), _omission()),
+        ),
+    )
+    assert _has_section_omissions_ir(amend)
+
+    ctx = _container_replace_ctx(live)
+    profile = get_replay_profile("official_consolidation")
+
+    result = _pre_resolve_omissions(
+        ctx, amend, "chapter", "1", None, [_whole_replace_op("chapter")], profile
+    )
+
+    assert result is not None
+    # Not the raw payload returned by the old dead-code fall-through.
+    assert result is not amend
+    # The container merge resolved the omission markers.
+    assert not _has_section_omissions_ir(result)
+    # The live residue the omission represented (subsections 2.2, 2.3) is
+    # spliced back in instead of being dropped.
+    sec2 = next(
+        c for c in result.children if c.kind is IRNodeKind.SECTION and c.label == "2"
+    )
+    sec2_text = irnode_to_text(sec2)
+    assert "live 2.2" in sec2_text
+    assert "live 2.3" in sec2_text
+
+
+def test_pre_resolve_omissions_part_replace_routes_through_container_merge() -> None:
+    """The same activation holds for ``part`` container targets."""
+    live = IRNode(
+        kind=IRNodeKind.PART,
+        label="1",
+        children=(
+            _sec(
+                "5",
+                _sub("1", _content("live 5.1")),
+                _sub("2", _content("live 5.2")),
+            ),
+        ),
+    )
+    amend = IRNode(
+        kind=IRNodeKind.PART,
+        label="1",
+        children=(
+            _sec("5", _sub("1", _content("new 5.1")), _omission()),
+        ),
+    )
+    assert _has_section_omissions_ir(amend)
+
+    ctx = _container_replace_ctx(live, target_unit_kind="part")
+    profile = get_replay_profile("official_consolidation")
+
+    result = _pre_resolve_omissions(
+        ctx, amend, "part", "1", None, [_whole_replace_op("part")], profile
+    )
+
+    assert result is not None
+    assert result is not amend
+    assert not _has_section_omissions_ir(result)
+    sec5 = next(
+        c for c in result.children if c.kind is IRNodeKind.SECTION and c.label == "5"
+    )
+    assert "live 5.2" in irnode_to_text(sec5)

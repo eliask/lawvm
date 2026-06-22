@@ -35,6 +35,7 @@ from lawvm.core.stage_result_ledger import (
 )
 from lawvm.tools.certificate_bundle import (
     BundleSelfCheckError,
+    _verify_stage_accounts,
     build_stage_account_row,
     canonical_json_bytes,
     stage_account_root,
@@ -385,3 +386,131 @@ def test_projection_blocking_residual_contributes_to_status(bundle_482: Path) ->
     # forest is NOT in STATUS_CONTRIBUTING_STAGE_IDS, so it does not raise the count
     # beyond the overlays injection.
     assert _committed_stage_blocking_residual_count(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# coverage is FOLDED-AND-VERIFIED, not folded-not-verified: the per-stage
+# coverage row's partition/totality verdict is re-derived from the committed
+# COUNTS, not merely re-hashed (the circular self-consistency that let a forged
+# inconsistent row through).
+# ---------------------------------------------------------------------------
+
+
+def _forge_coverage_account(coverage_row: dict) -> dict:
+    """Build a stage-account row carrying `coverage_row`, hashes made consistent.
+
+    The coverage_subroot/account_root are recomputed from the (possibly forged)
+    coverage row so the circular HASH self-consistency check passes — only the
+    arithmetic re-derivation can catch an inconsistent row.
+    """
+    base = build_stage_account_row(
+        "stage.forge",
+        StageResult(value=None, coverage=CoverageCertificate(unit="chars", total=0, owned=0)),
+    )
+    row = dict(base)
+    row["coverage_row"] = dict(coverage_row)
+    row["coverage_subroot"] = stage_coverage_subroot(row["coverage_row"])
+    row["stage_account_root"] = stage_account_root(row)
+    return row
+
+
+def test_forged_inconsistent_coverage_row_fails_verify() -> None:
+    # The bite: counts that do NOT sum to total but claim is_partition True.
+    # Hashes are self-consistent (circular check passes); the arithmetic
+    # re-derivation must reject it.
+    forged = _forge_coverage_account(
+        {
+            "unit": "chars",
+            "total": 999,
+            "owned": 0,
+            "benign": 0,
+            "residual": 0,
+            "violation": 0,
+            "totality_claimed": True,
+            "is_partition": True,  # LIE: 0 != 999
+        }
+    )
+    with pytest.raises(BundleSelfCheckError):
+        _verify_stage_accounts([forged])
+
+
+def test_forged_is_partition_flag_mismatch_fails_verify() -> None:
+    # Counts sum correctly but the committed is_partition flag is forged True
+    # while totality is NOT claimed (recomputed verdict is False).
+    forged = _forge_coverage_account(
+        {
+            "unit": "chars",
+            "total": 4,
+            "owned": 2,
+            "benign": 0,
+            "residual": 2,
+            "violation": 0,
+            "totality_claimed": False,
+            "is_partition": True,  # LIE: not claimed -> recomputed False
+        }
+    )
+    with pytest.raises(BundleSelfCheckError):
+        _verify_stage_accounts([forged])
+
+
+def test_honest_coverage_row_passes_verify() -> None:
+    # 0-delta: an honest, balanced, totality-claimed row recomputes cleanly.
+    honest = build_stage_account_row(
+        "stage.honest",
+        StageResult(
+            value=None,
+            coverage=CoverageCertificate(unit="chars", total=4, owned=2, benign=0, residual=2),
+        ),
+    )
+    # No raise; the aggregate recomputes from the honest rows.
+    assert _verify_stage_accounts([honest]) == stage_accounts_root([honest])
+
+
+# ---------------------------------------------------------------------------
+# duplicate residuals/findings must NOT crash the build: set-root semantics are a
+# SET, so identical canonical rows (Residual/StageResult permit duplicates;
+# residual_row drops distinguishing context) de-dup to one set member.
+# ---------------------------------------------------------------------------
+
+
+def test_duplicate_residuals_build_a_valid_subroot() -> None:
+    # Two identical residual records -> identical canonical rows -> one set member.
+    stage = StageResult(
+        value=None,
+        residuals=(_residual(), _residual()),
+        coverage=CoverageCertificate(unit="chars", total=2, owned=0, benign=2),
+    )
+    # No crash (it crashed before the dedup fix).
+    row = build_stage_account_row("stage.dup", stage)
+    # The subroot is the set over the DISTINCT rows: same as a single residual.
+    single_rows = stage_residual_rows(
+        StageResult(value=None, residuals=(_residual(),))
+    )
+    assert row["residual_subroot"] == stage_residual_subroot(single_rows)
+    # The whole account verifies.
+    assert _verify_stage_accounts([row]) == stage_accounts_root([row])
+
+
+def test_duplicate_findings_build_a_valid_subroot() -> None:
+    stage = StageResult(value=None, findings=(_finding(), _finding()))
+    row = build_stage_account_row("stage.dupf", stage)
+    single_rows = stage_finding_rows(StageResult(value=None, findings=(_finding(),)))
+    assert row["finding_subroot"] == stage_finding_subroot(single_rows)
+
+
+def test_dedup_is_no_op_for_distinct_residuals() -> None:
+    # 0-delta proof: two DISTINCT residuals stay two set members (dedup changes
+    # nothing when there are no duplicates).
+    distinct = Residual(
+        kind="benign_uninterpreted",
+        reason="segmentation_benign_whitespace",
+        scope="u#body",
+        source_unit_id="u#body",
+        char_start=4,
+        char_end=6,
+        text="xy",
+        blocking=False,
+    )
+    two = stage_residual_rows(StageResult(value=None, residuals=(_residual(), distinct)))
+    one = stage_residual_rows(StageResult(value=None, residuals=(_residual(),)))
+    assert stage_residual_subroot(two) != stage_residual_subroot(one)

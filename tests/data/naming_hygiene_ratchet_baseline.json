@@ -138,7 +138,7 @@
     "src/lawvm/us_federal/dry_run.py": 2,
     "src/lawvm/us_federal/nonpositive.py": 3
   },
-  "certified_symbol_count": 64,
+  "certified_symbol_count": 66,
   "certified_symbols": [
     "CERTIFICATE_SCHEMA",
     "CERTIFICATE_SPEC_VERSION",
@@ -157,6 +157,7 @@
     "_candidate_target_set_certificate",
     "_certificate_status_is_complete",
     "_certified_core",
+    "_check_certificate_layer",
     "_closure_certificate_requirements",
     "_exclusion_scope_certificate",
     "_fold_certification",
@@ -167,6 +168,7 @@
     "build_certificate",
     "build_certificate_bundle",
     "certificate",
+    "certificate_body",
     "certificate_bundle_main",
     "certificate_id",
     "certificate_payload",

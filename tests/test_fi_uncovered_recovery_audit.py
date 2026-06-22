@@ -62,6 +62,8 @@ def test_uncovered_candidate_audit_projects_to_replay_meta() -> None:
 def test_apply_resolved_op_audit_projects_to_replay_meta() -> None:
     observation = ApplyResolvedOpAudit(
         source_statute="12/2015",
+        source_effective="",
+        source_expires="",
         op_id="replace_1",
         action_type="REPLACE",
         description="replace section 1",
@@ -100,6 +102,8 @@ def test_apply_resolved_op_audit_projects_to_replay_meta() -> None:
         {
             "source_statute": "12/2015",
             "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
+            "source_effective": "",
+            "source_expires": "",
             "op_id": "replace_1",
             "action_type": "REPLACE",
             "description": "replace section 1",
