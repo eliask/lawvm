@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, NamedTuple
 
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.uk_legislation.source_state import (
     uk_source_parse_observations_from_ir,
@@ -79,7 +79,7 @@ def _rule_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def _blocking_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [row for row in rows if is_blocking_compile_record(row)]
+    return [row for row in rows if is_blocking_compile_record(CompileRecord.from_mapping(row))]
 
 
 def _eid_side_report_jsonable(

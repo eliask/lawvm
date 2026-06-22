@@ -352,7 +352,7 @@ def _ops_uk_sync(
     from farchive import Farchive
     from lawvm.uk_legislation import uk_amendment_replay as uk_replay_module
     from lawvm.uk_legislation.source_state import is_uk_affecting_act_xml_source_observation
-    from lawvm.core.compile_records import is_blocking_compile_record
+    from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 
     _repo_root = Path(__file__).resolve().parents[3]
     db_path = _repo_root / "data" / "uk_legislation.farchive"
@@ -406,7 +406,9 @@ def _ops_uk_sync(
         *authority_rejections,
     ]
     blocking_rejections = [
-        row for row in all_compile_observations if is_blocking_compile_record(row)
+        row
+        for row in all_compile_observations
+        if is_blocking_compile_record(CompileRecord.from_mapping(row))
     ]
     rejection_rule_counts: dict[str, int] = dict(
         sorted(Counter(str(row.get("rule_id") or "unknown") for row in blocking_rejections).items())
@@ -449,7 +451,7 @@ def _ops_uk_sync(
         rejection_rows = [
             {
                 "rule_id": str(row.get("rule_id") or ""),
-                "blocking": bool(is_blocking_compile_record(row)),
+                "blocking": bool(is_blocking_compile_record(CompileRecord.from_mapping(row))),
                 "affected_provision": str(row.get("affected_provision") or row.get("affected_provisions") or ""),
                 "effect_type": str(row.get("effect_type") or ""),
             }

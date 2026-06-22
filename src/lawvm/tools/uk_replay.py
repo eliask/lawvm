@@ -35,7 +35,7 @@ from lawvm.uk_legislation.source_state import (
     uk_source_state_wire_tuple as _source_state,
 )
 from lawvm.uk_legislation.witness_builders import _uk_temporal_events_from_ops
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]  # LawVM/
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
@@ -391,21 +391,21 @@ def _uk_compile_rejection_text_lines(
         *lowering_rejections,
         *authority_rejections,
     ]
-    blocking_rejections = [row for row in compile_rejections if is_blocking_compile_record(row)]
+    blocking_rejections = [row for row in compile_rejections if is_blocking_compile_record(CompileRecord.from_mapping(row))]
     blocking_by_lane = {
-        "source_parse": [row for row in source_parse_rejections if is_blocking_compile_record(row)],
-        "feed_parse": [row for row in effect_feed_parse_rejections if is_blocking_compile_record(row)],
+        "source_parse": [row for row in source_parse_rejections if is_blocking_compile_record(CompileRecord.from_mapping(row))],
+        "feed_parse": [row for row in effect_feed_parse_rejections if is_blocking_compile_record(CompileRecord.from_mapping(row))],
         "effect_source_pathology": [
-            row for row in effect_source_pathology_observations if is_blocking_compile_record(row)
+            row for row in effect_source_pathology_observations if is_blocking_compile_record(CompileRecord.from_mapping(row))
         ],
         "manual_compile_frontier": [
-            row for row in manual_compile_frontier_observations if is_blocking_compile_record(row)
+            row for row in manual_compile_frontier_observations if is_blocking_compile_record(CompileRecord.from_mapping(row))
         ],
         "source_acquisition": [
-            row for row in source_acquisition_rejections if is_blocking_compile_record(row)
+            row for row in source_acquisition_rejections if is_blocking_compile_record(CompileRecord.from_mapping(row))
         ],
-        "lowering": [row for row in lowering_rejections if is_blocking_compile_record(row)],
-        "authority": [row for row in authority_rejections if is_blocking_compile_record(row)],
+        "lowering": [row for row in lowering_rejections if is_blocking_compile_record(CompileRecord.from_mapping(row))],
+        "authority": [row for row in authority_rejections if is_blocking_compile_record(CompileRecord.from_mapping(row))],
     }
     total_count = (
         len(source_parse_rejections)

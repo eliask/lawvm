@@ -123,9 +123,9 @@ def _rejection_rule_histogram(
 
 
 def _blocking_compile_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    from lawvm.core.compile_records import is_blocking_compile_record
+    from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 
-    return [row for row in rows if is_blocking_compile_record(row)]
+    return [row for row in rows if is_blocking_compile_record(CompileRecord.from_mapping(row))]
 
 
 def _diagnostic_owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
