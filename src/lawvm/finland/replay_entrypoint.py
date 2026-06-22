@@ -55,6 +55,7 @@ from lawvm.finland.replay_product_assembly import (
     ReplayProductAssemblyRequest,
     assemble_replay_products,
 )
+from lawvm.finland.replay_products import aggregate_structural_stage
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, resolve_replay_xml_request
 from lawvm.finland.statute import OracleSelectorInfo, ReplayResult
 
@@ -244,6 +245,22 @@ def replay_xml(
         products.apply_authority = aggregate_replay_authority(
             write_receipts=signals.write_receipts,
             findings=signals.findings,
+        )
+
+        # StageResult endgame WAIST #3: aggregate the per-op structural
+        # write-footprint accounts over every landed WriteReceipt of this replay
+        # (the same receipts that feed ``apply_authority``). Carried on
+        # ReplayProducts so the certificate dossier routes the structural stage
+        # into a per-stage account subroot instead of re-deriving it. The
+        # aggregate is a pure fold over the landed receipts: union footprint
+        # coverage (all owned) + the union of any blocking unexplained-divergence
+        # residuals (EMPTY on the green corpus, where every container write
+        # explains its boundary). The structural value is the replay's
+        # materialized IR tree (always present, even when the materialization
+        # stage account itself is not built on the plain path).
+        products.structural_stage = aggregate_structural_stage(
+            materialized_ir=products.materialized_state.ir,
+            write_receipts=tuple(signals.write_receipts),
         )
 
         return ReplayResult(

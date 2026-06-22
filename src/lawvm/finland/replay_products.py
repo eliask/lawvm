@@ -72,6 +72,7 @@ from lawvm.finland.tree_invariant_allowances import (
 
 if TYPE_CHECKING:
     from lawvm.core.stage_result import AuthoritySurface, StageResult
+    from lawvm.core.write_receipt import WriteReceipt
     from lawvm.finland.replay_fold_timeline_backfill import FoldTimelineBackfillRecord
     from lawvm.finland.timeline_version_dedupe import TimelineVersionDedupeRecord
     from lawvm.finland.statute import ReplayState, StatuteContext
@@ -186,6 +187,21 @@ class ReplayProducts:
     # re-derives it descriptively from ``bundle.result`` so the writer never
     # trusts an un-set carrier.
     apply_authority: Optional["AuthoritySurface"] = None
+    # StageResult-endgame WAIST #3: the per-replay STRUCTURAL (IRNode /
+    # LegalAddress) write-footprint account aggregated over every landed
+    # WriteReceipt of the replay. Each landed write already carries the canonical
+    # ``structural_stage_result(post_ir, receipt)`` per-op account (coverage =
+    # declared footprint owned, unit="paths"; one blocking ``unowned_violation``
+    # residual iff ``receipt.divergence_explained is False``). This field carries
+    # the UNION fold over those per-op accounts so the certificate dossier routes
+    # the structural stage into a per-stage account subroot instead of re-deriving
+    # it. ``None`` until the landed receipts are known (set at ReplayResult
+    # assembly beside ``apply_authority``). On the green corpus every container
+    # write has ``divergence_explained=True`` → empty blocking residuals → clean
+    # coverage. The apply-decline VERDICT stays on the existing #3 apply ``Finding``
+    # channel (``apply_structure_ops``); this carrier is the additive checkable
+    # account.
+    structural_stage: Optional["StageResult[IRNode]"] = None
 
     def __post_init__(self) -> None:
         temporal_events = tuple(self.temporal_events)
@@ -227,6 +243,94 @@ class ReplayProducts:
     def identity_ledger(self) -> IdentityLedger:
         """Frozen read-only lineage snapshot over replay migration events."""
         return IdentityLedger.from_events(self.migration_events)
+
+
+def aggregate_structural_stage(
+    *,
+    materialized_ir: IRNode,
+    write_receipts: tuple["WriteReceipt", ...],
+) -> "StageResult[IRNode]":
+    """Fold the per-op structural write-footprint accounts (WAIST #3).
+
+    Each landed ``WriteReceipt`` carries the canonical per-op structural account
+    via :func:`lawvm.core.tree_ops.structural_stage_result` (coverage = declared
+    footprint owned, ``unit="paths"``; one blocking ``unowned_violation`` residual
+    iff ``receipt.divergence_explained is False``). This aggregates those per-op
+    accounts over every landed write of the replay into the single
+    ``StageResult[IRNode]`` the certificate dossier routes:
+
+      * ``value``     — ``materialized_ir`` (the replay's materialized structural
+        product tree).
+      * ``coverage``  — the SUM of the per-op footprint partitions: ``owned`` =
+        sum of every landed write's declared-footprint path count;
+        ``violation`` = number of landed writes whose BOUND→LANDED divergence is
+        unexplained (each contributes exactly one blocking residual, matching the
+        per-op account); ``unit="paths"``, ``total = owned + violation`` so
+        ``is_partition()`` holds.
+      * ``residuals`` — the union of the per-op blocking ``unowned_violation``
+        residuals (one per landed write that BOUND a target and landed elsewhere
+        with no named recovery rule — the exact #3 structural mutation-boundary
+        condition). EMPTY on the green corpus (every bound container write
+        explains its boundary).
+
+    BOUNDARY SEMANTICS (the #3/#7 contract, NOT a heuristic): a receipt with
+    ``bound_target_path is None`` carried no resolver binding at this granularity
+    (the op-level apply write — ``apply_resolved_op._collect_op_write_receipt``).
+    It has NO bound→landed divergence to explain and the apply path does NOT block
+    it today; the #3 structural residual fires ONLY for a bound target that
+    diverged with no named rule (see ``apply_replay_authorization`` /
+    ``_receipt_boundary_authorized``). Such a receipt therefore contributes its
+    landed footprint as ``owned`` and emits NO residual — treating it as an
+    unexplained divergence would manufacture a violation a write that legitimately
+    stands today never had (a mapping error, not a finding). ``divergence_explained``
+    alone is NOT the test, because for a ``bound=None`` receipt it is vacuously
+    False (``None != landed_primary_path``).
+      * ``evidence``  — ``EMPTY_EVIDENCE``: the per-op source anchors live on the
+        receipts; the aggregate carries the partition account, not a merged
+        witness bundle (the witnesses ride ``apply_authority`` / receipts).
+      * ``findings``  — ``()`` (the apply layer owns the structural-divergence
+        ``Finding`` verdict; this carrier is the additive checkable account).
+      * ``authority`` — ``NEUTRAL_AUTHORITY`` (Pro §8 firewall; execution
+        authorization rides ``apply_authority`` (#7), not this account).
+    """
+    from lawvm.core.stage_result import (
+        EMPTY_EVIDENCE,
+        NEUTRAL_AUTHORITY,
+        CoverageCertificate,
+        Residual,
+        StageResult,
+    )
+    from lawvm.core.tree_ops import structural_stage_result
+
+    owned = 0
+    residuals: list[Residual] = []
+    for receipt in write_receipts:
+        if receipt.bound_target_path is None:
+            # No resolver binding at this granularity: no bound→landed divergence
+            # to account. The landed footprint is owned; emit no residual (the #3
+            # apply consumer / replay-authority gate stand such a write today).
+            owned += len(receipt.declared_footprint)
+            continue
+        per_op = structural_stage_result(materialized_ir, receipt)
+        owned += per_op.coverage.owned
+        residuals.extend(per_op.residuals)
+
+    violation = len(residuals)
+    coverage = CoverageCertificate(
+        unit="paths",
+        total=owned + violation,
+        owned=owned,
+        violation=violation,
+        totality_claimed=True,
+    )
+    return StageResult(
+        value=materialized_ir,
+        evidence=EMPTY_EVIDENCE,
+        residuals=tuple(residuals),
+        findings=(),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
 
 
 def _assert_finland_timeline_safe_ops(lo_ops_out: list[LegalOperation]) -> None:

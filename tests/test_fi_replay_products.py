@@ -6641,3 +6641,113 @@ def test_replay_xml_1999_1352_places_inserted_section_headings_after_num() -> No
         )
         heading = next(child for child in section.children if child.kind is IRNodeKind.HEADING)
         assert irnode_to_text(heading).strip() == heading_text
+
+
+# ---------------------------------------------------------------------------
+# StageResult endgame WAIST #3 — the structural write-footprint carrier
+# ---------------------------------------------------------------------------
+
+
+def test_structural_stage_carrier_is_populated_and_clean_on_green_corpus(
+    replay_1997_1339_finlex_oracle_full_products: ReplayResult,
+) -> None:
+    """The #3 carrier carries a clean structural footprint account on green corpus.
+
+    ``ReplayProducts.structural_stage`` aggregates the per-op
+    ``structural_stage_result`` accounts over every landed write. On the green
+    corpus every container write explains its boundary
+    (``divergence_explained=True``) → empty blocking residuals + clean coverage.
+    This is a CONTRACT test: the cert-consumer + severance fire-drill land in the
+    next (cert) lane.
+    """
+    replay = replay_1997_1339_finlex_oracle_full_products
+    stage = replay.products.structural_stage
+    assert stage is not None, "full-products replay must carry the #3 structural stage"
+    # The carrier is anchored on the replay's materialized IR tree.
+    assert stage.value is replay.products.materialized_state.ir
+    # Coverage: footprint paths, all owned, a genuine partition, and clean.
+    assert stage.coverage.unit == "paths"
+    assert stage.coverage.owned > 0, "the replay landed writes with a declared footprint"
+    assert stage.coverage.is_partition()
+    assert stage.coverage.is_clean
+    assert stage.coverage.violation == 0
+    # No blocking residuals: every container write explains its boundary.
+    assert stage.residuals == ()
+    assert not stage.has_blocking_residual
+    # Authority is the neutral firewall surface (authorization rides #7).
+    assert stage.authority.is_neutral
+
+
+def test_aggregate_structural_stage_surfaces_unexplained_divergence() -> None:
+    """A landed write with unexplained divergence becomes one blocking residual.
+
+    Aggregator unit test (no corpus): one receipt whose ``bound != landed`` with
+    no named recovery rule (``divergence_explained is False``) folds into exactly
+    one blocking ``unowned_violation`` residual and ``coverage.violation == 1``;
+    an explained write contributes only owned footprint.
+    """
+    from lawvm.core.write_receipt import WriteReceipt
+    from lawvm.finland.replay_products import aggregate_structural_stage
+
+    section_1: tuple[tuple[str, str], ...] = (("section", "1"),)
+    section_2: tuple[tuple[str, str], ...] = (("section", "2"),)
+    explained = WriteReceipt(
+        op_id="op-explained",
+        helper="fi.apply.resolved_op_write",
+        action="replace",
+        bound_target_path=section_1,
+        landed_primary_path=section_1,
+        replaced_paths=(section_1,),
+    )
+    unexplained = WriteReceipt(
+        op_id="op-unexplained",
+        helper="fi.apply.resolved_op_write",
+        action="replace",
+        bound_target_path=section_1,
+        landed_primary_path=section_2,
+        replaced_paths=(section_2,),
+    )
+    materialized_ir = IRNode(kind=IRNodeKind.BODY, children=())
+
+    stage = aggregate_structural_stage(
+        materialized_ir=materialized_ir,
+        write_receipts=(explained, unexplained),
+    )
+    assert stage.value is materialized_ir
+    assert stage.coverage.unit == "paths"
+    # Two landed writes each declare one footprint path → owned == 2.
+    assert stage.coverage.owned == 2
+    assert stage.coverage.violation == 1
+    assert stage.coverage.is_partition()
+    assert not stage.coverage.is_clean
+    assert len(stage.residuals) == 1
+    residual = stage.residuals[0]
+    assert residual.kind == "unowned_violation"
+    assert residual.blocking is True
+    assert stage.has_blocking_residual
+
+    # Empty receipts → trivially clean, empty account.
+    empty = aggregate_structural_stage(materialized_ir=materialized_ir, write_receipts=())
+    assert empty.coverage.owned == 0
+    assert empty.coverage.violation == 0
+    assert empty.residuals == ()
+    assert empty.coverage.is_clean
+
+    # A bound=None op-level receipt (no resolver binding) has no bound→landed
+    # divergence to account: its footprint is owned, it emits NO residual (the
+    # #3/#7 boundary contract — the green FI corpus is entirely such receipts).
+    bound_none = WriteReceipt(
+        op_id="op-bound-none",
+        helper="fi.apply.resolved_op_write",
+        action="replace",
+        bound_target_path=None,
+        landed_primary_path=section_1,
+        replaced_paths=(section_1,),
+    )
+    none_stage = aggregate_structural_stage(
+        materialized_ir=materialized_ir, write_receipts=(bound_none,)
+    )
+    assert none_stage.coverage.owned == 1
+    assert none_stage.coverage.violation == 0
+    assert none_stage.residuals == ()
+    assert none_stage.coverage.is_clean
