@@ -158,29 +158,21 @@ def _is_each_place_instruction(raw_text: str) -> bool:
     later occurrences unmodified — a mutation-scope error.
     """
     return _EACH_PLACE_RE.search(raw_text) is not None
+# Effective-date phrase family (AGENTS.md §2.4: previously 7 overlapping
+# regex variants of one phrase family; merged into 4 named patterns by
+# unifying the "effective" / "take effect" trigger words, which are
+# synonymous drafting verbs).
+#
 # whether the instruction is in force for the requested point-in-time.
-_EFFECTIVE_AFTER_ENACTMENT_RE = re.compile(
-    r"effective\s+(?:on\s+)?(?:the\s+date\s+that\s+is\s+)?"
+_EFFECTIVE_OR_TAKE_EFFECT_AFTER_RE = re.compile(
+    r"(?:effective|take\s+effect)\s+(?:on\s+)?(?:the\s+date\s+that\s+is\s+)?"
     r"(?P<n>\d+)\s+(?P<unit>year|month|day)s?\s+after\s+"
     r"(?:the\s+date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act|\b(?P<base_month>[A-Z][a-z]+)\s+"
     r"(?P<base_day>\d{1,2}),?\s+(?P<base_year>\d{4}))",
     re.IGNORECASE,
 )
-_EFFECTIVE_ON_ENACTMENT_RE = re.compile(
-    r"effective\s+(?:on\s+)?(?:the\s+)?date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act",
-    re.IGNORECASE,
-)
-# Some effective-date paragraphs use the verb "take effect" rather than
-# "effective" (e.g. "shall take effect on the date that is 1 year after ...").
-_TAKE_EFFECT_AFTER_ENACTMENT_RE = re.compile(
-    r"take\s+effect\s+(?:on\s+)?(?:the\s+date\s+that\s+is\s+)?"
-    r"(?P<n>\d+)\s+(?P<unit>year|month|day)s?\s+after\s+"
-    r"(?:the\s+date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act|\b(?P<base_month>[A-Z][a-z]+)\s+"
-    r"(?P<base_day>\d{1,2}),?\s+(?P<base_year>\d{4}))",
-    re.IGNORECASE,
-)
-_TAKE_EFFECT_ON_ENACTMENT_RE = re.compile(
-    r"take\s+effect\s+(?:on\s+)?(?:the\s+)?date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act",
+_EFFECTIVE_OR_TAKE_EFFECT_ON_RE = re.compile(
+    r"(?:effective|take\s+effect)\s+(?:on\s+)?(?:the\s+)?date\s+of\s+(?:the\s+)?enactment\s+of\s+this\s+Act",
     re.IGNORECASE,
 )
 _EFFECTIVE_ABSOLUTE_RE = re.compile(
@@ -319,10 +311,8 @@ def _has_effective_date_phrase(text: str) -> bool:
     if "effective" not in lowered and "take effect" not in lowered:
         return False
     return (
-        _EFFECTIVE_AFTER_ENACTMENT_RE.search(text) is not None
-        or _EFFECTIVE_ON_ENACTMENT_RE.search(text) is not None
-        or _TAKE_EFFECT_AFTER_ENACTMENT_RE.search(text) is not None
-        or _TAKE_EFFECT_ON_ENACTMENT_RE.search(text) is not None
+        _EFFECTIVE_OR_TAKE_EFFECT_AFTER_RE.search(text) is not None
+        or _EFFECTIVE_OR_TAKE_EFFECT_ON_RE.search(text) is not None
         or _EFFECTIVE_ABSOLUTE_RE.search(text) is not None
     )
 
@@ -359,19 +349,14 @@ def _parse_effective_date(text: str, enacted: str) -> str:
     lowered = text.lower()
     if "effective" not in lowered and "take effect" not in lowered:
         return ""
-    for pattern in (
-        _EFFECTIVE_AFTER_ENACTMENT_RE,
-        _TAKE_EFFECT_AFTER_ENACTMENT_RE,
-    ):
-        m = pattern.search(text)
-        if m is not None:
-            return _parse_after_enactment_match(m, enacted)
-    for pattern in (_EFFECTIVE_ON_ENACTMENT_RE, _TAKE_EFFECT_ON_ENACTMENT_RE):
-        if pattern.search(text) is not None:
-            if not enacted:
-                return ""
-            parsed = _parse_iso_date_or_none(enacted)
-            return parsed.isoformat() if parsed else ""
+    m = _EFFECTIVE_OR_TAKE_EFFECT_AFTER_RE.search(text)
+    if m is not None:
+        return _parse_after_enactment_match(m, enacted)
+    if _EFFECTIVE_OR_TAKE_EFFECT_ON_RE.search(text) is not None:
+        if not enacted:
+            return ""
+        parsed = _parse_iso_date_or_none(enacted)
+        return parsed.isoformat() if parsed else ""
     m = _EFFECTIVE_ABSOLUTE_RE.search(text)
     if m is not None:
         month = _MONTHS.get(m.group("month").lower())
