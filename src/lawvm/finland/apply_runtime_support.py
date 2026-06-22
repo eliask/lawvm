@@ -1351,11 +1351,18 @@ def _emit_section_snapshot(
         def _whole_section_insert_can_own_snapshot(rop: ResolvedOp) -> bool:
             if not rop.is_insert_action:
                 return False
+            if temporary_signal_for_op(rop):
+                # First-time temporary section inserts often need post-apply
+                # normalization/rebasing.  If an exact prior section snapshot
+                # ended before this insert, the fold may still carry stale
+                # background content at that address; the complete source
+                # section payload is the stronger overlay/rebirth witness.
+                return bool(op_source.expires) and _insert_target_is_not_live_before_effective()
             # A whole-section insert after a prior exact target ended owns the
             # reborn section child surface.  Initial inserts and existing-section
             # insert/merge families still need the post-apply fold snapshot
             # because source payload may need ontology normalization or rebasing.
-            return (not temporary_signal_for_op(rop)) and _insert_target_is_not_live_before_effective()
+            return _insert_target_is_not_live_before_effective()
 
         for rop in group_rops:
             if not rop.targets_whole_unit("section"):

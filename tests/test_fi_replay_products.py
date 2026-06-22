@@ -978,6 +978,36 @@ def test_replay_xml_1987_1250_chapter_scoped_kumotaan_repeals_right_section() ->
     assert " ".join(irnode_to_text(untouched).split()).startswith("5 d § Pääomalainalle")
 
 
+@pytest.mark.slow
+def test_replay_xml_1996_931_temporary_whole_section_insert_snapshots_source_payload() -> None:
+    """2023/1191 §43a is a temporary whole-section overlay, not stale fold text."""
+    lo_ops: list[LegalOperation] = []
+    replay = pinned_replay(
+        "1996/931",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    snapshot = next(
+        op
+        for op in lo_ops
+        if op.op_id == "snapshot_section_43a"
+        and op.source is not None
+        and op.source.statute_id == "2023/1191"
+    )
+    assert snapshot.payload is not None
+    snapshot_text = " ".join(irnode_to_text(snapshot.payload).split())
+    assert "616/2021" in snapshot_text
+    assert "vuosina 2004" not in snapshot_text
+
+    section = replay.materialized_state.find_node("section", "43a", "chapter", "6")
+    assert section is not None
+    rendered = " ".join(irnode_to_text(section).split())
+    assert "616/2021" in rendered
+    assert "vuosina 2004" not in rendered
+
+
 def test_replay_xml_2011_806_pure_kumotaan_subsection_keeps_chapter_scope() -> None:
     """2025/1104 repeals 8 luvun 21 §:n 3 momentti, not chapter 3's §21."""
     lo_ops: list[LegalOperation] = []
