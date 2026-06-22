@@ -23,6 +23,7 @@ from typing import Any, Iterator, Optional, cast
 from lxml import etree
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.ir_helpers import kind_str
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.norway.grafter import lovdata_amendment_filename_to_id, lovdata_filename_to_id
 
@@ -445,18 +446,55 @@ def load_no_amendment_artifact_bytes(
     return None
 
 
+# §§ 1.9 / 1.10 — module-scope IR-operative-content predicate.
+#
+# The previous shape was a nested closure inside ``load_no_current_law_ids``
+# with this membership test:
+#
+#     if getattr(node, "kind", "") in {"section", "subsection", "item", "sentence"}:
+#
+# which silently returned False on every IRNode whose ``kind`` is an
+# ``IRNodeKind`` enum member (enum members don't equal their string values).
+# The OR-clause's right side (``_payload_has_operative_content``) was the
+# sole authority — the IR walk was dead code, an invisible §1.10 heuristic
+# that lied about whether the IR carried operative content.
+#
+# The fix uses ``kind_str`` coercion (the same pattern as
+# ``_no_kind_value`` in verify.py:269); both enum and plain-str kinds now
+# participate. Hoisted to module scope so the predicate is unit-testable
+# directly against synthetic IRNodes.
+_NO_OPERATIVE_KINDS: frozenset[str] = frozenset(
+    {"section", "subsection", "item", "sentence"}
+)
+
+
+def _has_operative_content(node: Any) -> bool:
+    """Return True if *node* (or any descendant) carries operative section content.
+
+    A node is operative when its ``kind`` is one of the leaf-bearing legal-unit
+    kinds (section / subsection / item / sentence) AND it has either populated
+    text or non-empty children. The IR-walk recurses into any non-leaf node
+    (the body, chapter, …) so the recursive case remains the authority when
+    the inspected level is a container, not a leaf.
+
+    Honors both IRNode with ``IRNodeKind`` enum kind and any legacy str-typed
+    kind — coercion goes through :func:`lawvm.core.ir_helpers.kind_str`, the
+    shared canonical-string projection (mirroring ``_no_kind_value`` in
+    verify.py).
+    """
+    kind_value = kind_str(getattr(node, "kind", ""))
+    if kind_value in _NO_OPERATIVE_KINDS:
+        if getattr(node, "text", "") or getattr(node, "children", []):
+            return True
+    return any(_has_operative_content(child) for child in getattr(node, "children", []))
+
+
 def load_no_current_law_ids(
     source_path: Path | None = None,
     *,
     diagnostics_out: list[dict[str, Any]] | None = None,
 ) -> set[str]:
     from lawvm.norway.grafter import parse_no_statute
-
-    def _has_operative_content(node: Any) -> bool:
-        if getattr(node, "kind", "") in {"section", "subsection", "item", "sentence"}:
-            if getattr(node, "text", "") or getattr(node, "children", []):
-                return True
-        return any(_has_operative_content(child) for child in getattr(node, "children", []))
 
     def _payload_has_operative_content(payload: bytes) -> bool:
         text = payload.decode("utf-8", errors="ignore")
