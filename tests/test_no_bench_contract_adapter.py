@@ -373,7 +373,7 @@ _REAL_ARCHIVE = _REPO_ROOT / "data" / "norway.farchive"
     not _REAL_CORPUS.exists() or not _REAL_ARCHIVE.exists(),
     reason="requires the curated corpus (data/norway/bench_corpus.csv) and the local Lovdata archive (data/norway.farchive)",
 )
-def test_no_bench_main_runs_curated_corpus_to_zero_crashes() -> None:
+def test_no_bench_main_runs_curated_corpus_to_zero_crashes(tmp_path) -> None:
         """``lawvm -j no bench`` runs every corpus row without CRASH.
 
         The contract adapter above tests the comparator's mapping logic in
@@ -392,7 +392,15 @@ def test_no_bench_main_runs_curated_corpus_to_zero_crashes() -> None:
 
         from lawvm.tools.no_bench import no_bench_main
 
-        args = SimpleNamespace(corpus=None, data_dir=None, label="adapter-smoke")
+        # Isolate the history CSV to tmp_path so test runs do not pollute the
+        # repo's real data/norway_bench_history.csv with adapter-smoke rows
+        # (each test invocation would otherwise append a real-history row).
+        # An empty file at tmp_path works without altering the summary
+        # contract.
+        history_csv = tmp_path / "norway_bench_history.csv"
+        args = SimpleNamespace(
+            corpus=None, data_dir=None, label="adapter-smoke", history_path=history_csv
+        )
         buf = io.StringIO()
         rc = no_bench_main(args)
         assert rc == 0
@@ -410,3 +418,6 @@ def test_no_bench_main_runs_curated_corpus_to_zero_crashes() -> None:
         assert "crashed: 0" in summary, summary
         # Residue reconciliation holds across all real rows end-to-end.
         assert "Residue reconciliation: OK" in summary, summary
+        # History-write spanned both runs and reported the isolated path.
+        assert history_csv.exists()
+        assert str(history_csv) in summary

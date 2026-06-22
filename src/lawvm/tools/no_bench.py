@@ -348,6 +348,7 @@ def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentio
     print(f"  Corpus     : {corpus_path}")
     print(f"  Rows run   : {len(results)}")
     print(f"  Workers    : {workers}")
+    _persist_history(results, label, getattr(args, "history_path", None))
     return 0
 
 
@@ -356,6 +357,57 @@ def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentio
 # data_dir from this global so ProcessPoolExecutor batches do not need to
 # pickle the (heavy) archive connection per task.
 _WORKER_DATA_DIR: "Path | None" = None
+
+
+def _persist_history(
+    results: list[BenchUnitResult],
+    label: str,
+    history_path: "Path | None" = None,
+) -> None:
+    """Append one NO bench run summary row to ``data/norway_bench_history.csv``.
+
+    Mirrors EE's ``data/ee_benchmark_history.csv`` convention; the CSV is
+    byte-compatible with the shared ``bench_aggregate.HISTORY_HEADER`` schema
+    FI uses. Per-run distribution → ``(timestamp, label, mean, n, perfect,
+    above_99, above_95, below_90)`` so trend tracking across labelled runs
+    works via ``abstracted = load_history(...)`` and the regression-guard
+    API ``bench_aggregate.find_regressions``.
+
+    ``history_path`` is an optional override (used by the contract-adapter
+    smoke test to isolate the file to tmp_path); when ``None``, the default
+    path ``data/norway_bench_history.csv`` at the repository root is used.
+
+    Failure to append never aborts the run: history persistence is observability,
+    not load-bearing for the SCORED verdict. A ValueError at the
+    append-history layer surfaces as a stderr diagnostic so the user sees
+    something went wrong without losing the bench numbers already printed.
+    """
+    import datetime as _datetime
+    import sys as _sys
+
+    from lawvm.core.bench_aggregate import append_history, compute_distribution
+
+    if history_path is None:
+        repo_root = Path(__file__).resolve().parents[3]
+        history_path = repo_root / "data" / "norway_bench_history.csv"
+    distribution = compute_distribution(results)
+    timestamp = (
+        _datetime.datetime.now(_datetime.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+    try:
+        append_history(history_path, timestamp, label, distribution)
+    except OSError as exc:
+        # Filesystem hiccup (parent not creatable, disk full, ...). Never
+        # raise into the CLI surface: the bench numbers printed above stand.
+        print(
+            f"  history: append to {history_path} failed: {exc}",
+            file=_sys.stderr,
+        )
+        return
+    print(f"  History    : {history_path}")
 
 
 def _no_bench_score_one_worker(row: tuple[str, str, str]) -> BenchUnitResult:
