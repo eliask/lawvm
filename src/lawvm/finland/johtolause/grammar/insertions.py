@@ -2237,10 +2237,12 @@ def _foldable_anaphoric_heading_arm_end(scan: _Scan, start: int) -> int | None:
     non-anaphoric ``N §:n edelle …`` form (a §:GEN target before EDELLA), which
     it DOES emit a node for.
 
-    The residue is safe to skip when it is terminal, or when the next separator
-    opens another plain insertion arm. It is deliberately not safe before
-    ``jolloin`` / move tails or unrelated prose: those clauses stay declined so
-    the legacy parser owns their wider control flow.
+    The residue is safe to skip when it is terminal, when the next separator
+    opens another plain insertion arm, or when the next separator opens a typed
+    ``JOLLOIN_MOVE`` consequence-renumber sentinel.  The latter is still owned
+    by the parser driver: this helper returns the separator position so the
+    outer loop can consume the sentinel and emit the existing
+    ``fi.jolloin_renumber`` group.  Unrelated prose remains declined.
     """
     toks = scan.cur.tokens
     n = len(toks)
@@ -2271,6 +2273,8 @@ def _foldable_anaphoric_heading_arm_end(scan: _Scan, start: int) -> int | None:
     if toks[j].cat not in {"COMMA", "CONJ", "SEKA"}:
         return None
     k = j + 1
+    if k < n and toks[k].cat == "JOLLOIN_MOVE":
+        return j
     if k < n and toks[k].cat == "DOC" and toks[k].case == "ILL":
         k += 1
     if k < n and toks[k].cat == "UUSI":
