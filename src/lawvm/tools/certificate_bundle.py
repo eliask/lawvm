@@ -292,13 +292,29 @@ def _sha256_rendered(data: bytes) -> str:
 
 
 def stage_residual_subroot(rows: Sequence[Mapping[str, Any]]) -> str:
-    """Subroot over one stage's canonical residual rows (order-independent set)."""
-    return set_root(D_STAGE_RESIDUAL_LEDGER, [leaf_hash(D_STAGE_RESIDUAL_LEDGER, row) for row in rows])
+    """Subroot over one stage's canonical residual rows (order-independent set).
+
+    ``StageResult``/``Residual`` permit duplicate residual records (no dedup), and
+    ``residual_row`` drops distinguishing context, so two residuals differing only
+    in dropped context map to identical rows. ``set_root`` has SET semantics — a
+    repeated leaf is the same set member — so the leaf-hash list is de-duplicated
+    before ``set_root`` (which rejects duplicate leaves). The committed root is
+    unchanged when no duplicates exist (0-delta); without dedup an identical-row
+    duplicate would crash the whole certificate build.
+    """
+    leaves = list(dict.fromkeys(leaf_hash(D_STAGE_RESIDUAL_LEDGER, row) for row in rows))
+    return set_root(D_STAGE_RESIDUAL_LEDGER, leaves)
 
 
 def stage_finding_subroot(rows: Sequence[Mapping[str, Any]]) -> str:
-    """Subroot over one stage's canonical finding rows (order-independent set)."""
-    return set_root(D_STAGE_FINDING_LEDGER, [leaf_hash(D_STAGE_FINDING_LEDGER, row) for row in rows])
+    """Subroot over one stage's canonical finding rows (order-independent set).
+
+    Findings can likewise collapse to identical canonical rows; ``set_root`` is a
+    SET so the leaf-hash list is de-duplicated first (0-delta when no duplicates,
+    no crash when there are).
+    """
+    leaves = list(dict.fromkeys(leaf_hash(D_STAGE_FINDING_LEDGER, row) for row in rows))
+    return set_root(D_STAGE_FINDING_LEDGER, leaves)
 
 
 def stage_coverage_subroot(row: Mapping[str, Any]) -> str:
@@ -363,6 +379,45 @@ def stage_accounts_root(account_rows: Sequence[Mapping[str, Any]]) -> str:
     )
 
 
+def _verify_coverage_row_arithmetic(stage: str, coverage_row: Mapping[str, Any]) -> None:
+    """Re-derive the coverage partition FROM the committed counts, not its hash.
+
+    ``stage_coverage_subroot`` only proves the committed ``coverage_row`` hashes to
+    its committed ``coverage_subroot`` (circular self-consistency). It never checks
+    that the four classes actually sum to ``total`` nor that the committed
+    ``is_partition`` matches the counts. So a forged row like ``{total:999,
+    owned:0, benign:0, residual:0, violation:0, is_partition:true}`` would pass the
+    hash recompute untouched. This re-derives both verdicts from the counts:
+
+    * when totality is claimed, ``owned+benign+residual+violation`` MUST equal
+      ``total`` (no leaked, unaccounted units);
+    * the committed ``is_partition`` MUST equal the recomputed
+      ``totality_claimed and partition_total == total`` (mirrors
+      :meth:`CoverageCertificate.is_partition`).
+    """
+    owned = int(coverage_row.get("owned", 0))
+    benign = int(coverage_row.get("benign", 0))
+    residual = int(coverage_row.get("residual", 0))
+    violation = int(coverage_row.get("violation", 0))
+    total = int(coverage_row.get("total", 0))
+    totality_claimed = bool(coverage_row.get("totality_claimed", False))
+    partition_total = owned + benign + residual + violation
+    if totality_claimed:
+        _require(
+            partition_total == total,
+            f"stage {stage!r} coverage claims totality but its classes "
+            f"({owned}+{benign}+{residual}+{violation}={partition_total}) do not "
+            f"sum to total {total}",
+        )
+    recomputed_is_partition = totality_claimed and partition_total == total
+    _require(
+        bool(coverage_row.get("is_partition", False)) == recomputed_is_partition,
+        f"stage {stage!r} coverage is_partition "
+        f"{bool(coverage_row.get('is_partition', False))!r} does not recompute "
+        f"from its counts (expected {recomputed_is_partition!r})",
+    )
+
+
 def _verify_stage_accounts(account_rows: Sequence[Mapping[str, Any]]) -> str:
     """Recompute the per-stage subroots FROM the committed rows and re-aggregate.
 
@@ -370,6 +425,11 @@ def _verify_stage_accounts(account_rows: Sequence[Mapping[str, Any]]) -> str:
     was dropped/severed before the dossier, or whose committed subroot disagrees
     with its committed rows, makes this recompute diverge from the committed
     `stage_accounts_root` (BundleSelfCheckError) — the guard-liveness property.
+
+    The coverage check is two-layered: the subroot recompute proves the committed
+    coverage_row hashes to its committed coverage_subroot (self-consistency), and
+    :func:`_verify_coverage_row_arithmetic` re-derives the partition/totality
+    verdict from the counts so a forged row with inconsistent counts cannot pass.
     """
     for row in account_rows:
         _require(
@@ -384,6 +444,7 @@ def _verify_stage_accounts(account_rows: Sequence[Mapping[str, Any]]) -> str:
             stage_coverage_subroot(row["coverage_row"]) == row["coverage_subroot"],
             f"stage {row['stage']!r} coverage_subroot does not recompute from its row",
         )
+        _verify_coverage_row_arithmetic(row["stage"], row["coverage_row"])
         _require(
             stage_account_root(row) == row["stage_account_root"],
             f"stage {row['stage']!r} stage_account_root does not recompute from its subroots",
