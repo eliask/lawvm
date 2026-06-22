@@ -1253,6 +1253,29 @@ def _parse_section_list_labels(raw: str) -> Set[str]:
     return labels
 
 
+def _subsection_clause_section_labels(raw: str) -> Set[str]:
+    """Section labels for a subsection-scoped sunset clause's ``group(1)``.
+
+    The subsection anchors (``… §:n N momentti …``) capture in ``group(1)``
+    everything up to the last ``§:n``. Two shapes:
+
+    * a SINGLE owning section ("51" from "Lain 51 §:n 5 momentti …") — emit it as
+      the section-scoped granularity hint, exactly as before;
+    * a MIXED multi-provision list (``group(1)`` carries an embedded ``§``, e.g.
+      "3 §:n otsikko sekä 3 ja 4 momentti, 4 §:n …" or "1 §:n 2 momentti, … 11 §,
+      … 22 §:n 1 momentti") — emit NOTHING here. The momentti/otsikko scopes are
+      owned by the provision path + whole-section promotion guard, and any genuine
+      whole-section run in the list ("58 c–58 h ja 59 a–59 e §") is already taken
+      by the dedicated whole-section anchor (``_TEMPORARY_SECTION_EXPIRY_RE``);
+      re-deriving labels here over-expires sections that keep most of their content
+      (the bug EH1's correct section-list labels surfaced — the labels used to be
+      harmless junk) and duplicates the whole-section anchor's expiries.
+    """
+    if "§" in raw:
+        return set()
+    return _parse_section_list_labels(raw)
+
+
 _temporary_section_expiry_cache: dict[tuple[int, str, int], tuple[tuple[str, Set[str], dt.date], ...]] = {}
 
 
@@ -1287,6 +1310,38 @@ _TEMPORARY_SECTION_EXPIRY_RE = re.compile(
     rf"\s+(?:ovat|on)\s+voimassa\s+(?:\d{{1,2}}\s+päivästä\s+[a-zäöå]+\s+)?"
     rf"(?P<datetail>\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})",
     re.IGNORECASE,
+)
+# Per-date split of a `_TEMPORARY_SECTION_EXPIRY_RE` match span (group 0). The
+# anchor exposes only one ``datetail`` (its LAST date), which is correct when the
+# whole coordinated list shares one date ("59 §:n 2 momentti ja 62 § ovat voimassa
+# … 2025"). When the span instead carries MORE THAN ONE ``… (ovat|on) voimassa …
+# <date>`` segment (sections coordinated by "ja"/"sekä" but each with its OWN date,
+# e.g. "64 a §:n 3 momentti on voimassa … 2025 ja lain 127 f § on voimassa …
+# 2027"), the single last-date cannot be attributed to every section. These two
+# patterns let the override builder count the date segments and, only when >1,
+# attribute each date to the sections in ITS segment. A single-date span is left
+# to the unchanged whole-list path, so those cases stay byte-identical.
+# lawvm-regex: per-date segmenter for a multi-date temporary-expiry span; section
+# structure delegated to _parse_section_list_labels, date to the shared match_fi_date
+_TEMPORARY_SECTION_EXPIRY_DATE_SEGMENT_RE = re.compile(
+    r"(?:ovat|on)\s+voimassa\s+(?:\d{1,2}\s+päivästä\s+[a-zäöå]+\s+)?"
+    r"\d{1,2}\s+päivään\s+[a-zäöå]+\s+\d{4}",
+    re.IGNORECASE,
+)
+_TEMPORARY_SECTION_EXPIRY_PER_DATE_RE = re.compile(
+    r"(?P<sections>.+?)\s*(?:ovat|on)\s+voimassa\s+"
+    r"(?:\d{1,2}\s+päivästä\s+[a-zäöå]+\s+)?"
+    r"(?P<datetail>\d{1,2}\s+päivään\s+[a-zäöå]+\s+\d{4})",
+    re.IGNORECASE,
+)
+# Leading connective / cited-act head that a later per-date segment carries over
+# from the preceding "ja lain …"/"sekä asetuksen …" join; stripped so the section
+# tokenizer sees only the section list (e.g. "ja lain 127 f §" -> "127 f §").
+_TEMPORARY_SECTION_EXPIRY_SEGMENT_HEAD_RE = re.compile(
+    r"^\s*(?:ja|sekä|,|;)\s+", re.IGNORECASE
+)
+_TEMPORARY_SECTION_EXPIRY_SEGMENT_CITED_HEAD_RE = re.compile(
+    r"^(?:Lain|Asetuksen|Päätöksen|Sen)\s+", re.IGNORECASE
 )
 _TEMPORARY_ADDED_SECTION_EXPIRY_RE = re.compile(
     rf"(?:Lakiin|Asetukseen|Päätökseen)\s+väliaikaisesti\s+(?:lisätty|lisätyt)\s+"
@@ -1576,6 +1631,32 @@ def _temporary_section_expiry_overrides(
     if "päivään" in expiry_scan_casefold:
         # lawvm-regex: owning_parser V-expiry section-scoped sunset clause LOCATOR; date lexed by shared match_fi_date below, labels by _parse_section_list_labels — anchor only
         for m in _TEMPORARY_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
+            span = m.group(0)
+            # A coordinated list sharing one date keeps the whole-list path (the
+            # anchor's single ``datetail`` is correct for every section). A span
+            # carrying more than one ``… voimassa … <date>`` segment means each
+            # coordinated section has its OWN date, so the last-date attribution
+            # would be wrong; split per date and attribute each date to the
+            # sections in its own segment.
+            if len(_TEMPORARY_SECTION_EXPIRY_DATE_SEGMENT_RE.findall(span)) > 1:
+                for seg in _TEMPORARY_SECTION_EXPIRY_PER_DATE_RE.finditer(span):
+                    seg_expiry = match_fi_date(
+                        seg.group("datetail"), forms={FiDateForm.ALLATIVE}
+                    )
+                    if seg_expiry is None:
+                        continue
+                    sections = _TEMPORARY_SECTION_EXPIRY_SEGMENT_HEAD_RE.sub(
+                        "", seg.group("sections")
+                    )
+                    sections = _TEMPORARY_SECTION_EXPIRY_SEGMENT_CITED_HEAD_RE.sub(
+                        "", sections
+                    )
+                    _append_override(
+                        target_mid_from_cited,
+                        _parse_section_list_labels(sections),
+                        seg_expiry.value,
+                    )
+                continue
             expiry_match = match_fi_date(
                 m.group("datetail"), forms={FiDateForm.ALLATIVE}
             )
@@ -1614,7 +1695,14 @@ def _temporary_section_expiry_overrides(
             if expiry_match is None:
                 continue
             expiry = expiry_match.value
-            _append_override(target_mid_from_cited, _parse_section_list_labels(m.group(1)), expiry)
+            # Single owning section -> {N}; mixed multi-provision clause -> nothing
+            # (subsection scopes owned by the provision path; any genuine whole
+            # sections are taken by the dedicated whole-section anchor above).
+            _append_override(
+                target_mid_from_cited,
+                _subsection_clause_section_labels(m.group(1)),
+                expiry,
+            )
 
         # Chained same-sentence temporary sunset where only the first section repeats
         # "on voimassa", e.g.:
@@ -1666,9 +1754,11 @@ def _temporary_section_expiry_overrides(
             if yend_match is None:
                 continue
             expiry = yend_match.value
+            # Subsection-scoped year-end sunset: same single-owning-section /
+            # mixed-clause discipline as the päivään subsection path above.
             _append_override(
                 target_mid_from_cited,
-                _parse_section_list_labels(m_yend_moment.group(1)),
+                _subsection_clause_section_labels(m_yend_moment.group(1)),
                 expiry,
             )
 
