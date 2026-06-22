@@ -57,6 +57,7 @@ from lawvm.substrate.manifest import (
     PackManifest,
     PackProvenance,
 )
+from lawvm.substrate.relation_edge import SCHEMA_RELATION_EDGE
 from lawvm.substrate.roots import (
     leaf_hash,
     map_root,
@@ -928,6 +929,59 @@ def export_work_pack(
     universe_object_hash = state_w.write(universe.to_canonical_dict())
     selection_universe_hashes.append(universe_object_hash)
 
+    # -- edges/ layer: the body cross-reference relation graph ---------------- #
+    # The FI body cross-references become REAL ``lawvm.legal_relation_edge.v0``
+    # rows so the checker's L0.8 authority-legality matrix exercises live data
+    # (design §25.4 — extraction, not greenfield). The edges are a SET (an
+    # additive overlay family — the omission keystone already committed to its
+    # absence via the reserved dir). If a work has no resolvable body references
+    # the layer is absent (no fabrication). Only FI carries the extractor; other
+    # jurisdictions emit no edges (their reserved ``edges/`` dir stays empty).
+    edge_bodies: list[dict[str, JsonValue]] = []
+    if jurisdiction == "fi":
+        edge_bodies = _build_fi_relation_edges(
+            engine_id=engine_id,
+            corpus_version=corpus_version,
+        )
+    edges_layer: PackLayer | None = None
+    if edge_bodies:
+        edges_rel = f"edges/{corpus_version}/edges.jsonl"
+        edges_path = out / edges_rel
+        edges_path.parent.mkdir(parents=True, exist_ok=True)
+        edges_hashes: list[str] = []
+        edges_seen: set[str] = set()
+        edges_byte_hasher = hashlib.sha256()
+        with edges_path.open("w", encoding="utf-8") as fh:
+            for body in edge_bodies:
+                row = wrap_row(body)
+                object_hash = str(row["object_hash"])
+                # SetRoot semantics: a duplicate edge (same content) is the same
+                # content-addressed object — written once, counted once.
+                if object_hash in edges_seen:
+                    continue
+                edges_seen.add(object_hash)
+                line = json.dumps(
+                    row, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+                )
+                fh.write(line)
+                fh.write("\n")
+                edges_byte_hasher.update((line + "\n").encode("utf-8"))
+                edges_hashes.append(object_hash)
+        edges_root = set_root(_DOMAIN_EDGES, edges_hashes)
+        edges_uncompressed = "sha256:" + edges_byte_hasher.hexdigest()
+        edges_layer = PackLayer(
+            kind="edges",
+            path=edges_rel,
+            row_schema=SCHEMA_RELATION_EDGE,
+            codec=STORAGE_CODEC,
+            dict_id="",
+            uncompressed_sha256=edges_uncompressed,
+            storage_sha256=edges_uncompressed,
+            root=edges_root,
+            root_fn="SetRoot",
+            row_count=len(edges_hashes),
+        )
+
     # -- close writers, compute roots ----------------------------------------- #
     for w in writers.values():
         w.close()
@@ -975,6 +1029,8 @@ def export_work_pack(
 
     # -- layer descriptors + manifest ----------------------------------------- #
     layers = _build_layer_descriptors(writers)
+    if edges_layer is not None:
+        layers = (*layers, edges_layer)
 
     schemas = {
         "work": SCHEMA_WORK,
@@ -986,6 +1042,8 @@ def export_work_pack(
         "certified_tree_transition": SCHEMA_TRANSITION,
         "checkpoint": SCHEMA_CHECKPOINT,
     }
+    if edges_layer is not None:
+        schemas["relation_edge"] = SCHEMA_RELATION_EDGE
 
     provenance = PackProvenance(
         lawvm_git_commit=_git_commit(),
@@ -1037,6 +1095,89 @@ def export_work_pack(
         n_residuals=n_residuals,
         leaf_dedup_attempts=leaf_dedup_attempts,
     )
+
+
+_DOMAIN_EDGES = "edges"
+
+
+def _build_fi_relation_edges(
+    *,
+    engine_id: str,
+    corpus_version: str,
+) -> list[dict[str, JsonValue]]:
+    """Extract FI body cross-references and bridge them to relation-edge bodies.
+
+    Reuses the FI reference-extraction entrypoint READ-ONLY
+    (``extract_all_reference_mentions`` — the same extractor ``lawvm refs`` /
+    ``fi_refs.parquet`` project through), folds the flattened per-target mentions
+    back into ONE reference SET per written surface (``fold_reference_set`` —
+    so a range/coordination is ONE set, not N rows), and maps each folded set to
+    a ``lawvm.legal_relation_edge.v0`` body (``reference_set_to_relation_edge``).
+
+    Returns the list of edge bodies (possibly empty — a work with no resolvable
+    references emits NO edges, never a fabricated one). FI-specific by
+    construction (the extractor is Finland's); the caller guards on jurisdiction.
+    """
+    from lawvm.finland.corpus import get_corpus_store
+    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.reference_sets import fold_reference_set
+    from lawvm.substrate.relation_edge_bridge import reference_set_to_relation_edge
+
+    store = get_corpus_store()
+    try:
+        # The FI corpus store keys consolidated oracle text by the ENGINE id
+        # (year-major, e.g. "2004/301") — the same id form ``lawvm refs`` /
+        # ``fi_refs`` iterate. The emitted ``ProvisionRef.statute_id`` therefore
+        # carries the engine id; it is an opaque content-addressed target ref in
+        # the edge, so the id flavour does not affect edge legality.
+        xml_bytes = store.read_oracle(engine_id)
+    except Exception:
+        # No consolidated oracle text for this work → no body references to
+        # extract. Honest absence (an empty edges layer), never a fabrication.
+        return []
+    if not xml_bytes:
+        return []
+
+    result = extract_all_reference_mentions(xml_bytes, engine_id)
+
+    # Group flattened mentions by their written surface (surface_text + span):
+    # the mentions of ONE range/coordination share these, so they fold into ONE
+    # set. Metadata-derived mentions (no surface/span) are keyed by their own
+    # identity so each stays a distinct singleton set (never merged by accident).
+    groups: dict[tuple[str, JsonValue], list[Any]] = {}
+    order: list[tuple[str, JsonValue]] = []
+    for idx, mention in enumerate(result.mentions):
+        span = mention.source_span
+        if mention.surface_text and span is not None:
+            key: tuple[str, JsonValue] = (
+                mention.surface_text,
+                f"{span.source_file}:{span.byte_offset}:{span.byte_len}",
+            )
+        else:
+            # No shared surface anchor — keep this mention its own group so it is
+            # neither merged with an unrelated mention nor silently dropped.
+            key = ("\x00solo", idx)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(mention)
+
+    edges: list[dict[str, JsonValue]] = []
+    for key in order:
+        folded = fold_reference_set(
+            groups[key],
+            corpus_version=corpus_version,
+            branch=_BRANCH_ID,
+        )
+        edges.append(
+            reference_set_to_relation_edge(
+                expression=folded.expression,
+                resolution=folded.resolution,
+                corpus_version=corpus_version,
+                branch_id=_BRANCH_ID,
+            )
+        )
+    return edges
 
 
 def _version_rail(bundle: Any, addr: str, date: str) -> str:
@@ -1353,6 +1494,11 @@ _KNOWN_SCHEMAS = frozenset(
         SCHEMA_RESIDUAL,
         SCHEMA_COVERAGE,
         SCHEMA_CERTIFICATE,
+        # The relation-edge schema is a KNOWN schema: the checker's L0.8
+        # ``_check_relation_edge_authority`` validates every such row (identity +
+        # §25.3 authority-legality matrix), so the ``edges`` layer is genuinely
+        # SUPPORTED, not tagged as an unknown overlay.
+        SCHEMA_RELATION_EDGE,
         "lawvm.selection_row.v1",
         "lawvm.applicability_fact.v1",
         "lawvm.selection_candidate_set.v1",
