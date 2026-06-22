@@ -18546,6 +18546,113 @@ def test_subsection_replace_merges_section_level_sparse_omission_item_rows() -> 
     assert pathologies[0].detail["recovery_kind"] == "subsection_replace_sparse_omission_item_merge"
 
 
+def test_subsection_replace_merges_single_unlabeled_sparse_table_row_by_intro_anchor() -> None:
+    live_first = _sub(
+        "1",
+        _intro("Special pension age applies to state service"),
+        _para("1", "alpha beta gamma delta old text 55 years"),
+        _para("2", "police service senior constable old text 58 years"),
+        _para("3", "customs service old text 58 years"),
+    )
+    sec = _sec("5", live_first)
+    state = _make_state(_body(sec))
+    op = _op(op_type="REPLACE", target_section="5", target_paragraph=1)
+    muutos_ir = _sec(
+        "5",
+        _sub(
+            "1",
+            _content(
+                "Special pension age applies to state service police service senior "
+                "constable new text 58 years"
+            ),
+        ),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_subsection_replace(
+        state,
+        op,
+        [("section", "5")],
+        sec,
+        [live_first],
+        _sub(
+            "1",
+            _content(
+                "Special pension age applies to state service police service senior "
+                "constable new text 58 years"
+            ),
+        ),
+        muutos_ir,
+        _LEGAL_PIT,
+        "5 § 1 mom",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    new_sec = next(c for c in result.ir.children if c.kind is IRNodeKind.SECTION)
+    first = next(c for c in new_sec.children if c.kind is IRNodeKind.SUBSECTION)
+    assert [child.label for child in first.children if child.kind is IRNodeKind.PARAGRAPH] == [
+        "1",
+        "2",
+        "3",
+    ]
+    text = irnode_to_text(first)
+    assert "alpha beta gamma delta old text" in text
+    assert "police service senior constable old text" not in text
+    assert "2) police service senior constable new text 58 years" in text
+    assert "customs service old text" in text
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+    assert pathologies[0].detail["recovery_kind"] == "subsection_replace_unlabeled_sparse_item_merge"
+
+
+def test_subsection_replace_single_unlabeled_sparse_table_row_strict_blocks_recovery() -> None:
+    live_first = _sub(
+        "1",
+        _intro("Special pension age applies to state service"),
+        _para("1", "alpha beta gamma delta old text 55 years"),
+        _para("2", "police service senior constable old text 58 years"),
+        _para("3", "customs service old text 58 years"),
+    )
+    sec = _sec("5", live_first)
+    state = _make_state(_body(sec))
+    op = _op(op_type="REPLACE", target_section="5", target_paragraph=1)
+    muutos_ir = _sec(
+        "5",
+        _sub(
+            "1",
+            _content(
+                "Special pension age applies to state service police service senior "
+                "constable new text 58 years"
+            ),
+        ),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_subsection_replace(
+        state,
+        op,
+        [("section", "5")],
+        sec,
+        [live_first],
+        _sub(
+            "1",
+            _content(
+                "Special pension age applies to state service police service senior "
+                "constable new text 58 years"
+            ),
+        ),
+        muutos_ir,
+        _LEGAL_PIT,
+        "5 § 1 mom",
+        source_pathologies_out=pathologies,
+        strict_profile=default_finland_strict_profile(),
+    )
+
+    assert result is None
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+    assert pathologies[0].detail["recovery_kind"] == "subsection_replace_unlabeled_sparse_item_merge"
+
+
 def test_subsection_replace_sparse_omission_item_rows_strict_blocks_recovery() -> None:
     live_first = _sub(
         "1",

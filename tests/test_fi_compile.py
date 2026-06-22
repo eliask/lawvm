@@ -2760,6 +2760,41 @@ def test_replay_xml_1966_611_applies_heading_tagged_subsection_payload() -> None
     assert "henkikirjoittajan" not in text
 
 
+def test_replay_xml_1966_611_preserves_section_5_items_after_sparse_table_row_replace() -> None:
+    replay = replay_xml(
+        "1966/611",
+        mode="legal_pit",
+        stop_before="1991/234",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.state.ir)
+    section5 = sections["section:5"]
+    subsection1 = next(
+        child
+        for child in section5.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+
+    labels = [
+        child.label
+        for child in subsection1.children
+        if child.kind is IRNodeKind.PARAGRAPH
+    ]
+    text = " ".join(irnode_to_text(subsection1).split())
+
+    assert "7" in labels
+    assert "12" in labels
+    assert "13" in labels
+    assert "poliisissa palvelevana rikosylikonstaapelina" in text
+    assert "taikka naiskonstaapelina" not in text
+    assert "johtajana, asuntolanjohtajana tai opettajana kuulovammaisten ammattikoulussa" in text
+    assert (
+        "rehtorina, apulaisrehtorina, oppilaskodinjohtajana tai opettajana "
+        "kuulovammaisten tai näkövammaisten koulussa"
+    ) in text
+
+
 def test_compile_fi_1997_786_combines_split_preamble_body_lead_formula() -> None:
     facade = compile_fi_facade("1997/786", replay_mode="official_consolidation")
 

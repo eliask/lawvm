@@ -16003,6 +16003,27 @@ def test_inspect_amendment_1966_611_1981_20_recovers_heading_tagged_subsection_p
     )
 
 
+def test_inspect_amendment_1966_611_1986_193_binds_unlabeled_table_item_rows_by_source_order() -> None:
+    bundle = build_amendment_bundle("1966/611", "1986/193", mode="legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "5")
+
+    assert group["ops_final"] == [
+        "REPLACE 5 § 1 mom 12 kohta",
+        "INSERT 5 § 1 mom 13 kohta",
+    ]
+    mapped = {entry["op"]: entry["mapped_payload"] for entry in group["subsection_map"]}
+    assert "12) rehtorina, apulaisrehtorina" in mapped[
+        "REPLACE 5 § 1 mom 12 kohta"
+    ]["text"]
+    assert "13) johtajana, asuntolanjohtajana" in mapped[
+        "INSERT 5 § 1 mom 13 kohta"
+    ]["text"]
+    assert {
+        observation["kind"]
+        for observation in group["elaboration_observations"]
+    } >= {"ELAB.UNLABELED_TABLE_ITEM_ROW_SOURCE_ORDER"}
+
+
 def test_inspect_amendment_2020_811_2021_278_promotes_leading_subsection_heading_payload() -> None:
     """A whole-section insert may carry the section heading as its first subsection."""
     bundle = build_amendment_bundle("2020/811", "2021/278", mode="legal_pit")

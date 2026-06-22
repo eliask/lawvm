@@ -106,6 +106,7 @@ class RecoveryKind(StrEnum):
     SUBSECTION_REPLACE_SPARSE_OMISSION_ITEM_MERGE = "subsection_replace_sparse_omission_item_merge"
     SUBSECTION_REPLACE_STANDALONE_TAIL_APPEND = "subsection_replace_standalone_tail_append"
     SUBSECTION_REPLACE_STANDALONE_TAIL_SIBLING_PRUNE = "subsection_replace_standalone_tail_sibling_prune"
+    SUBSECTION_REPLACE_UNLABELED_SPARSE_ITEM_MERGE = "subsection_replace_unlabeled_sparse_item_merge"
     SUBSECTION_SNAPSHOT_DROP_ABSENT_CARRIED_PARAGRAPH = "subsection_snapshot_drop_absent_carried_paragraph"
     SUBSECTION_SNAPSHOT_DROP_EXPIRED_TEMPORARY_PARAGRAPH = "subsection_snapshot_drop_expired_temporary_paragraph"
     UNCOVERED_SECTION_INSERT_SOURCE_OWNED_PART_CHAPTER_SCAFFOLD = "uncovered_section_insert_source_owned_part_chapter_scaffold"

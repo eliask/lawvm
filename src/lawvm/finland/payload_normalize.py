@@ -986,6 +986,117 @@ def _assign_multi_paragraph_item_slot_ops(
         state.used_subs.add(idx)
 
 
+def _table_rows_from_content_only_subsection(subsection: IRNode) -> tuple[str, ...]:
+    if subsection.kind is not IRNodeKind.SUBSECTION:
+        return ()
+    content_children = [
+        child
+        for child in subsection.children
+        if child.kind is IRNodeKind.CONTENT and irnode_to_text(child).strip()
+    ]
+    if len(content_children) != 1:
+        return ()
+    if any(
+        child.kind is not IRNodeKind.CONTENT and child.kind is not IRNodeKind.OMISSION
+        for child in subsection.children
+    ):
+        return ()
+    tables = [
+        child
+        for child in content_children[0].children
+        if child.kind is IRNodeKind.TABLE
+    ]
+    if len(tables) != 1:
+        return ()
+    rows: list[str] = []
+    for row in tables[0].children:
+        if row.kind is not IRNodeKind.ROW:
+            return ()
+        text = " ".join(irnode_to_text(row).split())
+        if not text:
+            return ()
+        rows.append(text)
+    return tuple(rows)
+
+
+def _item_table_row_payload_subsection(
+    source_subsection: IRNode,
+    op: AmendmentOp,
+    row_text: str,
+) -> IRNode:
+    item_label = str(op.target_item or "")
+    return IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label=str(op.target_paragraph or source_subsection.label or ""),
+        attrs=dict(source_subsection.attrs),
+        children=(
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=item_label,
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text=f"{item_label})"),
+                    IRNode(kind=IRNodeKind.CONTENT, text=row_text),
+                ),
+            ),
+        ),
+    )
+
+
+def _assign_unlabeled_table_item_row_ops(
+    slot_inputs: SubsectionSlotInputs,
+    state: SubsectionSlotAssignmentState,
+) -> None:
+    """Bind same-moment item ops to unlabeled source table rows by source order."""
+    item_ops = [
+        op
+        for op in slot_inputs.payload_subsec_ops
+        if (
+            op not in state.subsec_map
+            and op.target_item
+            and op.target_paragraph is not None
+            and op.op_type in {"REPLACE", "INSERT"}
+        )
+    ]
+    if len(item_ops) < 2:
+        return
+
+    paragraphs = sorted({int(op.target_paragraph or 0) for op in item_ops})
+    for paragraph in paragraphs:
+        ops_for_paragraph = [
+            op for op in item_ops if int(op.target_paragraph or 0) == paragraph
+        ]
+        if len(ops_for_paragraph) < 2:
+            continue
+        free_slots = [
+            (idx, sub)
+            for idx, sub in enumerate(slot_inputs.amend_subs)
+            if idx not in state.used_subs
+        ]
+        if len(free_slots) != 1:
+            continue
+        idx, sub = free_slots[0]
+        rows = _table_rows_from_content_only_subsection(sub)
+        if len(rows) != len(ops_for_paragraph):
+            continue
+        for op, row_text in zip(ops_for_paragraph, rows, strict=True):
+            state.subsec_map.assign(
+                op,
+                _item_table_row_payload_subsection(sub, op, row_text),
+            )
+            state.binding_rule_by_op_id[id(op)] = "unlabeled_table_item_row_source_order"
+            state.binding_observations.append(
+                _obs(
+                    "ELAB.UNLABELED_TABLE_ITEM_ROW_SOURCE_ORDER",
+                    "sparse_subsection_elaboration",
+                    target_paragraph=op.target_paragraph,
+                    target_item=str(op.target_item or ""),
+                    payload_slot_label=str(sub.label or ""),
+                    op_description=op.description(),
+                )
+            )
+        state.used_subs.add(idx)
+
+
 def _assign_item_matched_slot_ops(
     slot_inputs: SubsectionSlotInputs,
     state: SubsectionSlotAssignmentState,
@@ -4477,6 +4588,7 @@ def _assign_subsection_slots(
     _assign_insert_before_moved_same_target_slot_ops(slot_inputs, state)
     _assign_duplicate_target_slot_ops(slot_inputs, state)
     _assign_multi_paragraph_item_slot_ops(slot_inputs, state)
+    _assign_unlabeled_table_item_row_ops(slot_inputs, state)
     _assign_item_matched_slot_ops(slot_inputs, state)
     _assign_shared_sparse_item_slot_ops(slot_inputs, state)
     _assign_dense_local_target_groups(slot_inputs, state)
