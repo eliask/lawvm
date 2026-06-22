@@ -245,6 +245,8 @@ def test_apply_resolved_op_audit_serializes_to_observation() -> None:
     assert observation["source_statute"] == "12/2015"
     assert observation["detail"] == {
         "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
+        "source_effective": result.audit.source_effective,
+        "source_expires": result.audit.source_expires,
         "op_id": "replace_1",
         "action_type": "REPLACE",
         "description": result.audit.description,

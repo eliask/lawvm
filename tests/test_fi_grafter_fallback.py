@@ -984,6 +984,8 @@ def test_apply_ops_to_tree_records_resolved_op_apply_audit(monkeypatch: pytest.M
             "source_statute": "1996/1261",
             "detail": {
                 "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
+                "source_effective": "",
+                "source_expires": "",
                 "op_id": "replace_7",
                 "action_type": "REPLACE",
                 "description": "REPLACE 7 §",
