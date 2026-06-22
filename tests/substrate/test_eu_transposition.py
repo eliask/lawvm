@@ -22,7 +22,8 @@ tests prove:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from typing import cast
 
 from lawvm.finland.references.eu_transposition import (
     TranspositionClaim,
@@ -56,6 +57,12 @@ from lawvm.substrate.relation_edge import (
 )
 
 CV = "fi:corpus:sha256:testcorpus"
+
+
+def _effective_scope(edge: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
+    scope = edge["effective_scope"]
+    assert isinstance(scope, dict)
+    return cast(Mapping[str, JsonValue], scope)
 
 
 def _claim(
@@ -116,8 +123,7 @@ def test_unbound_claim_preserves_surface_and_drops_no_directive() -> None:
     # the target carries the nickname, never a fabricated CELEX.
     assert edge["target_set"] == ["eu-nickname:päästökattodirektiivin"]
     assert edge["status"] == EdgeStatus.QUALIFIED.value
-    scope = edge["effective_scope"]
-    assert isinstance(scope, dict)
+    scope = _effective_scope(edge)
     assert scope["binding_status"] == "statute_only"
 
 
@@ -133,8 +139,7 @@ def test_timeliness_late_when_commencement_after_deadline() -> None:
     assert edge["authority_plane"] == AuthorityPlane.EVIDENCE.value
     assert edge["replay_authorized"] is False
     assert edge["status"] == EdgeStatus.RESOLVED.value
-    scope = edge["effective_scope"]
-    assert isinstance(scope, dict)
+    scope = _effective_scope(edge)
     assert scope["timeliness_verdict"] == "late"
     assert scope["transposition_deadline"] == "2013-01-07"
     assert edge_authority_violation(edge) is None
@@ -142,8 +147,7 @@ def test_timeliness_late_when_commencement_after_deadline() -> None:
 
 def test_timeliness_on_time_when_commencement_before_deadline() -> None:
     edge = timeliness_edge(_claim(), commencement_date="2012-06-01", corpus_version=CV)
-    scope = edge["effective_scope"]
-    assert isinstance(scope, dict)
+    scope = _effective_scope(edge)
     assert scope["timeliness_verdict"] == "on_time"
     assert edge["status"] == EdgeStatus.RESOLVED.value
 
@@ -154,8 +158,7 @@ def test_timeliness_open_when_deadline_unknown_no_fabricated_date() -> None:
         _claim(celex="32099L9999"), commencement_date="2020-01-01", corpus_version=CV
     )
     assert edge["status"] == EdgeStatus.OPEN.value
-    scope = edge["effective_scope"]
-    assert isinstance(scope, dict)
+    scope = _effective_scope(edge)
     assert scope["timeliness_verdict"] == "deadline_unknown"
     assert scope["transposition_deadline"] is None  # never fabricated
     assert edge_authority_violation(edge) is None
@@ -168,8 +171,7 @@ def test_timeliness_open_when_directive_unbound() -> None:
         corpus_version=CV,
     )
     assert edge["status"] == EdgeStatus.OPEN.value
-    scope = edge["effective_scope"]
-    assert isinstance(scope, dict)
+    scope = _effective_scope(edge)
     assert scope["timeliness_verdict"] == "deadline_unknown"
 
 
@@ -193,8 +195,7 @@ def test_conformance_is_always_not_assessed_residual() -> None:
         assert edge["authority_plane"] == AuthorityPlane.OVERLAY.value
         assert edge["verification_level"] == VerificationLevel.EXTERNAL_ASSESSMENT.value
         assert edge["replay_authorized"] is False
-        scope = edge["effective_scope"]
-        assert isinstance(scope, dict)
+        scope = _effective_scope(edge)
         assert scope["conformance"] == "not_assessed"
         assert edge_authority_violation(edge) is None
 
@@ -232,7 +233,7 @@ def test_claim_yields_exactly_three_edge_kinds() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _edges_layer(objects: list[Mapping[str, JsonValue]]) -> PackLayerData:
+def _edges_layer(objects: Sequence[Mapping[str, JsonValue]]) -> PackLayerData:
     from lawvm.substrate.roots import set_root
 
     rows = tuple(wrap_row(obj) for obj in objects)
@@ -288,7 +289,7 @@ def _manifest_for(layers: Mapping[str, PackLayerData]) -> PackManifest:
     )
 
 
-def _edges_only_pack(objects: list[Mapping[str, JsonValue]]) -> Pack:
+def _edges_only_pack(objects: Sequence[Mapping[str, JsonValue]]) -> Pack:
     from lawvm.substrate.exporter import _KNOWN_SCHEMAS
 
     edges = _edges_layer(objects)
