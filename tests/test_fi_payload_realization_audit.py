@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lawvm.core.ir import IRNode
+from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
 from lawvm.finland.payload_realization_audit import payload_realization_findings
@@ -62,6 +62,56 @@ def test_payload_realization_audit_reports_missing_payload_text() -> None:
     assert findings[0].source_statute == "2000/1"
     assert findings[0].detail["unit_id"] == "op1"
     assert findings[0].detail["disposition"] == "source_payload_text_not_realized_in_post_fold_state"
+
+
+def test_payload_realization_audit_scopes_child_target_to_matching_payload_subtree() -> None:
+    carrier = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="6",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="7a",
+                        text="Owned inserted item text appears here.",
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="16",
+                        text="Sibling replacement text belongs to another operation.",
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = ResolvedOp(
+        op=AmendmentOp(
+            op_id="op1",
+            op_type="INSERT",
+            target_section="6",
+            target_unit_kind="section",
+        ),
+        muutos_ir=carrier,
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="6",
+        op_id="op1",
+        _op_type_seed="INSERT",
+        _target_address_override=LegalAddress(
+            path=(("section", "6"), ("subsection", "1"), ("item", "7a"))
+        ),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(op,),
+        after_ir=_after("The folded statute says owned inserted item text appears here."),
+        amendment_id="2000/1",
+    )
+
+    assert findings == ()
 
 
 def test_payload_realization_audit_ignores_unclaimed_source_body_context() -> None:
