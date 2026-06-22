@@ -1763,6 +1763,185 @@ def drill_reference_unclassified_reference_surface_totality() -> None:
 
 
 # ---------------------------------------------------------------------------
+# SURF-01 / SURF-02 / SURF-07 surface-totality observation drills
+# ---------------------------------------------------------------------------
+
+
+def _drill_token_partition_cert(*, total: int, owned: int):
+    """A real TokenPartitionCoverage whose buckets sum to ``owned`` (≤ total).
+
+    Built via the PRODUCTION projection ``build_token_partition_coverage`` over a
+    synthetic forest with a deliberately-undersummed census, so a non-zero
+    realization gap is driven through the real sweep — not a hand-built finding.
+    """
+    from lawvm.finland.legal_surface.source_syntax_graph import (
+        SourceSyntaxGraph,
+        SurfaceGraphSubject,
+        SyntaxCoverage,
+    )
+    from lawvm.finland.legal_surface.token_partition_coverage import (
+        build_token_partition_coverage,
+    )
+
+    cov = SyntaxCoverage(
+        total_tokens=total,
+        owned_tokens=owned,
+        benign_tokens=0,
+        residual_tokens=0,
+        silent_tokens=0,
+    )
+    forest = SourceSyntaxGraph(
+        graph_id="drill-forest",
+        subject=SurfaceGraphSubject(
+            jurisdiction="fi",
+            work_id="drill/1",
+            scope={},
+            surface_time=None,
+            source_bundle_hash="deadbeef",
+            language="fi",
+        ),
+        source_units=(),
+        text_hash="h",
+        text_len=100,
+        syntax_nodes={},
+        syntax_edges=(),
+        parse_status="parsed",
+        residuals=(),
+        coverage=cov,
+    )
+    return build_token_partition_coverage(forest, statute_id="drill/1")
+
+
+def drill_surface_token_realization_gap_surface_totality() -> None:
+    """Drive the production SURF-01 sweep into a TOKEN_REALIZATION_GAP firing."""
+    from lawvm.finland.legal_surface.surface_token_totality import (
+        SURFACE_TOKEN_REALIZATION_GAP,
+        sweep_token_realization,
+    )
+
+    # total=10 but only 6 owned and the other buckets empty -> 4-token gap.
+    cert = _drill_token_partition_cert(total=10, owned=6)
+    findings = sweep_token_realization(cert)
+    assert any(f.code == SURFACE_TOKEN_REALIZATION_GAP for f in findings), (
+        "TOKEN_REALIZATION_GAP sweep did not fire on an under-summed partition"
+    )
+    # and STAYS SILENT on a balanced partition (clean input)
+    clean = _drill_token_partition_cert(total=10, owned=10)
+    assert not sweep_token_realization(clean), (
+        "TOKEN_REALIZATION_GAP sweep fired on a balanced partition"
+    )
+
+
+def drill_waist_handoff_parity_source_to_token_surface_totality() -> None:
+    """Drive the production SURF-02 sweep into a HANDOFF_PARITY firing."""
+    from lawvm.finland.legal_surface.surface_token_totality import (
+        WAIST_HANDOFF_PARITY_SOURCE_TO_TOKEN,
+        assert_handoff_parity,
+    )
+
+    cert = _drill_token_partition_cert(total=12, owned=5)
+    findings = assert_handoff_parity(cert)
+    assert any(
+        f.code == WAIST_HANDOFF_PARITY_SOURCE_TO_TOKEN for f in findings
+    ), "HANDOFF_PARITY sweep did not fire on a source->token parity break"
+    clean = _drill_token_partition_cert(total=12, owned=12)
+    assert not assert_handoff_parity(clean), (
+        "HANDOFF_PARITY sweep fired on a balanced handoff"
+    )
+
+
+def drill_surface_orphan_entity_node_surface_totality() -> None:
+    """Drive the production SURF-07 sweep into an ORPHAN_ENTITY_NODE firing."""
+    from lawvm.core.legal_surface_graph import (
+        LegalSurfaceGraph,
+        SurfaceEdge,
+        SurfaceGraphSubject,
+        SurfaceNode,
+    )
+    from lawvm.finland.legal_surface.surface_token_totality import (
+        SURFACE_ORPHAN_ENTITY_NODE,
+        sweep_orphan_entity_nodes,
+    )
+
+    subject = SurfaceGraphSubject(
+        jurisdiction="fi",
+        work_id="drill/1",
+        scope={},
+        surface_time=None,
+        source_bundle_hash="deadbeef",
+        language="fi",
+    )
+
+    def _entity(node_id: str, term: str) -> SurfaceNode:
+        return SurfaceNode(
+            node_id=node_id,
+            node_kind="term_symbol_entity",
+            authority_role="entity_handle",
+            jurisdiction="fi",
+            source_ref=None,
+            lens_id="lens.def",
+            rule_id="r",
+            status="asserted",
+            payload_hash="p",
+            payload={"term": term},
+        )
+
+    covered = _entity("covered", "sivutuote")
+    orphan = _entity("orphan", "jäte")
+    binding = SurfaceNode(
+        node_id="binding",
+        node_kind="definition_binding",
+        authority_role="surface_fact",
+        jurisdiction="fi",
+        source_ref=None,
+        lens_id="lens.def",
+        rule_id="r",
+        status="resolved",
+        payload_hash="p",
+        payload={},
+    )
+    edge = SurfaceEdge(
+        edge_id="e1",
+        edge_kind="defines_term",
+        src="binding",
+        dst="covered",  # only `covered` is an edge endpoint; `orphan` is not
+        rule_id="r",
+        status="asserted",
+        payload_hash="p",
+        payload={},
+    )
+    graph = LegalSurfaceGraph(
+        schema="lawvm.legal_surface_graph.v0",
+        graph_id="g-drill",
+        subject=subject,
+        source_units=(),
+        lens_runs=(),
+        nodes={n.node_id: n for n in (binding, covered, orphan)},
+        edges=(edge,),
+        build_diagnostics=(),
+    )
+    findings = sweep_orphan_entity_nodes(graph)
+    assert [f.node_id for f in findings] == ["orphan"], (
+        "ORPHAN_ENTITY_NODE sweep did not isolate the uncovered entity handle"
+    )
+    assert findings[0].code == SURFACE_ORPHAN_ENTITY_NODE
+    # and STAYS SILENT when every entity is covered (drop the orphan)
+    clean = LegalSurfaceGraph(
+        schema="lawvm.legal_surface_graph.v0",
+        graph_id="g-clean",
+        subject=subject,
+        source_units=(),
+        lens_runs=(),
+        nodes={n.node_id: n for n in (binding, covered)},
+        edges=(edge,),
+        build_diagnostics=(),
+    )
+    assert not sweep_orphan_entity_nodes(clean), (
+        "ORPHAN_ENTITY_NODE sweep fired when every entity handle was covered"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Per-op apply-authority gate drills (audit lane L1: LS-01, LS-03, EV-05/FW-01)
 # ---------------------------------------------------------------------------
 
@@ -2387,6 +2566,9 @@ OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "DEFINITION.DUPLICATE_DEFINITION": drill_definition_duplicate_definition_surface_totality,
     "DEFINITION.ORPHAN_DEFINITION_REFERENCE": drill_definition_orphan_reference_surface_totality,
     "REFERENCE.UNCLASSIFIED_REFERENCE": drill_reference_unclassified_reference_surface_totality,
+    "SURFACE.TOKEN_REALIZATION_GAP": drill_surface_token_realization_gap_surface_totality,
+    "WAIST.HANDOFF_PARITY_SOURCE_TO_TOKEN": drill_waist_handoff_parity_source_to_token_surface_totality,
+    "SURFACE.ORPHAN_ENTITY_NODE": drill_surface_orphan_entity_node_surface_totality,
     "APPLY.OCCUPANCY_POLICY_VIOLATION": drill_occupancy_policy_violation_finland_production,
     "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT": drill_occupancy_temporally_disjoint_insert_finland_production,
     "APPLY.REPLAY_UNDECLARED_TREE_TOUCH": drill_replay_undeclared_tree_touch_apply_lane,
