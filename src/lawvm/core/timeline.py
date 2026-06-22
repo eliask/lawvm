@@ -1324,6 +1324,8 @@ def materialize_pit_ex(
         content: IRNode,
         parent_addr: LegalAddress,
         child_addr: LegalAddress,
+        *,
+        active_descendant: bool = False,
     ) -> bool:
         if content.attrs.get(STRUCTURAL_RENUMBER_SNAPSHOT_ATTR) == "1":
             return False
@@ -1353,6 +1355,11 @@ def materialize_pit_ex(
                 return parent_addr in base_addresses
         if parent_leaf in {"chapter", "part"} and not has_structural_children:
             return parent_addr in base_addresses
+        if active_descendant and parent_leaf in {"chapter", "part"}:
+            return (
+                content.attrs.get("lawvm_tail_policy") == "replace_if_target_scope_requires"
+                and content.attrs.get("lawvm_payload_completeness_kind") == "complete"
+            )
 
         node = content
         for kind_name, label in relative_path:
@@ -1439,11 +1446,21 @@ def materialize_pit_ex(
                 continue
             if (
                 (
-                    _parent_content_masks_child(parent_v.content, parent_addr, addr)
+                    _parent_content_masks_child(
+                        parent_v.content,
+                        parent_addr,
+                        addr,
+                        active_descendant=True,
+                    )
                     and parent_v.effective > child_v.effective
                 )
                 or (
-                    _parent_content_masks_child(parent_v.content, parent_addr, addr)
+                    _parent_content_masks_child(
+                        parent_v.content,
+                        parent_addr,
+                        addr,
+                        active_descendant=True,
+                    )
                     and parent_v.effective == child_v.effective
                     and parent_v.enacted > child_v.enacted
                 )
