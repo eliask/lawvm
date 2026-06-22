@@ -22,7 +22,13 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.tools import no_bench  # noqa: F401  (registers the "no" comparator at import)
 from lawvm.core.bench_comparator_registry import registered_jurisdictions
-from lawvm.tools.no_bench import no_bench_unit_result
+from lawvm.tools.no_bench import (
+    _load_run_accuracies,
+    _most_recent_labels,
+    _resolve_runs_dir,
+    _render_regressions_from_runs,
+    no_bench_unit_result,
+)
 
 
 def _replayed_body(*section_labels: str) -> IRNode:
@@ -426,3 +432,218 @@ def test_no_bench_main_runs_curated_corpus_to_zero_crashes(tmp_path) -> None:
         # History-write spanned both runs and reported the isolated path.
         assert history_csv.exists()
         assert str(history_csv) in summary
+
+
+# ---------------------------------------------------------------------------
+# Regression-guard primitives — focused unit tests for the per-statute CSV
+# loader, mtime-sorted label discovery, and --compare / --regressions
+# arbitration. Pins the contract established by the 30ef19d8 prerequisite
+# (per-statute CSV) and the current commit's --regressions / --compare wiring.
+# ---------------------------------------------------------------------------
+
+
+_PER_STATUTE_CSV_HEADER = (
+    "unit_id,status,structural_err,text_err,headline_error,headline_accuracy,"
+    "residue_total,residue_buckets,witnesses\n"
+)
+
+
+def _write_run_csv(path: _Path, rows: list[tuple[str, str, str]]) -> None:
+    """Write a synthetic per-statute NO bench run CSV.
+
+    Each row is ``(unit_id, status, headline_accuracy)``; structural_err is
+    derived as ``1 - accuracy`` so find_regressions' headline_accuracy column
+    reads sanely. Mirrors the schema persisted by ``_persist_per_statute_results``.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        f.write(_PER_STATUTE_CSV_HEADER)
+        for unit_id, status, acc in rows:
+            try:
+                acc_f = float(acc)
+                struct_f = 1.0 - acc_f
+            except ValueError:
+                acc_f = None
+                struct_f = None
+            f.write(
+                f"{unit_id},{status},"
+                f"{'' if struct_f is None else f'{struct_f:.6f}'},"
+                f","
+                f"{'' if acc_f is None else f'{(1 - struct_f) if struct_f is not None else acc:.6f}'},"
+                f"{acc},0,,\n"
+            )
+
+
+def test_load_run_accuracies_returns_none_for_missing_csv(tmp_path) -> None:
+    # The contract: a missing file returns None, not an empty dict — so the
+    # caller can distinguish "no such labelled run" from "label existed but
+    # produced zero SCORED rows".
+    result = _load_run_accuracies(tmp_path / "no-such-label.csv")
+
+    assert result is None
+
+
+def test_load_run_accuracies_skips_non_scored_rows() -> None:
+    # CRASH / NON_SCORED statuses carry no accuracy and would pollute the
+    # regression comparator's {unit_id: accuracy} map. The loader must skip
+    # them; missing-key-on-either-side is what find_regressions handles via
+    # its `unit_id not in current: continue` branch.
+    csv_content = (
+        "unit_id,status,structural_err,text_err,headline_error,headline_accuracy,"
+        "residue_total,residue_buckets,witnesses\n"
+        "no/lov/2024-01-12-1,scored,0.000000,,0.000000,1.000000,0,,\n"
+        "no/lov/2022-03-11-9,crash,,,,,0,,boom\n"
+        "no/lov/2017-06-16-60,scored,0.050000,,0.050000,0.950000,2,structural:MISMATCH=2,\n"
+    )
+
+    # Re-call the loader against a real tmp file we create directly:
+    import tempfile
+
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".csv", delete=False) as tf:
+        tf.write(csv_content)
+        tmp_csv = _Path(tf.name)
+    try:
+        out = _load_run_accuracies(tmp_csv)
+    finally:
+        tmp_csv.unlink()
+    assert out == {"no/lov/2024-01-12-1": 1.0, "no/lov/2017-06-16-60": 0.95}
+
+
+def test_most_recent_labels_orders_by_mtime_desc(tmp_path) -> None:
+    # Two runs created with different mtimes; the more-recent one is the
+    # "current" run, the older one is the baseline. find_regressions' output
+    # depends on which side is "previous" vs "current"; the label order
+    # returned here is the contract: previous=current-label-1, current=label-0
+    # (caller does recent[1] vs recent[0]).
+    import os
+    import time as _time
+
+    older = tmp_path / "older.csv"
+    newer = tmp_path / "newer.csv"
+    older.write_text("header\n", encoding="utf-8")
+    _time.sleep(0.01)
+    newer.write_text("header\n", encoding="utf-8")
+    # Guarantee mtime skew on filesystems with coarse timestamps:
+    os.utime(older, (older.stat().st_atime, older.stat().st_mtime))
+    os.utime(newer, (newer.stat().st_atime, newer.stat().st_mtime + 0.5))
+
+    labels = _most_recent_labels(tmp_path, limit=2)
+
+    assert labels == ["newer", "older"]
+
+
+def test_most_recent_labels_returns_empty_for_missing_dir(tmp_path) -> None:
+    # An absent runs dir → empty list, *not* an exception. The CLI's
+    # --regressions branch surfaces a typed "found N runs" diagnostic that
+    # fires only because of this contract.
+    no_runs_dir = tmp_path / "does-not-exist"
+    assert no_runs_dir.exists() is False
+
+    labels = _most_recent_labels(no_runs_dir, limit=2)
+
+    assert labels == []
+
+
+def test_render_regressions_reports_one_unit_when_accuracy_drops(tmp_path) -> None:
+    # Two synthetic runs: same three statutes scored in both; one of them
+    # drops in accuracy from 1.00 to 0.90. The render must surface that
+    # single regression with the unit_id, the delta (-0.10 = -10pp), and
+    # both headline accuracies.
+    from types import SimpleNamespace
+
+    runs_dir = tmp_path / "norway_bench_runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+
+    _write_run_csv(
+        runs_dir / "before.csv",
+        [
+            ("no/lov/A", "scored", "1.000000"),
+            ("no/lov/B", "scored", "0.950000"),
+            ("no/lov/C", "scored", "0.800000"),
+        ],
+    )
+    _write_run_csv(
+        runs_dir / "after.csv",
+        [
+            ("no/lov/A", "scored", "1.000000"),  # unchanged
+            ("no/lov/B", "scored", "0.900000"),  # dropped -0.05 → regression
+            ("no/lov/C", "scored", "0.500000"),  # dropped -0.30 → regression
+        ],
+    )
+
+    args = SimpleNamespace(
+        compare=["before", "after"],
+        runs_path=runs_dir,
+    )
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    rc = 0
+    with redirect_stdout(buf):
+        rc = _render_regressions_from_runs(args)
+
+    assert rc == 0
+    out = buf.getvalue()
+    assert "Norway bench regressions: before -> after" in out
+    assert "Common (scored in both): 3" in out
+    assert "Regressions (accuracy dropped > 0.001 tolerance): 2" in out
+    # Worst-delta-first (find_regressions sorts by delta ascending):
+    # C: -0.30, then B: -0.05.
+    assert "no/lov/C" in out
+    assert "no/lov/B" in out
+    assert out.index("no/lov/C") < out.index("no/lov/B")
+
+
+def test_render_regressions_returns_2_when_only_one_labelled_run(tmp_path) -> None:
+    # The --regressions branch (no --compare) requires at least two labelled
+    # runs in the runs dir; with only one persisted, the CLI must fail loud
+    # with rc=2 (matching the no-corpus error convention elsewhere):
+    # ``lawvm -j no bench --regressions`` is not useful without a baseline.
+    from types import SimpleNamespace
+
+    runs_dir = tmp_path / "norway_bench_runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    _write_run_csv(
+        runs_dir / "only.csv",
+        [("no/lov/A", "scored", "1.000000")],
+    )
+
+    args = SimpleNamespace(regressions=True, compare=None, runs_path=runs_dir)
+    rc = _render_regressions_from_runs(args)
+
+    assert rc == 2
+
+
+def test_render_regressions_returns_2_when_compare_label_missing(tmp_path) -> None:
+    # Explicit --compare LABEL_A LABEL_B where LABEL_B has never been
+    # persisted: typed rc=2 diagnostic naming the missing path.
+    from types import SimpleNamespace
+
+    runs_dir = tmp_path / "norway_bench_runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    _write_run_csv(
+        runs_dir / "a.csv",
+        [("no/lov/A", "scored", "1.000000")],
+    )
+
+    args = SimpleNamespace(compare=["a", "no-such"], runs_path=runs_dir)
+    rc = _render_regressions_from_runs(args)
+
+    assert rc == 2
+
+
+def test_resolve_runs_dir_uses_arg_override_when_directory(tmp_path) -> None:
+    # The contract-adapter smoke test isolates the runs dir to tmp_path via
+    # `args.runs_path=tmp_path / "norway_bench_runs"`. The dir must be
+    # recognized (not treated as a file path), since the regression-guard
+    # helpers fall back to the repository-root default otherwise.
+    from types import SimpleNamespace
+
+    runs_dir = tmp_path / "norway_bench_runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    args = SimpleNamespace(runs_path=runs_dir)
+
+    resolved = _resolve_runs_dir(args)
+
+    assert resolved == runs_dir

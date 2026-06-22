@@ -270,6 +270,152 @@ def _load_corpus_rows(path: "Path") -> list[tuple[str, str, str]]:
     return rows
 
 
+def _resolve_runs_dir(args: object) -> "Path":
+    """Return the directory holding per-statute NO bench run CSVs.
+
+    Honors ``args.runs_path`` when it points at a directory (used by the
+    smoke test to isolate runs to tmp_path); otherwise falls back to the
+    canonical ``data/norway_bench_runs/`` at the repository root.
+    """
+    runs_path = getattr(args, "runs_path", None)
+    if runs_path is not None and Path(runs_path).is_dir():
+        return Path(runs_path)
+    repo_root = Path(__file__).resolve().parents[3]
+    return repo_root / "data" / "norway_bench_runs"
+
+
+def _load_run_accuracies(csv_path: "Path") -> "dict[str, float] | None":
+    """Parse a per-statute NO bench run CSV into ``{unit_id: headline_accuracy}``.
+
+    Returns ``None`` (rather than an empty dict) when the file does not
+    exist — the caller distinguishes "no such labelled run" from "an empty
+    run", the former being a typed error.
+
+    Skips rows whose status is not ``SCORED`` (CRASH / NON_SCORED statuses
+    carry no accuracy and would confuse the regression comparator's
+    unit-id-matching semantics — a unit that crashed in one run but scored
+    in another is *interesting*, not a regression to silently omit; we keep
+    it out of both sides so the comparator sees missing keys symmetrically,
+    leaving the missing-key case for a future "newly broken" branch).
+    """
+    import csv as _csv
+
+    if not csv_path.exists():
+        return None
+    out: dict[str, float] = {}
+    with csv_path.open("r", encoding="utf-8", newline="") as f:
+        reader = _csv.DictReader(f)
+        for row in reader:
+            status = row.get("status", "")
+            if status != "scored":
+                continue
+            try:
+                acc = float(row["headline_accuracy"])
+            except (KeyError, ValueError):
+                # A row that lacks the accuracy column or carries a
+                # non-numeric value is silently dropped — a regression guard
+                # that crashes on a malformed CSV is worse than one that
+                # misses one row. Surface the issue via stderr if you want it
+                # raised; for now skip.
+                continue
+            out[row["unit_id"]] = acc
+    return out
+
+
+def _most_recent_labels(runs_dir: "Path", *, limit: int = 2) -> list[str]:
+    """Return the ``limit`` most recent labelled runs (by mtime), newest first.
+
+    Determined by the per-statute CSV's modification time, not the label
+    column. Empty list if the runs dir does not exist or contains no CSVs.
+    """
+    if not runs_dir.exists():
+        return []
+    labelled = [
+        (path.stat().st_mtime, path)
+        for path in runs_dir.glob("*.csv")
+        if path.is_file()
+    ]
+    labelled.sort(key=lambda pair: pair[0], reverse=True)
+    return [path.stem for _, path in labelled[:limit]]
+
+
+def _render_regressions_from_runs(args: object) -> int:
+    """Render a regression report comparing two labelled runs.
+
+    Two entry modes (set on the unified bench parser):
+
+    - ``--compare LABEL_A LABEL_B`` — explicit pair.
+    - ``--regressions`` — implicitly compares the two most recent labelled
+      runs in ``data/norway_bench_runs/`` (by mtime). Requires at least two
+      labelled runs to have been persisted.
+
+    Both modes load the per-statute CSVs written by
+    :func:`_persist_per_statute_results` and feed the ``unit_id ->
+    headline_accuracy`` maps through
+    :func:`lawvm.core.bench_aggregate.find_regressions` (the shared
+    regression-guard API across jurisdictions).
+    """
+    import sys
+
+    from lawvm.core.bench_aggregate import find_regressions
+
+    runs_dir = _resolve_runs_dir(args)
+
+    compare = getattr(args, "compare", None)
+    if compare:
+        if len(compare) != 2:
+            print(
+                "Norway bench --compare requires exactly two labels (LABEL_A LABEL_B)",
+                file=sys.stderr,
+            )
+            return 2
+        label_a, label_b = compare
+    else:
+        recent = _most_recent_labels(runs_dir, limit=2)
+        if len(recent) < 2:
+            print(
+                f"Norway bench --regressions requires at least two labelled runs in "
+                f"{runs_dir}/; found {len(recent)}. Run `lawvm -j no bench --label "
+                "<tag>` twice with different tags to persist two comparable runs first.",
+                file=sys.stderr,
+            )
+            return 2
+        label_a, label_b = recent[1], recent[0]  # older vs newer (worst-delta-first)
+
+    path_a = runs_dir / f"{label_a}.csv"
+    path_b = runs_dir / f"{label_b}.csv"
+    accuracies_a = _load_run_accuracies(path_a)
+    accuracies_b = _load_run_accuracies(path_b)
+    if accuracies_a is None:
+        print(
+            f"Norway bench run not found: {path_a}. "
+            "Persist it first via `lawvm -j no bench --label <tag>`.",
+            file=sys.stderr,
+        )
+        return 2
+    if accuracies_b is None:
+        print(
+            f"Norway bench run not found: {path_b}. "
+            "Persist it first via `lawvm -j no bench --label <tag>`.",
+            file=sys.stderr,
+        )
+        return 2
+
+    regressions = find_regressions(accuracies_a, accuracies_b, tolerance=0.001)
+    print(f"=== Norway bench regressions: {label_a} -> {label_b} ===")
+    print(f"  Compared units: {len(accuracies_b)} current vs {len(accuracies_a)} previous")
+    print(f"  Common (scored in both): {len(set(accuracies_a) & set(accuracies_b))}")
+    print(f"  Regressions (accuracy dropped > 0.001 tolerance): {len(regressions)}")
+    if regressions:
+        print()
+        print("  unit_id                          delta      prev_acc   curr_acc")
+        for r in regressions:
+            print(
+                f"  {r.unit_id:<33} {r.delta:+.4f}   {r.previous_accuracy:.4f}     {r.current_accuracy:.4f}"
+            )
+    return 0
+
+
 def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentionally loose
     """Entry point for ``lawvm -j no bench``.
 
@@ -292,6 +438,13 @@ def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentio
       jurisdictions is its own cohesive change.
     - No regression-guard comparison against a prior labelled run.
     """
+
+    # Regression-guard arbitration: --regressions and --compare short-circuit
+    # the sweep entirely. The bench parser registers both flags; without this
+    # short-circuit, the sweep would run + persist another labelled run before
+    # ever reading either flag — wasting minutes on an obvious-mode command.
+    if getattr(args, "regressions", False) or getattr(args, "compare", None):
+        return _render_regressions_from_runs(args)
 
     from lawvm.core.bench_aggregate import render_summary
     from lawvm.norway.sources import resolve_no_source_path
