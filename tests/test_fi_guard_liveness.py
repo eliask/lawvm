@@ -1552,6 +1552,7 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     # stable fixture in this harness.
     "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE": ("sparse descendant merge barrier; needs stable fixture", "2026-06-22"),
     "ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL": ("payload-normalize barrier; needs stable fixture", "2026-06-20"),
+    "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL": ("payload-normalize recovery; needs fixture", "2026-06-22"),
     "APPLY.WORD_SUBSTITUTION": ("word-substitution barrier; needs fixture", "2026-06-20"),
     "COMPARE.UNADJUDICATED_ORACLE_DIVERGENCE.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
     "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED": ("coverage barrier; needs fixture", "2026-06-20"),
