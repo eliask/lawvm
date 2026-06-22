@@ -5309,10 +5309,11 @@ def test_sort_label_key_roman_numerals() -> None:
 
 def test_select_active_version_two_rail_temporary_wins_over_permanent() -> None:
     """select_active_version at a date inside a temporary window returns the
-    temporary version, not a newer permanent version.
+    temporary version, not its same-source deferred permanent version.
 
     Setup: permanent v1 (eff 2000), temporary v2 (eff 2004, expires 2016),
-    permanent v3 (eff 2010). At 2012, the temporary v2 should win over v3.
+    same-source permanent v3 (eff 2010). At 2012, the temporary v2 should win
+    over v3.
     """
     addr = LegalAddress(path=(("section", "1"),))
     tl = ProvisionTimeline(address=addr, versions=[
@@ -5328,12 +5329,23 @@ def test_select_active_version_two_rail_temporary_wins_over_permanent() -> None:
             expires="2016-01-01",
             variant_kind="temporary",
             content=IRNode(kind=IRNodeKind.SECTION, label="1", text="temporary v2"),
+            source=OperationSource(
+                statute_id="test/temp-window",
+                enacted="2004-01-01",
+                effective="2004-01-01",
+                expires="2016-01-01",
+            ),
         ),
         ProvisionVersion(
             effective="2010-01-01",
             enacted="2010-01-01",
             variant_kind="permanent",
             content=IRNode(kind=IRNodeKind.SECTION, label="1", text="permanent v3"),
+            source=OperationSource(
+                statute_id="test/temp-window",
+                enacted="2004-01-01",
+                effective="2010-01-01",
+            ),
         ),
     ])
 
@@ -5357,6 +5369,49 @@ def test_select_active_version_two_rail_temporary_wins_over_permanent() -> None:
     assert active_before.variant_kind == "permanent"
     assert active_before.content is not None
     assert irnode_to_text(active_before.content) == "permanent v1"
+
+
+def test_select_active_version_independent_later_background_supersedes_temporary() -> None:
+    """A later independent same-address rewrite is lex posterior over an older temporary snapshot."""
+    addr = LegalAddress(path=(("section", "1"),))
+    tl = ProvisionTimeline(address=addr, versions=[
+        ProvisionVersion(
+            effective="2000-01-01",
+            enacted="2000-01-01",
+            variant_kind="permanent",
+            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="permanent v1"),
+        ),
+        ProvisionVersion(
+            effective="2004-01-01",
+            enacted="2004-01-01",
+            expires="2016-01-01",
+            variant_kind="temporary",
+            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="temporary v2"),
+            source=OperationSource(
+                statute_id="test/temp-window",
+                enacted="2004-01-01",
+                effective="2004-01-01",
+                expires="2016-01-01",
+            ),
+        ),
+        ProvisionVersion(
+            effective="2010-01-01",
+            enacted="2010-01-01",
+            variant_kind="permanent",
+            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="independent v3"),
+            source=OperationSource(
+                statute_id="test/independent-successor",
+                enacted="2010-01-01",
+                effective="2010-01-01",
+            ),
+        ),
+    ])
+
+    active = select_active_version(tl, "2012-01-01")
+    assert active is not None
+    assert active.variant_kind == "permanent"
+    assert active.content is not None
+    assert irnode_to_text(active.content) == "independent v3"
 
 
 def test_select_active_version_agrees_with_materialize_pit() -> None:
