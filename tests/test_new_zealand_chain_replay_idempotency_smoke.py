@@ -210,3 +210,68 @@ def test_chain_replay_already_tombstoned_skips_no_section_repeal_mismatch() -> N
         f"kept live; investigation required). work_id, row_id, source_path, "
         f"amendment_date for the offenders: {section_mismatches[:8]}"
     )
+
+
+def test_resolve_target_nodes_rejects_part_at_xml_id_leading_segment() -> None:
+    """Synthetic regression proving the `amendment_skipped_target_absent` gap
+    documented in `notes/IMPLEMENTATION_DIVERGENCE_LEDGER.md`'s
+    "amendment_skipped_target_absent — classified 2026-06-22" section.
+
+    The source-tree parser emits a `part@DLM_xml_id`-shaped path segment when
+    a `<part>` element lacks a parseable `<label>` — observed in
+    `act_public_1981_23_en_2007-09-03` (199 nodes with @-segments) and absent
+    in `act_public_1981_23_en_2026-02-21` (0 such nodes). The chain-replay starts
+    at the earliest archived version; ops resolve against the clean
+    `prov:N`/`subprov:N` form from the operation surface; `_resolve_target_nodes`
+    accepts the leading-1-extra-part tolerance only when
+    `path[0].split(':',1)[0] == "part"` — and `'part@DLM44815'.split(':',1)[0]`
+    returns the full `'part@DLM44815'` (no colon in the segment), so the check
+    fails and the op is correctly target_absent-skipped per the BUG (not honestly).
+
+    This test PINS the buggy current behavior as a synthetic witness so the
+    subsequent strict-superset widening of `_resolve_target_nodes` flips this
+    test green as a paired change. (AGENTS §2.5 — a parser-invariant widening
+    is a paired spec + test change; this test asserts the gap first.)
+    """
+    from lawvm.new_zealand.source_tree import parse_nz_source_document
+
+    # XML where <part> lacks <label>: parser emits path[0] = `part@DLM888`-shaped.
+    # A <prov> nested inside an unlabeled <part>: its path will become
+    # `('part@DLM888', 'prov:21')`.
+    xml = b"""\
+<act>
+  <body>
+    <part id="DLM888"><heading>Unlabeled part -- parser falls back to xml_id</heading>
+      <prov id="DLM821" deletion-status=""><label>21</label><heading>Section 21</heading>
+        <prov.body><para><text>21 Section body 21 original.</text></para></prov.body></prov>
+    </part>
+  </body>
+</act>
+"""
+    doc = parse_nz_source_document(xml, xml_locator="before", version_id="before")
+    # Confirm parser produced the part@xml_id shape.
+    prov21_nodes = [n for n in doc.nodes if n.kind == "prov" and n.label == "21"]
+    assert prov21_nodes, "expected prov:21 to parse"
+    prov21 = prov21_nodes[0]
+    assert prov21.path[0].startswith("part@"), (
+        f"expected the source-tree parser to fall back to `part@xml_id` shape for "
+        f"unlabeled <part>, got {prov21.path[0]!r} -- parser behavior changed! "
+        f"Either the parser now produces a stable `part:N` shape for unlabeled <part> "
+        f"(GREAT -- this test should be updated to pin the new behavior) OR the synthetic "
+        f"XML here no longer triggers the fallback (update the XML fixture)."
+    )
+
+    # The current gap: _resolve_target_nodes('part@DLM888', 'prov:21') with the op-resolved
+    # path ('prov:21',) FAILS because the leading-part tolerance predicate does not accept
+    # the `part@xml_id` form.
+    matches = _resolve_target_nodes(doc, ("prov:21",))
+    # The bug: assert EMPTY (current behavior). The strict-superset widening will
+    # flip this assertion to `assert len(matches) == 1` (the fix is acknowledged at
+    # that point by updating this test).
+    assert matches == (), (
+        f"_resolve_target_nodes unexpectedly accepted the `part@xml_id` leading segment "
+        f"for path ('prov:21',). The strict-superset widening described in the ledger's "
+        f"`amendment_skipped_target_absent — classified 2026-06-22` section must have "
+        f"landed; this synthetic regression should be updated to assert the new widened "
+        f"behavior (`len(matches) == 1`) as the paired change. matches={matches}"
+    )
