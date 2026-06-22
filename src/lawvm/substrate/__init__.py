@@ -63,6 +63,17 @@ from lawvm.substrate.hashes import (
     storage_blob_hash,
 )
 from lawvm.substrate.manifest import PackLayer, PackManifest, PackProvenance
+from lawvm.substrate.relation_edge import (
+    SCHEMA_RELATION_EDGE,
+    AuthorityPlane,
+    EdgeStatus,
+    RelationKind,
+    TargetSetSemantics,
+    VerificationLevel,
+    build_relation_edge,
+    edge_authority_violation,
+    recompute_edge_id,
+)
 from lawvm.substrate.roots import (
     RootError,
     leaf_hash,
@@ -141,6 +152,16 @@ __all__ = [
     "PackManifest",
     "PackLayer",
     "PackProvenance",
+    # relation_edge (universal proof-graded relation edge, design §25)
+    "SCHEMA_RELATION_EDGE",
+    "RelationKind",
+    "TargetSetSemantics",
+    "AuthorityPlane",
+    "VerificationLevel",
+    "EdgeStatus",
+    "build_relation_edge",
+    "edge_authority_violation",
+    "recompute_edge_id",
     # source
     "LogicalKind",
     "Availability",

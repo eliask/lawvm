@@ -47,6 +47,11 @@ from lawvm.substrate.canonical_json import (
     semantic_hash,
 )
 from lawvm.substrate.manifest import PackManifest
+from lawvm.substrate.relation_edge import (
+    SCHEMA_RELATION_EDGE,
+    edge_authority_violation,
+    recompute_edge_id,
+)
 from lawvm.substrate.roots import (
     RootError,
     leaf_hash,
@@ -86,6 +91,7 @@ class IntegrityVerdict(enum.Enum):
     INVALID_MISSING_OBJECT = "INVALID_MISSING_OBJECT"
     INVALID_SELECTION_UNIVERSE = "INVALID_SELECTION_UNIVERSE"
     INVALID_SELECTION_OVERLAP = "INVALID_SELECTION_OVERLAP"
+    INVALID_EDGE_AUTHORITY = "INVALID_EDGE_AUTHORITY"
     UNSUPPORTED_SCHEMA = "UNSUPPORTED_SCHEMA"
     UNCHECKABLE_MISSING_SOURCE = "UNCHECKABLE_MISSING_SOURCE"
 
@@ -120,6 +126,7 @@ class TopLineVerdict(enum.Enum):
     INVALID_MISSING_OBJECT = "INVALID_MISSING_OBJECT"
     INVALID_SELECTION_UNIVERSE = "INVALID_SELECTION_UNIVERSE"
     INVALID_SELECTION_OVERLAP = "INVALID_SELECTION_OVERLAP"
+    INVALID_EDGE_AUTHORITY = "INVALID_EDGE_AUTHORITY"
     UNSUPPORTED_SCHEMA = "UNSUPPORTED_SCHEMA"
     UNCHECKABLE_MISSING_SOURCE = "UNCHECKABLE_MISSING_SOURCE"
     VALID_BLOCKED = "VALID_BLOCKED"
@@ -166,6 +173,7 @@ class ViolationCode(enum.Enum):
     INVALID_MISSING_OBJECT = "INVALID_MISSING_OBJECT"
     INVALID_SELECTION_UNIVERSE = "INVALID_SELECTION_UNIVERSE"
     INVALID_SELECTION_OVERLAP = "INVALID_SELECTION_OVERLAP"
+    INVALID_EDGE_AUTHORITY = "INVALID_EDGE_AUTHORITY"
     UNSUPPORTED_SCHEMA = "UNSUPPORTED_SCHEMA"
     UNCHECKABLE_MISSING_SOURCE = "UNCHECKABLE_MISSING_SOURCE"
     RESIDUAL_BLOCKS = "RESIDUAL_BLOCKS"
@@ -256,6 +264,7 @@ _INTEGRITY_TO_TOP: dict[IntegrityVerdict, TopLineVerdict] = {
     IntegrityVerdict.INVALID_MISSING_OBJECT: TopLineVerdict.INVALID_MISSING_OBJECT,
     IntegrityVerdict.INVALID_SELECTION_UNIVERSE: TopLineVerdict.INVALID_SELECTION_UNIVERSE,
     IntegrityVerdict.INVALID_SELECTION_OVERLAP: TopLineVerdict.INVALID_SELECTION_OVERLAP,
+    IntegrityVerdict.INVALID_EDGE_AUTHORITY: TopLineVerdict.INVALID_EDGE_AUTHORITY,
     IntegrityVerdict.UNSUPPORTED_SCHEMA: TopLineVerdict.UNSUPPORTED_SCHEMA,
     IntegrityVerdict.UNCHECKABLE_MISSING_SOURCE: TopLineVerdict.UNCHECKABLE_MISSING_SOURCE,
 }
@@ -688,6 +697,9 @@ class Checker:
 
         # L0.7 — content-leaf text-only identity (design §22.1 anchor ladder).
         self._check_content_leaf_identity(pack, violations, record)
+
+        # L0.8 — relation-edge identity + authority×evidence legality (§25.3).
+        self._check_relation_edge_authority(pack, violations, record)
 
         if worst is not None:
             return worst
@@ -1214,6 +1226,85 @@ class Checker:
                     )
                     record(IntegrityVerdict.INVALID_HASH)
 
+    def _check_relation_edge_authority(
+        self, pack: Pack, violations: list[TypedViolation], record
+    ) -> None:
+        """L0.8 — every ``lawvm.legal_relation_edge.v0`` row's ``edge_id`` is the
+        content-addressed identity AND its (authority_plane, verification_level)
+        pair is a LEGAL combination (design §25.3 — the firewall's teeth).
+
+        The substrate is a typed relation graph; the hard invariant is **no
+        relation edge may be stronger than its evidence class**. An edge whose
+        declared ``edge_id`` does not recompute is a hard ``INVALID_EDGE_AUTHORITY``
+        (text/identity tamper), and an illegal plane×level combination — a
+        ``legal_state`` edge carrying ``induced_similarity``, or a
+        ``source_asserted`` edge claiming the ``legal_state`` plane — is the
+        edge-level analog of "silent divergence = type error". Jurisdiction- and
+        layer-neutral: fires only on the relation-edge schema, in any layer.
+        """
+        for kind, layer in pack.layers.items():
+            for row in layer.rows:
+                body = _row_object(row)
+                if body is None or body.get("schema") != SCHEMA_RELATION_EDGE:
+                    continue
+                typed_body = cast(dict[str, JsonValue], dict(body))
+                declared = typed_body.get("edge_id")
+                # Identity integrity — the edge_id must be the content hash of
+                # the body without its own id (§1.3 preimage convention).
+                if not isinstance(declared, str):
+                    violations.append(
+                        TypedViolation(
+                            code=ViolationCode.INVALID_EDGE_AUTHORITY,
+                            level="L0",
+                            layer=kind,
+                            subject=str(declared),
+                            detail=(
+                                "relation edge is missing a string edge_id "
+                                "(content-addressed identity, §25.1/§1.3)"
+                            ),
+                        )
+                    )
+                    record(IntegrityVerdict.INVALID_EDGE_AUTHORITY)
+                    continue
+                recomputed = recompute_edge_id(typed_body)
+                if _strip(recomputed) != _strip(declared):
+                    violations.append(
+                        TypedViolation(
+                            code=ViolationCode.INVALID_EDGE_AUTHORITY,
+                            level="L0",
+                            layer=kind,
+                            subject=declared,
+                            expected=recomputed,
+                            actual=declared,
+                            detail=(
+                                f"relation edge_id mismatch in layer {kind!r}: declared "
+                                f"{declared}, recomputed {recomputed} (tamper/corruption, §25.1)"
+                            ),
+                        )
+                    )
+                    record(IntegrityVerdict.INVALID_EDGE_AUTHORITY)
+                    continue
+                # Authority×evidence legality — the firewall (§25.3).
+                reason = edge_authority_violation(typed_body)
+                if reason is not None:
+                    plane = typed_body.get("authority_plane")
+                    level = typed_body.get("verification_level")
+                    violations.append(
+                        TypedViolation(
+                            code=ViolationCode.INVALID_EDGE_AUTHORITY,
+                            level="L0",
+                            layer=kind,
+                            subject=f"({plane}, {level})",
+                            detail=(
+                                f"relation edge {declared} has an illegal "
+                                f"authority_plane×verification_level combination "
+                                f"({plane!r}, {level!r}): {reason} — no relation edge "
+                                f"may be stronger than its evidence class (§25.3)"
+                            ),
+                        )
+                    )
+                    record(IntegrityVerdict.INVALID_EDGE_AUTHORITY)
+
     # -- L1: finite-interval selection algebra (contract §3) ---------------- #
 
     def _run_l1(
@@ -1644,8 +1735,9 @@ _INTEGRITY_RANK: dict[IntegrityVerdict, int] = {
     IntegrityVerdict.INVALID_MISSING_OBJECT: 3,
     IntegrityVerdict.INVALID_SELECTION_UNIVERSE: 4,
     IntegrityVerdict.INVALID_SELECTION_OVERLAP: 5,
-    IntegrityVerdict.UNSUPPORTED_SCHEMA: 6,
-    IntegrityVerdict.UNCHECKABLE_MISSING_SOURCE: 7,
+    IntegrityVerdict.INVALID_EDGE_AUTHORITY: 6,
+    IntegrityVerdict.UNSUPPORTED_SCHEMA: 7,
+    IntegrityVerdict.UNCHECKABLE_MISSING_SOURCE: 8,
     IntegrityVerdict.VALID_WITH_UNSUPPORTED_LAYERS: 10,
     IntegrityVerdict.VALID: 11,
 }

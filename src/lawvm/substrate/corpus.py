@@ -52,6 +52,13 @@ from typing import Any
 from lawvm.substrate.canonical_json import JsonValue, wrap_row
 from lawvm.substrate.corpus_totality import IncludedMember, build_corpus_totality
 from lawvm.substrate.manifest import PackLayer, PackManifest, PackProvenance
+from lawvm.substrate.relation_edge import (
+    AuthorityPlane,
+    RelationKind,
+    TargetSetSemantics,
+    VerificationLevel,
+    edge_authority_violation,
+)
 from lawvm.substrate.roots import leaf_hash, set_root
 
 # --------------------------------------------------------------------------- #
@@ -301,7 +308,28 @@ def make_cross_work_resolution(
         },
         "depends_on": [source.struct_node_id, target.struct_node_id],
         "source_refs": [],
+        # §25.4 — this §14 cross-work reference resolution is the FIRST profile
+        # of the universal lawvm.legal_relation_edge.v0. Carry the typed
+        # relation-edge fields so the resolution is self-describingly consistent
+        # with the §25.3 authority×evidence legality matrix WITHOUT changing the
+        # lawvm.overlay.v1 schema (a consumer that reads the overlay keeps
+        # working; the relation-graph view reads these typed mirrors). The
+        # surface-only / replay-not-authorized posture maps to:
+        #   authority_plane=surface · verification_level=registry_resolved ·
+        #   replay_authorized=false — a combination the matrix ACCEPTS.
+        "relation_kind": RelationKind.CITATION.value,
+        "authority_plane": AuthorityPlane.SURFACE.value,
+        "verification_level": VerificationLevel.REGISTRY_RESOLVED.value,
+        "replay_authorized": False,
+        "target_set_semantics": TargetSetSemantics.SINGLE.value,
     }
+    # Self-check: the §14 reference profile must itself satisfy the firewall.
+    violation = edge_authority_violation(body)
+    if violation is not None:  # pragma: no cover — invariant guard
+        raise ValueError(
+            f"make_cross_work_resolution emits an edge that violates the §25.3 "
+            f"authority×evidence legality matrix: {violation}"
+        )
     return body
 
 
