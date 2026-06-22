@@ -325,6 +325,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_retraction_lifecycle.py",
         "test_fi_source_provider.py",
         "test_fi_validate_claims_cli.py",
+        "test_fi_payload_realization_audit.py",
     ),
     "evidence_claims": (
         "test_evidence.py",
@@ -472,6 +473,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_compile_facade_v3.py",
         "test_export_emitters_compile_metadata.py",
         "test_build_index_db_compile_metadata.py",
+        "test_payload_realization.py",
     ),
     "core_materialization_invariants": (
         "test_fi_materialization_invariants.py",

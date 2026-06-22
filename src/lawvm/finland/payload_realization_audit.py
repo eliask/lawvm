@@ -42,7 +42,8 @@ def _payload_realization_units(
 ) -> tuple[PayloadRealizationUnit, ...]:
     units: list[PayloadRealizationUnit] = []
     for index, rop in enumerate(resolved_ops):
-        if rop.resolved_action_type not in _REALIZING_ACTION_TYPES:
+        action_type = getattr(rop, "resolved_action_type", "")
+        if action_type not in _REALIZING_ACTION_TYPES:
             continue
         payload_ir = rop.resolved_amend_sub_ir() or rop.muutos_ir or rop.cross_ir
         if payload_ir is None:
@@ -52,7 +53,7 @@ def _payload_realization_units(
         units.append(
             PayloadRealizationUnit(
                 unit_id=unit_id,
-                unit_kind=rop.resolved_action_type,
+                unit_kind=action_type,
                 observed_label=rop.resolved_target_label,
                 parent_label=str(target or ""),
                 text_chunks=_payload_text_chunks(payload_ir),
