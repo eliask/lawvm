@@ -1797,6 +1797,8 @@ def test_quoted_block_insert_residual_is_typed_oracle_suspect_not_lawvm_wrong(
     )
 
     class _OneOpReport:
+        enacted = ""
+
         def operations(self) -> list[LegalOperation]:
             return [op]
 

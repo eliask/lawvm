@@ -45,7 +45,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Mapping
+from functools import lru_cache
+from typing import Any, Iterable, Mapping
 
 from lawvm.core.agreement_residual import (
     AgreementResidual,
@@ -879,7 +880,7 @@ def _residual_family(disposition: str) -> AgreementResidualFamily:
     return "unknown"
 
 
-def _counts(values: Any) -> dict[str, int]:
+def _counts(values: Iterable[str]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for value in values:
         key = str(value or "__blank__")
@@ -1230,6 +1231,18 @@ def _running_subtree_text(
     return running[start:end]
 
 
+@lru_cache(maxsize=512)
+def _word_boundary_pattern(match_text: str) -> re.Pattern[str]:
+    """Compile and cache a word-boundary pattern for an alphabetic amendatory token.
+
+    Per AGENTS.md §2.7: per-provision ``re.compile(rf\"(?<!\\w){re.escape(match_text)}(?!\\w)\")``
+    calls dominated compile cost. The set of distinct quoted amendatory tokens is
+    small and repeats heavily across ops (``'or'``, ``'and'``, ``'shall'`` ...),
+    so a bounded LRU cache is sound.
+    """
+    return re.compile(rf"(?<!\w){re.escape(match_text)}(?!\w)")
+
+
 def _token_in_text(text: str, match_text: str) -> bool:
     """True when ``text`` contains ``match_text`` as a standalone token.
 
@@ -1238,14 +1251,14 @@ def _token_in_text(text: str, match_text: str) -> bool:
     substring presence.
     """
     if match_text.isalpha():
-        return re.search(rf"(?<!\w){re.escape(match_text)}(?!\w)", text) is not None
+        return _word_boundary_pattern(match_text).search(text) is not None
     return match_text in text
 
 
 def _token_count_in_text(text: str, match_text: str) -> int:
     """Count occurrences of ``match_text`` as a standalone token."""
     if match_text.isalpha():
-        return len(re.findall(rf"(?<!\w){re.escape(match_text)}(?!\w)", text))
+        return len(_word_boundary_pattern(match_text).findall(text))
     return text.count(match_text)
 
 
@@ -1262,7 +1275,7 @@ def _replace_token_in_text(text: str, match_text: str, replacement: str, count: 
     literal semantics so phrase-shape patches continue to work unchanged.
     """
     if match_text.isalpha():
-        pattern = re.compile(rf"(?<!\w){re.escape(match_text)}(?!\w)")
+        pattern = _word_boundary_pattern(match_text)
         new_text = pattern.sub(replacement or "", text, count=count if count != -1 else 0)
         return new_text
     return text.replace(match_text, replacement or "", count)
@@ -1288,7 +1301,7 @@ def _replace_token_tail_in_text(text: str, match_text: str, replacement: str, co
     if not match_text:
         return text
     if match_text.isalpha():
-        pattern = re.compile(rf"(?<!\w){re.escape(match_text)}(?!\w)")
+        pattern = _word_boundary_pattern(match_text)
         starts = [m.start() for m in pattern.finditer(text)]
     else:
         starts = [m.start() for m in re.finditer(re.escape(match_text), text)]
@@ -1990,9 +2003,7 @@ def build_us_dry_run(
         report = lower_plaw_amendatory(
             blob, statute_id=statute_id, enacted=enacted, proof_title=str(title)
         )
-        # `report.enacted` may be absent in synthetic test doubles; fall back to the
-        # statute id so the sort remains total.
-        report_enacted = getattr(report, "enacted", "") or statute_id
+        report_enacted = report.enacted or statute_id
         lowered_reports.append((report_enacted, statute_id, blob, report))
     lowered_reports.sort(key=lambda x: (x[0] or x[1], x[1]))
     for _enacted, statute_id, _blob, report in lowered_reports:
@@ -2378,7 +2389,7 @@ def _build_boundary_proof(
     changed_set = set(oracle_changed)
     claimed_set = set(claimed)
 
-    def _paths(section_keys: Any) -> tuple[TreePath, ...]:
+    def _paths(section_keys: Iterable[str]) -> tuple[TreePath, ...]:
         out: list[TreePath] = []
         for section_key in section_keys:
             sk_title, _, section = section_key.partition(":")

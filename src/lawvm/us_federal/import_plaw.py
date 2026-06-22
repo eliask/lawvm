@@ -29,6 +29,7 @@ from typing import Any, Callable, Iterator
 import tempfile
 import urllib.request
 import zipfile
+import zlib
 
 from lawvm.us_federal.sources import (
     GOVINFO_PLAW_MEMBER_URL,
@@ -209,7 +210,7 @@ def import_plaw_zip(
 
             try:
                 data = zf.read(name)
-            except Exception as exc:  # corrupt/truncated zip member
+            except (zipfile.BadZipFile, OSError, zlib.error, EOFError) as exc:  # corrupt/truncated zip member
                 # Acquisition lane: never silently drop. Emit a typed rejection
                 # receipt (AGENTS.md §1.8/§1.10) carrying the entry name, locator,
                 # and the underlying exception class/message, so the gap is visible

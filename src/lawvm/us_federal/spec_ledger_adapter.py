@@ -220,14 +220,14 @@ def us_ledger_inputs_from_reports(
 
         # 4. Ambiguous sunset findings (note present, reversion unproven).
         for finding in report.sunset_findings:
-            rid = getattr(finding, "rule_id", "") or ""
+            rid = finding.rule_id
             if not rid:
                 continue
             firings[rid] += 1
             divergences.append(
                 DivergenceRow(
                     sid=sid,
-                    section_key=str(getattr(finding, "section", "")),
+                    section_key=finding.section,
                     diagnosis="sunset_note_unproven",
                     disposition="oracle_suspect",
                     rule_id=rid,

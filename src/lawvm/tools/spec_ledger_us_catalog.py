@@ -75,6 +75,10 @@ US_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
         # govinfo/OLRC classification refs (including sidenote refs). It is not a
         # separate witness rule id.
         "us_amend_target_title_from_section_classification",
+        # Classifier id for the compile_classifier_regex call (AGENTS.md §2.4 telemetry).
+        # Not a witness rule id.
+        "us_amendatory_each_place",
+        "us_amendatory_is_repealed_prose",
         "us_dry_run_section_changed_set",
         "us_dry_run_section_text",
         "us_dry_run_changed_section_set_matches_oracle",
@@ -119,6 +123,12 @@ _US_RULE_SPECS: Dict[str, str] = {
         "A 'striking <old> and inserting a semicolon/comma/period' instruction maps "
         "the prose punctuation word to its character and replaces the first (or each) "
         "occurrence of the quoted old text with that character in the target node."
+    ),
+    "us_amend_text_replace_each_place": (
+        "A strike-and-insert whose enacted text says 'each place it appears' is an "
+        "all-occurrence replacement (TextSelector.occurrence=-1), not a single-occurrence "
+        "replace. The phrase is recognized by a named compile_classifier_regex (AGENTS.md "
+        "§1.11/§2.4), not a raw substring check."
     ),
     "us_amend_insert_end_punctuation": (
         "An 'inserting <text> before/after the period/semicolon/comma at the end' "

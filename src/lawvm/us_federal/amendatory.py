@@ -44,6 +44,7 @@ from lawvm.core.ir import (
 from lawvm.core.parse_witness import ParseWitness
 from lawvm.core.branch_authority import COMMENCED_STATUS, PENDING_CONDITION_STATUS
 from lawvm.core.provenance import OperationSource
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 
 USLM_NS = "http://schemas.gpo.gov/xml/uslm"
@@ -131,6 +132,32 @@ TARGET_TITLE_FROM_PLAW_METADATA = "us_amend_target_title_from_plaw_metadata"
 # the act name a different title, the metadata fallback is withheld for the whole
 # Public Law to avoid cross-title target hijacking.
 PLAW_METADATA_SCOPE_CONFLICT_RULE_ID = "us_amend_plaw_metadata_scope_conflict"
+
+# A text-replace instruction whose enacted text says "each place it appears" /
+# "each place appearing" — a statutory instruction to apply the replacement to
+# ALL occurrences, not just the first. This is the typed carrier for what was
+# previously a raw substring check "each place" in raw_text (AGENTS.md §1.11:
+# no surface predicate authorizes legal state — mutation scope is legal state).
+# The regex is a named classifier compiled through compile_classifier_regex so the
+# backtracking lint and required-literal prefilter are enforced (AGENTS.md §2.4).
+EACH_PLACE_APPLIES_RULE_ID = "us_amend_text_replace_each_place"
+_EACH_PLACE_RE = compile_classifier_regex(
+    r"\beach\s+place\b",
+    re.IGNORECASE,
+    classifier_id="us_amendatory_each_place",
+)
+
+
+def _is_each_place_instruction(raw_text: str) -> bool:
+    """True when the enacted instruction directs an all-occurrence replacement.
+
+    ``"each place it appears"`` / ``"each place appearing"`` is a statutory
+    instruction that the strike-and-insert applies to every occurrence of the
+    match text, not just the first. This sets ``TextSelector.occurrence = -1``
+    (all occurrences). Without this, a single-occurrence replacement leaves
+    later occurrences unmodified — a mutation-scope error.
+    """
+    return _EACH_PLACE_RE.search(raw_text) is not None
 # whether the instruction is in force for the requested point-in-time.
 _EFFECTIVE_AFTER_ENACTMENT_RE = re.compile(
     r"effective\s+(?:on\s+)?(?:the\s+date\s+that\s+is\s+)?"
@@ -445,6 +472,17 @@ def _label_token(label: str) -> str:
     return label.strip("().- \t")
 
 
+# Module-scope regex for the "subsections (a) through (e)" range form used by
+# sibling sunset/effective-scope collectors. Hoisted per AGENTS.md §2.4
+# backtracking discipline — the two scope collectors are called per PLAW section
+# and the pattern was duplicated at both call sites.
+_SIBLING_SCOPE_RANGE_RE = re.compile(
+    r"(?P<kind>subsections?|paragraphs?|subparagraphs?|clauses?)\s+"
+    r"\((?P<start>[0-9A-Za-z]+)\)(?:\s+through\s+\((?P<end>[0-9A-Za-z]+)\))?",
+    re.IGNORECASE,
+)
+
+
 def _collect_sibling_sunset_scopes(
     section: ET.Element,
     parent_of: dict[ET.Element, ET.Element | None],
@@ -465,11 +503,6 @@ def _collect_sibling_sunset_scopes(
     """
     scopes: dict[ET.Element, str] = {}
     unit_tags = {"subsection", "paragraph", "subparagraph", "clause"}
-    kind_re = re.compile(
-        r"(?P<kind>subsections?|paragraphs?|subparagraphs?|clauses?)\s+"
-        r"\((?P<start>[0-9A-Za-z]+)\)(?:\s+through\s+\((?P<end>[0-9A-Za-z]+)\))?",
-        re.IGNORECASE,
-    )
 
     for sibling in section.iter():
         if _localname(sibling.tag) not in unit_tags:
@@ -488,7 +521,7 @@ def _collect_sibling_sunset_scopes(
         if any(_localname(a.tag) == "amendingAction" for a in sibling.iter()):
             continue
         expiry_text = shallow
-        range_match = kind_re.search(shallow)
+        range_match = _SIBLING_SCOPE_RANGE_RE.search(shallow)
         if range_match is None:
             continue
         kind = range_match.group("kind").rstrip("s").lower()
@@ -580,11 +613,6 @@ def _collect_sibling_effective_scopes(
     """
     scopes: dict[ET.Element, str] = {}
     unit_tags = {"subsection", "paragraph", "subparagraph", "clause"}
-    kind_re = re.compile(
-        r"(?P<kind>subsections?|paragraphs?|subparagraphs?|clauses?)\s+"
-        r"\((?P<start>[0-9A-Za-z]+)\)(?:\s+through\s+\((?P<end>[0-9A-Za-z]+)\))?",
-        re.IGNORECASE,
-    )
 
     for sibling in section.iter():
         if _localname(sibling.tag) not in unit_tags:
@@ -603,7 +631,7 @@ def _collect_sibling_effective_scopes(
         # temporal/meta paragraphs like "(f)(1) Effective date".
         if any(_localname(a.tag) == "amendingAction" for a in sibling.iter()):
             continue
-        range_match = kind_re.search(shallow)
+        range_match = _SIBLING_SCOPE_RANGE_RE.search(shallow)
         if range_match is not None:
             kind = range_match.group("kind").rstrip("s").lower()
             start_label = range_match.group("start")
@@ -1698,11 +1726,23 @@ def _resolve_target(
     return None, "unresolved"
 
 
+# Surface-prose fallback for the repeal action family. The typed
+# <amendingAction type="repeal"> element is the primary authority; this regex
+# is a prefilter fallback when the typed element is absent (AGENTS.md §1.11).
+# Hoisted per AGENTS.md §2.4 backtracking discipline and routed through
+# compile_classifier_regex (AGENTS.md §2.4 safety lint + prefilter).
+_IS_REPEALED_PROSE_RE = compile_classifier_regex(
+    r"\bis\s+repealed\b",
+    re.IGNORECASE,
+    classifier_id="us_amendatory_is_repealed_prose",
+)
+
+
 def _classify_action(actions: list[str], raw_text: str) -> str:
     """Map the amendingAction verb sequence / prose to a canonical family token."""
     has = set(actions)
     lowered = raw_text.lower()
-    if "repeal" in has or re.search(r"\bis repealed\b", lowered):
+    if "repeal" in has or _IS_REPEALED_PROSE_RE.search(lowered) is not None:
         return "repeal"
     if "redesignate" in has or "redesignat" in lowered:
         return "redesignate"
@@ -2361,7 +2401,7 @@ def _lower_instruction(
                         kind=TextPatchKindEnum.REPLACE,
                         selector=TextSelector(
                             match_text=old,
-                            occurrence=-1 if "each place" in raw_text.lower() else 0,
+                            occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
                         ),
                         replacement=new,
                     ),
@@ -2383,7 +2423,7 @@ def _lower_instruction(
                     kind=TextPatchKindEnum.REPLACE,
                     selector=TextSelector(
                         match_text=old,
-                        occurrence=-1 if "each place" in raw_text.lower() else 0,
+                        occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
                     ),
                     replacement=new,
                 ),
@@ -2543,7 +2583,7 @@ def _lower_instruction(
                     kind=TextPatchKindEnum.DELETE,
                     selector=TextSelector(
                         match_text=quoted[0],
-                        occurrence=-1 if "each place" in raw_text.lower() else 0,
+                        occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
                     ),
                 ),
                 target=_text_strike_target,

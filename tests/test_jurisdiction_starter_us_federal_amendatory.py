@@ -2440,3 +2440,37 @@ def test_through_tail_strike_emits_typed_not_section_representable_finding():
     assert instr.operation is None
     assert instr.finding is not None
     assert instr.finding.rule_id == THROUGH_TAIL_STRIKE_FINDING_RULE_ID
+
+
+# ---------------------------------------------------------------------------
+# Typed "each place" recognition (AGENTS.md §1.11 / §2.4)
+# ---------------------------------------------------------------------------
+
+
+def test_each_place_recognizer_true_on_drafting_instruction():
+    """The "each place" drafting instruction is recognized as a typed, named
+    classifier (compile_classifier_regex), not a raw substring check.
+
+    AGENTS.md §1.11: no surface predicate authorizes mutation scope. The
+    recognizer routes into the typed ``TextSelector.occurrence`` carrier.
+    """
+    from lawvm.us_federal.amendatory import _EACH_PLACE_RE, _is_each_place_instruction
+
+    assert _is_each_place_instruction(
+        'by striking "$3,237,000" each place it appears and inserting "$10,000,000"'
+    )
+    assert _EACH_PLACE_RE.search("EACH PLACE it appears") is not None  # case-insensitive
+
+
+def test_each_place_recognizer_false_without_phrase():
+    """Negative test: the recognizer does not fire when the drafting instruction
+    lacks the "each place" modifier.
+    """
+    from lawvm.us_federal.amendatory import _is_each_place_instruction
+
+    assert not _is_each_place_instruction(
+        'by striking "$3,237,000" and inserting "$10,000,000"'
+    )
+    assert not _is_each_place_instruction(
+        'by striking "each" and inserting "place"'  # words inside quotes, not the phrase
+    )
