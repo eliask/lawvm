@@ -269,6 +269,7 @@ def _op(
     scope_provenance_tags: tuple[str, ...] = (),
     has_exact_bound_payload: bool = False,
     witness_rule_id: str | None = None,
+    body_chapter_move_from: str | None = None,
 ) -> AmendmentOp:
     return AmendmentOp(
         op_id="test_op",
@@ -293,6 +294,7 @@ def _op(
         is_temporary=is_temporary,
         has_exact_bound_payload=has_exact_bound_payload,
         witness_rule_id=witness_rule_id,
+        body_chapter_move_from=body_chapter_move_from,
     )
 
 
@@ -8112,7 +8114,12 @@ def test_apply_whole_section_insert_moves_unique_parent_section_into_letter_suff
             ),
         )
     )
-    op = _op(op_type="INSERT", target_section="55", target_chapter="7c")
+    op = _op(
+        op_type="INSERT",
+        target_section="55",
+        target_chapter="7c",
+        body_chapter_move_from="7",
+    )
     muutos_ir = _sec("55", _content("new subchapter text"))
     pathologies: list[SourcePathology] = []
 
@@ -8135,6 +8142,52 @@ def test_apply_whole_section_insert_moves_unique_parent_section_into_letter_suff
     assert len(pathologies) == 1
     assert pathologies[0].code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
     assert pathologies[0].detail["recovery_kind"] == "section_move_insert_destination_rebind"
+
+
+def test_apply_whole_section_insert_does_not_move_parent_section_without_declared_body_move() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="6",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="6 luku"),
+                    _sec("2a", _content("chapter six native text")),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="6b",
+                children=(IRNode(kind=IRNodeKind.NUM, text="6 b luku"),),
+            ),
+        )
+    )
+    op = _op(op_type="INSERT", target_section="2a", target_chapter="6b")
+    muutos_ir = _sec("2a", _content("chapter six b native text"))
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        muutos_ir,
+        None,
+        _LEGAL_PIT,
+        "6 b luku 2 a §",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    original = result.find_section("2a", "6")
+    inserted = result.find_section("2a", "6b")
+    assert original is not None
+    assert inserted is not None
+    assert "chapter six native text" in irnode_to_text(original)
+    assert "chapter six b native text" in irnode_to_text(inserted)
+    assert not any(
+        pathology.detail.get("recovery_kind") == "section_move_insert_destination_rebind"
+        for pathology in pathologies
+    )
 
 
 def test_apply_whole_section_insert_into_existing_chapter_emits_pathology() -> None:

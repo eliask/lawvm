@@ -1042,6 +1042,12 @@ def _coerce_structure_apply_view(op: "_StructureApplyView | AmendmentOp | Resolv
     return _structure_apply_view_for_op(op)
 
 
+def _body_chapter_move_source(op: "_StructureApplyView | AmendmentOp | ResolvedOp") -> str:
+    if isinstance(op, ResolvedOp):
+        return str(getattr(op.op, "body_chapter_move_from", "") or "").strip()
+    return str(getattr(op, "body_chapter_move_from", "") or "").strip()
+
+
 def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureApplyView:
     if isinstance(op, ResolvedOp):
         scope = op.resolved_target_scope_view
@@ -2893,7 +2899,7 @@ def _apply_whole_section_op(
                         return state.with_ir(moved_ir)
                     elif re.fullmatch(
                         rf"{re.escape(existing_chapter)}[a-z]+", _target_chapter, re.I
-                    ) is not None:
+                    ) is not None and _body_chapter_move_source(op) == existing_chapter:
                         # Section exists in the "parent" chapter (e.g. §55 in ch "7")
                         # and is being INSERTed into a letter-suffix sub-chapter (e.g.
                         # ch "7c") via a REPLACE→INSERT pseudo-chapter restructuring
