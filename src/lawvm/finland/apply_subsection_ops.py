@@ -587,6 +587,51 @@ def _strip_context_carried_omission_for_complete_numbered_replace(
     )
 
 
+def _strip_owned_bound_omissions_for_complete_numbered_replace(
+    replacement_subsection: IRNode,
+) -> IRNode | None:
+    """Strip omission delimiters from an exact-bound whole-subsection payload.
+
+    Sparse subsection payloads use omission nodes to preserve unstated live
+    item rows.  Once elaboration has bound a single owned payload to a
+    whole-subsection ``REPLACE``, a contiguous numbered list starting at 1 owns
+    the target subsection's child list even if the source XML still carries a
+    context omission before the rows.  In that shape omission nodes delimit the
+    source excerpt; they do not authorize splicing stale live children back in.
+    """
+    if not any(_is_omission_ir(child) for child in replacement_subsection.children):
+        return None
+
+    non_omission_children = tuple(
+        child for child in replacement_subsection.children if not _is_omission_ir(child)
+    )
+    numbered = [
+        child
+        for child in non_omission_children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    ]
+    if not numbered:
+        return None
+    numbered_labels = [normalized_label_key(child.label) for child in numbered]
+    if any(not label.isdigit() for label in numbered_labels):
+        return None
+    if numbered_labels != [str(i) for i in range(1, len(numbered_labels) + 1)]:
+        return None
+    if any(
+        child.kind is IRNodeKind.PARAGRAPH and child.label and child not in numbered
+        for child in non_omission_children
+    ):
+        return None
+
+    return IRNode(
+        kind=replacement_subsection.kind,
+        label=replacement_subsection.label,
+        text=replacement_subsection.text,
+        attrs=dict(replacement_subsection.attrs),
+        children=non_omission_children,
+    )
+
+
 def _split_sparse_omission_item_row_text(text: str) -> tuple[str, str] | None:
     stripped = text.strip()
     for idx, char in enumerate(stripped[:8]):
@@ -1419,11 +1464,21 @@ def _apply_subsection_replace(
                 )
             complete_numbered_rewrite = _strip_context_carried_omission_for_complete_numbered_replace(_replace_sub)
             if complete_numbered_rewrite is not None:
+                logger.debug(
+                    "  %s → stripped context-carried omission from complete numbered whole-subsection replace payload",
+                    ctx_label,
+                )
+                _replace_sub = complete_numbered_rewrite
+            elif view.has_exact_bound_payload:
+                owned_bound_rewrite = _strip_owned_bound_omissions_for_complete_numbered_replace(
+                    _replace_sub
+                )
+                if owned_bound_rewrite is not None:
                     logger.debug(
-                        "  %s → stripped context-carried omission from complete numbered whole-subsection replace payload",
+                        "  %s → stripped owned bound omission from complete numbered whole-subsection replace payload",
                         ctx_label,
                     )
-                    _replace_sub = complete_numbered_rewrite
+                    _replace_sub = owned_bound_rewrite
             merged = _merge_intro_only_subsection_replace(subsecs[n], _replace_sub)
             if merged is None:
                 merged = _merge_subsection_accumulate_inner_omission_ir(subsecs[n], _replace_sub)

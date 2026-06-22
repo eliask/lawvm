@@ -267,6 +267,7 @@ def _op(
     extraction_provenance_tags: tuple[str, ...] = (),
     target_guessing_provenance_tags: tuple[str, ...] = (),
     scope_provenance_tags: tuple[str, ...] = (),
+    has_exact_bound_payload: bool = False,
     witness_rule_id: str | None = None,
 ) -> AmendmentOp:
     return AmendmentOp(
@@ -290,6 +291,7 @@ def _op(
         source_statute="2020/1",
         source_issue_date=_DATE,
         is_temporary=is_temporary,
+        has_exact_bound_payload=has_exact_bound_payload,
         witness_rule_id=witness_rule_id,
     )
 
@@ -7133,6 +7135,70 @@ class TestApplySubsectionReplace:
         assert "uusi" in text
         assert "sairaanhoitokortin" not in text
         assert "rajatyöntekijän" not in text
+
+    def test_exact_bound_complete_momentti_replace_drops_stale_item_tail_without_trailing_omission(self) -> None:
+        # Regression for 1946/148 §1a, 2013/977.  A prior amendment inserted
+        # item 1a, then a later explicit "replace 1 a § 2 mom" payload restated
+        # the whole numbered list as 1..3 with a leading context omission.  The
+        # exact slot binding owns subsection 2, so the old item 1a is stale
+        # target-region residue, not a preserved sparse tail.
+        state = _make_state(
+            _body(
+                _sec(
+                    "1a",
+                    _sub("1", _content("old first moment")),
+                    _sub(
+                        "2",
+                        _intro("Arvonlisäverottomasta liikevaihdosta vähennetään:"),
+                        _para("1a", "nikotiinivalmisteiden myynti"),
+                        _para("2", "muiden tuotteiden myynti"),
+                        _para("3", "sivuapteekin myynti"),
+                    ),
+                )
+            )
+        )
+        sec_path = [("section", "1a")]
+        sec = state.ir.children[0]
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        amend_sub = _sub(
+            "1",
+            _intro("Arvonlisäverottomasta liikevaihdosta vähennetään lisäksi seuraavat osuudet:"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            _para("1", "sopimusvalmistuksen myynnin arvo"),
+            _para("2", "nikotiinivalmisteiden myynnin arvo"),
+            _para("3", "1 ja 2 kohdan mukaan vähennetty liikevaihto"),
+        )
+        muutos_ir = _sec("1a", amend_sub)
+        op = _op(
+            op_type="REPLACE",
+            target_section="1a",
+            target_paragraph=2,
+            has_exact_bound_payload=True,
+        )
+
+        result = _apply_subsection_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            _FINLEX_ORACLE,
+            "1 a § 2 mom",
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(
+            c for c in new_sec.children if c.kind is IRNodeKind.SUBSECTION and c.label == "2"
+        )
+        item_labels = [c.label for c in new_sub.children if c.kind is IRNodeKind.PARAGRAPH]
+        assert item_labels == ["1", "2", "3"]
+        text = irnode_to_text(new_sub)
+        assert "sopimusvalmistuksen" in text
+        assert "1 ja 2 kohdan" in text
+        assert "1a)" not in text
 
     def test_not_applicable_for_item_op(self):
         state, sec_path, sec = self._make_sec_and_path()
