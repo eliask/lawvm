@@ -1,5 +1,14 @@
 # US federal dry-run eval state
 
+> **⚠ STALE:** The per-window table below predates several amendatory lowering
+> improvements (relative-prose targeting, sub-section materialization, editorial
+> projection comma-anchor, non-positive-title routing, deferred-op
+> reclassification). On a full-corpus scan (2026-06-22, 248 windows), the
+> aggregate coverage is 2,395/45,735 = 0.0524. Individual windows have
+> improved dramatically: e.g., title11:2018→2020 went from 1/40 = 0.025 to
+> 16/40 = 0.400. The table should be refreshed by a future `python -m
+> lawvm.us_federal.bench` run.
+
 Status: descriptive snapshot of the CURRENT kernel measured over the committed
 bench corpus. This is a **witness-anchored dry-run** number, not a replay claim:
 every window runs with `replay_authorized=False`. The denominator is the
