@@ -239,12 +239,14 @@ def _body_chapter_corrected_ops(
     *,
     target_norm: str,
     target_chapter: Optional[str],
+    resolved_body_part: Optional[str],
     resolved_body_chapter: str,
     body_chapter_move_from: Optional[str] = None,
 ) -> list[AmendmentOp]:
     return [
         dc_replace(
             op,
+            target_part=resolved_body_part if resolved_body_part is not None else op.target_part,
             target_chapter=resolved_body_chapter,
             body_chapter_move_from=body_chapter_move_from or op.body_chapter_move_from,
             scope_confidence=normalize_scope_confidence(
@@ -255,7 +257,15 @@ def _body_chapter_corrected_ops(
                 ),
                 resolved_chapter=resolved_body_chapter,
             ),
-            lo=_lo_with_path_update(op.lo, chapter=resolved_body_chapter) if op.lo is not None else op.lo,
+            lo=(
+                _lo_with_path_update(
+                    op.lo,
+                    part=resolved_body_part if resolved_body_part is not None else op.target_part,
+                    chapter=resolved_body_chapter,
+                )
+                if op.lo is not None
+                else op.lo
+            ),
         )
         if (
             op.target_unit_kind == "section"
@@ -641,7 +651,9 @@ def _maybe_apply_body_chapter_insert_correction(
 ) -> PhaseResult[CompileGroupScopeRecoveryResult]:
     if request.target_unit_kind != "section":
         return PhaseResult(output=result)
-    body_chapter = request.source_model.body_section_chapter(request.target_norm)
+    body_scope = request.source_model.source_body_scope_for_section_target(request.target_norm)
+    body_part = body_scope[0] if body_scope is not None else None
+    body_chapter = body_scope[1] if body_scope is not None else None
     resolved_body_chapter = body_chapter
     carry_forward_scoped = group_has_scope_source(request.group_ops, "carry_forward")
     explicit_chapter_scoped = _group_has_explicit_chapter_scope(request.group_ops)
@@ -801,6 +813,38 @@ def _maybe_apply_body_chapter_insert_correction(
             for op in request.amendment_group_ops
         )
     )
+    target_stem_match = re.fullmatch(r"(?P<stem>\d+)[a-z]+", request.target_norm, re.I)
+    body_chapter_has_target_stem = (
+        body_chapter is not None
+        and target_stem_match is not None
+        and request.source_model.body_has_section(
+            target_stem_match.group("stem"),
+            target_chapter=body_chapter,
+        )
+    )
+    source_owned_existing_chapter_with_heading = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter != request.target_chapter
+        and live_stem_host_scoped
+        and group_targets_whole_section
+        and any(op.op_type == "INSERT" for op in request.group_ops)
+        and not explicit_chapter_scoped
+        and not carry_forward_scoped
+        and request.source_model.body_has_real_chapter_container(body_chapter)
+        and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
+        and body_chapter_has_target_stem
+        and any(
+            op.target_unit_kind == "chapter"
+            and op.target_section
+            and _norm_num_token(op.target_section) == _norm_num_token(body_chapter)
+            and str(op.target_special or "").strip() == "otsikko"
+            and op.op_type in {"REPLACE", "INSERT"}
+            for op in request.amendment_group_ops
+        )
+        and not body_wrapper_overridden_by_scope
+        and not body_wrapper_overridden_by_live_target
+    )
     source_body_letter_run_scope_corroborated = (
         body_chapter is not None
         and _source_body_letter_run_scope_is_corroborated(request, body_chapter)
@@ -825,6 +869,21 @@ def _maybe_apply_body_chapter_insert_correction(
         and (
             not group_has_scope_source(request.group_ops, "live_stem_host")
             or source_owned_existing_chapter_with_sibling_heading
+        )
+        and request.source_model.body_has_real_chapter_container(body_chapter)
+        and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
+        and not body_wrapper_overridden_by_scope
+        and not body_wrapper_overridden_by_live_target
+    )
+    source_owned_body_scope_over_prior_repeal_address = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter != request.target_chapter
+        and carry_forward_scoped
+        and group_targets_whole_section
+        and _group_has_witness_rule(
+            request.group_ops,
+            "fi_reinstated_section_scope_from_prior_repeal_address",
         )
         and request.source_model.body_has_real_chapter_container(body_chapter)
         and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
@@ -863,6 +922,7 @@ def _maybe_apply_body_chapter_insert_correction(
             request.group_ops,
             "fi_reinstated_section_scope_from_prior_repeal_address",
         )
+        and not source_owned_body_scope_over_prior_repeal_address
     ):
         return PhaseResult(output=result)
     if (
@@ -874,7 +934,10 @@ def _maybe_apply_body_chapter_insert_correction(
             body_chapter=body_chapter,
             master=request.master,
         )
-    if resolved_body_chapter is None or resolved_body_chapter == (request.target_chapter or ""):
+    if resolved_body_chapter is None or (
+        resolved_body_chapter == (request.target_chapter or "")
+        and (body_part is None or body_part == request.target_part)
+    ):
         return PhaseResult(output=result)
     apply_correction = False
     if (
@@ -890,9 +953,15 @@ def _maybe_apply_body_chapter_insert_correction(
         )
     elif source_owned_inserted_chapter_scope:
         apply_correction = True
+    elif source_owned_existing_chapter_insert_scope:
+        apply_correction = True
     elif source_owned_existing_chapter_scope:
         apply_correction = True
+    elif source_owned_existing_chapter_with_heading:
+        apply_correction = True
     elif source_owned_existing_letter_run_scope:
+        apply_correction = True
+    elif source_owned_body_scope_over_prior_repeal_address:
         apply_correction = True
     elif carry_forward_scoped:
         apply_correction = (
@@ -903,11 +972,13 @@ def _maybe_apply_body_chapter_insert_correction(
         return PhaseResult(output=result)
     corrected = dc_replace(
         result,
+        effective_target_part=body_part if body_part is not None else result.effective_target_part,
         effective_target_chapter=resolved_body_chapter,
         group_ops=_body_chapter_corrected_ops(
             result.group_ops,
             target_norm=request.target_norm,
             target_chapter=request.target_chapter,
+            resolved_body_part=body_part,
             resolved_body_chapter=resolved_body_chapter,
             body_chapter_move_from=(
                 request.target_chapter if source_owned_existing_chapter_scope else None
