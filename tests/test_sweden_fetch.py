@@ -3386,6 +3386,103 @@ def test_apply_se_ops_conserved_returns_typed_filter_result_partition() -> None:
     assert result_with_adj.applied_ops[0].op_id == result.applied_ops[0].op_id
 
 
+def test_apply_se_ops_conserved_does_not_silently_accept_empty_op_id_skip() -> None:
+    """Regression (§1.8 conservation): a SKIPPED op with an empty op_id must
+    NOT silently land in the accepted lane.
+
+    Before the fix, the partition keyed on the op_id string and the skipped set
+    was ``{a.op_id for a in adjudications if a.op_id}`` — the ``if a.op_id``
+    filter drops a skipped op whose op_id is the default ``""``, so the
+    partition loop's ``op.op_id in skipped_op_ids`` was ``"" in set()`` ==
+    False, and the SKIPPED op fell through to ``accepted`` — a silent drop of
+    the rejection (violating "every input op lands in exactly one of
+    accepted/rejected"). The fix fails loud on empty op_ids instead of
+    mis-partitioning. (Empty op_ids cannot be a robust identity key.)
+    """
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "X", "namnOchEnhet": "X"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "2 § Ursprunglig 2 §.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    statute = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    ops = [
+        # SKIPPED op carrying the DEFAULT empty op_id (target §9 not found).
+        # Before the fix this op was filtered out of the skipped set and
+        # silently landed in `accepted` — a §1.8 conservation violation.
+        LegalOperation(
+            op_id="",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "9"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="9", text="Nytt."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    # The fix refuses to proceed (fail loud) rather than silently accepting a
+    # rejected op — the conservation invariant cannot be honored with an
+    # un-keyable identity, so the helper raises instead of dropping it.
+    with pytest.raises(ValueError, match="non-empty op_id"):
+        apply_se_ops_conserved(statute, ops)
+
+
+def test_apply_se_ops_conserved_rejects_duplicate_op_ids() -> None:
+    """Regression (§1.8 conservation): duplicate/shared op_ids mis-partition.
+
+    Two distinct ops sharing the same op_id cannot be partitioned by the op_id
+    string — if one is skipped, BOTH would be classed as skipped (or both
+    accepted), breaking the per-op accepted/rejected bijection. The fix fails
+    loud on duplicate op_ids rather than mis-partitioning.
+    """
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "X", "namnOchEnhet": "X"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "2 § Ursprunglig 2 §.\n\n3 § Tredje.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    statute = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    ops = [
+        LegalOperation(
+            op_id="dup",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Ny 2."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        LegalOperation(
+            op_id="dup",  # shared id with op #1 — not a robust identity
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "9"),)),  # skipped (not found)
+            payload=IRNode(kind=IRNodeKind.SECTION, label="9", text="Ny 9."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    with pytest.raises(ValueError, match="unique"):
+        apply_se_ops_conserved(statute, ops)
+
+
 def test_se_observed_replay_audit_reports_clean_for_target_bounded_replace() -> None:
     """Observed-write-audit is clean when mutations stay inside the declared target.
 
@@ -3715,10 +3812,109 @@ def test_se_replay_write_receipts_emits_no_receipt_for_skipped_ops() -> None:
 
 
 def se_statute_from_before_final_match(a: IRStatute, b: IRStatute) -> bool:
-    """Helper: compare two IRStatute trees for body-equivalence (label-set match)."""
-    a_labels = {(c.kind.value, c.label) for c in a.body.children}
-    b_labels = {(c.kind.value, c.label) for c in b.body.children}
-    return a_labels == b_labels
+    """Helper: compare two IRStatute bodies for full content + order equivalence.
+
+    The earlier version compared only the top-level child ``{(kind, label)}``
+    SETS — that would pass even if per-op replay diverged in body TEXT or in
+    child ORDER (the "associative and order-preserving" claim was therefore not
+    actually exercised). This compares the canonical structural subtree hash of
+    each whole body, which is order-sensitive and content-sensitive (text,
+    attrs, and the full recursive child structure), so divergence in any of
+    those fails the match.
+    """
+    from lawvm.core.ir_helpers import structural_subtree_hash
+
+    return structural_subtree_hash(a.body) == structural_subtree_hash(b.body)
+
+
+def test_se_replay_write_receipts_renumber_receipt_is_well_formed() -> None:
+    """Regression (§2.3 receipt): a RENUMBER must emit a MEANINGFUL receipt.
+
+    A RENUMBER removes the source section and re-inserts it under the
+    destination label — both are parent children-list changes, so the
+    identity-pruned diff reports the body-level change as a single empty-path
+    tuple ``((),)`` (a tuple holding an empty path, NOT a coordinate).
+
+    Before the fix, the RENUMBER branch did the equivalent of
+    ``replaced_paths = changed`` (== ``((),)``) and
+    ``landed_primary_path = changed[0]`` (== ``()``). Result: ``replaced_paths``
+    carried the bogus empty path, and ``landed_primary_path == ()`` is falsy so
+    the ``if landed_primary_path:`` guard skipped the pre/post hashes entirely
+    — the receipt was malformed (empty footprint + empty hashes), exactly the
+    INSERT/REPEAL empty-diff problem that those branches already special-case.
+
+    The fix mirrors INSERT/REPEAL: the receipt's footprint is the typed
+    ``renumbered_paths = ((from, to),)`` pair, ``landed_primary_path`` is the
+    destination coordinate (where the section landed), and the pre/post hashes
+    resolve against that destination subtree. ``replaced_paths`` no longer
+    carries the bogus empty path.
+    """
+    from lawvm.sweden.grafter import se_replay_write_receipts
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om renumber-receipt-test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "X", "namnOchEnhet": "X"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "2 § Flyttbar text.\n\n5 § Annan.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    before = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    # RENUMBER §2 -> §4 (a non-colliding destination, so the op applies).
+    ops = [
+        LegalOperation(
+            op_id="se-renumber-2-to-4",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "2"),)),
+            destination=LegalAddress(path=(("section", "4"),)),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    final, receipts = se_replay_write_receipts(before, ops)
+
+    # The renumber applied: §2 gone, §4 (with §2's text) present.
+    section_map = se_section_text_map(final)
+    assert set(section_map) == {"4", "5"}, section_map
+    assert "Flyttbar text" in section_map["4"]
+
+    assert len(receipts) == 1, [r.op_id for r in receipts]
+    r = receipts[0]
+    assert r.action == "renumber"
+
+    # The footprint is the typed (from_path, to_path) pair — NOT a bogus
+    # empty path. renumbered_paths is a tuple of (from, to) leg pairs.
+    from_path = (("section", "2"),)
+    to_path = (("section", "4"),)
+    assert r.renumbered_paths == ((from_path, to_path),)
+    # The bug signature: `replaced_paths` must NOT carry the empty-path tuple.
+    assert r.replaced_paths == ()
+    assert () not in r.replaced_paths
+    # Neither renumber leg is the bogus empty path.
+    for leg_from, leg_to in r.renumbered_paths:
+        assert leg_from != () and leg_to != ()
+
+    # landed_primary_path is the destination coordinate (a real coordinate),
+    # not the empty path `()` that the old `changed[0]` produced.
+    assert r.landed_primary_path == (("section", "4"),)
+    assert r.landed_primary_path  # truthy — the hash guard now fires
+
+    # pre/post hashes are populated (the malformed receipt left these empty).
+    # The destination §4 was ABSENT before (pre = "") and PRESENT after.
+    assert r.pre_hashes, r.pre_hashes
+    assert r.post_hashes, r.post_hashes
+    pre = list(r.pre_hashes.values())[0]
+    post = list(r.post_hashes.values())[0]
+    assert pre == "", r.pre_hashes  # §4 absent before
+    assert post != "", r.post_hashes  # §4 present after
 
 
 def test_apply_se_ops_records_renumber_and_heading_skip_adjudications() -> None:

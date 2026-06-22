@@ -34,6 +34,7 @@ Actionables
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 import json
@@ -3765,12 +3766,36 @@ def apply_se_ops_conserved(
     The contract is monotone: every input op ends up either accepted or
     rejected, never silently dropped.
     """
+    ops_list = list(ops)
+    # Conservation requires a robust op IDENTITY for the accepted/rejected
+    # partition. The op_id string is NOT a safe identity key: it defaults to
+    # "" (a SKIPPED op with an empty op_id would be filtered out of the
+    # skipped set and silently land in the accepted lane — a §1.8
+    # "never silently dropped" violation) and it is not guaranteed unique
+    # (a duplicate/shared op_id mis-partitions both ops). Fail loud on either
+    # degenerate case so the op_id-keyed partition below is provably bijective.
+    op_ids = [op.op_id for op in ops_list]
+    if any(not op_id for op_id in op_ids):
+        empty_positions = [i for i, op_id in enumerate(op_ids) if not op_id]
+        raise ValueError(
+            "apply_se_ops_conserved requires every op to carry a non-empty op_id "
+            "(the conservation partition keys on op_id and an empty op_id would be "
+            f"silently dropped from the skipped lane). Empty op_id at positions {empty_positions}."
+        )
+    if len(set(op_ids)) != len(op_ids):
+        counts = Counter(op_ids)
+        duplicates = sorted(op_id for op_id, n in counts.items() if n > 1)
+        raise ValueError(
+            "apply_se_ops_conserved requires op_ids to be unique (the conservation "
+            "partition keys on op_id and duplicate op_ids would mis-partition). "
+            f"Duplicate op_ids: {duplicates}."
+        )
     adjudications: list[CompileAdjudication] = list(adjudications_out or [])
-    applied = apply_se_ops(statute, list(ops), adjudications_out=adjudications)
+    applied = apply_se_ops(statute, ops_list, adjudications_out=adjudications)
     skipped_op_ids = {a.op_id for a in adjudications if a.op_id}
     accepted: list[LegalOperation] = []
     rejected: list[RejectedItem[LegalOperation]] = []
-    for op in ops:
+    for op in ops_list:
         if op.op_id in skipped_op_ids:
             matching = [a for a in adjudications if a.op_id == op.op_id]
             reason = matching[0].message if matching else "Sweden replay op skipped without a typed reason."
@@ -3964,6 +3989,20 @@ def _se_emit_one_op_receipt(
     # body's whole children list).
     if action_value in {"insert", "repeal"}:
         landed_primary_path: TreePath | None = bound_target_path or None
+    elif action_value == "renumber":
+        # RENUMBER removes the source section and re-inserts it under the
+        # destination label — both are parent children-list changes, so the
+        # identity-pruned diff reports the body-level change as a single
+        # empty-path tuple ``((),)`` rather than any surviving coordinate.
+        # Mirror the INSERT/REPEAL empty-diff handling: the section LANDED at
+        # the destination, so point the receipt (and its pre/post hash) at the
+        # destination path. Using ``changed[0]`` here would yield the empty
+        # path ``()`` (a non-coordinate), which is falsy and would silently
+        # blank the pre/post hashes — a malformed receipt.
+        landed_destination_path = (
+            _se_legal_path_to_tree_path(op.destination) if op.destination is not None else None
+        )
+        landed_primary_path = landed_destination_path or None
     else:
         landed_primary_path = changed[0] if changed else None
 
@@ -3990,12 +4029,16 @@ def _se_emit_one_op_receipt(
             # (the from_path is removed; the to_path is created with the
             # source's subtree content).
             renumbered_paths = ((bound_target_path, destination_path),)
-        # The structural diff captures the section's moved subtree, so also
-        # surface it as a replaced_path in the receipt (the section node's
-        # identity changed label). The renumbered_paths above carries the
-        # explicit (from, to) coordinates; replaced_paths carries the
-        # observed footprint for the receipt's declared-footprint union.
-        replaced_paths = changed
+        # Do NOT fold ``changed`` into replaced_paths here. A RENUMBER is a
+        # parent children-list change (source removed, destination inserted),
+        # so the identity-pruned diff reports it as a single empty-path tuple
+        # ``((),)`` rather than any surviving coordinate. Assigning
+        # ``replaced_paths = changed`` would put the bogus empty path ``()``
+        # into the receipt footprint (a non-coordinate). The meaningful
+        # RENUMBER footprint is the typed (from, to) pair carried by
+        # ``renumbered_paths`` above — mirroring how INSERT/REPEAL source
+        # their footprint from the declared bound target, not the body-level
+        # diff pair.
     # Other action families (e.g. TextPatchKindEnum-driven sets) currently
     # surface as ``replaced_paths`` by default — a conservative first step
     # that categorizes every observed change as a replacement. A finer-grained
