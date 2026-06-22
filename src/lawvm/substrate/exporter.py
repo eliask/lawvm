@@ -221,19 +221,26 @@ def _struct_node_id(work_id: str, address_path: str, structural_kind: str) -> st
     return leaf_hash(_DOMAIN_ADDRESS_NODE, identity)
 
 
-def _content_leaf_body(text: str, source_locators: list[JsonValue]) -> tuple[str, dict[str, JsonValue]]:
-    """``lawvm.content_leaf.v1`` — text-only identity (map §2; OBJECT_MODEL §4.4).
+def _content_leaf_body(text: str) -> tuple[str, dict[str, JsonValue]]:
+    """``lawvm.content_leaf.v1`` — PURE text identity (map §2; OBJECT_MODEL §4.4).
 
-    ``content_leaf_hash = "sha256:" + sha256(canonical_json_bytes(body))`` where
-    the body's ``text`` is NFC. The text-only semantic identity is what gives the
-    80x dedup; the structural subtree hash lives on transitions, not here.
+    The shared content leaf is the highest dedup anchor (design §22.1 anchor
+    ladder: ``content_leaf_hash`` = "same text content wherever reused"). Its
+    object body is therefore ``{schema, text, content_leaf_hash}`` and NOTHING
+    per-work — no ``source_locators``, no ``work_id``. Identical leaf text in two
+    different works produces a byte-identical object (and thus a byte-identical
+    wrapped-row ``object_hash``), so it deduplicates at the
+    ``content_leaf_root`` / shared-store level.
+
+    ``content_leaf_hash = "sha256:" + sha256(canonical_json_bytes({schema,
+    text}))`` (text NFC-normalized). Per-occurrence provenance (which work, which
+    source span) rides on the ``node_version`` instead (OBJECT_MODEL §4.7) — the
+    per-work-per-occurrence object — never on this shared leaf.
     """
     normalized = nfc(text)
     body: dict[str, JsonValue] = {
         "schema": SCHEMA_CONTENT_LEAF,
         "text": normalized,
-        "text_profile": CANON_PROFILE,
-        "source_locators": source_locators,
     }
     content_leaf_hash = leaf_hash(_DOMAIN_CONTENT_LEAF, _without(body, "content_leaf_hash"))
     body["content_leaf_hash"] = content_leaf_hash
@@ -246,12 +253,21 @@ def _node_version_body(
     effective_interval: tuple[str, str | None],
     rail: str,
     produced_by_transition_id: str,
+    source_locators: list[JsonValue],
 ) -> tuple[str, dict[str, JsonValue]]:
     """``lawvm.node_version.v1`` (OBJECT_MODEL §4.7).
 
     ``node_version_id = LeafHash("node_version", {struct_node_id,
     produced_by_transition_id, content_leaf_hash, effective_interval, branch_id,
     rail})``.
+
+    ``source_locators`` are the per-work-per-occurrence source spans. They live
+    HERE (the per-occurrence object), not on the shared content leaf, so the
+    content leaf stays pure text and deduplicates across works (design §22.1).
+    They are NOT a member of the ``node_version_id`` identity tuple (the §4.7
+    formula above) — provenance does not perturb version identity — but they ARE
+    a visible member of the emitted body (and so of the wrapped-row
+    ``object_hash``), keeping the per-occurrence source binding committed.
     """
     identity: dict[str, JsonValue] = {
         "schema": SCHEMA_NODE_VERSION,
@@ -265,6 +281,7 @@ def _node_version_body(
     node_version_id = leaf_hash(_DOMAIN_NODE_VERSION, identity)
     body = dict(identity)
     body["node_version_id"] = node_version_id
+    body["source_locators"] = list(source_locators)
     return node_version_id, body
 
 
@@ -579,7 +596,7 @@ def export_work_pack(
         nonlocal leaf_dedup_attempts
         leaf_dedup_attempts += 1
         text = irnode_to_text(node)
-        clh, body = _content_leaf_body(text, [source_ref])
+        clh, body = _content_leaf_body(text)
         existing = emitted_content_leaves.get(clh)
         if existing is not None:
             return existing
@@ -607,7 +624,12 @@ def export_work_pack(
         clh = span.content_leaf_hash
         produced_by = f"genesis:{addr}" if span.effective == commencement else f"t:{addr}:{span.effective}"
         nv_id, nv_body = _node_version_body(
-            struct_id, clh, _interval(span.effective, end_date), span.rail, produced_by
+            struct_id,
+            clh,
+            _interval(span.effective, end_date),
+            span.rail,
+            produced_by,
+            [source_ref],
         )
         h = state_w.write(nv_body)
         node_version_hashes.append(h)
@@ -727,7 +749,7 @@ def export_work_pack(
             if post != "":
                 node = cur_nodes[addr]
                 _ensure_address_node(addr, node)
-                clh, _ = _content_leaf_body(irnode_to_text(node), [source_ref])
+                clh, _ = _content_leaf_body(irnode_to_text(node))
                 rail = _version_rail(bundle, addr, date)
                 open_versions[addr] = _OpenVersion(
                     structural_hash=post,

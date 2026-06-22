@@ -58,14 +58,16 @@ _SHARED_TEXT = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2000."
 def _leaf_body(text: str) -> dict[str, JsonValue]:
     from lawvm.substrate.roots import leaf_hash
 
+    # PURE text identity — the body is {schema, text, content_leaf_hash} and
+    # NOTHING per-work (no source_locators, no work_id), exactly as the exporter
+    # now emits. This is what makes the shared leaf byte-identical across the two
+    # synthetic works (the cross-work dedup property, design §22.1).
     body: dict[str, JsonValue] = {
         "schema": "lawvm.content_leaf.v1",
         "text": text,
-        "text_profile": "lawvm.canon.semantic_text.v1",
-        "source_locators": [],
     }
     # content_leaf_hash = leaf_hash over the body without the hash field (matches
-    # the exporter's _content_leaf_body discipline). No work_id → pure text id.
+    # the exporter's _content_leaf_body discipline).
     clh = leaf_hash("content_leaf", body)
     body["content_leaf_hash"] = clh
     return body

@@ -569,20 +569,21 @@ SCHEMA_CONTENT_LEAF = "lawvm.content_leaf.v1"
 _DOMAIN_CONTENT_LEAF = "content_leaf"
 
 
-def _content_leaf_body(text: str, source_ref: str) -> tuple[str, dict[str, JsonValue]]:
-    """Text-only content leaf (NFC + ``sha256:`` via substrate primitives).
+def _content_leaf_body(text: str) -> tuple[str, dict[str, JsonValue]]:
+    """PURE text-only content leaf (NFC + ``sha256:`` via substrate primitives).
 
-    Identical identity discipline to ``exporter._content_leaf_body`` — the
-    text-only semantic hash is what gives content-leaf dedup. Re-built here
-    (rather than imported) only because the exporter's variant takes an
-    ``IRNode``; the hashed body shape is the same ``lawvm.content_leaf.v1``.
+    Identical identity discipline to ``exporter._content_leaf_body`` — the body
+    is ``{schema, text, content_leaf_hash}`` and NOTHING per-work, so identical
+    leaf text in two municipalities yields a byte-identical object that
+    deduplicates at the shared-store level (design §22.1 anchor ladder). The
+    per-occurrence ``source_locators`` ride on the ``node_version`` instead.
+    Re-built here (rather than imported) only because the exporter's variant
+    takes an ``IRNode``; the hashed body shape is the same ``lawvm.content_leaf.v1``.
     """
     normalized = nfc(text)
     body: dict[str, JsonValue] = {
         "schema": SCHEMA_CONTENT_LEAF,
         "text": normalized,
-        "text_profile": CANON_PROFILE,
-        "source_locators": [source_ref],
     }
     content_leaf_hash = leaf_hash(_DOMAIN_CONTENT_LEAF, body)
     body["content_leaf_hash"] = content_leaf_hash
@@ -597,8 +598,15 @@ def _node_version_body(
     struct_node_id: str,
     content_leaf_hash: str,
     produced_by: str,
+    source_locators: list[JsonValue],
 ) -> tuple[str, dict[str, JsonValue]]:
-    """``lawvm.node_version.v1`` over a single open-ended snapshot interval."""
+    """``lawvm.node_version.v1`` over a single open-ended snapshot interval.
+
+    ``source_locators`` are the per-work-per-occurrence source spans; they live
+    on the node_version (not the shared content leaf) so the leaf stays pure
+    text and deduplicates across municipalities (design §22.1). They are a
+    visible body member but NOT part of the ``node_version_id`` identity tuple.
+    """
     identity: dict[str, JsonValue] = {
         "schema": SCHEMA_NODE_VERSION,
         "struct_node_id": struct_node_id,
@@ -611,6 +619,7 @@ def _node_version_body(
     node_version_id = leaf_hash(_DOMAIN_NODE_VERSION, identity)
     body = dict(identity)
     body["node_version_id"] = node_version_id
+    body["source_locators"] = list(source_locators)
     return node_version_id, body
 
 
@@ -776,7 +785,7 @@ def export_snapshot_pack(
         return _struct_node_id(work_id, address_path, address_kind[address_path])
 
     def _ensure_content_leaf(text: str) -> str:
-        clh, body = _content_leaf_body(text, source_ref)
+        clh, body = _content_leaf_body(text)
         existing = emitted_content_leaves.get(clh)
         if existing is not None:
             return clh
@@ -834,7 +843,7 @@ def export_snapshot_pack(
         clh = _ensure_content_leaf(text)
 
         produced_by = f"genesis:{leaf_path}"
-        nv_id, nv_body = _node_version_body(struct_id, clh, produced_by)
+        nv_id, nv_body = _node_version_body(struct_id, clh, produced_by, [source_ref])
         node_version_hashes.append(state_w.write(nv_body))
 
         fact = ApplicabilityFact(
