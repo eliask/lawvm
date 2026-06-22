@@ -122,6 +122,10 @@ def _group_has_explicit_chapter_scope(group_ops: list[AmendmentOp]) -> bool:
     return False
 
 
+def _group_has_witness_rule(group_ops: list[AmendmentOp], rule_id: str) -> bool:
+    return any(op.witness_rule_id == rule_id for op in group_ops)
+
+
 def _group_has_scope_that_overrides_body_wrapper(
     group_ops: list[AmendmentOp],
     *,
@@ -642,6 +646,18 @@ def _maybe_apply_body_chapter_insert_correction(
             _sibling_part, sibling_chapter = sibling_consensus_scope
             if sibling_chapter != body_chapter:
                 resolved_body_chapter = sibling_chapter
+    if (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter != request.target_chapter
+        and carry_forward_scoped
+        and group_targets_whole_section
+        and _group_has_witness_rule(
+            request.group_ops,
+            "fi_reinstated_section_scope_from_prior_repeal_address",
+        )
+    ):
+        return PhaseResult(output=result)
     if (
         body_chapter is not None
         and all(str(op.target_special or "").strip() == "otsikko" for op in result.group_ops)

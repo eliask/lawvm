@@ -4,9 +4,13 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 
 from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
-from lawvm.finland.payload_realization_audit import payload_realization_findings
+from lawvm.finland.payload_realization_audit import (
+    attach_payload_gap_apply_dispositions,
+    payload_realization_findings,
+)
 
 
 def _resolved(payload_text: str, *, op_id: str = "op1", op_type: OpType = "REPLACE") -> ResolvedOp:
@@ -65,6 +69,190 @@ def test_payload_realization_audit_reports_missing_payload_text() -> None:
     assert findings[0].source_statute == "2000/1"
     assert findings[0].detail["unit_id"] == "op1"
     assert findings[0].detail["disposition"] == "source_payload_text_not_realized_in_post_fold_state"
+
+
+def test_payload_realization_audit_attaches_apply_disposition() -> None:
+    findings = payload_realization_findings(
+        resolved_ops=(_resolved("Substantive amendment payload appears here."),),
+        after_ir=_after("The folded statute still contains unrelated old text."),
+        amendment_id="2000/1",
+        apply_dispositions_by_op_id={"op1": "APPLY_FAILED"},
+    )
+
+    assert len(findings) == 1
+    assert findings[0].detail["apply_disposition"] == "APPLY_FAILED"
+    assert findings[0].detail["apply_disposition_source"] == "APPLY.RESOLVED_OP_AUDIT"
+
+
+def test_payload_realization_audit_suppresses_same_amendment_shadowed_gap() -> None:
+    inserted = ResolvedOp(
+        op=AmendmentOp(
+            op_id="insert_subsection",
+            op_type="INSERT",
+            target_section="4",
+            target_unit_kind="section",
+        ),
+        muutos_ir=IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="3",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text="Earlier same amendment payload that is later superseded.",
+                ),
+            ),
+        ),
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="4",
+        op_id="insert_subsection",
+        _op_type_seed="INSERT",
+        _target_address_override=LegalAddress(path=(("section", "4"), ("subsection", "3"))),
+    )
+    replacement = ResolvedOp(
+        op=AmendmentOp(
+            op_id="replace_subsection",
+            op_type="REPLACE",
+            target_section="4",
+            target_unit_kind="section",
+        ),
+        muutos_ir=IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="3",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text="Later same amendment payload appears in the folded state.",
+                ),
+            ),
+        ),
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="4",
+        op_id="replace_subsection",
+        _op_type_seed="REPLACE",
+        _target_address_override=LegalAddress(path=(("section", "4"), ("subsection", "3"))),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(inserted, replacement),
+        after_ir=_after("Later same amendment payload appears in the folded state."),
+        amendment_id="2000/1",
+        apply_dispositions_by_op_id={
+            "insert_subsection": "APPLIED",
+            "replace_subsection": "APPLIED",
+        },
+    )
+
+    assert [finding.kind for finding in findings] == [
+        "COVERAGE.PAYLOAD_REALIZATION_SHADOWED_BY_SAME_AMENDMENT"
+    ]
+    assert findings[0].detail["unit_id"] == "insert_subsection"
+    assert findings[0].detail["shadowing_unit_id"] == "replace_subsection"
+
+
+def test_payload_realization_audit_keeps_gap_when_shadowing_replace_failed() -> None:
+    inserted = ResolvedOp(
+        op=AmendmentOp(
+            op_id="insert_subsection",
+            op_type="INSERT",
+            target_section="4",
+            target_unit_kind="section",
+        ),
+        muutos_ir=IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="3",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text="Earlier payload remains a real missing chunk.",
+                ),
+            ),
+        ),
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="4",
+        op_id="insert_subsection",
+        _op_type_seed="INSERT",
+        _target_address_override=LegalAddress(path=(("section", "4"), ("subsection", "3"))),
+    )
+    failed_replacement = ResolvedOp(
+        op=AmendmentOp(
+            op_id="replace_subsection",
+            op_type="REPLACE",
+            target_section="4",
+            target_unit_kind="section",
+        ),
+        muutos_ir=IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="3",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text="Failed later payload is absent too.",
+                ),
+            ),
+        ),
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="4",
+        op_id="replace_subsection",
+        _op_type_seed="REPLACE",
+        _target_address_override=LegalAddress(path=(("section", "4"), ("subsection", "3"))),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(inserted, failed_replacement),
+        after_ir=_after("The folded statute still contains unrelated old text."),
+        amendment_id="2000/1",
+        apply_dispositions_by_op_id={
+            "insert_subsection": "APPLIED",
+            "replace_subsection": "APPLY_FAILED",
+        },
+    )
+
+    assert [finding.kind for finding in findings] == [
+        "COVERAGE.PAYLOAD_REALIZATION_GAP",
+        "COVERAGE.PAYLOAD_REALIZATION_GAP",
+    ]
+    assert {finding.detail["unit_id"] for finding in findings} == {
+        "insert_subsection",
+        "replace_subsection",
+    }
+
+
+def test_final_payload_gap_annotation_joins_same_source_op_audit() -> None:
+    gap = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={
+            "unit_id": "op1",
+            "unit_kind": "REPLACE",
+            "observed_label": "1",
+            "parent_label": "section:1",
+            "chunk_index": 0,
+            "chunk_excerpt": "Missing text",
+            "disposition": "source_payload_text_not_realized_in_post_fold_state",
+        },
+    )
+    audit = Finding(
+        kind="APPLY.RESOLVED_OP_AUDIT",
+        role=OBSERVATION_ROLE,
+        stage="apply",
+        source_statute="2000/1",
+        detail={
+            "detail": {
+                "op_id": "op1",
+                "disposition": "APPLY_FAILED",
+            }
+        },
+    )
+
+    annotated = attach_payload_gap_apply_dispositions((gap, audit))
+
+    assert annotated[0].detail["apply_disposition"] == "APPLY_FAILED"
 
 
 def test_replay_filters_payload_gaps_realized_in_materialized_product() -> None:

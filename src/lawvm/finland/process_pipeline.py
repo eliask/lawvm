@@ -9,7 +9,7 @@ compile projection, apply, temporal postprocessing, and failed-op governance.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import TypeVar
 
@@ -143,6 +143,27 @@ def _verify_staged_source_identity(
             f"({witness_digest.digest}) diverges from the source model digest "
             f"({expected.digest}) over the same read bytes"
         )
+
+
+def _apply_dispositions_by_op_id(
+    process_findings: list[Finding],
+    *,
+    amendment_id: str,
+) -> dict[str, str]:
+    dispositions: dict[str, str] = {}
+    for finding in process_findings:
+        if finding.kind != "APPLY.RESOLVED_OP_AUDIT":
+            continue
+        if finding.source_statute and finding.source_statute != amendment_id:
+            continue
+        detail = finding.detail.get("detail", finding.detail)
+        if not isinstance(detail, Mapping):
+            continue
+        op_id = str(detail.get("op_id") or "")
+        disposition = str(detail.get("disposition") or "")
+        if op_id and disposition:
+            dispositions[op_id] = disposition
+    return dispositions
 
 
 def _finish_process_amendment(
@@ -741,6 +762,10 @@ def process_muutoslaki_resolved(
                 resolved_ops=tuple(resolved),
                 after_ir=final_state.ir,
                 amendment_id=amendment_id,
+                apply_dispositions_by_op_id=_apply_dispositions_by_op_id(
+                    process_findings,
+                    amendment_id=amendment_id,
+                ),
             )
         )
         return _finish_process_amendment(

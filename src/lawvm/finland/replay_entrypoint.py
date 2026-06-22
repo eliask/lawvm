@@ -29,6 +29,7 @@ from lawvm.finland.future_repeal import build_future_repeal_suffix
 from lawvm.finland.future_repeal_prescan import _pre_scan_repeal_targets
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.finland.ops import get_replay_profile
+from lawvm.finland.payload_realization_audit import attach_payload_gap_apply_dispositions
 from lawvm.finland.post_process import post_process_tree
 from lawvm.finland.replay_base_evidence import (
     ReplayBaseEvidenceSeedRequest,
@@ -242,6 +243,7 @@ def replay_xml(
             tuple(signals.findings),
             materialized_text=irnode_to_text(products.materialized_state.ir),
         )
+        findings = attach_payload_gap_apply_dispositions(findings)
 
         # StageResult endgame WAIST #7: aggregate the per-replay apply/replay
         # execution authority over every landed write (replay_authorized = AND

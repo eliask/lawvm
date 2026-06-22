@@ -14026,6 +14026,34 @@ def test_resort_children_sorts_paragraphs_within_subsection() -> None:
     assert check_invariants(result) == [], "post-condition: no invariant violations"
 
 
+def test_resort_children_preserves_mixed_numbered_lettered_paragraph_order() -> None:
+    """Mixed digit/letter paragraph lists are source-ordered, not structural-sortable."""
+    from lawvm.core.ir import IRNode
+    from lawvm.core.tree_ops import resort_children, check_invariants
+
+    def _para(label: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text="", attrs={}, children=())
+
+    subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="",
+        attrs={},
+        children=(_para("1"), _para("2"), _para("a"), _para("b"), _para("3")),
+    )
+    section = IRNode(kind=IRNodeKind.SECTION, label="1", text="", attrs={}, children=(subsection,))
+    body = IRNode(kind=IRNodeKind.BODY, label=None, text="", attrs={}, children=(section,))
+
+    result = resort_children(body)
+    result_sec = next(c for c in result.children if c.kind is IRNodeKind.SECTION)
+    result_sub = next(c for c in result_sec.children if c.kind is IRNodeKind.SUBSECTION)
+    para_labels = [c.label for c in result_sub.children if c.kind is IRNodeKind.PARAGRAPH]
+
+    assert result is body
+    assert para_labels == ["1", "2", "a", "b", "3"]
+    assert check_invariants(result) == []
+
+
 def test_replay_xml_2014_834_voimaantulo_only_amendment_keeps_section_7a() -> None:
     """Regression: 2014/834 §7a was MISSING from official_consolidation replay.
 

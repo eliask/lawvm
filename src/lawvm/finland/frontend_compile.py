@@ -705,7 +705,7 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
     return ops, []
 
 
-_cited_scope_cache: dict[tuple[str, str], dict[str, tuple[str | None, str | None]]] = {}
+_cited_scope_cache: dict[tuple[str, str, int], dict[str, tuple[str | None, str | None]]] = {}
 _cited_effective_date_cache: dict[str, str | None] = {}
 _REINSTATEMENT_SECTION_LIST_FRAGMENT = (
     r"\d{1,4}(?:\s*[a-zäöå])?"
@@ -774,7 +774,7 @@ def _compiled_cited_section_scopes(
 ) -> dict[str, tuple[str | None, str | None]]:
     if not cited_id or cited_id == amendment_id:
         return {}
-    cache_key = (parent_id, cited_id)
+    cache_key = (parent_id, cited_id, id(master.ir))
     if cache_key in _cited_scope_cache:
         return _cited_scope_cache[cache_key]
 
@@ -1688,7 +1688,15 @@ def _infer_flat_reinstated_section_scope_from_base(
             part=cited_part,
             chapter=cited_chapter,
         ):
-            return (cited_part, cited_chapter)
+            if (
+                op.target_chapter is None
+                or cited_chapter == op.target_chapter
+                or (
+                    scope_witness is not None
+                    and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
+                )
+            ):
+                return (cited_part, cited_chapter)
     if base_ir is None:
         return None
     base_scope = _base_section_scope_for_unique_section(base_ir=base_ir, section_norm=section_norm)
@@ -2590,7 +2598,7 @@ def _enrich_ops_from_amendment_tree(
                 ScopeResolutionSource.EXPLICIT_CHUNK,
             }:
                 body_scoped = True
-            if body_scoped:
+            if body_scoped and inferred_rule_id != "fi_reinstated_section_scope_from_prior_repeal_address":
                 retargeted_scope = _retarget_stale_body_scope_for_section_op(
                     op=scoped_op,
                     muutos_tree=muutos_tree,
@@ -4531,6 +4539,37 @@ def normalize_and_compile_ops(
             op.extraction_provenance_tags = tuple(
                 dict.fromkeys((*op.extraction_provenance_tags, "extraction_preamble_body"))
             )
+    if ops:
+        reinstated_scope_ops: list[AmendmentOp] = []
+        for op in ops:
+            reinstated_scope = _infer_flat_reinstated_section_scope_from_base(
+                op=op,
+                muutos_tree=muutos_tree,
+                master=master,
+                base_ir=base_ir,
+                johto=johto,
+                amendment_id=amendment_id,
+                parent_id=parent_id,
+                source_model=source_model,
+            )
+            if reinstated_scope is None:
+                reinstated_scope_ops.append(op)
+                continue
+            reinstated_part, reinstated_chapter = reinstated_scope
+            if reinstated_chapter is None or (
+                reinstated_part == op.target_part and reinstated_chapter == op.target_chapter
+            ):
+                reinstated_scope_ops.append(op)
+                continue
+            reinstated_scope_ops.append(
+                _add_inferred_section_chapter_scope(
+                    op,
+                    part=reinstated_part,
+                    chapter=reinstated_chapter,
+                    rule_id="fi_reinstated_section_scope_from_prior_repeal_address",
+                )
+            )
+        ops = reinstated_scope_ops
     if not ops:
         frontend_findings_out.append(
             Finding(
