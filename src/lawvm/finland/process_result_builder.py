@@ -227,12 +227,25 @@ class ProcessResultBuilder:
         )
 
     def _append_effect_lifecycle_projection(self) -> None:
-        """Project process-level findings and override notes into effect evidence."""
+        """Project process-level relation notes that do not require canonical ops.
+
+        Effective-date commencement overrides are projected in
+        ``process_pipeline`` after canonical operations for the amendment exist.
+        Projecting those rows here would bind them to generic pre-canonical
+        source effects and can turn repeal effects into executable commencement
+        events. Expiry/repeal override rows remain safe here and preserve the
+        replay-time side channel even before canonical operation projection.
+        """
+        non_commencement_overrides = tuple(
+            row
+            for row in self.buffers.commencement_expiry_override_notes
+            if not row.effective
+        )
         _source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
             target_statute=self.target_statute,
             canonical_ops=(),
             temporal_events=(),
-            lifecycle_overrides=tuple(self.buffers.commencement_expiry_override_notes),
+            lifecycle_overrides=non_commencement_overrides,
             relation_signals=tuple(self.buffers.effect_relation_signals),
             known_source_effects=tuple(self.buffers.source_effects),
         )

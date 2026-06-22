@@ -139,6 +139,30 @@ def test_finland_canonical_op_mints_source_effect_identity() -> None:
     assert effect.source_provision.rule_id == "fi.legal_operation.effect_declaration"
 
 
+def test_finland_repeal_op_mints_repeal_source_effect_identity() -> None:
+    op = LegalOperation(
+        op_id="repeal-section-15",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "15"))),
+        source=OperationSource(statute_id="2024/1100", effective="2025-01-01"),
+        group_id="finland-johto:2024/1100",
+    )
+
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="2023/681",
+        canonical_ops=(op,),
+        temporal_events=(),
+    )
+
+    assert relations == ()
+    assert lifecycle_events == ()
+    assert len(source_effects) == 1
+    witness = source_effects[0].source_provision
+    assert witness is not None
+    assert witness.rule_id == "fi.legal_operation.repeal_effect_declaration"
+
+
 def test_known_source_effect_context_rejects_conflicting_duplicate_ids() -> None:
     op = _op()
     conflicting_known_effect = EffectRef(
@@ -814,6 +838,129 @@ def test_finland_commencement_effective_override_projects_executable_lifecycle()
     assert temporal is not None
     assert lifecycle_events[0].relation is not None
     assert temporal.group_id == lifecycle_events[0].relation.relation_id
+
+
+def test_finland_commencement_override_does_not_revive_repeal_effect() -> None:
+    repeal_op = LegalOperation(
+        op_id="snapshot_section_15",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "15"))),
+        source=OperationSource(statute_id="2024/1100", effective="2025-01-01"),
+        group_id="finland-johto:2024/1100",
+    )
+    replace_op = LegalOperation(
+        op_id="snapshot_section_16",
+        sequence=2,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "16"))),
+        source=OperationSource(statute_id="2024/1100", effective="2025-01-01"),
+        group_id="finland-johto:2024/1100",
+    )
+
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="2023/681",
+        canonical_ops=(repeal_op, replace_op),
+        temporal_events=(),
+        lifecycle_overrides=(
+            EffectLifecycleOverride(
+                source_statute="2024/1100",
+                target_statute="2024/1100",
+                scope=EffectLifecycleOverrideScope.instrument(),
+                effective="2025-04-01",
+                context="accepted_subsection_commencement",
+            ),
+            EffectLifecycleOverride(
+                source_statute="2024/1100",
+                target_statute="2024/1100",
+                scope=EffectLifecycleOverrideScope.sections(("15",)),
+                expiry="2025-01-01",
+                context="repeal_clause",
+            ),
+        ),
+    )
+
+    repeal_effect = next(effect for effect in source_effects if effect.target_address == repeal_op.target)
+    replace_effect = next(effect for effect in source_effects if effect.target_address == replace_op.target)
+    commencement_relations = [
+        relation for relation in relations if relation.kind == "changes_effect_commencement"
+    ]
+    repeal_relations = [relation for relation in relations if relation.kind == "repeals_effect"]
+    assert [relation.target_effect for relation in commencement_relations] == [replace_effect]
+    assert [relation.target_effect for relation in repeal_relations] == [repeal_effect]
+    commencement_events = [
+        event for event in lifecycle_events if event.kind == "change_effect_commencement"
+    ]
+    repeal_events = [event for event in lifecycle_events if event.kind == "repeal_effect"]
+    assert [event.effect for event in commencement_events] == [replace_effect]
+    assert [event.effect for event in repeal_events] == [repeal_effect]
+
+
+def test_finland_known_generic_repeal_effect_is_canonicalized_before_commencement_matching() -> None:
+    target = LegalAddress(path=(("chapter", "2"), ("section", "15")))
+    source_instrument = SourceInstrumentRef(instrument_id="2024/1100")
+    generic_known_effect = EffectRef(
+        effect_id="fi-effect:2024/1100:snapshot_section_15",
+        source_instrument=source_instrument,
+        target_statute="2023/681",
+        target_address=target,
+        projection_group_id="finland-johto:2024/1100",
+        source_provision=SourceProvisionRef(
+            instrument=source_instrument,
+            path=("snapshot_section_15",),
+            span_id="snapshot_section_15",
+            rule_id="fi.legal_operation.effect_declaration",
+        ),
+    )
+    repeal_op = LegalOperation(
+        op_id="snapshot_section_15",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=target,
+        source=OperationSource(statute_id="2024/1100", effective="2025-01-01"),
+        group_id="finland-johto:2024/1100",
+    )
+
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="2023/681",
+        canonical_ops=(repeal_op,),
+        temporal_events=(),
+        known_source_effects=(generic_known_effect,),
+        lifecycle_overrides=(
+            EffectLifecycleOverride(
+                source_statute="2024/1100",
+                target_statute="2024/1100",
+                scope=EffectLifecycleOverrideScope.instrument(),
+                effective="2025-04-01",
+                context="accepted_subsection_commencement",
+            ),
+            EffectLifecycleOverride(
+                source_statute="2024/1100",
+                target_statute="2024/1100",
+                scope=EffectLifecycleOverrideScope.sections(("15",)),
+                expiry="2025-01-01",
+                context="repeal_clause",
+            ),
+        ),
+    )
+
+    assert source_effects == ()
+    commencement_relations = [
+        relation for relation in relations if relation.kind == "changes_effect_commencement"
+    ]
+    repeal_relations = [relation for relation in relations if relation.kind == "repeals_effect"]
+    assert len(commencement_relations) == 1
+    assert commencement_relations[0].target_effect is None
+    assert commencement_relations[0].target_instrument is not None
+    assert len(repeal_relations) == 1
+    assert repeal_relations[0].target_effect is not None
+    assert repeal_relations[0].target_effect.source_provision is not None
+    assert (
+        repeal_relations[0].target_effect.source_provision.rule_id
+        == "fi.legal_operation.repeal_effect_declaration"
+    )
+    assert "change_effect_commencement" not in {event.kind for event in lifecycle_events}
+    assert [event.kind for event in lifecycle_events if event.executable] == ["repeal_effect"]
 
 
 def test_finland_repeal_override_projects_executable_lifecycle_when_effect_matches() -> None:

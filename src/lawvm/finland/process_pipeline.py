@@ -630,14 +630,27 @@ def process_muutoslaki_resolved(
             ),
         )
         amendment_lo_ops = tuple((lo_ops_out or [])[lo_ops_start:])
-        source_effects, _effect_relations, _lifecycle_events = build_finland_effect_lifecycle(
+        source_effects, effect_relations, lifecycle_events = build_finland_effect_lifecycle(
             target_statute=parent_id,
             canonical_ops=amendment_lo_ops,
             temporal_events=(),
+            lifecycle_overrides=tuple(commencement_expiry_override_notes),
+            relation_signals=tuple(runtime.effect_relation_signals),
+            known_source_effects=tuple(runtime.source_effects),
         )
         append_unique_effect_refs(
             runtime.source_effects,
             source_effects,
+            subject="process canonical operation projection",
+        )
+        append_unique_effect_relations(
+            runtime.effect_relations,
+            effect_relations,
+            subject="process canonical operation projection",
+        )
+        append_unique_effect_lifecycle_events(
+            runtime.effect_lifecycle_events,
+            lifecycle_events,
             subject="process canonical operation projection",
         )
         process_findings.extend(
