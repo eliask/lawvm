@@ -2330,24 +2330,7 @@ def _lower_instruction(
         # edits at the wrong positions (26:6050I: ', and' spliced after an existing
         # comma → 'business,, and'). We cannot represent the compound as one op, so
         # we refuse it as a typed residual rather than emit a corrupt patch.
-        if _INSERT_NODE_AFTER_RE.search(raw_text) is not None:
-            finding = _finding(
-                COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
-                "strike-and-insert is a positional compound that also splices a new "
-                "structural node ('inserting after … the following'); not lowerable "
-                "to a single text_replace",
-            )
-        elif _STRIKE_UNIT_INSERT_NODE_RE.search(raw_text) is not None:
-            # "striking subparagraph (I) and inserting the following new
-            # subparagraphs (I) and (J): <block>" — a node-level restructure. A
-            # whole-node REPLACE of the resolved address would drop the struck node's
-            # siblings (materializing only the new block); held out as a residual.
-            finding = _finding(
-                COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
-                "strike-and-insert replaces a named structural sub-unit with new "
-                "sub-unit(s) ('striking <unit> and inserting the following … <unit>'); "
-                "a node-level restructure, not a whole-node text replace",
-            )
+        #
         # For a named structural unit strike-insert, the target is the unit named in
         # the body (e.g. "striking paragraph (3)"), not the enclosing node the unit's
         # leading target phrase resolved to. The helper returns ``None`` for quoted-
