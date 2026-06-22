@@ -38,6 +38,7 @@ _STAGE = "_compile_group"
 _BODY_CHAPTER_INSERT_SCOPE_RULE_ID = "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
 _BODY_CHAPTER_MOVE_RULE_ID = "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE"
 _BODY_CHAPTER_DECLARED_MOVE_RULE_ID = "LOWER.BODY_CHAPTER_DECLARED_MOVE_REPLACE"
+_ITEM_AS_SUBSECTION_TARGET_REWRITE_RULE_ID = "LOWER.ITEM_AS_SUBSECTION_TARGET_REWRITE"
 _LIVE_SECTION_RETARGET_RULE_ID = "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET"
 _FI_LABEL_TOKEN = r"\d{1,4}\s{0,3}[a-z]?"
 _FI_RANGE_DASH = r"[\-\u2010-\u2015]"
@@ -426,6 +427,211 @@ def _retargeted_live_section_ops(
             )
         )
     return rewritten
+
+
+def _section_has_subsection_label(section: object, label: str) -> bool:
+    wanted = _norm_num_token(label)
+    return any(
+        child.kind is IRNodeKind.SUBSECTION
+        and child.label is not None
+        and _norm_num_token(child.label) == wanted
+        for child in getattr(section, "children", ())
+    )
+
+
+def _section_subsection_has_paragraph_children(
+    section: object,
+    subsection_label: int | str | None,
+) -> bool:
+    if subsection_label is None:
+        return False
+    wanted = _norm_num_token(str(subsection_label))
+    for child in getattr(section, "children", ()):
+        if (
+            child.kind is IRNodeKind.SUBSECTION
+            and child.label is not None
+            and _norm_num_token(child.label) == wanted
+        ):
+            return any(grandchild.kind is IRNodeKind.PARAGRAPH for grandchild in child.children)
+    return False
+
+
+def _section_is_definition_entry_list(section: object) -> bool:
+    """Return True for FI sections whose numbered children are definition entries."""
+    heading_text = " ".join(
+        str(getattr(child, "text", "") or "")
+        for child in getattr(section, "children", ())
+        if child.kind is IRNodeKind.HEADING
+    ).casefold()
+    return "määritel" in heading_text
+
+
+def _source_payload_has_subsection_label(
+    source_model: AmendmentSourceModel,
+    *,
+    target_norm: str,
+    target_chapter: Optional[str],
+    target_part: Optional[str],
+    subsection_label: str,
+) -> bool:
+    lookups = (
+        source_model.lookup_payload_ir(
+            "section",
+            target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+        ),
+        source_model.lookup_payload_ir("section", target_norm),
+    )
+    wanted = _norm_num_token(subsection_label)
+
+    def _node_text(node: object) -> str:
+        pieces: list[str] = []
+
+        def walk(current: object) -> None:
+            text = getattr(current, "text", None)
+            if text:
+                pieces.append(str(text))
+            for child in getattr(current, "children", ()):
+                walk(child)
+
+        walk(node)
+        return " ".join(" ".join(pieces).split())
+
+    def _text_starts_with_entry_label(text: str) -> bool:
+        normalized_text = " ".join(str(text or "").strip().lower().split())
+        if not normalized_text:
+            return False
+        variants = {wanted}
+        if len(wanted) > 1 and wanted[-1:].isalpha() and wanted[:-1].isdigit():
+            variants.add(f"{wanted[:-1]} {wanted[-1]}")
+        return any(
+            normalized_text.startswith(f"{variant}.")
+            or normalized_text.startswith(f"{variant} ")
+            for variant in variants
+        )
+
+    return any(
+        lookup.payload_ir is not None
+        and any(
+            (
+                child.kind is IRNodeKind.SUBSECTION
+                and (
+                    (child.label is not None and _norm_num_token(child.label) == wanted)
+                    or _text_starts_with_entry_label(_node_text(child))
+                )
+            )
+            or (
+                child.kind is IRNodeKind.SUBSECTION
+                and any(
+                    grandchild.kind is IRNodeKind.PARAGRAPH
+                    and grandchild.label is not None
+                    and _norm_num_token(grandchild.label) == wanted
+                    for grandchild in child.children
+                )
+            )
+            for child in lookup.payload_ir.children
+        )
+        for lookup in lookups
+    )
+
+
+def _item_as_subsection_rewritten_ops(
+    request: CompileGroupScopeRecoveryRequest,
+    result: CompileGroupScopeRecoveryResult,
+) -> tuple[list[AmendmentOp], tuple[str, ...]]:
+    section = request.master.find_section(
+        request.target_norm,
+        result.effective_target_chapter,
+    )
+    if section is None:
+        return result.group_ops, ()
+    rewritten: list[AmendmentOp] = []
+    rewritten_op_ids: list[str] = []
+    for op in result.group_ops:
+        item_label = _norm_num_token(op.target_item or "")
+        if not (
+            op.target_unit_kind == "section"
+            and _norm_num_token(op.target_section or "") == request.target_norm
+            and op.target_item
+            and op.target_paragraph is not None
+            and op.target_subitem is None
+            and op.target_special is None
+            and _section_is_definition_entry_list(section)
+            and _source_payload_has_subsection_label(
+                request.source_model,
+                target_norm=request.target_norm,
+                target_chapter=result.surface_target_chapter,
+                target_part=result.surface_target_part,
+                subsection_label=item_label,
+            )
+            and (
+                _section_has_subsection_label(section, item_label)
+                or (
+                    op.op_type == "INSERT"
+                    and not _section_subsection_has_paragraph_children(
+                        section,
+                        op.target_paragraph,
+                    )
+                )
+            )
+            and not _section_subsection_has_paragraph_children(section, op.target_paragraph)
+        ):
+            rewritten.append(op)
+            continue
+        rewritten_lo = (
+            _lo_with_path_update(op.lo, subsection=item_label, item=None, subitem=None)
+            if op.lo is not None
+            else op.lo
+        )
+        rewritten.append(
+            dc_replace(
+                op,
+                target_paragraph=None,
+                target_item=None,
+                target_subitem=None,
+                lo=rewritten_lo,
+            )
+        )
+        rewritten_op_ids.append(str(op.op_id or op.description()))
+    return rewritten, tuple(rewritten_op_ids)
+
+
+def _maybe_rewrite_item_targets_as_subsections(
+    request: CompileGroupScopeRecoveryRequest,
+    result: CompileGroupScopeRecoveryResult,
+) -> PhaseResult[CompileGroupScopeRecoveryResult]:
+    if request.target_unit_kind != "section":
+        return PhaseResult(output=result)
+    group_ops, rewritten_op_ids = _item_as_subsection_rewritten_ops(request, result)
+    if not rewritten_op_ids:
+        return PhaseResult(output=result)
+    recovered = dc_replace(result, group_ops=group_ops)
+    return PhaseResult(
+        output=recovered,
+        findings=(
+            Finding(
+                kind=_ITEM_AS_SUBSECTION_TARGET_REWRITE_RULE_ID,
+                role="observation",
+                stage=_STAGE,
+                detail={
+                    "rule_id": _ITEM_AS_SUBSECTION_TARGET_REWRITE_RULE_ID,
+                    "phase": "lowering",
+                    "family": "ontology_normalization",
+                    "reason": "definition_section_source_and_live_encode_kohta_target_as_subsection_label",
+                    "target_unit_kind": request.target_unit_kind,
+                    "target_norm": request.target_norm,
+                    "target_chapter": result.effective_target_chapter or "",
+                    "target_part": result.effective_target_part or "",
+                    "op_ids": rewritten_op_ids,
+                    "strict_disposition": "allow",
+                    "quirks_disposition": "apply",
+                },
+                source_statute=_source_statute(result.group_ops),
+                blocking=False,
+            ),
+        ),
+    )
 
 
 def _maybe_apply_body_chapter_insert_correction(
@@ -1186,4 +1392,7 @@ def resolve_compile_group_scope_recovery(
     retarget_result = _maybe_retarget_live_section(request, result)
     result = retarget_result.output
     findings += retarget_result.findings()
+    item_rewrite_result = _maybe_rewrite_item_targets_as_subsections(request, result)
+    result = item_rewrite_result.output
+    findings += item_rewrite_result.findings()
     return PhaseResult(output=result, findings=findings)
