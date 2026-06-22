@@ -3996,6 +3996,16 @@ def test_replay_xml_repealed_1974_258_section_15_stays_absent() -> None:
     assert replay.materialized_state.find_section("15") is None
 
 
+def test_replay_xml_1901_15_applies_1987_411_source_vts_side_repeal() -> None:
+    """A source-VTS side repeal must not compile the amendment's main target ops."""
+    replay = pinned_replay("1901/15-001", mode="official_consolidation", quiet=True)
+
+    section = replay.materialized_state.find_section("15")
+    assert section is not None
+    assert section.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert "oikeus ratkaiskoon" not in irnode_to_text(section).lower()
+
+
 def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010_128() -> None:
     """Recycle-and-rename: section in both kumotaan AND muutetaan must survive as new content.
 

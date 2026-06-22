@@ -7543,10 +7543,19 @@ def test_resolve_applicable_amendment_records_re_admits_oracle_reflected_source_
     import lawvm.finland.amendment_selection as selection_mod
 
     orig_children = selection_mod.amendment_children_by_parent
+    orig_edges = selection_mod.amendment_child_edges_by_parent
     orig_reflected = selection_mod.get_consolidated_oracle_reflected_source_vts_children
     try:
         selection_patch = cast(Any, selection_mod)
         selection_patch.amendment_children_by_parent = lambda: {"1986/506": ["1991/806", "1993/872", "1994/1264", "2024/1049"]}
+        selection_patch.amendment_child_edges_by_parent = lambda: {
+            "1986/506": [
+                ("1991/806", "oracle_amendedBy"),
+                ("1993/872", "oracle_amendedBy"),
+                ("1994/1264", "oracle_amendedBy"),
+                ("2024/1049", "source_vts_explicit"),
+            ]
+        }
         selection_patch.get_consolidated_oracle_reflected_source_vts_children = lambda _parent_id, corpus=None, selector=None: {"2024/1049"}
         records, cutoff_date, oracle_version = selection_mod.resolve_applicable_amendment_records(
             "1986/506",
@@ -7556,12 +7565,14 @@ def test_resolve_applicable_amendment_records_re_admits_oracle_reflected_source_
         )
     finally:
         selection_mod.amendment_children_by_parent = orig_children
+        selection_mod.amendment_child_edges_by_parent = orig_edges
         selection_mod.get_consolidated_oracle_reflected_source_vts_children = orig_reflected
 
     assert oracle_version == "1994/1264"
     assert cutoff_date == dt.date(2025, 1, 1)
     assert [record["statute_id"] for record in records] == ["1991/806", "1993/872", "1994/1264", "2024/1049"]
     assert records[-1]["selection_basis"] == "oracle_editorial_repeal_stub_override"
+    assert records[-1]["edge_kind"] == "source_vts_explicit"
 
 
 def test_oracle_ref_body_surface_excludes_amendment_history_metadata() -> None:

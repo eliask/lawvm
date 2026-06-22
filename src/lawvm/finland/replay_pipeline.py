@@ -671,6 +671,10 @@ def execute_replay_plan(
         str(record.get("statute_id") or ""): str(record.get("title") or "")
         for record in plan.amendment_records
     }
+    record_edge_kinds = {
+        str(record.get("statute_id") or ""): str(record.get("edge_kind") or "oracle_amendedBy")
+        for record in plan.amendment_records
+    }
     for idx, mid in enumerate(plan.amendment_ids):
         future_repeals = repeal_suffix[idx] if idx < len(repeal_suffix) else set()
         _pm_result = process_muutoslaki(
@@ -686,6 +690,7 @@ def execute_replay_plan(
                 future_repeals=future_repeals if future_repeals else None,
                 prior_migration_events=tuple(effective_migration_events_out),
                 processed_amendment_titles=processed_amendment_titles,
+                amendment_edge_kind=record_edge_kinds.get(str(mid), "oracle_amendedBy"),
             ),
             signals.process_sinks(
                 compiled_ops_out=compiled_ops_out,

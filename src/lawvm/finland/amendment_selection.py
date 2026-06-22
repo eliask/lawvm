@@ -50,6 +50,7 @@ class AmendmentSelectionCandidate:
     effective_date: dt.date | None
     issue_date: dt.date | None
     title: str
+    edge_kind: str = "oracle_amendedBy"
 
     @property
     def ordering_date(self) -> dt.date:
@@ -101,6 +102,13 @@ def amendment_children_by_parent() -> dict[str, list[str]]:
     from lawvm.finland.amendment_index import get_amendment_children
 
     return get_amendment_children()
+
+
+@lru_cache(maxsize=1)
+def amendment_child_edges_by_parent() -> dict[str, list[tuple[str, str]]]:
+    from lawvm.finland.amendment_index import get_amendment_child_edges
+
+    return get_amendment_child_edges()
 
 
 def amendment_ordering_date(
@@ -203,6 +211,10 @@ def _read_amendment_candidates(
 ) -> tuple[tuple[AmendmentSelectionCandidate, ...], tuple[AmendmentSourcePathology, ...]]:
     candidates: list[AmendmentSelectionCandidate] = []
     residuals: list[AmendmentSourcePathology] = []
+    edge_kind_by_amendment = {
+        amendment_id: edge_kind
+        for amendment_id, edge_kind in amendment_child_edges_by_parent().get(parent_id, ())
+    }
     for amendment_id in amendment_children_by_parent().get(parent_id, ()):
         xml_bytes = corpus.read_source(amendment_id)
         if xml_bytes is None:
@@ -231,6 +243,7 @@ def _read_amendment_candidates(
                 effective_date=_amendment_effective_date(amendment_tree),
                 issue_date=_statute_issue_date(amendment_tree),
                 title=title,
+                edge_kind=edge_kind_by_amendment.get(amendment_id, "oracle_amendedBy"),
             )
         )
     return tuple(candidates), tuple(residuals)
@@ -401,4 +414,5 @@ def _record_for_candidate(
         "sort_mode": mode,
         "included": True,
         "selection_basis": selection_basis,
+        "edge_kind": candidate.edge_kind,
     }

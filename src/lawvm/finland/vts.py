@@ -217,8 +217,12 @@ def _vts_parent_citation_re(parent_id: str) -> "re.Pattern[str] | None":
         return None
     try:
         parent_year, parent_num_str = parent_id.split("/")
-        parent_num = int(parent_num_str)
     except (ValueError, AttributeError):
+        return None
+    parent_num_head = parent_num_str.split("-", 1)[0]
+    try:
+        parent_num = int(parent_num_head)
+    except ValueError:
         return None
     if not parent_year:
         return None
@@ -323,7 +327,7 @@ def _classify_vts_source_diagnostic(
 ) -> VtsSourceDiagnostic | None:
     try:
         parent_year, parent_num_str = parent_id.split("/")
-        int(parent_num_str)
+        int(parent_num_str.split("-", 1)[0])
     except (ValueError, AttributeError):
         return VtsSourceDiagnostic(
             rule_id=VTS_SOURCE_DIAGNOSTIC_RULE_ID,
