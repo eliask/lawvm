@@ -943,6 +943,19 @@ def export_work_pack(
             engine_id=engine_id,
             corpus_version=corpus_version,
         )
+        # Additive EU directive mini-vertical (design §25.8): where the act's own
+        # prose CLAIMS to transpose an EU directive, also emit the deterministic,
+        # verifiable edges — claimed-transposition + timeliness (deadline seed vs
+        # this work's commencement) + an honest "conformance not assessed"
+        # residual. A work with NO transposition claim emits nothing new. NEVER a
+        # substantive conformance / direct-effect / breach conclusion.
+        edge_bodies.extend(
+            _build_fi_transposition_edges(
+                engine_id=engine_id,
+                corpus_version=corpus_version,
+                commencement_date=commencement,
+            )
+        )
     edges_layer: PackLayer | None = None
     if edge_bodies:
         edges_rel = f"edges/{corpus_version}/edges.jsonl"
@@ -1173,6 +1186,61 @@ def _build_fi_relation_edges(
             reference_set_to_relation_edge(
                 expression=folded.expression,
                 resolution=folded.resolution,
+                corpus_version=corpus_version,
+                branch_id=_BRANCH_ID,
+            )
+        )
+    return edges
+
+
+def _build_fi_transposition_edges(
+    *,
+    engine_id: str,
+    corpus_version: str,
+    commencement_date: str,
+) -> list[dict[str, JsonValue]]:
+    """Extract FI EU-directive transposition claims → relation-edge bodies (§25.8).
+
+    Reuses the FI consolidated oracle text READ-ONLY (the same bytes
+    :func:`_build_fi_relation_edges` reads) and the deterministic transposition
+    extractor (``recognize_transposition_claims``), then bridges each claim to
+    its EU directive edges (``transposition_claim_to_edges`` —
+    ``source_claimed_transposition`` + ``timeliness_fact`` + a "conformance not
+    assessed" residual). The timeliness edge compares the curated demo deadline
+    seed against THIS work's ``commencement_date`` (from the work's replayed
+    timeline, supplied by the caller).
+
+    Returns the edge bodies (possibly empty — an act with no explicit
+    transposition claim emits NONE, never a fabricated one). FI-specific by
+    construction; the caller guards on jurisdiction. A substantive conformance /
+    direct-effect / breach conclusion is NEVER emitted — only the deterministic
+    evidentiary edges + the honest "not assessed" residual.
+    """
+    from lawvm.finland.corpus import get_corpus_store
+    from lawvm.finland.references.eu_transposition import (
+        recognize_transposition_claims,
+    )
+    from lawvm.substrate.eu_transposition_bridge import (
+        transposition_claim_to_edges,
+    )
+
+    store = get_corpus_store()
+    try:
+        xml_bytes = store.read_oracle(engine_id)
+    except Exception:
+        # No consolidated oracle text → no prose to scan. Honest absence.
+        return []
+    if not xml_bytes:
+        return []
+
+    text = xml_bytes.decode("utf-8", "replace")
+    claims = recognize_transposition_claims(text, citing_engine_id=engine_id)
+    edges: list[dict[str, JsonValue]] = []
+    for claim in claims:
+        edges.extend(
+            transposition_claim_to_edges(
+                claim,
+                commencement_date=commencement_date,
                 corpus_version=corpus_version,
                 branch_id=_BRANCH_ID,
             )
