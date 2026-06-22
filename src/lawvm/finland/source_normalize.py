@@ -153,6 +153,7 @@ _DOTTED_MOMENT_NUM_RE = re.compile(r"^(\d+)\.$")
 _DOTTED_MOMENT_INTRO_RE = re.compile(r"^\s*(\d+)\.\s+")
 _LETTER_LABEL_RE = re.compile(r"^[a-z]$")
 _ARABIC_LABEL_RE = re.compile(r"^\d+[a-z]?$")
+_GLUED_ITEM_COORDINATORS = ("seka", "sekä", "ja")
 
 
 def source_normalization_fact_finding_kind(kind_value: str) -> str | None:
@@ -2259,6 +2260,125 @@ def _split_digit_reset_subparagraph_runs(
     return rewritten
 
 
+def _find_glued_coordinator_item_split(text: str, expected_label: int) -> tuple[str, str, str] | None:
+    """Find ``; seka5)`` / ``; sekä5)`` / ``; ja5)`` transport glue."""
+    lowered = text.casefold()
+    for idx, ch in enumerate(text):
+        if ch not in ";.":
+            continue
+        cursor = idx + 1
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        for coordinator in _GLUED_ITEM_COORDINATORS:
+            if not lowered.startswith(coordinator, cursor):
+                continue
+            digit_start = cursor + len(coordinator)
+            digit_end = digit_start
+            while digit_end < len(text) and text[digit_end].isdigit():
+                digit_end += 1
+            if digit_end == digit_start or digit_end >= len(text) or text[digit_end] != ")":
+                continue
+            label = text[digit_start:digit_end]
+            if int(label) != expected_label:
+                continue
+            left = text[: idx + 1].strip()
+            right = text[digit_end + 1 :].strip()
+            if left and right:
+                return left, label, right
+    return None
+
+
+def _split_glued_coordinator_item_paragraphs(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Split a source-transport-glued item marker out of paragraph content."""
+    rewritten: list[IRNode] = []
+    changed = False
+    for child in children:
+        if child.kind != IRNodeKind.PARAGRAPH:
+            rewritten.append(child)
+            continue
+        current_label = _numeric_label_value(child.label)
+        if current_label is None:
+            rewritten.append(child)
+            continue
+        expected_label = current_label + 1
+        split_child_index: int | None = None
+        split_payload: tuple[str, str, str] | None = None
+        for child_index, grandchild in enumerate(child.children):
+            if grandchild.kind != IRNodeKind.CONTENT or not grandchild.text:
+                continue
+            split_payload = _find_glued_coordinator_item_split(grandchild.text, expected_label)
+            if split_payload is not None:
+                split_child_index = child_index
+                break
+        if split_child_index is None or split_payload is None:
+            rewritten.append(child)
+            continue
+
+        left_text, new_label, right_text = split_payload
+        left_content = child.children[split_child_index]
+        left_children = list(child.children[:split_child_index])
+        left_children.append(
+            IRNode(
+                kind=left_content.kind,
+                label=left_content.label,
+                text=left_text,
+                attrs=left_content.attrs,
+                children=left_content.children,
+            )
+        )
+        new_paragraph_children = [
+            IRNode(kind=IRNodeKind.NUM, text=f"{new_label})"),
+            IRNode(kind=IRNodeKind.CONTENT, text=right_text, attrs=left_content.attrs),
+        ]
+        new_paragraph_children.extend(child.children[split_child_index + 1 :])
+
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(left_children),
+            )
+        )
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=new_label,
+                attrs=child.attrs,
+                children=tuple(new_paragraph_children),
+            )
+        )
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_DIGIT_RESET_SPLIT,
+                basis=SourceNormalizationBasis.MONOTONIC_LOCAL_REPAIR,
+                before=(
+                    f"paragraph {child.label or '?'} contains coordinator-glued "
+                    f"item marker {new_label}) inside content"
+                ),
+                after=f"split into sibling paragraph {new_label}",
+                explanation=(
+                    "The source glued a coordinating word directly to the next "
+                    "numbered item marker inside a paragraph payload. The marker "
+                    "continues the local item sequence, so it is transport glue "
+                    "rather than legal prose."
+                ),
+                path=parent_path + (_node_path_label(child),),
+                confidence=0.96,
+            )
+        )
+        changed = True
+
+    return rewritten if changed else children
+
+
 def _node_without_kind_text(node: IRNode, excluded_kind: IRNodeKind) -> str:
     return irnode_to_text(
         IRNode(
@@ -4054,6 +4174,24 @@ def normalize_source_ir(
                 text=working.text,
                 attrs=working.attrs,
                 children=tuple(recovered_children),
+            )
+
+    # Step 8.8: split source-transport glued item markers inside paragraph
+    # content before generic numbering anomaly detection sees the sibling run.
+    if working.kind == IRNodeKind.SUBSECTION:
+        new_children = list(working.children)
+        split_children = _split_glued_coordinator_item_paragraphs(
+            new_children, statute_id, current_path, facts
+        )
+        if len(split_children) != len(new_children) or any(
+            a is not b for a, b in zip(split_children, new_children, strict=True)
+        ):
+            working = IRNode(
+                kind=working.kind,
+                label=working.label,
+                text=working.text,
+                attrs=working.attrs,
+                children=tuple(split_children),
             )
 
     # Step 9: detect numbering anomalies (gaps/duplicates) among siblings.

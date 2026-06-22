@@ -596,6 +596,73 @@ class TestTagReclassify:
         assert "subsection:2" in fold_facts[0].before
         assert "subsection:3" in fold_facts[0].before
 
+    def test_splits_glued_coordinator_next_item_inside_paragraph_content(self) -> None:
+        """A source typo like ``; seka5)`` starts the next numbered item."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="51",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="51 §"),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="Hakemukseen on liitettävä:"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="4",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="4)"),
+                                IRNode(
+                                    kind=IRNodeKind.CONTENT,
+                                    text="pääpiirustukset; seka5) rakentamista koskevat tiedot.",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "1980/687")
+
+        subsection = next(child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION)
+        paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["4", "5"]
+        assert irnode_to_text(paragraphs[0]).endswith("pääpiirustukset;")
+        assert irnode_to_text(paragraphs[1]) == "5) rakentamista koskevat tiedot."
+        split_facts = [fact for fact in facts if fact.kind_value == BASE_DIGIT_RESET_SPLIT]
+        assert len(split_facts) == 1
+        assert split_facts[0].basis_value == SourceNormalizationBasis.MONOTONIC_LOCAL_REPAIR.value
+
+    def test_real_1980_687_section_51_splits_glued_seka5_item(self) -> None:
+        """Regression: 1980/687 section 51 glues item 5 into item 4 text."""
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("1980/687")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        body = root.find(".//{*}body")
+        raw = fi_xml_to_ir_node(body if body is not None else root, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1980/687")
+
+        section_51: IRNode | None = None
+        pending = list(normalized.children)
+        while pending:
+            candidate = pending.pop()
+            if candidate.kind == IRNodeKind.SECTION and candidate.label == "51":
+                section_51 = candidate
+                break
+            pending.extend(candidate.children)
+        assert section_51 is not None
+        subsection = next(child for child in section_51.children if child.kind == IRNodeKind.SUBSECTION)
+        paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["4", "5"]
+        assert "sadevesiensekä salaojavesien pois johtamisesta;" in irnode_to_text(paragraphs[0])
+        assert "rakentamista, rakennuksia ja huoneistoja koskevat tiedot" in irnode_to_text(paragraphs[1])
+        assert any(fact.kind_value == BASE_DIGIT_RESET_SPLIT for fact in facts)
+
     def test_preserves_connector_wrapper_without_next_section_item_carrier(self) -> None:
         """A connector word alone is not enough to collapse a peer moment."""
         xml = etree.fromstring(
