@@ -619,8 +619,20 @@ def parse_clause(
                         "source_text": _drop.source_text,
                     }
                 )
-        except Exception:
-            pass
+        except RuntimeError as _exc:
+            # The totality predicate is an observability overlay whose whole
+            # purpose is to surface SILENT mid-stream drops as residuals.  A
+            # known-pipeline failure (RuntimeError) inside it must therefore be
+            # made VISIBLE, not swallowed: swallowing it would undercount the
+            # very incompleteness signal this block exists to emit.  Programming
+            # bugs (TypeError, AttributeError, …) propagate to the caller.
+            residuals.append(
+                {
+                    "kind": "totality_check_error",
+                    "tier": "totality_predicate",
+                    "error": f"{type(_exc).__name__}: {_exc}",
+                }
+            )
 
     # -- Collect resolver residuals (SurfaceNodes that couldn't be resolved) --
     if resolved is not None and resolved.residuals:
@@ -1392,17 +1404,26 @@ def parse_to_ops(tokens: list[Token]) -> list[ParsedOp]:
     from lawvm.finland.johtolause.surface_parse import parse as _parse
     from lawvm.finland.johtolause.surface_resolve import resolve_surface_clause
     from lawvm.finland.johtolause.lower_clause_ast import lower_to_clause_ast
-    from lawvm.core.clause_ast import ClauseAST as _ClauseAST
 
     surface_clause = _parse(tokens)
+    # Mirror the parse_clause() contract: a known-pipeline RuntimeError is
+    # surfaced as a self-evidencing error rather than degraded to empty output
+    # (an empty op list is indistinguishable from "nothing to parse" and would
+    # silently mask a resolve/lower divergence).  Programming bugs (TypeError,
+    # AttributeError, …) propagate untouched.  This is the backward-compat
+    # bridge; callers wanting a non-fatal residual channel use parse_clause().
     try:
         resolved = resolve_surface_clause(surface_clause)
-    except Exception:
-        return []
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"parse_to_ops: surface_resolve failed: {type(exc).__name__}: {exc}"
+        ) from exc
     try:
         clause_ast = lower_to_clause_ast(resolved)
-    except Exception:
-        clause_ast = _ClauseAST(verb_groups=(), source_text="")
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"parse_to_ops: clause_ast lowering failed: {type(exc).__name__}: {exc}"
+        ) from exc
     return _derive_parsed_ops_from_ast(clause_ast)
 
 
