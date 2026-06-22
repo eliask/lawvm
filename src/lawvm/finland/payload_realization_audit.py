@@ -28,6 +28,13 @@ class _RealizationCandidate:
     unit: PayloadRealizationUnit
 
 
+@dataclass(frozen=True, slots=True)
+class _ApplyAuditObservation:
+    source_statute: str
+    detail: dict[str, object]
+    sequence: int
+
+
 def payload_realization_findings(
     *,
     resolved_ops: tuple[ResolvedOp, ...],
@@ -123,6 +130,7 @@ def attach_payload_gap_apply_dispositions(
             )
         )
     findings = _suppress_same_amendment_shadowed_payload_gaps(tuple(annotated))
+    findings = _classify_later_amendment_superseded_payload_gaps(findings)
     return _classify_apply_failed_payload_gaps(findings)
 
 
@@ -139,6 +147,89 @@ def _classify_apply_failed_payload_gaps(
             continue
         classified.append(_apply_failure_finding_from_gap(finding))
     return tuple(classified)
+
+
+def _classify_later_amendment_superseded_payload_gaps(
+    findings: tuple[Finding, ...],
+) -> tuple[Finding, ...]:
+    apply_audits = _ordered_apply_audit_observations(findings)
+    if not apply_audits:
+        return findings
+
+    classified: list[Finding] = []
+    for finding in findings:
+        if finding.kind != "COVERAGE.PAYLOAD_REALIZATION_GAP":
+            classified.append(finding)
+            continue
+        if str(finding.detail.get("apply_disposition") or "") != "APPLIED":
+            classified.append(finding)
+            continue
+        superseding = _later_amendment_applied_replace_supersession(finding, apply_audits)
+        if superseding is None:
+            classified.append(finding)
+            continue
+        classified.append(_later_supersession_finding_from_gap(finding, superseding))
+    return tuple(classified)
+
+
+def _ordered_apply_audit_observations(findings: tuple[Finding, ...]) -> tuple[_ApplyAuditObservation, ...]:
+    observations: list[_ApplyAuditObservation] = []
+    for sequence, finding in enumerate(findings):
+        if finding.kind != "APPLY.RESOLVED_OP_AUDIT":
+            continue
+        detail = finding.detail.get("detail", finding.detail)
+        if not isinstance(detail, Mapping):
+            continue
+        source = finding.source_statute or ""
+        if not source:
+            continue
+        observations.append(
+            _ApplyAuditObservation(
+                source_statute=source,
+                detail=dict(detail),
+                sequence=sequence,
+            )
+        )
+    return tuple(observations)
+
+
+def _later_amendment_applied_replace_supersession(
+    gap: Finding,
+    apply_audits: tuple[_ApplyAuditObservation, ...],
+) -> _ApplyAuditObservation | None:
+    gap_source = gap.source_statute or ""
+    gap_op_id = str(gap.detail.get("unit_id") or "")
+    gap_target = _address_path_from_string(str(gap.detail.get("parent_label") or ""))
+    if not gap_source or not gap_op_id or not gap_target:
+        return None
+
+    gap_audit = next(
+        (
+            audit
+            for audit in apply_audits
+            if audit.source_statute == gap_source
+            and str(audit.detail.get("op_id") or "") == gap_op_id
+        ),
+        None,
+    )
+    if gap_audit is None:
+        return None
+
+    for audit in apply_audits:
+        if audit.sequence <= gap_audit.sequence:
+            continue
+        if audit.source_statute == gap_source:
+            continue
+        if str(audit.detail.get("action_type") or "").upper() != "REPLACE":
+            continue
+        if str(audit.detail.get("disposition") or "") != "APPLIED":
+            continue
+        if str(audit.detail.get("target_special") or ""):
+            continue
+        audit_target = _address_path_from_apply_audit(audit.detail)
+        if audit_target and _path_has_prefix(gap_target, audit_target):
+            return audit
+    return None
 
 
 def _suppress_same_amendment_shadowed_payload_gaps(
@@ -276,6 +367,30 @@ def _shadow_finding_from_gap(gap: Finding, shadow: Mapping[str, object]) -> Find
                 f"{kind}:{label}" for kind, label in _address_path_from_apply_audit(shadow)
             ),
             "disposition": "source_payload_shadowed_by_later_same_amendment_replace",
+        },
+    )
+
+
+def _later_supersession_finding_from_gap(
+    gap: Finding,
+    superseding: _ApplyAuditObservation,
+) -> Finding:
+    return Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_SUPERSEDED_BY_LATER_AMENDMENT",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute=gap.source_statute,
+        blocking=False,
+        detail={
+            **gap.detail,
+            "superseding_source_statute": superseding.source_statute,
+            "superseding_unit_id": superseding.detail.get("op_id"),
+            "superseding_action_type": superseding.detail.get("action_type"),
+            "superseding_target": "/".join(
+                f"{kind}:{label}"
+                for kind, label in _address_path_from_apply_audit(superseding.detail)
+            ),
+            "disposition": "source_payload_superseded_by_later_amendment_replace",
         },
     )
 

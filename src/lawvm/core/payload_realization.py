@@ -113,6 +113,7 @@ def drop_materialized_payload_realization_false_positives(
     normalized_materialized = _normalized_text(materialized_text)
     if not normalized_materialized:
         return findings
+    materialized_tokens = tuple(normalized_materialized.split())
 
     retained: list[Finding] = []
     for finding in findings:
@@ -120,7 +121,11 @@ def drop_materialized_payload_realization_false_positives(
             retained.append(finding)
             continue
         chunk = str(finding.detail.get("chunk_excerpt") or "")
-        if chunk and _normalized_text(chunk) in normalized_materialized:
+        if chunk and _chunk_realized_in_text(
+            chunk,
+            normalized_materialized,
+            materialized_tokens,
+        ):
             continue
         retained.append(finding)
     return tuple(retained)

@@ -261,6 +261,122 @@ def test_final_payload_gap_annotation_joins_same_source_op_audit() -> None:
     assert annotated[0].detail["apply_disposition"] == "APPLY_FAILED"
 
 
+def test_final_payload_gap_annotation_classifies_later_amendment_supersession() -> None:
+    gap = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={
+            "unit_id": "op1",
+            "unit_kind": "INSERT",
+            "observed_label": "4",
+            "parent_label": "section:4/subsection:3",
+            "chunk_index": 0,
+            "chunk_excerpt": "Earlier inserted text",
+            "disposition": "source_payload_text_not_realized_in_post_fold_state",
+        },
+    )
+    own_audit = Finding(
+        kind="APPLY.RESOLVED_OP_AUDIT",
+        role=OBSERVATION_ROLE,
+        stage="apply",
+        source_statute="2000/1",
+        detail={
+            "detail": {
+                "op_id": "op1",
+                "action_type": "INSERT",
+                "disposition": "APPLIED",
+                "target_unit_kind": "section",
+                "target_norm": "4",
+                "target_paragraph": "3",
+            }
+        },
+    )
+    later_audit = Finding(
+        kind="APPLY.RESOLVED_OP_AUDIT",
+        role=OBSERVATION_ROLE,
+        stage="apply",
+        source_statute="2000/2",
+        detail={
+            "detail": {
+                "op_id": "op2",
+                "action_type": "REPLACE",
+                "disposition": "APPLIED",
+                "target_unit_kind": "section",
+                "target_norm": "4",
+                "target_paragraph": "3",
+            }
+        },
+    )
+
+    annotated = attach_payload_gap_apply_dispositions((gap, own_audit, later_audit))
+
+    assert (
+        annotated[0].kind
+        == "COVERAGE.PAYLOAD_REALIZATION_SUPERSEDED_BY_LATER_AMENDMENT"
+    )
+    assert annotated[0].detail["apply_disposition"] == "APPLIED"
+    assert annotated[0].detail["superseding_source_statute"] == "2000/2"
+    assert annotated[0].detail["superseding_unit_id"] == "op2"
+    assert annotated[0].detail["superseding_target"] == "section:4/subsection:3"
+
+
+def test_final_payload_gap_annotation_keeps_gap_when_later_replace_failed() -> None:
+    gap = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={
+            "unit_id": "op1",
+            "unit_kind": "INSERT",
+            "observed_label": "4",
+            "parent_label": "section:4/subsection:3",
+            "chunk_index": 0,
+            "chunk_excerpt": "Earlier inserted text",
+            "disposition": "source_payload_text_not_realized_in_post_fold_state",
+        },
+    )
+    own_audit = Finding(
+        kind="APPLY.RESOLVED_OP_AUDIT",
+        role=OBSERVATION_ROLE,
+        stage="apply",
+        source_statute="2000/1",
+        detail={
+            "detail": {
+                "op_id": "op1",
+                "action_type": "INSERT",
+                "disposition": "APPLIED",
+                "target_unit_kind": "section",
+                "target_norm": "4",
+                "target_paragraph": "3",
+            }
+        },
+    )
+    failed_later_audit = Finding(
+        kind="APPLY.RESOLVED_OP_AUDIT",
+        role=OBSERVATION_ROLE,
+        stage="apply",
+        source_statute="2000/2",
+        detail={
+            "detail": {
+                "op_id": "op2",
+                "action_type": "REPLACE",
+                "disposition": "APPLY_FAILED",
+                "target_unit_kind": "section",
+                "target_norm": "4",
+                "target_paragraph": "3",
+            }
+        },
+    )
+
+    annotated = attach_payload_gap_apply_dispositions((gap, own_audit, failed_later_audit))
+
+    assert annotated[0].kind == "COVERAGE.PAYLOAD_REALIZATION_GAP"
+    assert annotated[0].detail["apply_disposition"] == "APPLIED"
+
+
 def test_replay_filters_payload_gaps_realized_in_materialized_product() -> None:
     from lawvm.finland.compile import compile_fi_facade
 

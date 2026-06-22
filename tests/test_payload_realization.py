@@ -128,3 +128,29 @@ def test_materialized_payload_filter_drops_realized_gap_only() -> None:
     )
 
     assert filtered == (missing,)
+
+
+def test_materialized_payload_filter_accepts_bounded_ordered_interleaving() -> None:
+    realized = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={
+            "chunk_excerpt": (
+                "merenkulun ammattikorkeakoulututkinto, johon liitetaan koulutusohjelman "
+                "mukaan tutkintonimike merikapteeni (AMK), Bachelor of Marine Technology;"
+            )
+        },
+    )
+
+    filtered = drop_materialized_payload_realization_false_positives(
+        (realized,),
+        materialized_text=(
+            "merenkulun ammattikorkeakoulututkinto, johon liitetaan koulutusohjelman "
+            "mukaan tutkintonimike merikapteeni (AMK), merikapteeni (ylempi AMK), "
+            "Bachelor of Marine Technology;"
+        ),
+    )
+
+    assert filtered == ()
