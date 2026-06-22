@@ -33,7 +33,7 @@ from lawvm.finland.legal_surface.source_syntax_graph import (
 )
 from lawvm.finland.legal_surface.token_partition_coverage import (
     PARTITION_CLASSES,
-    CoverageCertificate,
+    GraphCoverageCrossCheck,
     TokenPartitionCoverage,
     build_token_partition_coverage,
     certificate_to_dict,
@@ -481,5 +481,5 @@ def test_corpus_certificate_and_coverage_smoke(statute_id: str) -> None:
         f"out_of_partition={len(cov_cert.violations)} "
         f"passes={cov_cert.passes}"
     )
-    # a real CoverageCertificate is returned (we surface, never crash)
-    assert isinstance(cov_cert, CoverageCertificate)
+    # a real GraphCoverageCrossCheck is returned (we surface, never crash)
+    assert isinstance(cov_cert, GraphCoverageCrossCheck)

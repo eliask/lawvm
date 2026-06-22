@@ -13,6 +13,8 @@ context.
 """
 from __future__ import annotations
 
+import os
+
 from lawvm.core.legal_surface_assembler import (
     SurfaceEdgePass,
     assemble_surface_graph,
@@ -42,6 +44,9 @@ from lawvm.core.stage_result import (
     StageResult,
 )
 from lawvm.finland.legal_surface.bundle import build_surface_bundle_staged
+from lawvm.finland.legal_surface.source_syntax_graph import (
+    assemble_source_syntax_graph_staged,
+)
 from lawvm.finland.legal_surface.annotation_compare import (
     GrammarAnnotationComparePass,
 )
@@ -403,6 +408,65 @@ def build_legal_surface_graph(
     ).value
 
 
+def _gate_forest_coverage(
+    bundle: SourceSurfaceBundle, *, statute_id: str
+) -> None:
+    """Fail loud if any unit's parse FOREST coverage fails the totality contract.
+
+    The source-syntax waist's production gate (StageResult endgame row #4). For
+    each bundle unit, assemble the forest as a typed
+    :class:`~lawvm.core.stage_result.StageResult` and READ its ``.coverage``
+    (the token-partition account) + ``.residuals`` (the typed residue). Two
+    branches:
+
+      * a NON-partition coverage (the four classes do not sum to ``total``) is a
+        STRUCTURAL leak — always a blocker, raise unconditionally (mirrors the
+        bundle gate's ``is_partition`` check above);
+      * a signal-bearing ``violation>0`` (a silent-unowned cheap-signal span no
+        construction family owned) is the no-silent-drop FRONTIER. Per the
+        established forest/census contract
+        (``union_ownership_census`` honours ``LAWVM_PARSE_TOTALITY`` as the
+        HARD gate for the silent bucket; a non-zero silent count is the surfaced,
+        non-blocking frontier in normal operation, NOT a steady-state failure),
+        the HARD RAISE here fires ONLY under ``LAWVM_PARSE_TOTALITY``. In normal
+        operation the violation is surfaced as a blocking ``unowned_violation``
+        residual on the StageResult (always type-carried + read), never silently
+        dropped, but does not block the graph build — exactly the same semantics
+        the L0 census already applies to the same ``silent_tokens`` bucket.
+
+    The raise embeds the verbatim offending span text taken straight from the
+    StageResult's blocking ``unowned_violation`` residual (self-evidencing —
+    never an opaque count). ``typed_residual`` (surfaced owned residue) is
+    NON-blocking and never raises here.
+    """
+    totality_mode = bool(os.environ.get("LAWVM_PARSE_TOTALITY"))
+    for unit in bundle.units:
+        forest_stage = assemble_source_syntax_graph_staged(
+            subject=bundle.subject, unit=unit
+        )
+        cov = forest_stage.coverage
+        if not cov.is_partition():
+            raise ValueError(
+                "FI source-syntax forest coverage is not a total partition of "
+                f"unit {unit.source_unit_id} ({statute_id}): owned={cov.owned} "
+                f"benign={cov.benign} residual={cov.residual} "
+                f"violation={cov.violation} total={cov.total}"
+            )
+        if totality_mode and cov.violation > 0:
+            blockers = [
+                r
+                for r in forest_stage.residuals
+                if r.kind == "unowned_violation" and r.blocking
+            ]
+            spans = "; ".join(repr(r.text) for r in blockers[:5])
+            raise ValueError(
+                "FI source-syntax forest coverage carries an unowned violation "
+                f"for unit {unit.source_unit_id} ({statute_id}): "
+                f"violation={cov.violation} tokens of {cov.total}; "
+                f"silent-unowned span(s): {spans}"
+            )
+
+
 def _assemble_surface_graph_value(
     xml_bytes: bytes,
     statute_id: str,
@@ -444,6 +508,20 @@ def _assemble_surface_graph_value(
             f"{statute_id}: violation={coverage.violation} chars of {coverage.total}"
         )
     bundle = surface_stage.value
+
+    # Source-syntax / parse-forest waist (StageResult endgame row #4): assemble the
+    # construction parse FOREST for each bundle unit as a typed StageResult and READ
+    # its token-partition coverage. The forest's SyntaxCoverage partition (the L0
+    # union-ownership census) is no longer an embedded-but-unread account — it is a
+    # returned CoverageCertificate this production consumer checks, EXACTLY parallel
+    # to the bundle gate above. A silent-unowned cheap-signal span (the parse
+    # ``unowned_violation`` class) is a blocking typed fact that must NEVER flow
+    # silently into the assembled surface graph: fail loud, carrying the verbatim
+    # offending span text from the StageResult's blocking residual. The forests are
+    # the SAME cached objects the downstream forest/edge passes reuse, so this is
+    # additive 0-delta plumbing (the GREEN corpus carries 0 violations → no raise).
+    _gate_forest_coverage(bundle, statute_id=statute_id)
+
     context = SurfaceAnalysisContext(
         surface_time=surface_time,
         options={

@@ -73,6 +73,13 @@ from typing import Literal
 from lawvm.core.legal_surface_graph import SourceUnitRef, SurfaceGraphSubject
 from lawvm.core.legal_surface_lens import SourceSurfaceUnit
 from lawvm.core.legal_surface_tokens import ClauseIndex, SegmentationGraph, TokenTape
+from lawvm.core.stage_result import (
+    EMPTY_EVIDENCE,
+    NEUTRAL_AUTHORITY,
+    CoverageCertificate,
+    Residual,
+    StageResult,
+)
 from lawvm.finland.legal_surface.clause_segment import (
     build_clause_index,
     build_segmentation_graph,
@@ -730,6 +737,115 @@ def assemble_source_syntax_graph_for_unit(
         ),
         token_tape=token_tape if isinstance(token_tape, TokenTape) else None,
         clause_index=clause_index if isinstance(clause_index, ClauseIndex) else None,
+    )
+
+
+def _source_syntax_stage_account(
+    forest: SourceSyntaxGraph, *, statute_id: str
+) -> tuple[CoverageCertificate, tuple[Residual, ...]]:
+    """Project a forest's token-partition into the core StageResult account.
+
+    Maps the embedded :class:`TokenPartitionCoverage` (itself a pure projection of
+    the forest's :class:`SyntaxCoverage`) field-for-field onto the canonical core
+    :class:`~lawvm.core.stage_result.CoverageCertificate` (``unit="tokens"``), and
+    surfaces the typed residue:
+
+      * every ``unowned_violation`` token span (a silent, signal-bearing span no
+        construction family owned) → a BLOCKING ``unowned_violation`` residual that
+        carries the verbatim offending span text (self-evidencing — the
+        no-silent-drop witness reaches the StageResult as a typed blocker);
+      * every explicit ``SyntaxResidual`` (an owned-but-cheap-signal surfaced span)
+        → a NON-blocking ``typed_residual`` residual (it is inside the typed-residual
+        coverage bucket, not the violation class).
+
+    Benign uninterpreted (whitespace-class) tokens stay out of ``residuals`` — they
+    are the ``benign`` coverage bucket, carry no signal, and must not block a clean
+    claim.
+    """
+    # Local import: ``token_partition_coverage`` imports THIS module, so the
+    # projector is consumed lazily to avoid an import cycle.
+    from lawvm.finland.legal_surface.token_partition_coverage import (
+        build_token_partition_coverage,
+    )
+
+    part = build_token_partition_coverage(forest, statute_id=statute_id)
+    coverage = CoverageCertificate(
+        unit="tokens",
+        total=part.total_tokens,
+        owned=part.owned,
+        benign=part.benign_uninterpreted,
+        residual=part.typed_residual,
+        violation=part.unowned_violation,
+        totality_claimed=True,
+    )
+    residuals: list[Residual] = []
+    for viol in part.violations:
+        residuals.append(
+            Residual(
+                kind="unowned_violation",
+                reason="forest_silent_unowned_cheap_signal:" + viol.shape,
+                scope=statute_id,
+                source_unit_id=statute_id,
+                char_start=viol.char_start,
+                char_end=viol.char_end,
+                text=viol.text,
+                blocking=True,
+            )
+        )
+    for res in forest.residuals:
+        residuals.append(
+            Residual(
+                kind="typed_residual",
+                reason="forest_typed_residual:" + res.shape,
+                scope=statute_id,
+                source_unit_id=statute_id,
+                char_start=res.char_start,
+                char_end=res.char_end,
+                text=res.text,
+                blocking=False,
+            )
+        )
+    return coverage, tuple(residuals)
+
+
+def assemble_source_syntax_graph_staged(
+    *,
+    subject: SurfaceGraphSubject,
+    unit: SourceSurfaceUnit,
+    source_units: tuple[SourceUnitRef, ...] = (),
+) -> StageResult[SourceSyntaxGraph]:
+    """Assemble a forest for a bundle unit as a typed ``StageResult`` (endgame row #4).
+
+    Thin sibling of :func:`assemble_source_syntax_graph_for_unit`: the ``value`` is
+    the SAME (cached) forest the bare form returns (so the ~3 forest consumers stay
+    on ``.value`` untouched — 0-delta), and the four accounts are ADDITIVE:
+
+      * ``coverage`` — the forest token-partition projected onto the core
+        :class:`~lawvm.core.stage_result.CoverageCertificate` (``unit="tokens"``).
+        ``is_partition()`` holds because the embedded
+        :class:`SyntaxCoverage`/:class:`TokenPartitionCoverage` already totalize the
+        signal-bearing token space; ``violation>0`` ⟺ a silent-unowned span exists
+        (target 0 — the GREEN corpus carries 0).
+      * ``residuals`` — one BLOCKING ``unowned_violation`` per silent span (verbatim
+        text) + one NON-blocking ``typed_residual`` per surfaced owned-residue span.
+      * ``evidence`` = :data:`EMPTY_EVIDENCE` (1D: the forest's source footing is the
+        upstream token-bundle witness; the syntax waist mints no new source identity).
+      * ``findings`` = ``()`` (the forest emits residual nodes, not registry findings).
+      * ``authority`` = :data:`NEUTRAL_AUTHORITY` (surface facts are not replay
+        authority; the firewall is in the default).
+    """
+    forest = assemble_source_syntax_graph_for_unit(
+        subject=subject, unit=unit, source_units=source_units
+    )
+    coverage, residuals = _source_syntax_stage_account(
+        forest, statute_id=unit.source_unit_id
+    )
+    return StageResult(
+        value=forest,
+        evidence=EMPTY_EVIDENCE,
+        residuals=residuals,
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
     )
 
 
