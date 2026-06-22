@@ -5,7 +5,7 @@ from collections import Counter
 import re
 from dataclasses import dataclass, replace as dc_replace
 from functools import lru_cache
-from typing import TYPE_CHECKING, Callable, Literal, Optional, cast
+from typing import TYPE_CHECKING, Callable, Literal, Optional, Sequence, cast
 
 from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
@@ -888,6 +888,65 @@ def _scoped_section_has_local_numeric_siblings(
     return min(sibling_numbers) <= target_number <= max(sibling_numbers)
 
 
+def _section_eid_confirms_chapter_path(
+    section: IRNode,
+    section_path: tuple[tuple[str, str], ...],
+) -> bool:
+    if len(section_path) < 2:
+        return False
+    parent_kind, parent_label = section_path[-2]
+    if parent_kind != "chapter" or not parent_label:
+        return False
+    return _chapter_label_from_section_eid(section) == parent_label
+
+
+def _has_repeated_scoped_section_label(
+    tree: IRNode,
+    section_paths: Sequence[tuple[tuple[str, str], ...]],
+) -> bool:
+    scoped_parent_paths = {
+        section_path[:-1]
+        for section_path in section_paths
+        if section_path[:-1]
+        and (parent := _tops_resolve(tree, section_path[:-1])) is not None
+        and parent.kind is not IRNodeKind.HCONTAINER
+    }
+    return len(scoped_parent_paths) > 1
+
+
+def _fold_has_section_at_materialized_path(
+    replay_fold: IRNode,
+    materialized: IRNode,
+    section_path: tuple[tuple[str, str], ...],
+    section_paths: Sequence[tuple[tuple[str, str], ...]],
+) -> bool:
+    """Return whether replay fold owns ``section_path`` through its provisions wrapper.
+
+    Finland source statutes commonly wrap legal roots in
+    ``statuteProvisionsWrapper``.  PIT materialization projects that wrapper
+    away, so a scoped materialized path such as ``chapter:2/section:1`` may be
+    present in the fold as ``hcontainer:/chapter:2/section:1``.  Reconciliation
+    must treat that as a fold-owned scoped section, not as a misplaced direct
+    wrapper section sharing the same bare label.  The fold can also contain a
+    real direct section with the same label; in that collision family, keep a
+    scoped materialized section only when its eId confirms the chapter path or
+    the materialized product shows repeated scoped occurrences of that label.
+    """
+    if _tops_resolve(replay_fold, section_path) is not None:
+        return True
+    provisions_parent = _find_provisions_parent(replay_fold)
+    if not provisions_parent:
+        return False
+    fold_section = _tops_resolve(replay_fold, provisions_parent + section_path)
+    if fold_section is None:
+        return False
+    materialized_section = _tops_resolve(materialized, section_path)
+    return (
+        materialized_section is not None
+        and _section_eid_confirms_chapter_path(materialized_section, section_path)
+    ) or _has_repeated_scoped_section_label(materialized, section_paths)
+
+
 def _reconcile_materialized_fold_hcontainer_sections(
     materialized: IRNode,
     replay_fold: IRNode,
@@ -954,7 +1013,9 @@ def _reconcile_materialized_fold_hcontainer_sections(
                 and parent_node is not None
                 and parent_node.attrs.get("lawvm_synthesized_container") != "active_descendant"
                 and (
-                    _tops_resolve(replay_fold, section_path) is not None
+                    _fold_has_section_at_materialized_path(
+                        replay_fold, result, section_path, section_paths
+                    )
                     or _scoped_section_has_local_numeric_siblings(result, parent_path, label)
                 )
             ):

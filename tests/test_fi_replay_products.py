@@ -812,6 +812,31 @@ def test_2001_621_materialized_state_keeps_operatives_outside_attachments_and_me
     assert all(child.kind is not IRNodeKind.SECTION for child in attachments[0].children)
 
 
+def test_replay_xml_2001_1488_materialized_state_keeps_chapter_scoped_first_sections() -> None:
+    """Unnumbered topical heading wrappers must not displace chapter ``1 §``."""
+    replay = replay_xml_for_test("2001/1488", mode="official_consolidation", quiet=True)
+
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    assert "chapter:2/section:1" in sections
+    assert "chapter:10/section:1" in sections
+    assert "section:1" in sections
+    assert "Perustajat Osuuskunnan voi perustaa" in irnode_to_text(
+        sections["chapter:2/section:1"]
+    )
+    assert "Voimaantulo Tämän lain voimaantulosta" in irnode_to_text(sections["section:1"])
+
+
+def test_replay_xml_1990_1295_materialized_state_drops_lone_unanchored_scoped_duplicate() -> None:
+    """A lone unanchored scoped duplicate is still reconciled to the body section."""
+    replay = replay_xml_for_test("1990/1295", mode="official_consolidation", quiet=True)
+
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    assert "chapter:4a/section:59a" not in sections
+    assert "section:59a" in sections
+
+
 def test_2017_236_materialized_state_drops_expired_exact_temporary_moments() -> None:
     replay = replay_xml_for_test("2017/236", mode="official_consolidation", quiet=True)
 
