@@ -1441,6 +1441,14 @@ def _body_chapter_insert_correction_candidate(group_ops: Sequence[AmendmentOp]) 
     return all(
         op.op_type == "INSERT"
         or (op.op_type == "REPLACE" and str(op.target_special or "").strip() == "otsikko")
+        or (
+            op.op_type == "REPLACE"
+            and op.target_unit_kind == "section"
+            and bool(op.target_section)
+            and op.target_paragraph is None
+            and not op.target_item
+            and not op.target_special
+        )
         for op in group_ops
     )
 

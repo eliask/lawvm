@@ -832,6 +832,81 @@ def test_existing_letter_run_body_chapter_overrides_live_stem_scope_guess() -> N
     ]
 
 
+def test_existing_body_chapter_overrides_live_unique_scope_for_whole_section_replace() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="13a",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="209b"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="22",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="209a"),
+                        IRNode(kind=IRNodeKind.SECTION, label="209c"),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>22 luku</num>
+              <section><num>209 a §</num><content><p>Sibling before.</p></content></section>
+              <section><num>209 b §</num><content><p>Replacement body.</p></content></section>
+              <section><num>209 c §</num><content><p>Sibling after.</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    replace_op = AmendmentOp(
+        op_id="replace_209b",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="209b",
+        target_chapter="13a",
+        source_statute="2012/399",
+        lo=LegalOperation(
+            op_id="replace_209b",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "13a"), ("section", "209b"))),
+            payload=None,
+        ),
+    )
+
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="209b",
+            target_chapter="13a",
+            target_part=None,
+            group_ops=[replace_op],
+            inserted_chapter_labels=set(),
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            strict_profile=None,
+        )
+    )
+
+    assert result.output.effective_target_chapter == "22"
+    assert result.output.group_ops[0].target_chapter == "22"
+    assert result.output.group_ops[0].body_chapter_move_from == "13a"
+    assert result.output.group_ops[0].lo is not None
+    assert result.output.group_ops[0].lo.target.path == (("chapter", "22"), ("section", "209b"))
+    assert [finding.kind for finding in result.findings()] == [
+        "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+    ]
+
+
 def test_existing_letter_run_body_chapter_needs_live_same_stem_sibling() -> None:
     master = ReplayState(
         ir=IRNode(
