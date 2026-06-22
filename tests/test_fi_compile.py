@@ -53,7 +53,7 @@ from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifec
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
-from tests.corpus_pin_helpers import pinned_replay
+from tests.corpus_pin_helpers import pinned_replay, replay_xml_for_test
 
 
 @dataclass(frozen=True, slots=True)
@@ -2092,6 +2092,50 @@ def test_compile_fi_2017_320_preserves_sparse_subsection_target_labels() -> None
         and cast(dict[str, Any], finding.detail).get("unit_id") == "op_27"
         for finding in facade.finding_ledger
     )
+
+
+@pytest.mark.slow
+def test_compile_fi_2017_320_keeps_dense_inserted_chapter_members_for_later_targets() -> None:
+    replay_before = replay_xml_for_test(
+        "2017/320",
+        mode="official_consolidation",
+        quiet=True,
+        stop_before="2018/984",
+    )
+
+    def chapter_sections(part_label: str, chapter_label: str) -> list[str]:
+        found: list[str] = []
+
+        def walk(node: IRNode, path: tuple[tuple[str, str], ...] = ()) -> None:
+            next_path = path
+            if node.kind in {IRNodeKind.PART, IRNodeKind.CHAPTER, IRNodeKind.SECTION} and node.label:
+                next_path = (*path, (node.kind.value, node.label))
+            if next_path == (("part", part_label), ("chapter", chapter_label)):
+                found.extend(
+                    child.label
+                    for child in node.children
+                    if child.kind is IRNodeKind.SECTION and child.label
+                )
+                return
+            for child in node.children:
+                walk(child, next_path)
+
+        walk(replay_before.products.replay_fold_state.ir)
+        return found
+
+    assert chapter_sections("2", "7") == [str(n) for n in range(1, 22)]
+    assert chapter_sections("2", "10") == [str(n) for n in range(1, 19)]
+
+    failed_ops: list[Any] = []
+    replay_xml_for_test(
+        "2017/320",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+        failed_ops_out=failed_ops,
+    )
+
+    assert not [op for op in failed_ops if getattr(op, "amendment_id", "") == "2018/984"]
 
 
 def test_compile_fi_surfaces_apply_legacy_dispatch_fallback_as_projection_row(

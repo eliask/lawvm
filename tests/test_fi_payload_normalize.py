@@ -1148,6 +1148,84 @@ def test_container_payload_keeps_dense_foreign_replace_bridge() -> None:
     ]
 
 
+def test_container_payload_keeps_dense_foreign_standalone_bridge_with_replace_overlap() -> None:
+    ctx = _mock_ctx("chapter", "7", live_node=None)
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="10"),
+            IRNode(kind=IRNodeKind.SECTION, label="11"),
+            IRNode(kind=IRNodeKind.SECTION, label="12"),
+            IRNode(kind=IRNodeKind.SECTION, label="13"),
+            IRNode(kind=IRNodeKind.SECTION, label="14"),
+            IRNode(kind=IRNodeKind.SECTION, label="15"),
+            IRNode(kind=IRNodeKind.SECTION, label="16"),
+        ),
+    )
+
+    got, changed, pruned = _prune_container_payload_sections_shadowed_by_standalone_targets(
+        ctx,
+        "chapter",
+        "7",
+        muutos_ir,
+        {"11", "12", "13", "14", "15"},
+        foreign_scoped_standalone_section_targets={"11", "12", "13", "14", "15"},
+        foreign_scoped_replace_section_targets={"12", "15"},
+        preserve_dense_new_container_payload=True,
+    )
+
+    assert changed is False
+    assert isinstance(got, IRNode)
+    assert pruned == []
+    assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == [
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+    ]
+
+
+def test_container_payload_prunes_dense_foreign_standalone_bridge_without_new_container_insert() -> None:
+    ctx = _mock_ctx("chapter", "7", live_node=None)
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="10"),
+            IRNode(kind=IRNodeKind.SECTION, label="11"),
+            IRNode(kind=IRNodeKind.SECTION, label="12"),
+            IRNode(kind=IRNodeKind.SECTION, label="13"),
+            IRNode(kind=IRNodeKind.SECTION, label="14"),
+            IRNode(kind=IRNodeKind.SECTION, label="15"),
+            IRNode(kind=IRNodeKind.SECTION, label="16"),
+        ),
+    )
+
+    got, changed, pruned = _prune_container_payload_sections_shadowed_by_standalone_targets(
+        ctx,
+        "chapter",
+        "7",
+        muutos_ir,
+        {"11", "12", "13", "14", "15"},
+        foreign_scoped_standalone_section_targets={"11", "12", "13", "14", "15"},
+        foreign_scoped_replace_section_targets={"12", "15"},
+    )
+
+    assert changed is True
+    assert isinstance(got, IRNode)
+    assert pruned == ["11", "12", "13", "14", "15"]
+    assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == [
+        "10",
+        "16",
+    ]
+
+
 def test_payload_normalize_aligns_sparse_omission_subsections_to_live() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

@@ -3419,6 +3419,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     ) = None,
     recodification_transfer_context: bool = False,
     expected_heading_only: bool = False,
+    preserve_dense_new_container_payload: bool = False,
 ) -> ContainerPayloadPruningResult:
     """Drop malformed container payload sections that are targeted separately.
 
@@ -3603,7 +3604,10 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
             pruned_witnesses.append(child_witness)
             continue
         if child_label in foreign_scoped_standalone_section_targets:
-            if foreign_replace_payload_overlap:
+            if foreign_replace_payload_overlap and not (
+                preserve_dense_new_container_payload
+                and has_dense_foreign_replace_bridge
+            ):
                 changed = True
                 pruned_labels.append(child_label)
                 pruned_witnesses.append(child_witness)
@@ -6698,6 +6702,14 @@ def elaborate_payload_against_live(
         foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
         recodification_transfer_context=recodification_transfer_context,
         expected_heading_only=_container_pruning_is_expected_heading_only(group_ops),
+        preserve_dense_new_container_payload=any(
+            op.op_type == "INSERT"
+            and op.target_unit_kind == target_unit_kind
+            and _norm_num_token(op.target_section or op.target_chapter or op.target_part or "")
+            == target_norm
+            for op in group_ops
+        )
+        and (target_unit_kind != "chapter" or ctx.target_part is not None),
     )
     muutos_ir = pruning_result.muutos_ir
     payload_pruned = pruning_result.changed
