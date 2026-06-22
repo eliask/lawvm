@@ -2499,6 +2499,8 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.SPARSE_PAYLOAD_LEFTOVER": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION": ("payload-normalize source-shape recovery; covered by payload unit fixture", "2026-06-23"),
+    "ELAB.SPLIT_MIXED_SPARSE_SLOT_CROSS_PARAGRAPH_PAYLOAD": ("payload-normalize recovery; needs fixture", "2026-06-23"),
     "ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL": ("payload-normalize recovery; covered by sparse payload fixture", "2026-06-22"),
     "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL": ("payload-normalize recovery; needs fixture", "2026-06-20"),

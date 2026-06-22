@@ -5329,6 +5329,87 @@ def test_normalize_group_payload_folds_split_target_subsection_intro_list_tail()
     assert _completeness(got).kind == "sparse_certified"
 
 
+def test_normalize_group_payload_splits_final_list_item_detached_moment() -> None:
+    """A whole-section payload may glue the next moment into the final list item.
+
+    Mirrors `1994/1143 <- 1994/1477 / 17 §`: the last item of moment 1 ends at
+    ``lääkintätarkoituksiin.``, and the following ``Erityismyynti ...`` sentence
+    is the real second moment, before the permit-granting third moment.
+    """
+    ctx = _mock_ctx("section", "17", target_chapter="4", live_node=None)
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="17",
+        target_chapter="4",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="17",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="17 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Erityismyynti ja käyttölupa"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Tukkumyyjä saa myydä:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="1)"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="etikan valmistukseen;"),
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="2)"),
+                            IRNode(
+                                kind=IRNodeKind.CONTENT,
+                                text=(
+                                    "apteekeille lääkintätarkoituksiin. "
+                                    "Erityismyynti 1 momentin 1 kohdassa tarkoitettuun "
+                                    "tarkoitukseen on sallittu käyttöluvalla."
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Tuotevalvontakeskus voi myöntää käyttöluvan luotettavalle hakijalle.",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    normalized = _muutos_ir(got)
+    subsections = [child for child in normalized.children if child.kind is IRNodeKind.SUBSECTION]
+    assert [child.label for child in subsections] == ["1", "2", "3"]
+    assert "apteekeille lääkintätarkoituksiin." in irnode_to_text(subsections[0])
+    assert "Erityismyynti 1 momentin" not in irnode_to_text(subsections[0])
+    assert "Erityismyynti 1 momentin" in irnode_to_text(subsections[1])
+    assert "Tuotevalvontakeskus voi myöntää" in irnode_to_text(subsections[2])
+    observations = _observations(got)
+    assert [obs.kind for obs in observations] == ["ELAB.SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION"]
+    detail = observations[0].detail
+    assert detail is not None
+    assert detail["inserted_subsection_label"] == "2"
+    assert detail["shifted_subsection_count"] == 1
+    assert _completeness(got).kind == "complete"
+
+
 def test_group_payload_normalization_result_defaults_unassigned_sparse_payload_slots() -> None:
     assignment = SubsectionSlotAssignmentResult(
         subsec_map=SubsectionSlotMap(),

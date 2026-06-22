@@ -2380,6 +2380,7 @@ class LeadingSubsectionHeadingPayloadResult:
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
 _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE = "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL"
+_SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION_RULE = "ELAB.SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION"
 _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE = "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL"
 _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
 _LEADING_SUBSECTION_HEADING_PAYLOAD_RULE = "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
@@ -3029,6 +3030,178 @@ def _fold_split_target_subsection_intro_list_tail(
         "rule": _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
     }
     return _tops._with_children(muutos_ir, new_children), True, detail
+
+
+def _split_detached_sentence_from_final_list_item(text: str) -> tuple[str, str] | None:
+    """Split a final list-item sentence tail using the shared FI sentence substrate."""
+    normalized = text.strip()
+    if not normalized:
+        return None
+    from lawvm.finland.legal_surface.clause_segment import build_clause_index
+
+    index = build_clause_index("fi.payload.final_list_item_tail", normalized)
+    if len(index.sentences) < 2:
+        return None
+    first = index.sentences[0]
+    prefix = normalized[: first.char_end].strip()
+    tail = normalized[first.char_end :].strip()
+    if not prefix or not tail:
+        return None
+    if not tail[:1].isupper():
+        return None
+    return prefix, tail
+
+
+def _last_numbered_paragraph_content_child(subsection: IRNode) -> tuple[int, IRNode, int, IRNode] | None:
+    for paragraph_index in range(len(subsection.children) - 1, -1, -1):
+        paragraph = subsection.children[paragraph_index]
+        if paragraph.kind is not IRNodeKind.PARAGRAPH or not paragraph.label:
+            continue
+        if not _norm_num_token(paragraph.label).isdigit():
+            continue
+        for child_index in range(len(paragraph.children) - 1, -1, -1):
+            child = paragraph.children[child_index]
+            if child.kind is IRNodeKind.CONTENT and child.text and not child.children:
+                return paragraph_index, paragraph, child_index, child
+    return None
+
+
+def _shift_subsection_label(subsection: IRNode, *, at_or_after: int) -> IRNode:
+    label = _norm_num_token(subsection.label or "")
+    if not label.isdigit() or int(label) < at_or_after:
+        return subsection
+    return IRNode(
+        kind=subsection.kind,
+        label=str(int(label) + 1),
+        text=subsection.text,
+        attrs=dict(subsection.attrs),
+        children=tuple(subsection.children),
+    )
+
+
+def _split_final_list_item_trailing_subsection(
+    target_unit_kind: TargetUnitKind,
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> tuple[Optional[IRNode], dict[str, object] | None]:
+    """Promote a detached sentence glued to the final list item into a moment.
+
+    Historical amendment XML can encode a whole-section replacement as:
+
+    - subsection 1: intro + numbered paragraphs, with the next legal moment
+      glued after the final list item's first sentence;
+    - subsection 2: the following real legal moment.
+
+    The source order is still complete, but the AKN subsection boundary is one
+    sentence late.  Split only that exact whole-section payload shape; descendant
+    scoped groups keep their existing sparse-slot machinery.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return muutos_ir, None
+    whole_section_ops = [
+        op
+        for op in group_ops
+        if (
+            op.op_type in {"INSERT", "REPLACE"}
+            and op.target_unit_kind == "section"
+            and op.target_paragraph is None
+            and not op.target_item
+            and not op.target_special
+        )
+    ]
+    if len(whole_section_ops) != 1 or len(group_ops) != 1:
+        return muutos_ir, None
+
+    subsection_positions = [
+        (idx, child)
+        for idx, child in enumerate(muutos_ir.children)
+        if child.kind is IRNodeKind.SUBSECTION
+    ]
+    if len(subsection_positions) < 2:
+        return muutos_ir, None
+    first_idx, first_subsection = subsection_positions[0]
+    following_idx, following_subsection = subsection_positions[1]
+    if following_idx != first_idx + 1:
+        return muutos_ir, None
+    first_label = _norm_num_token(first_subsection.label or "")
+    following_label = _norm_num_token(following_subsection.label or "")
+    if not first_label.isdigit() or not following_label.isdigit():
+        return muutos_ir, None
+    new_label_int = int(first_label) + 1
+    if int(following_label) != new_label_int:
+        return muutos_ir, None
+    if not _is_intro_list_subsection_ir(first_subsection):
+        return muutos_ir, None
+    if _plain_content_only_subsection_text(following_subsection) is None:
+        return muutos_ir, None
+
+    content_slot = _last_numbered_paragraph_content_child(first_subsection)
+    if content_slot is None:
+        return muutos_ir, None
+    paragraph_index, paragraph, content_index, content = content_slot
+    split = _split_detached_sentence_from_final_list_item(content.text or "")
+    if split is None:
+        return muutos_ir, None
+    list_item_text, detached_text = split
+
+    paragraph_children = list(paragraph.children)
+    paragraph_children[content_index] = IRNode(
+        kind=content.kind,
+        label=content.label,
+        text=list_item_text,
+        attrs=dict(content.attrs),
+        children=tuple(content.children),
+    )
+    subsection_children = list(first_subsection.children)
+    subsection_children[paragraph_index] = IRNode(
+        kind=paragraph.kind,
+        label=paragraph.label,
+        text=paragraph.text,
+        attrs=dict(paragraph.attrs),
+        children=tuple(paragraph_children),
+    )
+    rewritten_first = IRNode(
+        kind=first_subsection.kind,
+        label=first_subsection.label,
+        text=first_subsection.text,
+        attrs=dict(first_subsection.attrs),
+        children=tuple(subsection_children),
+    )
+    inserted_subsection = _with_payload_normalization_rule(
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label=str(new_label_int),
+            children=(IRNode(kind=IRNodeKind.CONTENT, text=detached_text),),
+        ),
+        _SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION_RULE,
+    )
+
+    new_children: list[IRNode] = []
+    shifted_count = 0
+    inserted = False
+    for idx, child in enumerate(muutos_ir.children):
+        if idx == first_idx:
+            new_children.append(rewritten_first)
+            new_children.append(inserted_subsection)
+            inserted = True
+            continue
+        if inserted and child.kind is IRNodeKind.SUBSECTION:
+            shifted = _shift_subsection_label(child, at_or_after=new_label_int)
+            shifted_count += int(shifted is not child)
+            new_children.append(shifted)
+            continue
+        new_children.append(child)
+    if not inserted:
+        return muutos_ir, None
+
+    detail: dict[str, object] = {
+        "source_subsection_label": str(first_subsection.label or ""),
+        "inserted_subsection_label": str(new_label_int),
+        "shifted_subsection_count": shifted_count,
+        "detached_text_chars": len(detached_text),
+        "rule": _SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION_RULE,
+    }
+    return _tops._with_children(muutos_ir, new_children), detail
 
 
 def _fold_split_omission_subsection_prefix_into_following_intro_list(
@@ -7037,6 +7210,21 @@ def elaborate_payload_against_live(
                 target_unit_kind=target_unit_kind,
                 target_norm=target_norm,
                 **split_target_intro_list_detail,
+            )
+        )
+    muutos_ir, final_list_tail_detail = _split_final_list_item_trailing_subsection(
+        target_unit_kind,
+        muutos_ir,
+        group_ops,
+    )
+    if final_list_tail_detail is not None:
+        observations.append(
+            _obs(
+                _SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                **final_list_tail_detail,
             )
         )
     heading_tagged_payload = _normalize_heading_tagged_subsection_payload(
