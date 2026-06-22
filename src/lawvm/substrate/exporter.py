@@ -155,6 +155,38 @@ def _interval(start: str, end: str | None) -> tuple[str, str | None]:
     return (start, end)
 
 
+_DOMAIN_CORPUS_VERSION = "corpus_version"
+
+
+def _corpus_version(
+    *,
+    jurisdiction: str,
+    work_id: str,
+    title: str,
+    change_dates: list[str],
+) -> str:
+    """Deterministic ``corpus_version`` derived from the engine input (Q6 fix).
+
+    Returns ``"{jur}:corpus:sha256:<hex>"`` where the digest pins the work's
+    identity + temporal frontier (``work_id``, NFC ``title``, the ordered
+    change-date list whose first entry is the commencement). It is a pure
+    function of the replay input, so the SAME engine input yields the SAME
+    ``corpus_version`` — and therefore the SAME ``pack_id`` — on any day and for
+    any third party re-exporting identical input. (The wall-clock republish
+    timestamp survives only on the hash-excluded ``provenance.created_at``.)
+    """
+    digest = leaf_hash(
+        _DOMAIN_CORPUS_VERSION,
+        {
+            "jurisdiction": jurisdiction,
+            "work_id": work_id,
+            "title": nfc(title),
+            "change_dates": list(change_dates),
+        },
+    )
+    return f"{jurisdiction}:corpus:{digest}"
+
+
 # --------------------------------------------------------------------------- #
 # Inline object builders (families with no substrate dataclass)                #
 # --------------------------------------------------------------------------- #
@@ -307,16 +339,52 @@ def _without(body: dict[str, JsonValue], key: str) -> dict[str, JsonValue]:
     return {k: v for k, v in body.items() if k != key}
 
 
-def _residual_body(kind: str, blocking: bool, detail: str, subject: str) -> dict[str, JsonValue]:
+def _residual_body(
+    kind: str,
+    blocking: bool,
+    detail: str,
+    subject: str,
+    detail_fields: dict[str, JsonValue] | None = None,
+) -> dict[str, JsonValue]:
+    """``lawvm.residual.v1`` — a single source/op/finding residual.
+
+    ``detail_fields`` carries the source object's FULL distinguishing identity
+    (Q4 fix): for a source pathology this is its ``as_detail()`` (``code``,
+    ``amendment_id``, ``phase``, ``strict_disposition``, ``target_unit_kind``,
+    …). Carrying it keeps DISTINCT engine pathologies DISTINCT content-addressed
+    objects — without it, the message-only projection collapsed thousands of
+    pathologies (different ``amendment_id``) to identical bodies that the proof
+    SetRoot then silently deduped away.
+    """
     body: dict[str, JsonValue] = {
         "schema": SCHEMA_RESIDUAL,
         "kind": kind,
         "blocking": blocking,
         "detail": nfc(detail),
         "subject": subject,
+        "detail_fields": _nfc_detail_fields(detail_fields or {}),
     }
     body["residual_id"] = leaf_hash(_DOMAIN_RESIDUAL, _without(body, "residual_id"))
     return body
+
+
+def _nfc_detail_fields(fields: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """JSON-safe, deterministically-ordered copy of a residual's detail fields.
+
+    String values are NFC-normalized (semantic-text identity discipline); other
+    JSON scalars pass through; anything non-JSON is stringified so the residual
+    body always serializes under ``canonical_json_bytes``.
+    """
+    out: dict[str, JsonValue] = {}
+    for key in sorted(fields):
+        val = fields[key]
+        if isinstance(val, str):
+            out[key] = nfc(val)
+        elif isinstance(val, (bool, int, float)) or val is None:
+            out[key] = val
+        else:
+            out[key] = nfc(str(val))
+    return out
 
 
 def _coverage_body(coverage_class: str, count: int, detail: str) -> dict[str, JsonValue]:
@@ -481,7 +549,23 @@ def export_work_pack(
             flush=True,
         )
 
-    corpus_version = f"{jurisdiction}:corpus:{_dt.date.today().isoformat()}"
+    # ``corpus_version`` is a HASHED manifest member and flows into every
+    # selection-row/fact ``account_interval`` + the ``account_boundary_root``, so
+    # it MUST be derived deterministically from the engine INPUT — NOT from
+    # ``date.today()`` (a wall-clock value made the same input produce a different
+    # ``pack_id`` on a different day, defeating content-addressing and third-party
+    # reproduction). The wall-clock republish moment lives only on the
+    # hash-EXCLUDED ``provenance.created_at``. The digest below pins the work's
+    # temporal/identity skeleton (work_id, title, commencement, the ordered
+    # change-date frontier, whose first entry is the commencement); the actual
+    # per-date tree CONTENT is independently content-addressed by the layer roots
+    # that also flow into ``pack_id``.
+    corpus_version = _corpus_version(
+        jurisdiction=jurisdiction,
+        work_id=work_id,
+        title=bundle.title,
+        change_dates=bundle.change_dates,
+    )
     out = Path(out_dir)
     if out.exists():
         # Idempotent: clear a previous pack at this path.
@@ -743,18 +827,66 @@ def export_work_pack(
         _close_span(addr, open_versions.pop(addr), _OPEN_END)
 
     # -- residuals / coverage (proof layer) ----------------------------------- #
-    n_residuals = 0
+    # Each residual carries the source object's FULL distinguishing identity
+    # (``detail_fields`` = its ``as_detail()``), so DISTINCT engine pathologies /
+    # findings stay DISTINCT content-addressed objects and are NOT silently
+    # deduped by the proof SetRoot (Q4). ``blocking`` is read from the object's
+    # own field (never hardcoded), so a blocking source-pathology/finding cannot
+    # be demoted out of the certification fold. ``emitted_residuals`` counts the
+    # objects ACTUALLY emitted (post-dedup) so the coverage ``residual`` row can
+    # NOT diverge from the number of residual objects on disk.
+    proof_residuals_before = proof_w.row_count
+
+    def _emit_residual(
+        kind: str, subject: str, blocking: bool, detail: str, detail_fields: dict[str, JsonValue]
+    ) -> None:
+        proof_w.write(
+            _residual_body(kind, blocking, detail, subject, detail_fields=detail_fields)
+        )
+
     for path in getattr(bundle, "source_pathologies", []) or []:
-        detail = _pathology_detail(path)
-        proof_w.write(_residual_body("source_pathology", False, detail, "source"))
-        n_residuals += 1
+        fields = _detail_fields(path)
+        _emit_residual(
+            "source_pathology",
+            "source",
+            _detail_blocking(path, fields),
+            _residual_detail(path, fields),
+            fields,
+        )
     for failed in getattr(bundle, "failed_ops", []) or []:
-        proof_w.write(_residual_body("failed_operation", False, str(failed)[:200], "op"))
-        n_residuals += 1
+        fields = _detail_fields(failed)
+        # A failed_op is a REJECTED legal operation — inherently blocking unless
+        # its own detail explicitly says otherwise.
+        _emit_residual(
+            "failed_operation",
+            "op",
+            _detail_blocking(failed, fields, default=True),
+            _residual_detail(failed, fields),
+            fields,
+        )
+    # Q1: replay_findings (blocking/violation roles) were silently dropped — emit
+    # one residual per finding so a blocking replay finding cannot vanish without
+    # a trace in the proof layer / certification fold.
+    for finding in getattr(bundle, "replay_findings", []) or []:
+        fields = _finding_fields(finding)
+        _emit_residual(
+            "replay_finding",
+            "replay",
+            _finding_blocking(finding),
+            _finding_detail(finding, fields),
+            fields,
+        )
+
+    # The number of residual OBJECTS on disk (post-SetRoot-dedup) — the coverage
+    # row reports exactly this, so the count can never diverge from reality.
+    n_residuals = proof_w.row_count - proof_residuals_before
+
     proof_w.write(
         _coverage_body("owned", n_selection_rows, "selected selection rows over covering frontier")
     )
-    proof_w.write(_coverage_body("residual", n_residuals, "non-blocking source/op residuals"))
+    proof_w.write(
+        _coverage_body("residual", n_residuals, "distinct source/op/finding residual objects")
+    )
 
     # -- selection universe (the omission keystone) --------------------------- #
     universe = SelectionUniverse(
@@ -893,12 +1025,78 @@ def _version_rail(bundle: Any, addr: str, date: str) -> str:
     return _RAIL_PERMANENT
 
 
-def _pathology_detail(path: Any) -> str:
+def _detail_fields(obj: Any) -> dict[str, JsonValue]:
+    """Return the source object's FULL ``as_detail()`` dict (Q4 distinguishing id).
+
+    The engine pathology / failed-op objects expose ``as_detail()`` carrying the
+    fields that make two otherwise-similar pathologies DISTINCT (``code``,
+    ``amendment_id``, ``phase``, ``blocking``, ``strict_disposition``,
+    ``target_unit_kind``, …). When an object lacks ``as_detail()`` we fall back to
+    a single stringified body so it is still emitted (never silently dropped).
+    """
+    as_detail = getattr(obj, "as_detail", None)
+    if callable(as_detail):
+        detail = as_detail()
+        if isinstance(detail, dict):
+            return cast("dict[str, JsonValue]", detail)
+    return {"repr": str(obj)}
+
+
+def _detail_blocking(obj: Any, fields: dict[str, JsonValue], *, default: bool = False) -> bool:
+    """Read the object's OWN ``blocking`` flag — never hardcode it.
+
+    The flag lives on ``as_detail()["blocking"]`` (the engine pathology carries
+    it there, not as a Python attribute), with the attribute as a secondary
+    source. ``default`` is the value when neither is present (a rejected
+    failed_op is inherently blocking).
+    """
+    if "blocking" in fields and isinstance(fields["blocking"], bool):
+        return fields["blocking"]
+    attr = getattr(obj, "blocking", None)
+    if isinstance(attr, bool):
+        return attr
+    return default
+
+
+def _residual_detail(obj: Any, fields: dict[str, JsonValue]) -> str:
+    """Human-readable summary line for a residual (the structured fields carry id)."""
+    for key in ("message", "reason", "detail", "code", "reason_code"):
+        val = fields.get(key)
+        if isinstance(val, str) and val:
+            return val[:200]
     for attr in ("message", "detail", "kind", "reason"):
-        val = getattr(path, attr, None)
+        val = getattr(obj, attr, None)
         if val:
             return str(val)[:200]
-    return str(path)[:200]
+    return str(obj)[:200]
+
+
+def _finding_fields(finding: Any) -> dict[str, JsonValue]:
+    """Distinguishing identity for a replay finding (Q1)."""
+    detail = getattr(finding, "detail", None)
+    base: dict[str, JsonValue] = {}
+    if isinstance(detail, dict):
+        base = cast("dict[str, JsonValue]", dict(detail))
+    for attr in ("kind", "role", "stage", "source_statute"):
+        val = getattr(finding, attr, None)
+        if val is not None and attr not in base:
+            base[attr] = val if isinstance(val, (str, int, float, bool)) else str(val)
+    base["blocking"] = bool(getattr(finding, "blocking", False))
+    if not base:
+        base = {"repr": str(finding)}
+    return base
+
+
+def _finding_blocking(finding: Any) -> bool:
+    role = str(getattr(finding, "role", "") or "")
+    return bool(getattr(finding, "blocking", False)) or role == "violation"
+
+
+def _finding_detail(finding: Any, fields: dict[str, JsonValue]) -> str:
+    kind = str(getattr(finding, "kind", "") or "")
+    role = str(getattr(finding, "role", "") or "")
+    summary = (kind + (f" [{role}]" if role else "")).strip()
+    return summary[:200] if summary else str(finding)[:200]
 
 
 def _build_certificate(
