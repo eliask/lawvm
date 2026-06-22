@@ -1210,33 +1210,44 @@ def _parse_section_list_labels(raw: str) -> Set[str]:
     applies that normalization in case it is called directly with raw XML text.
     """
     text = _normalize_fi_parse_text(raw)
-    text = text.replace("-", "\u2013").replace("\u2015", "\u2013")
-    # Strip trailing § markers and momentti/pykälä qualifiers that follow §.
-    # XXX FIXME: the negated char class `[^,;ja sekä\u2013]` is semantically
-    # confused — the author clearly intended to stop at the *words* "ja" and
-    # "sekä" (Finnish "and" / "and also"), but a char class matches
-    # individual characters, so this actually stops at any of the letters
-    # {j, a, s, e, k, ä}.  It happens to produce the right result on the
-    # section-list inputs we've seen because those inputs use comma /
-    # whitespace separators before any `ja`/`sekä`, but this is a
-    # coincidence, not a contract.  Rewrite as an alternation stop
-    # (`re.split` or a lookahead on `\b(?:ja|sekä)\b`) and drive it from
-    # real regression cases before trusting it.
-    text = re.sub(r'§[^,;ja sekä\u2013]*', ' ', text, flags=re.IGNORECASE)
-    # Split on comma, 'ja', 'sekä'
-    tokens = re.split(r'\s*(?:,|ja|sekä)\s*', text.strip(), flags=re.IGNORECASE)
+    _EN_DASH = "–"
+    text = text.replace("-", _EN_DASH).replace("―", _EN_DASH)
+
+    # The contract: a Finnish section-list is a sequence of section items
+    # separated by comma, semicolon, or the words "ja" / "sekä" ("and" /
+    # "and also"). Each item is a section number, optionally an alpha suffix,
+    # optionally an en-dash range, followed by a "§" marker and possibly a
+    # pykälä/momentti qualifier ("§:n 3 momentti"). We want the section labels
+    # only; the "§" marker and everything after it (the qualifier) is dropped.
+    #
+    # Split on the separators FIRST, then per item strip the "§" tail. This
+    # is the principled inverse of the original code, which tried to strip the
+    # "§" tail first with a single re.sub whose stop set was the negated char
+    # class [^,;ja sekä–]. That char class was a coincidence, not a
+    # contract: it negated the *characters* {j, a, s, e, k, ä, space} rather
+    # than the *words* "ja"/"sekä", and it left the post-"§" qualifier text
+    # (e.g. "3 momentti") in place to leak in as a bogus label like
+    # "793momentti". Splitting on word-boundaried separators and truncating
+    # each item at its "§" expresses the actual intent and drops the qualifier.
+    # lawvm-regex: separator tokenizer for a FI section list; \b(?:ja|sekä)\b
+    # matches the connective WORDS (not letters), [,;] the punctuation
+    # separators; ranges (en-dash) stay intra-item and are expanded below.
+    items = re.split(
+        r"\s*(?:[,;]|\bja\b|\bsekä\b)\s*", text.strip(), flags=re.IGNORECASE
+    )
     labels: Set[str] = set()
-    _EN_DASH = '\u2013'
-    for token in tokens:
-        token = token.strip()
-        if not token:
+    for item in items:
+        # Drop the "§" marker and any trailing pykälä/momentti qualifier;
+        # the section number (and any en-dash range / alpha suffix) precedes "§".
+        item = item.split("§", 1)[0].strip()
+        if not item:
             continue
         # Check for en-dash range (em-dash already normalised to en-dash above)
-        if _EN_DASH in token:
-            parts = token.split(_EN_DASH, 1)
+        if _EN_DASH in item:
+            parts = item.split(_EN_DASH, 1)
             labels.update(_expand_section_range(parts[0].strip(), parts[1].strip()))
         else:
-            norm = re.sub(r'\s+', '', token).lower()
+            norm = re.sub(r"\s+", "", item).lower()
             if norm:
                 labels.add(norm)
     return labels

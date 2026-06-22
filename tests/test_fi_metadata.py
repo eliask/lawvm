@@ -529,3 +529,82 @@ def test_statute_id_sort_key_letter_suffix_sorts_after_base() -> None:
     # 100a > 100 numerically since num_int is based on leading digits
     # (both share the same year; the raw string tie-break handles letter suffix)
     assert a <= b  # at minimum not greater
+
+
+# ---------------------------------------------------------------------------
+# _parse_section_list_labels — separator-tokenizer contract
+# ---------------------------------------------------------------------------
+
+
+def test_parse_section_list_simple_comma_ja_list() -> None:
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    assert _parse_section_list_labels("5, 8 b, 11 ja 12") == {"5", "8b", "11", "12"}
+
+
+def test_parse_section_list_seka_separator() -> None:
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    assert _parse_section_list_labels("87 a ja 89 a sekä 90") == {"87a", "89a", "90"}
+
+
+def test_parse_section_list_en_dash_range_expands() -> None:
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    assert _parse_section_list_labels("16 a–16 g") == {
+        "16a",
+        "16b",
+        "16c",
+        "16d",
+        "16e",
+        "16f",
+        "16g",
+    }
+
+
+def test_parse_section_list_momentti_qualifier_yields_section_only() -> None:
+    """The "§:n N momentti" qualifier is dropped; only the section number is kept.
+
+    The old negated-char-class strip left the qualifier text in place, so this
+    input produced the bogus glued label "793momentti" instead of "79". The
+    fix splits on the real separator words first and truncates each item at its
+    "§" marker, dropping the pykälä/momentti qualifier that follows.
+    """
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    assert _parse_section_list_labels("79 §:n 3 momentti") == {"79"}
+    # No leftover glued-qualifier label.
+    assert "793momentti" not in _parse_section_list_labels("79 §:n 3 momentti")
+
+
+def test_parse_section_list_momentti_with_seka_continuation() -> None:
+    """A momentti-qualified item followed by `sekä` must split on the word,
+    not on the letters of "sekä", and must drop the qualifier on each item."""
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    assert _parse_section_list_labels("12 §:n 2 momentti sekä 14 §") == {"12", "14"}
+
+
+def test_parse_section_list_complex_multi_section_clause() -> None:
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    got = _parse_section_list_labels(
+        "16 a–16 g ja 58 i–58 k §, 79 §:n 3 momentti sekä 87 a ja 89 a §"
+    )
+    assert got == {
+        "16a",
+        "16b",
+        "16c",
+        "16d",
+        "16e",
+        "16f",
+        "16g",
+        "58i",
+        "58j",
+        "58k",
+        "79",
+        "87a",
+        "89a",
+    }
+    # The qualifier must not leak in as a glued label.
+    assert "793momentti" not in got
