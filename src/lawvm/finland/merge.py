@@ -89,6 +89,18 @@ class MergeContainerContext:
     container_label: str = ""
 
 
+@dataclass(frozen=True)
+class _ContainerSectionUnit:
+    """A direct section plus source-owned non-structural context before it."""
+
+    prefix: Tuple[IRNode, ...]
+    section: IRNode
+
+    @property
+    def label(self) -> str:
+        return self.section.label or ""
+
+
 # ---------------------------------------------------------------------------
 # Typed merge operator — ReplaceMode, MergeEvent, invariant checks
 # ---------------------------------------------------------------------------
@@ -1405,8 +1417,6 @@ def _merge_same_numbered_container_insert_ir(
     context: Optional[MergeContainerContext] = None,
 ) -> Optional[IRNode]:
     """IRNode version: overlay partial container onto live container."""
-    # Start from master, update heading if provided
-    new_children = list(master_node.children)
     # Section labels the amendment payload itself carries, used to classify a
     # duplicate as an amendment child vs. a pre-existing live sibling.
     amend_section_labels: Set[str] = {
@@ -1424,46 +1434,40 @@ def _merge_same_numbered_container_insert_ir(
         if c.kind is IRNodeKind.SECTION and c.label:
             master_label_counts[c.label] = master_label_counts.get(c.label, 0) + 1
     master_preexisting_duplicates: Set[str] = {lbl for lbl, n in master_label_counts.items() if n > 1}
-    amend_heading = next((c for c in amend_node.children if c.kind is IRNodeKind.HEADING), None)
-    if amend_heading is not None:
-        heading_idx = next((i for i, c in enumerate(new_children) if c.kind is IRNodeKind.HEADING), None)
-        if heading_idx is not None:
-            new_children[heading_idx] = amend_heading
-        else:
-            insert_idx = 1 if any(c.kind is IRNodeKind.NUM for c in new_children) else 0
-            new_children.insert(insert_idx, amend_heading)
+    master_units, master_trailing = _container_section_units(master_node.children)
+    amend_units, amend_trailing = _container_section_units(amend_node.children)
+    amend_units_by_label: Dict[str, _ContainerSectionUnit] = {
+        unit.label: unit for unit in amend_units if unit.label
+    }
+    master_labels = {unit.label for unit in master_units if unit.label}
 
-    for amend_child in amend_node.children:
-        if amend_child.kind is not IRNodeKind.SECTION or not amend_child.label:
+    merged_units: List[_ContainerSectionUnit] = []
+    replaced_labels: Set[str] = set()
+    for master_unit in master_units:
+        amend_unit = amend_units_by_label.get(master_unit.label)
+        if amend_unit is None or master_unit.label in replaced_labels:
+            merged_units.append(master_unit)
             continue
-        # Find matching section in master
-        live_idx = next(
-            (i for i, c in enumerate(new_children) if c.kind is IRNodeKind.SECTION and c.label == amend_child.label),
-            None,
+        replaced_labels.add(master_unit.label)
+        merged_section = _merge_container_section(master_unit.section, amend_unit.section)
+        merged_units.append(
+            _ContainerSectionUnit(prefix=amend_unit.prefix, section=merged_section)
         )
-        if live_idx is not None:
-            has_omission = any(_is_omission_ir(gc) for gc in amend_child.children)
-            if has_omission:
-                live_child = new_children[live_idx]
-                live_sub_texts = {c.text or "" for c in live_child.children if c.kind is IRNodeKind.SUBSECTION}
-                for ac in amend_child.children:
-                    if ac.kind is IRNodeKind.SUBSECTION and (ac.text or "") not in live_sub_texts:
-                        live_child = _tops._with_children(live_child, list(live_child.children) + [ac])
-                new_children[live_idx] = live_child
-            else:
-                # Check for inner-subsection omissions
-                merged = _merge_section_inner_subsection_omission_ir(new_children[live_idx], amend_child)
-                new_children[live_idx] = merged if merged is not None else amend_child
-        else:
-            # Insert at sorted position
-            target_key = _section_sort_key(amend_child.label)
-            insert_idx = len(new_children)
-            for idx, c in enumerate(new_children):
-                if c.kind is IRNodeKind.SECTION and c.label:
-                    if _section_sort_key(c.label) > target_key:
-                        insert_idx = idx
-                        break
-            new_children.insert(insert_idx, amend_child)
+
+    appended_amend_labels: Set[str] = set()
+    for amend_unit in amend_units:
+        if amend_unit.label in master_labels or amend_unit.label in appended_amend_labels:
+            continue
+        selected_unit = amend_units_by_label.get(amend_unit.label, amend_unit)
+        merged_units.append(selected_unit)
+        appended_amend_labels.add(amend_unit.label)
+
+    merged_units.sort(key=lambda unit: _section_sort_key(unit.label))
+    new_children = list(_container_top_children(master_node, amend_node))
+    for unit in merged_units:
+        new_children.extend(unit.prefix)
+        new_children.append(unit.section)
+    new_children.extend(amend_trailing or master_trailing)
 
     # Abort ONLY when the merge INCREASES a label's repeat count beyond the
     # master's pre-existing baseline. A collision on a label that the live
@@ -1521,6 +1525,66 @@ def _merge_same_numbered_container_insert_ir(
         )
         return None
     return _tops._with_children(master_node, new_children)
+
+
+def _container_top_children(master_node: IRNode, amend_node: IRNode) -> Tuple[IRNode, ...]:
+    """Return the merged container num/heading shell for a partial merge."""
+
+    result: List[IRNode] = []
+    master_num = next((c for c in master_node.children if c.kind is IRNodeKind.NUM), None)
+    amend_num = next((c for c in amend_node.children if c.kind is IRNodeKind.NUM), None)
+    num = amend_num or master_num
+    if num is not None:
+        result.append(num)
+    amend_heading = next((c for c in amend_node.children if c.kind is IRNodeKind.HEADING), None)
+    master_heading = next((c for c in master_node.children if c.kind is IRNodeKind.HEADING), None)
+    heading = amend_heading or master_heading
+    if heading is not None:
+        result.append(heading)
+    return tuple(result)
+
+
+def _container_section_units(
+    children: Tuple[IRNode, ...],
+) -> Tuple[Tuple[_ContainerSectionUnit, ...], Tuple[IRNode, ...]]:
+    """Group direct section children with their immediately preceding context."""
+
+    units: List[_ContainerSectionUnit] = []
+    prefix: List[IRNode] = []
+    for child in children:
+        if child.kind in {IRNodeKind.NUM, IRNodeKind.HEADING} and not units and not prefix:
+            continue
+        if child.kind is IRNodeKind.SECTION and child.label:
+            units.append(_ContainerSectionUnit(prefix=tuple(prefix), section=child))
+            prefix = []
+            continue
+        prefix.append(child)
+    return tuple(units), tuple(prefix)
+
+
+def _merge_container_section(master_section: IRNode, amend_section: IRNode) -> IRNode:
+    """Merge one same-labeled section using the legacy inner-omission semantics."""
+
+    has_omission = any(_is_omission_ir(child) for child in amend_section.children)
+    if has_omission:
+        live_child = master_section
+        live_sub_texts = {
+            child.text or ""
+            for child in live_child.children
+            if child.kind is IRNodeKind.SUBSECTION
+        }
+        for amend_child in amend_section.children:
+            if (
+                amend_child.kind is IRNodeKind.SUBSECTION
+                and (amend_child.text or "") not in live_sub_texts
+            ):
+                live_child = _tops._with_children(
+                    live_child,
+                    list(live_child.children) + [amend_child],
+                )
+        return live_child
+    merged = _merge_section_inner_subsection_omission_ir(master_section, amend_section)
+    return merged if merged is not None else amend_section
 
 
 def _paragraph_signatures_ir(node: IRNode) -> List[str]:

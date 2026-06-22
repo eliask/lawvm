@@ -49,6 +49,18 @@ def _content(text: str) -> IRNode:
     return IRNode(kind=IRNodeKind.CONTENT, text=text)
 
 
+def _heading(text: str) -> IRNode:
+    return IRNode(kind=IRNodeKind.HEADING, text=text)
+
+
+def _cross_heading(text: str) -> IRNode:
+    return IRNode(kind=IRNodeKind.CROSS_HEADING, text=text)
+
+
+def _num(text: str) -> IRNode:
+    return IRNode(kind=IRNodeKind.NUM, text=text)
+
+
 def _has_omission(node: IRNode) -> bool:
     return node.kind is IRNodeKind.OMISSION or any(_has_omission(child) for child in node.children)
 
@@ -1329,6 +1341,50 @@ def test_merge_container_insert_payload_repeats_overlay_not_a_merge_caused_dupli
     assert labels.count("3") == 1
     # The master baseline ("2" once) is never exceeded either.
     assert labels.count("2") == 1
+
+
+def test_container_merge_replaces_cross_heading_context_for_amended_section_span() -> None:
+    master = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="12",
+        children=(
+            _num("12 luku"),
+            _heading("Old chapter heading"),
+            _cross_heading("Old heading for replaced section"),
+            _sec("1", _sub("1", _content("old one"))),
+            _cross_heading("Old heading for preserved tail"),
+            _sec("9", _sub("1", _content("old nine"))),
+        ),
+    )
+    amend = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="12",
+        children=(
+            _num("12 luku"),
+            _heading("New chapter heading"),
+            _cross_heading("New heading for section one"),
+            _sec("1", _sub("1", _content("new one"))),
+            _cross_heading("New heading for inserted section"),
+            _sec("2", _sub("1", _content("new two"))),
+        ),
+    )
+
+    result = _merge_same_numbered_container_insert_ir(master, amend)
+
+    assert result is not None
+    assert [child.text for child in result.children if child.kind is IRNodeKind.CROSS_HEADING] == [
+        "New heading for section one",
+        "New heading for inserted section",
+        "Old heading for preserved tail",
+    ]
+    assert [child.label for child in result.children if child.kind is IRNodeKind.SECTION] == [
+        "1",
+        "2",
+        "9",
+    ]
+    assert "old one" not in irnode_to_text(result)
+    assert "new one" in irnode_to_text(result)
+    assert "old nine" in irnode_to_text(result)
 
 
 def test_merge_clean_insert_over_preexisting_duplicate_does_not_warn(
