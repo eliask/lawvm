@@ -25,12 +25,16 @@ import pytest
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.substrate import exporter as exporter_mod
+from lawvm.substrate.canonical_json import semantic_hash
 from lawvm.substrate.checker import (
     CheckMode,
     IntegrityVerdict,
+    TopLineVerdict,
+    ViolationCode,
     check_pack,
 )
 from lawvm.substrate.exporter import export_work_pack, load_pack_for_check
+from lawvm.substrate.roots import set_root
 
 
 # --------------------------------------------------------------------------- #
@@ -202,6 +206,185 @@ def test_e2e_real_statute(tmp_path: Path) -> None:
         IntegrityVerdict.VALID,
         IntegrityVerdict.VALID_WITH_UNSUPPORTED_LAYERS,
     ), [v.to_canonical_dict() for v in verdict.violations]
+
+
+# --------------------------------------------------------------------------- #
+# FIX-1/FIX-2 hardening fire drills — RE-DERIVED forge adversary.              #
+#                                                                              #
+# The original drills (test_checker.py) tamper ONE cell WITHOUT re-deriving    #
+# the dependent roots — a strawman the layer-root check (L0.3) already caught. #
+# These drills re-derive the layer roots the forger MUST rebuild to get past   #
+# L0.3, and prove the checker STILL catches them via the roots-of-roots        #
+# recompute (FIX-1) and the now-live closure / omission checks (FIX-2). Each   #
+# runs through the REAL production lane (on-disk pack → load_pack_for_check →   #
+# check_pack), and each is shown to BITE: VALID_CLEAN before the bytes are      #
+# tampered, a violation after.                                                  #
+# --------------------------------------------------------------------------- #
+
+
+def _write_layer(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.write_text(
+        "".join(
+            json.dumps(r, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n"
+            for r in rows
+        ),
+        encoding="utf-8",
+    )
+
+
+def _load_manifest(pack: Path) -> dict[str, Any]:
+    return json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+
+
+def _write_manifest(pack: Path, manifest_row: dict[str, Any]) -> None:
+    (pack / "manifest.json").write_text(
+        json.dumps(manifest_row, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+
+def _rederive_layer_descriptor_root(
+    manifest_body: dict[str, Any], kind: str, rows: list[dict[str, Any]]
+) -> None:
+    """Rebuild ONLY the layer descriptor root (L0.3) — what a forger must do to
+    get past the per-layer root check after editing rows. Leaves manifest.roots
+    (the roots-of-roots map, FIX-1's target) untouched."""
+    hashes = [str(r["object_hash"]) for r in rows]
+    for layer in manifest_body["layers"]:
+        if layer["kind"] == kind:
+            domain = {"base": "base", "state": "state", "trace": "trace", "proof": "proof"}[kind]
+            fn = set_root if layer["root_fn"] == "SetRoot" else None
+            assert fn is not None, "drill only re-derives SetRoot layers"
+            layer["root"] = fn(domain, hashes)
+            layer["row_count"] = len(rows)
+
+
+def test_baseline_real_pack_is_valid_clean(synthetic_pack: Path) -> None:
+    """Sanity anchor for the drills: the untouched real pack is VALID_CLEAN."""
+    verdict = check_pack(load_pack_for_check(synthetic_pack), mode=CheckMode.BROWSE)
+    assert verdict.top_line_verdict is TopLineVerdict.VALID_CLEAN, verdict.to_canonical_dict()
+
+
+def test_drill_bogus_manifest_roots_entry(synthetic_pack: Path) -> None:
+    """(a) A bogus ``manifest.roots`` entry (Hole A) — the checker never used to
+    recompute the roots-of-roots map. FIX-1: now an INVALID_MANIFEST_ROOT."""
+    manifest_row = _load_manifest(synthetic_pack)
+    body = manifest_row["object"]
+    body["roots"]["materialization_root"] = "sha256:BOGUS"
+    body["roots"]["certificate_root"] = "sha256:BOGUS"
+    _write_manifest(synthetic_pack, manifest_row)
+
+    verdict = check_pack(load_pack_for_check(synthetic_pack), mode=CheckMode.BROWSE)
+    assert verdict.top_line_verdict is not TopLineVerdict.VALID_CLEAN, (
+        "Hole A NOT closed: a bogus roots-of-roots map still passes VALID_CLEAN"
+    )
+    assert verdict.has_code(ViolationCode.INVALID_MANIFEST_ROOT)
+    subjects = {v.subject for v in verdict.violations if v.code is ViolationCode.INVALID_MANIFEST_ROOT}
+    assert {"materialization_root", "certificate_root"} <= subjects
+
+
+def test_drill_rederived_content_forge(synthetic_pack: Path) -> None:
+    """(b) A re-derived content forge: rewrite a content_leaf text, re-wrap the
+    row, recompute the BASE layer descriptor root (so L0.3 passes), and rebuild
+    the manifest — but the forger does NOT rebuild manifest.roots. FIX-1's
+    ``selection_index_root`` recompute (over the forged content_leaf) catches it.
+    The forge changes a root the checker now recomputes (verified by asserting
+    the violating subject IS selection_index_root)."""
+    base_rows = _read_layer(synthetic_pack / "base" / "base.jsonl")
+    forged = False
+    for row in base_rows:
+        if row["object"].get("schema") == "lawvm.content_leaf.v1":
+            row["object"]["text"] = "FORGED LAW TEXT"
+            # Re-wrap: a real forger recomputes the object_hash so L0.2 passes.
+            row["object_hash"] = semantic_hash(row["object"])
+            forged = True
+            break
+    assert forged, "no content_leaf to forge"
+    _write_layer(synthetic_pack / "base" / "base.jsonl", base_rows)
+
+    manifest_row = _load_manifest(synthetic_pack)
+    body = manifest_row["object"]
+    _rederive_layer_descriptor_root(body, "base", base_rows)  # forger passes L0.3
+    _write_manifest(synthetic_pack, manifest_row)
+
+    verdict = check_pack(load_pack_for_check(synthetic_pack), mode=CheckMode.BROWSE)
+    assert verdict.top_line_verdict is not TopLineVerdict.VALID_CLEAN, (
+        "Hole B NOT closed: a re-derived content forge still passes VALID_CLEAN"
+    )
+    assert verdict.has_code(ViolationCode.INVALID_MANIFEST_ROOT)
+    subjects = {v.subject for v in verdict.violations if v.code is ViolationCode.INVALID_MANIFEST_ROOT}
+    # The forged content propagates into content_leaf_root → selection_index_root,
+    # which the forger did NOT rebuild in manifest.roots.
+    assert "selection_index_root" in subjects, subjects
+
+
+def test_drill_referential_closure_break(synthetic_pack: Path) -> None:
+    """(c) Drop a content_leaf row so a node_version→content_leaf ref dangles.
+    FIX-2 makes L0.5 live (referenced_hashes populated from real refs)."""
+    base_rows = _read_layer(synthetic_pack / "base" / "base.jsonl")
+    kept = [r for r in base_rows if r["object"].get("schema") != "lawvm.content_leaf.v1"]
+    assert len(kept) < len(base_rows), "expected at least one content_leaf to drop"
+    _write_layer(synthetic_pack / "base" / "base.jsonl", kept)
+
+    manifest_row = _load_manifest(synthetic_pack)
+    body = manifest_row["object"]
+    _rederive_layer_descriptor_root(body, "base", kept)  # forger rebuilds L0.3 root
+    _write_manifest(synthetic_pack, manifest_row)
+
+    verdict = check_pack(load_pack_for_check(synthetic_pack), mode=CheckMode.BROWSE)
+    assert verdict.top_line_verdict is not TopLineVerdict.VALID_CLEAN, (
+        "FIX-2 closure NOT live: a dropped content leaf still passes VALID_CLEAN"
+    )
+    assert verdict.has_code(ViolationCode.INVALID_MISSING_OBJECT) or verdict.has_code(
+        ViolationCode.INVALID_MANIFEST_ROOT
+    )
+
+
+def test_drill_shrunken_universe(synthetic_pack: Path) -> None:
+    """(d) Remove a selection_row (shrink the universe). FIX-2 takes the universe
+    MapRoot from the COMMITTED universe row, so present!=declared now fires
+    (omission honesty was dead when the root was rebuilt from present rows)."""
+    state_rows = _read_layer(synthetic_pack / "state" / "state.jsonl")
+    rows = [r for r in state_rows if r["object"].get("schema") == "lawvm.selection_row.v1"]
+    assert len(rows) >= 1
+    drop_hash = rows[0]["object_hash"]
+    kept = [r for r in state_rows if r["object_hash"] != drop_hash]
+    _write_layer(synthetic_pack / "state" / "state.jsonl", kept)
+
+    manifest_row = _load_manifest(synthetic_pack)
+    body = manifest_row["object"]
+    _rederive_layer_descriptor_root(body, "state", kept)  # forger rebuilds L0.3 root
+    _write_manifest(synthetic_pack, manifest_row)
+
+    verdict = check_pack(load_pack_for_check(synthetic_pack), mode=CheckMode.BROWSE)
+    assert verdict.top_line_verdict is not TopLineVerdict.VALID_CLEAN, (
+        "FIX-2 omission honesty NOT live: a dropped selection row still passes"
+    )
+    # The committed universe MapRoot no longer matches the present rows, and the
+    # selection_index_root (over the shrunken selection_row family) shifts too.
+    assert verdict.has_code(ViolationCode.INVALID_ROOT) or verdict.has_code(
+        ViolationCode.INVALID_MANIFEST_ROOT
+    )
+
+
+def test_drill_tampered_cert_layer(synthetic_pack: Path) -> None:
+    """(e) FIX-3 partial: tamper cert/certificate.json's committed root. The cert
+    layer used to be never read; now it is re-rooted and a disagreement bites."""
+    cert_file = synthetic_pack / "cert" / "certificate.json"
+    cert_row = json.loads(cert_file.read_text(encoding="utf-8"))
+    cert_row["object"]["materialization_root"] = "sha256:BOGUS_CERT"
+    # Re-wrap so the cert row's own object_hash is self-consistent (a real forger
+    # would; the bite must come from re-rooting, not the wrapper hash).
+    cert_row["object_hash"] = semantic_hash(cert_row["object"])
+    cert_file.write_text(
+        json.dumps(cert_row, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    verdict = check_pack(load_pack_for_check(synthetic_pack), mode=CheckMode.BROWSE)
+    assert verdict.top_line_verdict is not TopLineVerdict.VALID_CLEAN, (
+        "FIX-3 cert re-root NOT live: a tampered cert layer still passes"
+    )
+    assert verdict.has_code(ViolationCode.INVALID_MANIFEST_ROOT)
 
 
 # --------------------------------------------------------------------------- #

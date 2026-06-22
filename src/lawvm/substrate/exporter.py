@@ -51,6 +51,7 @@ from lawvm.substrate.canonical_json import (
     nfc,
     wrap_row,
 )
+from lawvm.substrate.checker import assemble_manifest_roots
 from lawvm.substrate.manifest import (
     PackLayer,
     PackManifest,
@@ -72,8 +73,6 @@ from lawvm.substrate.selection import (
     SelectionRow,
     SelectionUniverse,
     TemporalBasis,
-    build_selection_index_roots,
-    build_state_selection_roots,
     v0_profiles,
 )
 from lawvm.substrate.source import (
@@ -779,35 +778,39 @@ def export_work_pack(
     for w in writers.values():
         w.close()
 
-    state_roots = build_state_selection_roots(
-        selection_profile_object_hashes=selection_profile_hashes,
-        selection_universe_object_hashes=selection_universe_hashes,
-        scope_predicate_object_hashes=scope_predicate_hashes,
-        applicability_fact_object_hashes=applicability_fact_hashes,
-        candidate_set_object_hashes=candidate_set_hashes,
-        selection_row_object_hashes=selection_row_hashes,
+    # The roots-of-roots map is built by the SAME function the checker recomputes
+    # over the loaded rows (``checker.assemble_manifest_roots``) — one algorithm,
+    # so a checker re-derivation cannot disagree with an honest exporter, and a
+    # forged ``manifest.roots`` map is rejected (FIX-1). The trace layer is a
+    # SeqRoot (``materialization_root`` over its ordered rows); everything else is
+    # grouped by object family.
+    roots = assemble_manifest_roots(
+        content_leaf_hashes=content_leaf_hashes,
+        node_version_hashes=node_version_hashes,
+        selection_profile_hashes=selection_profile_hashes,
+        selection_universe_hashes=selection_universe_hashes,
+        scope_predicate_hashes=scope_predicate_hashes,
+        applicability_fact_hashes=applicability_fact_hashes,
+        candidate_set_hashes=candidate_set_hashes,
+        selection_row_hashes=selection_row_hashes,
+        trace_hashes=trace_w.hashes,
+        source_refs=(source_ref,),
     )
-    content_leaf_root = set_root("content_leaf", content_leaf_hashes)
-    node_version_root = set_root("node_version", node_version_hashes)
-    projection_root = set_root("projection", [])  # v0: no projection cache
-    index_roots = build_selection_index_roots(
-        content_leaf_root=content_leaf_root,
-        node_version_root=node_version_root,
-        state_selection_root=state_roots.state_selection_root,
-        projection_root=projection_root,
-    )
-
-    # materialization_root is a flat SeqRoot over the trace-layer checkpoint
-    # rows (map §6: "flat, keep"). The trace layer also carries transitions; the
-    # full layer SeqRoot is the trace layer descriptor root, distinct from this.
-    materialization_root = seq_root("materialization", trace_w.hashes)
+    materialization_root = roots["materialization_root"]
+    selection_index_root = roots["selection_index_root"]
+    certificate_root = roots["certificate_root"]
 
     # -- certificate (cert/ singleton) ---------------------------------------- #
-    certificate_root, cert_body = _build_certificate(
+    # The cert body restates the legal-state roots it commits to; its
+    # ``certificate_root`` MUST equal the shared map's (asserted below).
+    emitted_cert_root, cert_body = _build_certificate(
         work_id=work_id,
         materialization_root=materialization_root,
-        selection_index_root=index_roots.selection_index_root,
+        selection_index_root=selection_index_root,
         n_residuals=n_residuals,
+    )
+    assert emitted_cert_root == certificate_root, (
+        "certificate_root drift between _build_certificate and assemble_manifest_roots"
     )
     cert_dir = out / "cert"
     cert_dir.mkdir(parents=True, exist_ok=True)
@@ -816,17 +819,8 @@ def export_work_pack(
         encoding="utf-8",
     )
 
-    source_bundle_root = leaf_hash("source_bundle", {"source_refs": [source_ref]})
-
-    roots = {
-        "materialization_root": materialization_root,
-        "selection_index_root": index_roots.selection_index_root,
-        "certificate_root": certificate_root,
-        "source_bundle_root": source_bundle_root,
-    }
-
     # -- layer descriptors + manifest ----------------------------------------- #
-    layers = _build_layer_descriptors(writers, index_roots, materialization_root, certificate_root)
+    layers = _build_layer_descriptors(writers)
 
     schemas = {
         "work": SCHEMA_WORK,
@@ -936,9 +930,6 @@ def _build_certificate(
 
 def _build_layer_descriptors(
     writers: dict[str, _LayerWriter],
-    index_roots: Any,
-    materialization_root: str,
-    certificate_root: str,
 ) -> tuple[PackLayer, ...]:
     """Build one PackLayer descriptor per filled layer.
 
@@ -1032,28 +1023,90 @@ def load_pack_for_check(pack_dir: str | Path) -> Any:
             rows=tuple(rows),
         )
 
-    # Reconstruct the selection-universe map from the state layer's universe row.
+    # -- FIX-2: make L0.5 (referential closure) + L0.6 (omission honesty) LIVE -- #
+    # Previously this reconstructed BOTH the universe map AND its root from the
+    # PRESENT rows, so declared≡present by construction and the omission keystone
+    # never fired on a real loaded pack. Now:
+    #   * the universe ROOT is taken from the COMMITTED universe row's
+    #     ``selection_key_root`` (the value the exporter sealed over the keys it
+    #     INTENDED), while the universe MAP is rebuilt from the present rows — so a
+    #     dropped/added/renamed row makes ``map_root(present) != committed`` and
+    #     the recompute in ``_check_manifest_roots`` fires (shrunken-universe);
+    #   * ``referenced_hashes`` is populated from the ACTUAL cross-references the
+    #     selection rows emit (selected_node_version_id, candidate_set_hash) +
+    #     the node-version→content-leaf refs, so a removed leaf / dangling ref is
+    #     caught (referential-closure break).
     selection_universe: dict[str, str] | None = None
     selection_universe_root: str | None = None
     referenced: dict[str, str] = {}
+    source_refs: set[str] = set()
     state = layers.get("state")
+    base = layers.get("base")
+
+    def _bodies(layer: PackLayerData | None):
+        if layer is None:
+            return
+        for row in layer.rows:
+            body = row.get("object")
+            if isinstance(body, dict):
+                yield cast("dict[str, Any]", body)
+
+    # Present node_version intrinsic ids + content_leaf ids (the identity space
+    # references resolve against) — closure is verified by the checker against
+    # both these and the transport object_hashes.
+    present_node_version_ids: set[str] = set()
+    for body in _bodies(state):
+        if body.get("schema") == "lawvm.node_version.v1":
+            nv = body.get("node_version_id")
+            if isinstance(nv, str):
+                present_node_version_ids.add(nv)
+    for body in _bodies(base):
+        if body.get("schema") == SCHEMA_CONTENT_LEAF:
+            for loc in body.get("source_locators", []) or []:
+                if isinstance(loc, str):
+                    source_refs.add(loc)
+
     if state is not None:
-        # Build the universe map from the present selection_row keys (the checker
-        # enforces present==declared; we reconstruct the declared map as the row
-        # keys so a missing/surplus row would still be caught by the row hashes).
-        universe_keys: dict[str, str] = {}
+        present_map: dict[str, str] = {}
+        committed_key_root: str | None = None
         for row in state.rows:
             body = row.get("object")
             if not isinstance(body, dict):
                 continue
-            typed_body = cast("dict[str, Any]", body)
-            if typed_body.get("schema") == "lawvm.selection_row.v1":
-                key = typed_body.get("selection_key")
+            typed = cast("dict[str, Any]", body)
+            schema = typed.get("schema")
+            if schema == "lawvm.selection_row.v1":
+                key = typed.get("selection_key")
+                nv = typed.get("selected_node_version_id")
+                cs = typed.get("candidate_set_hash")
                 if isinstance(key, str):
-                    universe_keys[key] = str(row["object_hash"])
-        if universe_keys:
-            selection_universe = universe_keys
-            selection_universe_root = map_root("selection_universe", universe_keys)
+                    # The universe MapRoot the exporter sealed maps
+                    # selection_key -> selection_row OBJECT hash.
+                    present_map[key] = str(row["object_hash"])
+                    if isinstance(nv, str):
+                        referenced[f"selected_node_version:{key}"] = nv
+                    if isinstance(cs, str):
+                        referenced[f"candidate_set:{key}"] = cs
+            elif schema == "lawvm.selection_universe.v1":
+                root = typed.get("selection_key_root")
+                if isinstance(root, str):
+                    committed_key_root = root
+        if present_map:
+            selection_universe = present_map
+            # Authoritative root = the COMMITTED universe row's sealed MapRoot;
+            # fall back to recompute only if the pack predates the universe row.
+            selection_universe_root = committed_key_root or map_root(
+                "selection_universe", present_map
+            )
+
+    # FIX-3 (partial) — read the cert/ singleton so the checker can re-root it.
+    certificate_body: dict[str, Any] | None = None
+    cert_file = pack_path / "cert" / "certificate.json"
+    if cert_file.exists():
+        cert_row = json.loads(cert_file.read_text(encoding="utf-8"))
+        cert_obj = cert_row.get("object") if isinstance(cert_row, dict) else None
+        if isinstance(cert_obj, dict):
+            certificate_body = cast("dict[str, Any]", cert_obj)
 
     return Pack(
         manifest=manifest,
@@ -1061,6 +1114,9 @@ def load_pack_for_check(pack_dir: str | Path) -> Any:
         selection_universe=selection_universe,
         selection_universe_root=selection_universe_root,
         referenced_hashes=referenced,
+        source_refs=tuple(sorted(source_refs)),
+        recompute_manifest_roots=True,
+        certificate_body=certificate_body,
         known_schemas=_KNOWN_SCHEMAS,
     )
 
