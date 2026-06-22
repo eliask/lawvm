@@ -1657,6 +1657,112 @@ def drill_lineage_cycle_replay_products_build() -> None:
 
 
 # ---------------------------------------------------------------------------
+# SURF-04 / SURF-05 surface-totality observation drills
+# ---------------------------------------------------------------------------
+
+
+def drill_definition_duplicate_definition_surface_totality() -> None:
+    """Drive the production SURF-04 sweep into a DUPLICATE_DEFINITION firing.
+
+    Exercises the real ``sweep_definition_totality_from_bindings`` over two
+    bindings of the same (term, scope); the finding must reach the sweep's typed
+    output. The drill exercises the production sweep, not a hand-built Finding.
+    """
+    from lawvm.core.reference_mention import SourceSpan
+    from lawvm.finland.references.defined_terms import (
+        BINDING_TARKOITETAAN,
+        DefinedTermBinding,
+    )
+    from lawvm.finland.references.surface_totality import (
+        DEFINITION_DUPLICATE_DEFINITION,
+        sweep_definition_totality_from_bindings,
+    )
+
+    def _b(off: int) -> DefinedTermBinding:
+        return DefinedTermBinding(
+            term="sivutuote",
+            target_ref=None,
+            expansion="x",
+            scope="statute",
+            source_span=SourceSpan(source_file="drill", byte_offset=off, byte_len=8),
+            binding_kind=BINDING_TARKOITETAAN,
+        )
+
+    findings = sweep_definition_totality_from_bindings(
+        [_b(10), _b(99)], [], statute_id="drill/1"
+    )
+    assert any(f.code == DEFINITION_DUPLICATE_DEFINITION for f in findings), (
+        "DUPLICATE_DEFINITION sweep did not fire on a duplicate (term, scope) binding"
+    )
+
+
+def drill_definition_orphan_reference_surface_totality() -> None:
+    """Drive the production SURF-04 sweep into an ORPHAN_DEFINITION_REFERENCE firing."""
+    from lawvm.core.reference_mention import SourceSpan
+    from lawvm.finland.references.surface_totality import (
+        DEFINITION_ORPHAN_DEFINITION_REFERENCE,
+        sweep_definition_totality_from_bindings,
+    )
+    from lawvm.finland.references.term_use import (
+        RULE_BEFORE_BINDING,
+        STATUS_OPEN,
+        TermUse,
+    )
+
+    open_use = TermUse(
+        term_surface="sivutuotteisiin",
+        lemma="sivutuote",
+        binding=None,
+        source_span=SourceSpan(source_file="drill", byte_offset=5, byte_len=15),
+        status=STATUS_OPEN,
+        rule_id=RULE_BEFORE_BINDING,
+    )
+    findings = sweep_definition_totality_from_bindings(
+        [], [open_use], statute_id="drill/2"
+    )
+    assert any(
+        f.code == DEFINITION_ORPHAN_DEFINITION_REFERENCE for f in findings
+    ), "ORPHAN_DEFINITION_REFERENCE sweep did not fire on an open (unresolvable) use"
+
+
+def drill_reference_unclassified_reference_surface_totality() -> None:
+    """Drive the production SURF-05 sweep into an UNCLASSIFIED_REFERENCE firing."""
+    from lawvm.core.reference_mention import (
+        CiteConfidence,
+        CiteKind,
+        ProvisionRef,
+        ReferenceMention,
+        SourceSpan,
+    )
+    from lawvm.finland.references.ref_mention_extractor import ExtractionResult
+    from lawvm.finland.references.surface_totality import (
+        REFERENCE_UNCLASSIFIED_REFERENCE,
+        sweep_citation_totality,
+    )
+
+    mention = ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="1/2020", section_label="3"),
+        target_provision_ref=ProvisionRef(statute_id="2/2020", section_label="5"),
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.EXACT,
+        phrase_lemma="ref_element",
+        source_span=SourceSpan(source_file="1/2020", byte_offset=7, byte_len=4),
+        valid_at_interval=(None, None),
+        edge_subtype="CITES",
+    )
+    # Simulate a silently-widened classification set (out-of-closed-set value).
+    object.__setattr__(
+        mention, "cite_confidence", SimpleNamespace(value="FORGED_STATE")
+    )
+    findings = sweep_citation_totality(
+        ExtractionResult(mentions=[mention]), statute_id="1/2020"
+    )
+    assert any(f.code == REFERENCE_UNCLASSIFIED_REFERENCE for f in findings), (
+        "UNCLASSIFIED_REFERENCE sweep did not fire on an out-of-closed-set confidence"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Declarative fire-drill registry
 # ---------------------------------------------------------------------------
 
@@ -1708,6 +1814,9 @@ EXTRA_SURFACE_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
 # they are tracked separately from FIRE_DRILLS because the blocking-code
 # inventory tests only police blocking codes.
 OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
+    "DEFINITION.DUPLICATE_DEFINITION": drill_definition_duplicate_definition_surface_totality,
+    "DEFINITION.ORPHAN_DEFINITION_REFERENCE": drill_definition_orphan_reference_surface_totality,
+    "REFERENCE.UNCLASSIFIED_REFERENCE": drill_reference_unclassified_reference_surface_totality,
     "APPLY.OCCUPANCY_POLICY_VIOLATION": drill_occupancy_policy_violation_finland_production,
     "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT": drill_occupancy_temporally_disjoint_insert_finland_production,
     "APPLY.REPLAY_UNDECLARED_TREE_TOUCH": drill_replay_undeclared_tree_touch_apply_lane,
