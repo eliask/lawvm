@@ -42,6 +42,28 @@ class FoldTimelineBackfillResult:
     backfill_ops: tuple[LegalOperation, ...] = ()
 
 
+def _fold_backfill_op_id(address: LegalAddress) -> str:
+    """Return a deterministic op_id keyed by the full section address.
+
+    Finnish chaptered statutes repeat section labels across containers
+    (``1 §`` exists in every chapter). Keying the op_id by ``node.label``
+    alone collides those distinct sections, so the ``existing_op_ids`` dedup
+    drops every same-labelled section after the first and its replay-owned
+    content silently vanishes from PIT materialization. Deriving the id from
+    the serialized address path keeps true duplicates (same address) deduped
+    while distinguishing different-container same-label sections.
+
+    The ``snapshot_section_`` prefix is preserved because downstream replay
+    consumers gate on ``op_id.startswith("snapshot_section_")``.
+    """
+    ancestor_segments = "_".join(
+        f"{kind}_{label}" for kind, label in address.path[:-1]
+    )
+    section_label = address.path[-1][1] if address.path else ""
+    suffix = f"_in_{ancestor_segments}" if ancestor_segments else ""
+    return f"snapshot_section_{section_label}{suffix}_fold_timeline_backfill"
+
+
 def _content_is_repeal_placeholder(node: IRNode) -> bool:
     return node.attrs.get("lawvm_repeal_placeholder") == "1"
 
@@ -325,7 +347,7 @@ def append_fold_timeline_backfill_ops(
         if not source_statute or not effective:
             source_statute = base_statute_id
             effective = as_of
-        op_id = f"snapshot_section_{node.label}_fold_timeline_backfill"
+        op_id = _fold_backfill_op_id(address)
         if op_id in existing_op_ids:
             continue
         backfill_op = LegalOperation(
