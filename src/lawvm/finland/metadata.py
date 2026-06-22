@@ -1948,8 +1948,8 @@ def _chapter_commencement_effective_overrides(
         return ()
 
     rows: list[tuple[str, frozenset[str], dt.date]] = []
-    # lawvm-regex: owning_parser C-commence chapter-scoped commencement clause LOCATOR;
-    # chapter labels are lexed only inside the located subject span below.
+    # Chapter labels are lexed only inside the located subject span below.
+    # lawvm-regex: owning_parser C-commence chapter-scoped commencement clause LOCATOR; chapter labels lexed only inside the located subject span, date via parse_fi_day_month_year
     for match in _CHAPTER_COMMENCEMENT_RE.finditer(eit_text):
         effective = parse_fi_day_month_year(
             match.group("day"),
