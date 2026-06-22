@@ -132,10 +132,14 @@ def test_apply_resolved_op_audit_serializes_to_observation() -> None:
     assert observation["detail"] == {
         "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
         "op_id": "replace_1",
+        "action_type": "REPLACE",
         "description": result.audit.description,
         "target_unit_kind": "section",
         "target_norm": "1",
         "target_chapter": "",
         "target_part": "",
+        "target_paragraph": "",
+        "target_item": "",
+        "target_special": "",
         "disposition": "NO_APPLY_PASS",
     }
