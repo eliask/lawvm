@@ -150,6 +150,75 @@ def test_content_leaf_dedup(synthetic_pack: Path) -> None:
     # All content-leaf hashes are unique (dedup invariant).
     hashes = [leaf["content_leaf_hash"] for leaf in leaves]
     assert len(hashes) == len(set(hashes))
+    # No per-work provenance smuggled onto the shared leaf — the body is pure
+    # text identity (design §22.1). source_locators / work_id live on the
+    # node_version instead, never here.
+    for leaf in leaves:
+        assert set(leaf.keys()) == {"schema", "text", "content_leaf_hash"}, leaf
+
+
+def test_content_leaf_hash_is_independent_text_only_recompute() -> None:
+    """content_leaf_hash == sha256 of canonical {schema, text} — principled, not circular."""
+    import hashlib
+
+    from lawvm.substrate.canonical_json import canonical_json_bytes, nfc
+
+    known_text = "Pysyvä teksti ä — sama jokaisessa työssä."
+    clh, body = exporter_mod._content_leaf_body(known_text)
+
+    expected = (
+        "sha256:"
+        + hashlib.sha256(
+            b"lawvm:content_leaf\x00"
+            + canonical_json_bytes(
+                {"schema": "lawvm.content_leaf.v1", "text": nfc(known_text)}
+            )
+        ).hexdigest()
+    )
+    assert clh == expected
+    assert body == {
+        "schema": "lawvm.content_leaf.v1",
+        "text": nfc(known_text),
+        "content_leaf_hash": expected,
+    }
+
+
+def test_content_leaf_dedups_across_two_different_works() -> None:
+    """THE dedup property (would FAIL under the source_locators-in-leaf bug).
+
+    Two distinct works carry per-work source spans, but identical leaf TEXT must
+    yield the byte-identical content leaf — same ``content_leaf_hash`` AND same
+    wrapped-row ``object_hash`` — so a shared store deduplicates it. The fix
+    moves ``source_locators`` to the node_version; if they rode on the leaf, the
+    two works' leaves would hash differently and this assertion would fail.
+    """
+    from lawvm.substrate.canonical_json import wrap_row
+
+    shared_text = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2000."
+    clh_a, body_a = exporter_mod._content_leaf_body(shared_text)
+    clh_b, body_b = exporter_mod._content_leaf_body(shared_text)
+
+    assert clh_a == clh_b
+    assert body_a == body_b
+    # The wire-level dedup key (object_hash) must also match across works.
+    assert wrap_row(body_a)["object_hash"] == wrap_row(body_b)["object_hash"]
+
+    # And the per-occurrence node_version DOES distinguish the two works via its
+    # source_locators (provenance is preserved, just relocated off the leaf).
+    _, nv_a = exporter_mod._node_version_body(
+        "sha256:struct", clh_a, ("2000-01-01", None), "permanent", "genesis:x",
+        ["farchive:fi:work:1/2000"],
+    )
+    _, nv_b = exporter_mod._node_version_body(
+        "sha256:struct", clh_b, ("2000-01-01", None), "permanent", "genesis:x",
+        ["farchive:fi:work:2/2000"],
+    )
+    assert nv_a["source_locators"] == ["farchive:fi:work:1/2000"]
+    assert nv_b["source_locators"] == ["farchive:fi:work:2/2000"]
+    # node_version_id is identity-stable (locators excluded from the id tuple)…
+    assert nv_a["node_version_id"] == nv_b["node_version_id"]
+    # …but the wrapped object_hash differs (locators ARE a visible body member).
+    assert wrap_row(nv_a)["object_hash"] != wrap_row(nv_b)["object_hash"]
 
 
 def test_no_dense_keys_anywhere(synthetic_pack: Path) -> None:

@@ -13907,6 +13907,10 @@ def _main_impl() -> None:
             f"header-parse residue {_snap.header_parse_residuals}/{_snap.n_rows}",
             flush=True,
         )
+        _mc = ", ".join(
+            f"{_m}={_c}" for _m, _c in sorted(_snap.method_counts.items()) if _c
+        )
+        print(f"  induction:        {_mc or 'none'}", flush=True)
 
     elif args.command == "check-pack":
         from lawvm.substrate.checker import CheckMode, IntegrityVerdict, check_pack

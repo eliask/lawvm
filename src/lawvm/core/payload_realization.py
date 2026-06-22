@@ -18,6 +18,7 @@ from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
 _WS_RE = re.compile(r"\s+")
 _NON_WORD_RE = re.compile(r"[^\w§]+", flags=re.UNICODE)
 _MIN_CHUNK_CHARS = 24
+_MIN_ORDERED_TOKENS = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,11 +68,12 @@ def audit_payload_realization(
     normalized_after = _normalized_text(after_text)
     if not normalized_after:
         return ()
+    after_tokens = tuple(normalized_after.split())
 
     gaps: list[PayloadRealizationGap] = []
     for unit in units:
         for index, chunk in enumerate(unit.text_chunks):
-            if _normalized_text(chunk) not in normalized_after:
+            if not _chunk_realized_in_text(chunk, normalized_after, after_tokens):
                 gaps.append(
                     PayloadRealizationGap(
                         unit_id=unit.unit_id,
@@ -111,6 +113,7 @@ def drop_materialized_payload_realization_false_positives(
     normalized_materialized = _normalized_text(materialized_text)
     if not normalized_materialized:
         return findings
+    materialized_tokens = tuple(normalized_materialized.split())
 
     retained: list[Finding] = []
     for finding in findings:
@@ -118,7 +121,11 @@ def drop_materialized_payload_realization_false_positives(
             retained.append(finding)
             continue
         chunk = str(finding.detail.get("chunk_excerpt") or "")
-        if chunk and _normalized_text(chunk) in normalized_materialized:
+        if chunk and _chunk_realized_in_text(
+            chunk,
+            normalized_materialized,
+            materialized_tokens,
+        ):
             continue
         retained.append(finding)
     return tuple(retained)
@@ -130,6 +137,50 @@ def _display_text(text: str) -> str:
 
 def _normalized_text(text: str) -> str:
     return _NON_WORD_RE.sub(" ", _display_text(text).casefold()).strip()
+
+
+def _chunk_realized_in_text(
+    chunk: str,
+    normalized_after: str,
+    after_tokens: tuple[str, ...],
+) -> bool:
+    normalized_chunk = _normalized_text(chunk)
+    if normalized_chunk in normalized_after:
+        return True
+    chunk_tokens = tuple(normalized_chunk.split())
+    if len(chunk_tokens) < _MIN_ORDERED_TOKENS:
+        return False
+    return _ordered_tokens_in_bounded_window(chunk_tokens, after_tokens)
+
+
+def _ordered_tokens_in_bounded_window(
+    chunk_tokens: tuple[str, ...],
+    after_tokens: tuple[str, ...],
+) -> bool:
+    """Return whether ``chunk_tokens`` appear in order within a local window.
+
+    Finnish consolidated text can interleave editorial qualifiers, such as
+    English degree translations, between source-owned Finnish tokens.  Exact
+    substring matching would report those chunks missing even though the source
+    text is present in order.  The bounded window keeps this as a locality check:
+    a chunk cannot be satisfied by common words scattered across the statute.
+    """
+
+    if not chunk_tokens or not after_tokens:
+        return False
+    first = chunk_tokens[0]
+    max_window = max(len(chunk_tokens) * 4, len(chunk_tokens) + 80)
+    for start, token in enumerate(after_tokens):
+        if token != first:
+            continue
+        index = 1
+        end_limit = min(len(after_tokens), start + max_window)
+        for after_token in after_tokens[start + 1 : end_limit]:
+            if after_token == chunk_tokens[index]:
+                index += 1
+                if index == len(chunk_tokens):
+                    return True
+    return False
 
 
 def _is_substantive(text: str) -> bool:

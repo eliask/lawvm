@@ -50,13 +50,18 @@ _KNOWN_SCHEMAS = frozenset(
 )
 
 
-def _content_leaf(text: str, leaf_id: str) -> dict[str, JsonValue]:
-    return {
-        "schema": "lawvm.content_leaf.v1",
-        "content_leaf_hash": leaf_id,
-        "work_id": "fi:act:301/2004",
-        "text": text,
-    }
+def _content_leaf(text: str) -> dict[str, JsonValue]:
+    """A PURE text-only content leaf (body = {schema, text, content_leaf_hash}).
+
+    Mirrors the exporter: ``content_leaf_hash`` is the text-only identity and the
+    leaf carries NO per-work member (design §22.1), so the checker's L0.7
+    accepts it.
+    """
+    from lawvm.substrate.roots import leaf_hash
+
+    body: dict[str, JsonValue] = {"schema": "lawvm.content_leaf.v1", "text": text}
+    body["content_leaf_hash"] = leaf_hash("content_leaf", dict(body))
+    return body
 
 
 def _candidate_set(
@@ -189,8 +194,8 @@ def good_pack() -> Pack:
     """
     key_a = "sha256:key_a"
     key_b = "sha256:key_b"
-    leaf_a = semantic_hash(_content_leaf("text A", "sha256:leaf_a"))
-    leaf_b = semantic_hash(_content_leaf("text B", "sha256:leaf_b"))
+    leaf_a = semantic_hash(_content_leaf("text A"))
+    leaf_b = semantic_hash(_content_leaf("text B"))
 
     cand_a: list[Mapping[str, JsonValue]] = [
         {
@@ -221,8 +226,8 @@ def good_pack() -> Pack:
         "base",
         "content_leaf",
         [
-            _content_leaf("text A", "sha256:leaf_a"),
-            _content_leaf("text B", "sha256:leaf_b"),
+            _content_leaf("text A"),
+            _content_leaf("text B"),
         ],
     )
     state_objects: list[Mapping[str, JsonValue]] = [
@@ -496,7 +501,7 @@ def test_drill_3_remove_content_leaf() -> None:
     kept = tuple(
         row
         for row in base.rows
-        if _row_body_get(row, "content_leaf_hash") != "sha256:leaf_b"
+        if _row_body_get(row, "text") != "text B"
     )
     new_base = PackLayerData(
         kind=base.kind,
@@ -523,6 +528,47 @@ def test_drill_3_remove_content_leaf() -> None:
     verdict = Checker().check(pack)
     assert verdict.top_line_verdict is TopLineVerdict.INVALID_MISSING_OBJECT
     assert verdict.has_code(ViolationCode.INVALID_MISSING_OBJECT)
+
+
+def test_l0_7_content_leaf_with_per_work_member_is_invalid() -> None:
+    """A content leaf carrying source_locators (the old bug) → INVALID_HASH (§22.1).
+
+    Re-wrap the leaf body WITH a per-work member so its object_hash stays
+    self-consistent (L0.2 passes); L0.7 must still reject it as a non-text-only
+    leaf — the dedup-defeating member cannot hide behind a valid wrapper.
+    """
+    pack = _clone(good_pack())
+    base = pack.layers["base"]
+    new_rows = []
+    for row in base.rows:
+        body = dict(cast("Mapping[str, JsonValue]", row["object"]))
+        if body.get("text") == "text A":
+            body["source_locators"] = ["farchive:fi:work:301/2004"]
+            new_rows.append(wrap_row(body))  # re-wrap → object_hash self-consistent
+        else:
+            new_rows.append(row)
+    new_base = PackLayerData(
+        kind=base.kind,
+        domain=base.domain,
+        root_fn=base.root_fn,
+        root=set_root(base.domain, [str(r["object_hash"]) for r in new_rows]),
+        rows=tuple(new_rows),
+    )
+    pack = _sync_manifest(
+        Pack(
+            manifest=pack.manifest,
+            layers={**dict(pack.layers), "base": new_base},
+            selection_universe=dict(pack.selection_universe)
+            if pack.selection_universe is not None
+            else None,
+            selection_universe_root=pack.selection_universe_root,
+            referenced_hashes=dict(pack.referenced_hashes),
+            known_schemas=pack.known_schemas,
+        )
+    )
+    verdict = Checker().check(pack)
+    assert verdict.has_code(ViolationCode.INVALID_HASH)
+    assert any("non-text members" in v.detail for v in verdict.violations)
 
 
 def test_drill_4_change_selected_node_version_id() -> None:

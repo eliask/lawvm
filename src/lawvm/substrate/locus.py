@@ -131,7 +131,41 @@ _SCORE_COLUMNS: tuple[str, ...] = (
 # a section address (verified against the corpus — bare ``1`` collides), so it
 # residualizes rather than producing a phantom address.
 _MD_HEADING = re.compile(r"^#+\s*")
+# A leading section-sign / ``Sec.`` / ``Section`` label that precedes the actual
+# section number (``§ 10.99``, ``Sec. 1-4.``, ``Section 90.01``). Stripping it
+# alone was measured at +13.5pp corpus-wide recall — the highest-EV quick win.
+_SECTION_LABEL = re.compile(r"^(?:§+|[Ss]ec(?:tion|\.)?)\s*")
+# Absolute dotted (``1.05.010``) — the authoritative skeleton when present.
 _DOTTED_ADDRESS = re.compile(r"^([0-9]+(?:\.[0-9]+)+)\b")
+# Absolute dash-dotted (``1-2-1``, ``38-1014``) — an equally-authoritative
+# convention (Sec. 1-4. / 1-2-1:) used by a large share of the corpus. A bare
+# trailing dash (``1-``) does not count; require >= 1 inner ``-NUMBER`` group.
+_DASH_ADDRESS = re.compile(r"^([0-9]+(?:-[0-9]+)+)\b")
+# Word containers (``Article 2``, ``Chapter 1``, ``Title 5``, ``Part 3``,
+# ``Division 4``) — both arabic and roman-numeral values. These PUSH a typed
+# container segment onto the path stack; the value is normalised to its source
+# token (``article:II``, ``chapter:1``).
+_WORD_CONTAINER = re.compile(
+    r"^(article|chapter|title|part|division|subchapter|subpart|subdivision)\s+"
+    r"([0-9]+[A-Za-z]?|[IVXLCDM]+|[A-Za-z])\b",
+    re.IGNORECASE,
+)
+_CONTAINER_KIND = {
+    "article": "article",
+    "chapter": "chapter",
+    "title": "title",
+    "part": "part",
+    "division": "division",
+    "subchapter": "subchapter",
+    "subpart": "subpart",
+    "subdivision": "subdivision",
+}
+# Relative ordinal / letter markers (``(A)``, ``(a)``, ``(1)``, ``1.``, ``A.``).
+# These APPEND under the current parent as a positionally-unique item segment.
+# Legitimate only because LOCUS is a SNAPSHOT (no renumbering), so positional
+# ids are stable — unlike amended law. Captures the inner token.
+_PAREN_ITEM = re.compile(r"^\(([0-9]+|[A-Za-z]{1,3})\)")
+_DOT_ITEM = re.compile(r"^([0-9]+|[A-Za-z])\.\s")
 
 # The address segment names by depth (title.chapter.section.subsection...). A
 # dotted number deeper than this many segments reuses ``level_<n>`` so deep
@@ -146,6 +180,22 @@ def _segment_kind(depth: int) -> str:
     return f"level_{depth}"
 
 
+# Induction-method tags (recall-visibility, NOT hidden). ``exact_dotted`` is the
+# soundest (an authoritative dotted/dashed number); ``word_container`` /
+# ``sequential_stack`` are heuristic (positional, snapshot-only); a row that
+# yields none stays a typed ``locus_header_unparsed`` residual.
+METHOD_EXACT_DOTTED = "exact_dotted"
+METHOD_WORD_CONTAINER = "word_container"
+METHOD_SEQUENTIAL_STACK = "sequential_stack"
+METHOD_HEURISTIC = "heuristic"
+INDUCTION_METHODS: tuple[str, ...] = (
+    METHOD_EXACT_DOTTED,
+    METHOD_WORD_CONTAINER,
+    METHOD_SEQUENTIAL_STACK,
+    METHOD_HEURISTIC,
+)
+
+
 # --------------------------------------------------------------------------- #
 # Address induction                                                            #
 # --------------------------------------------------------------------------- #
@@ -158,10 +208,13 @@ class InducedAddress:
     ``segments`` is the list of ``(structural_kind, value)`` pairs from title
     down to the leaf; ``address_path`` is the canonical ``title:1/chapter:05/
     section:010`` rendering used as the ``struct_node_id`` address input.
+    ``method`` records HOW the address was induced (recall-visibility — heuristic
+    induction is tagged, never hidden as if it were an authoritative number).
     """
 
     dotted: str
     segments: tuple[tuple[str, str], ...]
+    method: str = METHOD_EXACT_DOTTED
 
     @property
     def address_path(self) -> str:
@@ -172,25 +225,189 @@ class InducedAddress:
         return self.segments[-1][0]
 
 
-def induce_address(header: str | None) -> InducedAddress | None:
-    """Induce a dotted address from a LOCUS ``header``, or ``None`` if unparsable.
+def _strip_header(header: str) -> str:
+    """Strip the markdown ``#`` prefix and surrounding whitespace from a header."""
+    return _MD_HEADING.sub("", header).strip()
 
-    Returns ``None`` (→ a typed residual at the call site, never a silent drop)
-    when the header carries no multi-segment dotted number — a chapter/article
-    TITLE heading, a bare subsection marker, a ``§``-style ordinance number, or a
+
+def _match_absolute(text: str) -> tuple[str, tuple[tuple[str, str], ...]] | None:
+    """Match an absolute dotted / dashed number at the start of ``text``.
+
+    Tries (1) a bare dotted/dashed number, then (2) the same after stripping a
+    leading ``§`` / ``Sec.`` / ``Section`` label (the +13.5pp quick win). Returns
+    ``(dotted_string, segments)`` or ``None``. Dash separators are normalised to
+    dots for the segment values so ``1-2-1`` and ``1.2.1`` share an address shape.
+    """
+    for candidate in (text, _SECTION_LABEL.sub("", text, count=1)):
+        m = _DOTTED_ADDRESS.match(candidate)
+        if m is not None:
+            dotted = m.group(1)
+            parts = dotted.split(".")
+            return dotted, tuple((_segment_kind(i), p) for i, p in enumerate(parts))
+        m = _DASH_ADDRESS.match(candidate)
+        if m is not None:
+            dotted = m.group(1)
+            parts = dotted.split("-")
+            return dotted, tuple((_segment_kind(i), p) for i, p in enumerate(parts))
+    return None
+
+
+def induce_address(header: str | None) -> InducedAddress | None:
+    """Induce an ABSOLUTE address from a LOCUS ``header`` (stateless primitive).
+
+    This is the soundest, context-free induction: a multi-segment dotted
+    (``1.05.010``) or dash-dotted (``1-2-1``, ``Sec. 1-4.``) number, optionally
+    behind a ``§`` / ``Sec.`` / ``Section`` label. Returns ``None`` (→ a typed
+    residual at the call site, never a silent drop) when no absolute number is
+    present — a chapter/article TITLE heading, a bare subsection marker, or a
     null header. The contract is fail-loud: an un-inducible header is owned as a
-    typed residual, it is never coerced into a phantom address.
+    typed residual, never coerced into a phantom address.
+
+    The DOCUMENT-ORDER fold (:class:`AddressInducer`) is the higher-recall path —
+    it additionally resolves word containers (``Article II``) and relative
+    ordinals (``(a)``, ``1.``) against a running path stack. This stateless
+    primitive is retained for the absolute case and back-compat.
     """
     if not header:
         return None
-    stripped = _MD_HEADING.sub("", header).strip()
-    match = _DOTTED_ADDRESS.match(stripped)
-    if match is None:
+    matched = _match_absolute(_strip_header(header))
+    if matched is None:
         return None
-    dotted = match.group(1)
-    parts = dotted.split(".")
-    segments = tuple((_segment_kind(i), part) for i, part in enumerate(parts))
-    return InducedAddress(dotted=dotted, segments=segments)
+    dotted, segments = matched
+    return InducedAddress(dotted=dotted, segments=segments, method=METHOD_EXACT_DOTTED)
+
+
+def _roman_or_token(value: str) -> str:
+    """Normalise a container value token (kept as-is; lower-cased only for words)."""
+    return value
+
+
+@dataclass(slots=True)
+class _StackFrame:
+    """One level on the induction path stack: a structural segment + its depth-kind."""
+
+    kind: str  # structural kind (title/chapter/article/section/item/...)
+    value: str  # the segment value (``1``, ``05``, ``II``, ``a``)
+    absolute: bool  # True if set by an absolute dotted/dashed number
+
+
+class AddressInducer:
+    """Stateful, document-ordered address induction (the max-recall fold).
+
+    Rows of a work arrive in DOCUMENT ORDER (verified corpus-wide). The inducer
+    maintains a path stack and, per row, applies the highest-priority NUMBER cue:
+
+    * **absolute dotted/dashed** (``1.05.010``, ``§ 10.99``, ``1-2-1``) → RESET
+      the stack to that absolute path (``exact_dotted``). The authoritative case.
+    * **word container** (``Article II``, ``Chapter 1``) → push/replace a typed
+      container frame at its container depth (``word_container``). A container has
+      a canonical ordering (title > chapter > article > part > division), so a
+      new container of an equal-or-shallower kind pops back to it first.
+    * **relative ordinal/letter** (``(a)``, ``(1)``, ``1.``, ``A.``) → APPEND an
+      ``item:<token>`` segment under the current parent (``sequential_stack``).
+      Positionally unique — legitimate ONLY because LOCUS is a non-renumbered
+      snapshot.
+
+    A row whose header yields no cue AND has no established parent is genuinely
+    hopeless → ``None`` (the caller writes a typed ``locus_header_unparsed``
+    residual). Heuristic induction is always tagged via ``InducedAddress.method``
+    so recall-max never masquerades as authoritative parsing.
+    """
+
+    # Container nesting rank — a smaller rank is structurally shallower. A new
+    # container pops the stack back to (and replaces) frames of equal-or-deeper
+    # rank, so ``Chapter 2`` after ``Article 5`` under ``Chapter 1`` reopens at
+    # the chapter level rather than nesting under the article.
+    _CONTAINER_RANK = {
+        "title": 0,
+        "subtitle": 1,
+        "chapter": 2,
+        "subchapter": 3,
+        "article": 4,
+        "part": 5,
+        "subpart": 6,
+        "division": 7,
+        "subdivision": 8,
+    }
+
+    def __init__(self) -> None:
+        self._stack: list[_StackFrame] = []
+        self._item_counter = 0
+
+    def _path_segments(self) -> tuple[tuple[str, str], ...]:
+        return tuple((f.kind, f.value) for f in self._stack)
+
+    def induce(self, header: str | None) -> InducedAddress | None:
+        if not header:
+            return None
+        text = _strip_header(header)
+        if not text:
+            return None
+
+        # (1) absolute dotted/dashed (optionally behind §/Sec.) — RESET.
+        matched = _match_absolute(text)
+        if matched is not None:
+            dotted, segments = matched
+            self._stack = [
+                _StackFrame(kind=k, value=v, absolute=True) for k, v in segments
+            ]
+            return InducedAddress(dotted=dotted, segments=segments, method=METHOD_EXACT_DOTTED)
+
+        # (2) word container (Article II / Chapter 1 / Title 5 / Part 3 ...).
+        m = _WORD_CONTAINER.match(text)
+        if m is not None:
+            word = m.group(1).lower()
+            kind = _CONTAINER_KIND.get(word, word)
+            value = _roman_or_token(m.group(2))
+            rank = self._CONTAINER_RANK.get(kind, 99)
+            # Pop frames of equal-or-deeper container rank (and any item frames)
+            # so a sibling/ancestor container reopens at the right level.
+            while self._stack:
+                top = self._stack[-1]
+                top_rank = self._CONTAINER_RANK.get(top.kind, 99 if top.kind != "item" else 100)
+                if top.kind == "item" or top_rank >= rank:
+                    self._stack.pop()
+                else:
+                    break
+            self._stack.append(_StackFrame(kind=kind, value=value, absolute=False))
+            segments = self._path_segments()
+            return InducedAddress(
+                dotted="/".join(f"{k}:{v}" for k, v in segments),
+                segments=segments,
+                method=METHOD_WORD_CONTAINER,
+            )
+
+        # (3) relative ordinal/letter — APPEND under the current parent.
+        token = self._relative_token(text)
+        if token is not None:
+            if not self._stack:
+                # No parent established — a relative marker with nothing to hang
+                # it under is genuinely ambiguous; residualize.
+                return None
+            # Pop a prior item frame at the same nesting (a sibling list item)
+            # only if the previous frame is also an item — keeps siblings flat
+            # rather than ever-deepening. We keep nesting shallow: one item level.
+            if self._stack and self._stack[-1].kind == "item":
+                self._stack.pop()
+            self._stack.append(_StackFrame(kind="item", value=token, absolute=False))
+            segments = self._path_segments()
+            return InducedAddress(
+                dotted="/".join(f"{k}:{v}" for k, v in segments),
+                segments=segments,
+                method=METHOD_SEQUENTIAL_STACK,
+            )
+
+        return None
+
+    @staticmethod
+    def _relative_token(text: str) -> str | None:
+        m = _PAREN_ITEM.match(text)
+        if m is not None:
+            return m.group(1)
+        m = _DOT_ITEM.match(text)
+        if m is not None:
+            return m.group(1)
+        return None
 
 
 # --------------------------------------------------------------------------- #
@@ -352,20 +569,21 @@ SCHEMA_CONTENT_LEAF = "lawvm.content_leaf.v1"
 _DOMAIN_CONTENT_LEAF = "content_leaf"
 
 
-def _content_leaf_body(text: str, source_ref: str) -> tuple[str, dict[str, JsonValue]]:
-    """Text-only content leaf (NFC + ``sha256:`` via substrate primitives).
+def _content_leaf_body(text: str) -> tuple[str, dict[str, JsonValue]]:
+    """PURE text-only content leaf (NFC + ``sha256:`` via substrate primitives).
 
-    Identical identity discipline to ``exporter._content_leaf_body`` — the
-    text-only semantic hash is what gives content-leaf dedup. Re-built here
-    (rather than imported) only because the exporter's variant takes an
-    ``IRNode``; the hashed body shape is the same ``lawvm.content_leaf.v1``.
+    Identical identity discipline to ``exporter._content_leaf_body`` — the body
+    is ``{schema, text, content_leaf_hash}`` and NOTHING per-work, so identical
+    leaf text in two municipalities yields a byte-identical object that
+    deduplicates at the shared-store level (design §22.1 anchor ladder). The
+    per-occurrence ``source_locators`` ride on the ``node_version`` instead.
+    Re-built here (rather than imported) only because the exporter's variant
+    takes an ``IRNode``; the hashed body shape is the same ``lawvm.content_leaf.v1``.
     """
     normalized = nfc(text)
     body: dict[str, JsonValue] = {
         "schema": SCHEMA_CONTENT_LEAF,
         "text": normalized,
-        "text_profile": CANON_PROFILE,
-        "source_locators": [source_ref],
     }
     content_leaf_hash = leaf_hash(_DOMAIN_CONTENT_LEAF, body)
     body["content_leaf_hash"] = content_leaf_hash
@@ -380,8 +598,15 @@ def _node_version_body(
     struct_node_id: str,
     content_leaf_hash: str,
     produced_by: str,
+    source_locators: list[JsonValue],
 ) -> tuple[str, dict[str, JsonValue]]:
-    """``lawvm.node_version.v1`` over a single open-ended snapshot interval."""
+    """``lawvm.node_version.v1`` over a single open-ended snapshot interval.
+
+    ``source_locators`` are the per-work-per-occurrence source spans; they live
+    on the node_version (not the shared content leaf) so the leaf stays pure
+    text and deduplicates across municipalities (design §22.1). They are a
+    visible body member but NOT part of the ``node_version_id`` identity tuple.
+    """
     identity: dict[str, JsonValue] = {
         "schema": SCHEMA_NODE_VERSION,
         "struct_node_id": struct_node_id,
@@ -394,6 +619,7 @@ def _node_version_body(
     node_version_id = leaf_hash(_DOMAIN_NODE_VERSION, identity)
     body = dict(identity)
     body["node_version_id"] = node_version_id
+    body["source_locators"] = list(source_locators)
     return node_version_id, body
 
 
@@ -418,6 +644,7 @@ class SnapshotResult:
     n_residuals: int
     header_parse_residuals: int
     residual_kinds: tuple[str, ...]
+    method_counts: dict[str, int]
 
 
 # --------------------------------------------------------------------------- #
@@ -547,6 +774,8 @@ def export_snapshot_pack(
     n_addressable = 0
     header_parse_residuals = 0
     residual_kinds: set[str] = set()
+    method_counts: dict[str, int] = {m: 0 for m in INDUCTION_METHODS}
+    inducer = AddressInducer()
 
     def _ensure_address_node(address_path: str, structural_kind: str) -> str:
         if address_path not in address_nodes_seen:
@@ -556,7 +785,7 @@ def export_snapshot_pack(
         return _struct_node_id(work_id, address_path, address_kind[address_path])
 
     def _ensure_content_leaf(text: str) -> str:
-        clh, body = _content_leaf_body(text, source_ref)
+        clh, body = _content_leaf_body(text)
         existing = emitted_content_leaves.get(clh)
         if existing is not None:
             return clh
@@ -566,7 +795,7 @@ def export_snapshot_pack(
         return clh
 
     for row in rows:
-        induced = induce_address(row.header)
+        induced = inducer.induce(row.header)
         if induced is None:
             # Un-inducible header → TYPED residual (never a silent drop). The
             # offending header text is embedded (self-evidencing diagnostics).
@@ -608,12 +837,13 @@ def export_snapshot_pack(
         struct_id = _ensure_address_node(leaf_path, induced.leaf_kind)
         all_addresses.add(leaf_path)
         n_addressable += 1
+        method_counts[induced.method] = method_counts.get(induced.method, 0) + 1
 
         text = row.content if row.content is not None else ""
         clh = _ensure_content_leaf(text)
 
         produced_by = f"genesis:{leaf_path}"
-        nv_id, nv_body = _node_version_body(struct_id, clh, produced_by)
+        nv_id, nv_body = _node_version_body(struct_id, clh, produced_by, [source_ref])
         node_version_hashes.append(state_w.write(nv_body))
 
         fact = ApplicabilityFact(
@@ -722,6 +952,29 @@ def export_snapshot_pack(
             "typed header-parse / duplicate-address residuals",
         )
     )
+    # Induction-method breakdown (recall-visibility — heuristic induction is
+    # surfaced as its own coverage class, never hidden inside the owned count).
+    # ``exact_dotted`` is the soundest; ``word_container`` / ``sequential_stack``
+    # are positional/snapshot-only heuristics. The auditor reads these to know
+    # exactly how much of the owned address tree rests on each method.
+    # Carried under the ``benign`` coverage class (informational accounting, not
+    # a fifth class) with the method name in the detail — the closed 4-class
+    # coverage exhaustiveness check (owned/benign/residual/violation) stays intact.
+    for method in INDUCTION_METHODS:
+        cnt = method_counts.get(method, 0)
+        if cnt:
+            proof_w.write(
+                _coverage_body(
+                    "benign",
+                    cnt,
+                    f"induction_method:{method} — addressable leaves induced via {method}"
+                    + (
+                        " (heuristic, positional — snapshot-only)"
+                        if method != METHOD_EXACT_DOTTED
+                        else " (authoritative dotted/dashed number)"
+                    ),
+                )
+            )
 
     # -- selection universe (omission keystone) ------------------------------ #
     universe = SelectionUniverse(
@@ -844,6 +1097,7 @@ def export_snapshot_pack(
         n_residuals=n_residuals,
         header_parse_residuals=header_parse_residuals,
         residual_kinds=tuple(sorted(residual_kinds)),
+        method_counts=dict(method_counts),
     )
 
 

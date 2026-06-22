@@ -34,7 +34,11 @@ from lawvm.substrate.checker import (
     check_pack,
 )
 from lawvm.substrate.locus import (
+    AddressInducer,
     LocusRow,
+    METHOD_EXACT_DOTTED,
+    METHOD_SEQUENTIAL_STACK,
+    METHOD_WORD_CONTAINER,
     SNAPSHOT_DATE,
     WorkKey,
     export_snapshot_pack,
@@ -61,30 +65,88 @@ from lawvm.substrate.totality import TotalityVerdict
         ("### 1.05.010.020 Deep.", "title:1/chapter:05/section:010/subsection:020"),
         # two-segment dotted is a valid (shallower) address.
         ("### 1.05 Chapter heading number.", "title:1/chapter:05"),
+        # §-style ordinance numbering is now stripped to its dotted skeleton (the
+        # +13.5pp quick win) — §/Sec./Section labels precede the real number.
+        ("§ 90.01 DEFINITIONS.", "title:90/chapter:01"),
+        ("Sec. 38-1014. No parking.", "title:38/chapter:1014"),
+        ("Section 1.05.010 Name.", "title:1/chapter:05/section:010"),
+        # dash-dotted is an equally-authoritative absolute convention.
+        ("1-2-1: REPEAL.", "title:1/chapter:2/section:1"),
     ],
 )
 def test_induce_address_dotted(header: str, expected: str) -> None:
     induced = induce_address(header)
     assert induced is not None, header
     assert induced.address_path == expected
+    assert induced.method == METHOD_EXACT_DOTTED
 
 
 @pytest.mark.parametrize(
     "header",
     [
         "GENERAL PROVISIONS",  # chapter/article TITLE heading (no number)
-        "Article 2. Police Department",  # article label, not a section address
-        "(a) Definitions.",  # subsection marker
-        "1. Contents.",  # bare single number = list marker, NOT an address
-        "§ 90.01 DEFINITIONS.",  # §-style ordinance numbering (unmodeled in v0)
+        "(a) Definitions.",  # bare subsection marker (no parent in the stateless primitive)
+        "1. Contents.",  # bare single ordinal = list marker, NOT an absolute address
+        "Article 2. Police Department",  # word container — needs the document-order fold
         "PREAMBLE",
         None,  # null header
         "",  # empty header
     ],
 )
 def test_induce_address_residualizes(header: str | None) -> None:
-    """A header with no multi-segment dotted address yields None (→ typed residual)."""
+    """The stateless primitive yields None for non-absolute headers (→ typed residual).
+
+    Word containers and relative ordinals need the document-order
+    :class:`AddressInducer` fold (a running parent stack); the stateless
+    ``induce_address`` only owns absolute dotted/dashed numbers.
+    """
     assert induce_address(header) is None
+
+
+# --------------------------------------------------------------------------- #
+# Document-order stack fold (the max-recall path)                             #
+# --------------------------------------------------------------------------- #
+
+
+def test_fold_word_container_and_relative_items() -> None:
+    """The fold resolves word containers + relative ordinals against a parent stack."""
+    inducer = AddressInducer()
+    # A word container pushes a typed container segment.
+    a = inducer.induce("## ARTICLE II")
+    assert a is not None and a.method == METHOD_WORD_CONTAINER
+    assert a.address_path == "article:II"
+    # A relative ordinal appends under the current parent (positionally unique).
+    b = inducer.induce("(a) Definitions.")
+    assert b is not None and b.method == METHOD_SEQUENTIAL_STACK
+    assert b.address_path == "article:II/item:a"
+    # A sibling relative item stays flat (one item level), not ever-deepening.
+    c = inducer.induce("(b) Scope.")
+    assert c is not None and c.address_path == "article:II/item:b"
+
+
+def test_fold_absolute_resets_stack() -> None:
+    """An absolute dotted number RESETS the path stack (authoritative skeleton)."""
+    inducer = AddressInducer()
+    inducer.induce("ARTICLE I")
+    inducer.induce("(1) something")
+    reset = inducer.induce("### 5.10.020 Real section.")
+    assert reset is not None and reset.method == METHOD_EXACT_DOTTED
+    assert reset.address_path == "title:5/chapter:10/section:020"
+
+
+def test_fold_container_rank_reopens_at_right_level() -> None:
+    """A sibling/ancestor container reopens at its level, not nested under a deeper one."""
+    inducer = AddressInducer()
+    inducer.induce("CHAPTER 1")
+    inducer.induce("ARTICLE 5")  # deeper than chapter
+    ch2 = inducer.induce("CHAPTER 2")  # pops the article, replaces the chapter
+    assert ch2 is not None and ch2.address_path == "chapter:2"
+
+
+def test_fold_orphan_relative_residualizes() -> None:
+    """A relative marker with no established parent stays None (→ typed residual)."""
+    inducer = AddressInducer()
+    assert inducer.induce("(a) orphan with no parent") is None
 
 
 # --------------------------------------------------------------------------- #
@@ -168,6 +230,27 @@ def test_typed_residuals_named(synthetic_pack: Path) -> None:
     details = " ".join(r["detail"] for r in residuals)
     assert "GENERAL PROVISIONS" in details
     assert "title:1/chapter:05/section:010" in details
+
+
+def test_induction_method_breakdown_is_visible(synthetic_pack: Path) -> None:
+    """The induction-method breakdown is surfaced as ``benign`` coverage rows.
+
+    Recall-visibility: how much of the owned address tree rests on each method
+    (authoritative vs heuristic) is in the proof layer, not hidden. They use the
+    ``benign`` coverage class so the closed 4-class exhaustiveness check holds.
+    """
+    proof_rows = _read_layer(synthetic_pack / "proof" / "proof.jsonl")
+    method_rows = [
+        r["object"]
+        for r in proof_rows
+        if r["object"].get("schema") == "lawvm.coverage_row.v1"
+        and "induction_method:" in str(r["object"].get("detail", ""))
+    ]
+    assert method_rows, "expected induction-method coverage rows"
+    assert all(r["coverage_class"] == "benign" for r in method_rows)
+    details = " ".join(r["detail"] for r in method_rows)
+    # All four synthetic dotted rows are authoritative exact_dotted induction.
+    assert "induction_method:exact_dotted" in details
 
 
 def test_scores_are_overlay_not_legal_state(synthetic_pack: Path) -> None:

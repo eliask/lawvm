@@ -648,7 +648,8 @@ class Checker:
         unsupported_layers: list[str],
     ) -> IntegrityVerdict:
         """L0.2 row hashes · L0.3 layer roots · L0.4 manifest roots-of-roots ·
-        L0.5 referential closure · L0.6 universe-domain equality · schema gate.
+        L0.5 referential closure · L0.6 universe-domain equality · L0.7
+        content-leaf text-only identity · schema gate.
 
         Returns the first failing ``INVALID_*`` per §1.1 precedence, else
         ``VALID`` (or ``VALID_WITH_UNSUPPORTED_LAYERS``). Violations accumulate
@@ -684,6 +685,9 @@ class Checker:
 
         # L0.6 — universe-domain equality (omission honesty, the keystone).
         self._check_universe_domain(pack, violations, record)
+
+        # L0.7 — content-leaf text-only identity (design §22.1 anchor ladder).
+        self._check_content_leaf_identity(pack, violations, record)
 
         if worst is not None:
             return worst
@@ -1143,6 +1147,72 @@ class Checker:
                 )
             )
             record(IntegrityVerdict.INVALID_SELECTION_UNIVERSE)
+
+    def _check_content_leaf_identity(
+        self, pack: Pack, violations: list[TypedViolation], record
+    ) -> None:
+        """L0.7 — every content leaf's ``content_leaf_hash`` is the TEXT-ONLY id.
+
+        The shared content leaf is the highest dedup anchor (design §22.1): its
+        identity is ``LeafHash("content_leaf", {schema, text})`` and NOTHING
+        per-work. A leaf carrying ``source_locators`` / ``work_id`` (the old bug)
+        or a ``content_leaf_hash`` recomputed over anything but ``{schema, text}``
+        would defeat cross-work dedup, so it is a hard ``INVALID_HASH`` here.
+        Jurisdiction-neutral — it fires only for the ``lawvm.content_leaf.v1``
+        schema, present in any pack family that emits leaves (FI replay, LOCUS
+        snapshot, corpus store).
+        """
+        for kind, layer in pack.layers.items():
+            for row in layer.rows:
+                body = _row_object(row)
+                if body is None or body.get("schema") != "lawvm.content_leaf.v1":
+                    continue
+                declared = body.get("content_leaf_hash")
+                text = body.get("text")
+                if not isinstance(declared, str) or not isinstance(text, str):
+                    violations.append(
+                        TypedViolation(
+                            code=ViolationCode.INVALID_HASH,
+                            level="L0",
+                            layer=kind,
+                            subject=str(declared),
+                            detail=(
+                                "content_leaf is missing a string content_leaf_hash/text "
+                                "(text-only identity, §22.1)"
+                            ),
+                        )
+                    )
+                    record(IntegrityVerdict.INVALID_HASH)
+                    continue
+                # A leaf must carry text-only members; any per-work member (the
+                # source_locators bug) defeats cross-work dedup.
+                extra = set(body.keys()) - {"schema", "text", "content_leaf_hash"}
+                recomputed = leaf_hash(
+                    "content_leaf", {"schema": body.get("schema"), "text": text}
+                )
+                if _strip(recomputed) != _strip(declared) or extra:
+                    violations.append(
+                        TypedViolation(
+                            code=ViolationCode.INVALID_HASH,
+                            level="L0",
+                            layer=kind,
+                            subject=declared,
+                            expected=recomputed,
+                            actual=declared,
+                            detail=(
+                                "content_leaf_hash is not the text-only identity "
+                                f"LeafHash('content_leaf', {{schema, text}}); "
+                                f"recomputed {recomputed}"
+                                + (
+                                    f"; leaf carries non-text members {sorted(extra)} "
+                                    "(per-work provenance belongs on the node_version, §22.1)"
+                                    if extra
+                                    else ""
+                                )
+                            ),
+                        )
+                    )
+                    record(IntegrityVerdict.INVALID_HASH)
 
     # -- L1: finite-interval selection algebra (contract §3) ---------------- #
 
