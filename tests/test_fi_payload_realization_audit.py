@@ -326,6 +326,60 @@ def test_payload_realization_audit_scopes_child_target_to_matching_payload_subtr
     assert findings == ()
 
 
+def test_payload_realization_audit_does_not_charge_post_omission_carried_tail_to_item() -> None:
+    carrier = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="The subsection intro belongs to the sparse carrier."),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3)"),
+                    IRNode(kind=IRNodeKind.INTRO, text="Owned item text appears here."),
+                    IRNode(kind=IRNodeKind.OMISSION),
+                    IRNode(
+                        kind=IRNodeKind.SUBPARAGRAPH,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.CONTENT,
+                                text="Carried post-omission tail belongs to a rejected sibling target.",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = ResolvedOp(
+        op=AmendmentOp(
+            op_id="op1",
+            op_type="REPLACE",
+            target_section="7",
+            target_unit_kind="section",
+        ),
+        muutos_ir=None,
+        cross_ir=None,
+        amend_sub_ir=carrier,
+        target_norm="7",
+        op_id="op1",
+        _op_type_seed="REPLACE",
+        _target_address_override=LegalAddress(
+            path=(("section", "7"), ("subsection", "1"), ("item", "3"))
+        ),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(op,),
+        after_ir=_after("The folded statute says owned item text appears here."),
+        amendment_id="2000/1",
+    )
+
+    assert findings == ()
+
+
 def test_payload_realization_audit_scopes_split_subitem_target_to_combined_payload_label() -> None:
     carrier = IRNode(
         kind=IRNodeKind.SUBSECTION,

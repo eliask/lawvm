@@ -551,6 +551,8 @@ def _collect_chunks(node: IRNode, chunks: list[str]) -> None:
     if node.text:
         chunks.append(node.text)
     for child in node.children:
+        if child.kind is IRNodeKind.OMISSION:
+            break
         _collect_chunks(child, chunks)
 
 
