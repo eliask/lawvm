@@ -3512,6 +3512,215 @@ def test_se_observed_replay_audit_flags_violation_for_unexplained_mutation() -> 
     ), audit.unexplained_paths
 
 
+def test_se_replay_write_receipts_emits_typed_receipt_per_applied_op() -> None:
+    """Per-op WriteReceipt emission (§2.3 receipt contract, second step).
+
+    :func:`se_replay_write_receipts` applies ops one at a time, snapshots
+    before/after body trees, and synthesizes a contract :class:`WriteReceipt`
+    per applied op. The receipt carries the typed §2.3 fields: op_id /
+    helper / action / bound_target_path / landed_primary_path / categorized
+    mutation footprint (created/replaced/removed/renumbered) / pre & post
+    structural subtree hashes.
+
+    Regression (synthetic; exercises every op action family that the SE
+    apply path supports):
+      * REPLACE §1: receipt shows ``replaced_paths = (('section', '1'),)`` and
+        both pre/post hashes non-empty (the section existed before AND after).
+      * INSERT §3a: receipt shows ``created_paths = (('section', '3a'),)`` and
+        pre_hash = "" / post_hash non-empty (the section was absent before,
+        present after — the receipt's hash signal is the opposite of REPEAL).
+      * REPEAL §2: receipt shows ``removed_paths = (('section', '2'),)`` and
+        pre_hash non-empty / post_hash = "" (the section existed before,
+        absent after).
+
+    Skipped ops emit no receipt (the FilterResult's rejected_items lane
+    carries them instead — the conservation partition + receipt are dual
+    lanes, not doubles).
+    """
+    from lawvm.sweden.grafter import se_replay_write_receipts
+    from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om receipt-test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "X", "namnOchEnhet": "X"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "1 § Gamla.\n\n2 § Other.\n\n3 § Third.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    before = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    # 3 ops: REPLACE §1, INSERT §3a, REPEAL §2
+    ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="se-replace-1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Ny 1."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        LegalOperation(
+            op_id="se-insert-3a",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "3a"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="3a", text="Ny 3a."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        LegalOperation(
+            op_id="se-repeal-2",
+            sequence=3,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "2"),)),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    final, receipts = se_replay_write_receipts(before, ops)
+
+    # All 3 ops applied — 3 receipts emitted.
+    assert len(receipts) == 3, [r.op_id for r in receipts]
+    for r in receipts:
+        assert isinstance(r, WriteReceipt)
+    # The final body should have §1 (replaced text), §3 (unchanged),
+    # §3a (inserted). §2 (repealed) is removed.
+    sections_after = {child.label for child in final.body.children if child.kind is IRNodeKind.SECTION}
+    assert sections_after == {"1", "3", "3a"}, sections_after
+
+    # Categorize by op action family
+    by_op = {r.op_id: r for r in receipts}
+
+    # REPLACE §1: replaced_paths = (('section','1'),), pre/post non-empty
+    r_replace = by_op["se-replace-1"]
+    assert r_replace.action == "replace"
+    assert r_replace.bound_target_path == (("section", "1"),)
+    assert r_replace.replaced_paths == ((("section", "1"),),)
+    assert r_replace.created_paths == ()
+    assert r_replace.removed_paths == ()
+    assert r_replace.landed_primary_path == (("section", "1"),)
+    # pre/post hashes non-empty (section exists before AND after)
+    pre_values = list(r_replace.pre_hashes.values())
+    post_values = list(r_replace.post_hashes.values())
+    assert pre_values and pre_values[0], r_replace.pre_hashes
+    assert post_values and post_values[0], r_replace.post_hashes
+    # The hash changed (replaced)
+    assert pre_values[0] != post_values[0]
+
+    # INSERT §3a: created_paths = (('section','3a'),), pre_hash "" (absent
+    # before), post_hash non-empty (present after)
+    r_insert = by_op["se-insert-3a"]
+    assert r_insert.action == "insert"
+    assert r_insert.created_paths == ((("section", "3a"),),)
+    assert r_insert.replaced_paths == ()
+    assert r_insert.removed_paths == ()
+    pre_insert = list(r_insert.pre_hashes.values())[0]
+    post_insert = list(r_insert.post_hashes.values())[0]
+    assert pre_insert == "", r_insert.pre_hashes  # absent before = empty hash
+    assert post_insert != "", r_insert.post_hashes  # present after
+
+    # REPEAL §2: removed_paths = (('section','2'),), pre_hash non-empty
+    # (present before), post_hash "" (absent after)
+    r_repeal = by_op["se-repeal-2"]
+    assert r_repeal.action == "repeal"
+    assert r_repeal.removed_paths == ((("section", "2"),),)
+    assert r_repeal.created_paths == ()
+    assert r_repeal.replaced_paths == ()
+    pre_repeal = list(r_repeal.pre_hashes.values())[0]
+    post_repeal = list(r_repeal.post_hashes.values())[0]
+    assert pre_repeal != "", r_repeal.pre_hashes  # present before
+    assert post_repeal == "", r_repeal.post_hashes  # absent after
+
+    # The hash key for pre/post is the receipt_address_string of the
+    # landed primary path.
+    expected_key_replace = receipt_address_string((("section", "1"),))
+    assert expected_key_replace in r_replace.pre_hashes
+    assert expected_key_replace in r_replace.post_hashes
+
+
+def test_se_replay_write_receipts_emits_no_receipt_for_skipped_ops() -> None:
+    """Skipped ops emit no receipt; the FilterResult rejected_items lane carries them.
+
+    Dual-lane design (§1.8 + §2.3): the FilterResult[LegalOperation]
+    ``rejected_items`` lane is the typed-conservation record (what was
+    rejected and why); the WriteReceipt lane is the typed-write record
+    (what was written and to what covering region). A skipped op is in
+    the rejected lane (no write happened); an applied op is in the
+    receipt lane (no rejected reason). The two are mutually exclusive per
+    op — a non-empty receipt set means the op applied, a non-empty
+    rejected_items set means the op was skipped.
+    """
+    from lawvm.sweden.grafter import se_replay_write_receipts, apply_se_ops_conserved
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om receipt-test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "X", "namnOchEnhet": "X"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "1 § En §.\n\n2 § Annan §.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    before = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    ops = [
+        # Successful: REPLACE §1 with valid payload
+        LegalOperation(
+            op_id="se-replace-1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Ny 1."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        # Skipped: REPLACE §9 (target not found)
+        LegalOperation(
+            op_id="se-replace-9-missing",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "9"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="9", text="Ny."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    final, receipts = se_replay_write_receipts(before, ops)
+    assert len(receipts) == 1, [r.op_id for r in receipts]
+    assert receipts[0].op_id == "se-replace-1"
+
+    # Cross-check: the conserved FilterResult one-receipt-per-applied-op
+    # invariant holds -- the rejected lane carries the skipped op.
+    conserved = apply_se_ops_conserved(before, ops)
+    assert len(conserved.applied_ops) == 1
+    assert conserved.applied_ops[0].op_id == "se-replace-1"
+    assert len(conserved.skipped_items) == 1
+    assert conserved.skipped_items[0].item.op_id == "se-replace-9-missing"
+
+    # Cross-check: the file-state match -- `final` statute (from the per-op
+    # receipt-emitting pass) must equal what `apply_se_ops` returns for the
+    # full op list (the per-op apply is associative and order-preserving for
+    # SE's REPLACE family, which this fixture exercises).
+    assert se_statute_from_before_final_match(final, conserved.statute)
+
+
+def se_statute_from_before_final_match(a: IRStatute, b: IRStatute) -> bool:
+    """Helper: compare two IRStatute trees for body-equivalence (label-set match)."""
+    a_labels = {(c.kind.value, c.label) for c in a.body.children}
+    b_labels = {(c.kind.value, c.label) for c in b.body.children}
+    return a_labels == b_labels
+
+
 def test_apply_se_ops_records_renumber_and_heading_skip_adjudications() -> None:
     payload = {
         "beteckning": "2026:998",

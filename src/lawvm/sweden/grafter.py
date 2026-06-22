@@ -56,7 +56,7 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
-from lawvm.core.ir_helpers import irnode_from_dict
+from lawvm.core.ir_helpers import irnode_from_dict, structural_subtree_hash
 from lawvm.core.mutation_boundary import (
     TreePath,
     TreePaths,
@@ -65,6 +65,7 @@ from lawvm.core.mutation_boundary import (
 )
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
 _SFS_ID_RE = re.compile(r"\b(\d{4}:\d+)\b")
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
@@ -3889,3 +3890,175 @@ def se_observed_replay_audit(
         unexplained_paths=unexplained,
         op_count=len(ops),
     )
+
+
+# ---------------------------------------------------------------------------
+# Per-op WriteReceipt emission (AGENTS.md §2.3 — receipt contract, second step).
+#
+# An opt-in wrapper around `apply_se_ops` that applies ops one at a time,
+# snapshots the before/after body trees, and synthesizes a `WriteReceipt`
+# per *applied* op (skipped ops emit no receipt). The receipt carries the
+# full §2.3 contract shape:
+#   - op_id / helper / action / bound_target_path / landed_primary_path
+#   - categorized mutation footprint (created/replaced/removed/renumbered)
+#   - pre/post structural subtree hashes for the covering region
+#
+# A consumer that wants both the conserved FilterResult AND per-op receipts
+# calls `apply_se_ops_with_receipts` (a thin wrapper that runs both passively).
+# The default `apply_se_ops_conserved` stays receipt-free so existing callers
+# do not pay the per-op-replay overhead.
+# ---------------------------------------------------------------------------
+
+
+def _se_legal_path_to_tree_path(addr: LegalAddress) -> TreePath:
+    """Coerce a LegalAddress path into the core TreePath shape.
+
+    ``LegalAddress.path`` is a tuple of ``(kind, label | None)`` pairs; the
+    core ``TreePath`` shape requires ``str`` labels (empty string for the
+    root or None labels, matching the Sweden replay's never-None leaf-label
+    invariant — every leaf-level target carries a non-None label).
+    """
+    return tuple((str(kind), str(label or "")) for kind, label in addr.path)
+
+
+def _se_emit_one_op_receipt(
+    before_body: IRNode,
+    after_body: IRNode,
+    op: LegalOperation,
+) -> WriteReceipt | None:
+    """Emit a :class:`WriteReceipt` for one op's apply, or ``None`` when skipped.
+
+    The receipt synthesizes the typed §2.3 contract fields from the actual
+    before/after IR tree diff (computed via core's identity-pruned diff) and
+    the op's declared target. The mutation footprint is categorized by
+    ``op.action.value`` — REPLACE/text-replace → ``replaced_paths``; INSERT →
+    ``created_paths``; REPEAL → ``removed_paths``; RENUMBER → ``renumbered_paths``
+    sourced from ``op.target.path`` and ``op.destination.path``.
+
+    Pre/post hashes are taken at the landed primary path's covering region
+    using :func:`structural_subtree_hash` (the canonical recipe from
+    CERTIFIED_TREE_TRANSITION_TRACE_V0.md §2.2). For REPEAL the pre hash is
+    the section-body subtree hash that existed before; the post hash is ``""``
+    (the hash of an absent subtree).
+    """
+    changed = diff_ir_paths_identity_pruned(before_body, after_body)
+    if not changed:
+        # The op was filtered/skipped (the apply path emitted an adjudication).
+        # No receipt — the conserved FilterResult's rejected_items lane will
+        # carry the witness instead.
+        return None
+
+    action_value = op.action.value if op.action else "unknown"
+    leaf_kind = op.target.leaf_kind() or "unknown"
+    helper = f"apply_se_ops::{action_value}::{leaf_kind}"
+    bound_target_path = _se_legal_path_to_tree_path(op.target)
+
+    # Landed primary path: for INSERT and REPEAL the diff's identity-pruned
+    # output reports the body-level change (children list) rather than the
+    # created/removed node itself — the diff algorithm returns an empty-path
+    # tuple because the change happened at the parent's children list, not
+    # inside any one surviving child. Use the op's declared bound target
+    # path directly for these action families so the receipt points at the
+    # legible section coordinate, and so the pre/post hash resolves against
+    # the right subtree (the section that was inserted or removed, not the
+    # body's whole children list).
+    if action_value in {"insert", "repeal"}:
+        landed_primary_path: TreePath | None = bound_target_path or None
+    else:
+        landed_primary_path = changed[0] if changed else None
+
+    created_paths: TreePaths = ()
+    replaced_paths: TreePaths = ()
+    removed_paths: TreePaths = ()
+    renumbered_paths: tuple[tuple[TreePath, TreePath], ...] = ()
+
+    # Same reasoning as landed_primary_path above: INSERT/REPEAL categorize
+    # via the declared bound_target_path (the targeted section is the one
+    # that was created/removed), not the diff's body-level change pair.
+    if action_value in {"replace", "text_replace"}:
+        replaced_paths = changed
+    elif action_value == "insert":
+        created_paths = (bound_target_path,) if bound_target_path else ()
+    elif action_value == "repeal":
+        removed_paths = (bound_target_path,) if bound_target_path else ()
+    elif action_value == "renumber":
+        if op.destination is not None:
+            destination_path = _se_legal_path_to_tree_path(op.destination)
+            # The RENUMBER footprint is (from_path, to_path). The from_path
+            # comes from the op's declared target; the to_path from the
+            # destination. Both cover the section node's identity relabel
+            # (the from_path is removed; the to_path is created with the
+            # source's subtree content).
+            renumbered_paths = ((bound_target_path, destination_path),)
+        # The structural diff captures the section's moved subtree, so also
+        # surface it as a replaced_path in the receipt (the section node's
+        # identity changed label). The renumbered_paths above carries the
+        # explicit (from, to) coordinates; replaced_paths carries the
+        # observed footprint for the receipt's declared-footprint union.
+        replaced_paths = changed
+    # Other action families (e.g. TextPatchKindEnum-driven sets) currently
+    # surface as ``replaced_paths`` by default — a conservative first step
+    # that categorizes every observed change as a replacement. A finer-grained
+    # categorization can be added incrementally as new action families land.
+
+    # pre/post hashes at the covering region of the landed primary path.
+    # For REPEAL, the landed path's post node is absent -> post_hash is "".
+    pre_hashes: dict[str, str] = {}
+    post_hashes: dict[str, str] = {}
+    if landed_primary_path:
+        key = receipt_address_string(landed_primary_path)
+        before_node = tree_ops.resolve(before_body, list(landed_primary_path))
+        after_node = tree_ops.resolve(after_body, list(landed_primary_path))
+        pre_hashes[key] = structural_subtree_hash(before_node) if before_node is not None else ""
+        post_hashes[key] = structural_subtree_hash(after_node) if after_node is not None else ""
+
+    return WriteReceipt(
+        op_id=op.op_id or "",
+        helper=helper,
+        action=action_value,
+        bound_target_path=bound_target_path,
+        landed_primary_path=landed_primary_path,
+        created_paths=created_paths,
+        replaced_paths=replaced_paths,
+        removed_paths=removed_paths,
+        renumbered_paths=renumbered_paths,
+        pre_hashes=pre_hashes,
+        post_hashes=post_hashes,
+    )
+
+
+def se_replay_write_receipts(
+    statute: IRStatute,
+    ops: list[LegalOperation] | tuple[LegalOperation, ...],
+) -> tuple[IRStatute, tuple[WriteReceipt, ...]]:
+    """Apply ops one at a time and emit per-op :class:`WriteReceipt` records (§2.3).
+
+    For each op, applies it via :func:`apply_se_ops` to a single-op list,
+    snapshots the before/after body trees, and synthesizes a
+    :class:`WriteReceipt` using core's identity-pruned diff +
+    :func:`structural_subtree_hash`. Skipped ops (those that resulted in no
+    tree change — the adjudication ledger recorded the skip) emit no receipt.
+
+    The final statute matches the result of :func:`apply_se_ops` applied to
+    the full op list (the per-op apply is associative and order-preserving
+    for Sweden's REPLACE/INSERT/REPEAL/RENUMBER op families, assuming the
+    replay fold does not branch on multi-op invariants).
+
+    Returns ``(final_statute, receipts_tuple)``. Consumers that want both the
+    typed FilterResult conservation receipt (§1.8) AND per-op write receipts
+    (§2.3) call this; callers that only need the apply fold itself keep using
+    the cheaper :func:`apply_se_ops_conserved`.
+    """
+    current = statute
+    receipts: list[WriteReceipt] = []
+    for op in ops:
+        adjudications: list[CompileAdjudication] = []
+        next_statute = apply_se_ops(current, [op], adjudications_out=adjudications)
+        if not adjudications:
+            # Op applied — emit a receipt from the before/after body diff.
+            receipt = _se_emit_one_op_receipt(current.body, next_statute.body, op)
+            if receipt is not None:
+                receipts.append(receipt)
+        # If adjudications is non-empty, op was skipped — no receipt.
+        current = next_statute
+    return current, tuple(receipts)
