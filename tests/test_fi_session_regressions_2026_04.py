@@ -2370,6 +2370,30 @@ def test_1996_579_1998_518_new_chapter_does_not_reanimate_repealed_section_32() 
     assert "Korvausrahaston jäsenyys" in irnode_to_text(chapter_6_section_32)
 
 
+def test_2008_878_2016_520_reinstated_section_keeps_prior_repeal_scope() -> None:
+    """A cited same-label reinstatement must not follow a stale source chapter wrapper."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2008/878",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
+
+    section_61a = replay.materialized_state.find_section("61a", "6")
+    assert section_61a is not None
+    assert "Johdon toiminnan rajoittaminen" in irnode_to_text(section_61a)
+    assert replay.materialized_state.find_section("61a", "3") is None
+    assert [
+        event
+        for event in getattr(replay, "migration_events", ())
+        if getattr(event, "source_statute", "") == "2016/520"
+        and "61a" in str(event)
+    ] == []
+
+
 @pytest.mark.slow
 def test_1992_1243_2016_118_chapter_8a_repealed_by_2024_853() -> None:
     """Real corpus anchor for single unnumbered chapter-heading migration."""
