@@ -12124,6 +12124,65 @@ def test_has_unclosed_payload_quote_after_formula_marker_local_close_check() -> 
     assert _has_unclosed_payload_quote_after_formula(guillemet_balanced) is False
 
 
+def test_has_unclosed_payload_quote_after_formula_symmetric_and_mirror_openers_dont_self_match() -> None:
+    """Regression: openers that previously appeared in BOTH the open set and
+    the close regex (``\u201c`` left-double, ASCII ``\u0022``, ``\u02ee``
+    modifier) self-matched, so an unclosed payload opening with one of them
+    was wrongly reported closed (``False`` = safe to split). That let the
+    wrapper-splitter absorb a later ``\u00a7 N`` body and drop its ops.
+    Each opener must now pair with its *real* closer (or, for the symmetric
+    quotes, the same character only AFTER the opening delimiter), so an
+    open-and-never-closed tail returns ``True`` (unclosed -> don't split).
+    The canonical ``\u201e ... \u201d`` and ``\u00ab ... \u00bb`` pairs
+    must keep their correct closed/open verdicts.
+    """
+    from lawvm.estonia.target_resolution import (
+        _has_unclosed_payload_quote_after_formula,
+    )
+
+    marker = "punkt 1 muudetakse j\u00e4rgmises s\u00f5nastuses: "
+    body = "6. peat\u00fckk. text \u00a7 28 body"
+
+    # The three self-matching openers, opened and never closed -> unclosed.
+    for opener in ("\u201c", "\u0022", "\u02ee"):
+        tail = marker + opener + body
+        assert (
+            _has_unclosed_payload_quote_after_formula(tail) is True
+        ), f"opener {opener!r} opened-and-not-closed must be unclosed"
+
+    # The same openers WITH their real closer present must report closed.
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u201ctekst\u201d more")
+        is False
+    )
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u0022tekst\u0022 more")
+        is False
+    )
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u02eetekst\u02ee more")
+        is False
+    )
+
+    # Canonical paired delimiters keep their correct verdicts.
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u201e6. peat\u00fckk text")
+        is True
+    )
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u201etekst\u201d more")
+        is False
+    )
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u00abtekst\u00bb more")
+        is False
+    )
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u00abtekst more")
+        is True
+    )
+
+
 def test_parse_ee_amendment_ops_real_128062014035_splits_wrapper_sections_abandoned_by_open_quote() -> None:
     """Corpus regression: ``128062014035`` is a multi-target omnibus whose
     ``§ 1`` targets ``Lahkumisettekirjutuses...`` while ``§ 2`` targets

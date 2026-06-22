@@ -10970,6 +10970,19 @@ def test_ee_phrase_forms_returns_assistent_loanword_family() -> None:
     assert forms["sg_trn"] == "bürooassistendiks"
     assert forms["sg_ess"] == "bürooassistentina"
     assert forms["pl_nom"] == "bürooassistendid"
+    # Plural oblique forms: standard Estonian declines this ``-ent`` agent
+    # loanword like the consonant-final ``vorm`` family (strong-grade ``-ent``
+    # + ``-ide`` plural stem). Gen pl is ``assistentide`` and part pl
+    # ``assistente``; the earlier ``-ite`` / ``assistendeid`` forms were
+    # non-standard and tested only ``pl_nom``, hiding the divergence.
+    assert forms["pl_gen"] == "bürooassistentide"
+    assert forms["pl_part"] == "bürooassistente"
+    assert forms["pl_ine"] == "bürooassistentides"
+    assert forms["pl_ela"] == "bürooassistentidest"
+    assert forms["pl_all"] == "bürooassistentidele"
+    assert forms["pl_ade"] == "bürooassistentidel"
+    assert forms["pl_abl"] == "bürooassistentidelt"
+    assert forms["pl_trn"] == "bürooassistentideks"
 
 
 def test_ee_phrase_forms_returns_long_vowel_oo_family() -> None:

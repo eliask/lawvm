@@ -856,27 +856,36 @@ def _has_unclosed_payload_quote_after_formula(text: str) -> bool:
         exceed closes, treat as still-open (conservative). Otherwise safe.
       * Marker found but tail doesn't start with an open-quote char → the
         marker doesn't open a quoted payload in this block → safe to split.
-      * Marker found, tail starts with an open-quote char AND a close-quote
-        appears anywhere in the tail → the marker's payload has closed at
+      * Marker found, tail starts with an opener AND that opener's
+        *matching* closer appears later in the tail (after the opening
+        delimiter) → the marker's payload has closed at
         some point in the tail; the rest of the tail is non-quoted content
         → safe to split. Pre-fix only considered the tail *end* as the
         close site, which dropped legitimate mid-tail closes and absorbed
         legitimate wrapper sections (corpus witness: ``128062014035``
         §2-§4 against ``Kinnipidamiskeskuse sisekorraeeskirja
         kehtestamine`` produced ``ops=0`` pre-fix).
-      * Marker found, tail starts with an open-quote char AND no
-        close-quote appears in the tail → the marker's payload is still
-        open across the block boundary (the close sits in a later ``§ N``
-        body) → split is unsafe.
+      * Marker found, tail starts with an opener AND that opener's
+        matching closer never appears after it → the marker's payload is
+        still open across the block boundary (the close sits in a later
+        ``§ N`` body) → split is unsafe.
 
-    Quote character sets:
+    Quote character sets (EE source is irregular; a closer is searched for
+    only PAST the opening delimiter so an opener can never close itself):
 
-      * opens: ``„`` (``\\u201e`` low-9), ``«`` (``\\u00ab`` guillemet open)
-      * closes: ``”`` (``\\u201d`` close-9), ``“`` (``\\u201c``
-        smart-close mirror), ``»`` (``\\u00bb`` guillemet close)
-      * ASCII ``\\u0022`` quotation mark is intentionally *not* counted
-        because some EE source surfaces use it inside measurement and
-        quoted-quoted forms that would skew the count.
+      * openers: ``„`` (``\\u201e`` low-9), ``“`` (``\\u201c`` left-double),
+        ``«`` (``\\u00ab`` guillemet), ASCII ``\\u0022``, ``ˮ`` (``\\u02ee``
+        modifier).
+      * closers: ``”`` (``\\u201d`` close-9), ``“`` (``\\u201c`` left-double
+        — EE also uses it as a CLOSE, e.g. ``„...“``), ``»`` (``\\u00bb``
+        guillemet close), ASCII ``\\u0022``, ``ˮ`` (``\\u02ee``).
+      * The symmetric quotes (ASCII ``\\u0022`` and ``ˮ``) close with the
+        SAME character as they open. An earlier docstring claimed ASCII
+        ``\\u0022`` was *not* counted, but it was present in both the open
+        set and the close regex and matched *itself* at index 0, so an
+        unclosed ASCII-quoted (or ``“``/``ˮ``-opened) payload looked
+        closed. Searching ``tail[1:]`` for a closer fixes that while
+        keeping the irregular ``„...“`` close working.
 
     Pre-balanced-count this function used a "tail-ends-with-close-quote"
     heuristic that broke ``128062014035``. Post-balanced-count this
@@ -895,9 +904,29 @@ def _has_unclosed_payload_quote_after_formula(text: str) -> bool:
     )
     if marker_matches:
         tail = text[marker_matches[-1].end():].lstrip()
+        # A payload is "still open" iff the tail begins with an opener whose
+        # closer never appears AFTER the opening delimiter. The bug being
+        # fixed: three chars (\u201c left-double, ASCII \u0022, \u02ee
+        # modifier) sat in BOTH the open set and the close set, so for a
+        # payload opening with one of them the close-search matched the
+        # OPENING char itself and reported "closed" -> the wrapper-splitter
+        # absorbed a later ``\u00a7 N`` body and dropped its ops. The fix is
+        # to search for a closer only in tail[1:], i.e. PAST the opening
+        # delimiter, so an opener can never close itself.
+        #
+        # Openers (EE source): \u201e low-9, \u201c left-double, \u00ab
+        # guillemet, ASCII \u0022, \u02ee modifier.
+        # Closers (EE source): \u201d close-9, \u201c left-double (EE also
+        # uses it as a CLOSE, e.g. ``\u201e...\u201c``), \u00bb guillemet,
+        # ASCII \u0022, \u02ee modifier. The asymmetric pairs are
+        # \u201e/\u201c -> \u201d|\u201c and \u00ab -> \u00bb; the symmetric
+        # quotes (ASCII \u0022, \u02ee) close with the same character, which
+        # is exactly why the close-search must skip index 0.
         open_quote_chars = ("\u201e", "\u0022", "\u201c", "\u00ab", "\u02ee")
         if tail.startswith(open_quote_chars):
-            return not bool(re.search(r"[\u201c\u201d\u0022\u00bb\u02ee]", tail))
+            return not bool(
+                re.search(r"[\u201c\u201d\u0022\u00bb\u02ee]", tail[1:])
+            )
         return False
     open_quote = text.count("\u201e") + text.count("\u00ab")
     close_quote = text.count("\u201d") + text.count("\u201c") + text.count("\u00bb")

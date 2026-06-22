@@ -612,15 +612,21 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "sg_ess": word + "ina",
             "sg_abe": stem + "ita",
             "sg_com": stem + "iga",
+            # Plural: nom pl takes the weak grade (``assistendid``); the
+            # oblique plural takes the strong grade ``-ent`` + ``-ide`` stem,
+            # exactly like the consonant-final loanword ``vorm`` family above
+            # (``vorm`` -> ``vormid`` / ``vormide`` / ``vorme``). Standard
+            # Estonian gen pl is ``assistentide`` and part pl ``assistente``;
+            # the prior ``-ite`` / ``assistendeid`` forms were non-standard.
             "pl_nom": stem + "id",
-            "pl_gen": word + "ite",
-            "pl_part": stem + "eid",
-            "pl_ine": stem + "ites",
-            "pl_ela": stem + "itest",
-            "pl_all": word + "itele",
-            "pl_ade": word + "itel",
-            "pl_abl": word + "itelt",
-            "pl_trn": word + "iteks",
+            "pl_gen": word + "ide",
+            "pl_part": word + "e",
+            "pl_ine": word + "ides",
+            "pl_ela": word + "idest",
+            "pl_all": word + "idele",
+            "pl_ade": word + "idel",
+            "pl_abl": word + "idelt",
+            "pl_trn": word + "ideks",
         }
     if lower.endswith(("öö", "üü", "ää", "aa", "ee", "ii", "uu", "õõ")):
         # Long-vowel noun family (``töö`` / ``bürootöö`` / ``maa`` / ``puu``
