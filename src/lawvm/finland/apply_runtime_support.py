@@ -2255,18 +2255,42 @@ def _emit_section_snapshot(
             children=tuple(new_children),
         )
 
+    def _explicitly_targeted_paragraph_labels_by_subsection() -> dict[str, set[str]]:
+        labels: dict[str, set[str]] = {}
+        for rop in group_rops:
+            subsection_label = str(rop.resolved_target_subsection_label or "").strip()
+            item_label = str(rop.resolved_target_item_label or "").strip()
+            if (
+                subsection_label
+                and item_label
+                and (rop.is_insert_action or rop.is_replace_action)
+            ):
+                labels.setdefault(_norm_num_token(subsection_label), set()).add(
+                    leaf_label_identity_key(item_label)
+                )
+        return labels
+
     def _sanitize_section_subsection_payloads(
         section_path: Path,
         section_payload: IRNode,
     ) -> IRNode | None:
         if section_payload.kind is not IRNodeKind.SECTION:
             return None
+        preserve_labels_by_subsection = _explicitly_targeted_paragraph_labels_by_subsection()
         changed = False
         new_children: list[IRNode] = []
         for child in section_payload.children:
             if child.kind is IRNodeKind.SUBSECTION and child.label:
                 child_path = section_path + (("subsection", child.label),)
-                sanitized = _drop_expired_temporary_paragraph_children(child_path, child)
+                child_norm_label = _norm_num_token(child.label)
+                sanitized = _drop_expired_temporary_paragraph_children(
+                    child_path,
+                    child,
+                    preserve_paragraph_labels=preserve_labels_by_subsection.get(
+                        child_norm_label,
+                        set(),
+                    ),
+                )
                 if sanitized is not None:
                     child = sanitized
                     changed = True
@@ -3713,21 +3737,14 @@ def _emit_section_snapshot(
             and _snapshot_subsection_target_label(rop)
         }
         explicitly_repealed_paragraph_labels_by_subsection: dict[str, set[str]] = {}
-        explicitly_targeted_paragraph_labels_by_subsection: dict[str, set[str]] = {}
+        explicitly_targeted_paragraph_labels_by_subsection = (
+            _explicitly_targeted_paragraph_labels_by_subsection()
+        )
         source_text_lower = str(op_source.raw_text or "").lower()
         has_post_repeal_item_shift = "muuttuvat kohdiksi" in source_text_lower
         for rop in group_rops:
             subsection_label = str(rop.resolved_target_subsection_label or "").strip()
             item_label = str(rop.resolved_target_item_label or "").strip()
-            if (
-                subsection_label
-                and item_label
-                and (rop.is_insert_action or rop.is_replace_action)
-            ):
-                explicitly_targeted_paragraph_labels_by_subsection.setdefault(
-                    _norm_num_token(subsection_label),
-                    set(),
-                ).add(leaf_label_identity_key(item_label))
             if not rop.is_repeal_action:
                 continue
             if has_post_repeal_item_shift:

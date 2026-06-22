@@ -7125,3 +7125,31 @@ def test_aggregate_structural_stage_surfaces_unexplained_divergence() -> None:
     assert none_stage.coverage.violation == 0
     assert none_stage.residuals == ()
     assert none_stage.coverage.is_clean
+
+
+def test_replay_xml_2008_1005_preserves_explicit_item_insertions_during_snapshot_prune() -> None:
+    replay = replay_xml_for_test(
+        "2008/1005",
+        mode="legal_pit",
+        quiet=True,
+        as_of="2022-04-11",
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_37_text = " ".join(irnode_to_text(sections["chapter:7/section:37"]).split())
+
+    assert (
+        "14) markkinavalvonta-asetuksen 4 artiklan 3 kohdan a alakohdassa"
+        in section_37_text
+    )
+    assert (
+        "15) markkinavalvonta-asetuksen 4 artiklan 3 kohdan b alakohdassa"
+        in section_37_text
+    )
+    assert (
+        "16) markkinavalvonta-asetuksen 4 artiklan 3 kohdan c alakohdassa"
+        in section_37_text
+    )
+    assert (
+        "17) markkinavalvonta-asetuksen 4 artiklan 3 kohdan d alakohdassa"
+        in section_37_text
+    )
