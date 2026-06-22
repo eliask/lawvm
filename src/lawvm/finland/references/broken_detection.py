@@ -13,6 +13,7 @@ The bitemporal question this detector answers, for one resolved mention::
     existed-when-cited AND gone-now            -> BROKEN
     did-not-exist-when-cited                   -> BROKEN (never_existed)
     existed-when-cited AND still-present        -> no finding
+    no citing-date anchor                       -> BrokenCheckUnavailable
     cannot materialize either tree             -> BrokenCheckUnavailable
 
 A reference that points at a provision that was alive when the citation was
@@ -331,26 +332,46 @@ def detect_broken(
 
         # --- (a) the as-of-citation tree. With no citation start date we have
         # no temporal anchor for "existed-when-cited"; that is a missing input,
-        # not a broken reference. ---
+        # not a broken reference. Reusing the current tree here would compare the
+        # target against the SAME tree as the present check, so an absent-now
+        # target would falsely read as NEVER_EXISTED — the strongest BROKEN
+        # reason the detector cannot actually establish (the target could have
+        # existed when cited and been repealed/renumbered since). Mirror the
+        # statute-level sibling: a missing citing-date anchor is undetermined,
+        # not broken. ---
         if cited_on is None:
-            cited_tree: Optional[IRNode] = current_tree
-        else:
-            cited_tree = tree_as_of(target_statute, cited_on)
-            if cited_tree is None:
-                findings.append(
-                    BrokenCheckUnavailable(
-                        source=source,
-                        target=target,
-                        unavailable_for="cited",
-                        as_of=cited_on,
-                        reason=(
-                            f"as-of-{cited_on.isoformat()} tree for target "
-                            f"statute {target_statute!r} could not be "
-                            "materialized; brokenness undetermined"
-                        ),
-                    )
+            findings.append(
+                BrokenCheckUnavailable(
+                    source=source,
+                    target=target,
+                    unavailable_for="cited",
+                    as_of=None,
+                    reason=(
+                        "citing text has no effective-date anchor; the "
+                        "as-of-citation tree for target statute "
+                        f"{target_statute!r} cannot be materialized; "
+                        "brokenness undetermined"
+                    ),
                 )
-                continue
+            )
+            continue
+
+        cited_tree = tree_as_of(target_statute, cited_on)
+        if cited_tree is None:
+            findings.append(
+                BrokenCheckUnavailable(
+                    source=source,
+                    target=target,
+                    unavailable_for="cited",
+                    as_of=cited_on,
+                    reason=(
+                        f"as-of-{cited_on.isoformat()} tree for target "
+                        f"statute {target_statute!r} could not be "
+                        "materialized; brokenness undetermined"
+                    ),
+                )
+            )
+            continue
 
         existed_when_cited = provision_present(cited_tree, target)
         present_now = provision_present(current_tree, target)
