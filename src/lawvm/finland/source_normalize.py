@@ -1227,6 +1227,8 @@ def _fold_sparse_section_item_subsection_payload(
     if any(label is None for label in item_labels):
         return children
     labels = [str(label) for label in item_labels if label is not None]
+    if len(labels) == 1 and labels[0].isdigit():
+        return children
     if not any(any(ch.isalpha() for ch in label) for label in labels) and labels == [
         str(idx) for idx in range(1, len(labels) + 1)
     ]:
@@ -1531,6 +1533,18 @@ def _subsection_has_numbered_paragraphs(subsection: IRNode) -> bool:
     return any(_numbered_paragraph_value(child) is not None for child in subsection.children)
 
 
+def _subsection_has_payload_before_first_numbered_paragraph(subsection: IRNode) -> bool:
+    """True when a carrier has substantive child payload before its first numbered item."""
+    for child in subsection.children:
+        if child.kind == IRNodeKind.NUM:
+            continue
+        if _numbered_paragraph_value(child) is not None:
+            return False
+        if irnode_to_text(child).strip():
+            return True
+    return False
+
+
 def _fold_item_carrier_into_paragraphs(
     subsection: IRNode,
     paragraphs: list[IRNode],
@@ -1610,8 +1624,15 @@ def _subsection_can_start_item_run_at(
 ) -> bool:
     if subsection is None or subsection.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(subsection):
         return False
-    if _item_num_value(subsection) == expected_next_value:
+    direct_item_value = _item_num_value(subsection)
+    if direct_item_value == expected_next_value:
         return True
+    resumes_after_dash = _subsection_resumes_item_run_after_dash_continuation(
+        subsection,
+        expected_next_value,
+    )
+    if direct_item_value is None and _subsection_has_payload_before_first_numbered_paragraph(subsection):
+        return resumes_after_dash
     paragraph_values = [
         value
         for child in subsection.children
@@ -1622,10 +1643,7 @@ def _subsection_can_start_item_run_at(
         range(expected_next_value, expected_next_value + len(paragraph_values))
     ):
         return True
-    return _subsection_resumes_item_run_after_dash_continuation(
-        subsection,
-        expected_next_value,
-    )
+    return resumes_after_dash
 
 
 def _subsection_can_start_item_run_after_connector(

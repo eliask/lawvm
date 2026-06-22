@@ -92,8 +92,16 @@ def _grammar_whole_section_labels(block: str) -> List[str]:
         site_match = _whole_section_run_before_site(block, m.start())
         if site_match is None:
             continue
-        _, run_start = site_match
-        parsed = parse_body_provision_tail_spanned(_deglue_run(block[run_start:]))
+        run, run_start = site_match
+        current_site = parse_body_provision_tail_spanned(_deglue_run(block[run_start:]))
+        if current_site.targets:
+            first = current_site.targets[0]
+            if (
+                first.section_label
+                and (first.subsection_num is not None or first.item_label is not None or first.subitem_label is not None)
+            ):
+                continue
+        parsed = parse_body_provision_tail_spanned(_deglue_run(run + " §"))
         for target in parsed.targets:
             if (
                 target.subsection_num is None

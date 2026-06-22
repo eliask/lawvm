@@ -16,6 +16,7 @@ Three criteria, three drills:
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import cast
 
 from lawvm.substrate.canonical_json import JsonValue, wrap_row
 from lawvm.substrate.checker import Checker, Pack, PackLayerData
@@ -253,7 +254,10 @@ def test_totality_reaches_checker_verdict() -> None:
     verdict = Checker().check(pack)
     assert verdict.totality.verdict is TotalityVerdict.TOTAL_WITH_RESIDUALS
     # The totality axis is reported in the wire format.
-    assert verdict.to_canonical_dict()["totality"]["verdict"] == "TOTAL_WITH_RESIDUALS"
+    totality_wire = verdict.to_canonical_dict()["totality"]
+    assert isinstance(totality_wire, Mapping)
+    totality_wire = cast("Mapping[str, JsonValue]", totality_wire)
+    assert totality_wire["verdict"] == "TOTAL_WITH_RESIDUALS"
 
 
 def test_incomplete_reaches_checker_verdict() -> None:

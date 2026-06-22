@@ -1550,6 +1550,7 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     # Payload-normalization strict barrier; add a dedicated production-lane
     # drill when flattened insert-subsection tail splitting gets a small
     # stable fixture in this harness.
+    "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE": ("sparse descendant merge barrier; needs stable fixture", "2026-06-22"),
     "ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL": ("payload-normalize barrier; needs stable fixture", "2026-06-20"),
     "APPLY.WORD_SUBSTITUTION": ("word-substitution barrier; needs fixture", "2026-06-20"),
     "COMPARE.UNADJUDICATED_ORACLE_DIVERGENCE.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),

@@ -22,16 +22,17 @@ from lawvm.substrate.signature_attestation import (
 
 
 def _att(**kw) -> SignatureAttestation:
-    defaults = dict(
-        subject=AttestationSubject("corpus_totality_root", "sha256:root"),
-        claim_kind="compiler_output",
-        signer=AttestationSigner("lawvm.build", "LawVM Build", "compiler"),
-        signature_profile="lawvm.dsse.v1",
-        signed_at="2026-06-22T00:00:00Z",
-        signature_bytes_ref="sha256:sigref",
+    return SignatureAttestation(
+        subject=kw.pop(
+            "subject",
+            AttestationSubject("corpus_totality_root", "sha256:root"),
+        ),
+        claim_kind=kw.pop("claim_kind", "compiler_output"),
+        signer=kw.pop("signer", AttestationSigner("lawvm.build", "LawVM Build", "compiler")),
+        signature_profile=kw.pop("signature_profile", "lawvm.dsse.v1"),
+        signed_at=kw.pop("signed_at", "2026-06-22T00:00:00Z"),
+        signature_bytes_ref=kw.pop("signature_bytes_ref", "sha256:sigref"),
     )
-    defaults.update(kw)
-    return SignatureAttestation(**defaults)  # type: ignore[arg-type]
 
 
 def test_default_status_is_unverifiable() -> None:
