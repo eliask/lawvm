@@ -379,6 +379,15 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_dual_registration_completeness.py",
         "test_authority_boundary_ratchet.py",
         "test_source_witness_liveness_ratchet.py",
+        # Audit-invariant registry program (lanes L2a/L2b/L3/L5): control-flow,
+        # determinism-spine, typed-carrier, identity-leak, and replay-determinism gates.
+        "test_fail_loud_ratchet.py",
+        "test_confidence_control_ratchet.py",
+        "test_determinism_spine_ratchet.py",
+        "test_typed_carrier_boundary_ratchet.py",
+        "test_identity_intrinsic_audit.py",
+        "test_synthetic_label_leak.py",
+        "test_replay_determinism.py",
     ),
     "core_ir_contracts": (
         "test_fi_address_parse.py",

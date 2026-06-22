@@ -642,6 +642,28 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "info", "frontend_phase_surface",
                 "frontend phase diagnostic projected into the governed finding ledger",
                 ("parse_witness",), role="observation"),
+    # Surface-plane totality sweeps (audit-registry rows SURF-04, SURF-05).
+    # Observation-role per-unit totality: the sweep asserts the surface contract
+    # and surfaces a residual population; over the real corpus the residual is the
+    # expected, correct outcome (an orphan reference / unclassified mention is a
+    # real surface fact, not a pipeline fault), so it is non-blocking by design
+    # (tag-don't-guess). The synthetic unit-level bite is the guard-liveness drill.
+    FindingSpec("DEFINITION.DUPLICATE_DEFINITION", "surface_totality",
+                "ambiguity", "warn", "fi_surface_totality",
+                "a defined term is bound more than once per (PIT, scope); "
+                "exactly one definition site per scope is the totality contract",
+                ("parse_witness", "ambiguity_resolution"), role="observation"),
+    FindingSpec("DEFINITION.ORPHAN_DEFINITION_REFERENCE", "surface_totality",
+                "source_pathology", "warn", "fi_surface_totality",
+                "a reference to a defined term has no resolvable definition in "
+                "scope (used before / without an in-scope definition site)",
+                ("parse_witness", "preservation"), role="observation"),
+    FindingSpec("REFERENCE.UNCLASSIFIED_REFERENCE", "surface_totality",
+                "violation", "warn", "fi_surface_totality",
+                "an emitted ReferenceMention carries a cite_confidence outside the "
+                "closed classification set (resolved/statute_only/ambiguous/open/"
+                "broken/unsupported); the closed set was silently widened",
+                ("parse_witness", "safety_invariant"), role="observation"),
     # Rank-17 silent-drop closure (canonical_op plane). The clause_ast ingress
     # seam (fi extract_legal_ops_from_parse_result) and the legacy lower_surface
     # bridge previously dropped unsupported clause/surface nodes
@@ -967,6 +989,26 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
     FindingSpec("REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET", "apply",
                 "violation", "hard_fail", "grafter",
                 "applied replay op touched paths outside its declared target",
+                ("safety_invariant",), role="violation"),
+    FindingSpec("APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP", "apply",
+                "violation", "hard_fail", "apply_resolved_op",
+                "per-op mutation-boundary REJECT: an op's changed paths are not a subset of "
+                "its target plus declared migration/recovery/editorial-projection boundary",
+                ("safety_invariant",), role="violation"),
+    FindingSpec("APPLY.MUTATION_BOUNDARY_FINDING_AT_OP", "apply",
+                "violation", "warn", "apply_resolved_op",
+                "quirks-mode accounting for a per-op mutation-boundary escape "
+                "(same condition as APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP, recorded not blocked)",
+                ("safety_invariant",), role="observation"),
+    FindingSpec("APPLY.OCCUPANCY_TRANSITION_BLOCKED", "apply",
+                "violation", "hard_fail", "apply_resolved_op",
+                "strict-mode occupancy gate: a state-mutating op attempted an invalid "
+                "(action, from->to) occupancy transition",
+                ("safety_invariant",), role="violation"),
+    FindingSpec("EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED", "apply",
+                "violation", "hard_fail", "apply_resolved_op",
+                "a state-mutating op landed without resolving an ExecutionAuthorization "
+                "(rule_id + required proofs) under strict mode",
                 ("safety_invariant",), role="violation"),
     FindingSpec("REPLAY_UNKNOWN_MUTATION_OUTCOME", "apply",
                 "violation", "hard_fail", "grafter",

@@ -13,6 +13,17 @@ from lawvm.core.mutation_accounting import (
     observed_vs_declared_cross_check,
 )
 from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
+from lawvm.core.mutation_boundary_proof import (
+    MUTATION_BOUNDARY_FINDING_AT_OP_CODE,
+    MUTATION_BOUNDARY_VIOLATION_AT_OP_CODE,
+    verify_per_op,
+)
+from lawvm.core.occupancy import (
+    InvalidOccupancyTransition,
+    OccupancyAction,
+    validate_transition,
+)
+from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.phase_result import Finding
 from lawvm.core.stage_result import (
@@ -33,6 +44,7 @@ from lawvm.finland.apply_replay_authorization import (
 )
 from lawvm.finland.apply import apply_op
 from lawvm.finland.apply_events import ApplyMutationEvent
+from lawvm.finland.apply_policy import _OP_TYPE_TO_ACTION, _section_occupancy
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import FailedOp, ResolvedOp
 from lawvm.finland.replay_notices import replay_print as _replay_print
@@ -269,6 +281,18 @@ def _apply_required_resolved_op(
             sinks=sinks,
             undeclared_touch=undeclared_touch,
         )
+        # Per-op apply-authority gates (LS-01 / LS-03 / EV-05+FW-01): run after
+        # the write landed so the changed-path subset, the occupancy transition,
+        # and the execution-authorization closure are all checked PER OP at the
+        # production apply site.
+        _enforce_per_op_apply_authority(
+            prev_state,
+            state,
+            rop=rop,
+            strict_profile=request.strict_profile,
+            source_statute=request.amendment_id,
+            findings_out=sinks.findings_out,
+        )
     except (NameError, TypeError, AttributeError):
         raise
     except WriteReceiptTotalityError:
@@ -328,6 +352,259 @@ def cross_check_observed_vs_declared(
     if result is not None and observed_touch_results_out is not None:
         observed_touch_results_out.append(result)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Per-op apply-authority gates (audit-registry lane L1: LS-01, LS-03, EV-05/FW-01)
+# ---------------------------------------------------------------------------
+
+# The FI replay IR is rooted under an unlabeled hcontainer wrapper; tree-diff
+# paths carry this step but op-nominal LegalAddress targets do not. Mirrors
+# ``mutation_accounting._WRAPPER_ROOT_STEP``.
+_FI_REPLAY_WRAPPER_ROOT_STEP: tuple[tuple[str, str], ...] = (("hcontainer", ""),)
+
+OCCUPANCY_TRANSITION_BLOCKED_FINDING_CODE = "APPLY.OCCUPANCY_TRANSITION_BLOCKED"
+REPLAY_AUTHORIZATION_PROOF_REQUIRED_FINDING_CODE = "EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED"
+# Owner phase recorded on the per-op ExecutionAuthorization closure (EV-05/FW-01).
+_APPLY_OP_AUTHORIZATION_OWNER_PHASE = "apply"
+_APPLY_OP_AUTHORIZATION_REQUIRED_PROOFS: tuple[str, ...] = (
+    "execution_authorization_rule_id_resolved",
+)
+
+
+def _enforce_per_op_apply_authority(
+    prev_state: ReplayState,
+    new_state: ReplayState,
+    *,
+    rop: ResolvedOp,
+    strict_profile: Optional[StrictProfile],
+    source_statute: str,
+    findings_out: Optional[list[Finding]],
+) -> None:
+    """Run the per-op apply-authority gates for one landed write.
+
+    Three audit-registry gates fire here, PER OP, at the production apply site:
+
+    * **LS-01** (mutation boundary): the op's observed changed paths must be a
+      subset of its declared mutation boundary. Out-of-boundary → strict BLOCKS
+      (``APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP``), quirks records a non-blocking
+      accounting finding (``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP``).
+    * **LS-03** (occupancy gate-liveness): a state-mutating op whose action maps
+      to an occupancy transition must pass the (action, from)->to table. An invalid
+      transition BLOCKS under strict (``APPLY.OCCUPANCY_TRANSITION_BLOCKED``) — the
+      occupancy gate was previously telemetry-only.
+    * **EV-05/FW-01** (execution-authorization closure): every state-mutating op
+      must resolve an :class:`ExecutionAuthorization` (a non-empty rule_id +
+      required proofs). An op that landed a write with no resolvable authorization
+      rule BLOCKS under strict (``EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED``).
+
+    No tree change → no landed write → no state mutation → nothing to gate.
+    ``strict_profile is not None`` is the strict-mode signal; ``None`` is the
+    permissive (quirks) profile, which records rather than blocks where the audit
+    contract says so.
+    """
+    if prev_state.ir is new_state.ir:
+        # No state mutation: these gates only police writes that actually landed.
+        return
+    if findings_out is None:
+        return
+    is_strict = strict_profile is not None
+
+    _gate_mutation_boundary_at_op(
+        prev_state, new_state, rop=rop, is_strict=is_strict,
+        source_statute=source_statute, findings_out=findings_out,
+    )
+    _gate_occupancy_transition_at_op(
+        prev_state, rop=rop, is_strict=is_strict,
+        source_statute=source_statute, findings_out=findings_out,
+    )
+    _gate_execution_authorization_at_op(
+        rop=rop, is_strict=is_strict,
+        source_statute=source_statute, findings_out=findings_out,
+    )
+
+
+def _gate_mutation_boundary_at_op(
+    prev_state: ReplayState,
+    new_state: ReplayState,
+    *,
+    rop: ResolvedOp,
+    is_strict: bool,
+    source_statute: str,
+    findings_out: list[Finding],
+) -> None:
+    """LS-01: per-op mutation-boundary REJECT gate over the typed LegalOperation."""
+    # ``rop.op`` is the AmendmentOp wrapper; its ``.lo`` is the typed core
+    # LegalOperation (action + target) the verify gate needs.
+    amendment_op = rop.op if rop is not None else None
+    legal_op = amendment_op.lo if amendment_op is not None else None
+    if legal_op is None:
+        # No typed core operation available at this granularity — the op-level
+        # boundary is carried by the observed-vs-declared cross-check + receipt
+        # (already wired); there is no declared LegalOperation target to verify
+        # the changed-path subset against here.
+        return
+    verdict = verify_per_op(
+        prev_state.ir,
+        new_state.ir,
+        legal_op,
+        op_id=rop.op_id or "",
+        # The FI replay IR is rooted under an unlabeled ("hcontainer", "") wrapper
+        # that tree-diff paths carry but op LegalAddress targets do not; strip it
+        # so observed and declared surfaces align (same normalization as
+        # mutation_accounting). Without it every wrapped diff path is a false escape.
+        strip_root_prefix=_FI_REPLAY_WRAPPER_ROOT_STEP,
+    )
+    if verdict.within_boundary:
+        return
+    detail = {
+        "message": (
+            "Per-op mutation boundary escaped: the op's changed tree paths are not "
+            "a subset of its declared target/migration/recovery/editorial boundary."
+        ),
+        "op_id": rop.op_id or "",
+        "changed_paths": list(verdict.changed_paths),
+        "out_of_boundary_paths": list(verdict.out_of_boundary_paths),
+    }
+    if is_strict:
+        findings_out.append(
+            Finding(
+                kind=MUTATION_BOUNDARY_VIOLATION_AT_OP_CODE,
+                role="violation",
+                stage="apply",
+                blocking=True,
+                source_statute=source_statute,
+                detail=detail,
+            )
+        )
+    else:
+        findings_out.append(
+            Finding(
+                kind=MUTATION_BOUNDARY_FINDING_AT_OP_CODE,
+                role="observation",
+                stage="apply",
+                blocking=False,
+                source_statute=source_statute,
+                detail={**detail, "strict_disposition": "record"},
+            )
+        )
+
+
+def _gate_occupancy_transition_at_op(
+    prev_state: ReplayState,
+    *,
+    rop: ResolvedOp,
+    is_strict: bool,
+    source_statute: str,
+    findings_out: list[Finding],
+) -> None:
+    """LS-03: occupancy-transition gate that BLOCKS an invalid transition under strict."""
+    action_value = _OP_TYPE_TO_ACTION.get(rop.resolved_action_type or "")
+    if action_value is None:
+        return
+    # Occupancy transitions are defined at the whole-section slot level (the
+    # VALID_TRANSITIONS table); descendant (paragraph/item/special) edits do not
+    # change slot occupancy and are out of scope, matching _observe_occupancy_transition.
+    if (
+        not rop.targets_whole_unit("section")
+        or rop.effective_target_paragraph is not None
+        or rop.effective_target_item_label is not None
+        or rop.effective_target_special is not None
+    ):
+        return
+    target_address = rop.resolved_target_address
+    if target_address is None or not target_address.path:
+        return
+    sec_path = tuple((str(kind), str(label)) for kind, label in target_address.path)
+    current = _section_occupancy(prev_state, sec_path)
+    try:
+        validate_transition(OccupancyAction(action_value), current)
+    except InvalidOccupancyTransition as exc:
+        if not is_strict:
+            # Quirks: the legacy observational APPLY.OCCUPANCY_POLICY_VIOLATION
+            # lane already records the non-blocking signal; do not double-emit.
+            return
+        findings_out.append(
+            Finding(
+                kind=OCCUPANCY_TRANSITION_BLOCKED_FINDING_CODE,
+                role="violation",
+                stage="apply",
+                blocking=True,
+                source_statute=source_statute,
+                detail={
+                    "message": (
+                        "Strict occupancy gate blocked an invalid (action, occupancy) "
+                        "transition for a state-mutating op."
+                    ),
+                    "op_id": rop.op_id or "",
+                    "action": action_value,
+                    "current_occupancy": current.value,
+                    "transition_error": str(exc),
+                },
+            )
+        )
+
+
+def _gate_execution_authorization_at_op(
+    *,
+    rop: ResolvedOp,
+    is_strict: bool,
+    source_statute: str,
+    findings_out: list[Finding],
+) -> None:
+    """EV-05/FW-01: closure that every state-mutating op resolves an ExecutionAuthorization."""
+    authorization = _resolve_op_execution_authorization(rop)
+    if authorization is not None and authorization.authorization_rule_id:
+        # The op carries/resolves an execution-authorization rule; closure met.
+        return
+    if not is_strict:
+        return
+    findings_out.append(
+        Finding(
+            kind=REPLAY_AUTHORIZATION_PROOF_REQUIRED_FINDING_CODE,
+            role="violation",
+            stage="apply",
+            blocking=True,
+            source_statute=source_statute,
+            detail={
+                "message": (
+                    "A state-mutating op landed without resolving an ExecutionAuthorization "
+                    "(no rule_id + required proofs)."
+                ),
+                "op_id": rop.op_id or "",
+                "required_proofs": list(_APPLY_OP_AUTHORIZATION_REQUIRED_PROOFS),
+            },
+        )
+    )
+
+
+def _resolve_op_execution_authorization(
+    rop: ResolvedOp,
+) -> Optional[ExecutionAuthorization]:
+    """Resolve the per-op :class:`ExecutionAuthorization` for a state-mutating op.
+
+    The authorization rule_id is the op's stable identity (its ``op_id``). An op
+    with no op_id cannot be tied to an execution-authorization rule, so the
+    closure returns ``None`` and the strict gate emits
+    ``EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED``. This is the closure sweep, not a
+    full evidence-policy re-architecture: it asserts the authority *carrier* exists
+    per op, which is the gap the audit names (apply path had ZERO references).
+    """
+    rule_id = (rop.op_id or "").strip()
+    if not rule_id:
+        return None
+    return ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="apply_op_authorized",
+        authorization_rule_id=rule_id,
+        owner_phase=_APPLY_OP_AUTHORIZATION_OWNER_PHASE,
+        strict_disposition="record",
+        safe_default="block_until_apply_op_authorization_rule_is_resolved",
+        forbidden_shortcuts=(
+            "landed_write_existence_as_execution_authorization",
+        ),
+    )
 
 
 class WriteReceiptTotalityError(AssertionError):
