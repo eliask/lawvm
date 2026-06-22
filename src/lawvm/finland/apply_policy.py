@@ -779,14 +779,28 @@ def _check_occupancy_policy(
             and incoming.effective
             and incoming.expires
             and occupant is not None
-            and incoming.effective < occupant[0]
-            and incoming.expires <= occupant[0]
+            and (
+                (
+                    incoming.effective < occupant[0]
+                    and incoming.expires <= occupant[0]
+                )
+                or (
+                    incoming.effective == occupant[0]
+                    and incoming.expires > incoming.effective
+                )
+            )
         ):
             occupant_effective, occupant_statute = occupant
+            rule_id = (
+                "temporally_bounded_overlay_insert"
+                if incoming.effective == occupant_effective
+                else "temporally_disjoint_twin_insert"
+            )
             logger.debug(
-                "  %s → temporally disjoint twin insert: window %s..%s precedes "
+                "  %s → %s: window %s..%s coexists with "
                 "occupant %s effective %s",
                 ctx_label,
+                rule_id,
                 incoming.effective,
                 incoming.expires,
                 occupant_statute,
@@ -808,7 +822,7 @@ def _check_occupancy_policy(
                             "incoming_expires": incoming.expires,
                             "occupant_effective": occupant_effective,
                             "occupant_source_statute": occupant_statute,
-                            "rule_id": "temporally_disjoint_twin_insert",
+                            "rule_id": rule_id,
                         },
                         blocking=False,
                     )

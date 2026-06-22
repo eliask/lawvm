@@ -443,7 +443,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 ("preservation", "safety_invariant"), role="observation"),
     FindingSpec("APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT", "apply_op",
                 "audit", "info", "grafter",
-                "temporary gap-filler insert whose in-force window ends before the fold-order occupant's deferred commencement begins",
+                "temporary insert whose bounded in-force window can be represented without a permanent occupancy violation",
                 ("preservation",), role="observation"),
     FindingSpec("APPLY.RELABEL_SKIP", "restructure_plan",
                 "recovery", "warn", "grafter",

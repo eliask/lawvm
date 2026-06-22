@@ -727,6 +727,7 @@ def process_muutoslaki_resolved(
                 compiled_ops_out=compiled_ops_out,
                 amendment_temporal_events=amendment_temporal_events,
                 commencement_expiry_override_notes=commencement_expiry_override_notes,
+                process_findings=process_findings,
                 record_finding=record_process_finding,
                 replay_print=_replay_print,
                 section_expiry_overrides=amendment_tree_metadata.section_expiry_overrides,

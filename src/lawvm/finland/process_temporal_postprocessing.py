@@ -17,6 +17,8 @@ from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.phase_result import Finding
+from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.johtolause import extract_law_level_text_patch_los as _extract_law_level_patch_los
 from lawvm.finland.kumotaan import (
     _extract_kumotaan_chapter_section_map,
@@ -74,6 +76,7 @@ class ProcessTemporalPostprocessContext:
     compiled_ops_out: Optional[List[Dict[str, object]]]
     amendment_temporal_events: list[TemporalEvent]
     commencement_expiry_override_notes: list[EffectLifecycleOverride]
+    process_findings: list[Finding]
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
     section_expiry_overrides: tuple[tuple[str, Set[str], dt.date], ...] = ()
@@ -85,6 +88,17 @@ class ProcessTemporalPostprocessContext:
         self.apply_section_commencement_overrides()
         self.apply_later_effective_group_rewrites()
         self.apply_kumotaan_replay_product_rewrites()
+        self.reconcile_temporal_occupancy_observations()
+
+    def reconcile_temporal_occupancy_observations(self) -> None:
+        """Add bounded-window evidence after source expiry rewrites are known."""
+        self.process_findings.extend(
+            _temporal_occupancy_reconciliation_findings(
+                self.lo_ops_out,
+                self.process_findings,
+                amendment_id=self.amendment_id,
+            )
+        )
 
     def collect_law_level_text_patches(self) -> None:
         if self.lo_ops_out is None:
@@ -642,6 +656,218 @@ def _kumotaan_override_scope(
             continue
         uncovered_labels.append(str(label))
     return EffectLifecycleOverrideScope.mixed(labels=uncovered_labels, addresses=addresses)
+
+
+def _section_key(address: LegalAddress) -> tuple[tuple[str, str], ...]:
+    return tuple((kind, normalized_label_key(label)) for kind, label in address.path)
+
+
+def _section_label(address: LegalAddress) -> str:
+    return next((label for kind, label in reversed(address.path) if kind == "section"), "")
+
+
+def _chapter_label(address: LegalAddress) -> str:
+    return next((label for kind, label in reversed(address.path) if kind == "chapter"), "")
+
+
+def _chapter_from_ctx_label(ctx_label: str) -> str:
+    if " luku " not in ctx_label:
+        return ""
+    prefix = ctx_label.split(" luku ", 1)[0].strip()
+    if not prefix:
+        return ""
+    return prefix.rsplit(maxsplit=1)[-1].strip()
+
+
+def _temporary_occupant_for_prior_history(
+    lo_ops: list[_LegalOperation],
+    *,
+    before_index: int,
+    target: LegalAddress,
+) -> tuple[str, str] | None:
+    key = _section_key(target)
+    for prior in reversed(lo_ops[:before_index]):
+        if prior.target is None or prior.source is None:
+            continue
+        if prior.action not in {StructuralAction.INSERT, StructuralAction.REPLACE}:
+            continue
+        if _section_key(prior.target) != key:
+            continue
+        if not prior.source.effective:
+            return None
+        return prior.source.effective, prior.source.statute_id
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class _OccupancyViolationSeed:
+    section_norm: str
+    chapter_norm: str
+    target_label: str
+    target_chapter: str
+    ctx_label: str
+    legacy_action: str
+    op_id: str
+
+
+def _occupancy_violation_seeds(
+    findings: list[Finding],
+    *,
+    amendment_id: str,
+) -> tuple[_OccupancyViolationSeed, ...]:
+    seeds: list[_OccupancyViolationSeed] = []
+    for finding in findings:
+        if finding.kind != "APPLY.OCCUPANCY_POLICY_VIOLATION":
+            continue
+        if finding.source_statute != amendment_id:
+            continue
+        detail = finding.detail
+        if detail.get("allowed_non_primary"):
+            continue
+        target_label = str(detail.get("target_label") or "")
+        if not target_label:
+            continue
+        target_chapter = str(detail.get("target_chapter") or "")
+        if not target_chapter:
+            target_chapter = _chapter_from_ctx_label(str(detail.get("ctx_label") or ""))
+        seeds.append(
+            _OccupancyViolationSeed(
+                section_norm=normalized_label_key(target_label),
+                chapter_norm=normalized_label_key(target_chapter),
+                target_label=target_label,
+                target_chapter=target_chapter,
+                ctx_label=str(detail.get("ctx_label") or ""),
+                legacy_action=str(detail.get("legacy_action") or ""),
+                op_id=str(detail.get("op_id") or ""),
+            )
+        )
+    return tuple(seeds)
+
+
+def _matching_occupancy_violation_seed(
+    seeds: tuple[_OccupancyViolationSeed, ...],
+    *,
+    target_label: str,
+    target_chapter: str,
+) -> _OccupancyViolationSeed | None:
+    target_norm = normalized_label_key(target_label)
+    chapter_norm = normalized_label_key(target_chapter)
+    for seed in seeds:
+        if seed.section_norm != target_norm:
+            continue
+        if seed.chapter_norm and seed.chapter_norm != chapter_norm:
+            continue
+        return seed
+    return None
+
+
+def _temporal_occupancy_reconciliation_findings(
+    lo_ops_out: Optional[List[_LegalOperation]],
+    process_findings: list[Finding],
+    *,
+    amendment_id: str,
+) -> tuple[Finding, ...]:
+    """Reconcile early occupancy observations after per-section expiry rewrites.
+
+    Apply-time occupancy runs before Finland commencement/expiry postprocessing
+    stamps section-specific temporary windows onto LegalOperation sources. When
+    a same-slot insert was recorded as an occupancy concern and the final
+    operation stream proves a finite temporary window with a prior occupant,
+    emit the same typed temporal-window observation the apply lane would have
+    emitted had those bounds already been available.
+    """
+    if not lo_ops_out:
+        return ()
+    violation_seeds = _occupancy_violation_seeds(
+        process_findings,
+        amendment_id=amendment_id,
+    )
+    if not violation_seeds:
+        return ()
+
+    already_recorded: set[tuple[str, str, str, str]] = set()
+    for finding in process_findings:
+        if finding.kind != "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT":
+            continue
+        detail = finding.detail
+        already_recorded.add(
+            (
+                finding.source_statute,
+                normalized_label_key(str(detail.get("target_label") or "")),
+                str(detail.get("incoming_effective") or ""),
+                str(detail.get("incoming_expires") or ""),
+            )
+        )
+
+    notes: list[Finding] = []
+    for index, lo in enumerate(lo_ops_out):
+        source = lo.source
+        if source is None or source.statute_id != amendment_id:
+            continue
+        if lo.target is None or lo.target.special is not None:
+            continue
+        if lo.action not in {StructuralAction.INSERT, StructuralAction.REPLACE}:
+            continue
+        target_label = _section_label(lo.target)
+        target_chapter = _chapter_label(lo.target)
+        violation_seed = _matching_occupancy_violation_seed(
+            violation_seeds,
+            target_label=target_label,
+            target_chapter=target_chapter,
+        )
+        if violation_seed is None:
+            continue
+        if not source.effective or not source.expires or source.expires <= source.effective:
+            continue
+        occupant = _temporary_occupant_for_prior_history(
+            lo_ops_out,
+            before_index=index,
+            target=lo.target,
+        )
+        if occupant is None:
+            continue
+        occupant_effective, occupant_statute = occupant
+        if not (
+            (source.effective < occupant_effective and source.expires <= occupant_effective)
+            or source.effective == occupant_effective
+        ):
+            continue
+        key = (amendment_id, violation_seed.section_norm, source.effective, source.expires)
+        if key in already_recorded:
+            continue
+        already_recorded.add(key)
+        rule_id = (
+            "temporally_bounded_overlay_insert"
+            if source.effective == occupant_effective
+            else "temporally_disjoint_twin_insert"
+        )
+        notes.append(
+            Finding(
+                kind="APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT",
+                role="observation",
+                stage="process_muutoslaki",
+                source_statute=amendment_id,
+                detail={
+                    "message": (
+                        "Post-temporal expiry rewrite proved a bounded same-slot "
+                        "temporary window for an earlier occupancy observation."
+                    ),
+                    "ctx_label": violation_seed.ctx_label,
+                    "op_id": violation_seed.op_id,
+                    "legacy_action": violation_seed.legacy_action,
+                    "target_label": violation_seed.target_label,
+                    "target_chapter": violation_seed.target_chapter,
+                    "incoming_effective": source.effective,
+                    "incoming_expires": source.expires,
+                    "occupant_effective": occupant_effective,
+                    "occupant_source_statute": occupant_statute,
+                    "rule_id": rule_id,
+                    "reconciles_finding": "APPLY.OCCUPANCY_POLICY_VIOLATION",
+                },
+                blocking=False,
+            )
+        )
+    return tuple(notes)
 
 
 def _kumotaan_labels_by_effective_date(

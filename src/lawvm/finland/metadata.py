@@ -1325,6 +1325,7 @@ _TEMPORARY_CITED_COMMENCEMENT_RE = re.compile(
 )
 _TEMPORARY_SECTION_EXPIRY_RE = re.compile(
     rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§"
+    rf"(?:\s+ja\s+sen\s+edellä\s+oleva\s+väliotsikko)?"
     rf"(?:\s*sekä\s+({_TEMPORARY_SECTION_CHARS_SIMPLE}+?)\s*§[^.]*?(?=\s+(?:ovat|on)\s))?"
     rf"\s+(?:ovat|on)\s+voimassa\s+(?:\d{{1,2}}\s+päivästä\s+[a-zäöå]+\s+)?"
     rf"(?P<datetail>\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})",
@@ -1391,7 +1392,9 @@ _TEMPORARY_CHAINED_SECTION_EXPIRY_RE = re.compile(
     re.IGNORECASE,
 )
 _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE = re.compile(
-    rf"(?:ja|sekä)\s+(?P<section>{_TEMPORARY_SINGLE_SECTION_CHARS}+?)\s*§\s+(?P<datetail>\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})",
+    rf"(?:ja|sekä)\s+(?P<section>{_TEMPORARY_SINGLE_SECTION_CHARS}+?)\s*§"
+    rf"(?:\s+ja\s+sen\s+edellä\s+oleva\s+väliotsikko)?\s+"
+    rf"(?P<datetail>\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})",
     re.IGNORECASE,
 )
 _TEMPORARY_CHAINED_PROVISION_EXPIRY_TAIL_RE = re.compile(
@@ -1748,6 +1751,25 @@ def _temporary_section_expiry_overrides(
             if m.group(2):
                 labels |= _parse_section_list_labels(m.group(2))
             _append_override(target_mid_from_cited, labels, expiry)
+            tail_start = m.end()
+            tail_end = expiry_scan_text.find(".", tail_start)
+            if tail_end == -1:
+                tail_end = len(expiry_scan_text)
+            sentence_tail = expiry_scan_text[tail_start:tail_end]
+            # lawvm-regex: owning_parser V-expiry chained-sunset tail after a
+            # normal plural ``ovat voimassa`` head; date via match_fi_date, label
+            # via _parse_section_list_labels.
+            for m_tail in _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE.finditer(sentence_tail):
+                tail_match = match_fi_date(
+                    m_tail.group("datetail"), forms={FiDateForm.ALLATIVE}
+                )
+                if tail_match is None:
+                    continue
+                _append_override(
+                    target_mid_from_cited,
+                    _parse_section_list_labels(m_tail.group("section")),
+                    tail_match.value,
+                )
 
         # lawvm-regex: owning_parser bounded temporary added-section expiry recognizer
         for m_added in _TEMPORARY_ADDED_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
