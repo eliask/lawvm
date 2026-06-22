@@ -3204,7 +3204,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 18,1982/672,core,,,OK
 18,1987/21,suspect,oracle_suspect,2025/548 eff 2026-01-01 > cutoff 2025-06-27,
 18,1987/449,suspect,oracle_suspect,2013/771 eff 2013-12-01 > cutoff 2013-11-08,
-18,1990/1295,core,,,OK
+18,1990/1295,suspect,source_pathology,abridged base XML omits chapters 7-10; journaled source-acquisition frontier,OK
 18,1991/305,suspect,oracle_suspect,2024/591 eff 2024-11-13 > cutoff 2024-11-08,
 18,1992/1330,suspect,oracle_suspect,2023/26 eff 2023-06-01 > cutoff 2023-01-05,
 18,1993/477,suspect,oracle_suspect,2024/341 eff 2024-07-01 > cutoff 2024-06-13,
@@ -3234,7 +3234,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 19,1993/1608,suspect,oracle_suspect,2008/884 eff 2009-01-01 > cutoff 2008-12-19,
 19,1998/852,core,,,OK
 19,1999/895,suspect,oracle_suspect,2018/518 eff 2018-08-01 > cutoff 2018-06-27,
-19,2000/812,core,,,OK
+19,2000/812,suspect,oracle_suspect,oracle-check classifies all divergences as ORACLE_STALE,OK
 19,2001/1383,core,,,OK
 19,2001/1501,suspect,oracle_suspect,2023/593 eff 2023-06-01 > cutoff 2023-03-23,
 19,2001/1559,suspect,oracle_suspect,2024/916 eff 2025-01-01 > cutoff 2024-12-19,
@@ -3356,12 +3356,12 @@ amendments,statute_id,bucket,reason,detail,last_status
 25,2015/234,suspect,oracle_suspect,base_oracle_only despite amendment 2015/1437 eff 2015-12-14 <= cutoff 2023-05-25,OK
 25,2016/768,core,,,OK
 26,1967/550,suspect,oracle_suspect,2016/717 eff 2017-01-01 > cutoff 2016-08-25,
-26,1982/182,core,,,OK
+26,1982/182,suspect,source_pathology,base chapter 4 absent plus traffic-sign image/catalog payload frontier; journaled source-acquisition lane,OK
 26,1988/423,suspect,oracle_suspect,2024/757 eff 2025-01-01 > cutoff 2024-12-05,
 26,1990/1341,core,,,OK
 26,1992/110,core,,,OK
 26,1992/147,suspect,oracle_suspect,1997/556 eff 1997-07-01 > cutoff 1997-06-11,
-26,1992/785,core,,,OK
+26,1992/785,suspect,oracle_suspect,oracle-check classifies divergences as ORACLE_STALE/EDITORIAL_CONVENTION,OK
 26,1995/1598,suspect,oracle_suspect,2007/684 eff 2007-06-25 > cutoff 2007-06-14,
 26,1996/158,suspect,oracle_suspect,2020/640 eff 2020-09-01 > cutoff 2020-08-20,
 26,2005/768,suspect,oracle_suspect,2026/116 eff 2026-09-01 > cutoff 2026-02-05,
@@ -3543,4 +3543,4 @@ amendments,statute_id,bucket,reason,detail,last_status
 166,2002/1290,core,,,OK
 169,1963/364,suspect,oracle_suspect,2004/639 eff 2005-01-01 > cutoff 2004-07-09,
 198,1734/4-000,suspect,oracle_suspect,2025/560 eff 2026-01-01 > cutoff 2025-06-27,
-238,1992/1535,core,,,OK
+238,1992/1535,suspect,oracle_suspect,large tax-law comparison/adjudication surface journaled; current oracle-check mostly editorial/oracle-stale,OK
