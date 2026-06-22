@@ -161,9 +161,8 @@ def _is_each_place_instruction(raw_text: str) -> bool:
 # Effective-date phrase family (AGENTS.md §2.4: previously 7 overlapping
 # regex variants of one phrase family; merged into 4 named patterns by
 # unifying the "effective" / "take effect" trigger words, which are
-# synonymous drafting verbs).
-#
-# whether the instruction is in force for the requested point-in-time.
+# synonymous drafting verbs). These extract the date when the instruction
+# is in force for the requested point-in-time.
 _EFFECTIVE_OR_TAKE_EFFECT_AFTER_RE = re.compile(
     r"(?:effective|take\s+effect)\s+(?:on\s+)?(?:the\s+date\s+that\s+is\s+)?"
     r"(?P<n>\d+)\s+(?P<unit>year|month|day)s?\s+after\s+"
