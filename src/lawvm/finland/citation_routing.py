@@ -123,6 +123,27 @@ def _looks_like_fi_meta_repeal(text: str) -> bool:
     return bool(_FI_META_REPEAL_RE.search(text))
 
 
+def _title_looks_like_fi_meta_repeal(source_title: str) -> bool:
+    """Return True for titles that repeal a prior amendment instrument.
+
+    Some Finnish acts carry only a bare enacting formula in the preamble while
+    the title itself says ``<parent> N §:n muuttamisesta annetun lain
+    kumoamisesta``. That is lifecycle evidence about the amending instrument,
+    not authorization to execute a repeal of ``N §`` against the parent statute.
+    """
+    lo = source_title.casefold()
+    if "muuttamisesta" not in lo:
+        return False
+    return any(
+        marker in lo
+        for marker in (
+            "annetun lain kumoamisesta",
+            "annetun asetuksen kumoamisesta",
+            "annetun valtioneuvoston asetuksen kumoamisesta",
+        )
+    )
+
+
 OP_KEYWORDS = {
     'muutetaan', 'muutettu', 'muuttaa', 'muuttanut', 'muutettava',
     'kumotaan', 'kumottu', 'kumoaa', 'kumonnut',
