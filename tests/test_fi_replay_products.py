@@ -1362,6 +1362,34 @@ def test_build_amendment_bundle_2022_972_2024_70_parses_plural_section_marker() 
     assert final_ops_by_target["40a"] == ["INSERT 6 luku 40a §"]
 
 
+def test_replay_xml_1960_282_1965_667_materializes_bare_lisataan_momentti_inserts() -> None:
+    replay = replay_xml_for_test("1960/282", mode="official_consolidation", quiet=True)
+    section_by_label = {
+        child.label: child
+        for child in replay.materialized_state.ir.children
+        if child.kind is IRNodeKind.SECTION
+    }
+
+    section_17_subsections = {
+        child.label: " ".join(irnode_to_text(child).split())
+        for child in section_by_label["17"].children
+        if child.kind is IRNodeKind.SUBSECTION
+    }
+    assert set(section_17_subsections) >= {"1", "2", "3", "4", "5"}
+    assert "Maata älköön 1 momentissa tarkoitetuin tavoin" in section_17_subsections["2"]
+    assert "Aikaisemmassa maanmittaustoimituksessa erotettu yhteinen tiealue" in section_17_subsections["4"]
+    assert "Uusjaossa voidaan aikaisemmassa maanmittaustoimituksessa erotetun muun yhteisen alueen" in section_17_subsections["5"]
+
+    section_44_subsections = {
+        child.label: " ".join(irnode_to_text(child).split())
+        for child in section_by_label["44"].children
+        if child.kind is IRNodeKind.SUBSECTION
+    }
+    assert set(section_44_subsections) == {"1", "2"}
+    assert "alle tuhat markkaa" in section_44_subsections["1"]
+    assert "Rajakaistan käyttöoikeuden menetyksestä" in section_44_subsections["2"]
+
+
 def test_replay_xml_2000_755_applies_2018_945_to_cited_pending_version_paths() -> None:
     replay = pinned_replay("2000/755", mode="legal_pit", quiet=True, as_of="2020-01-02")
 
