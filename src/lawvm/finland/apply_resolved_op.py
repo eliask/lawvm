@@ -27,6 +27,7 @@ from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.tree_ops import receipt_from_diff
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.finland.apply_replay_authorization import (
+    WRITE_RECEIPT_VIOLATION_FINDING_CODE,
     mint_apply_replay_authority,
     op_replay_authorized,
 )
@@ -113,7 +114,8 @@ FI_APPLY_OP_WRITE_HELPER = "fi.apply.resolved_op_write"
 # "violation") or whose bound→landed divergence is unexplained. This reuses the
 # registered apply-boundary touch-outside-target violation code (coordinated
 # with the mutation-boundary guard-liveness lane) rather than minting a new one.
-WRITE_RECEIPT_VIOLATION_FINDING_CODE = "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
+# Imported from apply_replay_authorization (above) so the producer and the
+# authority consumer share one literal and cannot silently diverge.
 
 
 @dataclass(frozen=True, slots=True)

@@ -66,6 +66,10 @@ _APPLY_REPLAY_SAFE_DEFAULT = "block_until_apply_replay_gate_is_satisfied"
 # already-load-bearing signal that a landed write touched outside its declared
 # footprint — i.e. the write does NOT stand under the conservative gate.
 APPLY_BOUNDARY_VIOLATION_FINDING_CODE = "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
+#: Same code under the apply-producer's name. ``apply_resolved_op`` imports this
+#: alias instead of defining its own literal, so the producer (write-receipt
+#: firewall) and the authority consumer can never silently drift apart.
+WRITE_RECEIPT_VIOLATION_FINDING_CODE = APPLY_BOUNDARY_VIOLATION_FINDING_CODE
 
 
 def mint_apply_replay_authority(
