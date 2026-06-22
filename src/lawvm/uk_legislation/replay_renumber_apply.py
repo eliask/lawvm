@@ -8,6 +8,7 @@ from typing import Protocol, cast
 from lawvm.core.ir import IRNodeKind, LegalAddress, LegalOperation
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.mutation_boundary import TreePath
+from lawvm.core.tree_ops import _NESTING_ORDER
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
@@ -206,15 +207,18 @@ class UKReplayRenumberApplyMixin:
         # or updates the eId lookup index, so the path may not be recoverable
         # from the mutable node afterward.
         old_path = replay._tree_path_for_mutable_node(source_node)
+        dest_admitted = _NESTING_ORDER.get(destination_kind, set())
         retained_children = [
             child
             for child in source_node.children
             if child.kind in (IRNodeKind.HEADING, IRNodeKind.NUM)
+            or _kind_str(child.kind) not in dest_admitted
         ]
         moved_children = [
             child
             for child in source_node.children
             if child.kind not in (IRNodeKind.HEADING, IRNodeKind.NUM)
+            and _kind_str(child.kind) in dest_admitted
         ]
         child = UKMutableNode(
             kind=uk_ir_node_kind(destination_kind),
