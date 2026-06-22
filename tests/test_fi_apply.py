@@ -5271,6 +5271,55 @@ def test_apply_whole_section_op_clean_replace_stays_quiet() -> None:
     )
 
 
+def test_apply_whole_section_op_crossheading_carrier_does_not_carry_old_heading() -> None:
+    """A source crossHeading before a section replacement blocks stale heading carry."""
+    master = _sec(
+        "11",
+        IRNode(kind=IRNodeKind.HEADING, text="Old heading"),
+        _sub("1", _content("old section body")),
+    )
+    amend = _sec("11", _sub("1", _content("Ylijohtajan ollessa estynyt toimii sijainen.")))
+    cross = IRNode(kind=IRNodeKind.CROSS_HEADING, text="Ylijohtajan sijainen")
+    state = _make_state(_body(master))
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="11"),
+        muutos_ir=amend,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="11",
+        target_chapter=None,
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("synthetic_complete_section",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
+        op_source=OperationSource(
+            statute_id="2099/11",
+            enacted="2099-01-01",
+            effective="2099-01-01",
+            expires="",
+            raw_text="muutetaan 11 § ja 11 §:n edellä oleva väliotsikko",
+        ),
+    )
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        (("section", "11"),),
+        amend,
+        cross,
+        _LEGAL_PIT,
+        "11 §",
+        base_ir=_body(master),
+    )
+
+    applied = _modified(state, result)
+    live = applied.find_section("11")
+    assert live is not None
+    assert [c.text for c in live.children if c.kind == IRNodeKind.HEADING] == []
+    assert irnode_to_text(live) == "Ylijohtajan ollessa estynyt toimii sijainen."
+
+
 def _paragraph_labels(sub: IRNode) -> List[str]:
     return [c.label for c in sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label is not None]
 

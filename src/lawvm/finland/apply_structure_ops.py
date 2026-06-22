@@ -494,6 +494,7 @@ def _prepare_section_root_payload_for_replay(
     live_sec: IRNode,
     rop: ResolvedOp | None,
     view: _StructureApplyView | None = None,
+    suppress_live_heading_carry: bool = False,
 ) -> IRNode:
     """Prepare a whole-section payload before it replaces an occupied live section."""
     payload = _align_section_payload_subsection_labels_from_slot_assignment(
@@ -505,7 +506,7 @@ def _prepare_section_root_payload_for_replay(
     has_heading = any(c.kind == IRNodeKind.HEADING for c in payload.children)
     if has_heading:
         prepared = payload
-    else:
+    elif not suppress_live_heading_carry:
         live_heading = next((c for c in live_sec.children if c.kind == IRNodeKind.HEADING), None)
         if live_heading is None:
             prepared = payload
@@ -520,6 +521,8 @@ def _prepare_section_root_payload_for_replay(
                 attrs=payload.attrs,
                 children=tuple(new_children),
             )
+    else:
+        prepared = payload
     prepared = _preserve_unstated_live_subsection_tail(
         prepared,
         live_sec=live_sec,
@@ -527,6 +530,57 @@ def _prepare_section_root_payload_for_replay(
         view=view,
     )
     return _apply_section_tail_policy_marker(prepared, rop=rop, view=view)
+
+
+def _cross_heading_conflicts_with_live_heading(cross_ir: IRNode | None, live_sec: IRNode) -> bool:
+    if cross_ir is None:
+        return False
+    cross_text = (cross_ir.text or "").strip()
+    if not cross_text:
+        return False
+    live_heading = next((c for c in live_sec.children if c.kind == IRNodeKind.HEADING), None)
+    if live_heading is None:
+        return False
+    return " ".join(cross_text.split()).casefold() != " ".join((live_heading.text or "").split()).casefold()
+
+
+def _source_claims_preceding_cross_heading(rop: ResolvedOp | None, target_label: str) -> bool:
+    if rop is None or rop.resolved_op_source is None:
+        return False
+    source_text = " ".join((rop.resolved_op_source.raw_text or "").casefold().split())
+    if "edellä oleva väliotsikko" not in source_text:
+        return False
+    target = _norm_num_token(target_label)
+    if not target:
+        return False
+    phrases = (
+        f"{target} §:n edellä oleva väliotsikko",
+        f"{target}§:n edellä oleva väliotsikko",
+        f"{target} § ja sen edellä oleva väliotsikko",
+        f"{target}§ ja sen edellä oleva väliotsikko",
+    )
+    return any(phrase in source_text for phrase in phrases)
+
+
+def _semantic_heading_tokens(text: str) -> tuple[str, ...]:
+    tokens: list[str] = []
+    for raw in text.split():
+        token = raw.strip(".,;:()[]{}§\"'`´-–—").casefold()
+        if len(token) > 3 and not token.isdigit():
+            tokens.append(token)
+    return tuple(tokens)
+
+
+def _cross_heading_overlaps_payload_opening(cross_ir: IRNode | None, payload: IRNode) -> bool:
+    if cross_ir is None:
+        return False
+    cross_tokens = set(_semantic_heading_tokens(cross_ir.text or ""))
+    if not cross_tokens:
+        return False
+    payload_tokens = set(_semantic_heading_tokens(irnode_to_text(payload))[:24])
+    if not payload_tokens:
+        return False
+    return len(cross_tokens & payload_tokens) / len(cross_tokens) >= 0.5
 
 
 def _create_part_and_move_siblings(
@@ -2597,6 +2651,11 @@ def _apply_whole_section_op(
             live_sec=live_merge_sec,
             rop=rop,
             view=view,
+            suppress_live_heading_carry=(
+                _source_claims_preceding_cross_heading(rop, _ts)
+                and _cross_heading_conflicts_with_live_heading(cross_ir, live_merge_sec)
+                and _cross_heading_overlaps_payload_opening(cross_ir, muutos_ir)
+            ),
         )
         new_ir = _tops.replace_at(state.ir, sec_path, muutos_ir)
         if _same_section_label(muutos_ir):
