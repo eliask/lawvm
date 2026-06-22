@@ -253,9 +253,16 @@ def replay_xml(
         # replay_authorized=True iff every landed receipt's boundary is explained
         # AND no apply-boundary touch-outside-target violation finding fired (the
         # exact conjunction that lets the writes stand today).
+        #
+        # SINGLE-SOURCED from the POST-filter ``findings`` — the SAME findings set
+        # carried on ``ReplayResult`` and re-derived by the certificate fallback
+        # (``_fi_apply_authority``). Minting from ``signals.findings`` (pre-filter)
+        # would let the carried authority diverge from the fallback whenever
+        # ``drop_materialized_payload_realization_false_positives`` dropped a
+        # finding, so the carrier↔fallback agreement would hold only by accident.
         products.apply_authority = aggregate_replay_authority(
             write_receipts=signals.write_receipts,
-            findings=signals.findings,
+            findings=findings,
         )
 
         # StageResult endgame WAIST #3: aggregate the per-op structural
