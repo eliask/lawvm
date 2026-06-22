@@ -112,6 +112,25 @@ def test_diagnose_treats_unblamed_high_overlap_truncation_as_source_pathology() 
     assert _diagnose(replay, oracle, None) == "SOURCE_PATHOLOGY"
 
 
+def test_diagnose_treats_replay_only_section_heading_as_editorial_convention() -> None:
+    # Real shape: 1993/1501 §41. Replay carries a heading facet in section text;
+    # the Finlex comparison surface omits it while preserving the body.
+    replay = "41 § Rahoituspalvelut Veroa ei suoriteta rahoituspalvelun myynnistä."
+    oracle = "41 § Veroa ei suoriteta rahoituspalvelun myynnistä."
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_does_not_drop_leading_substantive_sentence_as_heading() -> None:
+    replay = (
+        "41 § Rahoituspalvelut ovat verottomia. "
+        "Veroa ei suoriteta rahoituspalvelun myynnistä."
+    )
+    oracle = "41 § Veroa ei suoriteta rahoituspalvelun myynnistä."
+
+    assert _diagnose(replay, oracle, None) != "EDITORIAL_CONVENTION"
+
+
 def test_diagnose_treats_unblamed_tiny_base_text_corruption_as_source_pathology() -> None:
     # Real shape: 1966/232 chapter 4 section 14. The base XML witness has two
     # tiny OCR/source corruptions ("12 a 13", "toiston") while the oracle has

@@ -249,6 +249,10 @@ _SECTION_HEADING_RE = re.compile(
     r"^\d{1,4}(?:[a-zäöå]|\s[a-zäöå])?\s{0,10}§\s{0,20}([^\n]{0,240}?)(?:\s{2,}|\n|$)",
     re.IGNORECASE,
 )
+_LEADING_SECTION_NUM_RE = re.compile(
+    r"^\s*\d{1,4}(?:\s*[a-zäöå])?\s*§\s*",
+    re.IGNORECASE,
+)
 
 
 def _section_heading_alpha(text: str) -> str:
@@ -257,6 +261,53 @@ def _section_heading_alpha(text: str) -> str:
     if not match:
         return ""
     return re.sub(r"[^a-z0-9äöå]", "", match.group(1).lower())
+
+
+def _compact_alnum_offsets(text: str) -> tuple[str, list[int]]:
+    chars: list[str] = []
+    offsets: list[int] = []
+    for idx, char in enumerate(text):
+        if char.isalnum():
+            chars.append(char.lower())
+            offsets.append(idx)
+    return "".join(chars), offsets
+
+
+def _replay_reduces_to_oracle_by_dropping_leading_heading(
+    replay_text: str,
+    oracle_text: str,
+) -> bool:
+    """Detect replay-only section headings omitted from Finlex comparison text."""
+    replay_body = _LEADING_SECTION_NUM_RE.sub("", replay_text, count=1).strip()
+    oracle_body = _LEADING_SECTION_NUM_RE.sub("", oracle_text, count=1).strip()
+    if not replay_body or not oracle_body:
+        return False
+
+    replay_compact, replay_offsets = _compact_alnum_offsets(replay_body)
+    oracle_compact, _ = _compact_alnum_offsets(oracle_body)
+    if not replay_compact or not oracle_compact:
+        return False
+    if not replay_compact.endswith(oracle_compact):
+        return False
+
+    prefix_len = len(replay_compact) - len(oracle_compact)
+    if prefix_len < 4 or prefix_len > 120 or prefix_len > len(replay_offsets):
+        return False
+    prefix_end = (
+        replay_offsets[prefix_len]
+        if prefix_len < len(replay_offsets)
+        else replay_offsets[prefix_len - 1] + 1
+    )
+    dropped_prefix = replay_body[:prefix_end].strip(" \t\r\n-–—")
+    if not dropped_prefix:
+        return False
+    if any(mark in dropped_prefix for mark in ".;:!?"):
+        return False
+    if len(dropped_prefix.split()) > 12:
+        return False
+
+    remaining = replay_body[prefix_end:].strip()
+    return Levenshtein.ratio(_clean(remaining), _clean(oracle_body)) >= 0.999
 
 
 def _recodification_blame_frame_diagnosis(
@@ -891,6 +942,9 @@ def _diagnose(
     r_stripped = strip_editorial_annotations(r_text)
     o_stripped = strip_editorial_annotations(o_text)
     if Levenshtein.ratio(_clean(r_stripped), _clean(o_stripped)) >= 0.999:
+        return "EDITORIAL_CONVENTION"
+
+    if _replay_reduces_to_oracle_by_dropping_leading_heading(r_text, o_text):
         return "EDITORIAL_CONVENTION"
 
     if is_old_code_reference_marker(o_text):
