@@ -283,7 +283,13 @@ def test_same_pit_materialization_hash_stable_across_processes(statute_id: str) 
     # Force hash randomization ON in the child (belt-and-suspenders: a stored
     # set-order leak must surface even if the parent ran with a fixed seed).
     env["PYTHONHASHSEED"] = "random"
-    env.setdefault("LAWVM_CANONICAL_DATA_ROOT", "<DATA_ROOT>")
+    # The parent's resolved data root is already carried over via dict(os.environ);
+    # this setdefault is only a safety net, so fall back to the repo root (the same
+    # default the in-process resolver uses) rather than any developer-local path.
+    env.setdefault(
+        "LAWVM_CANONICAL_DATA_ROOT",
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    )
 
     proc = subprocess.run(
         [sys.executable, "-c", _CROSS_PROCESS_WORKER, statute_id],
