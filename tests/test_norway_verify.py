@@ -1330,6 +1330,71 @@ def test_primary_divergence_partition_records_prefix_suppression() -> None:
     assert partition.filtered[0].rule_id == "no_verify.prefix_descendant_suppressed"
 
 
+def test_primary_divergence_partition_does_not_suppress_sibling_paths() -> None:
+    # §2.9 paired negative for no_verify.prefix_descendant_suppressed:
+    # two divergences at sibling paths (neither is a strict prefix of the
+    # other) must both remain primary — no suppression fires. A regression
+    # that confused "sibling" with "parent-of" (e.g. via path label equality
+    # alone, ignoring the prefix structure) would now silently suppress
+    # one of them, masking a genuine divergence.
+    left = ConsistencyDivergence(
+        address=LegalAddress(path=(("section", "1"), ("subsection", "1"))),
+        divergence_type="MISMATCH",
+        ops_text="ops-1",
+        consolidated_text="cur-1",
+    )
+    right = ConsistencyDivergence(
+        address=LegalAddress(path=(("section", "1"), ("subsection", "2"))),
+        divergence_type="MISMATCH",
+        ops_text="ops-2",
+        consolidated_text="cur-2",
+    )
+
+    partition = _partition_primary_divergences([left, right])
+
+    assert partition.primary == (left, right)
+    assert partition.filtered == ()
+    # Belt-and-suspenders: the explicit rule_id is absent from any receipt.
+    assert all(
+        row.rule_id != "no_verify.prefix_descendant_suppressed"
+        for row in partition.filtered
+    )
+
+
+def test_primary_divergence_partition_does_not_pair_divergences_with_different_text() -> None:
+    # §2.9 paired negative for no_verify.chapter_relocation_pair: two
+    # divergences at different chapter paths but with DIFFERENT normalized
+    # text are not a relocation of the same provision — they are two distinct
+    # mismatches. A regression that paired paths-only (ignoring the
+    # equality-on-normalized-text requirement in _is_chapter_relocation_pair)
+    # would have silently suppressed both.
+    missing_in_replay = ConsistencyDivergence(
+        address=LegalAddress(
+            path=(("chapter", "1"), ("section", "5"))
+        ),
+        divergence_type="OPS_MISSING",
+        ops_text="Lovens formål er å sikre informative priser.",
+        consolidated_text="",
+    )
+    present_only_in_current = ConsistencyDivergence(
+        address=LegalAddress(
+            path=(("chapter", "2"), ("section", "5"))
+        ),
+        divergence_type="CONSOLIDATED_MISSING",
+        ops_text="",
+        consolidated_text="Et heilt anna formål som ikkje er ei omplassering.",
+    )
+
+    partition = _partition_primary_divergences([missing_in_replay, present_only_in_current])
+
+    # Both divergences remain primary; no relocation pair is filtered.
+    assert len(partition.primary) == 2
+    assert len(partition.filtered) == 0
+    assert all(
+        row.rule_id != "no_verify.chapter_relocation_pair" for row in partition.filtered
+    )
+
+
 def test_verify_no_against_current_ignores_section_heading_only_drift(tmp_path) -> None:
     base_xml = """<?xml version="1.0" encoding="utf-8"?>
 <html lang="nb">
