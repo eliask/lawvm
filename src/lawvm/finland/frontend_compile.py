@@ -1688,15 +1688,14 @@ def _infer_flat_reinstated_section_scope_from_base(
             part=cited_part,
             chapter=cited_chapter,
         ):
-            if (
-                op.target_chapter is None
-                or cited_chapter == op.target_chapter
-                or (
-                    scope_witness is not None
-                    and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
-                )
-            ):
-                return (cited_part, cited_chapter)
+            # The op's own ``target_chapter`` is already known to be uncorroborated
+            # in master (the find_section_path guard above returned for any chapter
+            # that actually holds this section), so a stale body-wrapper chapter —
+            # e.g. a heading-only "N luvun otsikko" op for a different chapter than
+            # the reinstated section's home — must not outrank the johto-confirmed,
+            # master-corroborated cited-repeal address regardless of the op's
+            # scope-witness source (carry_forward or explicit_chunk).
+            return (cited_part, cited_chapter)
     if base_ir is None:
         return None
     base_scope = _base_section_scope_for_unique_section(base_ir=base_ir, section_norm=section_norm)
