@@ -13,6 +13,8 @@ from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.ops import ResolvedOp
 
+_REALIZING_ACTION_TYPES = frozenset({"INSERT", "REPLACE"})
+
 
 def payload_realization_findings(
     *,
@@ -40,6 +42,8 @@ def _payload_realization_units(
 ) -> tuple[PayloadRealizationUnit, ...]:
     units: list[PayloadRealizationUnit] = []
     for index, rop in enumerate(resolved_ops):
+        if rop.resolved_action_type not in _REALIZING_ACTION_TYPES:
+            continue
         payload_ir = rop.resolved_amend_sub_ir() or rop.muutos_ir or rop.cross_ir
         if payload_ir is None:
             continue

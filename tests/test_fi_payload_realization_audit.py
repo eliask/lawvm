@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
 from lawvm.finland.payload_realization_audit import payload_realization_findings
 
 
-def _resolved(payload_text: str, *, op_id: str = "op1") -> ResolvedOp:
+def _resolved(payload_text: str, *, op_id: str = "op1", op_type: OpType = "REPLACE") -> ResolvedOp:
     return ResolvedOp(
         op=AmendmentOp(
             op_id=op_id,
-            op_type="REPLACE",
+            op_type=op_type,
             target_section="1",
             target_unit_kind="section",
         ),
@@ -23,7 +23,7 @@ def _resolved(payload_text: str, *, op_id: str = "op1") -> ResolvedOp:
         amend_sub_ir=None,
         target_norm="1",
         op_id=op_id,
-        _op_type_seed="REPLACE",
+        _op_type_seed=op_type,
     )
 
 
@@ -68,6 +68,25 @@ def test_payload_realization_audit_ignores_unclaimed_source_body_context() -> No
     findings = payload_realization_findings(
         resolved_ops=(),
         after_ir=_after("The parent statute body is unchanged."),
+        amendment_id="2000/1",
+    )
+
+    assert findings == ()
+
+
+def test_payload_realization_audit_ignores_non_realizing_actions() -> None:
+    findings = payload_realization_findings(
+        resolved_ops=(
+            _resolved(
+                "Repealed source text should disappear from the folded statute.",
+                op_type="REPEAL",
+            ),
+            _resolved(
+                "Renumbered source text is not a new realization payload.",
+                op_type="RENUMBER",
+            ),
+        ),
+        after_ir=_after("The folded statute no longer contains those source texts."),
         amendment_id="2000/1",
     )
 
