@@ -29,6 +29,7 @@ from lawvm.finland.ops import (
     _lo_with_path_update,
     _op_target_subsection_label,
 )
+from lawvm.finland.scope import _johtolause_explicitly_binds_chapter_section
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 
@@ -1250,6 +1251,18 @@ def _maybe_retarget_live_section(
             if sibling_consensus_live_scope is not None:
                 retarget_scope_source = "close_live_sibling_consensus"
     if retarget_scope_source is None:
+        return PhaseResult(output=result)
+    if (
+        retarget_scope_source == "explicit_chunk"
+        and request.target_chapter
+        and _johtolause_explicitly_binds_chapter_section(
+            request.johto,
+            request.target_chapter,
+            request.target_norm,
+        )
+    ):
+        # Source-owned chapter chunks beat broad amendment-body wrapper
+        # membership when they explicitly bind this section.
         return PhaseResult(output=result)
     body_scope = request.source_model.source_body_scope_for_section_target(request.target_norm)
     body_part = None

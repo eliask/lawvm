@@ -3686,6 +3686,97 @@ def test_compile_group_retargets_explicit_chunk_section_to_body_backed_live_part
     assert retarget[0].detail["scope_source"] == "explicit_chunk"
 
 
+def test_compile_group_does_not_retarget_explicit_johtolause_chunk_to_body_wrapper_chapter() -> None:
+    def _section(label: str, text: str = "") -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
+
+    def _chapter(label: str, *sections: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.CHAPTER, label=label, children=tuple(sections))
+
+    def _part(label: str, *children: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.PART, label=label, children=tuple(children))
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                _part(
+                    "2",
+                    _chapter("13a", _section("146a", "live 146a")),
+                    _chapter("14", _section("147", "old live 147")),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <part>
+            <num>II OSA</num>
+            <chapter>
+              <num>14 luku</num>
+              <section>
+                <num>147 §</num>
+                <content><p>payload</p></content>
+              </section>
+            </chapter>
+          </part>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_id="replace_147_explicit_13a_chunk",
+        op_type="REPLACE",
+        target_section="147",
+        target_unit_kind="section",
+        target_part="2",
+        target_chapter="13a",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
+            resolved_chapter="13a",
+        ),
+        source_statute="2016/773",
+        lo=LegalOperation(
+            op_id="replace_147_explicit_13a_chunk",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("part", "2"), ("chapter", "13a"), ("section", "147"))),
+            payload=None,
+        ),
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "147",
+        "13a",
+        "2",
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "muutetaan 13 a luvun otsikko, 146 a ja 147 §, 14 luvun otsikko",
+        get_replay_profile("legal_pit"),
+        None,
+        None,
+    )
+
+    assert len(result.output) == 1
+    rop = result.output[0]
+    assert rop.resolved_target_scope_view.target_part == "2"
+    assert rop.resolved_target_scope_view.target_chapter == "13a"
+    assert rop.scope_confidence is not None
+    assert rop.scope_confidence.source == "explicit_chunk"
+    assert rop.scope_confidence.tag == "chapter_scope_from_explicit_chunk"
+    assert not [
+        finding
+        for finding in result.findings()
+        if finding.kind == "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET"
+    ]
+
+
 def test_compile_group_retargets_explicit_chunk_section_from_stale_part_only_scope_to_live_part_and_chapter() -> None:
     def _section(label: str, text: str = "") -> IRNode:
         return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)

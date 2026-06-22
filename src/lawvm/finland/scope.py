@@ -277,20 +277,36 @@ def _duplicate_section_labels(master: "ReplayState") -> Set[str]:
 def chapter_chunks_from_johtolause(johto: str) -> List[Tuple[str, str]]:
     # johto is already Zs-normalized by _normalize_fi_parse_text upstream.
     text = re.sub(r"\s+", " ", johto or "")
+    citation_cut_re = re.compile(r"\bsellais(?:ena|ina)\s+kuin\b", flags=re.I)
+
+    def _match_is_inside_prior_law_citation(match: re.Match[str]) -> bool:
+        prefix = text[: match.start()]
+        citation = None
+        for citation_match in citation_cut_re.finditer(prefix):
+            citation = citation_match
+        if citation is None:
+            return False
+        last_scope_verb_end = 0
+        for verb_match in _FI_SCOPE_VERB_RE.finditer(prefix):
+            last_scope_verb_end = verb_match.end()
+        return citation.start() >= last_scope_verb_end
+
     matches = list(
-        re.finditer(
-            r"((?:\d+\s*,\s*)*\d+(?:\s+ja\s+\d+)?)\s+lu(?:ku|vun)\b",
+        match
+        for match in re.finditer(
+            r"((?:\d+\s*[a-z]?\s*,\s*)*\d+\s*[a-z]?(?:\s+ja\s+\d+\s*[a-z]?)?)\s+lu(?:ku|vun)\b",
             text,
             flags=re.I,
         )
+        if not _match_is_inside_prior_law_citation(match)
     )
     chunks: List[Tuple[str, str]] = []
     for idx, match in enumerate(matches):
         cluster = match.group(1)
         labels = [
-            token.strip().lower()
+            _norm_num_token(token.strip().lower())
             for token in re.split(r"\s*,\s*|\s+ja\s+", cluster)
-            if re.fullmatch(r"\d+[a-z]?", token.strip(), flags=re.I)
+            if re.fullmatch(r"\d+[a-z]?", _norm_num_token(token.strip()), flags=re.I)
         ]
         if not labels:
             continue
@@ -313,6 +329,9 @@ def chapter_chunks_from_johtolause(johto: str) -> List[Tuple[str, str]]:
             )
             if verb_boundary is not None:
                 end = start + verb_boundary.start()
+        citation_boundary = citation_cut_re.search(text[start:end])
+        if citation_boundary is not None:
+            end = start + citation_boundary.start()
         chunks.append((labels[-1], text[start:end]))
     return chunks
 
@@ -325,7 +344,11 @@ def _chapter_match_is_repeal_target(text: str, match: "re.Match[str]") -> bool:
     scope) and the nearest governing amendment verb before it is ``kumotaan``,
     with no intervening scope verb (``muutetaan``/``lisätään``/``siirretään``).
     """
-    if not re.match(r"\d+(?:\s*,\s*\d+|\s+ja\s+\d+)*\s+luku\b", text[match.start():], re.I):
+    if not re.match(
+        r"\d+\s*[a-z]?(?:\s*,\s*\d+\s*[a-z]?|\s+ja\s+\d+\s*[a-z]?)*\s+luku\b",
+        text[match.start():],
+        re.I,
+    ):
         return False
     prefix = text[: match.start()]
     last_verb = None
@@ -761,6 +784,65 @@ def _unique_base_section_chapter(
     return next(iter(chapters))
 
 
+def _chapter_chunk_mentions_section_label(chunk: str, section_label: str) -> bool:
+    norm = _norm_num_token(section_label)
+    m = re.fullmatch(r"(\d+)([a-z]?)", norm, flags=re.I)
+    if not m:
+        return re.search(rf"\b{re.escape(section_label)}\s*§", chunk, flags=re.I) is not None
+
+    base, suffix = m.groups()
+
+    def _genitive_reference_is_whole_section(match: re.Match[str]) -> bool:
+        tail = chunk[match.end() : match.end() + 40]
+        return not re.match(
+            r"\s+\d+(?:\s+ja\s+\d+)?\s+(?:moment\w*|kohta\b)",
+            tail,
+            flags=re.I,
+        )
+
+    # Whole-section carry-forward must not latch onto subsection-qualified
+    # mentions like ``1 §:n 4 momentti`` when choosing the governing chapter
+    # chunk for a later plain ``1 §`` op.
+    direct_pat = (
+        rf"\b{re.escape(base)}\s*{re.escape(suffix)}\s*§(?!\s*:n?\b)"
+        if suffix
+        else rf"\b{re.escape(base)}\s*§(?!\s*:n?\b)"
+    )
+    if re.search(direct_pat, chunk, flags=re.I):
+        return True
+    genitive_pat = (
+        rf"\b{re.escape(base)}\s*{re.escape(suffix)}\s*§:n?\b"
+        if suffix
+        else rf"\b{re.escape(base)}\s*§:n?\b"
+    )
+    for match in re.finditer(genitive_pat, chunk, flags=re.I):
+        if _genitive_reference_is_whole_section(match):
+            return True
+
+    if suffix:
+        # Handles chains like "5 a ja 8-10 §" where only the terminal label
+        # carries the section sign.
+        if re.search(
+            rf"\b{re.escape(base)}\s*{re.escape(suffix)}\b(?=[^§]{{0,40}}§)",
+            chunk,
+            flags=re.I,
+        ):
+            return True
+        return False
+
+    wanted = int(base)
+    for a, b, c in re.findall(r"(\d+)\s*[–-]\s*(\d+)(?:\s+ja\s+(\d+))?\s*§", chunk, flags=re.I):
+        lo_, hi = sorted((int(a), int(b)))
+        if lo_ <= wanted <= hi:
+            return True
+        if c and wanted == int(c):
+            return True
+    for a, b in re.findall(r"(\d+)\s+ja\s+(\d+)\s*§", chunk, flags=re.I):
+        if wanted in {int(a), int(b)}:
+            return True
+    return False
+
+
 def _chapter_chunk_mentions_lo(chunk: str, lo: _LegalOperation) -> bool:
     pd = _lo_path_dict(lo)
     sec_label = str(pd.get("section", ""))
@@ -803,64 +885,6 @@ def _chapter_chunk_mentions_lo(chunk: str, lo: _LegalOperation) -> bool:
                     return True
         return False
 
-    def _section_in_chunk(target: str) -> bool:
-        norm = _norm_num_token(target)
-        m = re.fullmatch(r"(\d+)([a-z]?)", norm, flags=re.I)
-        if not m:
-            return re.search(rf"\b{re.escape(target)}\s*§", chunk, flags=re.I) is not None
-
-        base, suffix = m.groups()
-
-        def _genitive_reference_is_whole_section(match: re.Match[str]) -> bool:
-            tail = chunk[match.end() : match.end() + 40]
-            return not re.match(
-                r"\s+\d+(?:\s+ja\s+\d+)?\s+(?:moment\w*|kohta\b)",
-                tail,
-                flags=re.I,
-            )
-
-        # Whole-section carry-forward must not latch onto subsection-qualified
-        # mentions like ``1 §:n 4 momentti`` when choosing the governing chapter
-        # chunk for a later plain ``1 §`` op.
-        direct_pat = (
-            rf"\b{re.escape(base)}\s*{re.escape(suffix)}\s*§(?!\s*:n?\b)"
-            if suffix
-            else rf"\b{re.escape(base)}\s*§(?!\s*:n?\b)"
-        )
-        if re.search(direct_pat, chunk, flags=re.I):
-            return True
-        genitive_pat = (
-            rf"\b{re.escape(base)}\s*{re.escape(suffix)}\s*§:n?\b"
-            if suffix
-            else rf"\b{re.escape(base)}\s*§:n?\b"
-        )
-        for match in re.finditer(genitive_pat, chunk, flags=re.I):
-            if _genitive_reference_is_whole_section(match):
-                return True
-
-        if suffix:
-            # Handles chains like "5 a ja 8-10 §" where only the terminal label
-            # carries the section sign.
-            if re.search(
-                rf"\b{re.escape(base)}\s*{re.escape(suffix)}\b(?=[^§]{{0,40}}§)",
-                chunk,
-                flags=re.I,
-            ):
-                return True
-            return False
-
-        wanted = int(base)
-        for a, b, c in re.findall(r"(\d+)\s*[–-]\s*(\d+)(?:\s+ja\s+(\d+))?\s*§", chunk, flags=re.I):
-            lo_, hi = sorted((int(a), int(b)))
-            if lo_ <= wanted <= hi:
-                return True
-            if c and wanted == int(c):
-                return True
-        for a, b in re.findall(r"(\d+)\s+ja\s+(\d+)\s*§", chunk, flags=re.I):
-            if wanted in {int(a), int(b)}:
-                return True
-        return False
-
     if special == "heading":
         return re.search(rf"\b{sec}\s*§:n?\s+otsikko\b", chunk, flags=re.I) is not None
     if special == "intro":
@@ -881,7 +905,7 @@ def _chapter_chunk_mentions_lo(chunk: str, lo: _LegalOperation) -> bool:
         if re.search(rf"\b{sec}\s*§", chunk, flags=re.I) and _moment_in_chunk(int(subsec)):
             return True
         return re.search(rf"\b{sec}\s*§:n?\s+{subsec}(?:\s+ja\s+\d+)?\s+moment", chunk, flags=re.I) is not None
-    return _section_in_chunk(sec_label)
+    return _chapter_chunk_mentions_section_label(chunk, sec_label)
 
 
 # --- shared source-plane descendant-scope recognizer (scope.py owner) ---------
@@ -999,6 +1023,13 @@ def _johtolause_explicitly_binds_chapter_section(johto: str, chapter: str, secti
     chapter_pat = _chapter_pat(str(chapter))
     section_pat = _section_pat(str(section))
     section_list_pat = _section_list_pat(str(section))
+    chapter_norm = _norm_num_token(str(chapter)).removesuffix("luku")
+    for chunk_chapter, chunk in chapter_chunks_from_johtolause(text):
+        if (
+            _norm_num_token(chunk_chapter).removesuffix("luku") == chapter_norm
+            and _chapter_chunk_mentions_section_label(chunk, str(section))
+        ):
+            return True
     if (
         re.search(
             # Negative lookahead: "X luvun otsikko" means only the chapter heading
