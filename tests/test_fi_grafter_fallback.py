@@ -985,11 +985,15 @@ def test_apply_ops_to_tree_records_resolved_op_apply_audit(monkeypatch: pytest.M
             "detail": {
                 "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
                 "op_id": "replace_7",
+                "action_type": "REPLACE",
                 "description": "REPLACE 7 §",
                 "target_unit_kind": "section",
                 "target_norm": "7",
                 "target_chapter": "",
                 "target_part": "",
+                "target_paragraph": "",
+                "target_item": "",
+                "target_special": "",
                 "disposition": "APPLIED",
             },
         }

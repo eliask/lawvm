@@ -1688,6 +1688,16 @@ def _infer_flat_reinstated_section_scope_from_base(
             part=cited_part,
             chapter=cited_chapter,
         ):
+            source_chunk_target_absent = (
+                op.target_chapter is not None
+                and scope_witness is not None
+                and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
+                and master.find_section_path(section_norm, op.target_chapter, op.target_part)
+                is None
+            )
+            cited_repeal_target_present = (
+                master.find_section_path(section_norm, cited_chapter, cited_part) is not None
+            )
             if (
                 op.target_chapter is None
                 or cited_chapter == op.target_chapter
@@ -1695,6 +1705,7 @@ def _infer_flat_reinstated_section_scope_from_base(
                     scope_witness is not None
                     and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
                 )
+                or (source_chunk_target_absent and cited_repeal_target_present)
             ):
                 return (cited_part, cited_chapter)
     if base_ir is None:
