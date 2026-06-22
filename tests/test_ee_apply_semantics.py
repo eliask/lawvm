@@ -10946,3 +10946,73 @@ def test_replace_section_item_recovers_inline_singleton_subsection_item() -> Non
     assert subsection.text == "Inline list is: 19) old previous; 20) new item; 21) old next."
     assert subsection.attrs["source_family"] == "ee_inline_item_replace_singleton_subsection"
     assert [item.kind for item in adjudications] == ["ee_inline_item_replace_singleton_subsection"]
+
+
+def test_ee_phrase_forms_returns_assistent_loanword_family() -> None:
+    """Synthetic unit isolating the ``-assistent`` loanword agent noun family.
+    Corpus motivation: ``120092023001`` §1 item 1 amends
+    ``Sekretäri- ja kontoritöö erialade riiklikppekava`` via the
+    source-backed rename ``bürootöö → bürooassistent vastavas käändes``.
+    Pre-fix the new noun dropped to nominative-only because no decay
+    family existed for the ``-ent`` loanword agent suffix.
+    """
+    from lawvm.estonia.text_morphology import _ee_phrase_forms
+
+    forms = _ee_phrase_forms("bürooassistent")
+    assert forms is not None
+    assert forms["sg_nom"] == "bürooassistent"
+    assert forms["sg_gen"] == "bürooassistendi"
+    assert forms["sg_part"] == "bürooassistenti"
+    assert forms["sg_ine"] == "bürooassistendis"
+    assert forms["sg_all"] == "bürooassistendile"
+    assert forms["sg_ade"] == "bürooassistendil"
+    assert forms["sg_abl"] == "bürooassistendilt"
+    assert forms["sg_trn"] == "bürooassistendiks"
+    assert forms["sg_ess"] == "bürooassistentina"
+    assert forms["pl_nom"] == "bürooassistendid"
+
+
+def test_ee_phrase_forms_returns_long_vowel_oo_family() -> None:
+    """Synthetic unit isolating the ``-öö`` long-vowel noun family.
+    Corpus motivation: ``120092023001`` source-backed rename
+    ``bürootöö → bürooassistent vastavas käändes``. ``bürootöö`` shares
+    the Estonian class-II long-vowel paradigm where sg_nom == sg_gen
+    (no vowel drop, no consonant gradation); the ambiguity-genitive
+    sanity check relies on this double-collapse.
+    """
+    from lawvm.estonia.text_morphology import _ee_phrase_forms
+
+    forms = _ee_phrase_forms("bürootöö")
+    assert forms is not None
+    assert forms["sg_nom"] == "bürootöö"
+    assert forms["sg_gen"] == "bürootöö"
+    assert forms["sg_part"] == "bürootööd"
+    assert forms["sg_ine"] == "bürootöös"
+    assert forms["sg_ill"] == "bürootöösse"
+    assert forms["sg_all"] == "bürootööle"
+    assert forms["sg_com"] == "bürootööga"
+    # Same family holds for the bare-long-vowel ``töö`` head noun.
+    too = _ee_phrase_forms("töö")
+    assert too is not None
+    assert too["sg_nom"] == "töö"
+    assert too["sg_gen"] == "töö"
+    assert too["sg_part"] == "tööd"
+
+
+def test_case_inflected_text_replace_uses_assistent_genitive_on_modifier_context() -> None:
+    """Case-aware rewrite of ``bürootöö -> bürooassistent`` must produce the
+    genitive ``bürooassistendi`` in a genitive-modifier context
+    (e.g., ``bürooassistendi erialappekava üldosa``), because the new
+    noun's sg_gen splits away from sg_nom while the old noun's sg_gen
+    collapses onto sg_nom.
+
+    This exercises the ``_ee_replace_ambiguous_genitive_phrase`` path
+    through ``_ee_apply_text_replace_value``.
+    """
+    replaced = _ee_apply_text_replace_value(
+        "Bürootöö erialappekava üldosa",
+        "bürootöö",
+        "bürooassistent",
+        case_inflected=True,
+    )
+    assert replaced == "Bürooassistendi erialappekava üldosa"
