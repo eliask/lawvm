@@ -9,6 +9,8 @@ from lxml import etree
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalAddress
+from lawvm.core.ir import ProvisionTimeline
+from lawvm.core.ir import ProvisionVersion
 from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.tools.divergence_heuristics import (
@@ -42,6 +44,7 @@ from lawvm.tools.oracle_check import (
     _el_text,
     _extract_attachment_info_ir,
     _ir_node_has_repeal_placeholder,
+    _replay_has_active_tombstoned_ancestor,
     main,
     _print_corpus_summary,
     _print_statute_summary,
@@ -187,6 +190,41 @@ def test_diagnose_treats_bare_oracle_stub_as_editorial_convention() -> None:
     oracle = "5 a §"
 
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_replay_tombstoned_ancestor_marks_oracle_descendant_stale() -> None:
+    chapter = LegalAddress(path=(("part", "2"), ("chapter", "14a")))
+    master = SimpleNamespace(
+        products=SimpleNamespace(
+            materialization_spec=SimpleNamespace(as_of="2026-01-01", query_type="governing"),
+            timelines={
+                chapter: ProvisionTimeline(
+                    address=chapter,
+                    versions=[
+                        ProvisionVersion(
+                            effective="2004-01-01",
+                            enacted="2003-12-30",
+                            content=IRNode(kind=IRNodeKind.CHAPTER, label="14a"),
+                        ),
+                        ProvisionVersion(
+                            effective="2025-01-01",
+                            enacted="2024-06-28",
+                            content=None,
+                        ),
+                    ],
+                )
+            },
+        )
+    )
+
+    assert _replay_has_active_tombstoned_ancestor(
+        master,
+        "part:2/chapter:14a/section:149c",
+    )
+    assert not _replay_has_active_tombstoned_ancestor(
+        master,
+        "part:2/chapter:14/section:149c",
+    )
 
 
 def test_diagnose_treats_legacy_roman_division_heading_as_editorial_convention() -> None:

@@ -32,7 +32,9 @@ if TYPE_CHECKING:
 import Levenshtein
 from lxml import etree
 
+from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.timeline import select_active_version
 
 from lawvm.finland.oracle_comparison import (
     is_old_code_reference_marker,
@@ -1025,6 +1027,52 @@ def _diagnose(
     return "UNKNOWN"
 
 
+def _section_key_to_legal_address(section_key: str) -> LegalAddress | None:
+    parts: list[tuple[str, str]] = []
+    for raw_part in section_key.split("/"):
+        if ":" not in raw_part:
+            return None
+        kind, label = raw_part.split(":", 1)
+        if not kind or not label:
+            return None
+        parts.append((kind, label))
+    if not parts:
+        return None
+    return LegalAddress(path=tuple(parts))
+
+
+def _replay_has_active_tombstoned_ancestor(master: object, section_key: str) -> bool:
+    """Return True when replay has actively repealed an ancestor of ``section_key``.
+
+    Oracle section extraction can expose stale descendant sections even after
+    replay has a later chapter/container tombstone. That is oracle topology
+    staleness, not a missing replay descendant.
+    """
+    address = _section_key_to_legal_address(section_key)
+    if address is None or len(address.path) < 2:
+        return False
+    products = getattr(master, "products", None)
+    timelines = getattr(products, "timelines", None)
+    if not timelines:
+        return False
+    spec = getattr(products, "materialization_spec", None)
+    as_of = str(getattr(spec, "as_of", "") or "")
+    if not as_of:
+        return False
+    query_type = getattr(spec, "query_type", "governing")
+    if query_type not in {"governing", "in_force"}:
+        query_type = "governing"
+    for depth in range(1, len(address.path)):
+        ancestor = LegalAddress(path=address.path[:depth])
+        timeline = timelines.get(ancestor)
+        if timeline is None:
+            continue
+        selected = select_active_version(timeline, as_of, query_type=query_type)
+        if selected is not None and selected.content is None:
+            return True
+    return False
+
+
 def _batch_pre_blame_sections(
     sid: str, blame_sources: list[str], mode: Literal["official_consolidation", "legal_pit"]
 ) -> dict[str, PreBlameSnapshot]:
@@ -1286,6 +1334,8 @@ def _classify_statute(
                         elif mode == "legal_pit" and blame_title_indicates_temporary_amendment(
                             str(blame_op.get("source_title", ""))
                         ):
+                            diag = "ORACLE_STALE"
+                        elif _replay_has_active_tombstoned_ancestor(master, key):
                             diag = "ORACLE_STALE"
                 else:
                     diag = "EXTRA"
