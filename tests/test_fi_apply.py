@@ -117,6 +117,7 @@ from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.strict_profile import default_finland_strict_profile
 from lawvm.finland.standalone_targets import (
     StandaloneSectionTarget,
+    build_standalone_section_targets,
     normalize_standalone_section_target,
 )
 from tests.corpus_pin_helpers import pinned_replay
@@ -212,6 +213,38 @@ def test_standalone_section_target_is_normalized_typed_record() -> None:
     assert target == StandaloneSectionTarget(part="iv", chapter="6", label="23")
     with pytest.raises(ValueError, match="label must be non-empty"):
         StandaloneSectionTarget(part=None, chapter="6", label="")
+
+
+def test_build_standalone_section_targets_does_not_let_unscoped_replace_shadow_new_chapter_child() -> None:
+    """Unscoped REPLACE is too weak to strip same-label children from a fresh chapter."""
+    unscoped_replace = AmendmentOp(
+        op_id="replace_2",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="2",
+    )
+    unscoped_insert = AmendmentOp(
+        op_id="insert_3",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="3",
+    )
+    scoped_replace = AmendmentOp(
+        op_id="replace_ch5_2",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_part="5",
+        target_chapter="5",
+        target_section="2",
+    )
+
+    assert build_standalone_section_targets([unscoped_replace]) == frozenset()
+    assert build_standalone_section_targets([unscoped_insert]) == frozenset(
+        {StandaloneSectionTarget(part=None, chapter=None, label="3")}
+    )
+    assert build_standalone_section_targets([scoped_replace]) == frozenset(
+        {StandaloneSectionTarget(part="5", chapter="5", label="2")}
+    )
 
 
 def test_replay_state_section_path_cache_is_state_local() -> None:

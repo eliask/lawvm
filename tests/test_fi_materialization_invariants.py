@@ -1001,6 +1001,11 @@ class TestNoDuplicatesInPIT:
             for child in root.children
             if child.kind is IRNodeKind.PART and child.label == "4"
         )
+        part_5 = next(
+            child
+            for child in root.children
+            if child.kind is IRNodeKind.PART and child.label == "5"
+        )
         part_6 = next(
             child
             for child in root.children
@@ -1059,6 +1064,26 @@ class TestNoDuplicatesInPIT:
 
         assert chapter_1_part_3_labels == ["1", "2", "3", "4"]
         assert {"5", "6", "7"} <= set(chapter_2_part_3_labels)
+
+        chapter_5_part_5 = next(
+            child
+            for child in part_5.children
+            if child.kind is IRNodeKind.CHAPTER and child.label == "5"
+        )
+        chapter_5_part_5_sections = [
+            child
+            for child in chapter_5_part_5.children
+            if child.kind is IRNodeKind.SECTION
+        ]
+        assert [child.label for child in chapter_5_part_5_sections] == [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+        ]
+        section_2 = next(child for child in chapter_5_part_5_sections if child.label == "2")
+        assert "Väyläviraston tiedonsaantioikeus" in irnode_to_text(section_2)
 
     def test_2017_519_no_root_section_10_after_jolloin_renumber_insert(
         self,
