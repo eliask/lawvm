@@ -198,6 +198,47 @@ def test_restructure_relabel_snapshot_shadows_label_only_section_shell() -> None
     assert records[0].witness_rule_id == FI_TIMELINE_RESTRUCTURE_RELABEL_SHELL_SHADOW_COLLAPSE_RULE_ID
 
 
+def test_restructure_relabel_snapshot_does_not_shadow_repeal_placeholder() -> None:
+    address = LegalAddress(path=(("part", "2"), ("chapter", "22a"), ("section", "218")))
+    source = OperationSource(statute_id="2016/773", enacted="2016-09-09")
+    restructure_snapshot = ProvisionVersion(
+        effective="2017-01-01",
+        enacted="2016-09-09",
+        variant_kind="permanent",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="218",
+            text="old carried body",
+            attrs={"lawvm_restructure_relabel_section_snapshot": "1"},
+        ),
+        source=source,
+    )
+    repeal_placeholder = ProvisionVersion(
+        effective="2017-01-01",
+        enacted="2016-09-09",
+        variant_kind="permanent",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="218",
+            attrs={"lawvm_repeal_placeholder": "1"},
+            children=(IRNode(kind=IRNodeKind.NUM, text="218 §"),),
+        ),
+        source=source,
+    )
+    timelines = {
+        address: ProvisionTimeline(
+            address=address,
+            versions=[restructure_snapshot, repeal_placeholder],
+        )
+    }
+
+    deduped, records = dedupe_finland_timelines(timelines)
+
+    assert deduped[address].versions == [repeal_placeholder]
+    assert len(records) == 1
+    assert records[0].witness_rule_id == FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID
+
+
 def test_semantic_text_cache_reuses_content_hash(monkeypatch) -> None:
     calls = 0
     original_irnode_to_text = timeline_version_dedupe.irnode_to_text

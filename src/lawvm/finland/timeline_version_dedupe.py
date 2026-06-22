@@ -134,6 +134,8 @@ def _is_section_label_only_shell(version: ProvisionVersion) -> bool:
     content = version.content
     if not isinstance(content, IRNode) or content.kind is not IRNodeKind.SECTION:
         return False
+    if content.attrs.get("lawvm_repeal_placeholder") == "1":
+        return False
     if content.text.strip():
         return False
     for child in content.children:
