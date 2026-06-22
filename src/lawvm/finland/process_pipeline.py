@@ -236,6 +236,7 @@ def process_muutoslaki_resolved(
     write_audits_out = process_call.write_audits_out
     write_receipts_out = process_call.write_receipts_out
     migration_events_out = process_call.migration_events_out
+    canonical_op_stages_out = process_call.canonical_op_stages_out
     runtime = build_process_runtime(process_call)
     amendment_temporal_events = runtime.amendment_temporal_events
     process_findings = runtime.process_findings
@@ -560,6 +561,7 @@ def process_muutoslaki_resolved(
                 source_ref=amendment_id,
                 source_title=source_title,
                 target_statute=ctx.id,
+                canonical_op_stage_out=canonical_op_stages_out,
             )
         resolved = compile_result.output
 

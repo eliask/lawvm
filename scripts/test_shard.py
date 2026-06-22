@@ -390,6 +390,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_branch_projection.py",
         "test_canonical_intent_kinds.py",
         "test_fi_canonical_op_stage.py",
+        "test_fi_canonical_op_stage_carrier.py",
         "test_fi_clause_ast.py",
         "test_fi_coordination_parser.py",
         "test_core_locator.py",

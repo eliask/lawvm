@@ -55,7 +55,10 @@ from lawvm.finland.replay_product_assembly import (
     ReplayProductAssemblyRequest,
     assemble_replay_products,
 )
-from lawvm.finland.replay_products import aggregate_structural_stage
+from lawvm.finland.replay_products import (
+    aggregate_canonical_op_stage,
+    aggregate_structural_stage,
+)
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, resolve_replay_xml_request
 from lawvm.finland.statute import OracleSelectorInfo, ReplayResult
 
@@ -261,6 +264,22 @@ def replay_xml(
         products.structural_stage = aggregate_structural_stage(
             materialized_ir=products.materialized_state.ir,
             write_receipts=tuple(signals.write_receipts),
+        )
+
+        # StageResult endgame WAIST #6: aggregate the per-amendment canonical-op
+        # compile accounts over every amendment of this replay. Each
+        # ``compile_amendment_ops`` already builds one canonical-op ``StageResult``
+        # and APPENDS it to ``signals.canonical_op_stages`` via the
+        # ``canonical_op_stages_out`` sink (threaded through the process sinks).
+        # The aggregate is a pure fold over those per-amendment accounts (union
+        # candidate-op coverage partition + the union of the per-amendment compile
+        # declines). Carried on ReplayProducts so the certificate dossier routes
+        # the canonical-op stage into a per-stage account subroot instead of
+        # re-deriving it from the stage-tagless union findings. FAITHFUL: the
+        # carried accounts ARE the producer's own stages, not a reconstruction.
+        # The decline VERDICT stays on the existing #6 single-channel.
+        products.canonical_op_stage = aggregate_canonical_op_stage(
+            tuple(signals.canonical_op_stages),
         )
 
         return ReplayResult(

@@ -202,6 +202,22 @@ class ReplayProducts:
     # channel (``apply_structure_ops``); this carrier is the additive checkable
     # account.
     structural_stage: Optional["StageResult[IRNode]"] = None
+    # StageResult-endgame WAIST #6: the per-replay CANONICAL-OPERATION compile
+    # account aggregated over every amendment's ``compile_amendment_ops`` decline
+    # partition. Each amendment already builds one canonical-op ``StageResult``
+    # (``build_canonical_op_stage``: coverage ``unit="candidate_ops"``, owned =
+    # emitted ops, violation = declined ops; one blocking ``unowned_violation``
+    # residual per decline — the same account that backs the typed-residual decline
+    # single-channel). This field carries the UNION fold over those per-amendment
+    # accounts (captured FAITHFULLY off the producer via the
+    # ``canonical_op_stages_out`` sink, NOT re-derived from the stage-tagless union
+    # findings) so the certificate dossier routes the canonical-op stage into a
+    # per-stage account subroot. ``None`` until the per-amendment accounts are
+    # known (set at ReplayResult assembly beside ``apply_authority`` /
+    # ``structural_stage``). The decline VERDICT stays on the existing #6
+    # residual/finding single-channel; this carrier is the additive checkable
+    # account.
+    canonical_op_stage: Optional["StageResult[None]"] = None
 
     def __post_init__(self) -> None:
         temporal_events = tuple(self.temporal_events)
@@ -325,6 +341,70 @@ def aggregate_structural_stage(
     )
     return StageResult(
         value=materialized_ir,
+        evidence=EMPTY_EVIDENCE,
+        residuals=tuple(residuals),
+        findings=(),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def aggregate_canonical_op_stage(
+    canonical_op_stages: tuple["StageResult[object]", ...],
+) -> "StageResult[None]":
+    """Aggregate the per-amendment canonical-op StageResult accounts (WAIST #6).
+
+    Each amendment's ``compile_amendment_ops`` builds one canonical-op
+    ``StageResult`` (``build_canonical_op_stage``: coverage ``unit="candidate_ops"``,
+    ``owned`` = #emitted resolved ops, ``violation`` = #rejected/declined candidate
+    ops, one blocking ``unowned_violation`` residual per decline — the exact #6
+    typed-residual partition that backs the decline single-channel). This folds
+    those per-amendment accounts — captured FAITHFULLY off the producer via the
+    ``canonical_op_stages_out`` sink, NOT re-derived from the stage-tagless union
+    findings — into the single ``StageResult`` the certificate dossier routes:
+
+      * ``coverage``  — the SUM of the per-amendment partitions: ``owned`` = sum of
+        every amendment's emitted-op count; ``violation`` = sum of every
+        amendment's declined-op count; ``unit="candidate_ops"``,
+        ``total = owned + violation`` so ``is_partition()`` holds.
+      * ``residuals`` — the union of every per-amendment blocking/typed canonical-op
+        residual (the compile declines). EMPTY only when no amendment declined a
+        candidate op; the strict-rejection declines that exist on some statutes are
+        the genuine canonical-op residue and ride through here unchanged.
+      * ``findings``  — ``()`` (the decline VERDICT rides the existing #6
+        residual/finding single-channel via
+        ``reconstruct_findings_from_canonical_op_stage``; this carrier is the
+        additive checkable account, it does not replace the decline channel).
+      * ``value``     — ``None`` (the per-amendment resolved-op lists are not a
+        single replay-level value; the account carries the partition, not a merged
+        op list).
+      * ``evidence``  — ``EMPTY_EVIDENCE``; ``authority`` — ``NEUTRAL_AUTHORITY``
+        (compile authority is not execution authority — that rides #7).
+    """
+    from lawvm.core.stage_result import (
+        EMPTY_EVIDENCE,
+        NEUTRAL_AUTHORITY,
+        CoverageCertificate,
+        Residual,
+        StageResult,
+    )
+
+    owned = 0
+    violation = 0
+    residuals: list[Residual] = []
+    for stage in canonical_op_stages:
+        owned += stage.coverage.owned
+        violation += stage.coverage.violation
+        residuals.extend(stage.residuals)
+    coverage = CoverageCertificate(
+        unit="candidate_ops",
+        total=owned + violation,
+        owned=owned,
+        violation=violation,
+        totality_claimed=True,
+    )
+    return StageResult(
+        value=None,
         evidence=EMPTY_EVIDENCE,
         residuals=tuple(residuals),
         findings=(),

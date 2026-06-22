@@ -235,8 +235,19 @@ def compile_amendment_ops(
     source_ref: str = "",
     source_title: str = "",
     target_statute: str = "",
+    canonical_op_stage_out: Optional[list[StageResult[list[ResolvedOp]]]] = None,
 ) -> PhaseResult[list[ResolvedOp]]:
-    """Compile grouped amendment ops into resolved ops ready for application."""
+    """Compile grouped amendment ops into resolved ops ready for application.
+
+    ``canonical_op_stage_out`` is the WAIST #6 carrier sink: when provided, the
+    per-amendment canonical-op ``StageResult`` (the same ``stage`` that backs the
+    typed-residual decline single-channel below) is APPENDED to it. This lets the
+    replay assembly aggregate the per-amendment canonical-op accounts into one
+    ``ReplayProducts.canonical_op_stage`` carrier WITHOUT re-deriving the partition
+    from union findings (which carry no stage tag). The sink only OBSERVES the
+    stage; the decline still rides ``reconstruct_findings_from_canonical_op_stage``
+    (the load-bearing single-channel) unchanged.
+    """
     profile = get_replay_profile(replay_mode)
     source_title = source_title or source_model.title()
     amendment_issue_date = source_model.issue_date()
@@ -408,6 +419,12 @@ def compile_amendment_ops(
     # green corpus the blocking-finding set is reconstructed verbatim from its own
     # residuals → byte-identical findings → 0-delta.
     stage, carriers = build_canonical_op_stage(resolved, all_findings)
+    if canonical_op_stage_out is not None:
+        # WAIST #6 carrier: observe the per-amendment canonical-op StageResult so
+        # the replay can aggregate it onto ReplayProducts.canonical_op_stage. This
+        # is the EXACT account that backs the decline single-channel below — a
+        # faithful capture, not a union-findings re-derivation.
+        canonical_op_stage_out.append(stage)
     returned_findings = reconstruct_findings_from_canonical_op_stage(
         all_findings, stage, carriers
     )
