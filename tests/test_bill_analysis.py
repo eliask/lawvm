@@ -16,8 +16,23 @@ from lawvm.core.legal_surface_graph import (
     SurfaceGraphSubject,
     SurfaceNode,
 )
+from lawvm.core.stage_result import StageResult
 from lawvm.finland.johtolause.types import ParsedOp
+from lawvm.finland.legal_surface.graph_build import (
+    _surface_graph_stage_account,
+)
 from lawvm.tools import bill_analysis as ba
+
+
+def _stage(graph: LegalSurfaceGraph) -> StageResult[LegalSurfaceGraph]:
+    """Wrap a synthetic graph in the real surface StageResult account.
+
+    Uses the production status->coverage projection so the broken-ref branch is
+    exercised through the SAME typed residual channel the production consumer
+    reads (not a hand-rolled stub).
+    """
+    coverage, residuals = _surface_graph_stage_account(graph)
+    return StageResult(value=graph, residuals=residuals, coverage=coverage)
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +246,7 @@ def test_reference_delta_groups_by_status() -> None:
 
 def test_broken_ref_risk_status_broken_and_self_repeal() -> None:
     ops = [_op("K", "P", "7")]
-    risk = ba.build_broken_ref_risk(ops, _rich_graph(), BODY)
+    risk = ba.build_broken_ref_risk(ops, _stage(_rich_graph()), BODY)
     assert [t["number"] for t in risk["repealed_targets"]] == ["7"]
     # ref#3 surface "7 pykala" has graph status broken
     assert len(risk["status_broken"]) == 1
@@ -268,7 +283,7 @@ def test_definition_delta_extracts_term() -> None:
 
 def test_unowned_candidates_flag_open_and_strand() -> None:
     ops = [_op("K", "P", "7")]
-    out = ba.build_unowned_candidates(ops, _rich_graph(), BODY)
+    out = ba.build_unowned_candidates(ops, _stage(_rich_graph()), BODY)
     rules = {c["rule"] for c in out["candidates"]}
     # open reference present -> open_reference_introduced
     assert "open_reference_introduced" in rules
@@ -286,13 +301,13 @@ def test_unowned_candidates_flag_open_and_strand() -> None:
 def test_delegation_candidate_suppressed_by_accountability_cue() -> None:
     body = BODY + " Viranomaisen on raportoitava toiminnastaan vuosittain."
     ops: list[ParsedOp] = []
-    out = ba.build_unowned_candidates(ops, _rich_graph(), body)
+    out = ba.build_unowned_candidates(ops, _stage(_rich_graph()), body)
     rules = {c["rule"] for c in out["candidates"]}
     assert "delegation_without_accountability" not in rules
 
 
 def test_unowned_rule_catalog_is_closed_and_documented() -> None:
-    out = ba.build_unowned_candidates([], _graph([]), BODY)
+    out = ba.build_unowned_candidates([], _stage(_graph([])), BODY)
     assert set(out["rule_catalog"]) == {
         "delegation_without_accountability",
         "repeal_strands_reference",
@@ -309,7 +324,7 @@ def test_unowned_rule_catalog_is_closed_and_documented() -> None:
 
 def _report() -> dict[str, Any]:
     ops = [_op("M", "P", "5", momentti=2), _op("K", "P", "7")]
-    return ba.build_bill_report("2099/1", ops, _rich_graph(), BODY)
+    return ba.build_bill_report("2099/1", ops, _stage(_rich_graph()), BODY)
 
 
 def test_bill_report_structure() -> None:

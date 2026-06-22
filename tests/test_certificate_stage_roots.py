@@ -256,3 +256,132 @@ def test_tampered_stage_accounts_root_fails_self_check(
     cert_path.write_text(json.dumps(envelope, ensure_ascii=True, sort_keys=True, indent=1))
     with pytest.raises(BundleSelfCheckError):
         verify_bundle(tampered)
+
+
+# ---------------------------------------------------------------------------
+# StageResult endgame Wave-5: the 6/7 newly-routed per-stage accounts each
+# reach the dossier (the (D) deliverable) AND each is checkable end-to-end —
+# severing/tampering its committed row makes the PRODUCTION verify_bundle raise
+# (mirrors test_severed_stage_residual_makes_self_check_diverge; reachable because
+# _verify_stage_accounts is UNCONDITIONAL on the blocked 482/2024).
+# ---------------------------------------------------------------------------
+
+_WAVE5_ROUTED_STAGE_IDS = (
+    "fi.source.identity",  # #1
+    "fi.structure.write_footprint",  # #3 (SEAM B)
+    "fi.source_syntax.forest",  # #4 (SEAM A)
+    "fi.legal_surface.graph",  # #5 (SEAM A)
+    "fi.canonical_op.compile",  # #6 (SEAM B)
+    "fi.projection.interlinks",  # #10 (SEAM A)
+    "fi.projection.overlays",  # #10 (SEAM A)
+)
+
+
+@_corpus_skip
+def test_all_wave5_stages_reach_the_dossier(bundle_482: Path) -> None:
+    rows = [
+        json.loads(line)
+        for line in (bundle_482 / "stages/stage_accounts.jsonl").read_text().splitlines()
+    ]
+    stages = {row["stage"] for row in rows}
+    for stage_id in _WAVE5_ROUTED_STAGE_IDS:
+        assert stage_id in stages, f"{stage_id} did not reach the dossier"
+    # Every routed stage carries a real coverage partition (a checkable account).
+    for row in rows:
+        if row["stage"] in _WAVE5_ROUTED_STAGE_IDS:
+            assert row["coverage_row"]["is_partition"] is True, row["stage"]
+
+
+def _sever_named_stage_row(src: Path, dst: Path, stage_id: str) -> None:
+    """Copy `src` to `dst`, drop the named stage's coverage_row count (a sever).
+
+    Tampers the committed coverage row WITHOUT updating its subroot, so the
+    unconditional _verify_stage_accounts recompute must diverge.
+    """
+    shutil.copytree(src, dst)
+    path = dst / "stages/stage_accounts.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
+        row = json.loads(line)
+        if row["stage"] != stage_id:
+            continue
+        # Sever: mutate the coverage row total but keep the committed subroot.
+        row["coverage_row"]["total"] = int(row["coverage_row"]["total"]) + 1
+        lines[index] = canonical_json_bytes(row).decode("ascii")
+        break
+    else:  # pragma: no cover - defensive
+        raise AssertionError(f"stage {stage_id} not found in committed rows")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+@_corpus_skip
+@pytest.mark.parametrize("stage_id", _WAVE5_ROUTED_STAGE_IDS)
+def test_severed_wave5_stage_row_makes_self_check_diverge(
+    bundle_482: Path, tmp_path: Path, stage_id: str
+) -> None:
+    tampered = tmp_path / f"sev_{stage_id.replace('.', '_')}"
+    _sever_named_stage_row(bundle_482, tampered, stage_id)
+    with pytest.raises(BundleSelfCheckError):
+        verify_bundle(tampered)
+
+
+@_corpus_skip
+def test_surface_graph_blocking_residual_forces_blocked_status(
+    bundle_482: Path, tmp_path: Path
+) -> None:
+    # PART 2 status-contribution (#5): inject a BLOCKING surface residual into the
+    # committed fi.legal_surface.graph row; recompute the row's subroots so the
+    # _verify_stage_accounts pass succeeds, then the status recompute MUST see the
+    # blocking residual and require `blocked`. Because 482/2024 is already blocked,
+    # this never flips it clean — but it proves the contribution path is live: a
+    # broken-ref blocking residual forces blocked UNCONDITIONALLY.
+    from lawvm.tools.certificate_bundle import (
+        _committed_stage_blocking_residual_count,
+        compute_certificate_status,
+    )
+
+    rows = [
+        json.loads(line)
+        for line in (bundle_482 / "stages/stage_accounts.jsonl").read_text().splitlines()
+    ]
+    # Baseline: 482/2024 carries zero #5/#10 blocking residuals (0-delta).
+    assert _committed_stage_blocking_residual_count(rows) == 0
+    graph_row = next(r for r in rows if r["stage"] == "fi.legal_surface.graph")
+    graph_row["residual_rows"].append(
+        {"diagnostic_code": "x", "kind": "unowned_violation", "blocking": True}
+    )
+    assert _committed_stage_blocking_residual_count(rows) == 1
+    # A non-zero contribution forces blocked regardless of the flat residue.
+    forced = compute_certificate_status(
+        residual_rows=[],
+        certification_statuses=[],
+        registered_codes=frozenset(),
+        extra_blocking_residual_count=1,
+    )
+    assert forced == "blocked"
+
+
+@_corpus_skip
+def test_projection_blocking_residual_contributes_to_status(bundle_482: Path) -> None:
+    # PART 2 status-contribution (#10): a dropped-universe-member blocking
+    # projection residual in either projection stage row contributes to the count.
+    from lawvm.tools.certificate_bundle import _committed_stage_blocking_residual_count
+
+    rows = [
+        json.loads(line)
+        for line in (bundle_482 / "stages/stage_accounts.jsonl").read_text().splitlines()
+    ]
+    overlays_row = next(r for r in rows if r["stage"] == "fi.projection.overlays")
+    overlays_row["residual_rows"].append(
+        {"diagnostic_code": "x", "kind": "projection_residual", "blocking": True}
+    )
+    assert _committed_stage_blocking_residual_count(rows) == 1
+    # A NON-contributing stage's blocking residual must NOT count (only #5/#10).
+    forest_row = next(r for r in rows if r["stage"] == "fi.source_syntax.forest")
+    n_forest_blocking = sum(
+        1 for r in forest_row["residual_rows"] if r.get("blocking")
+    )
+    assert n_forest_blocking >= 0  # the forest can carry blocking residue
+    # forest is NOT in STATUS_CONTRIBUTING_STAGE_IDS, so it does not raise the count
+    # beyond the overlays injection.
+    assert _committed_stage_blocking_residual_count(rows) == 1

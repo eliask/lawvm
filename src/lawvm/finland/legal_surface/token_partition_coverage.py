@@ -267,8 +267,18 @@ class CoverageViolation:
 
 
 @dataclass(frozen=True, slots=True)
-class CoverageCertificate:
+class GraphCoverageCrossCheck:
     """Result of the coverage-certifier cross-check over a graph + its forests.
+
+    NOT a coverage PARTITION account (that is the core
+    :class:`lawvm.core.stage_result.CoverageCertificate`, which the
+    StageResult endgame row #4 token-partition view maps onto). This is the
+    lens-vs-forest cross-CHECK RESULT: how many graph nodes were checked /
+    skipped and which nodes' source spans are NOT forest-owned. It was renamed
+    from ``CoverageCertificate`` (the StageResult-endgame name-clash resolution,
+    4D) — verified not persisted under that symbol name (no JSON/parquet/cert
+    schema carries the class name; the ``*_to_dict`` projections key on fields,
+    not the type name), so the rename is schema-safe.
 
     Attributes:
         nodes_checked:   Graph nodes with a source span that were checked.
@@ -327,7 +337,7 @@ def _span_is_covered(
 def certify_graph_coverage(
     graph: LegalSurfaceGraph,
     forests: Mapping[str, SourceSyntaxGraph],
-) -> CoverageCertificate:
+) -> GraphCoverageCrossCheck:
     """Cross-check: every graph node's source span is OWNED in the forest partition.
 
     The reframe's core invariant (Pro D2): the lenses stay the PRODUCERS, and the
@@ -383,7 +393,7 @@ def certify_graph_coverage(
                     reason="span_not_owned",
                 )
             )
-    return CoverageCertificate(
+    return GraphCoverageCrossCheck(
         nodes_checked=checked,
         nodes_skipped=skipped,
         violations=tuple(violations),
@@ -456,8 +466,8 @@ def render_certificate(cert: TokenPartitionCoverage) -> str:
     return "\n".join(lines)
 
 
-def coverage_certificate_to_dict(cert: CoverageCertificate) -> dict[str, object]:
-    """Machine-readable projection of a :class:`CoverageCertificate`."""
+def coverage_certificate_to_dict(cert: GraphCoverageCrossCheck) -> dict[str, object]:
+    """Machine-readable projection of a :class:`GraphCoverageCrossCheck`."""
     return {
         "nodes_checked": cert.nodes_checked,
         "nodes_skipped": cert.nodes_skipped,
@@ -477,8 +487,8 @@ def coverage_certificate_to_dict(cert: CoverageCertificate) -> dict[str, object]
     }
 
 
-def render_coverage_certificate(cert: CoverageCertificate) -> str:
-    """Human-readable rendering of a :class:`CoverageCertificate`."""
+def render_coverage_certificate(cert: GraphCoverageCrossCheck) -> str:
+    """Human-readable rendering of a :class:`GraphCoverageCrossCheck`."""
     lines: list[str] = []
     lines.append("COVERAGE CERTIFIER (lens nodes vs forest ownership)")
     lines.append("=" * 60)

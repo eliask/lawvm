@@ -193,10 +193,11 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 100,
+  "public_schema_count": 101,
   "public_schemas": [
     "lawvm.agreement_surface_report.v1",
     "lawvm.annotated_token_view.v1",
+    "lawvm.apply_authority.v0",
     "lawvm.base_tree.v0",
     "lawvm.candidate_set_report.v1",
     "lawvm.certificate.v0",

@@ -233,7 +233,7 @@ def test_real_corpus_smoke_if_archive_present() -> None:
 
     # Project overlays for the first statute that yields any; assert schema only.
     for _, statute_id in corpus[:50]:
-        rows, _diag = _project_overlays_for_statute(statute_id, store)
+        rows = list(_project_overlays_for_statute(statute_id, store).rows)
         if rows:
             for row in rows:
                 assert set(row.keys()) == set(OVERLAY_ROW_COLUMNS)

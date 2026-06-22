@@ -73,6 +73,7 @@ from lawvm.core.timeline_materialization import (
     project_materialization_selection_states as _project_materialization_selection_states,
     top_level_supplement_active as _top_level_supplement_active,
 )
+from lawvm.core.stage_result import StageResult
 from lawvm.core.timeline_results import (
     MaterializationCoverage,
     MaterializationLineagePlan,
@@ -82,6 +83,7 @@ from lawvm.core.timeline_results import (
     TimelineIssue,
     TimelineIssueKind,
     Timelines,
+    materialization_result_to_stage_account,
 )
 from lawvm.core.timeline_selection import (
     VersionSelectionResult,
@@ -1067,7 +1069,61 @@ def materialize_pit(
     migration_events: Tuple[MigrationEvent, ...] = (),
     lineage_plan: MaterializationLineagePlan | None = None,
 ) -> IRStatute:
-    """Materialize a PIT statute or fail when required scope is omitted."""
+    """Materialize a PIT statute or fail when required scope is omitted.
+
+    Thin value-only wrapper over :func:`materialize_pit_staged` so the dominant
+    callers stay byte-identical; the staged form carries the coverage account the
+    plain path used to discard (the StageResult-endgame un-sever).
+    """
+    staged = materialize_pit_staged(
+        timelines,
+        as_of,
+        base=base,
+        territory=territory,
+        query_type=query_type,
+        label_norm=label_norm,
+        expires_as_of=expires_as_of,
+        migration_events=migration_events,
+        lineage_plan=lineage_plan,
+    )
+    # A blocking ``unowned_violation`` residual is the typed carrier of the
+    # degraded-missing-scope condition (see
+    # ``materialization_result_to_stage_account``); the historical hard-error
+    # contract now READS that typed account instead of re-deriving it from the
+    # raw status string.
+    for residual in staged.residuals:
+        if residual.kind == "unowned_violation" and residual.blocking:
+            raise ValueError(
+                "materialize_pit requires explicit scope when PIT selection is "
+                "degraded; use materialize_pit_staged()/materialize_pit_ex() for an "
+                f"explicit degradation result ({residual.reason})."
+            )
+    return staged.value
+
+
+def materialize_pit_staged(
+    timelines: Timelines,
+    as_of: str,
+    base: Optional[IRStatute] = None,
+    territory: Optional[str] = None,
+    query_type: Literal["governing", "in_force"] = "governing",
+    label_norm: Optional[Callable[[str], str]] = None,
+    expires_as_of: str = "",
+    migration_events: Tuple[MigrationEvent, ...] = (),
+    lineage_plan: MaterializationLineagePlan | None = None,
+) -> StageResult[IRStatute]:
+    """Materialize a PIT statute, carrying the coverage account on a StageResult.
+
+    The StageResult-endgame producer for the timeline/materialization waist. It
+    wraps :func:`materialize_pit_ex` (the coverage-computing path) and projects
+    its rich :class:`MaterializationResult` onto the canonical
+    ``StageResult[IRStatute]`` contract (value + coverage + residuals + findings)
+    via :func:`materialization_result_to_stage_account`. Unlike
+    :func:`materialize_pit`, this does NOT raise on a degraded materialization —
+    the degradation is carried as a blocking ``unowned_violation`` residual and a
+    ``coverage.violation`` so a downstream consumer (e.g. the certificate
+    dossier) can branch on it instead of having the coverage silently discarded.
+    """
     result = materialize_pit_ex(
         timelines,
         as_of,
@@ -1079,13 +1135,7 @@ def materialize_pit(
         migration_events=migration_events,
         lineage_plan=lineage_plan,
     )
-    if result.materialization_status == "degraded_missing_scope":
-        raise ValueError(
-            "materialize_pit requires explicit scope when PIT selection is degraded by "
-            f"missing {result.required_dimensions!r}; use materialize_pit_ex() for an "
-            "explicit degradation result."
-        )
-    return result.statute
+    return materialization_result_to_stage_account(result)
 
 
 def materialize_pit_ex(

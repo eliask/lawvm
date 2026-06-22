@@ -16,6 +16,7 @@ from lawvm.core.tree_ops import check_invariants as _check_tree_invariants
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_realization import drop_materialized_payload_realization_false_positives
 from lawvm.finland.amendment_selection import resolve_applicable_amendment_records
+from lawvm.finland.apply_replay_authorization import aggregate_replay_authority
 from lawvm.finland.chapter_seed import seed_missing_chapters as _seed_missing_chapters
 from lawvm.finland.consolidated_store import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import (
@@ -55,6 +56,10 @@ from lawvm.finland.replay_pipeline import (
 from lawvm.finland.replay_product_assembly import (
     ReplayProductAssemblyRequest,
     assemble_replay_products,
+)
+from lawvm.finland.replay_products import (
+    aggregate_canonical_op_stage,
+    aggregate_structural_stage,
 )
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, resolve_replay_xml_request
 from lawvm.finland.statute import OracleSelectorInfo, ReplayResult
@@ -236,6 +241,51 @@ def replay_xml(
         findings = drop_materialized_payload_realization_false_positives(
             tuple(signals.findings),
             materialized_text=irnode_to_text(products.materialized_state.ir),
+        )
+
+        # StageResult endgame WAIST #7: aggregate the per-replay apply/replay
+        # execution authority over every landed write (replay_authorized = AND
+        # over all landed writes). Carried on ReplayProducts so the per-replay
+        # clean-claim predicate the certificate firewall branches on is
+        # type-carried, not convention-bridged. Descriptive: it mints
+        # replay_authorized=True iff every landed receipt's boundary is explained
+        # AND no apply-boundary touch-outside-target violation finding fired (the
+        # exact conjunction that lets the writes stand today).
+        products.apply_authority = aggregate_replay_authority(
+            write_receipts=signals.write_receipts,
+            findings=signals.findings,
+        )
+
+        # StageResult endgame WAIST #3: aggregate the per-op structural
+        # write-footprint accounts over every landed WriteReceipt of this replay
+        # (the same receipts that feed ``apply_authority``). Carried on
+        # ReplayProducts so the certificate dossier routes the structural stage
+        # into a per-stage account subroot instead of re-deriving it. The
+        # aggregate is a pure fold over the landed receipts: union footprint
+        # coverage (all owned) + the union of any blocking unexplained-divergence
+        # residuals (EMPTY on the green corpus, where every container write
+        # explains its boundary). The structural value is the replay's
+        # materialized IR tree (always present, even when the materialization
+        # stage account itself is not built on the plain path).
+        products.structural_stage = aggregate_structural_stage(
+            materialized_ir=products.materialized_state.ir,
+            write_receipts=tuple(signals.write_receipts),
+        )
+
+        # StageResult endgame WAIST #6: aggregate the per-amendment canonical-op
+        # compile accounts over every amendment of this replay. Each
+        # ``compile_amendment_ops`` already builds one canonical-op ``StageResult``
+        # and APPENDS it to ``signals.canonical_op_stages`` via the
+        # ``canonical_op_stages_out`` sink (threaded through the process sinks).
+        # The aggregate is a pure fold over those per-amendment accounts (union
+        # candidate-op coverage partition + the union of the per-amendment compile
+        # declines). Carried on ReplayProducts so the certificate dossier routes
+        # the canonical-op stage into a per-stage account subroot instead of
+        # re-deriving it from the stage-tagless union findings. FAITHFUL: the
+        # carried accounts ARE the producer's own stages, not a reconstruction.
+        # The decline VERDICT stays on the existing #6 single-channel.
+        products.canonical_op_stage = aggregate_canonical_op_stage(
+            tuple(signals.canonical_op_stages),
         )
 
         return ReplayResult(

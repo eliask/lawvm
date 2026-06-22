@@ -71,6 +71,8 @@ from lawvm.finland.tree_invariant_allowances import (
 )
 
 if TYPE_CHECKING:
+    from lawvm.core.stage_result import AuthoritySurface, StageResult
+    from lawvm.core.write_receipt import WriteReceipt
     from lawvm.finland.replay_fold_timeline_backfill import FoldTimelineBackfillRecord
     from lawvm.finland.timeline_version_dedupe import TimelineVersionDedupeRecord
     from lawvm.finland.statute import ReplayState, StatuteContext
@@ -170,6 +172,52 @@ class ReplayProducts:
     cited_version_parse_residuals: tuple["CitedVersionParseResidual", ...] = ()
     materialization_issues: tuple[TimelineIssue, ...] = ()
     materialization_coverage: Optional[MaterializationCoverage] = None
+    # StageResult-endgame: the full typed materialization account (coverage +
+    # residuals + findings), carried so the certificate dossier routes it into a
+    # per-stage account subroot instead of discarding it. ``None`` only on the
+    # full-products-skipped path.
+    materialization_stage: Optional["StageResult[IRStatute]"] = None
+    # StageResult-endgame WAIST #7: the per-replay apply/replay execution
+    # authority aggregated over every landed write (replay_authorized = AND over
+    # all landed writes; one unauthorized write un-authorizes the replay). This is
+    # the firewall the certificate dossier branches on — an unauthorized replay
+    # cannot produce an authoritative (clean) receipt/dossier. ``None`` until the
+    # apply path's receipts/findings are known (set at ReplayResult assembly,
+    # where the landed receipts + findings are accumulated); the certificate
+    # re-derives it descriptively from ``bundle.result`` so the writer never
+    # trusts an un-set carrier.
+    apply_authority: Optional["AuthoritySurface"] = None
+    # StageResult-endgame WAIST #3: the per-replay STRUCTURAL (IRNode /
+    # LegalAddress) write-footprint account aggregated over every landed
+    # WriteReceipt of the replay. Each landed write already carries the canonical
+    # ``structural_stage_result(post_ir, receipt)`` per-op account (coverage =
+    # declared footprint owned, unit="paths"; one blocking ``unowned_violation``
+    # residual iff ``receipt.divergence_explained is False``). This field carries
+    # the UNION fold over those per-op accounts so the certificate dossier routes
+    # the structural stage into a per-stage account subroot instead of re-deriving
+    # it. ``None`` until the landed receipts are known (set at ReplayResult
+    # assembly beside ``apply_authority``). On the green corpus every container
+    # write has ``divergence_explained=True`` → empty blocking residuals → clean
+    # coverage. The apply-decline VERDICT stays on the existing #3 apply ``Finding``
+    # channel (``apply_structure_ops``); this carrier is the additive checkable
+    # account.
+    structural_stage: Optional["StageResult[IRNode]"] = None
+    # StageResult-endgame WAIST #6: the per-replay CANONICAL-OPERATION compile
+    # account aggregated over every amendment's ``compile_amendment_ops`` decline
+    # partition. Each amendment already builds one canonical-op ``StageResult``
+    # (``build_canonical_op_stage``: coverage ``unit="candidate_ops"``, owned =
+    # emitted ops, violation = declined ops; one blocking ``unowned_violation``
+    # residual per decline — the same account that backs the typed-residual decline
+    # single-channel). This field carries the UNION fold over those per-amendment
+    # accounts (captured FAITHFULLY off the producer via the
+    # ``canonical_op_stages_out`` sink, NOT re-derived from the stage-tagless union
+    # findings) so the certificate dossier routes the canonical-op stage into a
+    # per-stage account subroot. ``None`` until the per-amendment accounts are
+    # known (set at ReplayResult assembly beside ``apply_authority`` /
+    # ``structural_stage``). The decline VERDICT stays on the existing #6
+    # residual/finding single-channel; this carrier is the additive checkable
+    # account.
+    canonical_op_stage: Optional["StageResult[None]"] = None
 
     def __post_init__(self) -> None:
         temporal_events = tuple(self.temporal_events)
@@ -211,6 +259,158 @@ class ReplayProducts:
     def identity_ledger(self) -> IdentityLedger:
         """Frozen read-only lineage snapshot over replay migration events."""
         return IdentityLedger.from_events(self.migration_events)
+
+
+def aggregate_structural_stage(
+    *,
+    materialized_ir: IRNode,
+    write_receipts: tuple["WriteReceipt", ...],
+) -> "StageResult[IRNode]":
+    """Fold the per-op structural write-footprint accounts (WAIST #3).
+
+    Each landed ``WriteReceipt`` carries the canonical per-op structural account
+    via :func:`lawvm.core.tree_ops.structural_stage_result` (coverage = declared
+    footprint owned, ``unit="paths"``; one blocking ``unowned_violation`` residual
+    iff ``receipt.divergence_explained is False``). This aggregates those per-op
+    accounts over every landed write of the replay into the single
+    ``StageResult[IRNode]`` the certificate dossier routes:
+
+      * ``value``     — ``materialized_ir`` (the replay's materialized structural
+        product tree).
+      * ``coverage``  — the SUM of the per-op footprint partitions: ``owned`` =
+        sum of every landed write's declared-footprint path count;
+        ``violation`` = number of landed writes whose BOUND→LANDED divergence is
+        unexplained (each contributes exactly one blocking residual, matching the
+        per-op account); ``unit="paths"``, ``total = owned + violation`` so
+        ``is_partition()`` holds.
+      * ``residuals`` — the union of the per-op blocking ``unowned_violation``
+        residuals (one per landed write that BOUND a target and landed elsewhere
+        with no named recovery rule — the exact #3 structural mutation-boundary
+        condition). EMPTY on the green corpus (every bound container write
+        explains its boundary).
+
+    BOUNDARY SEMANTICS (the #3/#7 contract, NOT a heuristic): a receipt with
+    ``bound_target_path is None`` carried no resolver binding at this granularity
+    (the op-level apply write — ``apply_resolved_op._collect_op_write_receipt``).
+    It has NO bound→landed divergence to explain and the apply path does NOT block
+    it today; the #3 structural residual fires ONLY for a bound target that
+    diverged with no named rule (see ``apply_replay_authorization`` /
+    ``_receipt_boundary_authorized``). Such a receipt therefore contributes its
+    landed footprint as ``owned`` and emits NO residual — treating it as an
+    unexplained divergence would manufacture a violation a write that legitimately
+    stands today never had (a mapping error, not a finding). ``divergence_explained``
+    alone is NOT the test, because for a ``bound=None`` receipt it is vacuously
+    False (``None != landed_primary_path``).
+      * ``evidence``  — ``EMPTY_EVIDENCE``: the per-op source anchors live on the
+        receipts; the aggregate carries the partition account, not a merged
+        witness bundle (the witnesses ride ``apply_authority`` / receipts).
+      * ``findings``  — ``()`` (the apply layer owns the structural-divergence
+        ``Finding`` verdict; this carrier is the additive checkable account).
+      * ``authority`` — ``NEUTRAL_AUTHORITY`` (Pro §8 firewall; execution
+        authorization rides ``apply_authority`` (#7), not this account).
+    """
+    from lawvm.core.stage_result import (
+        EMPTY_EVIDENCE,
+        NEUTRAL_AUTHORITY,
+        CoverageCertificate,
+        Residual,
+        StageResult,
+    )
+    from lawvm.core.tree_ops import structural_stage_result
+
+    owned = 0
+    residuals: list[Residual] = []
+    for receipt in write_receipts:
+        if receipt.bound_target_path is None:
+            # No resolver binding at this granularity: no bound→landed divergence
+            # to account. The landed footprint is owned; emit no residual (the #3
+            # apply consumer / replay-authority gate stand such a write today).
+            owned += len(receipt.declared_footprint)
+            continue
+        per_op = structural_stage_result(materialized_ir, receipt)
+        owned += per_op.coverage.owned
+        residuals.extend(per_op.residuals)
+
+    violation = len(residuals)
+    coverage = CoverageCertificate(
+        unit="paths",
+        total=owned + violation,
+        owned=owned,
+        violation=violation,
+        totality_claimed=True,
+    )
+    return StageResult(
+        value=materialized_ir,
+        evidence=EMPTY_EVIDENCE,
+        residuals=tuple(residuals),
+        findings=(),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def aggregate_canonical_op_stage(
+    canonical_op_stages: tuple["StageResult[object]", ...],
+) -> "StageResult[None]":
+    """Aggregate the per-amendment canonical-op StageResult accounts (WAIST #6).
+
+    Each amendment's ``compile_amendment_ops`` builds one canonical-op
+    ``StageResult`` (``build_canonical_op_stage``: coverage ``unit="candidate_ops"``,
+    ``owned`` = #emitted resolved ops, ``violation`` = #rejected/declined candidate
+    ops, one blocking ``unowned_violation`` residual per decline — the exact #6
+    typed-residual partition that backs the decline single-channel). This folds
+    those per-amendment accounts — captured FAITHFULLY off the producer via the
+    ``canonical_op_stages_out`` sink, NOT re-derived from the stage-tagless union
+    findings — into the single ``StageResult`` the certificate dossier routes:
+
+      * ``coverage``  — the SUM of the per-amendment partitions: ``owned`` = sum of
+        every amendment's emitted-op count; ``violation`` = sum of every
+        amendment's declined-op count; ``unit="candidate_ops"``,
+        ``total = owned + violation`` so ``is_partition()`` holds.
+      * ``residuals`` — the union of every per-amendment blocking/typed canonical-op
+        residual (the compile declines). EMPTY only when no amendment declined a
+        candidate op; the strict-rejection declines that exist on some statutes are
+        the genuine canonical-op residue and ride through here unchanged.
+      * ``findings``  — ``()`` (the decline VERDICT rides the existing #6
+        residual/finding single-channel via
+        ``reconstruct_findings_from_canonical_op_stage``; this carrier is the
+        additive checkable account, it does not replace the decline channel).
+      * ``value``     — ``None`` (the per-amendment resolved-op lists are not a
+        single replay-level value; the account carries the partition, not a merged
+        op list).
+      * ``evidence``  — ``EMPTY_EVIDENCE``; ``authority`` — ``NEUTRAL_AUTHORITY``
+        (compile authority is not execution authority — that rides #7).
+    """
+    from lawvm.core.stage_result import (
+        EMPTY_EVIDENCE,
+        NEUTRAL_AUTHORITY,
+        CoverageCertificate,
+        Residual,
+        StageResult,
+    )
+
+    owned = 0
+    violation = 0
+    residuals: list[Residual] = []
+    for stage in canonical_op_stages:
+        owned += stage.coverage.owned
+        violation += stage.coverage.violation
+        residuals.extend(stage.residuals)
+    coverage = CoverageCertificate(
+        unit="candidate_ops",
+        total=owned + violation,
+        owned=owned,
+        violation=violation,
+        totality_claimed=True,
+    )
+    return StageResult(
+        value=None,
+        evidence=EMPTY_EVIDENCE,
+        residuals=tuple(residuals),
+        findings=(),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
 
 
 def _assert_finland_timeline_safe_ops(lo_ops_out: list[LegalOperation]) -> None:
@@ -1824,6 +2024,7 @@ def build_replay_products(
         )
 
     from lawvm.core.timeline import compile_timelines, materialize_pit_ex
+    from lawvm.core.timeline_results import materialization_result_to_stage_account
 
     base_ir = IRStatute(
         statute_id=statute_id,
@@ -2034,6 +2235,11 @@ def build_replay_products(
         expires_as_of=expires_as_of,
         lineage_plan=lineage_decision.lineage_plan,
     )
+    # StageResult-endgame: surface the materialization coverage account as the
+    # canonical typed carrier so the certificate dossier can ROUTE it (instead of
+    # the plain path discarding everything but the statute). Built from the SAME
+    # MaterializationResult — no re-materialization, byte-identical value path.
+    materialization_stage = materialization_result_to_stage_account(materialization_result)
     if materialization_result.materialization_status == "degraded_missing_scope":
         # Preserve the historical materialize_pit() contract: missing PIT scope is
         # a hard error, not a silently degraded materialization. The explicit
@@ -2098,6 +2304,7 @@ def build_replay_products(
         cited_version_parse_residuals=cited_version_parse_residuals,
         materialization_issues=materialization_result.issues,
         materialization_coverage=materialization_result.certificate,
+        materialization_stage=materialization_stage,
         materialization_spec=MaterializationSpec(
             as_of=as_of,
             query_type=query_type,

@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 from typing import Protocol, cast
 
 from lawvm.core.filter_result import FilterResult
-from lawvm.core.stage_result import CoverageCertificate, PartitionResult, Residual
+from lawvm.core.stage_result import CoverageCertificate, PartitionResult
 from lawvm.finland.section_text_extractor import (
     SectionTextExtractionResult,
     extract_sections_text,
@@ -126,40 +126,25 @@ def project_fi_interlinks_partition(
     """
     from lawvm.tools.export_fi_interlinks import _project_interlinks_for_statute
 
-    rows, diagnostics = _project_interlinks_for_statute(
+    projection = _project_interlinks_for_statute(
         statute_id, cast(_PreviewCorpus, corpus)
     )
-    interlink_rows = tuple(LawvmInterlinkRow.from_mapping(row) for row in rows)
-    residuals = tuple(
-        Residual(
-            kind="typed_residual",
-            reason=_interlink_diagnostic_reason(diagnostic),
-            scope=f"fi_interlinks:{statute_id}:{diagnostic.get('family', '')}",
-            source_unit_id=statute_id,
-            text=str(diagnostic.get("raw_text", "")),
-            blocking=bool(diagnostic.get("blocking", False)),
-        )
-        for diagnostic in diagnostics
+    interlink_rows = tuple(
+        LawvmInterlinkRow.from_mapping(row) for row in projection.rows
     )
     coverage = CoverageCertificate(
         unit="interlink_rows",
-        total=len(interlink_rows) + len(residuals),
+        total=projection.coverage.total,
         owned=len(interlink_rows),
-        residual=len(residuals),
+        residual=projection.coverage.residual,
+        violation=projection.coverage.violation,
+        totality_claimed=projection.coverage.totality_claimed,
     )
     return InterlinkProjection(
         FilterResult(accepted_items=interlink_rows),
-        residuals=residuals,
+        residuals=projection.residuals,
         coverage=coverage,
     )
-
-
-def _interlink_diagnostic_reason(diagnostic: dict[str, object]) -> str:
-    rule_id = str(diagnostic.get("rule_id", "")) or "fi_interlink_diagnostic"
-    family = str(diagnostic.get("family", ""))
-    reason = str(diagnostic.get("reason", "") or diagnostic.get("kind", ""))
-    parts = [part for part in (family, rule_id, reason) if part]
-    return ": ".join(parts) if parts else rule_id
 
 
 def project_fi_interlinks_for_transition_graph(
@@ -202,8 +187,8 @@ def project_fi_surface_overlays_for_transition_graph(
     """
     from lawvm.tools.export_fi_interlinks import _project_overlays_for_statute
 
-    rows, _diagnostics = _project_overlays_for_statute(statute_id, corpus)
-    return rows
+    projection = _project_overlays_for_statute(statute_id, corpus)
+    return list(projection.rows)
 
 
 def fi_transition_graph_overlay_provider() -> LawvmSurfaceOverlayExportProvider:

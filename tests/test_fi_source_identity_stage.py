@@ -156,3 +156,144 @@ def test_witness_digest_reaches_certificate_source_bundle_root(
         )
         verified += 1
     assert verified > 0, "no source identities verified against the witness surface"
+
+
+# ---------------------------------------------------------------------------
+# Divergent-witness pipeline fire-drill (WAIST #1 behavioral guard).
+#
+# The production amendment pipeline (`process_muutoslaki` ->
+# `_verify_staged_source_identity` at process_pipeline.py:~337) raises on a
+# content-witness divergence / un-admitted lane, but no test drove it: the green
+# corpus has matching digests, so DELETING the call passed the whole suite. These
+# drills inject a divergent / un-admitted staged read and assert the production
+# path raises — RED on the call deletion (the anti-sever property).
+# ---------------------------------------------------------------------------
+
+_PARENT_ID = "2024/482"
+_AMENDMENT_ID = "2025/368"  # an amendment 2024/482 actually processes
+
+
+class _DivergentWitnessStore(CorpusStore):
+    """Delegates to the real store but tampers ONE amendment's staged-read witness.
+
+    ``mode="digest"`` returns the real bytes with a DELIBERATELY WRONG
+    ``DigestWitness`` (the silent content-divergence the witness exists to catch);
+    ``mode="unadmitted"`` returns a staged read whose ``SourceBundleAdmission`` is
+    NOT admitted. Both must make ``_verify_staged_source_identity`` raise.
+    """
+
+    def __init__(self, inner: CorpusStore, *, target_id: str, mode: str) -> None:
+        self._inner = inner
+        self._target_id = target_id
+        self._mode = mode
+
+    def read_source(self, sid: str) -> bytes | None:
+        return self._inner.read_source(sid)
+
+    def read_oracle(self, sid: str) -> bytes | None:
+        return self._inner.read_oracle(sid)
+
+    def read_media(self, sid: str, filename: str) -> bytes | None:
+        return self._inner.read_media(sid, filename)
+
+    def read_corrigendum_media(self, sid: str, filename: str) -> bytes | None:
+        return self._inner.read_corrigendum_media(sid, filename)
+
+    def list_statute_ids(self) -> list[str]:
+        return self._inner.list_statute_ids()
+
+    def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
+        return self._inner.oracle_path_index(**kwargs)
+
+    def read_locator(self, locator: str) -> bytes | None:
+        return self._inner.read_locator(locator)
+
+    def read_source_staged(self, sid: str):  # type: ignore[override]
+        staged = self._inner.read_source_staged(sid)
+        if staged is None or sid != self._target_id:
+            return staged
+        from dataclasses import replace
+
+        from lawvm.core.source_acquisition import SourceBundleAdmission
+        from lawvm.core.stage_result import (
+            AuthoritySurface,
+            EvidenceBundle,
+        )
+
+        if self._mode == "digest":
+            witness = staged.evidence.witnesses[0]
+            assert isinstance(witness, SourceWitness)
+            assert witness.digest is not None
+            wrong = DigestWitness(
+                digest_algorithm="sha256",
+                digest="0" * 64,  # NOT sha256(bytes) — a divergent witness
+            )
+            tampered_witness = replace(witness, digest=wrong)
+            return replace(staged, evidence=EvidenceBundle((tampered_witness,)))
+
+        # mode == "unadmitted": carry a NON-admitted source lane.
+        unadmitted = SourceBundleAdmission(
+            assertion_id=f"fire-drill:{sid}",
+            admitted=False,
+            admission_status="source_bundle_rejected",
+            policy_id="fire-drill.policy",
+            source_lane="amendment_source_xml",
+        )
+        return replace(staged, authority=AuthoritySurface(source_admission=unadmitted))
+
+
+def _drive_amendment(store: CorpusStore) -> None:
+    from lxml import etree
+
+    from lawvm.finland.helpers import _fi_label_postprocessor
+    from lawvm.finland.process_pipeline import process_muutoslaki
+    from lawvm.finland.process_request import ProcessAmendmentRequest
+    from lawvm.finland.process_result_builder import ProcessAmendmentSinks
+    from lawvm.finland.statute import ReplayState, StatuteContext
+
+    parent_xml = store.read_source(_PARENT_ID)
+    assert parent_xml is not None
+    ctx = StatuteContext.from_xml(parent_xml, _fi_label_postprocessor)
+    import copy
+
+    state = ReplayState(ir=copy.deepcopy(ctx.base_ir))
+    process_muutoslaki(
+        ProcessAmendmentRequest(
+            amendment_id=_AMENDMENT_ID,
+            state=state,
+            ctx=ctx,
+            replay_mode="legal_pit",
+            parent_id=_PARENT_ID,
+            corpus=store,
+        ),
+        ProcessAmendmentSinks(),
+    )
+    # silence unused import warning when lxml is needed only transitively
+    del etree
+
+
+@_corpus_skip
+def test_divergent_witness_digest_fails_the_pipeline(corpus: CorpusStore) -> None:
+    # A staged read whose witness digest does NOT match the source bytes must make
+    # the production pipeline fail loud (the silent content-divergence the witness
+    # catches). RED if the `_verify_staged_source_identity` call is deleted.
+    store = _DivergentWitnessStore(corpus, target_id=_AMENDMENT_ID, mode="digest")
+    with pytest.raises(ValueError, match="diverges from the source model digest"):
+        _drive_amendment(store)
+
+
+@_corpus_skip
+def test_unadmitted_lane_fails_the_pipeline(corpus: CorpusStore) -> None:
+    # A staged read whose source lane is NOT admitted must make the pipeline fail
+    # loud (a typed boundary fact, not a silent acceptance).
+    store = _DivergentWitnessStore(corpus, target_id=_AMENDMENT_ID, mode="unadmitted")
+    with pytest.raises(ValueError, match="not admitted to the bundle"):
+        _drive_amendment(store)
+
+
+@_corpus_skip
+def test_matching_witness_does_not_raise_baseline(corpus: CorpusStore) -> None:
+    # 0-delta control: the UNtampered staged read drives the same path without
+    # raising on the source-identity boundary (proves the drills above isolate the
+    # divergence, not an unrelated pipeline error).
+    _drive_amendment(corpus)
