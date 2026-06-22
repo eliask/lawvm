@@ -71,6 +71,58 @@ def test_payload_realization_audit_reports_missing_payload_text() -> None:
     assert findings[0].detail["disposition"] == "source_payload_text_not_realized_in_post_fold_state"
 
 
+def test_payload_realization_audit_scopes_heading_facet_to_cross_heading_payload() -> None:
+    resolved = ResolvedOp(
+        op=AmendmentOp(
+            op_id="replace_chapter_heading",
+            op_type="REPLACE",
+            target_section="7",
+            target_unit_kind="chapter",
+            target_special="otsikko",
+        ),
+        muutos_ir=IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="7",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+                IRNode(kind=IRNodeKind.CROSS_HEADING, text="Sovinnosta ja akordista."),
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="93",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="Unrelated section payload."),),
+                ),
+            ),
+        ),
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="7",
+        op_id="replace_chapter_heading",
+        _op_type_seed="REPLACE",
+        _target_address_override=LegalAddress(path=(("chapter", "7"),), special=FacetKind.HEADING),
+    )
+    after_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+                    IRNode(kind=IRNodeKind.HEADING, text="Sovinnosta ja akordista."),
+                ),
+            ),
+        ),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(resolved,),
+        after_ir=after_ir,
+        amendment_id="1932/55",
+    )
+
+    assert findings == ()
+
+
 def test_payload_realization_audit_attaches_apply_disposition() -> None:
     findings = payload_realization_findings(
         resolved_ops=(_resolved("Substantive amendment payload appears here."),),

@@ -643,7 +643,7 @@ _TARGET_NODE_KINDS: dict[str, frozenset[IRNodeKind]] = {
 }
 
 _FACET_NODE_KINDS: dict[FacetKind, frozenset[IRNodeKind]] = {
-    FacetKind.HEADING: frozenset({IRNodeKind.HEADING}),
+    FacetKind.HEADING: frozenset({IRNodeKind.HEADING, IRNodeKind.CROSS_HEADING}),
     FacetKind.INTRO: frozenset({IRNodeKind.INTRO}),
 }
 
