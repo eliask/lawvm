@@ -15,8 +15,21 @@ from lawvm.core.mutation_accounting import (
 from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
 from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.phase_result import Finding
+from lawvm.core.stage_result import (
+    AuthoritySurface,
+    CoverageCertificate,
+    EMPTY_EVIDENCE,
+    EvidenceBundle,
+    Residual,
+    StageResult,
+)
+from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.tree_ops import receipt_from_diff
 from lawvm.core.write_receipt import WriteReceipt
+from lawvm.finland.apply_replay_authorization import (
+    mint_apply_replay_authority,
+    op_replay_authorized,
+)
 from lawvm.finland.apply import apply_op
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.migration_ledger import MigrationLedger
@@ -377,6 +390,160 @@ def _collect_op_write_receipt(
                 },
             )
         )
+
+
+def apply_resolved_op_staged(
+    request: ApplyResolvedOpRequest,
+    sinks: ApplyResolvedOpSinks,
+) -> StageResult[ReplayState]:
+    """Apply one ResolvedOp and return the typed apply stage (WAIST #7).
+
+    A thin wrapper over :func:`apply_resolved_op_with_audit` (the value-path,
+    kept untouched so existing callers stay 0-delta). It SURFACES the apply
+    boundary's account as the canonical :class:`StageResult` and — the CRUX —
+    mints a real type-carried :class:`AuthoritySurface` (NOT the neutral default)
+    from the SAME facts that already gate whether the write may stand:
+
+      * ``value``    = the mutated :class:`ReplayState`.
+      * ``coverage`` = the receipt declared-footprint partition; every declared
+        path is ``owned``, ``violation==1`` iff the observed-vs-declared
+        cross-check found an undeclared mutation touch.
+      * ``residuals`` = the EXISTING #3 structural mutation-boundary residual
+        (unexplained bound→landed divergence) + an undeclared-touch residual when
+        the cross-check is dirty (REUSED signals, not recomputed semantics).
+      * ``findings``  = the apply findings emitted for THIS op (the #3 blocking
+        ``Finding`` etc.), projected as the typed tuple.
+      * ``evidence``  = a :class:`SourceWitness` from the receipt ``source_anchor``
+        quote-hash when present, else empty footing.
+      * ``authority`` = the minted apply-replay :class:`AuthoritySurface`:
+        ``replay_authorized`` ⟺ ``disposition == "APPLIED"`` AND no blocking
+        structural residual AND a clean undeclared-touch cross-check (the exact
+        conjunction that lets the write stand today). This is the firewall in the
+        type — a permissive strict profile / a bare receipt is named a forbidden
+        shortcut, never authority.
+
+    The apply DECLINE verdict is UNCHANGED (it stays on the #3 residual→`Finding`
+    channel — ESCALATE-3W); the new load-bearing branch the authority adds is at
+    the certificate (the clean-claim gate), not a second apply decline.
+    """
+    receipts_before = len(sinks.write_receipts_out)
+    findings_before = (
+        len(sinks.findings_out) if sinks.findings_out is not None else 0
+    )
+
+    result = apply_resolved_op_with_audit(request, sinks)
+
+    new_receipts = sinks.write_receipts_out[receipts_before:]
+    new_findings = (
+        sinks.findings_out[findings_before:]
+        if sinks.findings_out is not None
+        else []
+    )
+
+    # The op-level receipt (if a write landed) is the footprint + boundary
+    # account; an undeclared touch surfaces as the apply-boundary violation
+    # finding the value-path already emitted.
+    receipt = new_receipts[-1] if new_receipts else None
+    undeclared_touch_present = any(
+        finding.kind == WRITE_RECEIPT_VIOLATION_FINDING_CODE and finding.blocking
+        for finding in new_findings
+    )
+
+    coverage = _staged_apply_coverage(receipt, undeclared_touch_present)
+    residuals = _staged_apply_residuals(receipt, undeclared_touch_present)
+    evidence = _staged_apply_evidence(receipt)
+
+    has_blocking_structural_residual = any(item.blocking for item in residuals)
+    replay_authorized = op_replay_authorized(
+        disposition=result.disposition,
+        has_blocking_structural_residual=has_blocking_structural_residual,
+        undeclared_touch_present=undeclared_touch_present,
+    )
+    authority: AuthoritySurface = mint_apply_replay_authority(
+        replay_authorized=replay_authorized
+    )
+
+    return StageResult(
+        value=result.state,
+        evidence=evidence,
+        residuals=residuals,
+        findings=tuple(new_findings),
+        coverage=coverage,
+        authority=authority,
+    )
+
+
+def _staged_apply_coverage(
+    receipt: Optional[WriteReceipt],
+    undeclared_touch_present: bool,
+) -> CoverageCertificate:
+    """The receipt declared-footprint partition (violation iff undeclared touch)."""
+    declared = len(receipt.declared_footprint) if receipt is not None else 0
+    return CoverageCertificate(
+        unit="paths",
+        total=declared,
+        owned=declared,
+        residual=0,
+        violation=1 if undeclared_touch_present else 0,
+    )
+
+
+def _staged_apply_residuals(
+    receipt: Optional[WriteReceipt],
+    undeclared_touch_present: bool,
+) -> tuple[Residual, ...]:
+    """REUSE the existing #3 structural + undeclared-touch residual signals.
+
+    The op-level receipt carries no resolver binding (``bound_target_path is
+    None``); there is no bound→landed divergence to explain, so the structural
+    mutation-boundary residual only fires for a receipt that bound a target and
+    landed elsewhere with no named rule (the exact #3 condition).
+    """
+    residuals: list[Residual] = []
+    if (
+        receipt is not None
+        and receipt.bound_target_path is not None
+        and not receipt.divergence_explained
+    ):
+        residuals.append(
+            Residual(
+                kind="unowned_violation",
+                reason="unexplained_mutation_boundary_divergence",
+                scope=str(receipt.op_id or ""),
+                text="",
+                blocking=True,
+            )
+        )
+    if undeclared_touch_present:
+        residuals.append(
+            Residual(
+                kind="unowned_violation",
+                reason="undeclared_mutation_touch",
+                scope=str(receipt.op_id or "") if receipt is not None else "",
+                text="",
+                blocking=True,
+            )
+        )
+    return tuple(residuals)
+
+
+def _staged_apply_evidence(receipt: Optional[WriteReceipt]) -> EvidenceBundle:
+    """Project the receipt ``source_anchor`` quote-hash into a SourceWitness."""
+    if receipt is None:
+        return EMPTY_EVIDENCE
+    anchor = receipt.source_anchor
+    if anchor is None:
+        return EMPTY_EVIDENCE
+    algorithm, _, digest = anchor.quote_hash.partition(":")
+    return EvidenceBundle(
+        (
+            SourceWitness(
+                source_role="amendment_source_clause",
+                artifact_id=anchor.source_artifact_id,
+                digest=DigestWitness(digest_algorithm=algorithm, digest=digest),
+            ),
+        )
+    )
 
 
 def _audit_for_rop(

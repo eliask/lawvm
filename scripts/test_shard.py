@@ -231,6 +231,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_uncovered_target_resolve.py",
         "test_fi_apply_intent_facade.py",
         "test_fi_apply_resolved_op.py",
+        "test_fi_apply_authority_stage.py",
         "test_fi_apply_loop_state.py",
         "test_fi_broken_detection.py",
         "test_fi_chapter_labelled_subheading_recovery.py",

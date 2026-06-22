@@ -14,6 +14,7 @@ from typing import Optional, cast
 
 from lawvm.core.tree_ops import check_invariants as _check_tree_invariants
 from lawvm.finland.amendment_selection import resolve_applicable_amendment_records
+from lawvm.finland.apply_replay_authorization import aggregate_replay_authority
 from lawvm.finland.chapter_seed import seed_missing_chapters as _seed_missing_chapters
 from lawvm.finland.consolidated_store import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import (
@@ -230,6 +231,19 @@ def replay_xml(
                 debug_log=logger.debug,
                 quiet=quiet,
             )
+        )
+
+        # StageResult endgame WAIST #7: aggregate the per-replay apply/replay
+        # execution authority over every landed write (replay_authorized = AND
+        # over all landed writes). Carried on ReplayProducts so the per-replay
+        # clean-claim predicate the certificate firewall branches on is
+        # type-carried, not convention-bridged. Descriptive: it mints
+        # replay_authorized=True iff every landed receipt's boundary is explained
+        # AND no apply-boundary touch-outside-target violation finding fired (the
+        # exact conjunction that lets the writes stand today).
+        products.apply_authority = aggregate_replay_authority(
+            write_receipts=signals.write_receipts,
+            findings=signals.findings,
         )
 
         return ReplayResult(

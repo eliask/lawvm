@@ -38,7 +38,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from lawvm.core.observation_registry import FINDING_REGISTRY, FindingSpec
 from lawvm.core.provenance import SourceAnchor
-from lawvm.core.stage_result import StageResult
+from lawvm.core.stage_result import AuthoritySurface, StageResult
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 from lawvm.tools.export_transition_graph import (
     DEFAULT_GRANULARITY,
@@ -108,6 +108,11 @@ D_STAGE_FINDING_LEDGER = "lawvm.stage_finding_ledger.v0"
 D_STAGE_COVERAGE = "lawvm.stage_coverage.v0"
 D_STAGE_ACCOUNT = "lawvm.stage_account.v0"
 D_STAGE_ACCOUNTS = "lawvm.stage_accounts.v0"
+# WAIST #7 — the apply/replay execution-authority subroot. Additive: with an
+# authorized replay (the green-corpus default) its single leaf is value-stable
+# and it NEVER folds into the flat residual/finding/coverage roots, so those stay
+# value-identical (0-delta). The checker can read WHICH replay was unauthorized.
+D_APPLY_AUTHORITY = "lawvm.apply_authority.v0"
 
 # Stage ids for the per-stage account ledger (WAIST #8/#9 live feeders).
 STAGE_TIMELINE_MATERIALIZATION = "fi.timeline.materialization"
@@ -129,6 +134,14 @@ SOURCE_ANCHOR_UNAVAILABLE_CODE = "CERT.SOURCE_ANCHOR_UNAVAILABLE"
 # restorations, the enacted-base first materialization) carry no attributed ops
 # and are NOT flagged — they are recorded as writer notes only.
 RECEIPT_TRANSITION_DIVERGENCE_CODE = "CERT.RECEIPT_TRANSITION_DIVERGENCE"
+
+# WAIST #7 firewall: a landed WriteReceipt carried into the dossier under a
+# replay whose aggregate apply authority is NOT replay_authorized (a neutral /
+# un-granted ExecutionAuthorization, or a write that does not stand under the
+# conservative apply gate). This BLOCKS the clean claim: an unauthorized replay
+# cannot masquerade as an authoritative receipt/dossier (Pro §8 the authority
+# firewall; Pro §10 "clean claims forbidden when scoped blocking residue exists").
+UNAUTHORIZED_REPLAY_RECEIPT_CODE = "CERT.UNAUTHORIZED_REPLAY_RECEIPT"
 
 # Certificate spec §3.4 + §3.5: per-family run-provenance exclusion list.
 # The seam payload's `engine` block (git commit/dirty/repository) is
@@ -466,6 +479,103 @@ def _verify_materialization_stage_clean(stage_account_rows: Sequence[Mapping[str
         not any(bool(r.get("blocking")) for r in materialization_account["residual_rows"]),
         "clean certificate carries a blocking materialization residual; a "
         "degraded materialization cannot be certified clean",
+    )
+
+
+# ---------------------------------------------------------------------------
+# WAIST #7 — the apply/replay execution-authority firewall at the certificate.
+# ---------------------------------------------------------------------------
+
+
+def _fi_apply_authority(bundle: Any) -> "AuthoritySurface":
+    """The per-replay apply execution authority for this dossier (firewall input).
+
+    Re-derived DESCRIPTIVELY from ``bundle.result`` (the landed write receipts +
+    findings the cert already consumes) so the writer never trusts an un-set
+    carrier — the same conjunction the apply boundary minted on its
+    ``StageResult``: every landed receipt's mutation boundary is explained AND no
+    apply-boundary touch-outside-target violation finding fired. This is the
+    cert-side recompute of ``ReplayProducts.apply_authority`` (the carried value
+    and this recompute agree on a faithful replay).
+    """
+    from lawvm.finland.apply_replay_authorization import aggregate_replay_authority
+
+    result = bundle.result
+    return aggregate_replay_authority(
+        write_receipts=result.write_receipts,
+        findings=result.findings,
+    )
+
+
+def apply_authority_row(authority: "AuthoritySurface") -> Dict[str, Any]:
+    """Project the per-replay :class:`AuthoritySurface` onto a committed row.
+
+    Self-evidencing: it carries the typed authorization fields (a checker reads
+    WHY the replay was/was not authorized), not just a flag.
+    """
+    authorization = authority.authorization
+    return {
+        "replay_authorized": bool(authority.replay_authorized),
+        "is_neutral": bool(authority.is_neutral),
+        "authorization": authorization.to_dict() if authorization is not None else None,
+    }
+
+
+def apply_authority_root(authority: "AuthoritySurface") -> str:
+    """Subroot over the single per-replay apply-authority row (additive layer).
+
+    A single leaf under ``D_APPLY_AUTHORITY``; with an authorized replay (the
+    green-corpus default) it is value-stable and never folds into the flat
+    residual/finding/coverage roots (0-delta).
+    """
+    return leaf_hash(D_APPLY_AUTHORITY, apply_authority_row(authority))
+
+
+def _require_authorized_replay(authority: "AuthoritySurface") -> None:
+    """Writer-side firewall (WAIST #7): an unauthorized replay forbids a clean cert.
+
+    The load-bearing branch: a clean/authoritative dossier requires the
+    per-replay apply authority to be ``replay_authorized`` (granted by an explicit
+    :class:`ExecutionAuthorization`). A neutral / un-granted surface, or a replay
+    that landed a write outside the conservative apply gate, makes a clean claim
+    impossible — "an unauthorized replay cannot produce an authoritative receipt".
+    RED if the authority is severed back to the neutral default (it would be
+    ``replay_authorized=False`` and this guard fires) or if the gate is wired to
+    ignore it.
+    """
+    _require(
+        authority.replay_authorized,
+        "apply/replay authority is not replay_authorized (the per-replay "
+        "ExecutionAuthorization does not grant replay authority); a clean "
+        "certificate cannot be claimed over an unauthorized replay — an "
+        "unauthorized replay cannot produce an authoritative receipt",
+    )
+
+
+def _verify_apply_authority_clean(
+    apply_authority_rows: Sequence[Mapping[str, Any]],
+) -> None:
+    """`verify_bundle` consumer: re-assert the firewall from the COMMITTED row.
+
+    The writer-side recompute of :func:`_require_authorized_replay` over the
+    committed apply-authority row. A clean certificate MUST carry exactly one
+    apply-authority row whose ``replay_authorized`` is True. If the row was
+    severed before the dossier (the authority dropped to neutral), the row is
+    absent or non-authorized — a failure here, so the firewall cannot regress
+    silently. Raises :class:`BundleSelfCheckError`.
+    """
+    _require(
+        len(apply_authority_rows) == 1,
+        "clean certificate must carry exactly one apply-authority row "
+        f"(found {len(apply_authority_rows)}); the apply/replay authority was not "
+        "routed into the dossier",
+    )
+    row = apply_authority_rows[0]
+    _require(
+        bool(row.get("replay_authorized")) is True,
+        "clean certificate carries an apply-authority row that is NOT "
+        "replay_authorized; an unauthorized replay cannot be certified clean "
+        "(an unauthorized replay cannot produce an authoritative receipt)",
     )
 
 
@@ -1151,6 +1261,17 @@ def build_certificate_bundle(
 
     stage_accounts_root_value = stage_accounts_root(stage_account_rows)
 
+    # --- apply/replay execution-authority firewall (StageResult endgame WAIST
+    # #7) --- The per-replay apply authority (AND over every landed write):
+    # re-derived descriptively from the landed receipts + findings this dossier
+    # already consumes. Routed into the dossier as an additive subroot (0-delta:
+    # an authorized replay yields a value-stable single leaf that never folds into
+    # the flat roots). The firewall bite (the clean-claim gate) lives just below,
+    # after `certificate_status` is computed.
+    apply_authority = _fi_apply_authority(bundle)
+    apply_authority_row_value = apply_authority_row(apply_authority)
+    apply_authority_root_value = apply_authority_root(apply_authority)
+
     # --- trace: covering-state evolution per boundary date (§10 carve-out) ---
     ops_by_date = _index_ops_by_date(bundle.lo_ops)
     expiry_ops_by_date = _index_ops_by_expiry_date(bundle.lo_ops)
@@ -1731,6 +1852,17 @@ def build_certificate_bundle(
         certification_statuses=certification_statuses,
         registered_codes=registered_codes,
     )
+
+    # WAIST #7 firewall bite: a CLEAN/authoritative dossier requires the
+    # per-replay apply authority to be replay_authorized. An unauthorized replay
+    # (neutral/un-granted ExecutionAuthorization, or a write outside the
+    # conservative apply gate) cannot produce an authoritative receipt — the clean
+    # claim is forbidden here (it may still emit a BLOCKED dossier). On the green
+    # corpus every replay authorizes, so this never fires (0-delta). RED if the
+    # authority is severed to neutral or the gate is wired to ignore it.
+    if certificate_status == "clean":
+        _require_authorized_replay(apply_authority)
+
     projection_coverage = {
         "seam": {
             "universe_kind": "all_address_interval_states",
@@ -1833,6 +1965,11 @@ def build_certificate_bundle(
             "root": stage_accounts_root_value,
             "locator": "stages/stage_accounts.jsonl",
         },
+        "apply_authority": {
+            "schema": D_APPLY_AUTHORITY,
+            "root": apply_authority_root_value,
+            "locator": "stages/apply_authority.jsonl",
+        },
     }
 
     roots = {
@@ -1848,6 +1985,9 @@ def build_certificate_bundle(
         # Additive per-stage attribution layer (WAIST #9); does NOT fold into the
         # flat residual/finding/coverage roots above (they stay value-identical).
         "stage_accounts_root": stage_accounts_root_value,
+        # Additive apply/replay authority subroot (WAIST #7); value-stable for an
+        # authorized replay, never folds into the flat roots (0-delta).
+        "apply_authority_root": apply_authority_root_value,
     }
 
     envelope: Dict[str, Any] = {
@@ -1928,6 +2068,9 @@ def build_certificate_bundle(
     _write_jsonl(out_path / "coverage" / "source_unit_coverage.jsonl", source_unit_rows)
     _write_jsonl(out_path / "coverage" / "potential_operation_coverage.jsonl", potential_op_rows)
     _write_jsonl(out_path / "stages" / "stage_accounts.jsonl", stage_account_rows)
+    _write_jsonl(
+        out_path / "stages" / "apply_authority.jsonl", [apply_authority_row_value]
+    )
 
     # Writer-side self-check: recompute every committed root from the bundle
     # files independently. Not a checker; raises on writer inconsistency.
@@ -2062,6 +2205,26 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         _verify_materialization_stage_clean(
             _read_jsonl(bundle_path / artifacts["stage_accounts"]["locator"])
         )
+        # WAIST #7 firewall recompute: a clean certificate MUST carry a
+        # replay_authorized apply-authority row. Re-asserted from the COMMITTED
+        # row so a severed authority (dropped to neutral) makes the self-check
+        # raise BundleSelfCheckError — the guard-liveness property.
+        _verify_apply_authority_clean(
+            _read_jsonl(bundle_path / artifacts["apply_authority"]["locator"])
+        )
+
+    # apply/replay authority subroot (additive): recompute from the committed row.
+    apply_authority_rows = _read_jsonl(
+        bundle_path / artifacts["apply_authority"]["locator"]
+    )
+    _require(
+        len(apply_authority_rows) == 1,
+        "apply_authority artifact must carry exactly one row "
+        f"(found {len(apply_authority_rows)})",
+    )
+    recomputed["apply_authority_root"] = leaf_hash(
+        D_APPLY_AUTHORITY, apply_authority_rows[0]
+    )
 
     # sources
     identities = json.loads(
@@ -2371,6 +2534,7 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         ("residual_ledger", "residual_root"),
         ("finding_ledger", "finding_root"),
         ("stage_accounts", "stage_accounts_root"),
+        ("apply_authority", "apply_authority_root"),
     ):
         _require(artifacts[key]["root"] == roots[root_name], f"artifacts.{key}.root != roots.{root_name}")
 

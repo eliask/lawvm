@@ -71,7 +71,7 @@ from lawvm.finland.tree_invariant_allowances import (
 )
 
 if TYPE_CHECKING:
-    from lawvm.core.stage_result import StageResult
+    from lawvm.core.stage_result import AuthoritySurface, StageResult
     from lawvm.finland.replay_fold_timeline_backfill import FoldTimelineBackfillRecord
     from lawvm.finland.timeline_version_dedupe import TimelineVersionDedupeRecord
     from lawvm.finland.statute import ReplayState, StatuteContext
@@ -176,6 +176,16 @@ class ReplayProducts:
     # per-stage account subroot instead of discarding it. ``None`` only on the
     # full-products-skipped path.
     materialization_stage: Optional["StageResult[IRStatute]"] = None
+    # StageResult-endgame WAIST #7: the per-replay apply/replay execution
+    # authority aggregated over every landed write (replay_authorized = AND over
+    # all landed writes; one unauthorized write un-authorizes the replay). This is
+    # the firewall the certificate dossier branches on — an unauthorized replay
+    # cannot produce an authoritative (clean) receipt/dossier. ``None`` until the
+    # apply path's receipts/findings are known (set at ReplayResult assembly,
+    # where the landed receipts + findings are accumulated); the certificate
+    # re-derives it descriptively from ``bundle.result`` so the writer never
+    # trusts an un-set carrier.
+    apply_authority: Optional["AuthoritySurface"] = None
 
     def __post_init__(self) -> None:
         temporal_events = tuple(self.temporal_events)
