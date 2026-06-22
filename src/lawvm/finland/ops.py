@@ -1230,6 +1230,7 @@ class ResolvedOp:
             target_part=op.target_part,
             target_paragraph=op.target_paragraph,
             target_item=op.target_item,
+            target_subitem=op.target_subitem,
             target_special=op.target_special,
         )
         if (
@@ -1799,6 +1800,7 @@ def _synthesize_target_address(
     target_part: str | None,
     target_paragraph: int | None,
     target_item: str | None,
+    target_subitem: str | None = None,
     target_special: str | None,
 ) -> Optional[LegalAddress]:
     """Build a target LegalAddress from explicit late-waist construction inputs.
@@ -1845,8 +1847,13 @@ def _synthesize_target_address(
         # (e.g. ``3d``); split it back into the two separate address segments so
         # the canonical address never collapses the alakohta into the kohta.
         item_text = str(target_item)
-        compound = re.fullmatch(r"(\d+)([a-z])", item_text)
-        if compound is not None:
+        compound = re.fullmatch(r"(\d+)([a-z])", item_text) if target_subitem is None else None
+        if target_subitem is not None:
+            if item_text.endswith(str(target_subitem)):
+                item_text = item_text[: -len(str(target_subitem))]
+            path_parts.append(("item", item_text))
+            path_parts.append(("subitem", str(target_subitem)))
+        elif compound is not None:
             path_parts.append(("item", compound.group(1)))
             path_parts.append(("subitem", compound.group(2)))
         else:

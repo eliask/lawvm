@@ -171,12 +171,16 @@ def _consume_trailing_alakohta(scan: _Scan) -> Optional[list[str]]:
     saved = scan.pos
 
     letters = _letter_list(scan)
+    if letters:
+        _read(scan, _DASH)
     if letters and (t := scan.peek()) and t.cat == "ALAKOHTA":
         scan.advance()
         return letters
     scan.goto(saved)
 
     nums = _number_list(scan)
+    if nums:
+        _read(scan, _DASH)
     if nums and (t := scan.peek()) and t.cat == "ALAKOHTA":
         scan.advance()
         return [n + sf for n, sf in nums]

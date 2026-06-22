@@ -554,6 +554,8 @@ def _recognize_alakohta_insert_into_item(
     if not letters:
         letter = _letter(scan)
         letters = [letter] if letter is not None else []
+    if letters and _at(scan, "DASH"):
+        scan.advance()
     if not letters or not _at(scan, "ALAKOHTA"):
         scan.goto(saved)
         return None

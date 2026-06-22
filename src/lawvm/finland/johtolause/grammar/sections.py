@@ -396,6 +396,8 @@ def _same_item_alakohta_continuation(scan: _Scan, subs: list["SubRef"]) -> Optio
     if not labels:
         nums = _number_list(scan)
         labels = [n + sf for n, sf in nums] if nums else None
+    if labels:
+        _read(scan, _DASH)
     if labels and (t := scan.peek()) and t.cat == "ALAKOHTA":
         scan.advance()
         return [

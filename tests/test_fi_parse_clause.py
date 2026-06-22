@@ -1112,6 +1112,14 @@ def test_2024_539_replace_and_insert_alakohta_lists_survive_cross_verb_clause() 
             "L P 4 1 2 h",
         ),
         (
+            "lisätään 4 §:n 2 kohtaan uusi h-alakohta seuraavasti:",
+            "L P 4 1 2 h",
+        ),
+        (
+            "lisätään 4 §:n 2 kohtaan uusi h -alakohta seuraavasti:",
+            "L P 4 1 2 h",
+        ),
+        (
             "lisätään 4 §:n 2 kohtaan, sellaisena kuin se on osaksi laissa 650/2014, "
             "uusi i alakohta, seuraavasti:",
             "L P 4 1 2 i",
@@ -1128,6 +1136,56 @@ def test_insertion_alakohta_into_item_defaults_omitted_momentti_to_first(
     assert [op.code() for op in ops] == [expected]
     assert ops[0].witness is not None
     assert ops[0].witness.rule_id == "fi.insertion_alakohta_into_item"
+
+
+def test_2011_359_hyphenated_item_subitem_insert_continuations_stay_structural() -> None:
+    """Hyphenated ``e-alakohta`` must not drop to section-reference fallback."""
+
+    text = (
+        "muutetaan ympäristövaikutusten arviointimenettelystä annetun "
+        "valtioneuvoston asetuksen (713/2006) 6 §:n 3 kohdan a-alakohta sekä "
+        "lisätään 6 §:n 7 kohtaan uusi e-alakohta ja 8 kohtaan uusi e, f ja "
+        "g-alakohta seuraavasti:"
+    )
+    result = parse_clause(text, statute_id="2006/713")
+
+    assert result.parser_lane == "grammar_owned"
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 6 1 3 a",
+        "L P 6 1 7 e",
+        "L P 6 1 8 e",
+        "L P 6 1 8 f",
+        "L P 6 1 8 g",
+    ]
+    assert all(op.witness is not None for op in result.parsed_ops)
+    witness_rule_ids = [op.witness.rule_id for op in result.parsed_ops if op.witness is not None]
+    assert witness_rule_ids == [
+        "fi.section_ref",
+        "fi.insertion_alakohta_into_item",
+        "fi.insertion_alakohta_into_item",
+        "fi.insertion_alakohta_into_item",
+        "fi.insertion_alakohta_into_item",
+    ]
+
+
+def test_2011_359_spaced_dash_subitems_stay_structural() -> None:
+    """Finlex spacing ``a- alakohta`` / ``e -alakohta`` is structural trivia."""
+
+    text = (
+        "muutetaan ympäristövaikutusten arviointimenettelystä annetun asetuksen "
+        "(713/2006) 6 §:n 3 kohdan a- alakohta sekä lisätään 6 §:n 7 kohtaan "
+        "uusi e -alakohta ja 8 kohtaan uusi e, f ja g -alakohta seuraavasti:"
+    )
+    result = parse_clause(text, statute_id="2006/713")
+
+    assert result.parser_lane == "grammar_owned"
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 6 1 3 a",
+        "L P 6 1 7 e",
+        "L P 6 1 8 e",
+        "L P 6 1 8 f",
+        "L P 6 1 8 g",
+    ]
 
 
 def test_2014_692_insertion_list_keeps_anaphoric_momentti_and_alakohta_targets() -> None:

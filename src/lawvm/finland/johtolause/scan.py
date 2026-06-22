@@ -861,6 +861,7 @@ def annotate_qualifiers(tokens: list[Token]) -> list[Annotation]:
         if (
             t.cat == "ALAKOHTA"
             and not (i > 0 and tokens[i - 1].cat in {"LETTER", "NUM"})
+            and not (i > 1 and tokens[i - 1].cat == "DASH" and tokens[i - 2].cat in {"LETTER", "NUM"})
             and not (i > 0 and tokens[i - 1].cat == "UUSI")
             and not (i > 1 and tokens[i - 1].cat == "LETTER" and tokens[i - 2].cat == "UUSI")
         ):

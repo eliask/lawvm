@@ -396,7 +396,9 @@ _LETTER_PYKALA_RE = re.compile(r"^([a-z])(\u00a7.*)$")  # a\u00a7:n
 _NUM_DASH_STRUCT_RE = re.compile(
     rf"^(\d+[a-z]?){_DASH_CLASS}(kohta|kohdan|momentti|momentin|momenttiin)$", re.I
 )
-_LETTER_DASH_STRUCT_RE = re.compile(rf"^([a-z]){_DASH_CLASS}(kohta|kohdan)$", re.I)
+_LETTER_DASH_STRUCT_RE = re.compile(
+    rf"^([a-z]){_DASH_CLASS}(kohta|kohdan|alakohta|alakohdan)$", re.I
+)
 _LETTER_DASH_NUM_RE = re.compile(rf"^([a-z]){_DASH_CLASS}(\d+)$")
 # Letter range for item enumerations: "a-c", "j-l" → LETTER DASH LETTER.
 # Single ASCII letter, one dash, single ASCII letter (no §, no momentti).
