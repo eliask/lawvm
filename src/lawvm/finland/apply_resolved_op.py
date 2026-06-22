@@ -58,11 +58,15 @@ class ApplyResolvedOpAudit:
 
     source_statute: str
     op_id: str
+    action_type: str
     description: str
     target_unit_kind: str
     target_norm: str
     target_chapter: str
     target_part: str
+    target_paragraph: str
+    target_item: str
+    target_special: str
     disposition: ApplyDisposition
 
     def to_observation(self) -> dict[str, object]:
@@ -72,11 +76,15 @@ class ApplyResolvedOpAudit:
             "detail": {
                 "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
                 "op_id": self.op_id,
+                "action_type": self.action_type,
                 "description": self.description,
                 "target_unit_kind": self.target_unit_kind,
                 "target_norm": self.target_norm,
                 "target_chapter": self.target_chapter,
                 "target_part": self.target_part,
+                "target_paragraph": self.target_paragraph,
+                "target_item": self.target_item,
+                "target_special": self.target_special,
                 "disposition": self.disposition,
             },
         }
@@ -554,10 +562,16 @@ def _audit_for_rop(
     return ApplyResolvedOpAudit(
         source_statute=request.amendment_id,
         op_id=request.rop.op_id or "",
+        action_type=request.rop.resolved_action_type,
         description=request.rop.description(),
         target_unit_kind=str(group.unit_kind or ""),
         target_norm=str(group.target_norm or ""),
         target_chapter=str(group.target_chapter or ""),
         target_part=str(group.target_part or ""),
+        target_paragraph=str(request.rop.effective_target_paragraph)
+        if request.rop.effective_target_paragraph is not None
+        else "",
+        target_item=str(request.rop.effective_target_item_label or "").strip(),
+        target_special=str(request.rop.effective_target_special or "").strip(),
         disposition=disposition,
     )

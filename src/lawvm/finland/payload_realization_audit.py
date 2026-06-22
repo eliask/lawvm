@@ -3,20 +3,29 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_realization import (
+    PayloadRealizationGap,
     PayloadRealizationUnit,
     audit_payload_realization,
     payload_realization_gap_findings,
 )
-from lawvm.core.phase_result import Finding
+from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.ops import ResolvedOp
 
 _REALIZING_ACTION_TYPES = frozenset({"INSERT", "REPLACE"})
+
+
+@dataclass(frozen=True, slots=True)
+class _RealizationCandidate:
+    op_id: str
+    action_type: str
+    target: LegalAddress | None
+    unit: PayloadRealizationUnit
 
 
 def payload_realization_findings(
@@ -33,12 +42,23 @@ def payload_realization_findings(
     infer a target address, change action family, or mutate replay output.
     """
 
-    units = _payload_realization_units(resolved_ops)
+    candidates = _payload_realization_candidates(resolved_ops)
     gaps = audit_payload_realization(
-        units=units,
+        units=tuple(candidate.unit for candidate in candidates),
         after_text=irnode_to_text(after_ir),
     )
+    shadowed_by_unit_id = _same_amendment_shadowed_units(
+        candidates,
+        apply_dispositions_by_op_id=apply_dispositions_by_op_id,
+    )
+    shadowed_gaps = tuple(gap for gap in gaps if gap.unit_id in shadowed_by_unit_id)
+    gaps = tuple(gap for gap in gaps if gap.unit_id not in shadowed_by_unit_id)
     findings = payload_realization_gap_findings(gaps, source_ref=amendment_id)
+    findings = findings + _same_amendment_shadow_findings(
+        shadowed_gaps,
+        amendment_id=amendment_id,
+        shadowed_by_unit_id=shadowed_by_unit_id,
+    )
     if not apply_dispositions_by_op_id:
         return findings
     return tuple(
@@ -101,13 +121,158 @@ def attach_payload_gap_apply_dispositions(
                 {op_id: disposition},
             )
         )
-    return tuple(annotated)
+    return _suppress_same_amendment_shadowed_payload_gaps(tuple(annotated))
+
+
+def _suppress_same_amendment_shadowed_payload_gaps(
+    findings: tuple[Finding, ...],
+) -> tuple[Finding, ...]:
+    apply_audits_by_source: dict[str, list[dict[str, object]]] = {}
+    for finding in findings:
+        if finding.kind != "APPLY.RESOLVED_OP_AUDIT":
+            continue
+        detail = finding.detail.get("detail", finding.detail)
+        if not isinstance(detail, Mapping):
+            continue
+        source = finding.source_statute or ""
+        if not source:
+            continue
+        apply_audits_by_source.setdefault(source, []).append(dict(detail))
+
+    if not apply_audits_by_source:
+        return findings
+
+    retained: list[Finding] = []
+    shadow_findings: list[Finding] = []
+    shadowed_unit_ids: set[tuple[str, str]] = set()
+    for finding in findings:
+        if finding.kind != "COVERAGE.PAYLOAD_REALIZATION_GAP":
+            retained.append(finding)
+            continue
+        shadow = _same_source_later_applied_replace_shadow(finding, apply_audits_by_source)
+        if shadow is None:
+            retained.append(finding)
+            continue
+        shadow_key = (finding.source_statute or "", str(finding.detail.get("unit_id") or ""))
+        if shadow_key in shadowed_unit_ids:
+            continue
+        shadowed_unit_ids.add(shadow_key)
+        shadow_findings.append(_shadow_finding_from_gap(finding, shadow))
+    return tuple(retained + shadow_findings)
+
+
+def _same_source_later_applied_replace_shadow(
+    gap: Finding,
+    apply_audits_by_source: Mapping[str, list[dict[str, object]]],
+) -> dict[str, object] | None:
+    source = gap.source_statute or ""
+    audits = apply_audits_by_source.get(source, [])
+    if not audits:
+        return None
+    gap_detail = gap.detail
+    if str(gap_detail.get("apply_disposition") or "") != "APPLIED":
+        return None
+    gap_op_id = str(gap_detail.get("unit_id") or "")
+    gap_target = _address_path_from_string(str(gap_detail.get("parent_label") or ""))
+    if not gap_op_id or not gap_target:
+        return None
+    gap_index = next(
+        (index for index, audit in enumerate(audits) if str(audit.get("op_id") or "") == gap_op_id),
+        None,
+    )
+    if gap_index is None:
+        return None
+    for audit in audits[gap_index + 1 :]:
+        if str(audit.get("action_type") or "").upper() != "REPLACE":
+            continue
+        if str(audit.get("disposition") or "") != "APPLIED":
+            continue
+        if str(audit.get("target_special") or ""):
+            continue
+        audit_target = _address_path_from_apply_audit(audit)
+        if audit_target and _path_has_prefix(gap_target, audit_target):
+            return audit
+    return None
+
+
+def _address_path_from_apply_audit(
+    audit: Mapping[str, object],
+) -> tuple[tuple[str, str], ...]:
+    path: list[tuple[str, str]] = []
+    part = str(audit.get("target_part") or "")
+    chapter = str(audit.get("target_chapter") or "")
+    target_norm = str(audit.get("target_norm") or "")
+    unit_kind = str(audit.get("target_unit_kind") or "")
+    paragraph = str(audit.get("target_paragraph") or "")
+    item = str(audit.get("target_item") or "")
+    if part:
+        path.append(("part", part))
+    if chapter:
+        path.append(("chapter", chapter))
+    if unit_kind == "chapter":
+        if not chapter and target_norm:
+            path.append(("chapter", target_norm))
+        return tuple(path)
+    if target_norm:
+        path.append(("section", target_norm))
+    if paragraph:
+        path.append(("subsection", paragraph))
+    if item:
+        path.append(("item", item))
+    return tuple(path)
+
+
+def _address_path_from_string(value: str) -> tuple[tuple[str, str], ...]:
+    path: list[tuple[str, str]] = []
+    for part in value.split("/"):
+        if not part or ":" not in part:
+            break
+        kind, label = part.split(":", 1)
+        if not kind or not label:
+            return ()
+        path.append((kind, label))
+    return tuple(path)
+
+
+def _path_has_prefix(
+    path: tuple[tuple[str, str], ...],
+    prefix: tuple[tuple[str, str], ...],
+) -> bool:
+    return len(prefix) <= len(path) and path[: len(prefix)] == prefix
+
+
+def _shadow_finding_from_gap(gap: Finding, shadow: Mapping[str, object]) -> Finding:
+    return Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_SHADOWED_BY_SAME_AMENDMENT",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute=gap.source_statute,
+        blocking=False,
+        detail={
+            "unit_id": gap.detail.get("unit_id"),
+            "unit_kind": gap.detail.get("unit_kind"),
+            "observed_label": gap.detail.get("observed_label"),
+            "parent_label": gap.detail.get("parent_label"),
+            "shadowing_unit_id": shadow.get("op_id"),
+            "shadowing_action_type": shadow.get("action_type"),
+            "shadowing_target": "/".join(
+                f"{kind}:{label}" for kind, label in _address_path_from_apply_audit(shadow)
+            ),
+            "disposition": "source_payload_shadowed_by_later_same_amendment_replace",
+        },
+    )
 
 
 def _payload_realization_units(
     resolved_ops: tuple[ResolvedOp, ...],
 ) -> tuple[PayloadRealizationUnit, ...]:
-    units: list[PayloadRealizationUnit] = []
+    return tuple(candidate.unit for candidate in _payload_realization_candidates(resolved_ops))
+
+
+def _payload_realization_candidates(
+    resolved_ops: tuple[ResolvedOp, ...],
+) -> tuple[_RealizationCandidate, ...]:
+    units: list[_RealizationCandidate] = []
     for index, rop in enumerate(resolved_ops):
         action_type = getattr(rop, "resolved_action_type", "")
         if action_type not in _REALIZING_ACTION_TYPES:
@@ -120,16 +285,86 @@ def _payload_realization_units(
             continue
         unit_id = rop.op_id or f"resolved_op_{index}"
         target = rop.resolved_target_address
+        unit = PayloadRealizationUnit(
+            unit_id=unit_id,
+            unit_kind=action_type,
+            observed_label=rop.resolved_target_label,
+            parent_label=str(target or ""),
+            text_chunks=_payload_text_chunks(payload_ir),
+        )
         units.append(
-            PayloadRealizationUnit(
-                unit_id=unit_id,
-                unit_kind=action_type,
-                observed_label=rop.resolved_target_label,
-                parent_label=str(target or ""),
-                text_chunks=_payload_text_chunks(payload_ir),
+            _RealizationCandidate(
+                op_id=unit_id,
+                action_type=action_type,
+                target=target,
+                unit=unit,
             )
         )
     return tuple(units)
+
+
+def _same_amendment_shadowed_units(
+    candidates: tuple[_RealizationCandidate, ...],
+    *,
+    apply_dispositions_by_op_id: Mapping[str, str] | None,
+) -> dict[str, _RealizationCandidate]:
+    if not apply_dispositions_by_op_id:
+        return {}
+
+    shadowed: dict[str, _RealizationCandidate] = {}
+    for index, candidate in enumerate(candidates):
+        if candidate.target is None:
+            continue
+        for later in candidates[index + 1 :]:
+            if later.action_type != "REPLACE" or later.target is None:
+                continue
+            if apply_dispositions_by_op_id.get(later.op_id) != "APPLIED":
+                continue
+            if _target_region_supersedes(later.target, candidate.target):
+                shadowed[candidate.op_id] = later
+                break
+    return shadowed
+
+
+def _target_region_supersedes(later_target: LegalAddress, earlier_target: LegalAddress) -> bool:
+    """Return whether a later replace target owns the earlier target region."""
+
+    return earlier_target.has_prefix(later_target)
+
+
+def _same_amendment_shadow_findings(
+    shadowed_gaps: tuple[PayloadRealizationGap, ...],
+    *,
+    amendment_id: str,
+    shadowed_by_unit_id: Mapping[str, _RealizationCandidate],
+) -> tuple[Finding, ...]:
+    seen: set[str] = set()
+    findings: list[Finding] = []
+    for gap in shadowed_gaps:
+        if gap.unit_id in seen:
+            continue
+        seen.add(gap.unit_id)
+        shadow = shadowed_by_unit_id[gap.unit_id]
+        findings.append(
+            Finding(
+                kind="COVERAGE.PAYLOAD_REALIZATION_SHADOWED_BY_SAME_AMENDMENT",
+                role=OBSERVATION_ROLE,
+                stage="post_apply_payload_realization",
+                source_statute=amendment_id,
+                blocking=False,
+                detail={
+                    "unit_id": gap.unit_id,
+                    "unit_kind": gap.unit_kind,
+                    "observed_label": gap.observed_label,
+                    "parent_label": gap.parent_label,
+                    "shadowing_unit_id": shadow.op_id,
+                    "shadowing_action_type": shadow.action_type,
+                    "shadowing_target": str(shadow.target or ""),
+                    "disposition": "source_payload_shadowed_by_later_same_amendment_replace",
+                },
+            )
+        )
+    return tuple(findings)
 
 
 def _target_scoped_payload_ir(payload_ir: IRNode, target: LegalAddress | None) -> IRNode | None:
