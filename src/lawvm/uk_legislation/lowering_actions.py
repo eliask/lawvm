@@ -234,6 +234,7 @@ _UK_EFFECT_TYPE_ACTIONS = {
     "repealed": "repeal",
     "entry repealed": "repeal",
     "repealed in part": "replace",
+    "revoked in part": "replace",  # OPC drafting synonym: "repealed in part"
     "words repealed": "replace",
     "word repealed": "replace",
     "substituted": "replace",
