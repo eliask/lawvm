@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LawVM — lakigraafi & transkluusio</title>
+    <link rel="stylesheet" href="statute-timeline.css" />
+    <link rel="stylesheet" href="law-graph.css" />
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <h1 class="logo">LawVM</h1>
+        <p class="tagline">
+          Proof-graded relation graph + cross-work transclusion — read straight from a substrate pack
+        </p>
+      </div>
+    </header>
+
+    <div class="topbar">
+      <div class="wrap">
+        <div class="topbar-row">
+          <div class="ctl">
+            <span class="ctl-label">Säädös</span>
+            <select id="statute-select"></select>
+          </div>
+          <div class="verify-badge" id="verify-badge" title="In-browser L0 row-integrity check">
+            <span class="verify-spin">tarkistetaan…</span>
+          </div>
+          <label class="focus-toggle" id="eu-only-toggle" title="Show only edges that point at the EU regulation">
+            <input type="checkbox" id="eu-only" /> vain EU-viittaukset
+          </label>
+        </div>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+
+    <main>
+      <div class="wrap graph-layout">
+        <aside class="rail" id="edge-rail">
+          <h2 class="rail-title">Relaatiograafi</h2>
+          <p class="rail-sub" id="edge-summary"></p>
+          <div id="edge-list"></div>
+        </aside>
+        <section class="doc-pane">
+          <h2 class="doc-title" id="doc-title"></h2>
+          <p class="doc-meta" id="doc-meta"></p>
+          <div class="doc" id="doc"></div>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        Pack-native viewer — fetches plain JSONL substrate layers, no server, no build.
+        Each interlink carries its proof grade (authority_plane × verification_level); a
+        resolved EU citation transcludes the regulation article inline. See
+        <code>viewer/README</code> and <code>viewer/build-graph-demo.py</code>.
+      </div>
+    </footer>
+
+    <script src="substrate-pack.js"></script>
+    <script src="substrate-verify.js"></script>
+    <script src="law-graph.js"></script>
+  </body>
+</html>

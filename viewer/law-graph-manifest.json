@@ -1,0 +1,17 @@
+[
+  {
+    "pack_id": "fi-1050-2018",
+    "title": "Tietosuojalaki (1050/2018)",
+    "subtitle": "Suomen kansallinen tietosuojalaki",
+    "lang": "fi",
+    "jurisdiction": "fi",
+    "pack": "data/fi-1050-2018",
+    "resolved_edges": "data/fi-1050-2018/edges-resolved.jsonl",
+    "anchors": "data/fi-1050-2018/edge-anchors.json",
+    "transclude_packs": {
+      "32016R0679": "data/eu-gdpr"
+    },
+    "edge_count": 177,
+    "gdpr_resolved_count": 84
+  }
+]

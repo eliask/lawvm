@@ -1,3 +1,118 @@
+# LawVM viewers
+
+Two zero-build, vanilla-JS browser viewers ship here:
+
+* **`law-graph.html`** — a **pack-native relation-graph + transclusion** viewer
+  that reads a LawVM **substrate pack** (the latest plain-JSONL format) directly
+  and renders the proof-graded relation graph + cross-work transclusion. See
+  [Pack-native relation-graph viewer](#pack-native-relation-graph-viewer) below.
+* **`statute-timeline.html`** — the certified-transition-graph timeline viewer
+  (SQLite export), documented in the rest of this file.
+
+---
+
+## Pack-native relation-graph viewer
+
+`law-graph.html` is **pack-native, zero-build, server-less**: it `fetch`es a
+substrate pack's `manifest.json` and its plain-JSONL layers (no zstd, no SQLite —
+just NDJSON, so the browser parses without decompression), renders the statute as
+a readable document, and paints each **relation edge** as an anchored interlink
+carrying its **proof grade** (`authority_plane` × `verification_level` — the
+firewall made visible). When an edge target is a resolved EU **entity node**
+(`entity:celex:32016R0679#006.001`), hovering/opening the anchor **transcludes**
+the regulation article text inline, fetched from a second pack. This is §25
+Step 5: the hypercodex of law made visible — a Finnish statute and the EU
+regulation it points at, in one view.
+
+### Run
+
+```sh
+cd viewer
+python3 -m http.server 8000
+# open http://localhost:8000/law-graph.html
+```
+
+### Build the demo data
+
+The demo packs under `viewer/data/` are **gitignored** (only the build script,
+the manifests, and the viewer source are tracked). Reproduce them with:
+
+```sh
+systemd-run --user --scope -p MemoryMax=18G -p MemorySwapMax=0 \
+    viewer/build-graph-demo.py
+```
+
+The script: (1) `lawvm pack-work 2018/1050` → `data/fi-1050-2018` (Finnish
+**tietosuojalaki**, whose `edges/` layer carries 84 GDPR article cites as
+**opaque** `celex:…` targets); (2) ingests the GDPR consolidated Formex
+(`lawvm.substrate.eu_ingest`) → `data/eu-gdpr` (99 articles / 372 paragraphs,
+each addressable as `entity:celex:32016R0679#…`); (3) **resolves** the opaque
+GDPR cites against the ingested work (`resolve_fi_eu_edge` — 84/84 resolve) and
+writes a viewer **sidecar** (`edges-resolved.jsonl` + `edge-anchors.json`) next
+to the FI pack; (4) `check-pack`s both packs VALID; (5) writes
+`law-graph-manifest.json`.
+
+> **Resolution wiring.** `pack-work` does **not** resolve the `celex:` targets —
+> that resolution lives only in the `eu_ingest` path, not the exporter. The build
+> script runs it (rather than touching shared exporter code) and keeps the
+> certified `pack-work` pack byte-for-byte intact, so its `check-pack` verdict is
+> over the engine's own output. The resolved edges + anchor metadata are a
+> **presentation overlay** (the sidecar), not part of the certified pack.
+
+### Files
+
+* `substrate-pack.js` — the pack reader: fetches `manifest.json` + layer JSONL,
+  indexes content leaves, address/version nodes, relation edges (by `source_ref`
+  + `relation_kind`), and the EU entity-node index for transclusion. Tolerant of
+  `:`-bearing layer paths (the `corpus_version` directory) via per-segment
+  percent-encoding.
+* `substrate-verify.js` — a tiny in-browser re-implementation of the
+  canonical-JSON-v1 hashing + named roots (`semantic_hash` / `set_root`, NUL
+  domain separator) that recomputes every certified row's `object_hash` (L0
+  integrity) and the `content_leaf` SetRoot — the "verify with a tiny checker,
+  not the engine" story shown as a live ✓ badge. **Scope:** it verifies L0 row
+  integrity (665 rows for the demo) + recomputes the content-leaf set root; it
+  does **not** reproduce the manifest `selection_index_root` composition (the
+  8-child `state_selection_root` + `projection_root` fold) — that documented gap
+  is noted in the badge tooltip.
+* `law-graph.js` / `law-graph.css` — the viewer: document tree, proof-grade
+  badges, edge anchors (a `target_set_semantics=all_valid` range is **one**
+  anchor whose expansion lists **all** targets), inline transclusion, and the
+  graph rail.
+* `build-graph-demo.py` — the reproducible build script.
+* `law-graph-manifest.json` — lists the demo pack(s) (like
+  `statute-timeline-manifest.json`).
+
+### Proof-grade visual encoding
+
+Each edge's `authority_plane` × `verification_level` collapses to a badge:
+
+| grade | icon | meaning | plane × level |
+|-------|------|---------|---------------|
+| verified | ✓ (green) | varmennettu johdos | `legal_state` × `delta/replay/hash` |
+| resolved | → (blue) | ratkaistu viittaus | `surface` × `registry_resolved` |
+| evidence | ⁇ | näyttö (claimed) | `evidence` × … |
+| asserted | ≈ (amber) | lähde väittää | … × `source_asserted` |
+| kinship | ≈ (amber) | sukulaisuus (arvio) | `overlay` × `induced_similarity` |
+
+The `status` (resolved / open / ambiguous / qualified) rides alongside as a chip,
+and a `range-chip` marks a one-anchor-many-targets set. A resolved EU target adds
+an `EU ⇲` chip — the transcludable cross-work link.
+
+### Smoke test
+
+```sh
+uv run --with playwright python viewer/test/law_graph_smoke.py
+```
+
+Serves `viewer/`, loads `law-graph.html`, and asserts: the statute renders;
+anchored edges with proof badges (and ≥2 distinct grades) appear; a range anchor
+shows multiple targets; the in-browser L0 verifier badge is OK; and opening a
+GDPR-bearing anchor transcludes the EU article text. Prerequisite: run the build
+script first. Not wired into `ci.sh` (needs Playwright).
+
+---
+
 # LawVM statute-timeline viewer
 
 Zero-build, vanilla-JS browser viewer for a LawVM **certified transition graph**
