@@ -9,6 +9,7 @@ from lawvm.core.semantic_types import FacetKind
 from lawvm.finland.metadata import (
     _amendment_effective_date_with_step,
     _amendment_expiry_date,
+    _chapter_commencement_effective_overrides,
     _commencement_expiry_override,
     _expiry_date_precedes_effective_date,
     _infer_expiry_date_from_temporary_payload_text,
@@ -848,6 +849,20 @@ def test_section_commencement_effective_override_single_section_unchanged() -> N
     _target_mid, chapter_section_map, effective = override
     assert chapter_section_map == {None: {"78c"}}
     assert effective.isoformat() == "2023-07-01"
+
+
+def test_chapter_commencement_effective_overrides_parse_staged_chapter_clauses() -> None:
+    tree = _tree(
+        "Tämän lain 1, 6 ja 6 a luku tulevat voimaan 19 päivänä kesäkuuta 2026. "
+        "Lain 7 ja 7 a luku tulevat kuitenkin voimaan vasta 20 päivänä marraskuuta 2026."
+    )
+
+    overrides = _chapter_commencement_effective_overrides(tree, "2026/31")
+
+    assert overrides == (
+        ("2026/31", frozenset({"1", "6", "6a"}), dt.date(2026, 6, 19)),
+        ("2026/31", frozenset({"7", "7a"}), dt.date(2026, 11, 20)),
+    )
 
 
 def test_subsection_commencement_effective_override_mixed_enumeration() -> None:

@@ -38,11 +38,13 @@ from lawvm.finland.helpers import _parse_iso_date
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import (
     _rewrite_compiled_op_activation_rule_effective,
+    _rewrite_compiled_op_activation_rule_effective_for_chapters,
     _rewrite_compiled_op_activation_rule_effective_for_addresses,
     _rewrite_compiled_op_activation_rule_effective_for_address_suffixes,
     _rewrite_later_effective_lo_groups,
     _rewrite_lo_op_group_id,
     _rewrite_lo_op_source_effective,
+    _rewrite_lo_op_source_effective_for_chapters,
     _rewrite_lo_op_source_effective_for_address_suffixes,
     _rewrite_lo_op_source_expiry,
 )
@@ -79,6 +81,7 @@ class ProcessTemporalPostprocessContext:
     def run(self) -> None:
         self.collect_law_level_text_patches()
         self.apply_commencement_expiry_overrides()
+        self.apply_chapter_commencement_overrides()
         self.apply_section_commencement_overrides()
         self.apply_later_effective_group_rewrites()
         self.apply_kumotaan_replay_product_rewrites()
@@ -165,6 +168,51 @@ class ProcessTemporalPostprocessContext:
                 self.replay_print(
                     f"  [{self.amendment_id}] temporary_section_expiry_override (accepted): "
                     f"{target_mid} {scope} -> {expiry.isoformat()}"
+                )
+
+    def apply_chapter_commencement_overrides(self) -> None:
+        overrides = self.source_model.chapter_commencement_effective_overrides(self.amendment_id)
+        for index, (target_mid, chapter_labels, effective) in enumerate(overrides, start=1):
+            scoped_group_id = (
+                f"finland-johto:{self.amendment_id}:chapter_commencement:{index}"
+            )
+            scoped_addresses = _rewrite_lo_op_source_effective_for_chapters(
+                self.lo_ops_out,
+                target_mid,
+                effective,
+                chapter_labels=chapter_labels,
+                new_group_id=scoped_group_id,
+                base_ir=self.base_ir,
+            )
+            compiled_updated = _rewrite_compiled_op_activation_rule_effective_for_chapters(
+                self.compiled_ops_out,
+                target_mid,
+                effective,
+                chapter_labels=chapter_labels,
+            )
+            if scoped_addresses:
+                self.amendment_temporal_events.append(
+                    self._commence_event(
+                        event_group_id=scoped_group_id,
+                        exact_addresses=scoped_addresses,
+                        effective=effective,
+                    )
+                )
+            if scoped_addresses or compiled_updated:
+                scope = sorted(chapter_labels)
+                self.replay_print(
+                    f"  [{self.amendment_id}] chapter_commencement_effective_override "
+                    f"(accepted): {target_mid} {scope} -> {effective.isoformat()}"
+                )
+            if scoped_addresses:
+                self.commencement_expiry_override_notes.append(
+                    EffectLifecycleOverride(
+                        source_statute=self.amendment_id,
+                        target_statute=target_mid,
+                        scope=EffectLifecycleOverrideScope.exact_addresses(scoped_addresses),
+                        effective=effective.isoformat(),
+                        context="accepted_chapter_commencement",
+                    )
                 )
 
     def apply_section_commencement_overrides(self) -> None:

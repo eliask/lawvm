@@ -7929,6 +7929,20 @@ def test_subsection_insert_fallback_expands_plural_momentti_insert_after_provena
     assert ("INSERT", "22", 6) in got
 
 
+def test_subsection_insert_fallback_expands_mom_abbreviation_before_section_insert() -> None:
+    johto = (
+        "muutetaan 2 §:n 1 mom. sekä lisätään 2 §:ään uusi 9 ja 10 mom. "
+        "ja asetukseen uusi 27 § seuraavasti:"
+    )
+
+    ops = _extract_insert_subsection_ops_fallback(johto)
+    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+
+    assert ("INSERT", "2", 9) in got
+    assert ("INSERT", "2", 10) in got
+    assert not any(op.target_section == "27" for op in ops)
+
+
 def test_subsection_insert_fallback_stops_at_next_chapter_scoped_section_ref() -> None:
     johto = (
         "lisätään 6 luvun 1 §:ään, sellaisena kuin se on osaksi laeissa 821/2017, "
@@ -9152,10 +9166,12 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
             </formula>
           </preamble>
           <body>
+            <crossHeading>First recovered source cross-heading</crossHeading>
             <section>
               <num>4 a §</num>
               <subsection><content><p>foo</p></content></subsection>
             </section>
+            <crossHeading>Second recovered source cross-heading</crossHeading>
             <section>
               <num>4 b §</num>
               <subsection><content><p>bar</p></content></subsection>
@@ -9193,8 +9209,19 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
 
     assert got.find_section("4a") is not None
     assert got.find_section("4b") is not None
+    recovered_cross_headings = [
+        child.text for child in got.ir.children if child.kind is IRNodeKind.CROSS_HEADING
+    ]
+    assert recovered_cross_headings == [
+        "First recovered source cross-heading",
+        "Second recovered source cross-heading",
+    ]
     # Recovered op ids are mirrored onto ResolvedOp for audit joins.
     assert [rop.op_id for rop in rops] == ["uncovered_insert_4a", "uncovered_insert_4b"]
+    assert [rop.cross_ir.text if rop.cross_ir is not None else "" for rop in rops] == [
+        "First recovered source cross-heading",
+        "Second recovered source cross-heading",
+    ]
     assert [rop.op_id for rop in rops] == [rop.op.op_id for rop in rops]
     assert {rop.witness_rule_id for rop in rops} == {FI_RECOVERY_UNCOVERED_BODY_RULE_ID}
     assert {rop.op.witness_rule_id for rop in rops} == {FI_RECOVERY_UNCOVERED_BODY_RULE_ID}

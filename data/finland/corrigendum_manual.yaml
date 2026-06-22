@@ -229,6 +229,34 @@
   notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): enacted SD source XML has an empty section 9 shell; consolidated Finlex section 9 is tagged finlex:vsId='1161/1991', so the missing Voimaantulo body is source-owned by the base act."
   verified: "2026-06-21"
 
+# 1973/650 (Laki oikeudenkäynnistä huoneenvuokra-asioissa) — enacted source
+# XML labels the appeal provision between 27 § and 29 § as chp_3__sec_3 / 3 §.
+# The consolidated Finlex witness and the chapter-local sequence identify the
+# same source-owned provision as 28 §. Exact full-section fragment patch repairs
+# both visible <num> and eId lineage without touching the provision text.
+- amendment_id: "1973/650"
+  wrong_text: |-
+    <section eId="chp_3__sec_3">
+                        <num>3§</num>
+                        <subsection eId="chp_3__sec_3__subsec_1">
+                            <content>
+                                <p>Asunto-oikeuden puheenjohtajan päätökseen jättää asia tutkimatta saa hakea muutosta hovioikeudella. Valituskirjelmä ja valituksenalainen päätös on annettava asunto-oikeuden kansliaan kahden viikon kuluessa päätöksen tiedoksi saamisesta. Valitusasiakirjat on tuomioistuimen toimesta viivytyksettä lähetettävä hovioikeudelle. </p>
+                            </content>
+                        </subsection>
+                    </section>
+  correct_text: |-
+    <section eId="chp_3__sec_28">
+                        <num>28§</num>
+                        <subsection eId="chp_3__sec_28__subsec_1">
+                            <content>
+                                <p>Asunto-oikeuden puheenjohtajan päätökseen jättää asia tutkimatta saa hakea muutosta hovioikeudella. Valituskirjelmä ja valituksenalainen päätös on annettava asunto-oikeuden kansliaan kahden viikon kuluessa päätöksen tiedoksi saamisesta. Valitusasiakirjat on tuomioistuimen toimesta viivytyksettä lähetettävä hovioikeudelle. </p>
+                            </content>
+                        </subsection>
+                    </section>
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted source XML labels the chapter 3 provision between 27 § and 29 § as chp_3__sec_3 / 3 §, while consolidated Finlex and the chapter-local sequence identify the same source-owned text as 28 §; exact full-section fragment patch repairs structural identity and eIds before replay."
+  verified: "2026-06-22"
+
 # 1208/1991 (Metsäveroasetus) — enacted base SD source XML has several
 # still-live OCR/spacing defects in ordinary prose. No official corrigendum was
 # harvested; cached consolidated XML fin@20061451 carries the corrected visible

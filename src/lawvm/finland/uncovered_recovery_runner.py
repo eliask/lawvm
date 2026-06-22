@@ -54,6 +54,7 @@ from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_l
 
 if TYPE_CHECKING:
     from lawvm.finland.source_model import AmendmentSourceModel
+    from lawvm.finland.source_model import SourcePayloadLookupResult
     from lawvm.finland.statute import ReplayState
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,7 @@ class UncoveredRecoveryRun:
     source_owned_insert_chapter_labels: Set[str]
     part_insert_labels: Set[str]
     johto_whole_section_targets: Set[str]
+    johto_insert_section_targets: Set[str]
     johto_named_subprovision_section_targets: Set[str]
     johto_insert_subsection_section_targets: Set[str]
 
@@ -134,6 +136,10 @@ class UncoveredRecoveryRun:
         """Whether the preamble parses this label as a whole-section target."""
         return _norm_num_token(label) in self.johto_whole_section_targets
 
+    def label_has_section_insert_johto_target(self, label: str) -> bool:
+        """Whether the preamble declares ``lisätään ... uusi N §`` for this label."""
+        return _norm_num_token(label) in self.johto_insert_section_targets
+
     def label_has_subsection_insert_johto_target(self, label: str) -> bool:
         """Whether the preamble inserts subsection(s) into this section."""
         return _norm_num_token(label) in self.johto_insert_subsection_section_targets
@@ -158,8 +164,15 @@ class UncoveredRecoveryRun:
 
     def section_payload_ir(self, candidate: UncoveredSectionCandidate) -> IRNode | None:
         """Resolve one candidate's section payload through the source model."""
+        return self.section_payload_lookup(candidate).payload_ir
+
+    def section_payload_lookup(
+        self,
+        candidate: UncoveredSectionCandidate,
+    ) -> "SourcePayloadLookupResult":
+        """Resolve one candidate's section payload and neighboring heading witness."""
         payload_lookup = self.source_model.lookup_payload_ir_for_coverage_ref(candidate.source_ref)
-        return payload_lookup.payload_ir
+        return payload_lookup
 
     def process_section_candidate(self, candidate: UncoveredSectionCandidate) -> None:
         """Process one uncovered section candidate and commit a typed disposition."""
@@ -229,7 +242,8 @@ class UncoveredRecoveryRun:
                     f"{label!r} in chapter {amend_chapter_label!r}"
                 )
             if payload.outcome is ChapterPayloadOutcome.ADOPT:
-                adopt_sec_ir = self.section_payload_ir(candidate)
+                adopt_payload = self.section_payload_lookup(candidate)
+                adopt_sec_ir = adopt_payload.payload_ir
                 if adopt_sec_ir is None:
                     self.record_skip(
                         "source_payload_missing",
@@ -255,6 +269,7 @@ class UncoveredRecoveryRun:
                             target_chapter=amend_chapter_label,
                             target_part=amend_part_label,
                             muutos_ir=adopt_sec_ir,
+                            cross_ir=adopt_payload.cross_heading_ir,
                             op_id=(
                                 f"uncovered_move_replace_{label}"
                                 if declared_move_destination
@@ -290,7 +305,8 @@ class UncoveredRecoveryRun:
             self.record_skip("ambiguous_duplicate_label_no_chapter", label, amend_chapter_label)
             return
 
-        sec_ir = self.section_payload_ir(candidate)
+        payload_lookup = self.section_payload_lookup(candidate)
+        sec_ir = payload_lookup.payload_ir
         if sec_ir is None:
             self.record_skip(
                 "source_payload_missing",
@@ -307,6 +323,7 @@ class UncoveredRecoveryRun:
                         existing=existing,
                         existing_path=resolved.existing_path,
                         sec_ir=sec_ir,
+                        cross_ir=payload_lookup.cross_heading_ir,
                         label=label,
                         amend_chapter_label=amend_chapter_label,
                         amend_part_label=amend_part_label,
@@ -318,6 +335,7 @@ class UncoveredRecoveryRun:
         self.process_new_section(
             NewSectionCandidate(
                 sec_ir=sec_ir,
+                cross_ir=payload_lookup.cross_heading_ir,
                 label=label,
                 amend_chapter_label=amend_chapter_label,
                 amend_part_label=amend_part_label,
@@ -329,6 +347,7 @@ class UncoveredRecoveryRun:
         existing = candidate.existing
         existing_path = candidate.existing_path
         sec_ir = candidate.sec_ir
+        cross_ir = candidate.cross_ir
         label = candidate.label
         amend_chapter_label = candidate.amend_chapter_label
         amend_part_label = candidate.amend_part_label
@@ -339,6 +358,7 @@ class UncoveredRecoveryRun:
             existing_heading.startswith("voimaantulo")
             and amend_heading
             and not amend_heading.startswith("voimaantulo")
+            and not self.label_has_section_insert_johto_target(label)
         ):
             parent_path = existing_path[:-1]
             parent = _tops.resolve(self.state.ir, parent_path) if parent_path else self.state.ir
@@ -370,6 +390,7 @@ class UncoveredRecoveryRun:
                             target_chapter=amend_chapter_label,
                             target_part=amend_part_label or _part_label_from_path(existing_path),
                             muutos_ir=inserted_sec,
+                            cross_ir=cross_ir,
                             op_id=f"uncovered_insert_{insert_label}",
                         )
                     )
@@ -447,6 +468,7 @@ class UncoveredRecoveryRun:
                             target_chapter=amend_chapter_label,
                             target_part=amend_part_label or _part_label_from_path(existing_path),
                             muutos_ir=table_merge.node,
+                            cross_ir=cross_ir,
                             op_id=f"uncovered_table_merge_{label}",
                         )
                     )
@@ -461,6 +483,7 @@ class UncoveredRecoveryRun:
                         target_chapter=amend_chapter_label,
                         target_part=amend_part_label or _part_label_from_path(existing_path),
                         muutos_ir=sec_ir,
+                        cross_ir=cross_ir,
                         op_id=f"uncovered_replace_{label}",
                     )
                 )
@@ -507,6 +530,7 @@ class UncoveredRecoveryRun:
                                 target_chapter=amend_chapter_label,
                                 target_part=amend_part_label or _part_label_from_path(existing_path),
                                 muutos_ir=merged,
+                                cross_ir=cross_ir,
                                 op_id=f"uncovered_merge_{label}",
                             )
                         )
@@ -524,6 +548,7 @@ class UncoveredRecoveryRun:
     def process_new_section(self, candidate: NewSectionCandidate) -> None:
         """Commit the disposition for a candidate without a live target."""
         sec_ir = candidate.sec_ir
+        cross_ir = candidate.cross_ir
         label = candidate.label
         amend_chapter_label = candidate.amend_chapter_label
         amend_part_label = candidate.amend_part_label
@@ -582,6 +607,7 @@ class UncoveredRecoveryRun:
                     target_chapter=effective_chapter,
                     target_part=effective_part,
                     muutos_ir=sec_ir,
+                    cross_ir=cross_ir,
                     op_id=f"uncovered_insert_{label}",
                 )
             )

@@ -71,6 +71,52 @@ def test_audit_payload_realization_accepts_bounded_ordered_interleaving() -> Non
     assert gaps == ()
 
 
+def test_audit_payload_realization_accepts_local_token_substitutions() -> None:
+    units = (
+        PayloadRealizationUnit(
+            unit_id="section_2",
+            unit_kind="section",
+            observed_label="2",
+            text_chunks=(
+                "Liikenne- ja viestintävirasto avaa 1 §:n nojalla saamansa tiedot "
+                "sekä niiden perusteella tekemänsä tilastot ja tutkimukset avoimen "
+                "rajapinnan kautta koneluettavassa muodossa vapaasti käytettäväksi.",
+            ),
+        ),
+    )
+
+    gaps = audit_payload_realization(
+        units=units,
+        after_text=(
+            "Liikenne- ja viestintävirasto avaa 233 §:n nojalla saamansa tiedot "
+            "sekä niiden perusteella tekemänsä tilastot ja tutkimukset avoimen "
+            "rajapinnan kautta koneluettavassa muodossa vapaasti käytettäväksi."
+        ),
+    )
+
+    assert gaps == ()
+
+
+def test_audit_payload_realization_rejects_low_coverage_local_overlap() -> None:
+    units = (
+        PayloadRealizationUnit(
+            unit_id="section_2",
+            unit_kind="section",
+            observed_label="2",
+            text_chunks=(
+                "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda",
+            ),
+        ),
+    )
+
+    gaps = audit_payload_realization(
+        units=units,
+        after_text="alpha beta gamma delta unrelated replacement text in one local window",
+    )
+
+    assert len(gaps) == 1
+
+
 def test_audit_payload_realization_rejects_ordered_tokens_scattered_across_statute() -> None:
     units = (
         PayloadRealizationUnit(

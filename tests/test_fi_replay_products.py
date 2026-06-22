@@ -978,6 +978,36 @@ def test_replay_xml_1987_1250_chapter_scoped_kumotaan_repeals_right_section() ->
     assert " ".join(irnode_to_text(untouched).split()).startswith("5 d § Pääomalainalle")
 
 
+@pytest.mark.slow
+def test_replay_xml_1996_931_temporary_whole_section_insert_snapshots_source_payload() -> None:
+    """2023/1191 §43a is a temporary whole-section overlay, not stale fold text."""
+    lo_ops: list[LegalOperation] = []
+    replay = pinned_replay(
+        "1996/931",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    snapshot = next(
+        op
+        for op in lo_ops
+        if op.op_id == "snapshot_section_43a"
+        and op.source is not None
+        and op.source.statute_id == "2023/1191"
+    )
+    assert snapshot.payload is not None
+    snapshot_text = " ".join(irnode_to_text(snapshot.payload).split())
+    assert "616/2021" in snapshot_text
+    assert "vuosina 2004" not in snapshot_text
+
+    section = replay.materialized_state.find_node("section", "43a", "chapter", "6")
+    assert section is not None
+    rendered = " ".join(irnode_to_text(section).split())
+    assert "616/2021" in rendered
+    assert "vuosina 2004" not in rendered
+
+
 def test_replay_xml_2011_806_pure_kumotaan_subsection_keeps_chapter_scope() -> None:
     """2025/1104 repeals 8 luvun 21 §:n 3 momentti, not chapter 3's §21."""
     lo_ops: list[LegalOperation] = []
@@ -1257,6 +1287,28 @@ def test_build_amendment_bundle_2000_755_rebinds_cited_version_owned_section_pat
     assert "REPLACE 6 luku 30b §" in all_ops
     assert "REPLACE 3 luku 34a §" in all_ops
     assert "REPLACE 30b §" not in all_ops
+
+
+def test_build_amendment_bundle_2022_972_2024_70_parses_plural_section_marker() -> None:
+    bundle = build_amendment_bundle("2022/972", "2024/70", "legal_pit")
+
+    assert bundle["compiled_ops"] == [
+        "REPLACE 2 luku 3 §",
+        "REPLACE 4 luku 18 §",
+        "REPLACE 4 luku 22 §",
+        "REPLACE 5 luku 24 §",
+        "REPLACE 5 luku 32 §",
+        "REPLACE 5 luku 35 §",
+        "REPLACE 9 luku 52 §",
+        "INSERT 5 luku 34a §",
+        "INSERT 6 luku 40a §",
+    ]
+    final_ops_by_target = {
+        group["target_norm"]: group["ops_final"]
+        for group in bundle["groups"]
+    }
+    assert final_ops_by_target["34a"] == ["INSERT 5 luku 34a §"]
+    assert final_ops_by_target["40a"] == ["INSERT 6 luku 40a §"]
 
 
 def test_replay_xml_2000_755_applies_2018_945_to_cited_pending_version_paths() -> None:
@@ -3973,6 +4025,19 @@ def test_replay_xml_preserves_sparse_insert_before_terminal_voimaantulo_for_2006
     section_4 = replay.materialized_state.find_section("4")
     assert section_4 is not None
     assert irnode_to_text(section_4).startswith("4 § Voimaantulo")
+
+
+def test_replay_xml_explicit_insert_section_keeps_terminal_voimaantulo_label_for_2020_1266() -> None:
+    replay = replay_xml_for_test("2020/1266", mode="official_consolidation", quiet=True)
+    body = replay.materialized_state.ir
+
+    assert replay.materialized_state.find_section("26a", "6") is None
+
+    section_27 = replay.materialized_state.find_section("27", "6")
+    assert section_27 is not None
+    text = irnode_to_text(section_27)
+    assert text.startswith("27 § Rehualan toimijan ja tilarehustamon vuosi-ilmoitusvelvollisuus")
+    assert "Tämä asetus tulee voimaan 1 päivänä tammikuuta 2021" not in text
 
 
 def test_replay_xml_preserves_inserted_chapter_topology_for_2014_1429(
@@ -7005,6 +7070,45 @@ def test_replay_xml_1999_1352_places_inserted_section_headings_after_num() -> No
         assert irnode_to_text(heading).strip() == heading_text
 
 
+@pytest.mark.slow
+def test_replay_xml_1999_132_2024_899_cited_section_replace_rebirths_chapter_parent() -> None:
+    """2024/899 replaces 131 § by citing 2014/41 after chapter 19 was repealed.
+
+    The cited-version selector and replay history prove the exact historical
+    path ``19 luku / 131 §``.  Replay may scaffold that parent and insert the
+    replacement, but the recovery must be witnessed.
+    """
+    failed_ops = []
+    pathologies = []
+
+    replay = replay_xml_for_test(
+        "1999/132",
+        mode="official_consolidation",
+        quiet=True,
+        failed_ops_out=failed_ops,
+        source_pathologies_out=pathologies,
+    )
+
+    section = replay.materialized_state.find_section("131", "19")
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "Rakentamislupahakemus" in text
+    assert "rakentamislupahakemuksen ratkaisemiseksi tarvittava olennainen selvitys" in text
+    assert not any(
+        failed.amendment_id == "2024/899"
+        and failed.target_unit_kind == "section"
+        and failed.target_section == "131"
+        for failed in failed_ops
+    )
+    assert any(
+        pathology.code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+        and pathology.source_statute == "2024/899"
+        and pathology.detail.get("recovery_kind")
+        == "section_replace_bootstrap_cited_parent_scaffold"
+        for pathology in pathologies
+    )
+
+
 # ---------------------------------------------------------------------------
 # StageResult endgame WAIST #3 — the structural write-footprint carrier
 # ---------------------------------------------------------------------------
@@ -7113,3 +7217,52 @@ def test_aggregate_structural_stage_surfaces_unexplained_divergence() -> None:
     assert none_stage.coverage.violation == 0
     assert none_stage.residuals == ()
     assert none_stage.coverage.is_clean
+
+
+def test_replay_xml_2008_1005_preserves_explicit_item_insertions_during_snapshot_prune() -> None:
+    replay = replay_xml_for_test(
+        "2008/1005",
+        mode="legal_pit",
+        quiet=True,
+        as_of="2022-04-11",
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_37_text = " ".join(irnode_to_text(sections["chapter:7/section:37"]).split())
+
+    assert (
+        "14) markkinavalvonta-asetuksen 4 artiklan 3 kohdan a alakohdassa"
+        in section_37_text
+    )
+    assert (
+        "15) markkinavalvonta-asetuksen 4 artiklan 3 kohdan b alakohdassa"
+        in section_37_text
+    )
+    assert (
+        "16) markkinavalvonta-asetuksen 4 artiklan 3 kohdan c alakohdassa"
+        in section_37_text
+    )
+    assert (
+        "17) markkinavalvonta-asetuksen 4 artiklan 3 kohdan d alakohdassa"
+        in section_37_text
+    )
+
+
+def test_replay_xml_1973_935_folds_single_insert_list_tail_before_later_insert() -> None:
+    replay = replay_xml_for_test(
+        "1973/935",
+        mode="legal_pit",
+        quiet=True,
+        as_of="2004-12-21",
+    )
+    section_16 = extract_ir_sections(replay.materialized_state.ir)["section:16"]
+    subsections = [child for child in section_16.children if child.kind is IRNodeKind.SUBSECTION]
+    section_text = " ".join(irnode_to_text(section_16).split())
+
+    assert len(subsections) == 3
+    assert (
+        "työkyvyttömyysajalta maksamastaan palkasta, mikäli selvityksen esittäminen"
+        in section_text
+    )
+    assert section_text.index("mikäli selvityksen esittäminen") < section_text.index(
+        "Valtiokonttorilla on salassapitosäännösten"
+    )

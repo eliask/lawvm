@@ -88,6 +88,8 @@ def build_standalone_section_targets(
             continue
         if op.target_paragraph is not None or op.target_item or op.target_special:
             continue
+        if op.target_chapter in (None, "") and op.op_type != "INSERT":
+            continue
         norm_label = _norm_num_token(op.target_section)
         standalone_targets.add(
             StandaloneSectionTarget(

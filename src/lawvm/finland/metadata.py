@@ -267,6 +267,13 @@ _SCOPED_APPLICATION_COMMENCEMENT_RE = re.compile(
     r"(\d{1,2})\s+päivänä\s+([a-zäöå]+)\s+(\d{4})",
     re.IGNORECASE,
 )
+_CHAPTER_COMMENCEMENT_RE = re.compile(
+    r"(?:Tämän\s+lain|Lain|Asetuksen|Päätöksen|Sen)\s+"
+    r"(?P<chapters>.{1,500}?\bluku)\s+"
+    r"tule(?:vat|e)\s+(?:kuitenkin\s+)?voimaan(?:\s+(?:jo|vasta))?\s+"
+    r"(?P<day>\d{1,2})\s+päivänä\s+(?P<month>[a-zäöå]+)\s+(?P<year>\d{4})",
+    re.IGNORECASE,
+)
 _COMMENCEMENT_SUBSECTION_REF_RE = re.compile(
     r"(?:(?P<chapter>\d+\s*[a-z]?)\s+luvun\s+)?"
     r"(?P<section>\d+\s*[a-z]?)\s*§\s*:\s*n\s+"
@@ -1921,6 +1928,56 @@ def _section_commencement_effective_override(
     if not chapter_section_map:
         return None
     return source_statute_id, chapter_section_map, effective
+
+
+def _chapter_commencement_effective_overrides(
+    tree: "etree._Element",
+    source_statute_id: str,
+) -> tuple[tuple[str, frozenset[str], dt.date], ...]:
+    """Return chapter-scoped commencement overrides from voimaantulo text.
+
+    Finland sometimes phases entire chapters rather than individual sections,
+    for example ``Tämän lain 1, 6 ja 6 a luku tulevat voimaan ...`` followed by
+    ``Lain 7 ja 7 a luku tulevat kuitenkin voimaan vasta ...``.  A chapter
+    scope is not a section label, so it is kept as its own typed lane and later
+    matched against chapter-prefixed operation targets.
+    """
+    full_text = _normalized_tree_text(tree)
+    eit_text = _normalized_entry_into_force_text(tree, full_text)
+    if "luku" not in eit_text.casefold() or "voimaan" not in eit_text.casefold():
+        return ()
+
+    rows: list[tuple[str, frozenset[str], dt.date]] = []
+    # lawvm-regex: owning_parser C-commence chapter-scoped commencement clause LOCATOR;
+    # chapter labels are lexed only inside the located subject span below.
+    for match in _CHAPTER_COMMENCEMENT_RE.finditer(eit_text):
+        effective = parse_fi_day_month_year(
+            match.group("day"),
+            match.group("month"),
+            match.group("year"),
+        )
+        if effective is None:
+            continue
+        chapters = frozenset(_chapter_labels_from_commencement_subject(match.group("chapters")))
+        if chapters:
+            rows.append((source_statute_id, chapters, effective))
+    return tuple(rows)
+
+
+def _chapter_labels_from_commencement_subject(subject_text: str) -> tuple[str, ...]:
+    """Extract chapter labels from a shared-terminal ``luku`` subject."""
+    before_luku = subject_text.rsplit("luku", 1)[0]
+    labels: list[str] = []
+    # lawvm-regex: owning_parser chapter-label lexer inside a located chapter-commencement subject.
+    for label_match in re.finditer(
+        r"\d+(?:\s*[a-z](?![a-zåäö]))?",
+        before_luku,
+        flags=re.IGNORECASE,
+    ):
+        label = re.sub(r"\s+", "", label_match.group(0)).lower()
+        if label:
+            labels.append(label)
+    return tuple(labels)
 
 
 def _section_subsection_commencement_effective_override(

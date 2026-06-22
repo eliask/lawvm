@@ -1784,6 +1784,7 @@ def _try_section_ill_sub_target(
     """
     saved = scan.pos
     scan.advance()  # consume §:ILL
+    repeated_nums = _collect_repeated_section_ill_targets(scan)
     _skip_ill_reinst_preamble(scan)
     # An archaic ``näin kuuluva`` lead-in can sit between the §:ään target (and
     # its skipped provenance) and ``uusi`` (old _insertion line 2421).
@@ -1792,7 +1793,7 @@ def _try_section_ill_sub_target(
     if not had_uusi and not (verb == SourceVerb.LISATA and _at(scan, "OTSIKKO")):
         scan.goto(saved)
         return None
-    sec_nums = [n + sf for n, sf in nums]
+    sec_nums = [n + sf for n, sf in (*nums, *repeated_nums)]
     all_nodes: list[InsNode] = []
     for sec in sec_nums:
         saved_sub = scan.pos
@@ -1806,6 +1807,27 @@ def _try_section_ill_sub_target(
         return None
     _consume_sub_target_continuation(scan, sec_nums, chapter, part, all_nodes)
     return all_nodes
+
+
+def _collect_repeated_section_ill_targets(scan: _Scan) -> tuple[NumSuffix, ...]:
+    """Collect ``ja N §:ään`` peers before a shared ``uusi`` sub-target."""
+    results: list[NumSuffix] = []
+    while True:
+        saved = scan.pos
+        if _sep(scan) is None:
+            scan.goto(saved)
+            break
+        nums = _number_list(scan)
+        if not nums:
+            scan.goto(saved)
+            break
+        t = scan.peek()
+        if t is None or t.cat != "PYKALA" or t.case != "ILL":
+            scan.goto(saved)
+            break
+        scan.advance()
+        results.extend(nums)
+    return tuple(results)
 
 
 def _try_section_gen_sub_target(
@@ -2215,10 +2237,12 @@ def _foldable_anaphoric_heading_arm_end(scan: _Scan, start: int) -> int | None:
     non-anaphoric ``N §:n edelle …`` form (a §:GEN target before EDELLA), which
     it DOES emit a node for.
 
-    The residue is safe to skip when it is terminal, or when the next separator
-    opens another plain insertion arm. It is deliberately not safe before
-    ``jolloin`` / move tails or unrelated prose: those clauses stay declined so
-    the legacy parser owns their wider control flow.
+    The residue is safe to skip when it is terminal, when the next separator
+    opens another plain insertion arm, or when the next separator opens a typed
+    ``JOLLOIN_MOVE`` consequence-renumber sentinel.  The latter is still owned
+    by the parser driver: this helper returns the separator position so the
+    outer loop can consume the sentinel and emit the existing
+    ``fi.jolloin_renumber`` group.  Unrelated prose remains declined.
     """
     toks = scan.cur.tokens
     n = len(toks)
@@ -2249,6 +2273,8 @@ def _foldable_anaphoric_heading_arm_end(scan: _Scan, start: int) -> int | None:
     if toks[j].cat not in {"COMMA", "CONJ", "SEKA"}:
         return None
     k = j + 1
+    if k < n and toks[k].cat == "JOLLOIN_MOVE":
+        return j
     if k < n and toks[k].cat == "DOC" and toks[k].case == "ILL":
         k += 1
     if k < n and toks[k].cat == "UUSI":

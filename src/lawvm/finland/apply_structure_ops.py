@@ -79,10 +79,12 @@ from lawvm.finland.apply_runtime_support import (
     _find_insert_parent_path,
     _find_chapter_insert_parent_path,
     _resolve_parallel_container_path,
+    _section_snapshot_identity,
     _legacy_target_section_for_scope,
     _legacy_target_special_for_scope,
     _parent_direct_child_path_with_same_label,
     _same_norm_label,
+    _snapshot_section_los_for_identity,
     _with_preserved_provision_index,
     _with_replaced_provision_subtree_index,
 )
@@ -494,6 +496,7 @@ def _prepare_section_root_payload_for_replay(
     live_sec: IRNode,
     rop: ResolvedOp | None,
     view: _StructureApplyView | None = None,
+    suppress_live_heading_carry: bool = False,
 ) -> IRNode:
     """Prepare a whole-section payload before it replaces an occupied live section."""
     payload = _align_section_payload_subsection_labels_from_slot_assignment(
@@ -505,7 +508,7 @@ def _prepare_section_root_payload_for_replay(
     has_heading = any(c.kind == IRNodeKind.HEADING for c in payload.children)
     if has_heading:
         prepared = payload
-    else:
+    elif not suppress_live_heading_carry:
         live_heading = next((c for c in live_sec.children if c.kind == IRNodeKind.HEADING), None)
         if live_heading is None:
             prepared = payload
@@ -520,6 +523,8 @@ def _prepare_section_root_payload_for_replay(
                 attrs=payload.attrs,
                 children=tuple(new_children),
             )
+    else:
+        prepared = payload
     prepared = _preserve_unstated_live_subsection_tail(
         prepared,
         live_sec=live_sec,
@@ -527,6 +532,57 @@ def _prepare_section_root_payload_for_replay(
         view=view,
     )
     return _apply_section_tail_policy_marker(prepared, rop=rop, view=view)
+
+
+def _cross_heading_conflicts_with_live_heading(cross_ir: IRNode | None, live_sec: IRNode) -> bool:
+    if cross_ir is None:
+        return False
+    cross_text = (cross_ir.text or "").strip()
+    if not cross_text:
+        return False
+    live_heading = next((c for c in live_sec.children if c.kind == IRNodeKind.HEADING), None)
+    if live_heading is None:
+        return False
+    return " ".join(cross_text.split()).casefold() != " ".join((live_heading.text or "").split()).casefold()
+
+
+def _source_claims_preceding_cross_heading(rop: ResolvedOp | None, target_label: str) -> bool:
+    if rop is None or rop.resolved_op_source is None:
+        return False
+    source_text = " ".join((rop.resolved_op_source.raw_text or "").casefold().split())
+    if "edellä oleva väliotsikko" not in source_text:
+        return False
+    target = _norm_num_token(target_label)
+    if not target:
+        return False
+    phrases = (
+        f"{target} §:n edellä oleva väliotsikko",
+        f"{target}§:n edellä oleva väliotsikko",
+        f"{target} § ja sen edellä oleva väliotsikko",
+        f"{target}§ ja sen edellä oleva väliotsikko",
+    )
+    return any(phrase in source_text for phrase in phrases)
+
+
+def _semantic_heading_tokens(text: str) -> tuple[str, ...]:
+    tokens: list[str] = []
+    for raw in text.split():
+        token = raw.strip(".,;:()[]{}§\"'`´-–—").casefold()
+        if len(token) > 3 and not token.isdigit():
+            tokens.append(token)
+    return tuple(tokens)
+
+
+def _cross_heading_overlaps_payload_opening(cross_ir: IRNode | None, payload: IRNode) -> bool:
+    if cross_ir is None:
+        return False
+    cross_tokens = set(_semantic_heading_tokens(cross_ir.text or ""))
+    if not cross_tokens:
+        return False
+    payload_tokens = set(_semantic_heading_tokens(irnode_to_text(payload))[:24])
+    if not payload_tokens:
+        return False
+    return len(cross_tokens & payload_tokens) / len(cross_tokens) >= 0.5
 
 
 def _create_part_and_move_siblings(
@@ -643,6 +699,8 @@ def _insert_or_replace_same_labeled_child(
     child: IRNode,
 ) -> tuple[IRNode, bool]:
     """Insert a child, or replace a same-labeled direct child if one already exists."""
+    if child.kind is IRNodeKind.CROSS_HEADING and not child.label:
+        return _tops.insert_sorted(tree, parent_path, child), False
     same_path = _parent_direct_child_path_with_same_label(
         tree,
         parent_path,
@@ -1016,6 +1074,91 @@ def _insert_missing_chapter_scaffold_under_part(
     return state.with_ir(new_ir), _tops._as_path(part_path) + (("chapter", target_chapter),)
 
 
+def _has_exact_cited_section_snapshot(
+    replay_history_ops: List[_LegalOperation] | None,
+    *,
+    section_path: Path,
+    cited_statute_id: str,
+) -> bool:
+    if not cited_statute_id:
+        return False
+    matches = _snapshot_section_los_for_identity(
+        replay_history_ops,
+        _section_snapshot_identity(section_path),
+    )
+    return any(
+        lo.target.path == section_path
+        and lo.source is not None
+        and lo.source.statute_id == cited_statute_id
+        for lo in matches
+    )
+
+
+def _unique_exact_cited_section_snapshot_path(
+    replay_history_ops: List[_LegalOperation] | None,
+    *,
+    section_label: str,
+    cited_statute_id: str,
+) -> Path | None:
+    if replay_history_ops is None or not section_label or not cited_statute_id:
+        return None
+    paths: list[Path] = []
+    for lo in replay_history_ops:
+        if not lo.op_id.startswith("snapshot_section_"):
+            continue
+        if lo.source is None or lo.source.statute_id != cited_statute_id:
+            continue
+        if not lo.target.path or lo.target.path[-1] != ("section", section_label):
+            continue
+        if lo.payload is None or lo.payload.kind is not IRNodeKind.SECTION:
+            continue
+        path = _tops._as_path(lo.target.path)
+        if path not in paths:
+            paths.append(path)
+    if len(paths) != 1:
+        return None
+    return paths[0]
+
+
+def _scaffold_historical_parent_path(
+    state: "ReplayState",
+    historical_parent_path: Path,
+) -> tuple["ReplayState", Path] | None:
+    """Recreate an exact historical part/chapter parent path when a cited section rebirth proves it."""
+    if not historical_parent_path:
+        return None
+    current_state = state
+    current_parent: Path = ()
+    for kind, label in historical_parent_path:
+        if kind not in {"part", "chapter"}:
+            return None
+        node_kind = IRNodeKind.PART if kind == "part" else IRNodeKind.CHAPTER
+        existing = _parent_direct_child_path_with_same_label(
+            current_state.ir,
+            current_parent,
+            kind=node_kind,
+            label=label,
+        )
+        if existing is not None:
+            current_parent = _tops._as_path(existing)
+            continue
+        if kind == "part":
+            node = IRNode(
+                kind=IRNodeKind.PART,
+                label=label,
+                children=(IRNode(kind=IRNodeKind.NUM, text=f"{label} osa"),),
+            )
+        else:
+            node = IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label=label,
+                children=(IRNode(kind=IRNodeKind.NUM, text=f"{label} luku"),),
+            )
+        current_state = current_state.with_ir(_tops.insert_sorted_required(current_state.ir, current_parent, node))
+        current_parent = current_parent + ((kind, label),)
+    return current_state, current_parent
+
+
 @dataclass(frozen=True)
 class _StructureApplyView:
     target_unit_kind: TargetUnitKind
@@ -1222,6 +1365,40 @@ def _container_otsikko_payload_heading(muutos_ir: IRNode) -> Optional[IRNode]:
             children=cross.children,
         )
     return None
+
+
+def _container_otsikko_payload_heading_for_target(
+    muutos_ir: IRNode,
+    *,
+    target_kind: str,
+    target_label: str,
+) -> Optional[IRNode]:
+    """Return a heading owned by the target container payload.
+
+    Some historical amendment payloads wrap the target chapter/part inside a
+    body/hcontainer carrier.  The legal target is still typed by kind+label; do
+    not scan arbitrary descendants for a convenient title.  Only descend when
+    there is exactly one matching container payload.
+    """
+
+    direct = _container_otsikko_payload_heading(muutos_ir)
+    if direct is not None:
+        return direct
+
+    target_node_kind = IRNodeKind.CHAPTER if target_kind == "chapter" else IRNodeKind.PART
+    matches: list[IRNode] = []
+
+    def _walk(node: IRNode) -> None:
+        if node is not muutos_ir and node.kind is target_node_kind and node.label == target_label:
+            matches.append(node)
+            return
+        for child in node.children:
+            _walk(child)
+
+    _walk(muutos_ir)
+    if len(matches) != 1:
+        return None
+    return _container_otsikko_payload_heading(matches[0])
 
 
 def _replace_container_heading_children(node: IRNode, amend_heading: IRNode) -> list[IRNode]:
@@ -1594,7 +1771,11 @@ def _apply_container_op(
         node = _tops.resolve(state.ir, path)
         assert node is not None, f"resolve failed for {path}"
         if _op_type == "REPLACE" and muutos_ir is not None:
-            amend_heading = _container_otsikko_payload_heading(muutos_ir)
+            amend_heading = _container_otsikko_payload_heading_for_target(
+                muutos_ir,
+                target_kind=kind,
+                target_label=section_label,
+            )
             if amend_heading is not None:
                 new_children = _replace_container_heading_children(node, amend_heading)
                 logger.debug("  %s → container otsikko replace", ctx_label)
@@ -2557,6 +2738,11 @@ def _apply_whole_section_op(
             live_sec=live_merge_sec,
             rop=rop,
             view=view,
+            suppress_live_heading_carry=(
+                _source_claims_preceding_cross_heading(rop, _ts)
+                and _cross_heading_conflicts_with_live_heading(cross_ir, live_merge_sec)
+                and _cross_heading_overlaps_payload_opening(cross_ir, muutos_ir)
+            ),
         )
         new_ir = _tops.replace_at(state.ir, sec_path, muutos_ir)
         if _same_section_label(muutos_ir):
@@ -2718,9 +2904,70 @@ def _apply_whole_section_op(
                                     [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
                                 ),
                             )
-                        )
+                    )
                     logger.debug("  %s → section replace-as-insert (base prior parent)", ctx_label)
                     return state.with_ir(_tops.insert_sorted(state.ir, live_parent_path, muutos_ir))
+                cited_statute_id = str(getattr(op, "target_version_statute_id", "") or "")
+                if _has_exact_cited_section_snapshot(
+                    replay_history_ops,
+                    section_path=_tops._as_path(base_path),
+                    cited_statute_id=cited_statute_id,
+                ):
+                    scaffolded = _scaffold_historical_parent_path(state, base_parent_path)
+                    if scaffolded is not None:
+                        scaffold_state, scaffold_parent_path = scaffolded
+                        if source_pathologies_out is not None:
+                            source_pathologies_out.append(
+                                build_destructive_shape_loss_risk_pathology(
+                                    source_statute=_source_statute or "",
+                                    target_unit_kind=view.target_unit_kind,
+                                    target_label=f"{_ts} §",
+                                    recovery_kind=RecoveryKind.SECTION_REPLACE_BOOTSTRAP_CITED_PARENT_SCAFFOLD,
+                                    live_sibling_count=0,
+                                    payload_sibling_count=len(
+                                        [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
+                                    ),
+                                )
+                            )
+                        logger.debug(
+                            "  %s → section replace-as-insert (cited-version parent scaffold)",
+                            ctx_label,
+                        )
+                        return scaffold_state.with_ir(
+                            _tops.insert_sorted_required(scaffold_state.ir, scaffold_parent_path, muutos_ir)
+                        )
+
+            cited_statute_id = str(getattr(op, "target_version_statute_id", "") or "")
+            cited_snapshot_path = _unique_exact_cited_section_snapshot_path(
+                replay_history_ops,
+                section_label=_ts,
+                cited_statute_id=cited_statute_id,
+            )
+            if cited_snapshot_path is not None:
+                cited_parent_path = _tops._as_path(cited_snapshot_path[:-1])
+                scaffolded = _scaffold_historical_parent_path(state, cited_parent_path)
+                if scaffolded is not None:
+                    scaffold_state, scaffold_parent_path = scaffolded
+                    if source_pathologies_out is not None:
+                        source_pathologies_out.append(
+                            build_destructive_shape_loss_risk_pathology(
+                                source_statute=_source_statute or "",
+                                target_unit_kind=view.target_unit_kind,
+                                target_label=f"{_ts} §",
+                                recovery_kind=RecoveryKind.SECTION_REPLACE_BOOTSTRAP_CITED_PARENT_SCAFFOLD,
+                                live_sibling_count=0,
+                                payload_sibling_count=len(
+                                    [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
+                                ),
+                            )
+                        )
+                    logger.debug(
+                        "  %s → section replace-as-insert (cited-version snapshot parent scaffold)",
+                        ctx_label,
+                    )
+                    return scaffold_state.with_ir(
+                        _tops.insert_sorted_required(scaffold_state.ir, scaffold_parent_path, muutos_ir)
+                    )
 
             if base_path is None:
                 parent_path = _find_scoped_section_insert_parent_path(
@@ -3044,7 +3291,12 @@ def _apply_whole_section_op(
                             rop=rop,
                             view=view,
                         )
-                temp_ch = IRNode(kind=IRNodeKind.CHAPTER, label=_target_chapter, children=(prepared_muutos_ir,))
+                temp_children = (
+                    (cross_ir, prepared_muutos_ir)
+                    if cross_ir is not None
+                    else (prepared_muutos_ir,)
+                )
+                temp_ch = IRNode(kind=IRNodeKind.CHAPTER, label=_target_chapter, children=temp_children)
                 if source_pathologies_out is not None:
                     source_pathologies_out.append(
                         build_destructive_shape_loss_risk_pathology(
@@ -3391,37 +3643,41 @@ def _apply_whole_section_op(
                 )
                 return state
             new_ir = state.ir
-            if cross_ir is not None:
-                cross_same_path = _parent_direct_child_path_with_same_label(
-                    new_ir,
-                    parent_path,
-                    kind=cross_ir.kind,
-                    label=cross_ir.label or "",
-                )
-                if cross_same_path is not None:
-                    existing_cross = _tops.resolve(new_ir, cross_same_path)
-                    if existing_cross is not None and cross_ir.kind is IRNodeKind.SECTION:
-                        cross_ir = _prepare_section_root_payload_for_replay(
-                            cross_ir,
-                            live_sec=existing_cross,
-                            rop=rop,
-                            view=view,
-                        )
-                new_ir, replaced = _insert_or_replace_same_labeled_child(new_ir, parent_path, cross_ir)
-                if replaced and source_pathologies_out is not None:
-                    parent_node = _tops.resolve(new_ir, parent_path)
-                    source_pathologies_out.append(
-                        build_destructive_shape_loss_risk_pathology(
-                            source_statute=_source_statute or "",
-                            target_unit_kind=view.target_unit_kind,
-                            target_label=f"{_ts} §",
-                            recovery_kind=RecoveryKind.SECTION_INSERT_SAME_LABEL_REPLACE_CROSS,
-                            live_sibling_count=len(
-                                [c for c in (parent_node.children if parent_node is not None else ()) if c.kind is IRNodeKind.SECTION]
-                            ),
-                            payload_sibling_count=1,
-                        )
+        if cross_ir is not None:
+            cross_same_path = _parent_direct_child_path_with_same_label(
+                new_ir,
+                parent_path,
+                kind=cross_ir.kind,
+                label=cross_ir.label or "",
+            )
+            if cross_same_path is not None:
+                existing_cross = _tops.resolve(new_ir, cross_same_path)
+                if existing_cross is not None and cross_ir.kind is IRNodeKind.SECTION:
+                    cross_ir = _prepare_section_root_payload_for_replay(
+                        cross_ir,
+                        live_sec=existing_cross,
+                        rop=rop,
+                        view=view,
                     )
+            new_ir, replaced = _insert_or_replace_same_labeled_child(new_ir, parent_path, cross_ir)
+            if replaced and source_pathologies_out is not None:
+                parent_node = _tops.resolve(new_ir, parent_path)
+                source_pathologies_out.append(
+                    build_destructive_shape_loss_risk_pathology(
+                        source_statute=_source_statute or "",
+                        target_unit_kind=view.target_unit_kind,
+                        target_label=f"{_ts} §",
+                        recovery_kind=RecoveryKind.SECTION_INSERT_SAME_LABEL_REPLACE_CROSS,
+                        live_sibling_count=len(
+                            [
+                                c
+                                for c in (parent_node.children if parent_node is not None else ())
+                                if c.kind is IRNodeKind.SECTION
+                            ]
+                        ),
+                        payload_sibling_count=1,
+                    )
+                )
         same_path = _parent_direct_child_path_with_same_label(
             new_ir,
             parent_path,

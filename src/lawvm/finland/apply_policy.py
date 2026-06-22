@@ -347,8 +347,24 @@ def _resolve_section_path_with_fallbacks(
             and any(kind in {"subsection", "item"} for kind, _label in target_address.path)
         )
     )
+    target_address_has_descendant = target_address is not None and any(
+        kind in {"subsection", "item"} for kind, _label in target_address.path
+    )
     scope_confidence = runtime_scope_confidence_for_op(rop)
     scope_is_explicit = scope_confidence is None or scope_confidence.is_explicit
+    if sec_path is None and not _target_chapter and target_address_has_descendant:
+        _idx = state.provision_index
+        global_path = _tops.find(state.ir, "section", target_norm, label_index=_idx)
+        if global_path is not None:
+            label_norm = normalized_label_key(target_norm)
+            n_matches = len(_idx.get(("section", label_norm), []))
+            if n_matches == 1:
+                return SectionPathResolution(
+                    path=_tops._as_path(global_path),
+                    reason_code=SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK,
+                    rung_id=RUNG_UNIQUE_GLOBAL_FALLBACK,
+                    global_candidate_count=n_matches,
+                )
     if sec_path is None and _target_chapter and allow_unique_global_fallback:
         _idx = state.provision_index
         global_path = _tops.find(state.ir, "section", target_norm, label_index=_idx)
@@ -363,11 +379,7 @@ def _resolve_section_path_with_fallbacks(
                     rop.resolved_action_type == "INSERT"
                     and rop.effective_target_special in {"otsikko", "otsikko_edella", "johd"}
                 )
-                is_descendant_insert = (
-                    rop.resolved_action_type == "INSERT"
-                    and target_address is not None
-                    and any(kind in {"subsection", "item"} for kind, _label in target_address.path)
-                )
+                is_descendant_insert = rop.resolved_action_type == "INSERT" and target_address_has_descendant
                 if is_descendant_insert and (_target_part is None or global_part == _target_part):
                     return SectionPathResolution(
                         path=global_path,

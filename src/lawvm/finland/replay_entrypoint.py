@@ -243,7 +243,14 @@ def replay_xml(
             tuple(signals.findings),
             materialized_text=irnode_to_text(products.materialized_state.ir),
         )
-        findings = attach_payload_gap_apply_dispositions(findings)
+        findings = attach_payload_gap_apply_dispositions(
+            findings,
+            materialized_as_of=(
+                products.materialization_spec.as_of
+                if products.materialization_spec is not None
+                else ""
+            ),
+        )
 
         # StageResult endgame WAIST #7: aggregate the per-replay apply/replay
         # execution authority over every landed write (replay_authorized = AND

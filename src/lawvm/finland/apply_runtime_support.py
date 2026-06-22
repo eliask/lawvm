@@ -1074,7 +1074,8 @@ def _group_has_item_scoped_snapshot_mutations(group_rops: list[ResolvedOp]) -> b
 def _group_has_descendant_scoped_snapshot_mutations(group_rops: list[ResolvedOp]) -> bool:
     """True when child-scoped ops must not promote a sparse whole-section shell."""
     return any(
-        rop.effective_target_paragraph is not None
+        rop.resolved_target_subsection_label is not None
+        or rop.effective_target_paragraph is not None
         or rop.effective_target_item_label is not None
         or rop.effective_target_special is not None
         for rop in group_rops
@@ -1351,11 +1352,18 @@ def _emit_section_snapshot(
         def _whole_section_insert_can_own_snapshot(rop: ResolvedOp) -> bool:
             if not rop.is_insert_action:
                 return False
+            if temporary_signal_for_op(rop):
+                # First-time temporary section inserts often need post-apply
+                # normalization/rebasing.  If an exact prior section snapshot
+                # ended before this insert, the fold may still carry stale
+                # background content at that address; the complete source
+                # section payload is the stronger overlay/rebirth witness.
+                return bool(op_source.expires) and _insert_target_is_not_live_before_effective()
             # A whole-section insert after a prior exact target ended owns the
             # reborn section child surface.  Initial inserts and existing-section
             # insert/merge families still need the post-apply fold snapshot
             # because source payload may need ontology normalization or rebasing.
-            return (not temporary_signal_for_op(rop)) and _insert_target_is_not_live_before_effective()
+            return _insert_target_is_not_live_before_effective()
 
         for rop in group_rops:
             if not rop.targets_whole_unit("section"):
@@ -2247,18 +2255,42 @@ def _emit_section_snapshot(
             children=tuple(new_children),
         )
 
+    def _explicitly_targeted_paragraph_labels_by_subsection() -> dict[str, set[str]]:
+        labels: dict[str, set[str]] = {}
+        for rop in group_rops:
+            subsection_label = str(rop.resolved_target_subsection_label or "").strip()
+            item_label = str(rop.resolved_target_item_label or "").strip()
+            if (
+                subsection_label
+                and item_label
+                and (rop.is_insert_action or rop.is_replace_action)
+            ):
+                labels.setdefault(_norm_num_token(subsection_label), set()).add(
+                    leaf_label_identity_key(item_label)
+                )
+        return labels
+
     def _sanitize_section_subsection_payloads(
         section_path: Path,
         section_payload: IRNode,
     ) -> IRNode | None:
         if section_payload.kind is not IRNodeKind.SECTION:
             return None
+        preserve_labels_by_subsection = _explicitly_targeted_paragraph_labels_by_subsection()
         changed = False
         new_children: list[IRNode] = []
         for child in section_payload.children:
             if child.kind is IRNodeKind.SUBSECTION and child.label:
                 child_path = section_path + (("subsection", child.label),)
-                sanitized = _drop_expired_temporary_paragraph_children(child_path, child)
+                child_norm_label = _norm_num_token(child.label)
+                sanitized = _drop_expired_temporary_paragraph_children(
+                    child_path,
+                    child,
+                    preserve_paragraph_labels=preserve_labels_by_subsection.get(
+                        child_norm_label,
+                        set(),
+                    ),
+                )
                 if sanitized is not None:
                     child = sanitized
                     changed = True
@@ -2964,6 +2996,26 @@ def _emit_section_snapshot(
         }
         return candidates[0] if len(candidate_parts) == 1 else None
 
+    def _unique_prior_section_snapshot_path() -> Optional[Path]:
+        if target_unit_kind != "section" or target_chapter or target_part:
+            return None
+        if not _group_has_descendant_scoped_snapshot_mutations(group_rops):
+            return None
+        candidates: list[Path] = []
+        for lo in reversed(lo_ops_out):
+            if lo.target.special is not None:
+                continue
+            path = lo.target.path
+            if not path or path[-1][0] != "section":
+                continue
+            if _norm_num_token(path[-1][1]) != normalized_target_norm:
+                continue
+            if path not in candidates:
+                candidates.append(path)
+        if len(candidates) != 1:
+            return None
+        return candidates[0]
+
     def _base_container_payload() -> Optional[IRNode]:
         if base_ir is None or target_unit_kind not in {"chapter", "part"}:
             return None
@@ -3021,9 +3073,10 @@ def _emit_section_snapshot(
         target_part,
         path_hint,
     )
+    prior_timeline_path = _unique_prior_section_snapshot_path()
     raw_path_from_timeline = False
     if hinted_path is not None:
-        emitted_path = _project_snapshot_path(hinted_path)
+        emitted_path = prior_timeline_path or _project_snapshot_path(hinted_path)
         if emitted_path is None:
             emitted_path = path_hint
         if emitted_path is not None:
@@ -3042,6 +3095,9 @@ def _emit_section_snapshot(
                 substantive_path = _unique_substantive_section_path(state, normalized_target_norm)
                 if substantive_path is not None:
                     raw_path = substantive_path
+        if prior_timeline_path is not None:
+            raw_path = prior_timeline_path
+            raw_path_from_timeline = True
         if not raw_path and _whole_target_repeal():
             # The REPEAL op already removed the section from the IR before this
             # snapshot is called.  Scan the accumulated lo_ops_out in reverse to
@@ -3184,6 +3240,10 @@ def _emit_section_snapshot(
             for label in raw_candidates:
                 raw_path_from_timeline = False
                 raw_path = state.find_section_path(label, target_chapter, target_part)
+                prior_timeline_path = _unique_prior_section_snapshot_path()
+                if prior_timeline_path is not None:
+                    raw_path = prior_timeline_path
+                    raw_path_from_timeline = True
                 if not raw_path and not target_chapter:
                     raw_path = _unique_global_section_path(label)
                 if not raw_path and target_chapter and not target_part:
@@ -3677,21 +3737,14 @@ def _emit_section_snapshot(
             and _snapshot_subsection_target_label(rop)
         }
         explicitly_repealed_paragraph_labels_by_subsection: dict[str, set[str]] = {}
-        explicitly_targeted_paragraph_labels_by_subsection: dict[str, set[str]] = {}
+        explicitly_targeted_paragraph_labels_by_subsection = (
+            _explicitly_targeted_paragraph_labels_by_subsection()
+        )
         source_text_lower = str(op_source.raw_text or "").lower()
         has_post_repeal_item_shift = "muuttuvat kohdiksi" in source_text_lower
         for rop in group_rops:
             subsection_label = str(rop.resolved_target_subsection_label or "").strip()
             item_label = str(rop.resolved_target_item_label or "").strip()
-            if (
-                subsection_label
-                and item_label
-                and (rop.is_insert_action or rop.is_replace_action)
-            ):
-                explicitly_targeted_paragraph_labels_by_subsection.setdefault(
-                    _norm_num_token(subsection_label),
-                    set(),
-                ).add(leaf_label_identity_key(item_label))
             if not rop.is_repeal_action:
                 continue
             if has_post_repeal_item_shift:

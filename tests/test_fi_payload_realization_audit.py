@@ -72,6 +72,58 @@ def test_payload_realization_audit_reports_missing_payload_text() -> None:
     assert findings[0].detail["disposition"] == "source_payload_text_not_realized_in_post_fold_state"
 
 
+def test_payload_realization_audit_scopes_heading_facet_to_cross_heading_payload() -> None:
+    resolved = ResolvedOp(
+        op=AmendmentOp(
+            op_id="replace_chapter_heading",
+            op_type="REPLACE",
+            target_section="7",
+            target_unit_kind="chapter",
+            target_special="otsikko",
+        ),
+        muutos_ir=IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="7",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+                IRNode(kind=IRNodeKind.CROSS_HEADING, text="Sovinnosta ja akordista."),
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="93",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="Unrelated section payload."),),
+                ),
+            ),
+        ),
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="7",
+        op_id="replace_chapter_heading",
+        _op_type_seed="REPLACE",
+        _target_address_override=LegalAddress(path=(("chapter", "7"),), special=FacetKind.HEADING),
+    )
+    after_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+                    IRNode(kind=IRNodeKind.HEADING, text="Sovinnosta ja akordista."),
+                ),
+            ),
+        ),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(resolved,),
+        after_ir=after_ir,
+        amendment_id="1932/55",
+    )
+
+    assert findings == ()
+
+
 def test_payload_realization_audit_attaches_apply_disposition() -> None:
     findings = payload_realization_findings(
         resolved_ops=(_resolved("Substantive amendment payload appears here."),),
@@ -321,6 +373,98 @@ def test_final_payload_gap_annotation_classifies_later_amendment_supersession() 
     assert annotated[0].detail["superseding_source_statute"] == "2000/2"
     assert annotated[0].detail["superseding_unit_id"] == "op2"
     assert annotated[0].detail["superseding_target"] == "section:4/subsection:3"
+
+
+def test_final_payload_gap_annotation_classifies_expired_source_window() -> None:
+    gap = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={
+            "unit_id": "op1",
+            "unit_kind": "REPLACE",
+            "observed_label": "7",
+            "parent_label": "chapter:7/heading",
+            "chunk_index": 0,
+            "chunk_excerpt": "Temporary heading",
+            "disposition": "source_payload_text_not_realized_in_post_fold_state",
+        },
+    )
+    audit = Finding(
+        kind="APPLY.RESOLVED_OP_AUDIT",
+        role=OBSERVATION_ROLE,
+        stage="apply",
+        source_statute="2000/1",
+        detail={
+            "detail": {
+                "op_id": "op1",
+                "action_type": "REPLACE",
+                "disposition": "APPLIED",
+                "target_unit_kind": "chapter",
+                "target_norm": "7",
+                "target_special": "otsikko",
+                "source_effective": "2000-01-01",
+                "source_expires": "2001-01-01",
+            }
+        },
+    )
+
+    annotated = attach_payload_gap_apply_dispositions(
+        (gap, audit),
+        materialized_as_of="2002-01-01",
+    )
+
+    assert (
+        annotated[0].kind
+        == "COVERAGE.PAYLOAD_REALIZATION_EXPIRED_SOURCE_WINDOW"
+    )
+    assert annotated[0].detail["source_expires"] == "2001-01-01"
+    assert annotated[0].detail["materialized_as_of"] == "2002-01-01"
+
+
+def test_final_payload_gap_annotation_keeps_active_temporary_window_as_gap() -> None:
+    gap = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={
+            "unit_id": "op1",
+            "unit_kind": "REPLACE",
+            "observed_label": "7",
+            "parent_label": "chapter:7/heading",
+            "chunk_index": 0,
+            "chunk_excerpt": "Temporary heading",
+            "disposition": "source_payload_text_not_realized_in_post_fold_state",
+        },
+    )
+    audit = Finding(
+        kind="APPLY.RESOLVED_OP_AUDIT",
+        role=OBSERVATION_ROLE,
+        stage="apply",
+        source_statute="2000/1",
+        detail={
+            "detail": {
+                "op_id": "op1",
+                "action_type": "REPLACE",
+                "disposition": "APPLIED",
+                "target_unit_kind": "chapter",
+                "target_norm": "7",
+                "target_special": "otsikko",
+                "source_effective": "2000-01-01",
+                "source_expires": "2001-01-01",
+            }
+        },
+    )
+
+    annotated = attach_payload_gap_apply_dispositions(
+        (gap, audit),
+        materialized_as_of="2000-06-01",
+    )
+
+    assert annotated[0].kind == "COVERAGE.PAYLOAD_REALIZATION_GAP"
+    assert annotated[0].detail["apply_disposition"] == "APPLIED"
 
 
 def test_final_payload_gap_annotation_keeps_gap_when_later_replace_failed() -> None:

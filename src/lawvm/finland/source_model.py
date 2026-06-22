@@ -1387,6 +1387,15 @@ class AmendmentSourceModel:
 
         return _section_commencement_effective_override(self.muutos_tree, source_statute_id)
 
+    def chapter_commencement_effective_overrides(
+        self,
+        source_statute_id: str,
+    ) -> tuple[tuple[str, frozenset[str], dt.date], ...]:
+        """Return chapter-scoped commencement effective override metadata."""
+        from lawvm.finland.metadata import _chapter_commencement_effective_overrides
+
+        return _chapter_commencement_effective_overrides(self.muutos_tree, source_statute_id)
+
     def section_subsection_commencement_effective_override(
         self,
         source_statute_id: str,

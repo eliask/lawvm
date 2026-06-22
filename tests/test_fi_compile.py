@@ -53,7 +53,7 @@ from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifec
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
-from tests.corpus_pin_helpers import pinned_replay
+from tests.corpus_pin_helpers import pinned_replay, replay_xml_for_test
 
 
 @dataclass(frozen=True, slots=True)
@@ -2067,6 +2067,75 @@ def test_compile_fi_surfaces_recodification_source_chain_gap_for_2017_320() -> N
         for row in rows
     }
     assert ("2 luku 7 §", "target_leaf_absent_under_existing_parent") in details
+
+
+@pytest.mark.slow
+def test_compile_fi_2017_320_preserves_sparse_subsection_target_labels() -> None:
+    facade = compile_fi_facade("2017/320", replay_mode="legal_pit")
+
+    subsection_ops = [
+        op
+        for op in facade.bundle.structural_ops
+        if op.source is not None
+        and op.source.statute_id == "2020/1256"
+        and op.target.path[:3] == (("part", "2"), ("chapter", "10"), ("section", "107"))
+        and len(op.target.path) == 4
+        and op.target.path[-1][0] == "subsection"
+    ]
+    by_label = {op.target.path[-1][1]: " ".join(irnode_to_text(op.payload).split()) for op in subsection_ops}
+
+    assert "Lisäksi pätevyyskirjan ja lisäpätevyystodistuksen myöntämisen edellytyksenä" in by_label["3"]
+    assert "Liikenne- ja viestintävirasto vahvistaa pätevyyskirjan" in by_label["5"]
+    assert not any(
+        finding.kind == "COVERAGE.PAYLOAD_REALIZATION_GAP"
+        and finding.source_statute == "2020/1256"
+        and cast(dict[str, Any], finding.detail).get("unit_id") == "op_27"
+        for finding in facade.finding_ledger
+    )
+
+
+@pytest.mark.slow
+def test_compile_fi_2017_320_keeps_dense_inserted_chapter_members_for_later_targets() -> None:
+    replay_before = replay_xml_for_test(
+        "2017/320",
+        mode="official_consolidation",
+        quiet=True,
+        stop_before="2018/984",
+    )
+
+    def chapter_sections(part_label: str, chapter_label: str) -> list[str]:
+        found: list[str] = []
+
+        def walk(node: IRNode, path: tuple[tuple[str, str], ...] = ()) -> None:
+            next_path = path
+            if node.kind in {IRNodeKind.PART, IRNodeKind.CHAPTER, IRNodeKind.SECTION} and node.label:
+                next_path = (*path, (node.kind.value, node.label))
+            if next_path == (("part", part_label), ("chapter", chapter_label)):
+                found.extend(
+                    child.label
+                    for child in node.children
+                    if child.kind is IRNodeKind.SECTION and child.label
+                )
+                return
+            for child in node.children:
+                walk(child, next_path)
+
+        walk(replay_before.products.replay_fold_state.ir)
+        return found
+
+    assert chapter_sections("2", "7") == [str(n) for n in range(1, 22)]
+    assert chapter_sections("2", "10") == [str(n) for n in range(1, 19)]
+
+    failed_ops: list[Any] = []
+    replay_xml_for_test(
+        "2017/320",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+        failed_ops_out=failed_ops,
+    )
+
+    assert not [op for op in failed_ops if getattr(op, "amendment_id", "") == "2018/984"]
 
 
 def test_compile_fi_surfaces_apply_legacy_dispatch_fallback_as_projection_row(

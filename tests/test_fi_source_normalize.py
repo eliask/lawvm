@@ -1862,6 +1862,71 @@ class TestNumberingAnomalies:
         # First occurrence of label 2 is kept
         assert para_children[1].text == "text 2 v1"
 
+    def test_repairs_terminal_duplicate_item_after_open_coordinator(self) -> None:
+        """A terminal ``1), 2), 2)`` after ``ja`` is a local item-label typo."""
+        parent = IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="1)"),
+                        IRNode(kind=IRNodeKind.CONTENT, text="ensimmäinen kohta,"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="2)"),
+                        IRNode(kind=IRNodeKind.CONTENT, text="toinen kohta ja"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="2)"),
+                        IRNode(kind=IRNodeKind.CONTENT, text="kolmas kohta."),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(parent, "1996/1117")
+
+        paragraphs = [child for child in normalized.children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3"]
+        assert irnode_to_text(paragraphs[2]).startswith("3) kolmas kohta")
+        repair_facts = [
+            fact
+            for fact in facts
+            if fact.kind_value == SourceNormalizationKind.NUMBERING_REPAIR.value
+        ]
+        assert len(repair_facts) == 1
+        assert "terminal duplicate paragraph label 2" in repair_facts[0].before
+        assert not any(fact.kind_value == BASE_DUPLICATE_SIBLING_DROP for fact in facts)
+
+    def test_terminal_duplicate_without_open_coordinator_is_not_relabelled(self) -> None:
+        """The duplicate-item repair needs a local open-list witness."""
+        children = tuple(
+            IRNode(kind=IRNodeKind.PARAGRAPH, label=str(n), text=f"text {n} v{i}.")
+            for i, n in enumerate([1, 2, 2])
+        )
+        parent = IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=children)
+
+        normalized, facts = normalize_source_ir(parent, "2020/1")
+
+        paragraphs = [child for child in normalized.children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "2"]
+        assert not any(
+            fact.kind_value == SourceNormalizationKind.NUMBERING_REPAIR.value
+            and "terminal duplicate paragraph label" in fact.before
+            for fact in facts
+        )
+
     def test_no_anomaly_for_monotonic_sequence(self) -> None:
         """A clean 1, 2, 3 sequence produces no numbering facts."""
         children = tuple(

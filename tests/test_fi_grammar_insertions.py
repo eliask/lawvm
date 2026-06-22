@@ -28,8 +28,10 @@ from lawvm.finland.johtolause.grammar.parser import OutOfScope
 from lawvm.finland.johtolause.surface_model import (
     SurfaceInsertion,
     SurfaceNode,
+    SurfaceRenumberTail,
     SurfaceTargetRef,
     TargetKind,
+    VerbKind,
 )
 
 
@@ -191,17 +193,38 @@ def test_terminal_anaphoric_heading_co_insert_is_zero_delta(text: str) -> None:
     assert report.equal, report.summary()
 
 
-def test_non_terminal_anaphoric_heading_still_declines() -> None:
-    # The benign consume-and-drop applies ONLY to a TERMINAL anaphoric heading. A
-    # heading trailed by a ``, jolloin …`` renumber tail inside a cross-verb-group
-    # clause (1999/1001) must STILL decline so the old parser — which threads the
-    # renumber and the cross-group structure — owns it, preserving parity.
+def test_anaphoric_heading_before_jolloin_renumber_keeps_tail() -> None:
+    # 1999/1001: an anaphoric heading residue may be followed by a typed
+    # JOLLOIN_MOVE consequence. The heading residue itself still mints no node,
+    # but the jolloin pair must survive as a prepended renumber group and the
+    # following insertion arm must remain reachable.
     text = (
         "muutetaan lain 9 b § sekä lisätään lakiin uusi 9 c § ja sen edelle uusi "
-        "väliotsikko, jolloin nykyinen 9 c § siirtyy 9 d §:ksi seuraavasti:"
+        "väliotsikko, jolloin nykyinen 9 c § siirtyy 9 d §:ksi, ja 23 §:ään uusi "
+        "2 momentti seuraavasti:"
     )
-    with pytest.raises(OutOfScope):
-        parse_text_with(text, new_parser.parse)
+    model = parse_text_with(text, new_parser.parse)
+
+    assert [vg.verb for vg in model.verb_groups] == [
+        VerbKind.SIIRTAA,
+        VerbKind.MUUTTAA,
+        VerbKind.LISATA,
+    ]
+
+    renumber_group = model.verb_groups[0]
+    target = renumber_group.nodes[0]
+    tail = renumber_group.nodes[1]
+    assert isinstance(target, SurfaceTargetRef)
+    assert target.label == "9c"
+    assert target.witness is not None
+    assert target.witness.rule_id == "fi.jolloin_renumber"
+    assert isinstance(tail, SurfaceRenumberTail)
+    assert tail.new_label == "9d"
+
+    insertions = [_as_insertion(node) for node in model.verb_groups[2].nodes]
+    assert [node.label for node in insertions] == ["9c", "23"]
+    assert insertions[1].sub_target is not None
+    assert insertions[1].sub_target.momentti == 2
 
 
 def test_anaphoric_heading_between_doc_level_inserts_keeps_later_insert() -> None:
@@ -552,6 +575,16 @@ def test_section_ref_kohta_without_uusi_is_not_an_insertion() -> None:
         "muutetaan 12 §:n 2 momentin 3 kohta", surface_parse.parse, new_parser.parse
     )
     assert report.equal
+
+
+def test_repeated_section_ill_targets_share_inserted_subsection() -> None:
+    model = parse_text_with(
+        "lisätään lain 20 §:ään ja 37 §:ään uusi 2 momentti seuraavasti:",
+        new_parser.parse,
+    )
+    insertions = [_as_insertion(node) for node in model.verb_groups[0].nodes]
+    assert [node.label for node in insertions] == ["20", "37"]
+    assert [node.sub_target.momentti for node in insertions if node.sub_target] == [2, 2]
 
 
 # Chained-insertion continuation arms where a LATER batch carries a trailing

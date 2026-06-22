@@ -1552,7 +1552,7 @@ def _apply_subsection_replace(
                 )
             return None
         if n == len(subsecs):
-            append_label = str(len(subsecs) + 1)
+            append_label = str(view.target_paragraph)
             if _replace_sub.label != append_label:
                 _replace_sub = IRNode(
                     kind=_replace_sub.kind,
@@ -1789,7 +1789,7 @@ def _apply_subsection_replace(
                         )
                     )
                 return None
-            append_label = str(len(subsecs) + 1)
+            append_label = str(view.target_paragraph)
             if _replace_sub.label != append_label:
                 _replace_sub = IRNode(
                     kind=_replace_sub.kind,
@@ -1813,7 +1813,6 @@ def _apply_subsection_replace(
             if strict_profile is not None:
                 return None
             logger.debug("  %s → momentti replace (forced append, master had %s subsecs)", ctx_label, len(subsecs))
-            _report_fragment_rebound()
             return _with_preserved_provision_index(
                 state,
                 _tops.replace_at(state.ir, sec_path, new_sec),

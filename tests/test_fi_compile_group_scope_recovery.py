@@ -1055,3 +1055,197 @@ def test_source_owned_existing_chapter_insert_is_not_retargeted_to_duplicate_liv
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "2"), ("section", "5"))
     assert result.findings() == ()
+
+
+def test_item_targets_rewrite_to_subsections_for_flat_definition_entries() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.HEADING, text="Määritelmiä"),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="12"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <section>
+              <num>2 §</num>
+              <subsection><content><p>11 a. Uusi määritelmä.</p></content></subsection>
+              <subsection><content><p>12. Korvattu määritelmä.</p></content></subsection>
+            </section>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_11a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="2",
+        target_chapter="1",
+        target_paragraph=1,
+        target_item="11a",
+        source_statute="2006/168",
+        lo=LegalOperation(
+            op_id="insert_11a",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(
+                path=(
+                    ("chapter", "1"),
+                    ("section", "2"),
+                    ("subsection", "1"),
+                    ("item", "11a"),
+                )
+            ),
+            payload=None,
+        ),
+    )
+    replace_op = AmendmentOp(
+        op_id="replace_12",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="2",
+        target_chapter="1",
+        target_paragraph=1,
+        target_item="12",
+        source_statute="2006/168",
+        lo=LegalOperation(
+            op_id="replace_12",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(
+                path=(
+                    ("chapter", "1"),
+                    ("section", "2"),
+                    ("subsection", "1"),
+                    ("item", "12"),
+                )
+            ),
+            payload=None,
+        ),
+    )
+
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="2",
+            target_chapter="1",
+            target_part=None,
+            group_ops=[insert_op, replace_op],
+            inserted_chapter_labels=set(),
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            strict_profile=None,
+        )
+    )
+
+    assert [op.target_item for op in result.output.group_ops] == [None, None]
+    assert result.output.group_ops[0].lo is not None
+    assert result.output.group_ops[0].lo.target.path == (
+        ("chapter", "1"),
+        ("section", "2"),
+        ("subsection", "11a"),
+    )
+    assert result.output.group_ops[1].lo is not None
+    assert result.output.group_ops[1].lo.target.path == (
+        ("chapter", "1"),
+        ("section", "2"),
+        ("subsection", "12"),
+    )
+    assert [finding.kind for finding in result.findings()] == [
+        "LOWER.ITEM_AS_SUBSECTION_TARGET_REWRITE"
+    ]
+
+
+def test_item_targets_do_not_rewrite_when_live_host_has_paragraph_items() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.HEADING, text="Määritelmiä"),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="1"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <section>
+              <num>2 §</num>
+              <subsection><content><p>2. Not a subsection rewrite.</p></content></subsection>
+            </section>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="replace_item_2",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="2",
+        target_paragraph=1,
+        target_item="2",
+        source_statute="2020/1",
+        lo=LegalOperation(
+            op_id="replace_item_2",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(
+                path=(("section", "2"), ("subsection", "1"), ("item", "2"))
+            ),
+            payload=None,
+        ),
+    )
+
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="2",
+            target_chapter=None,
+            target_part=None,
+            group_ops=[op],
+            inserted_chapter_labels=set(),
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            strict_profile=None,
+        )
+    )
+
+    assert result.output.group_ops[0].target_item == "2"
+    assert result.output.group_ops[0].lo is not None
+    assert result.output.group_ops[0].lo.target.path == (
+        ("section", "2"),
+        ("subsection", "1"),
+        ("item", "2"),
+    )
+    assert result.findings() == ()

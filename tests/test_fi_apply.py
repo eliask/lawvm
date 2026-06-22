@@ -117,6 +117,7 @@ from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.strict_profile import default_finland_strict_profile
 from lawvm.finland.standalone_targets import (
     StandaloneSectionTarget,
+    build_standalone_section_targets,
     normalize_standalone_section_target,
 )
 from tests.corpus_pin_helpers import pinned_replay
@@ -214,6 +215,38 @@ def test_standalone_section_target_is_normalized_typed_record() -> None:
         StandaloneSectionTarget(part=None, chapter="6", label="")
 
 
+def test_build_standalone_section_targets_does_not_let_unscoped_replace_shadow_new_chapter_child() -> None:
+    """Unscoped REPLACE is too weak to strip same-label children from a fresh chapter."""
+    unscoped_replace = AmendmentOp(
+        op_id="replace_2",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="2",
+    )
+    unscoped_insert = AmendmentOp(
+        op_id="insert_3",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="3",
+    )
+    scoped_replace = AmendmentOp(
+        op_id="replace_ch5_2",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_part="5",
+        target_chapter="5",
+        target_section="2",
+    )
+
+    assert build_standalone_section_targets([unscoped_replace]) == frozenset()
+    assert build_standalone_section_targets([unscoped_insert]) == frozenset(
+        {StandaloneSectionTarget(part=None, chapter=None, label="3")}
+    )
+    assert build_standalone_section_targets([scoped_replace]) == frozenset(
+        {StandaloneSectionTarget(part="5", chapter="5", label="2")}
+    )
+
+
 def test_replay_state_section_path_cache_is_state_local() -> None:
     state = ReplayState(
         ir=_body(
@@ -270,6 +303,7 @@ def _op(
     has_exact_bound_payload: bool = False,
     witness_rule_id: str | None = None,
     body_chapter_move_from: str | None = None,
+    target_version_statute_id: str | None = None,
 ) -> AmendmentOp:
     return AmendmentOp(
         op_id="test_op",
@@ -295,6 +329,7 @@ def _op(
         has_exact_bound_payload=has_exact_bound_payload,
         witness_rule_id=witness_rule_id,
         body_chapter_move_from=body_chapter_move_from,
+        target_version_statute_id=target_version_statute_id,
     )
 
 
@@ -4554,6 +4589,78 @@ def test_emit_section_snapshot_keeps_part_wrapped_container_child_when_timeline_
     assert snapshot.payload.attrs["lawvm_payload_completeness_kind"] == "complete"
 
 
+def test_emit_section_snapshot_anchors_unscoped_subsection_insert_to_prior_timeline_path() -> None:
+    live_section = _sec(
+        "145f",
+        _sub("1", _content("existing first moment")),
+        _sub("2", _content("inserted second moment")),
+    )
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(live_section,),
+            )
+        )
+    )
+    lo_ops = [
+        LegalOperation(
+            op_id="snapshot_section_145f",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(
+                path=(("part", "3a"), ("chapter", "16a"), ("section", "145f"))
+            ),
+            payload=_sec("145f", _sub("1", _content("existing first moment"))),
+            source=OperationSource(statute_id="1969/628", effective="1969-10-10"),
+        )
+    ]
+    op = AmendmentOp(
+        op_id="insert_145f_sub2",
+        op_type="INSERT",
+        target_section="145f",
+        target_unit_kind="section",
+        target_paragraph=2,
+        source_statute="1973/791",
+        source_issue_date=_DATE,
+    )
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=_sec("145f", _sub("2", _content("inserted second moment"))),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="145f",
+        target_chapter=None,
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="145f",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="1973/791",
+        source_title="Insert",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(),
+        path_hint=(("hcontainer", ""), ("section", "145f")),
+    )
+
+    new_ops = lo_ops[1:]
+    assert [op.target.path for op in new_ops if "145f" in str(op.target.path)] == [
+        (("part", "3a"), ("chapter", "16a"), ("section", "145f")),
+        (("part", "3a"), ("chapter", "16a"), ("section", "145f"), ("subsection", "1")),
+        (("part", "3a"), ("chapter", "16a"), ("section", "145f"), ("subsection", "2")),
+    ]
+    assert not any(op.target.path == (("section", "145f"),) for op in new_ops)
+    assert new_ops[0].action is StructuralAction.REPLACE
+    assert new_ops[0].payload is not None
+    assert "inserted second moment" in irnode_to_text(new_ops[0].payload)
+
+
 def test_emit_section_snapshot_prefers_unique_substantive_section_over_repeal_placeholder_when_unscoped() -> None:
     from lawvm.core import tree_ops as _tops
 
@@ -5347,6 +5454,55 @@ def test_apply_whole_section_op_clean_replace_stays_quiet() -> None:
         != "apply_whole_section_op:suspicious_partial_fallback_fragment_replace_declined"
         for p in pathologies
     )
+
+
+def test_apply_whole_section_op_crossheading_carrier_does_not_carry_old_heading() -> None:
+    """A source crossHeading before a section replacement blocks stale heading carry."""
+    master = _sec(
+        "11",
+        IRNode(kind=IRNodeKind.HEADING, text="Old heading"),
+        _sub("1", _content("old section body")),
+    )
+    amend = _sec("11", _sub("1", _content("Ylijohtajan ollessa estynyt toimii sijainen.")))
+    cross = IRNode(kind=IRNodeKind.CROSS_HEADING, text="Ylijohtajan sijainen")
+    state = _make_state(_body(master))
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="11"),
+        muutos_ir=amend,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="11",
+        target_chapter=None,
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("synthetic_complete_section",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
+        op_source=OperationSource(
+            statute_id="2099/11",
+            enacted="2099-01-01",
+            effective="2099-01-01",
+            expires="",
+            raw_text="muutetaan 11 § ja 11 §:n edellä oleva väliotsikko",
+        ),
+    )
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        (("section", "11"),),
+        amend,
+        cross,
+        _LEGAL_PIT,
+        "11 §",
+        base_ir=_body(master),
+    )
+
+    applied = _modified(state, result)
+    live = applied.find_section("11")
+    assert live is not None
+    assert [c.text for c in live.children if c.kind == IRNodeKind.HEADING] == []
+    assert irnode_to_text(live) == "Ylijohtajan ollessa estynyt toimii sijainen."
 
 
 def _paragraph_labels(sub: IRNode) -> List[str]:
@@ -7959,6 +8115,110 @@ def test_apply_whole_section_replace_records_missing_bootstrap_parent() -> None:
     assert pathologies[0].detail["target_section"] == "3a"
     assert pathologies[0].detail["recovery_kind"] == "section_replace_bootstrap_parent_missing"
     assert pathologies[0].detail["strict_disposition"] == "block"
+
+
+def test_apply_whole_section_replace_scaffolds_parent_from_exact_cited_snapshot() -> None:
+    """A cited-version whole-section replace may rebirth the exact historical parent path.
+
+    This is the narrow form of the 1999/132 + 2024/899 family: the target section
+    has no live parent because an earlier same-effective repeal removed the
+    chapter, but the amending formula cites a concrete earlier version and the
+    replay history contains that exact section snapshot path.
+    """
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(IRNode(kind=IRNodeKind.NUM, text="7 luku"),),
+            )
+        )
+    )
+    base_ir = _body(
+        IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="19",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="19 luku"),
+                _sec("131", _sub("1", _content("historical section 131"))),
+            ),
+        )
+    )
+    cited_path = (("chapter", "19"), ("section", "131"))
+    replay_history_ops = [
+        LegalOperation(
+            op_id="snapshot_section_131",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=cited_path),
+            payload=_sec("131", _sub("1", _content("historical section 131"))),
+            source=OperationSource(statute_id="2014/41"),
+        )
+    ]
+    op = _op(
+        op_type="REPLACE",
+        target_section="131",
+        target_version_statute_id="2014/41",
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        _sec("131", _sub("1", _content("reborn section 131"))),
+        None,
+        _LEGAL_PIT,
+        "131 §",
+        base_ir=base_ir,
+        replay_history_ops=replay_history_ops,
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    section = result.find_section("131", "19")
+    assert section is not None
+    assert "reborn section 131" in irnode_to_text(section)
+    assert result.find("chapter", "19") is not None
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+    assert (
+        pathologies[0].detail["recovery_kind"]
+        == "section_replace_bootstrap_cited_parent_scaffold"
+    )
+
+
+def test_apply_whole_section_replace_refuses_cited_parent_scaffold_without_exact_snapshot() -> None:
+    state = _make_state(_body(IRNode(kind=IRNodeKind.CHAPTER, label="7")))
+    base_ir = _body(
+        IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="19",
+            children=(_sec("131", _sub("1", _content("historical section 131"))),),
+        )
+    )
+    op = _op(
+        op_type="REPLACE",
+        target_section="131",
+        target_version_statute_id="2014/41",
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        _sec("131", _sub("1", _content("reborn section 131"))),
+        None,
+        _LEGAL_PIT,
+        "131 §",
+        base_ir=base_ir,
+        replay_history_ops=[],
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is None
+    assert pathologies == []
+    assert state.find("chapter", "19") is None
 
 
 def test_apply_whole_section_replace_does_not_synthesize_root_insert_for_missing_root_section() -> None:
@@ -14956,6 +15216,111 @@ def test_typed_insert_subsection_with_carried_section_shell_uses_descendant_disp
     assert [event.helper for event in mutation_events] == ["_apply_deterministic_subsection_op"]
 
 
+def test_typed_insert_subsection_uses_unique_live_section_path_in_nested_tree() -> None:
+    from lawvm.core.canonical_intent import (
+        ExecutionContract,
+        Insert,
+        InsertOrder,
+        IntentKind,
+        NodeTarget,
+        OccupancyPolicy,
+    )
+    from lawvm.core.ir import LegalAddress
+
+    live_section = _sec("145f", _sub("1", _content("existing first moment")))
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="3a",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="16a",
+                        children=(live_section,),
+                    ),
+                ),
+            )
+        )
+    )
+    payload = _sec("145f", _sub("2", _content("inserted second moment")))
+    op = _op(op_type="INSERT", target_section="145f", target_paragraph=2)
+    slot_map = SubsectionSlotMap()
+    mapped_payload = next(c for c in payload.children if c.kind == IRNodeKind.SUBSECTION)
+    slot_map.assign(op, mapped_payload)
+    slot_assignment = SubsectionSlotAssignmentResult(
+        subsec_map=slot_map,
+        sparse_slot_bindings=(),
+        used_subs=(0,),
+        unassigned_payload_slots=(),
+    )
+    intent = Insert(
+        kind=IntentKind.INSERT,
+        target=NodeTarget(address=LegalAddress(path=(("section", "145f"), ("subsection", "2")))),
+        payload=cast(Any, payload),
+        contract=ExecutionContract(
+            occupancy=OccupancyPolicy.fresh_insert(),
+            insert_order=InsertOrder.SORTED_FAMILY,
+        ),
+    )
+    rop = _make_rop(op, intent, muutos_ir=payload, slot_assignment=slot_assignment)
+    ctx = _ctx(_body())
+    mutation_events: List[ApplyMutationEvent] = []
+
+    result = _apply_intent_section_level(
+        state,
+        rop,
+        "test",
+        ctx,
+        _LEGAL_PIT,
+        "145f § 2 mom insert",
+        payload,
+        mutation_events_out=mutation_events,
+    )
+
+    result = _modified(state, result)
+    assert not any(c.kind == IRNodeKind.SECTION and c.label == "145f" for c in result.ir.children)
+    nested = result.find_section("145f", "16a", "3a")
+    assert nested is not None
+    assert [c.label for c in nested.children if c.kind == IRNodeKind.SUBSECTION] == ["1", "2"]
+    assert "inserted second moment" in irnode_to_text(nested)
+    assert [event.helper for event in mutation_events] == ["_apply_deterministic_subsection_op"]
+    assert mutation_events[0].resolved_target_path == (
+        ("part", "3a"),
+        ("chapter", "16a"),
+        ("section", "145f"),
+        ("subsection", "2"),
+    )
+
+
+def test_resolved_op_preserves_subsection_scope_when_lo_target_names_only_section() -> None:
+    lo = LegalOperation(
+        op_id="lo_145f",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "145f"),)),
+        payload=None,
+        source=OperationSource(statute_id="1973/791"),
+    )
+    op = _op(op_type="INSERT", target_section="145f", target_paragraph=2)
+    op.lo = lo
+
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=_sec("145f", _sub("2", _content("new second moment"))),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="145f",
+        target_chapter=None,
+    )
+
+    assert rop.resolved_target_address == LegalAddress(
+        path=(("section", "145f"), ("subsection", "2"))
+    )
+    assert rop.resolved_target_subsection_label == "2"
+    assert rop.effective_target_paragraph == 2
+
+
 def test_typed_repeal_section_emits_mutation_event() -> None:
     """Typed Repeal(NodeTarget/section) path must emit a mutation event."""
     state = _make_state(_body(_sec("5", _sub("1", _content("old text")))))
@@ -17545,13 +17910,9 @@ def test_subsection_replace_forced_append_emits_pathology() -> None:
     result_sec = tree_resolve(result.ir, (("section", "13"),))
     assert result_sec is not None
     result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
-    assert [sub.label for sub in result_subsecs] == ["1", "2", "3", "4"]
-    assert [p.code for p in pathologies] == [
-        "DESTRUCTIVE_SHAPE_LOSS_RISK",
-        "SUBSECTION_TARGET_REBOUND",
-    ]
+    assert [sub.label for sub in result_subsecs] == ["1", "2", "3", "6"]
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
     assert pathologies[0].detail["recovery_kind"] == "subsection_replace_forced_append"
-    assert pathologies[1].detail["rebound_kind"] == "missing_exact_subsection_label"
 
 
 def test_subsection_replace_strict_blocks_forced_append() -> None:
@@ -18864,6 +19225,63 @@ def test_apply_container_otsikko_replace_applies_crossheading_payload() -> None:
     headings = [c.text for c in new_chapter.children if c.kind is IRNodeKind.HEADING]
     assert headings == ["New chapter heading"]
     # crossHeading recovery is a clean apply, not a pathology.
+    assert pathologies == []
+
+
+def test_apply_container_otsikko_replace_applies_heading_nested_under_target_container() -> None:
+    """A wrapped amendment payload may carry the target chapter below a carrier.
+
+    The heading is owned only when the typed target container is unique; apply
+    must not treat the wrapper's lack of an immediate heading as an absent
+    payload.
+    """
+    chapter = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old chapter heading"),
+            _sec("93", _content("body")),
+        ),
+    )
+    state = _make_state(_body(chapter))
+    payload = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+                    IRNode(kind=IRNodeKind.HEADING, text="New chapter heading"),
+                    _sec("93", _content("body")),
+                ),
+            ),
+        ),
+    )
+    op = ResolvedOp.from_amendment_op(
+        _otsikko_container_op(target_unit_kind="chapter", target_section="7"),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="chapter",
+        target_norm="7",
+        target_chapter=None,
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_container_op(
+        state,
+        op,
+        payload,
+        _LEGAL_PIT,
+        "7 luku otsikko",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    new_chapter = next(c for c in result.ir.children if c.kind is IRNodeKind.CHAPTER)
+    headings = [c.text for c in new_chapter.children if c.kind is IRNodeKind.HEADING]
+    assert headings == ["New chapter heading"]
     assert pathologies == []
 
 

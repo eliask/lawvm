@@ -305,12 +305,61 @@ def _is_target_version_source_word(token: Token) -> bool:
     return token.text.lower() in _TARGET_VERSION_SOURCE_WORDS
 
 
+def _target_version_cite_index_after_source_word(
+    tokens: list[Token],
+    source_word_index: int,
+    span_end: int,
+) -> int | None:
+    next_index = source_word_index + 1
+    if next_index < span_end and tokens[next_index].cat == "CITE":
+        return next_index
+    if (
+        next_index + 1 < span_end
+        and tokens[next_index].cat == "PUNCT"
+        and tokens[next_index].text == "("
+        and tokens[next_index + 1].cat == "CITE"
+    ):
+        return next_index + 1
+    return None
+
+
+def _source_word_has_target_version_cite(
+    tokens: list[Token],
+    source_word_index: int,
+    span_end: int,
+) -> bool:
+    return (
+        _is_target_version_source_word(tokens[source_word_index])
+        and _target_version_cite_index_after_source_word(tokens, source_word_index, span_end)
+        is not None
+    )
+
+
 def _previous_section_labels_for_provenance(tokens: list[Token], provenance_start: int) -> tuple[str, ...]:
     """Return the immediately preceding section batch for a provenance anaphor."""
-    start = provenance_start - 1
-    while start >= 0 and tokens[start].cat not in {"VERB", "END"}:
+    end = provenance_start
+    while end > 0 and tokens[end - 1].cat == "COMMA":
+        end -= 1
+    if end <= 0:
+        return ()
+
+    start = end - 1
+    seen_pykala = False
+    while start >= 0:
+        cat = tokens[start].cat
+        if cat == "PYKALA":
+            seen_pykala = True
+            start -= 1
+            continue
+        if cat in {"NUM", "LETTER", "DASH"} or (seen_pykala and cat == "CONJ"):
+            start -= 1
+            continue
+        if seen_pykala:
+            break
         start -= 1
-    return _section_labels_from_tokens(tokens, start + 1, provenance_start)
+    if not seen_pykala:
+        return ()
+    return _section_labels_from_tokens(tokens, start + 1, end)
 
 
 def extract_target_version_bindings(tokens: list[Token]) -> tuple["SurfaceTargetVersionBinding", ...]:
@@ -332,33 +381,29 @@ def extract_target_version_bindings(tokens: list[Token]) -> tuple["SurfaceTarget
         k = i + 1
         while k < span_end:
             labels_start = k
-            while (
-                k < span_end
-                and not (
-                    _is_target_version_source_word(tokens[k])
-                    and k + 1 < span_end
-                    and tokens[k + 1].cat == "CITE"
-                )
-            ):
+            while k < span_end and not _source_word_has_target_version_cite(tokens, k, span_end):
                 k += 1
             if k >= span_end:
+                break
+            cite_index = _target_version_cite_index_after_source_word(tokens, k, span_end)
+            if cite_index is None:
                 break
             target_labels = _section_labels_from_tokens(tokens, labels_start, k)
             if not target_labels:
                 target_labels = _previous_section_labels_for_provenance(tokens, i)
             if target_labels:
-                cited_statute_id = _normalize_cited_statute_id(tokens[k + 1].text)
+                cited_statute_id = _normalize_cited_statute_id(tokens[cite_index].text)
                 results.append(
                     SurfaceTargetVersionBinding(
                         target_labels=target_labels,
                         cited_statute_id=cited_statute_id,
                         witness=SurfaceWitness(
                             rule_id="fi.target_version_binding",
-                            source_span=(labels_start, k + 2),
+                            source_span=(labels_start, cite_index + 1),
                         ),
                     )
                 )
-            k += 2
+            k = cite_index + 1
             while k < span_end and tokens[k].cat in {"COMMA", "CONJ"}:
                 k += 1
         i = span_end

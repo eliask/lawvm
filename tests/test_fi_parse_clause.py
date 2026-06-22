@@ -1563,6 +1563,44 @@ def test_parse_clause_preserves_anaphoric_asetus_target_version_binding_range() 
     ] == [(("4a", "4b", "4c"), "2011/81")]
 
 
+def test_parse_clause_preserves_parenthesized_asetus_target_version_bindings_for_2009_1815() -> None:
+    text = (
+        "muutetaan 22 päivänä joulukuuta 1993 annetun jäteasetuksen "
+        "(1390/1993) 3 a §:n 2 momentin johdantokappale ja 3 momentti, "
+        "sellaisina kuin ne ovat 20 päivänä kesäkuuta 1996 annetussa "
+        "asetuksessa (472/1996), 12 § sellaisena kuin se on 24 päivänä "
+        "tammikuuta 1995 annetussa asetuksessa (64/1995), 14 § ja 14 b §, "
+        "sellaisina kuin ne ovat 18 päivänä helmikuuta 2000 annetussa "
+        "asetuksessa (171/2000), 17 §:n 2 momentin johdantokappale, "
+        "sellaisena kuin se on 24 päivänä tammikuuta 1995 annetussa "
+        "asetuksessa (64/1995) sekä 21 §:n 1 momentin 2 kohta sellaisena "
+        "kuin se on 18 päivänä helmikuuta 2000 annetussa asetuksessa "
+        "(171/2000), seuraavasti:"
+    )
+
+    result = parse_clause(text)
+
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 3a 2 j",
+        "M P 3a 3",
+        "M P 12",
+        "M P 14",
+        "M P 14b",
+        "M P 17 2 j",
+        "M P 21 1 2",
+    ]
+    assert [
+        (binding.target_labels, binding.cited_statute_id)
+        for binding in result.target_version_bindings
+    ] == [
+        (("3a",), "1996/472"),
+        (("12",), "1995/64"),
+        (("14", "14b"), "2000/171"),
+        (("17",), "1995/64"),
+        (("21",), "2000/171"),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Anaphoric provenance must not over-consume the resuming target list
 # ---------------------------------------------------------------------------
