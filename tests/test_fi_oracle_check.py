@@ -553,6 +553,20 @@ def test_classify_statute_1992_1702_empty_operative_body_wave_is_source_incomple
     assert by_section["chapter:8/section:42"]["diagnosis"] == "ORACLE_STALE"
 
 
+def test_classify_statute_2015_1480_pdf_only_amendment_is_source_incomplete() -> None:
+    result = _classify_statute("2015/1480", "official_consolidation")
+
+    assert result is not None
+    assert {
+        (row.get("source_statute"), row.get("code"))
+        for row in result.source_pathologies
+    } >= {("2021/1209", "EMPTY_OPERATIVE_BODY")}
+
+    by_section = {item["section"]: item for item in result.section_results}
+    for label in ("section:6", "section:8", "section:13", "section:20"):
+        assert by_section[label]["diagnosis"] == "SOURCE_INCOMPLETE"
+
+
 def test_classify_statute_1987_322_repealed_stubs_are_editorial_convention() -> None:
     # Sections 10a-10f appear in the oracle as "kumottu" repeal stubs.
     # They are correctly absent from the replay (repealed), and the oracle

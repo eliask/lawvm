@@ -1385,7 +1385,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 2,2015/1377,suspect,oracle_suspect,2024/313 eff 2024-06-30 > cutoff 2024-06-13,
 2,2015/1385,suspect,oracle_suspect,2021/1148 eff 2022-03-01 > cutoff 2021-12-16,
 2,2015/1466,suspect,oracle_suspect,base_oracle_only despite amendment 2017/379 eff 2017-07-01 <= cutoff 2019-01-31,OK
-2,2015/1480,core,,,OK
+2,2015/1480,suspect,source_pathology,2021/1209 has empty operative XML body and only PDF attachment; replay emits EMPTY_OPERATIVE_BODY,OK
 2,2015/1494,suspect,oracle_suspect,2020/659 eff 2020-10-01 > cutoff 2020-09-08,
 2,2015/1750,suspect,oracle_suspect,base_oracle_only despite amendment 2016/345 eff 2016-05-15 <= cutoff 2017-06-26,OK
 2,2015/326,suspect,oracle_suspect,2020/413 eff 2021-01-01 > cutoff 2020-05-20,
