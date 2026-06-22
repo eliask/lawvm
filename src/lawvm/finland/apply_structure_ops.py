@@ -1226,6 +1226,40 @@ def _container_otsikko_payload_heading(muutos_ir: IRNode) -> Optional[IRNode]:
     return None
 
 
+def _container_otsikko_payload_heading_for_target(
+    muutos_ir: IRNode,
+    *,
+    target_kind: str,
+    target_label: str,
+) -> Optional[IRNode]:
+    """Return a heading owned by the target container payload.
+
+    Some historical amendment payloads wrap the target chapter/part inside a
+    body/hcontainer carrier.  The legal target is still typed by kind+label; do
+    not scan arbitrary descendants for a convenient title.  Only descend when
+    there is exactly one matching container payload.
+    """
+
+    direct = _container_otsikko_payload_heading(muutos_ir)
+    if direct is not None:
+        return direct
+
+    target_node_kind = IRNodeKind.CHAPTER if target_kind == "chapter" else IRNodeKind.PART
+    matches: list[IRNode] = []
+
+    def _walk(node: IRNode) -> None:
+        if node is not muutos_ir and node.kind is target_node_kind and node.label == target_label:
+            matches.append(node)
+            return
+        for child in node.children:
+            _walk(child)
+
+    _walk(muutos_ir)
+    if len(matches) != 1:
+        return None
+    return _container_otsikko_payload_heading(matches[0])
+
+
 def _replace_container_heading_children(node: IRNode, amend_heading: IRNode) -> list[IRNode]:
     """Install ``amend_heading`` as the container's single heading facet.
 
@@ -1596,7 +1630,11 @@ def _apply_container_op(
         node = _tops.resolve(state.ir, path)
         assert node is not None, f"resolve failed for {path}"
         if _op_type == "REPLACE" and muutos_ir is not None:
-            amend_heading = _container_otsikko_payload_heading(muutos_ir)
+            amend_heading = _container_otsikko_payload_heading_for_target(
+                muutos_ir,
+                target_kind=kind,
+                target_label=section_label,
+            )
             if amend_heading is not None:
                 new_children = _replace_container_heading_children(node, amend_heading)
                 logger.debug("  %s → container otsikko replace", ctx_label)

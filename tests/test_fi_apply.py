@@ -18756,6 +18756,63 @@ def test_apply_container_otsikko_replace_applies_crossheading_payload() -> None:
     assert pathologies == []
 
 
+def test_apply_container_otsikko_replace_applies_heading_nested_under_target_container() -> None:
+    """A wrapped amendment payload may carry the target chapter below a carrier.
+
+    The heading is owned only when the typed target container is unique; apply
+    must not treat the wrapper's lack of an immediate heading as an absent
+    payload.
+    """
+    chapter = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old chapter heading"),
+            _sec("93", _content("body")),
+        ),
+    )
+    state = _make_state(_body(chapter))
+    payload = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+                    IRNode(kind=IRNodeKind.HEADING, text="New chapter heading"),
+                    _sec("93", _content("body")),
+                ),
+            ),
+        ),
+    )
+    op = ResolvedOp.from_amendment_op(
+        _otsikko_container_op(target_unit_kind="chapter", target_section="7"),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="chapter",
+        target_norm="7",
+        target_chapter=None,
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_container_op(
+        state,
+        op,
+        payload,
+        _LEGAL_PIT,
+        "7 luku otsikko",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    new_chapter = next(c for c in result.ir.children if c.kind is IRNodeKind.CHAPTER)
+    headings = [c.text for c in new_chapter.children if c.kind is IRNodeKind.HEADING]
+    assert headings == ["New chapter heading"]
+    assert pathologies == []
+
+
 def test_apply_container_otsikko_replace_witnesses_missing_heading_payload() -> None:
     """A container heading REPLACE whose payload exposes no heading (nor
     crossHeading) is witnessed rather than vanishing as a silent no-op."""
