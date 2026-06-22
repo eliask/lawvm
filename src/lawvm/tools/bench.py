@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 from rapidfuzz.distance import Indel as _RapidFuzzIndel
 
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
+from lawvm.finland.consolidated_store import pin_selection_as_of
 from lawvm.finland.corpus import get_ground_truth, get_ground_truth_bytes, get_ground_truth_tree
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_timeline_diagnostics import (
@@ -1005,6 +1006,38 @@ def _fi_status_to_bench_status(status: str) -> "BenchStatus":
     return BenchStatus.CRASH
 
 
+def _bench_oracle_provenance_witnesses(sid: str) -> tuple[str, ...]:
+    """Surface the oracle-selection qualifier as opaque witness pointers.
+
+    A score is valid even when the oracle it scored against was accepted only
+    under the 180-day Finlex-ahead tolerance, or when other candidate artifacts
+    were screened out as incomparable.  That qualifier must be *visible* — an
+    ordinary OK score with no qualifier would silently hide that the oracle was
+    tolerance-accepted.  This reads the same cached selection the score used
+    (no re-selection, no score change) and returns witness strings only when
+    there is something to surface.
+    """
+    from lawvm.finland.corpus import get_oracle_selection_provenance
+
+    provenance = get_oracle_selection_provenance(
+        sid, selector=_BENCH_CONSOLIDATED_SELECTOR
+    )
+    if provenance is None:
+        return ()
+    witnesses: list[str] = []
+    if provenance.tolerance_applied:
+        witnesses.append(
+            "oracle_selected_under_180day_tolerance"
+            f" version_tag={provenance.chosen_version_tag}"
+        )
+    if provenance.rejected_version_tags:
+        witnesses.append(
+            "oracle_candidates_rejected_incomparable="
+            + ",".join(provenance.rejected_version_tags)
+        )
+    return tuple(witnesses)
+
+
 def fi_bench_unit_result(
     sid: str,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
@@ -1052,6 +1085,7 @@ def fi_bench_unit_result(
                 status=BenchStatus.SCORED,
                 structural_err=None,
                 text_err=1.0 - lev_sim,
+                witnesses=_bench_oracle_provenance_witnesses(sid),
             )
 
         score = _semantic_section_score(sid, master, text_scores=text_scores)
@@ -1067,6 +1101,7 @@ def fi_bench_unit_result(
             structural_err=1.0 - sim,
             text_err=text_err,
             residue_buckets=residue,
+            witnesses=_bench_oracle_provenance_witnesses(sid),
         )
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud
@@ -1760,6 +1795,7 @@ def _write_bench_evidence_surface(
     lev_sims: Optional[Dict[str, float]],
     diagnostic_summaries: Dict[str, str],
     oracle_stale_adjusted: Optional[Dict[str, Any]],
+    selection_as_of: Optional[str] = None,
 ) -> Path:
     diagnostic_summary_counts: Counter[str] = Counter(
         summary for summary in diagnostic_summaries.values() if summary
@@ -1783,6 +1819,7 @@ def _write_bench_evidence_surface(
             "fast_mode": fast_mode,
             "diagnostic_replay": diagnostic_replay,
             "oracle_stale_adjusted": oracle_stale_adjusted or {},
+            "selection_as_of": selection_as_of or "",
         }
     )
     path = _bench_evidence_report_path(run_path)
@@ -2995,6 +3032,16 @@ def main(args) -> None:
     oracle_stale_headline = getattr(args, "oracle_aware_headline", False)
     workers = _fi_bench_worker_count(args)
 
+    # Pin one commencement reference date for the whole run so oracle selection
+    # is reproducible: every comparability decision in this run uses the same
+    # ``as_of`` even if the wall clock crosses midnight mid-run, and a
+    # future-dated artifact rejected today cannot become silently accepted
+    # tomorrow with no code/data change. Forked workers inherit this pinned
+    # module-global via copy-on-write (the pool is created after this line).
+    # Snapshot from the same UTC clock as the run timestamp.
+    selection_as_of = datetime.now(timezone.utc).date()
+    pin_selection_as_of(selection_as_of)
+
     print(
         _format_bench_run_banner(
             statute_count=len(corpus),
@@ -3126,6 +3173,7 @@ def main(args) -> None:
             lev_sims=lev_sims,
             diagnostic_summaries=diagnostic_summaries,
             oracle_stale_adjusted=oracle_adjusted_summary,
+            selection_as_of=selection_as_of.isoformat(),
         )
 
         diagnostics_sidecar_path = _save_bench_diagnostic_sidecar(

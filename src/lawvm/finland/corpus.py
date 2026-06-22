@@ -244,6 +244,26 @@ def _selected_consolidated_locator_for_statute(
     return locator
 
 
+def get_oracle_selection_provenance(
+    statute_id: str,
+    corpus: Optional[CorpusStore] = None,
+    selector: ConsolidatedArtifactSelector | None = None,
+) -> SelectionProvenance | None:
+    """Return the :class:`SelectionProvenance` for *statute_id*'s selected oracle.
+
+    Reuses the same per-statute selection (and its cache) that the oracle-path
+    accessors use, so callers can surface tolerance/rejection qualifiers without
+    re-running selection or affecting which oracle is chosen.  Returns ``None``
+    when no provenance is available (e.g. the non-archive corpus path).
+    """
+    _locator, provenance = _selected_consolidated_locator_and_provenance_for_statute(
+        statute_id,
+        corpus,
+        selector,
+    )
+    return provenance
+
+
 def get_oracle_path(
     statute_id: str,
     corpus: Optional[CorpusStore] = None,
