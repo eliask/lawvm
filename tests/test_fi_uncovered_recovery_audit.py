@@ -63,11 +63,15 @@ def test_apply_resolved_op_audit_projects_to_replay_meta() -> None:
     observation = ApplyResolvedOpAudit(
         source_statute="12/2015",
         op_id="replace_1",
+        action_type="REPLACE",
         description="replace section 1",
         target_unit_kind="section",
         target_norm="1",
         target_chapter="",
         target_part="",
+        target_paragraph="",
+        target_item="",
+        target_special="",
         disposition="APPLIED",
     ).to_observation()
     replay_meta: dict[str, object] = {}
@@ -97,11 +101,15 @@ def test_apply_resolved_op_audit_projects_to_replay_meta() -> None:
             "source_statute": "12/2015",
             "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
             "op_id": "replace_1",
+            "action_type": "REPLACE",
             "description": "replace section 1",
             "target_unit_kind": "section",
             "target_norm": "1",
             "target_chapter": "",
             "target_part": "",
+            "target_paragraph": "",
+            "target_item": "",
+            "target_special": "",
             "disposition": "APPLIED",
         }
     ]
