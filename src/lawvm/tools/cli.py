@@ -12089,9 +12089,9 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     pack_snapshot_p.add_argument(
         "--data",
         dest="data_glob",
-        default="<SCRATCH>/*.parquet",
+        default=os.environ.get("LAWVM_LOCUS_DATA_GLOB", ""),
         metavar="GLOB",
-        help="LOCUS parquet glob (default: the local LOCUS snapshot set)",
+        help="LOCUS parquet glob (or set LAWVM_LOCUS_DATA_GLOB)",
     )
     pack_snapshot_p.add_argument(
         "--out",
@@ -13880,6 +13880,10 @@ def _main_impl() -> None:
             if _jtype == "cities"
             else WorkKey(state=_state, city=None, county=_locality, jurisdiction_type=_jtype)
         )
+        if not str(args.data_glob):
+            parser.error(
+                "--data is required (a LOCUS parquet glob), or set LAWVM_LOCUS_DATA_GLOB"
+            )
         print(f"[pack-snapshot] reading LOCUS work {_state}/{_locality} ({_jtype})...", flush=True)
         _snap = export_snapshot_pack(
             str(args.data_glob),
