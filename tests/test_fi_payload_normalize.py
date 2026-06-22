@@ -7112,6 +7112,70 @@ def test_normalize_group_payload_expands_single_tail_insert_across_post_omission
     assert len(got.subsec_map) == 3
 
 
+def test_normalize_group_payload_folds_single_insert_list_tail_subsection() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="16",
+        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1"),),
+    )
+    ctx = _mock_ctx("section", "16", live_node=live_sec)
+    op = AmendmentOp(
+        op_id="insert_16_2",
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="16",
+        target_paragraph=2,
+        lo=LegalOperation(
+            op_id="insert_16_2",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "16"), ("subsection", "2"))),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="16",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="16 §"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Työnantajan on liitettävä selvitys:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="työkyvyttömyydestä;"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="rikoksesta; sekä"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="3",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="maksetusta palkasta,"),),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="mikäli selvitystä tarvitaan."),),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    assert [op.target_paragraph for op in got.group_ops] == [2]
+    mapped = got.subsec_map[id(got.group_ops[0])]
+    assert mapped.label == "2"
+    assert "maksetusta palkasta" in irnode_to_text(mapped)
+    assert "mikäli selvitystä tarvitaan" in irnode_to_text(mapped)
+    assert [obs.kind for obs in _observations(got)] == ["ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL"]
+
+
 def test_normalize_group_payload_splits_flattened_insert_subsection_tail() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

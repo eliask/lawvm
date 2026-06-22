@@ -7153,3 +7153,24 @@ def test_replay_xml_2008_1005_preserves_explicit_item_insertions_during_snapshot
         "17) markkinavalvonta-asetuksen 4 artiklan 3 kohdan d alakohdassa"
         in section_37_text
     )
+
+
+def test_replay_xml_1973_935_folds_single_insert_list_tail_before_later_insert() -> None:
+    replay = replay_xml_for_test(
+        "1973/935",
+        mode="legal_pit",
+        quiet=True,
+        as_of="2004-12-21",
+    )
+    section_16 = extract_ir_sections(replay.materialized_state.ir)["section:16"]
+    subsections = [child for child in section_16.children if child.kind is IRNodeKind.SUBSECTION]
+    section_text = " ".join(irnode_to_text(section_16).split())
+
+    assert len(subsections) == 3
+    assert (
+        "työkyvyttömyysajalta maksamastaan palkasta, mikäli selvityksen esittäminen"
+        in section_text
+    )
+    assert section_text.index("mikäli selvityksen esittäminen") < section_text.index(
+        "Valtiokonttorilla on salassapitosäännösten"
+    )

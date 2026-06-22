@@ -644,6 +644,7 @@ def _classify_payload_completeness(
             "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
             _SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE,
             _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+            _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
             "ELAB.CONTAINER_PRUNED_SHADOWED",
         }
     ):
@@ -659,6 +660,7 @@ def _classify_payload_completeness(
                 "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
                 _SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE,
                 _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+                _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
                 "ELAB.CONTAINER_PRUNED_SHADOWED",
             }
         )
@@ -2255,6 +2257,97 @@ def _split_flattened_insert_subsection_tail(
     return _tops._with_children(muutos_ir, new_children), True
 
 
+def _fold_single_insert_subsection_list_tail(
+    ctx: PayloadElaborationContext,
+    target_unit_kind: TargetUnitKind,
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> tuple[Optional[IRNode], dict[str, object] | None]:
+    """Fold a sibling tail into the one explicitly inserted list-shaped moment.
+
+    Some historical Finlex XML serializes ``lisätään ... uusi N momentti`` as
+    two post-omission subsections: the first carries an intro/list, while the
+    second is a content-only condition or wrap-up for the last list item.  The
+    preamble still claims exactly one new moment, so the tail is source-owned
+    by that moment; expanding it into ``N+1 momentti`` invents legal structure.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return muutos_ir, None
+
+    plain_insert_ops = [
+        op
+        for op in group_ops
+        if (op.op_type == "INSERT" and op.target_paragraph is not None and not op.target_item and not op.target_special)
+    ]
+    if len(plain_insert_ops) != 1:
+        return muutos_ir, None
+
+    master_sec = ctx.live_node
+    if master_sec is None or master_sec.kind is not IRNodeKind.SECTION:
+        return muutos_ir, None
+    live_subsecs = [child for child in master_sec.children if child.kind == IRNodeKind.SUBSECTION]
+    target = int(plain_insert_ops[0].target_paragraph or 0)
+    if target != len(live_subsecs) + 1:
+        return muutos_ir, None
+
+    omission_idx = next(
+        (idx for idx, child in enumerate(muutos_ir.children) if child.kind == IRNodeKind.OMISSION),
+        None,
+    )
+    if omission_idx is None:
+        return muutos_ir, None
+    trailing_pairs = [
+        (idx, child)
+        for idx, child in enumerate(muutos_ir.children[omission_idx + 1 :], start=omission_idx + 1)
+        if child.kind is IRNodeKind.SUBSECTION
+    ]
+    if len(trailing_pairs) != 2:
+        return muutos_ir, None
+
+    (prefix_idx, prefix_sub), (tail_idx, tail_sub) = trailing_pairs
+    if tail_idx != prefix_idx + 1:
+        return muutos_ir, None
+    trailing_labels = [(sub.label or "").strip() for _, sub in trailing_pairs]
+    if any(label and not label.isdigit() for label in trailing_labels):
+        return muutos_ir, None
+    if any(trailing_labels):
+        dense_local = ["1", "2"]
+        dense_target = [str(target), str(target + 1)]
+        if trailing_labels not in (dense_local, dense_target):
+            return muutos_ir, None
+
+    if not _is_intro_list_subsection_ir(prefix_sub):
+        return muutos_ir, None
+    tail_text = _content_only_non_item_subsection_text(tail_sub)
+    if tail_text is None:
+        return muutos_ir, None
+
+    folded = _with_payload_normalization_rule(
+        IRNode(
+            kind=prefix_sub.kind,
+            label=str(target),
+            text=prefix_sub.text,
+            attrs=dict(prefix_sub.attrs),
+            children=tuple(prefix_sub.children)
+            + (IRNode(kind=IRNodeKind.WRAP_UP, text=tail_text),),
+        ),
+        _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
+    )
+    new_children = [
+        folded if idx == prefix_idx else child
+        for idx, child in enumerate(muutos_ir.children)
+        if idx != tail_idx
+    ]
+    detail: dict[str, object] = {
+        "target_paragraph": target,
+        "prefix_payload_slot_label": str(prefix_sub.label or ""),
+        "tail_payload_slot_label": str(tail_sub.label or ""),
+        "tail_text_chars": len(tail_text),
+        "rule": _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
+    }
+    return _tops._with_children(muutos_ir, new_children), detail
+
+
 @dataclass(frozen=True, slots=True)
 class FlattenedListRow:
     """One content-only subsection row from a flattened list payload."""
@@ -2287,6 +2380,7 @@ class LeadingSubsectionHeadingPayloadResult:
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
 _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE = "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL"
+_FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE = "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL"
 _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
 _LEADING_SUBSECTION_HEADING_PAYLOAD_RULE = "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
 _TEXT_TABLE_ROW_CONTINUATION_RULE = "ELAB.TEXT_TABLE_ROW_CONTINUATION"
@@ -6920,6 +7014,22 @@ def elaborate_payload_against_live(
                 rewrites=normalized_item_like_target_rewrites,
                 target_unit_kind=target_unit_kind,
                 target_norm=target_norm,
+            )
+        )
+    muutos_ir, single_insert_tail_detail = _fold_single_insert_subsection_list_tail(
+        ctx,
+        target_unit_kind,
+        muutos_ir,
+        group_ops,
+    )
+    if single_insert_tail_detail is not None:
+        observations.append(
+            _obs(
+                _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                **single_insert_tail_detail,
             )
         )
     group_ops = _expand_post_omission_tail_insert_subsections(
