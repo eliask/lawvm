@@ -1340,6 +1340,9 @@ def resort_children(
         for ck, entries in by_kind.items():
             indices = [idx for idx, _ in entries]
             nodes = [n for _, n in entries]
+            labels = [str(n.label or "") for n in nodes]
+            if _preserve_source_order_for_mixed_labels(ck, labels):
+                continue
             sorted_nodes = sorted(nodes, key=lambda n: sort_key_fn(n.label))
             if any(orig is not repl for orig, repl in zip(nodes, sorted_nodes, strict=True)):
                 any_changed = True
@@ -1514,6 +1517,23 @@ _ORDERED_INVARIANT_KINDS = frozenset(
         "sentence",
     }
 )
+_SOURCE_ORDER_MIXED_LABEL_KINDS = frozenset({"paragraph", "subparagraph", "item", "sentence"})
+
+
+def _label_order_family(label: str) -> str:
+    normalized = _norm(label)
+    if _COMPOUND_NUMERIC_SORT_LABEL_RE.match(normalized) or _LETTER_SUFFIX_SORT_LABEL_RE.match(normalized):
+        return "numbered"
+    if _PURE_ALPHA_LABEL_RE.match(normalized):
+        return "alpha"
+    return "other"
+
+
+def _preserve_source_order_for_mixed_labels(kind: str, labels: Sequence[str]) -> bool:
+    if kind not in _SOURCE_ORDER_MIXED_LABEL_KINDS:
+        return False
+    families = {_label_order_family(label) for label in labels if label}
+    return "numbered" in families and "alpha" in families
 
 
 def format_invariant_path(path: InvariantPath) -> str:
@@ -1614,6 +1634,8 @@ def _iter_duplicate_order_tree_invariant_violations(
                 )
         for kind, labels in by_kind.items():
             if kind in _ORDERED_INVARIANT_KINDS:
+                if _preserve_source_order_for_mixed_labels(kind, labels):
+                    continue
                 keys = [sort_key(label) for label in labels]
                 for i, (left_key, right_key) in enumerate(pairwise(keys)):
                     if left_key > right_key:
@@ -1699,6 +1721,8 @@ def iter_tree_invariant_violations(
                     by_kind.setdefault(_kind_str(child.kind), []).append(child.label)
             for kind, labels in by_kind.items():
                 if kind in _ORDERED_INVARIANT_KINDS:
+                    if _preserve_source_order_for_mixed_labels(kind, labels):
+                        continue
                     keys = [_sort_key(label) for label in labels]
                     for i, (left_key, right_key) in enumerate(pairwise(keys)):
                         if left_key > right_key:
