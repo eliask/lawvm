@@ -4006,6 +4006,32 @@ def test_replay_xml_1901_15_applies_1987_411_source_vts_side_repeal() -> None:
     assert "oikeus ratkaiskoon" not in irnode_to_text(section).lower()
 
 
+def test_replay_xml_1951_83_ignores_self_relabel_bridge_from_1982_601() -> None:
+    """A restructure self-relabel must not revive stale pre-3a-luku section 19."""
+    replay = replay_xml_for_test(
+        "1951/83",
+        mode="legal_pit",
+        quiet=True,
+        as_of="1999-04-22",
+    )
+
+    assert replay.materialized_state.find_section("19", "3") is None
+    section_3a_19 = replay.materialized_state.find_section("19", "3a")
+    assert section_3a_19 is not None
+    section_3a_19_text = irnode_to_text(section_3a_19)
+    assert "Vaikka asiakirja ei ole julkinen" in section_3a_19_text
+    assert "viranomaiselle antamansa tai lähettämänsä asiakirjan takaisin" not in section_3a_19_text
+
+    relabel_skips = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "APPLY.RELABEL_SKIP"
+        and finding.source_statute == "1982/601"
+        and finding.detail.get("reason_code") == "self_relabel_noop"
+    ]
+    assert relabel_skips
+
+
 def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010_128() -> None:
     """Recycle-and-rename: section in both kumotaan AND muutetaan must survive as new content.
 
