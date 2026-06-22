@@ -480,6 +480,11 @@ def build_no_verify_coverage_summary(
     index: NOAmendmentIndex,
     data_dir: Optional[Path] = None,
 ) -> dict[str, Any]:
+    # ``getattr`` defenses stay here because the test suite mocks
+    # ``verify_result`` with ``types.SimpleNamespace`` call sites that do
+    # not set the replay field explicitly. The §1.9 "typed carriers over
+    # dynamic shape" rule permits exactly this local exception — test
+    # scaffolding duck-typed assertions against a typed dataclass.
     replay = getattr(verify_result, "replay", None)
     replayed_body = replay.replayed.body if replay is not None and getattr(replay, "replayed", None) is not None else None
     touched_path_counts, touched_source_count, touched_op_count = collect_no_touched_path_counts(
