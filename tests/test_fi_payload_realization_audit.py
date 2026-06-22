@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from lawvm.core.ir import IRNode, LegalAddress
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
 from lawvm.finland.payload_realization_audit import payload_realization_findings
 
@@ -108,6 +108,86 @@ def test_payload_realization_audit_scopes_child_target_to_matching_payload_subtr
     findings = payload_realization_findings(
         resolved_ops=(op,),
         after_ir=_after("The folded statute says owned inserted item text appears here."),
+        amendment_id="2000/1",
+    )
+
+    assert findings == ()
+
+
+def test_payload_realization_audit_scopes_heading_target_to_heading_facet() -> None:
+    carrier = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="6",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Owned chapter heading"),
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                text="Sibling section body belongs to a separate operation.",
+            ),
+        ),
+    )
+    op = ResolvedOp(
+        op=AmendmentOp(
+            op_id="op1",
+            op_type="REPLACE",
+            target_chapter="6",
+            target_unit_kind="chapter",
+        ),
+        muutos_ir=carrier,
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="6",
+        op_id="op1",
+        _op_type_seed="REPLACE",
+        _target_address_override=LegalAddress(
+            path=(("chapter", "6"),),
+            special=FacetKind.HEADING,
+        ),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(op,),
+        after_ir=_after("The folded statute says owned chapter heading."),
+        amendment_id="2000/1",
+    )
+
+    assert findings == ()
+
+
+def test_payload_realization_audit_does_not_require_body_text_for_missing_heading_facet() -> None:
+    op = ResolvedOp(
+        op=AmendmentOp(
+            op_id="op1",
+            op_type="REPLACE",
+            target_chapter="6",
+            target_unit_kind="chapter",
+        ),
+        muutos_ir=IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="6",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Unowned body text should not be audited as heading payload.",
+                ),
+            ),
+        ),
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="6",
+        op_id="op1",
+        _op_type_seed="REPLACE",
+        _target_address_override=LegalAddress(
+            path=(("chapter", "6"),),
+            special=FacetKind.HEADING,
+        ),
+    )
+
+    findings = payload_realization_findings(
+        resolved_ops=(op,),
+        after_ir=_after("The folded statute has unrelated text."),
         amendment_id="2000/1",
     )
 

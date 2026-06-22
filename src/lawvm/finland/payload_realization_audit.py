@@ -10,7 +10,7 @@ from lawvm.core.payload_realization import (
     payload_realization_gap_findings,
 )
 from lawvm.core.phase_result import Finding
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.ops import ResolvedOp
 
 _REALIZING_ACTION_TYPES = frozenset({"INSERT", "REPLACE"})
@@ -49,6 +49,8 @@ def _payload_realization_units(
         if payload_ir is None:
             continue
         payload_ir = _target_scoped_payload_ir(payload_ir, rop.resolved_target_address)
+        if payload_ir is None:
+            continue
         unit_id = rop.op_id or f"resolved_op_{index}"
         target = rop.resolved_target_address
         units.append(
@@ -63,11 +65,13 @@ def _payload_realization_units(
     return tuple(units)
 
 
-def _target_scoped_payload_ir(payload_ir: IRNode, target: LegalAddress | None) -> IRNode:
+def _target_scoped_payload_ir(payload_ir: IRNode, target: LegalAddress | None) -> IRNode | None:
     """Return the payload subtree owned by ``target`` when structurally provable."""
 
     if target is None or not target.path:
         return payload_ir
+    if target.special in _FACET_NODE_KINDS:
+        return _target_scoped_facet_payload_ir(payload_ir, target.special)
     terminal_kind, terminal_label = target.path[-1]
     if terminal_kind not in _TARGET_NODE_KINDS:
         return payload_ir
@@ -81,6 +85,18 @@ def _target_scoped_payload_ir(payload_ir: IRNode, target: LegalAddress | None) -
     if len(matching_descendants) == 1:
         return matching_descendants[0]
     return payload_ir
+
+
+def _target_scoped_facet_payload_ir(payload_ir: IRNode, facet: FacetKind) -> IRNode | None:
+    facet_kinds = _FACET_NODE_KINDS[facet]
+    if payload_ir.kind in facet_kinds:
+        return payload_ir
+    matching_descendants = tuple(
+        node for node in _walk_ir(payload_ir) if node is not payload_ir and node.kind in facet_kinds
+    )
+    if len(matching_descendants) == 1:
+        return matching_descendants[0]
+    return None
 
 
 def _walk_ir(node: IRNode) -> tuple[IRNode, ...]:
@@ -97,6 +113,11 @@ _TARGET_NODE_KINDS: dict[str, frozenset[IRNodeKind]] = {
     "subsection": frozenset({IRNodeKind.SUBSECTION}),
     "item": frozenset({IRNodeKind.ITEM, IRNodeKind.PARAGRAPH}),
     "subitem": frozenset({IRNodeKind.SUBPARAGRAPH}),
+}
+
+_FACET_NODE_KINDS: dict[FacetKind, frozenset[IRNodeKind]] = {
+    FacetKind.HEADING: frozenset({IRNodeKind.HEADING}),
+    FacetKind.INTRO: frozenset({IRNodeKind.INTRO}),
 }
 
 
