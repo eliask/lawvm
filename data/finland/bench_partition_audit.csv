@@ -42,7 +42,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 1,1988/893,suspect,oracle_suspect,2001/1233 eff 2002-01-01 > cutoff 2001-12-12,
 1,1989/382,suspect,oracle_suspect,1999/623 eff 1999-12-01 > cutoff 1999-05-21,
 1,1989/383,suspect,oracle_suspect,1997/506 eff 1997-06-04 > cutoff 1997-05-30,
-1,1989/573,core,,,OK
+1,1989/573,suspect,source_pathology,consolidated oracle text is truncated/corrupted in sections 11/13/14,
 1,1989/626,suspect,oracle_suspect,2001/495 eff 2001-07-01 > cutoff 2001-06-13,
 1,1990/1013,suspect,oracle_suspect,1991/1169 eff 1991-09-01 > cutoff 1991-08-22,
 1,1990/1207,suspect,oracle_suspect,1992/1639 eff 1993-01-01 > cutoff 1992-12-23,
