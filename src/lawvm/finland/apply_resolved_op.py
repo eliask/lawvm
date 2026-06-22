@@ -37,6 +37,10 @@ from lawvm.core.stage_result import (
 from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.tree_ops import receipt_from_diff
 from lawvm.core.write_receipt import WriteReceipt
+from lawvm.finland.apply_op_closure_sweeps import (
+    gate_unknown_attestation_policy,
+    run_per_op_closure_sweeps,
+)
 from lawvm.finland.apply_replay_authorization import (
     WRITE_RECEIPT_VIOLATION_FINDING_CODE,
     mint_apply_replay_authority,
@@ -292,6 +296,7 @@ def _apply_required_resolved_op(
             strict_profile=request.strict_profile,
             source_statute=request.amendment_id,
             findings_out=sinks.findings_out,
+            migration_ledger=request.migration_ledger,
         )
     except (NameError, TypeError, AttributeError):
         raise
@@ -370,6 +375,13 @@ _APPLY_OP_AUTHORIZATION_OWNER_PHASE = "apply"
 _APPLY_OP_AUTHORIZATION_REQUIRED_PROOFS: tuple[str, ...] = (
     "execution_authorization_rule_id_resolved",
 )
+# EV-06: the known/pinned evidence-policy id set the per-op apply-authority gate
+# validates a cited policy id against. The apply-path ExecutionAuthorizations
+# minted by ``_resolve_op_execution_authorization`` cite NO kernel evidence
+# policy, so this set is empty in production and the EV-06 gate is a no-op on the
+# corpus (0-delta). It is populated only when the apply path begins consuming
+# kernel-projected authorizations that cite a policy id.
+_APPLY_OP_KNOWN_ATTESTATION_POLICY_IDS: frozenset[str] = frozenset()
 
 
 def _enforce_per_op_apply_authority(
@@ -380,6 +392,7 @@ def _enforce_per_op_apply_authority(
     strict_profile: Optional[StrictProfile],
     source_statute: str,
     findings_out: Optional[list[Finding]],
+    migration_ledger: Optional[MigrationLedger] = None,
 ) -> None:
     """Run the per-op apply-authority gates for one landed write.
 
@@ -421,6 +434,17 @@ def _enforce_per_op_apply_authority(
     _gate_execution_authorization_at_op(
         rop=rop, is_strict=is_strict,
         source_statute=source_statute, findings_out=findings_out,
+    )
+    # Wave-2 apply-authority closure: the per-op totality sweeps (LS-05 scope-
+    # confidence, LS-06 verb-conversion, LS-07 granularity-escalation, LS-09
+    # payload-smuggling, LS-10 unstated-migration) gate at the SAME landed-write
+    # apply site as LS-01/EV-05 above.
+    run_per_op_closure_sweeps(
+        rop=rop,
+        is_strict=is_strict,
+        source_statute=source_statute,
+        findings_out=findings_out,
+        migration_ledger=migration_ledger,
     )
 
 
@@ -555,6 +579,17 @@ def _gate_execution_authorization_at_op(
     """EV-05/FW-01: closure that every state-mutating op resolves an ExecutionAuthorization."""
     authorization = _resolve_op_execution_authorization(rop)
     if authorization is not None and authorization.authorization_rule_id:
+        # EV-06: a resolved authorization that CITES an evidence policy id must
+        # cite a known/pinned policy. The apply-path authorizations cite no kernel
+        # policy (0-delta on the corpus); a forged cited unknown policy BLOCKS.
+        gate_unknown_attestation_policy(
+            authorization=authorization,
+            known_policy_ids=_APPLY_OP_KNOWN_ATTESTATION_POLICY_IDS,
+            is_strict=is_strict,
+            source_statute=source_statute,
+            op_id=rop.op_id or "",
+            findings_out=findings_out,
+        )
         # The op carries/resolves an execution-authorization rule; closure met.
         return
     if not is_strict:

@@ -1006,6 +1006,62 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "a state-mutating op landed without resolving an ExecutionAuthorization "
                 "(rule_id + required proofs) under strict mode",
                 ("safety_invariant",), role="violation"),
+    # --- Wave-2 apply-authority closure: per-op + whole-tree sweeps ---
+    # LS-07 (strict-blocking): a descendant-granularity op whose resolved address
+    # carries no descendant slot would overwrite its host whole-unit.
+    FindingSpec("APPLY.GRANULARITY_ESCALATION_AT_OP", "apply",
+                "violation", "hard_fail", "apply_op_closure_sweeps",
+                "strict granularity gate: a descendant-granularity op resolved to its "
+                "host whole-unit with no descendant slot, escalating to overwrite the host",
+                ("safety_invariant",), role="violation"),
+    # EV-06 (strict-blocking): an ExecutionAuthorization citing an unknown policy id.
+    FindingSpec("EVID.UNKNOWN_ATTESTATION_POLICY", "apply",
+                "violation", "hard_fail", "apply_op_closure_sweeps",
+                "an ExecutionAuthorization reaching apply cites an evidence policy id "
+                "not present in the known/pinned policy set (attestation-policy gap)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # FW-01 (whole-tree closure): a surface-origin node minting replay authority.
+    FindingSpec("FW.SURFACE_NODE_REPLAY_AUTHORITY_UNWITNESSED", "apply",
+                "violation", "hard_fail", "apply_tree_closure",
+                "whole-tree closure: a surface-origin node in the materialized replay "
+                "tree minted replay authority with no typed ExecutionAuthorization promotion",
+                ("safety_invariant", "provenance"), role="violation"),
+    # OV-01 (whole-tree closure): a replay-authorized overlay node with no promotion.
+    FindingSpec("OVERLAY.REPLAY_AUTHORIZED_WITHOUT_PROMOTION", "apply",
+                "violation", "hard_fail", "apply_tree_closure",
+                "whole-tree closure: an overlay-origin node is replay-authorized with no "
+                "typed promotion event + witness",
+                ("safety_invariant", "provenance"), role="violation"),
+    # OV-02 (whole-tree closure): an overlay promotion that does not cite provenance.
+    FindingSpec("OVERLAY.PROMOTION_WITNESS_INCOMPLETE", "apply",
+                "violation", "hard_fail", "apply_tree_closure",
+                "whole-tree closure: an overlay-origin promotion does not cite "
+                "provider_id+model_version OR registry_version+entry_id",
+                ("safety_invariant", "provenance"), role="violation"),
+    # LS-05 (non-blocking observation): a landed op with no scope-resolution witness.
+    FindingSpec("APPLY.SCOPE_CONFIDENCE_TOTALITY_GAP_AT_OP", "apply",
+                "audit", "warn", "apply_op_closure_sweeps",
+                "scope-confidence totality: a state-mutating op landed with no typed "
+                "ScopeConfidence witness recording how its scope was obtained",
+                ("provenance", "safety_invariant"), role="observation"),
+    # LS-06 (non-blocking observation): an unwitnessed verb conversion.
+    FindingSpec("LOWER.VERB_CONVERSION_UNWITNESSED_AT_OP", "apply",
+                "recovery", "warn", "apply_op_closure_sweeps",
+                "action-family conversion totality: a landed op's resolved action family "
+                "differs from its parsed action with no named conversion witness",
+                ("parse_witness", "preservation"), role="observation"),
+    # LS-09 (non-blocking observation closure): a parent-container payload smuggle.
+    FindingSpec("APPLY.PAYLOAD_SMUGGLING_AT_OP", "apply",
+                "audit", "warn", "apply_op_closure_sweeps",
+                "payload-smuggling closure: a descendant-claiming op resolved to its bare "
+                "host unit with no descendant step (could touch the unclaimed parent container)",
+                ("safety_invariant", "preservation"), role="observation"),
+    # LS-10 (non-blocking observation closure): an unstated migration / address rekey.
+    FindingSpec("APPLY.UNSTATED_MIGRATION_AT_OP", "apply",
+                "audit", "warn", "apply_op_closure_sweeps",
+                "unstated-migration closure: a target address-key delta (nominal -> resolved) "
+                "with no migration/lineage event or typed rekey witness",
+                ("migration", "lineage"), role="observation"),
     FindingSpec("REPLAY_UNKNOWN_MUTATION_OUTCOME", "apply",
                 "violation", "hard_fail", "grafter",
                 "replay mutation event carried an outcome label outside the registered outcome sets",
