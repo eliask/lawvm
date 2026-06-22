@@ -643,6 +643,8 @@ def _insert_or_replace_same_labeled_child(
     child: IRNode,
 ) -> tuple[IRNode, bool]:
     """Insert a child, or replace a same-labeled direct child if one already exists."""
+    if child.kind is IRNodeKind.CROSS_HEADING and not child.label:
+        return _tops.insert_sorted(tree, parent_path, child), False
     same_path = _parent_direct_child_path_with_same_label(
         tree,
         parent_path,
@@ -3044,7 +3046,12 @@ def _apply_whole_section_op(
                             rop=rop,
                             view=view,
                         )
-                temp_ch = IRNode(kind=IRNodeKind.CHAPTER, label=_target_chapter, children=(prepared_muutos_ir,))
+                temp_children = (
+                    (cross_ir, prepared_muutos_ir)
+                    if cross_ir is not None
+                    else (prepared_muutos_ir,)
+                )
+                temp_ch = IRNode(kind=IRNodeKind.CHAPTER, label=_target_chapter, children=temp_children)
                 if source_pathologies_out is not None:
                     source_pathologies_out.append(
                         build_destructive_shape_loss_risk_pathology(
@@ -3391,37 +3398,41 @@ def _apply_whole_section_op(
                 )
                 return state
             new_ir = state.ir
-            if cross_ir is not None:
-                cross_same_path = _parent_direct_child_path_with_same_label(
-                    new_ir,
-                    parent_path,
-                    kind=cross_ir.kind,
-                    label=cross_ir.label or "",
-                )
-                if cross_same_path is not None:
-                    existing_cross = _tops.resolve(new_ir, cross_same_path)
-                    if existing_cross is not None and cross_ir.kind is IRNodeKind.SECTION:
-                        cross_ir = _prepare_section_root_payload_for_replay(
-                            cross_ir,
-                            live_sec=existing_cross,
-                            rop=rop,
-                            view=view,
-                        )
-                new_ir, replaced = _insert_or_replace_same_labeled_child(new_ir, parent_path, cross_ir)
-                if replaced and source_pathologies_out is not None:
-                    parent_node = _tops.resolve(new_ir, parent_path)
-                    source_pathologies_out.append(
-                        build_destructive_shape_loss_risk_pathology(
-                            source_statute=_source_statute or "",
-                            target_unit_kind=view.target_unit_kind,
-                            target_label=f"{_ts} §",
-                            recovery_kind=RecoveryKind.SECTION_INSERT_SAME_LABEL_REPLACE_CROSS,
-                            live_sibling_count=len(
-                                [c for c in (parent_node.children if parent_node is not None else ()) if c.kind is IRNodeKind.SECTION]
-                            ),
-                            payload_sibling_count=1,
-                        )
+        if cross_ir is not None:
+            cross_same_path = _parent_direct_child_path_with_same_label(
+                new_ir,
+                parent_path,
+                kind=cross_ir.kind,
+                label=cross_ir.label or "",
+            )
+            if cross_same_path is not None:
+                existing_cross = _tops.resolve(new_ir, cross_same_path)
+                if existing_cross is not None and cross_ir.kind is IRNodeKind.SECTION:
+                    cross_ir = _prepare_section_root_payload_for_replay(
+                        cross_ir,
+                        live_sec=existing_cross,
+                        rop=rop,
+                        view=view,
                     )
+            new_ir, replaced = _insert_or_replace_same_labeled_child(new_ir, parent_path, cross_ir)
+            if replaced and source_pathologies_out is not None:
+                parent_node = _tops.resolve(new_ir, parent_path)
+                source_pathologies_out.append(
+                    build_destructive_shape_loss_risk_pathology(
+                        source_statute=_source_statute or "",
+                        target_unit_kind=view.target_unit_kind,
+                        target_label=f"{_ts} §",
+                        recovery_kind=RecoveryKind.SECTION_INSERT_SAME_LABEL_REPLACE_CROSS,
+                        live_sibling_count=len(
+                            [
+                                c
+                                for c in (parent_node.children if parent_node is not None else ())
+                                if c.kind is IRNodeKind.SECTION
+                            ]
+                        ),
+                        payload_sibling_count=1,
+                    )
+                )
         same_path = _parent_direct_child_path_with_same_label(
             new_ir,
             parent_path,
