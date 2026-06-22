@@ -1833,6 +1833,10 @@ def _cleanup_sourceless_base_merge_conflicts(
         for existing_version in versions
         if existing_version.source is None
         or (
+            existing_version.content is None
+            and existing_version.effective > base_effective
+        )
+        or (
             existing_version.content is not None
             and (
                 existing_version.effective > base_effective

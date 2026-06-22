@@ -2787,6 +2787,35 @@ def test_cleanup_sourceless_base_merge_conflicts_keeps_base_and_stronger_later_l
     assert cleaned[1].source.statute_id == "2002/1"
 
 
+def test_cleanup_sourceless_base_merge_conflicts_preserves_later_tombstone() -> None:
+    tombstone_source = OperationSource(statute_id="2016/773", effective="2017-01-01")
+    versions = [
+        ProvisionVersion(
+            effective="0000-00-00",
+            enacted="1993-12-30",
+            content=IRNode(kind=IRNodeKind.SECTION, label="218", text="218 § Base text"),
+            source=None,
+        ),
+        ProvisionVersion(
+            effective="2013-12-01",
+            enacted="2013-11-08",
+            content=IRNode(kind=IRNodeKind.SECTION, label="218", text="218 § Later text"),
+            source=OperationSource(statute_id="2013/785", effective="2013-12-01"),
+        ),
+        ProvisionVersion(
+            effective="2017-01-01",
+            enacted="2016-09-09",
+            content=None,
+            source=tombstone_source,
+        ),
+    ]
+
+    cleaned = _cleanup_sourceless_base_merge_conflicts(versions)
+
+    assert cleaned[-1].content is None
+    assert cleaned[-1].source == tombstone_source
+
+
 def test_cleanup_sourceless_base_merge_conflicts_is_noop_without_sourceless_base() -> None:
     versions = [
         ProvisionVersion(
