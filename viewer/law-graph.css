@@ -270,6 +270,35 @@
 .verify-fail { background: #fbe6e4; color: var(--red); font-weight: 600; }
 .vb-check, .vb-x { font-weight: 800; }
 
+/* per-provision inline history (the time lens) */
+.prov-history {
+  margin: 0.2rem 0 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--accent, #2b5c8a);
+  background: #f7f9fb;
+  border-radius: 0 6px 6px 0;
+}
+.ph-head {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+.ph-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.ph-item { font-size: 0.8rem; display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
+.ph-item.ph-future { opacity: 0.7; }
+.ph-act { font-family: var(--font-text); }
+.ph-act-none { color: var(--muted); font-style: italic; }
+
+/* the TOC sits above the relation rail; give it breathing room */
+.col-toc { margin-bottom: 1rem; }
+#toc { font-size: 0.84rem; max-height: 40vh; overflow: auto; }
+
+/* the scrubber controls (reuses statute-timeline.css .timeaxis/.scrubber) */
+.scrubber { margin-top: 0.4rem; }
+
 .loading, .error { color: var(--muted); font-style: italic; padding: 1rem 0; }
 .error { color: var(--red); }
 

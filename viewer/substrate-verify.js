@@ -148,4 +148,59 @@ async function verifyPack(pack, rawRows) {
   };
 }
 
-window.lawvmVerify = { canonicalJSON, semanticHash, leafHash, setRoot, verifyPack };
+// ---- point-in-time checkpoint recompute (the time-lens self-verify) ------ //
+//
+// reproducible_tree_hash(units) (export_transition_graph.py): sha256 over the
+// (address, subtree_hash) covering set SORTED by address, each emitted as
+//   addr.utf8 + 0x00 + subtree_hash.utf8 + 0x01
+// We reconstruct the covering set active AT a change date by FOLDING the trace:
+// every certified_tree_transition up to and including that date sets (or, on a
+// delete, removes) its target_address -> post_hash. post_hash is the same
+// structural_subtree_hash the engine folded. So a few lines of JS reproduce the
+// certified checkpoint tree_hash for the scrubbed date — without the engine.
+async function recomputeCheckpoint(pack, date) {
+  const cur = new Map(); // address -> subtree_hash (bare hex, no "sha256:")
+  // Fold every transition effective at or before `date`, in sequence order, so
+  // a later same-address change overwrites an earlier one (last-write-wins, the
+  // exporter's covering-set semantics). Transitions are sequence-sorted by the
+  // pack reader, and sequence is date-monotonic in the exporter.
+  const ordered = pack.transitions
+    .filter((t) => t.effective_date <= date)
+    .sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+  for (const t of ordered) {
+    const addr = t.target_address;
+    if (t.action === "delete_subtree" || t.action === "tombstone") {
+      cur.delete(addr);
+    } else {
+      cur.set(addr, stripPrefix(t.post_hash));
+    }
+  }
+  const enc = new TextEncoder();
+  const parts = [];
+  for (const addr of Array.from(cur.keys()).sort()) {
+    parts.push(enc.encode(addr), new Uint8Array([0]), enc.encode(cur.get(addr)), new Uint8Array([1]));
+  }
+  let total = 0;
+  for (const p of parts) total += p.length;
+  const buf = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) {
+    buf.set(p, off);
+    off += p.length;
+  }
+  const hex = await sha256Hex(buf);
+  return { tree_hash: "sha256:" + hex, active_node_count: cur.size };
+}
+
+function stripPrefix(h) {
+  return String(h || "").replace(/^sha256:/, "");
+}
+
+window.lawvmVerify = {
+  canonicalJSON,
+  semanticHash,
+  leafHash,
+  setRoot,
+  verifyPack,
+  recomputeCheckpoint,
+};

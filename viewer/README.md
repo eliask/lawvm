@@ -24,6 +24,26 @@ the regulation article text inline, fetched from a second pack. This is §25
 Step 5: the hypercodex of law made visible — a Finnish statute and the EU
 regulation it points at, in one view.
 
+It is also a **functional superset of the SQLite `statute-timeline` viewer**: the
+same view carries a full **TIME lens**, driven from the pack's `trace/` layer
+(`certified_tree_transition.v1` + `materialization_checkpoint.v1`) and `state/`
+intervals (`applicability_fact.v1`), *not* SQLite. A real time axis (change dates
+at their true temporal positions, so amendment bursts cluster), a date scrubber,
+and **point-in-time text reconstruction** (the `governing_text` selection
+profile: per address, the version whose half-open `effect_interval` `[start,end)`
+contains the scrubbed date). Per-provision inline **history** (the transitions
+that touched it — with the amending act's title when the attribution lane has
+emitted a `source_artifact.v1`, degrading to *change + date* otherwise),
+per-section change **badges** + micro **lifecycle strips** (in-force / repealed
+duration bars + event ticks), and a **ghost tombstone** in place for a provision
+repealed at the scrubbed date. § quick-jump, a TOC minimap with scroll-spy, and
+filter/search complete the navigation parity. The ✓ badge **recomputes the
+`materialization_checkpoint` `tree_hash` for the scrubbed date** in-browser (fold
+the trace's transitions up to that date → the same `(addr, subtree_hash)` SHA-256
+the engine committed) — so the self-verify tracks time. Scrub TIME and see the
+relation graph / proof badges / GDPR transclusion *at that date*, one pack, no
+server.
+
 ### Run
 
 ```sh
@@ -49,8 +69,10 @@ The script: (1) `lawvm pack-work 2018/1050` → `data/fi-1050-2018` (Finnish
 each addressable as `entity:celex:32016R0679#…`); (3) **resolves** the opaque
 GDPR cites against the ingested work (`resolve_fi_eu_edge` — 84/84 resolve) and
 writes a viewer **sidecar** (`edges-resolved.jsonl` + `edge-anchors.json`) next
-to the FI pack; (4) `check-pack`s both packs VALID; (5) writes
-`law-graph-manifest.json`.
+to the FI pack; (4) `check-pack`s all packs VALID; (5) writes
+`law-graph-manifest.json`. It also packs **`2004/301`** → `data/fi-301-2004`
+(**Ulkomaalaislaki**, ~93 change dates / ~2400 transitions) as the heavily-amended
+demo for the time lens (no EU transclusion — a pure point-in-time statute).
 
 > **Resolution wiring.** `pack-work` does **not** resolve the `celex:` targets —
 > that resolution lives only in the `eu_ingest` path, not the exporter. The build

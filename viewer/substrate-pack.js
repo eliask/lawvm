@@ -46,6 +46,17 @@ function parseNDJSON(text) {
   return rows;
 }
 
+// ISO-date string compare (lexical works for YYYY-MM-DD; null/empty sorts first
+// as an open lower bound). Returns <0, 0, >0.
+function cmpDate(a, b) {
+  const sa = a == null ? "" : String(a);
+  const sb = b == null ? "" : String(b);
+  if (sa === sb) return 0;
+  if (sa === "") return -1;
+  if (sb === "") return 1;
+  return sa < sb ? -1 : 1;
+}
+
 // Unwrap a possibly-wrapped manifest.json ({object_hash, object} or bare).
 function unwrapManifest(raw) {
   return raw && typeof raw === "object" && "object" in raw && "object_hash" in raw
@@ -69,6 +80,15 @@ class SubstratePack {
     this.edgesBySource = new Map(); // source_ref -> [edge]
     this.edgesByKind = new Map(); // relation_kind -> [edge]
     this.work = null; // lawvm.work.v1 body
+    // ---- TIME layer (trace) indices -------------------------------------- //
+    this.transitions = []; // lawvm.certified_tree_transition.v1 bodies (seq order)
+    this.transByAddr = new Map(); // target_address -> [transition] (per-provision history)
+    this.checkpoints = []; // lawvm.materialization_checkpoint.v1 (date order)
+    this.checkpointByDate = new Map(); // effective_date -> checkpoint
+    this.changeDates = []; // sorted unique effective_date strings (the time axis)
+    this.genesisDate = null; // initial_state_event commencement date
+    this.sourceArtifacts = new Map(); // canonical_id/source_ref -> {title, canonical_id}
+    this.addrById = new Map(); // struct_node_id -> address_path (the inverse index)
   }
 
   // Resolve a manifest layer path to a fetchable URL. corpus_version segments
@@ -115,6 +135,7 @@ class SubstratePack {
   _index() {
     const base = this._rows.base || [];
     const state = this._rows.state || [];
+    const trace = this._rows.trace || [];
 
     for (const { object: o } of base) {
       switch (o.schema) {
@@ -127,7 +148,12 @@ class SubstratePack {
         case "lawvm.address_node.v1":
           this.addressById.set(o.struct_node_id, o);
           this.addressByPath.set(o.address_path, o);
+          this.addrById.set(o.struct_node_id, o.address_path);
           if (o.eu_entity_node_id) this.entityNodeById.set(o.eu_entity_node_id, o);
+          break;
+        case "lawvm.initial_state_event.v1":
+          // The genesis / commencement date — the left edge of the time axis.
+          this.genesisDate = o.effective_date || this.genesisDate;
           break;
         default:
           break;
@@ -152,6 +178,103 @@ class SubstratePack {
     for (const { object: o } of this._rows.edges || []) {
       this._addEdge(o);
     }
+
+    // ---- TIME axis: the trace layer (transitions + checkpoints) ---------- //
+    // The change-history of the work. Transitions are the per-provision history
+    // and the time-axis ticks; checkpoints carry the per-date tree_hash for
+    // self-verify. A `source_artifact` row (if the attribution lane emitted it)
+    // names the amending act behind a source_ref — read it if present, degrade
+    // gracefully if absent.
+    const dateSet = new Set();
+    for (const { object: o } of trace) {
+      switch (o.schema) {
+        case "lawvm.certified_tree_transition.v1": {
+          this.transitions.push(o);
+          const addr = o.target_address || "";
+          if (!this.transByAddr.has(addr)) this.transByAddr.set(addr, []);
+          this.transByAddr.get(addr).push(o);
+          if (o.effective_date) dateSet.add(o.effective_date);
+          break;
+        }
+        case "lawvm.materialization_checkpoint.v1":
+          this.checkpoints.push(o);
+          if (o.effective_date) {
+            this.checkpointByDate.set(o.effective_date, o);
+            dateSet.add(o.effective_date);
+          }
+          break;
+        case "lawvm.source_artifact.v1":
+          this._indexSourceArtifact(o);
+          break;
+        default:
+          break;
+      }
+    }
+    // source_artifact rows may alternatively ride in the base layer.
+    for (const { object: o } of base) {
+      if (o.schema === "lawvm.source_artifact.v1") this._indexSourceArtifact(o);
+    }
+    this.transitions.sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+    this.checkpoints.sort((a, b) => cmpDate(a.effective_date, b.effective_date));
+    this.changeDates = Array.from(dateSet).sort(cmpDate);
+    if (this.genesisDate) dateSet.add(this.genesisDate);
+    if (!this.changeDates.length && this.genesisDate) this.changeDates = [this.genesisDate];
+  }
+
+  _indexSourceArtifact(o) {
+    // Tolerant of the not-yet-finalised schema: key by canonical_id and by any
+    // source_ref(s) it claims, value = {title, canonical_id}.
+    const title = o.title || o.act_title || o.canonical_id || "";
+    const cid = o.canonical_id || o.artifact_id || o.source_ref || "";
+    const entry = { title, canonical_id: cid };
+    if (cid) this.sourceArtifacts.set(cid, entry);
+    for (const ref of o.source_refs || (o.source_ref ? [o.source_ref] : [])) {
+      this.sourceArtifacts.set(ref, entry);
+    }
+  }
+
+  // The amending act behind a transition, IF the attribution lane attached a
+  // source_artifact for one of its source_refs. Returns {title, canonical_id}
+  // or null (degrade gracefully — show the change + date without an act name).
+  amendingAct(transition) {
+    for (const ref of transition.source_refs || []) {
+      const a = this.sourceArtifacts.get(ref);
+      // The bare work self-ref is NOT an amending act; skip it.
+      if (a && !/:work:/.test(ref)) return a;
+    }
+    return null;
+  }
+
+  // The point-in-time tree_hash committed at `date` (exact change date), for the
+  // viewer's self-verify against a recomputed checkpoint. Null if not a change
+  // date.
+  checkpointAt(date) {
+    return this.checkpointByDate.get(date) || null;
+  }
+
+  // The transitions that affect `addressPath` up to and including `asOf` (or all,
+  // if asOf omitted), in sequence order — the per-provision inline history.
+  historyFor(addressPath, asOf) {
+    const all = this.transByAddr.get(addressPath) || [];
+    if (!asOf) return all;
+    return all.filter((t) => cmpDate(t.effective_date, asOf) <= 0);
+  }
+
+  // Lifecycle of an address: the dated intervals it is in force, plus the date
+  // (if any) it was deleted/repealed (last delete_subtree). Derived from its
+  // applicability_fact intervals + its transitions.
+  lifecycle(addressPath) {
+    const versions = (this.addrText.get(addressPath) || [])
+      .slice()
+      .sort((a, b) => cmpDate(a.interval[0], b.interval[0]));
+    const trans = this.transByAddr.get(addressPath) || [];
+    let repealedAt = null;
+    // A trailing delete with no later set = repealed/lapsed at that date.
+    for (const t of trans) {
+      if (t.action === "delete_subtree" || t.action === "tombstone") repealedAt = t.effective_date;
+      else if (t.action === "set_subtree" || t.action === "restore") repealedAt = null;
+    }
+    return { versions, transitions: trans, repealedAt };
   }
 
   _addEdge(o) {
@@ -175,25 +298,34 @@ class SubstratePack {
     return this.edges.length;
   }
 
-  // The text of an address at (or as-of) a date. Picks the version whose
-  // interval covers `asOf` (default: the latest-starting version).
-  textAt(addressPath, asOf) {
+  // The version of an address effective AT `asOf` (the `governing_text`
+  // selection profile: the version whose half-open effect_interval [start,end)
+  // contains asOf, i.e. start <= asOf < end). Returns {leaf, interval} or null
+  // when the address has no version live at asOf (deleted / not yet commenced).
+  // With no asOf, returns the latest-starting version (the present law).
+  versionAt(addressPath, asOf) {
     const versions = this.addrText.get(addressPath);
-    if (!versions || !versions.length) return "";
+    if (!versions || !versions.length) return null;
+    if (asOf) {
+      for (const v of versions) {
+        const [vf, vt] = v.interval;
+        if ((!vf || cmpDate(vf, asOf) <= 0) && (!vt || cmpDate(asOf, vt) < 0)) return v;
+      }
+      return null; // no version live at asOf (a ghost / pre-commencement)
+    }
     let pick = versions[0];
     for (const v of versions) {
-      const [from] = v.interval;
-      if (asOf) {
-        const [vf, vt] = v.interval;
-        if ((!vf || vf <= asOf) && (!vt || asOf < vt)) {
-          pick = v;
-          break;
-        }
-      }
-      // default: latest start date
-      if (from && (!pick.interval[0] || from >= pick.interval[0])) pick = v;
+      const from = v.interval[0];
+      if (from && (!pick.interval[0] || cmpDate(from, pick.interval[0]) >= 0)) pick = v;
     }
-    return this.contentLeaves.get(pick.leaf) || "";
+    return pick;
+  }
+
+  // The text of an address at (or as-of) a date. "" when no version is live at
+  // asOf (the caller treats that as a ghost / not-yet-in-force).
+  textAt(addressPath, asOf) {
+    const v = this.versionAt(addressPath, asOf);
+    return v ? this.contentLeaves.get(v.leaf) || "" : "";
   }
 
   // Look up a transclusion target: an EU entity node id -> {address, text,
@@ -284,3 +416,4 @@ window.SubstratePack = SubstratePack;
 window.lawvmProofGrade = proofGrade;
 window.lawvmIsEntityTarget = isEntityTarget;
 window.lawvmCelexOfEntity = celexOfEntity;
+window.lawvmCmpDate = cmpDate;

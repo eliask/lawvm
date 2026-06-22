@@ -65,6 +65,10 @@ DATA = HERE / "data"
 FI_WORK_ENGINE_ID = "2018/1050"  # year-major; tietosuojalaki 1050/2018
 FI_PACK = DATA / "fi-1050-2018"
 EU_PACK = DATA / "eu-gdpr"
+# A heavily-amended statute for the TIME lens (Ulkomaalaislaki, ~93 change
+# dates / ~2400 transitions). No EU transclusion — a pure point-in-time demo.
+FI_TIME_WORK_ENGINE_ID = "2004/301"
+FI_TIME_PACK = DATA / "fi-301-2004"
 GDPR_CELEX = "32016R0679"
 GDPR_FORMEX = REPO / ".tmp" / "eulex" / "gdpr_fi_formex_plain.xml"
 # The acquired Formex lives in the AUTH checkout's .tmp (not symlinked into a
@@ -103,6 +107,14 @@ def _formex_path() -> Path:
 def build_fi_pack() -> None:
     _log(f"packing FI work {FI_WORK_ENGINE_ID} -> {FI_PACK}")
     _run_lawvm(["-j", "fi", "pack-work", FI_WORK_ENGINE_ID, "--out", str(FI_PACK)])
+
+
+def build_fi_time_pack() -> None:
+    """Pack the heavily-amended Ulkomaalaislaki for the time lens."""
+    _log(f"packing FI time-lens work {FI_TIME_WORK_ENGINE_ID} -> {FI_TIME_PACK}")
+    _run_lawvm(
+        ["-j", "fi", "pack-work", FI_TIME_WORK_ENGINE_ID, "--out", str(FI_TIME_PACK)]
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -304,7 +316,7 @@ def build_sidecar(work: object) -> dict[str, int]:
 
 
 def verify_packs() -> None:
-    for pack in (FI_PACK, EU_PACK):
+    for pack in (FI_PACK, EU_PACK, FI_TIME_PACK):
         _log(f"check-pack {pack}")
         _run_lawvm(["check-pack", str(pack)])
 
@@ -328,7 +340,15 @@ def write_manifest(stats: dict[str, int]) -> None:
             "transclude_packs": {"32016R0679": "data/eu-gdpr"},
             "edge_count": stats["edges"],
             "gdpr_resolved_count": stats["resolved"],
-        }
+        },
+        {
+            "pack_id": "fi-301-2004",
+            "title": "Ulkomaalaislaki (301/2004)",
+            "subtitle": "Vahvasti muutettu — aikalinssin demo",
+            "lang": "fi",
+            "jurisdiction": "fi",
+            "pack": "data/fi-301-2004",
+        },
     ]
     (HERE / "law-graph-manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -339,6 +359,7 @@ def write_manifest(stats: dict[str, int]) -> None:
 def main() -> None:
     DATA.mkdir(parents=True, exist_ok=True)
     build_fi_pack()
+    build_fi_time_pack()
     work = build_eu_pack()
     stats = build_sidecar(work)
     verify_packs()

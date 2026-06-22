@@ -12,9 +12,22 @@ Chromium (Playwright). Asserts the through-line:
   * hovering / opening a resolved GDPR cite TRANSCLUDES the EU article text,
   * the in-browser L0 row-integrity verifier shows a "✓ rows verified" badge.
 
+AND the TIME lens (driven from the same pack, on the heavily-amended
+Ulkomaalaislaki 301/2004):
+
+  * a real time axis with many change-date ticks renders,
+  * scrubbing to two different dates yields DIFFERENT reconstructed text for an
+    amended provision (point-in-time reconstruction from the pack intervals),
+  * per-provision inline history opens under a clicked unit,
+  * a lifecycle strip (change badge + micro time-strip) renders, and a repealed
+    provision renders a GHOST tombstone,
+  * § quick-jump scrolls to a section,
+  * the verify badge recomputes the checkpoint tree_hash for the scrubbed date.
+
 Prerequisite: viewer/build-graph-demo.py has produced viewer/data/fi-1050-2018
-(with edges-resolved.jsonl + edge-anchors.json) and viewer/data/eu-gdpr. Not
-wired into ci.sh (needs Playwright); run it manually after a viewer change.
+(with edges-resolved.jsonl + edge-anchors.json), viewer/data/eu-gdpr, and
+viewer/data/fi-301-2004 (the time-lens pack). Not wired into ci.sh (needs
+Playwright); run it manually after a viewer change.
 """
 
 from typing_extensions import override
@@ -122,6 +135,94 @@ with sync_playwright() as p:
     # 6. rail lists resolved EU citations and clicking one navigates.
     n_rail_eu = page.locator(".rail-eu-link").count()
     check("rail lists resolved EU citations", n_rail_eu >= 1, f"{n_rail_eu} links")
+
+    # 7. TIME lens (on the same viewer, default fi-1050 pack): a real time axis
+    #    with change-date ticks renders and a checkpoint verify line appears.
+    n_ticks_1050 = page.locator("#timeaxis .ta-tick").count()
+    check("time axis renders ticks (fi-1050)", n_ticks_1050 >= 2, f"{n_ticks_1050} ticks")
+
+    # Switch to the heavily-amended Ulkomaalaislaki for the full time lens.
+    page.select_option("#statute-select", label="Ulkomaalaislaki (301/2004)")
+    page.wait_for_function(
+        "() => document.querySelectorAll('#timeaxis .ta-tick').length > 20",
+        timeout=30000,
+    )
+    n_ticks = page.locator("#timeaxis .ta-tick").count()
+    check("dense time axis (fi-301 ~93 dates)", n_ticks > 20, f"{n_ticks} ticks")
+
+    # The list of change dates available in the scrubber.
+    date_opts = page.evaluate(
+        "() => Array.from(document.querySelectorAll('#date-select option'))"
+        ".map(o => o.value).filter(v => v)"
+    )
+    check("scrubber lists change dates", len(date_opts) > 20, f"{len(date_opts)} dates")
+
+    # Point-in-time reconstruction: find a provision whose text DIFFERS between
+    # an early and a late date (an amended provision). Scrub to two dates and
+    # compare the rendered text of the same address.
+    def texts_at(date):
+        page.select_option("#date-select", date)
+        page.wait_for_timeout(120)
+        return page.evaluate(
+            "() => { const m = {};"
+            " document.querySelectorAll('#doc .prose[data-addr]').forEach(p =>"
+            " { m[p.getAttribute('data-addr')] = p.textContent; }); return m; }"
+        )
+
+    early = texts_at(date_opts[1])
+    late = texts_at(date_opts[-1])
+    diff_addr = None
+    for addr, t0 in early.items():
+        if addr in late and late[addr] and late[addr] != t0:
+            diff_addr = addr
+            break
+    check(
+        "point-in-time reconstruction differs across dates",
+        diff_addr is not None,
+        f"changed addr: {diff_addr}",
+    )
+
+    # Per-provision inline history opens under a clicked unit.
+    hist_btn = page.locator("#doc .hist-btn").first
+    check("history affordance present", hist_btn.count() > 0)
+    hist_btn.scroll_into_view_if_needed()
+    hist_btn.click()
+    page.wait_for_selector("#doc .prov-history .ph-list", timeout=10000)
+    n_hist_items = page.locator("#doc .prov-history .ph-item").count()
+    check("per-provision history opens inline", n_hist_items >= 1, f"{n_hist_items} items")
+
+    # A lifecycle strip (change badge + micro time-strip) renders.
+    n_strips = page.locator("#doc .chg-badge .chg-strip").count()
+    check("lifecycle strips render", n_strips >= 1, f"{n_strips} strips")
+
+    # A GHOST tombstone renders for a repealed provision at the latest date.
+    n_ghosts = page.locator("#doc .node.tombstone[data-ghost='1']").count()
+    check("ghost tombstone renders (repealed provision)", n_ghosts >= 1, f"{n_ghosts} ghosts")
+
+    # § quick-jump scrolls to a section.
+    sec_label = page.evaluate(
+        "() => { for (const a of document.querySelectorAll('#doc .node.kind-section')) {"
+        " const m = /section:([^/]+)$/.exec(a.getAttribute('data-addr') || '');"
+        " if (m) return m[1]; } return null; }"
+    )
+    check("a section address exists for § jump", sec_label is not None, f"{sec_label}")
+    if sec_label:
+        page.fill("#sec-jump", sec_label)
+        page.press("#sec-jump", "Enter")
+        page.wait_for_timeout(200)
+        flashed = page.locator("#doc .node-row.flash, #doc .node-row").count()
+        not_found = page.evaluate(
+            "() => document.getElementById('sec-jump').classList.contains('nf')"
+        )
+        check("§ quick-jump resolves a section", not not_found, f"§{sec_label}")
+
+    # The verify badge stays OK and recomputes the checkpoint for the scrubbed
+    # date (an exact change date => committed checkpoint reproduced).
+    page.select_option("#date-select", date_opts[-1])
+    page.wait_for_timeout(300)
+    vbadge = page.text_content(".verify-badge") or ""
+    vok = page.locator(".verify-badge.verify-ok").count() > 0
+    check("checkpoint self-verify at scrubbed date", vok and "tarkistuspiste" in vbadge, repr(vbadge[:90]))
 
     browser.close()
 

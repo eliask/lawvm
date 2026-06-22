@@ -24,13 +24,35 @@
             <span class="ctl-label">Säädös</span>
             <select id="statute-select"></select>
           </div>
-          <div class="verify-badge" id="verify-badge" title="In-browser L0 row-integrity check">
-            <span class="verify-spin">tarkistetaan…</span>
-          </div>
+          <input
+            id="sec-jump"
+            class="sec-jump"
+            type="text"
+            placeholder="§ (esim. 12 tai 54 a)"
+            title="Hyppää pykälään (myös haudattu/kumottu)"
+          />
           <label class="focus-toggle" id="eu-only-toggle" title="Show only edges that point at the EU regulation">
             <input type="checkbox" id="eu-only" /> vain EU-viittaukset
           </label>
+          <div class="verify-badge verify-pending" id="verify-badge" title="In-browser L0 row-integrity check">
+            <span class="verify-spin">tarkistetaan…</span>
+          </div>
         </div>
+
+        <div class="scrubber" id="scrubber">
+          <div class="scrubber-row">
+            <span class="law">Voimassa <span class="date" id="cur-date">—</span></span>
+            <div class="date-nav">
+              <button id="date-prev" title="Edellinen muutospäivä">◀</button>
+              <select id="date-select" title="Muutospäivät"></select>
+              <button id="date-next" title="Seuraava muutospäivä">▶</button>
+              <button id="date-now" title="Voimassa oleva oikeustila (uusin)">Nyt</button>
+            </div>
+            <span class="date-meta" id="date-meta"></span>
+          </div>
+          <div class="timeaxis" id="timeaxis" title="Muutospäivät todellisissa aikakohdissaan — napsauta tai vedä"></div>
+        </div>
+
         <div class="legend" id="legend"></div>
       </div>
     </div>
@@ -38,6 +60,10 @@
     <main>
       <div class="wrap graph-layout">
         <aside class="rail" id="edge-rail">
+          <div class="col-toc">
+            <input id="toc-filter" class="toc-filter" type="text" placeholder="Suodata / hae…" />
+            <nav class="toc" id="toc"></nav>
+          </div>
           <h2 class="rail-title">Relaatiograafi</h2>
           <p class="rail-sub" id="edge-summary"></p>
           <div id="edge-list"></div>
