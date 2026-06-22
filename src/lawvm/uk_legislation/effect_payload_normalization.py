@@ -788,7 +788,7 @@ def prepare_uk_operation_payload_node(
         leaf_kind = _addr_leaf_kind(target) or ""
         leaf_label = _addr_leaf_label(target) or ""
         payload_kind = payload_node_mut.kind.value
-        leafish_kinds = {"subsection", "paragraph", "subparagraph", "item", "point"}
+        leafish_kinds = {"section", "subsection", "paragraph", "subparagraph", "item", "point"}
         canonical_leaf_kind = _uk_core_kind_alias_value(leaf_kind)
         parent_kind: Optional[str] = None
         parent_allowed_children: Optional[set[str]] = None
