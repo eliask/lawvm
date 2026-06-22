@@ -2516,7 +2516,7 @@ def _apply_whole_section_op(
             if amend_heading is not None:
                 new_children: list[IRNode] = []
                 heading_replaced = False
-                for child in live_sec.children:
+                for child in live_merge_sec.children:
                     if child.kind == IRNodeKind.HEADING and not heading_replaced:
                         new_children.append(amend_heading)
                         heading_replaced = True
@@ -2527,7 +2527,7 @@ def _apply_whole_section_op(
                 logger.debug("  %s → section heading-only replace (mixed sparse insert)", ctx_label)
                 return _with_preserved_provision_index(
                     state,
-                    _tops.replace_at(state.ir, sec_path, _tops._with_children(live_sec, new_children)),
+                    _tops.replace_at(state.ir, sec_path, _tops._with_children(live_merge_sec, new_children)),
                 )
         if _is_suspicious_partial_section_replace_ir(cast("AmendmentOp | ResolvedOp", view), live_sec, muutos_ir):
             if source_pathologies_out is not None:
