@@ -976,6 +976,11 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "violation", "hard_fail", "phase_result",
                 "generic runtime contract violation projected through the finding ledger",
                 ("safety_invariant",), role="violation"),
+    FindingSpec("LINEAGE.CYCLE", "lineage_ledger_build",
+                "violation", "hard_fail", "timeline_lineage",
+                "migration/lineage segments form a cycle (an eId migrates into its own ancestry); "
+                "non-terminating materialization / repeated-PIT hash drift; detail.cycle carries the address witness",
+                ("lineage", "safety_invariant"), role="violation"),
     FindingSpec("APPLY.WORD_SUBSTITUTION", "apply",
                 "recovery", "strict_fail", "compile_result",
                 "word-level text substitution was needed",
