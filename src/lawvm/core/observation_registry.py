@@ -986,6 +986,26 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "violation", "hard_fail", "grafter",
                 "applied replay op touched paths outside its declared target",
                 ("safety_invariant",), role="violation"),
+    FindingSpec("APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP", "apply",
+                "violation", "hard_fail", "apply_resolved_op",
+                "per-op mutation-boundary REJECT: an op's changed paths are not a subset of "
+                "its target plus declared migration/recovery/editorial-projection boundary",
+                ("safety_invariant",), role="violation"),
+    FindingSpec("APPLY.MUTATION_BOUNDARY_FINDING_AT_OP", "apply",
+                "violation", "warn", "apply_resolved_op",
+                "quirks-mode accounting for a per-op mutation-boundary escape "
+                "(same condition as APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP, recorded not blocked)",
+                ("safety_invariant",), role="observation"),
+    FindingSpec("APPLY.OCCUPANCY_TRANSITION_BLOCKED", "apply",
+                "violation", "hard_fail", "apply_resolved_op",
+                "strict-mode occupancy gate: a state-mutating op attempted an invalid "
+                "(action, from->to) occupancy transition",
+                ("safety_invariant",), role="violation"),
+    FindingSpec("EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED", "apply",
+                "violation", "hard_fail", "apply_resolved_op",
+                "a state-mutating op landed without resolving an ExecutionAuthorization "
+                "(rule_id + required proofs) under strict mode",
+                ("safety_invariant",), role="violation"),
     FindingSpec("REPLAY_UNKNOWN_MUTATION_OUTCOME", "apply",
                 "violation", "hard_fail", "grafter",
                 "replay mutation event carried an outcome label outside the registered outcome sets",

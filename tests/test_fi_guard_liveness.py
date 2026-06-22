@@ -1763,6 +1763,199 @@ def drill_reference_unclassified_reference_surface_totality() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Per-op apply-authority gate drills (audit lane L1: LS-01, LS-03, EV-05/FW-01)
+# ---------------------------------------------------------------------------
+
+
+def _drive_per_op_apply_gate(
+    *,
+    rop: Any,
+    new_ir: IRNode,
+    state: ReplayState,
+    strict: bool,
+) -> list[Finding]:
+    """Drive the PRODUCTION apply_resolved_op_with_audit and return its findings.
+
+    The per-op gate (``_enforce_per_op_apply_authority``) runs from inside the
+    production ``apply_resolved_op_with_audit`` after a landed write; ``apply_op``
+    is stubbed only to land ``new_ir`` (the same pattern the boundary drills use),
+    so the GUARD being tested is production code, not a hand-built finding.
+    """
+    from unittest.mock import patch as _patch
+
+    import lawvm.finland.apply_resolved_op as apply_resolved_op
+    from lawvm.finland.apply_resolved_op import (
+        ApplyResolvedOpRequest,
+        ApplyResolvedOpSinks,
+        apply_resolved_op_with_audit,
+    )
+
+    def _fake_apply_op(current_state: ReplayState, *_a: Any, **_k: Any) -> ReplayState:
+        return current_state.with_ir(new_ir)
+
+    findings: list[Finding] = []
+    sinks = ApplyResolvedOpSinks(findings_out=findings, mutation_events_out=[])
+    request = ApplyResolvedOpRequest(
+        state=state,
+        ctx=StatuteContext(
+            id="100/2010", title="Guard Liveness", base_ir=state.ir, base_xml_bytes=b"<akn/>"
+        ),
+        rop=rop,
+        amendment_id="12/2015",
+        replay_mode="official_consolidation",
+        strict_profile=_DRILL_STRICT_PROFILE if strict else None,
+    )
+    with _patch.object(apply_resolved_op, "apply_op", _fake_apply_op):
+        apply_resolved_op_with_audit(request, sinks)
+    return findings
+
+
+def _per_op_gate_rop(*, op_id: str = "replace_1", with_lo: bool = False) -> Any:
+    from typing import Any as _Any, cast as _cast
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+    from lawvm.core.semantic_types import StructuralAction
+    from lawvm.finland.ops import AmendmentOp, ResolvedOp
+    from lawvm.finland.target_kind import TargetKind
+
+    lo = None
+    if with_lo:
+        lo = LegalOperation(
+            op_id=op_id or "replace_1",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            source=OperationSource(statute_id="12/2015"),
+        )
+    op = AmendmentOp(
+        op_id=op_id,
+        op_type=_cast(_Any, "REPLACE"),
+        target_kind=TargetKind.SECTION,
+        target_section="1",
+        lo=lo,
+    )
+    return ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1"),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="1",
+        target_chapter=None,
+    )
+
+
+def drill_mutation_boundary_violation_at_op_apply_lane() -> None:
+    """APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP fires from the production apply lane.
+
+    Production lane: a strict apply whose declared op targets section 1 but whose
+    landed write changes section 2 (a sibling). The production per-op
+    mutation-boundary gate (``verify_per_op``) must surface the out-of-boundary
+    write as a blocking finding (LS-01).
+    """
+    sec1 = IRNode(kind=IRNodeKind.SECTION, label="1", text="old one")
+    sec2 = IRNode(kind=IRNodeKind.SECTION, label="2", text="old two")
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=(sec1, sec2)))
+    rop = _per_op_gate_rop(op_id="replace_1", with_lo=True)
+    sibling_landed = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(sec1, IRNode(kind=IRNodeKind.SECTION, label="2", text="changed")),
+    )
+    findings = _drive_per_op_apply_gate(
+        rop=rop, new_ir=sibling_landed, state=state, strict=True
+    )
+    hits = [
+        f
+        for f in findings
+        if f.kind == "APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP" and f.blocking
+    ]
+    assert hits, (
+        "a sibling-path edit did not surface APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP "
+        "from the production per-op apply boundary gate"
+    )
+    assert hits[0].detail["out_of_boundary_paths"]
+
+
+def drill_occupancy_transition_blocked_apply_lane() -> None:
+    """APPLY.OCCUPANCY_TRANSITION_BLOCKED fires from the production apply lane.
+
+    Production lane: a strict REPLACE on an ABSENT section slot (no valid
+    occupancy transition) that lands a write. The production occupancy gate must
+    BLOCK the invalid (replace, absent) transition (LS-03).
+    """
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    rop = _per_op_gate_rop(op_id="replace_1", with_lo=False)
+    landed = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
+    )
+    findings = _drive_per_op_apply_gate(rop=rop, new_ir=landed, state=state, strict=True)
+    hits = [
+        f for f in findings if f.kind == "APPLY.OCCUPANCY_TRANSITION_BLOCKED" and f.blocking
+    ]
+    assert hits, (
+        "REPLACE-on-absent did not surface APPLY.OCCUPANCY_TRANSITION_BLOCKED from "
+        "the production strict occupancy gate"
+    )
+    assert hits[0].detail["current_occupancy"] == "absent"
+
+
+def drill_replay_authorization_proof_required_apply_lane() -> None:
+    """EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED fires from the production apply lane.
+
+    Production lane: a strict state-mutating op carrying NO stable op_id, so no
+    ExecutionAuthorization rule can be resolved for the landed write. The
+    production execution-authorization closure must BLOCK (EV-05/FW-01).
+    """
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    rop = _per_op_gate_rop(op_id="", with_lo=False)
+    landed = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
+    )
+    findings = _drive_per_op_apply_gate(rop=rop, new_ir=landed, state=state, strict=True)
+    hits = [
+        f
+        for f in findings
+        if f.kind == "EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED" and f.blocking
+    ]
+    assert hits, (
+        "an op with no resolvable authorization rule did not surface "
+        "EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED from the production closure gate"
+    )
+    assert hits[0].detail["required_proofs"]
+
+
+def drill_mutation_boundary_finding_at_op_quirks_apply_lane() -> None:
+    """APPLY.MUTATION_BOUNDARY_FINDING_AT_OP (observation) records under quirks.
+
+    Production lane: the same sibling-path escape as the strict drill, but with a
+    permissive (None) strict profile. The production gate records the non-blocking
+    accounting observation instead of blocking.
+    """
+    sec1 = IRNode(kind=IRNodeKind.SECTION, label="1", text="old one")
+    sec2 = IRNode(kind=IRNodeKind.SECTION, label="2", text="old two")
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=(sec1, sec2)))
+    rop = _per_op_gate_rop(op_id="replace_1", with_lo=True)
+    sibling_landed = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(sec1, IRNode(kind=IRNodeKind.SECTION, label="2", text="changed")),
+    )
+    findings = _drive_per_op_apply_gate(
+        rop=rop, new_ir=sibling_landed, state=state, strict=False
+    )
+    hits = [
+        f
+        for f in findings
+        if f.kind == "APPLY.MUTATION_BOUNDARY_FINDING_AT_OP" and not f.blocking
+    ]
+    assert hits, (
+        "quirks-mode per-op boundary escape did not record "
+        "APPLY.MUTATION_BOUNDARY_FINDING_AT_OP (non-blocking accounting)"
+    )
+    assert not [f for f in findings if f.kind == "APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP"]
+
+
+# ---------------------------------------------------------------------------
 # Declarative fire-drill registry
 # ---------------------------------------------------------------------------
 
@@ -1788,6 +1981,9 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION": drill_replay_missing_primary_target_consumption_apply_lane,
     "REPLAY_APPLY_BOUNDARY_UNRESOLVED": drill_replay_apply_boundary_unresolved_apply_lane,
     "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET": drill_replay_apply_boundary_touch_outside_target_apply_lane,
+    "APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP": drill_mutation_boundary_violation_at_op_apply_lane,
+    "APPLY.OCCUPANCY_TRANSITION_BLOCKED": drill_occupancy_transition_blocked_apply_lane,
+    "EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED": drill_replay_authorization_proof_required_apply_lane,
 }
 
 # A second, distinct surface for an already-covered code. Tracked separately so
@@ -1820,6 +2016,7 @@ OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.OCCUPANCY_POLICY_VIOLATION": drill_occupancy_policy_violation_finland_production,
     "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT": drill_occupancy_temporally_disjoint_insert_finland_production,
     "APPLY.REPLAY_UNDECLARED_TREE_TOUCH": drill_replay_undeclared_tree_touch_apply_lane,
+    "APPLY.MUTATION_BOUNDARY_FINDING_AT_OP": drill_mutation_boundary_finding_at_op_quirks_apply_lane,
 }
 
 # code -> (reason, xfail-drill). These guards are verified structurally
