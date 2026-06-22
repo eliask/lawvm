@@ -185,6 +185,56 @@ def _rewrite_lo_op_group_id(
     return tuple(touched)
 
 
+def _rewrite_lo_op_source_effective_for_chapters(
+    lo_ops_out: Optional[List[_LegalOperation]],
+    target_source_statute: str,
+    effective_date: dt.date,
+    *,
+    chapter_labels: frozenset[str],
+    new_group_id: str,
+    base_ir: Optional[IRNode] = None,
+) -> tuple[LegalAddress, ...]:
+    """Update effective dates for ops targeting the named chapters."""
+    if lo_ops_out is None or not chapter_labels:
+        return ()
+    effective_iso = effective_date.isoformat()
+    touched: list[LegalAddress] = []
+    for i, lo in enumerate(lo_ops_out):
+        src = lo.source
+        if src is None or src.statute_id != target_source_statute:
+            continue
+        if not _address_targets_any_chapter(lo.target, chapter_labels):
+            continue
+        updated_lo = dc_replace(
+            lo,
+            source=dc_replace(src, effective=effective_iso),
+            group_id=new_group_id,
+        )
+        if (
+            updated_lo.action is StructuralAction.REPLACE
+            and updated_lo.target.path
+            and (base_ir is None or _tops.resolve(base_ir, updated_lo.target.path) is None)
+            and _timeline_target_exists(
+                updated_lo.target.path,
+                replay_history_ops=lo_ops_out[:i],
+                base_ir=base_ir,
+                before_effective=effective_iso,
+            )
+        ):
+            updated_lo = dc_replace(updated_lo, action=StructuralAction.INSERT)
+        lo_ops_out[i] = updated_lo
+        if lo.target not in touched:
+            touched.append(lo.target)
+    return tuple(touched)
+
+
+def _address_targets_any_chapter(address: LegalAddress, chapter_labels: frozenset[str]) -> bool:
+    return any(
+        kind == "chapter" and value.lower() in chapter_labels
+        for kind, value in address.path
+    )
+
+
 def _rewrite_lo_op_source_effective_for_address_suffixes(
     lo_ops_out: Optional[List[_LegalOperation]],
     target_source_statute: str,
@@ -369,6 +419,42 @@ def _rewrite_compiled_op_activation_rule_effective(
         op["is_contingent"] = False
         updated = True
     return updated
+
+
+def _rewrite_compiled_op_activation_rule_effective_for_chapters(
+    compiled_ops_out: Optional[List[Dict[str, object]]],
+    target_source_statute: str,
+    effective_date: dt.date,
+    *,
+    chapter_labels: frozenset[str],
+) -> bool:
+    """Update compiled activation rules for chapter-scoped commencement."""
+    if compiled_ops_out is None or not chapter_labels:
+        return False
+    effective_iso = effective_date.isoformat()
+    updated = False
+    for op in compiled_ops_out:
+        if op.get("source_statute") != target_source_statute:
+            continue
+        if _compiled_op_chapter_label(op) not in chapter_labels:
+            continue
+        op["activation_rule"] = {
+            "kind": "fixed_date",
+            "effective_date": effective_iso,
+            "condition_ref": "",
+        }
+        op["is_contingent"] = False
+        updated = True
+    return updated
+
+
+def _compiled_op_chapter_label(op: Dict[str, object]) -> str:
+    target_chapter = str(op.get("target_chapter") or "").strip().lower()
+    if target_chapter:
+        return target_chapter
+    if str(op.get("target_unit_kind") or "").strip().lower() == "chapter":
+        return str(op.get("target_norm") or "").strip().lower()
+    return ""
 
 
 def _rewrite_later_effective_lo_groups(
