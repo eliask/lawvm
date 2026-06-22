@@ -82,6 +82,11 @@ _MARKER_RE = re.compile(r"^\((?P<token>[0-9A-Za-z]+)\)")
 _MARKER_AFTER_DASH_RE = re.compile(
     r"^\s*[A-Za-z][A-Za-z\s,.&;]*?[—–—-]\s*\((?P<token>[0-9A-Za-z]+)\)"
 )
+# Structural-marker scanner used inside synthetic_usc_section: finds markers
+# anywhere in the text, unlike _MARKER_RE which is anchored to the start. Hoisted
+# per AGENTS.md §2.4 backtracking discipline — synthetic_usc_section is called
+# per synthetic node and the pattern was compiled per call.
+_SCANNER_MARKER_RE = re.compile(r"(?<!\S)\((?P<token>[0-9A-Za-z]+)\)")
 
 # The pinned USC enumeration ladder. Level == index. The OLRC's CSS indent class
 # is NOT a reliable level signal (run-in nesting flattens children to depth 0, so
@@ -857,7 +862,7 @@ def synthetic_usc_section(
         .replace("‘", " ")
         .replace("’", " ")
     )
-    marker_re = re.compile(r"(?<!\S)\((?P<token>[0-9A-Za-z]+)\)")
+    marker_re = _SCANNER_MARKER_RE
     prev_end = 0
     for m in marker_re.finditer(scan_surface):
         body = normalized[prev_end : m.start()].strip()
