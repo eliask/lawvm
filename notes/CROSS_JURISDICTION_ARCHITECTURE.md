@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative. Three-zone split + portable-contract rules accurate; cited code (payload_normalize.py, core/comparison_normalization.py, NZ `nz_replay_canonical_effects_not_implemented`) verified live; UK/NZ divergence (§6) consistent with code.
+
 # Cross-Jurisdiction Architecture
 
 Status: living spec, intentionally partial.

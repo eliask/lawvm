@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative (living, intentionally partial — first replay invariants + apply-accounting contract). ApplyMutationEvent shape matches live code; the strict-mode rollout (§5 Stage 0–3) is still a forward plan. No stale paths or PEG3/§1.13 refs.
+
 # Replay Invariants And Failure Model
 
 Status: living spec, intentionally partial.

@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current-with-noted-drift. Kind: Descriptive/derivative drafting guide (changes no parsing behaviour). Tier counts drifted vs `johtolause/rule_registry.py` `_REGISTER_TIERS`: now 32 canonical / 8 accepted / 23 discouraged / 5 archaic = 68 forms (doc says 7/22/66). Re-derive the accepted+discouraged tables and the headline count from the registry.
+
 # Finnish Amendment-Clause Drafting Grammar (Best Practice)
 
 Status: descriptive drafting guide for lainvalmistelijat (legislative drafters).

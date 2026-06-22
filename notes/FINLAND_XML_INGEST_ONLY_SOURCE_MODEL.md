@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative source-model/phase-boundary target with an honest in-progress snapshot. `AmendmentSourceModel`/`process_acquisition` verified in `finland/source_model.py`; transitional-state and migration-order sections read as accurate. No findings.
+
 # Finland XML-Ingest-Only Source Model
 
 Status: normative target for the Finland frontend.

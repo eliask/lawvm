@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current-with-noted-drift. Normative map + descriptive inventory. All linked paths resolve, but: line 101 'AGENTS.md §1.13' is stale (now §1.11/§1.12, §2.4); and three normative docs AGENTS.md itself cites are missing from the index — DISCIPLINE_GATES.md, UNIFIED_BENCH_CONTRACT.md, FI_JOHTOLAUSE_SURFACE_PARSER_CONTRACT.md (plus NZ/NO/SE status docs, indexed only for US).
+
 # LawVM Spec Index
 
 Status: current public/spec index for the v0.1 release line.
@@ -98,7 +100,7 @@ the architecture, keep it explanatory.
 
 - [LAWVM_ARCHITECTURE_INDEX.md](LAWVM_ARCHITECTURE_INDEX.md)
 - [LAWVM_STACK_MAP.md](LAWVM_STACK_MAP.md)
-- [REGEX_TO_GRAMMAR_MIGRATION.md](REGEX_TO_GRAMMAR_MIGRATION.md) — when string matching stays regex (lint + prefilter) vs becomes a named recognizer/spec; applies AGENTS.md §1.13
+- [REGEX_TO_GRAMMAR_MIGRATION.md](REGEX_TO_GRAMMAR_MIGRATION.md) — when string matching stays regex (lint + prefilter) vs becomes a named recognizer/spec; applies AGENTS.md §1.11/§1.12 (regex/recognizer firewall) + §2.4
 - [IMPLEMENTATION_DIVERGENCE_LEDGER.md](IMPLEMENTATION_DIVERGENCE_LEDGER.md) — current target-vs-implementation gaps + active work queue
 - [ARCHITECTURE_LEAK_LEDGER.md](ARCHITECTURE_LEAK_LEDGER.md) — EV-ranked backlog of representation/typing/authority leaks vs `LAWVM_PIPELINE_CONTRACT.md` (audit-and-enforce, not rewrite); 27 ranked sites + 2 CI-gate specs + 2 seam candidates from the e2e architecture-coherence audit
 - [FINLAND_COVERAGE_GAP_REPORT.md](FINLAND_COVERAGE_GAP_REPORT.md) — Finland projection freshness / coverage snapshot

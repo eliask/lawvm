@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current-with-noted-drift. Kind: Normative. Live doctrine accurate; stale symbol names in §4.5: `normalize_group_payload(...)` (now in payload_normalize.py / tag `group_payload_normalization`) and `compile_fi(...)` (now `compile_fi_facade`). §8.4.1 projection.py is core `src/lawvm/semantic/`, not finland/. Case-study .md referenced but absent.
+
 # Source Pathology And Adjudication Spec
 
 Status: living spec, intentionally partial.
@@ -181,9 +183,10 @@ observations may surface as generic compile adjudications.
 
 Current Finland bridge:
 
-- `normalize_group_payload(...)` emits typed elaboration observations
+- group-payload normalization in `src/lawvm/finland/payload_normalize.py`
+  (`group_payload_normalization`) emits typed elaboration observations
 - replay metadata preserves them as `elaboration_observations`
-- `compile_fi(...)` exposes them as
+- `compile_fi_facade(...)` (`src/lawvm/finland/_compile.py`) exposes them as
   `frontend_elaboration_observation`
 
 These are not outward proof claims by themselves.
@@ -470,7 +473,7 @@ Examples:
 
 Required response:
 
-- already handled by `_next_free_ordinal` in `semantic/projection.py`
+- already handled by `_next_free_ordinal` in `src/lawvm/semantic/projection.py`
 - when a collision would have happened under naive counting, emit a typed
   observation `oracle_duplicate_child_label` / `replay_duplicate_child_label`
   carrying `(parent_path, colliding_label, assigned_label_fallback)` on the

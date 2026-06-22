@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Largely-current, some stale refs. Kind: Normative. CandidateSetCertificate was renamed to CandidateSetCoverage (file `candidate_set_certificate.py` -> `candidate_set_coverage.py`); update §2 file list (line 72) and §7 type name. All other 19 core-file citations verified live.
+
 # LawVM Proof Surfaces
 
 Status: normative, implementation-near.
@@ -69,7 +71,7 @@ src/lawvm/core/evidence_surface_report.py
 src/lawvm/core/proof_surfaces.py
 src/lawvm/core/execution_authorization.py
 src/lawvm/core/frontier_work_item.py
-src/lawvm/core/candidate_set_certificate.py
+src/lawvm/core/candidate_set_coverage.py
 src/lawvm/core/mutation_boundary_proof.py
 src/lawvm/core/agreement_residual.py
 src/lawvm/core/provenance_graph.py
@@ -274,9 +276,9 @@ Rules:
 
 ---
 
-## 7. CandidateSetCertificate
+## 7. CandidateSetCoverage
 
-A `CandidateSetCertificate` describes the candidate set behind a selection or
+A `CandidateSetCoverage` describes the candidate set behind a selection or
 blocked selection.
 
 It is required when a row would otherwise smuggle an implicit uniqueness claim.
@@ -486,7 +488,7 @@ EvidenceSurfaceReport
 ProofSurfaceRow
 ExecutionAuthorization
 FrontierWorkItem
-CandidateSetCertificate
+CandidateSetCoverage
 SourceWitness / DigestWitness
 MutationBoundaryProof
 AgreementResidual
