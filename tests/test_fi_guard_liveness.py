@@ -325,6 +325,179 @@ def drill_leading_subsection_heading_payload_elaboration() -> None:
     )
 
 
+def drill_fold_single_insert_subsection_list_tail_payload_elaboration() -> None:
+    """ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL reaches payload elaboration output.
+
+    Production lane: ``elaborate_payload_against_live`` normalizes a single
+    explicitly-inserted ``lisätään uusi N momentti`` payload that historical
+    Finlex XML serialized as two post-omission subsections — an intro/list prefix
+    plus a content-only sibling tail. The preamble claims exactly one new moment,
+    so the production guard ``_fold_single_insert_subsection_list_tail`` folds the
+    tail into that one inserted list-shaped subsection and emits the blocking
+    ``strict_fail`` elaboration observation.
+
+    The trailing subsections are left source-unlabelled (the historical serializer
+    does not number an inserted moment). That matters: the earlier production
+    ``_align_sparse_omission_subsections_to_live`` pass only relabels *digit*
+    labelled sparse subsections, so unlabelled rows survive to the fold guard
+    intact. Labelled trailing rows are instead relabelled to live-slot order
+    (``[N, N+1]``), which the fold guard rejects — that relabel-vs-fold ordering
+    is exactly why this code could not be cleanly drilled with labelled fixtures.
+    """
+    sub1 = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Ensimmäinen momentti."),),
+    )
+    sub2 = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="2",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Toinen momentti."),),
+    )
+    live_node = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=(IRNode(kind=IRNodeKind.NUM, text="12 §"), sub1, sub2),
+    )
+    ctx = PayloadElaborationContext(
+        target_unit_kind="section",
+        target_norm="12",
+        target_chapter=None,
+        target_part=None,
+        live_node=live_node,
+        parent_node=None,
+        subsection_slots=(),
+        live_subsections=(sub1, sub2),
+        subsection_by_label={"1": sub1, "2": sub2},
+        item_index={},
+        row_anchor_index={},
+        container_member_labels=None,
+        lookups=ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset(),
+        ),
+    )
+    # Single "lisätään uusi 3 momentti": target == len(live_subsections) + 1.
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="12",
+        target_paragraph=3,
+        source_statute="2099/1",
+    )
+    # Post-omission intro/list prefix + content-only sibling tail, both unlabelled.
+    prefix = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="Sen estämättä mitä edellä säädetään, sovelletaan seuraavia:"),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="ensimmäinen luettelokohta;"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="toinen luettelokohta."),),
+            ),
+        ),
+    )
+    tail = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="Edellä tarkoitettu päätös tehdään viivytyksettä.",
+            ),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="12 §"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            prefix,
+            tail,
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    observations = got.elaboration_observations
+    assert observations is not None
+    hits = [
+        observation
+        for observation in observations
+        if observation.kind == "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL"
+    ]
+    assert hits, (
+        "single inserted list-shaped subsection with a content-only sibling tail "
+        "did not surface ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL on the "
+        "payload elaboration ledger"
+    )
+    detail = hits[0].detail or {}
+    assert detail["target_paragraph"] == 3
+    assert detail["tail_text_chars"] > 0
+
+    # The guard genuinely folded: the two trailing subsections collapse into one
+    # inserted moment slot (labelled to the insert target) carrying a wrap-up tail.
+    normalized = got.muutos_ir
+    assert normalized is not None
+    folded_subs = [c for c in normalized.children if c.kind is IRNodeKind.SUBSECTION]
+    assert len(folded_subs) == 1, "tail sibling was not folded into the inserted moment"
+    assert folded_subs[0].label == "3"
+    assert any(c.kind is IRNodeKind.WRAP_UP for c in folded_subs[0].children), (
+        "fold fired but the content-only tail was not carried as a wrap-up"
+    )
+
+    # Bite check: a near-miss where the sibling tail is itself a list-item row
+    # (``3. ...``) is NOT a content-only non-item tail, so the fold must not fire.
+    near_miss_tail = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3. kolmas luettelokohta."),),
+    )
+    near_miss_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="12 §"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            prefix,
+            near_miss_tail,
+        ),
+    )
+    near_miss_ctx = PayloadElaborationContext(
+        target_unit_kind="section",
+        target_norm="12",
+        target_chapter=None,
+        target_part=None,
+        live_node=live_node,
+        parent_node=None,
+        subsection_slots=(),
+        live_subsections=(sub1, sub2),
+        subsection_by_label={"1": sub1, "2": sub2},
+        item_index={},
+        row_anchor_index={},
+        container_member_labels=None,
+        lookups=ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset(),
+        ),
+    )
+    near_miss = elaborate_payload_against_live(near_miss_ctx, [op], near_miss_ir, set())
+    assert not any(
+        observation.kind == "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL"
+        for observation in (near_miss.elaboration_observations or [])
+    ), "fold fired on a list-item sibling tail that it must leave as a distinct moment"
+
+
 def drill_restore_heading_for_explicit_facet_group_elaboration() -> None:
     """ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET reaches the group elaboration ledger.
 
@@ -1441,6 +1614,7 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED": drill_pending_amendment_effect_unresolved_route_rejection_barrier,
     "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_verdict_barrier,
     "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD": drill_leading_subsection_heading_payload_elaboration,
+    "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL": drill_fold_single_insert_subsection_list_tail_payload_elaboration,
     "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET": drill_restore_heading_for_explicit_facet_group_elaboration,
     "ELAB.SPARSE_OMISSION_TAIL_CLAIM": drill_sparse_omission_tail_claim_group_surface,
     "ELAB.SPARSE_OMISSION_TAIL_PRUNED_FROM_CARRIER": drill_sparse_omission_tail_pruned_from_carrier_compile_surface,
@@ -1552,7 +1726,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     # stable fixture in this harness.
     "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE": ("sparse descendant merge barrier; needs stable fixture", "2026-06-22"),
     "ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL": ("payload-normalize barrier; needs stable fixture", "2026-06-20"),
-    "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL": ("payload-normalize recovery; needs fixture", "2026-06-22"),
     "APPLY.WORD_SUBSTITUTION": ("word-substitution barrier; needs fixture", "2026-06-20"),
     "COMPARE.UNADJUDICATED_ORACLE_DIVERGENCE.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
     "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED": ("coverage barrier; needs fixture", "2026-06-20"),

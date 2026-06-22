@@ -55,6 +55,9 @@ the architecture, keep it explanatory.
 - [CERTIFICATE_SCHEMA_V0.md](CERTIFICATE_SCHEMA_V0.md) — temporal-dossier certificate, hash hierarchy, residue honesty, checker v0 contract
 - [CERTIFIED_TREE_TRANSITION_TRACE_V0.md](CERTIFIED_TREE_TRANSITION_TRACE_V0.md) — replayable transition grammar: base tree, content blobs, action semantics, state-root/checkpoint semantics
 - [APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md](APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md) — the semantic apply waist: ScopedTargetResolver/ResolverBinding, fallback rungs, WriteReceipt, ObservedWriteAudit, occupancy contract, transition-leaf production
+- [DISCIPLINE_GATES.md](DISCIPLINE_GATES.md) — normative (cited by AGENTS.md §4)
+- [UNIFIED_BENCH_CONTRACT.md](UNIFIED_BENCH_CONTRACT.md) — normative (cited by AGENTS.md §4)
+- [FI_JOHTOLAUSE_SURFACE_PARSER_CONTRACT.md](FI_JOHTOLAUSE_SURFACE_PARSER_CONTRACT.md) — normative (cited by AGENTS.md §4)
 
 ## Finland Reference Frontend
 
@@ -78,7 +81,11 @@ the architecture, keep it explanatory.
 - [UK_REPLAY_REGIME_CONTRACT.md](UK_REPLAY_REGIME_CONTRACT.md)
 - [UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md](UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md) — per-statute UK official drafting-source rules
 - [US_LAWVM_STATUS.md](US_LAWVM_STATUS.md) — U.S. federal frontend status/limits/roadmap: witness-anchored dry-run over keyless govinfo PLAW USLM source + USC annual-edition htm oracle; coverage, lowering-gap residual classes, geo-block reality
+- [NEW_ZEALAND_LAWVM_STATUS.md](NEW_ZEALAND_LAWVM_STATUS.md) — New Zealand frontend status/limits/roadmap
+- [NORWAY_LAWVM_STATUS.md](NORWAY_LAWVM_STATUS.md) — Norway frontend status/limits/roadmap
+- [SWEDEN_LAWVM_STATUS.md](SWEDEN_LAWVM_STATUS.md) — Sweden frontend status/limits/roadmap
 - [OPEN_LAW_FRONTEND_SPEC.md](OPEN_LAW_FRONTEND_SPEC.md)
+- [OPEN_LAW_REGIME.md](OPEN_LAW_REGIME.md)
 
 ## Evidence and Verification
 

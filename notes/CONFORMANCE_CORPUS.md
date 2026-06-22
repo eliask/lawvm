@@ -259,7 +259,7 @@ Expected conformance focus:
 - elaboration summary must show the successful slot bind
 - replay/evidence summary must explain why the clean bind is source-backed
 
-### 2.6a Finland replay-regression micro-suite proposal
+### 2.6 Finland replay-regression micro-suite proposal
 
 This is the smallest stable Finland replay-regression watchlist for the current
 bad set. It is a proposal for bench review, not a new fixture family or a new
@@ -304,7 +304,7 @@ Expected outcome:
 - replay-side residue shrinks to editorial or unresolved residue instead of
   obvious stale duplication
 
-### 2.6 `1992/1702` / `1996/761` / `33 §`
+### 2.6a `1992/1702` / `1996/761` / `33 §`
 
 Family:
 

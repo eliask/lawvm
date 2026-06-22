@@ -1,4 +1,4 @@
-> **Status (2026-06-22):** Current-with-noted-drift (intentionally partial). Kind: Living spec / Normative (elaboration→apply contract). One stale consumer ref: `finland/grafter.py` (lines 141-143) was removed — `slot_assignment` is now read by `apply_*`/`payload_normalize`/`elaborated_group.py`. `ElaboratedGroup`/`build_elaborated_group` and the slot carriers verified present.
+> **Status (2026-06-22):** Current (intentionally partial). Kind: Living spec / Normative (elaboration→apply contract). `slot_assignment` consumers updated to the typed apply dispatch (`apply.py`/`apply_typed_dispatch.py`/`apply_subsection_ops.py`/`apply_structure_ops.py`) + `compile_group_lowering.py` (the removed `grafter.py`/`inspect_amendment.py` refs are gone). `ElaboratedGroup`/`build_elaborated_group` and the slot carriers verified present.
 
 # Finland Elaborated Group Spec
 
@@ -141,7 +141,9 @@ Current executed slice:
   object, so slot map, binding rows, and leftover slot labels can travel as
   one frontend product instead of only as parallel fields
 - downstream Finland consumers now start reading that carrier directly:
-  `grafter.py` and `inspect_amendment.py` use `slot_assignment` as the first
+  the typed apply dispatch (`apply.py` / `apply_typed_dispatch.py` /
+  `apply_subsection_ops.py` / `apply_structure_ops.py`) and
+  `compile_group_lowering.py` use `slot_assignment` as the first
   source for subsection mapping, binding rows, and leftover slot labels
 - `inspect-amendment` now surfaces those leftover slot labels directly, so the
   new elaborated-group field is visible in the existing debug workflow
