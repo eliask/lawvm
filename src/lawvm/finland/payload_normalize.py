@@ -3380,6 +3380,11 @@ def _normalize_item_like_target(
     amend_subs = [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION] if muutos_ir is not None else []
     if len(amend_subs) > 1 and not all(_is_flat_numbered_item_sub(sub) for sub in amend_subs):
         return op
+    if amend_subs and any(
+        _norm_num_token(sub.label or "") == str(op.target_paragraph)
+        for sub in amend_subs
+    ):
+        return op
     if amend_subs and op.target_paragraph <= len(amend_subs):
         return op
     if amend_subs and not any(c.kind is IRNodeKind.PARAGRAPH for c in amend_subs[0].children):

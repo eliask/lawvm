@@ -828,6 +828,58 @@ def test_payload_normalize_item_like_target_preserves_sparse_real_subsections() 
     assert dict(got.lo.target.path) == {"section": "5", "subsection": "3"}
 
 
+def test_payload_normalize_item_like_target_preserves_labelled_sparse_insert_subsection() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="9",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2"),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "9", live_node=live_sec)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="9",
+        target_paragraph=2,
+        lo=LegalOperation(
+            op_id="t9",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "9"), ("subsection", "2"))),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="9",
+        children=(
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Uuden momentin johdanto."),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="ensimmäinen kohta"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", text="toinen kohta"),
+                ),
+            ),
+        ),
+    )
+
+    got = _normalize_item_like_target(ctx, op, muutos_ir)
+
+    assert got.lo is not None
+    assert dict(got.lo.target.path) == {"section": "9", "subsection": "2"}
+    assert got.target_guessing_provenance_tags == ()
+
+
 def test_payload_normalize_item_like_target_keeps_real_subsection_when_group_has_item_ops() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,
