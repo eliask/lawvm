@@ -1298,10 +1298,22 @@ class TemporaryProvisionExpiryOverride:
     rule_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class TemporarySectionApplicabilityWindow:
+    """A section-scoped applicability window that bounds a temporary effect."""
+
+    target_mid: str
+    sections: frozenset[str]
+    start: dt.date
+    expiry: dt.date
+    rule_id: str
+
+
 _temporary_provision_expiry_cache: dict[tuple[int, str, int], tuple[TemporaryProvisionExpiryOverride, ...]] = {}
 _TEMPORARY_SECTION_EXPIRY_TEXT_ANCHORS = (
     "voimassa",
     "väliaikaisesta muuttamisesta",
+    "välisenä aikana",
 )
 _TEMPORARY_SECTION_CHARS = r"[\d\w\s,\-\u2013\u2015:§]"
 _TEMPORARY_SECTION_CHARS_SIMPLE = r"[\d\w\s,\-\u2013\u2015]"
@@ -1316,6 +1328,15 @@ _TEMPORARY_SECTION_EXPIRY_RE = re.compile(
     rf"(?:\s*sekä\s+({_TEMPORARY_SECTION_CHARS_SIMPLE}+?)\s*§[^.]*?(?=\s+(?:ovat|on)\s))?"
     rf"\s+(?:ovat|on)\s+voimassa\s+(?:\d{{1,2}}\s+päivästä\s+[a-zäöå]+\s+)?"
     rf"(?P<datetail>\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})",
+    re.IGNORECASE,
+)
+_TEMPORARY_SECTION_APPLICABILITY_WINDOW_RE = re.compile(
+    rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+"
+    rf"(?P<subject>{_TEMPORARY_SECTION_CHARS}+?\s*§(?::[a-zäöå]+)?)\s+"
+    rf"sovelletaan\s+[^.]*?\bjoka\s+tapahtuu\s+"
+    rf"(?P<startday>\d{{1,2}})\s+päivän\s+(?P<startmonth>[a-zäöå]+)\s+(?P<startyear>\d{{4}})\s+ja\s+"
+    rf"(?P<endday>\d{{1,2}})\s+päivän\s+(?P<endmonth>[a-zäöå]+)\s+(?P<endyear>\d{{4}})\s+"
+    rf"välisenä\s+aikana",
     re.IGNORECASE,
 )
 # Per-date split of a `_TEMPORARY_SECTION_EXPIRY_RE` match span (group 0). The
@@ -1578,6 +1599,54 @@ def _source_section_direct_subsection_labels(
     return set()
 
 
+def _temporary_section_applicability_windows(
+    expiry_scan_text: str,
+    target_mid: str,
+) -> tuple[TemporarySectionApplicabilityWindow, ...]:
+    """Return section-scoped applicability windows from entry-into-force text.
+
+    The regex is only a bounded sentence anchor. Provision structure is
+    delegated to ``parse_body_provision_tail`` through
+    ``_whole_section_labels_from_body_ref_text``.
+    """
+    scan_casefold = expiry_scan_text.casefold()
+    if "välisenä aikana" not in scan_casefold or "sovelletaan" not in scan_casefold:
+        return ()
+    windows: list[TemporarySectionApplicabilityWindow] = []
+    seen: set[tuple[str, frozenset[str], str, str]] = set()
+    # lawvm-regex: owning_parser V-expiry applicability-window sentence ANCHOR; subject -> parse_body_provision_tail, dates -> parse_fi_day_month_year
+    for match in _TEMPORARY_SECTION_APPLICABILITY_WINDOW_RE.finditer(expiry_scan_text):
+        start = parse_fi_day_month_year(
+            match.group("startday"),
+            match.group("startmonth"),
+            match.group("startyear"),
+        )
+        expiry = parse_fi_day_month_year(
+            match.group("endday"),
+            match.group("endmonth"),
+            match.group("endyear"),
+        )
+        if start is None or expiry is None:
+            continue
+        sections = frozenset(_whole_section_labels_from_body_ref_text(match.group("subject")))
+        if not sections:
+            continue
+        key = (target_mid, sections, start.isoformat(), expiry.isoformat())
+        if key in seen:
+            continue
+        seen.add(key)
+        windows.append(
+            TemporarySectionApplicabilityWindow(
+                target_mid=target_mid,
+                sections=sections,
+                start=start,
+                expiry=expiry,
+                rule_id="fi_temporary_section_applicability_window",
+            )
+        )
+    return tuple(windows)
+
+
 def _temporary_section_expiry_overrides(
     tree: "etree._Element",
     source_statute_id: str,
@@ -1744,6 +1813,12 @@ def _temporary_section_expiry_overrides(
                     _parse_section_list_labels(m_tail.group("section")),
                     tail_match.value,
                 )
+
+    for window in _temporary_section_applicability_windows(
+        expiry_scan_text,
+        target_mid_from_cited,
+    ):
+        _append_override(window.target_mid, set(window.sections), window.expiry)
 
     if "vuoden" in expiry_scan_casefold and "loppuun" in expiry_scan_casefold:
         # lawvm-regex: owning_parser V-expiry section year-end (vuoden YYYY loppuun) sunset LOCATOR; year-end arm lexed by shared match_fi_date below — anchor only

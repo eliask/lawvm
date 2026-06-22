@@ -18,6 +18,7 @@ from lawvm.finland.metadata import (
     _section_subsection_application_commencement_effective_override,
     _section_subsection_commencement_effective_override,
     _temporary_provision_expiry_overrides,
+    _temporary_section_applicability_windows,
     _temporary_section_expiry_overrides,
     _temporary_section_expiry_override,
 )
@@ -508,6 +509,31 @@ def test_temporary_section_expiry_override_em_dash_range() -> None:
     assert "43b" in labels
     assert "43c" in labels
     assert expiry.isoformat() == "2016-12-31"
+
+
+def test_temporary_section_expiry_override_parses_applicability_transfer_window() -> None:
+    """Amendment 2007/171 style: section applicability is limited by a transfer window."""
+    text = (
+        "Tämä laki tulee voimaan 23 päivänä helmikuuta 2007. "
+        "Lain 43 b ja 43 c §:ää sovelletaan luovutukseen, joka tapahtuu "
+        "1 päivän tammikuuta 2007 ja 31 päivän joulukuuta 2012 välisenä aikana."
+    )
+    tree = _tree(text)
+    windows = _temporary_section_applicability_windows(text, "2007/171")
+    assert len(windows) == 1
+    window = windows[0]
+    assert window.target_mid == "2007/171"
+    assert window.sections == frozenset({"43b", "43c"})
+    assert window.start.isoformat() == "2007-01-01"
+    assert window.expiry.isoformat() == "2012-12-31"
+    assert window.rule_id == "fi_temporary_section_applicability_window"
+
+    override = _temporary_section_expiry_override(tree, "2007/171")
+    assert override is not None
+    target_mid, labels, expiry = override
+    assert target_mid == "2007/171"
+    assert labels == {"43b", "43c"}
+    assert expiry.isoformat() == "2012-12-31"
 
 
 def test_amendment_expiry_date_phased_entry_lakkaa_returns_none() -> None:

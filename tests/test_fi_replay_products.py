@@ -850,6 +850,32 @@ def test_2017_236_materialized_state_drops_expired_exact_temporary_moments() -> 
     assert "Lounais-Suomen elinvoimakeskukselle" in section_7_text
 
 
+def test_1996_931_materialized_state_drops_expired_applicability_window_sections() -> None:
+    lo_ops = []
+    replay = replay_xml_for_test(
+        "1996/931",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    window_ops = [
+        op
+        for op in lo_ops
+        if op.source.statute_id == "2007/171"
+        and str(op.target) in {"chapter:6/section:43b", "chapter:6/section:43c"}
+    ]
+    assert {str(op.target): op.source.expires for op in window_ops} == {
+        "chapter:6/section:43b": "2013-01-01",
+        "chapter:6/section:43c": "2013-01-01",
+    }
+
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    assert "chapter:6/section:43b" not in sections
+    assert "chapter:6/section:43c" not in sections
+    assert "chapter:6/section:43a" in sections
+
+
 def test_2018_1069_whole_section_replace_keeps_owned_body_after_temporary_overlay() -> None:
     replay = replay_xml_for_test("2018/1069", mode="official_consolidation", quiet=True)
 
