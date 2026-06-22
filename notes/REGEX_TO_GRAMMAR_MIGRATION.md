@@ -42,7 +42,7 @@ bespoke-parser case.
 
 A fresh 7-cluster, per-site audit of `core/` (13 files) + `finland/` (~129 files), cross-checked by an independent non-Anthropic pass. **~1391 regex sites: 91 keep / 18 wrap / 25 move / 35 violation-flagged.** Headline: the architecture is healthy. The kernel holds no domain parser (one Finnish-idiom leak), the canonical surface parser is regex-free, the Legal Surface Graph lenses are regex-clean (0 violations), and the flagged "violations" are honest fallback/residue/oracle layers (mostly witnessed), not silent producers. **Do not do a big-bang migration** — most regex is benign-forever lexical/date/path/display and stays.
 
-### The firewall as a yes/no test (refines §1.13)
+### The firewall as a yes/no test (refines §1.12)
 
 A regex is an **outright violation** when raw statute / johtolause / transitional **prose is the sole evidence** for any of the six prime-directive facts: (a) action family (REPEAL/REPLACE/INSERT/MOVE), (b) target scope/ownership (chapter/section/momentti/kohta/luku/osa, or which sections a range absorbs), (c) lifecycle (expiry/commencement/validity-bound selection, repeal-vs-not), (d) saved/excepted effect (`lukuun ottamatta` / `siltä osin` / `jää voimaan`), (e) routing/applicability (which statute is affected), (f) drop/widen of a mutation. Date and citation **tokens** are not this; selecting *which* date is the bound or *which* unit is in scope is. Bright line: **if deleting the regex would force you to explain a legal operation differently, it is not lexical.**
 
@@ -97,7 +97,7 @@ No new domain regex may enter core.
 
 ### Enforcement gate (keeps the doctrine true — build on what exists, don't reinvent)
 
-The repo already has the right primitives: `core/regex_recognition_coverage.py` declares regex rows **passive evidence, not replay authority** and forbids `regex_match_as_complete_parse` / `bounded_wildcard_as_semantic_proof` / `regex_coverage_as_replay_authorization`; `tests/test_regex_perf_gate.py` validates module-scope patterns; `scripts/inventory_parser_smells.py` is a **starter sensor**. Add a two-part CI lint by **expanding `inventory_parser_smells.py`** (not a second mechanism): (1) any classifier-pattern over prose in `finland/**` must be built via `compile_classifier_regex`, not raw `re.compile` — the biggest current gap; (2) a frozen-residue check that no **new** raw-prose regex deciding a prime-directive fact lands in the migration-cluster files, plus sensors for production-named patterns, semantic capture names (`target`/`action`/`scope`/`repeal`/`range`/`occurrence`), dynamic per-op f-string regex, multiple `finditer` over the same source text, span-overlap dedup, and 3+ copies of the clause-boundary/range algorithm (rule-of-three as a sensor). Fail new `core/` regex containing jurisdiction tokens (`§`/`momentti`/`kohta`/`luku`) unless in an explicit tools/compat allowlist. This converts the hand-maintained §1.11/§1.13 discipline into a standing gate so the firewall cannot silently re-leak.
+The repo already has the right primitives: `core/regex_recognition_coverage.py` declares regex rows **passive evidence, not replay authority** and forbids `regex_match_as_complete_parse` / `bounded_wildcard_as_semantic_proof` / `regex_coverage_as_replay_authorization`; `tests/test_regex_perf_gate.py` validates module-scope patterns; `scripts/inventory_parser_smells.py` is a **starter sensor**. Add a two-part CI lint by **expanding `inventory_parser_smells.py`** (not a second mechanism): (1) any classifier-pattern over prose in `finland/**` must be built via `compile_classifier_regex`, not raw `re.compile` — the biggest current gap; (2) a frozen-residue check that no **new** raw-prose regex deciding a prime-directive fact lands in the migration-cluster files, plus sensors for production-named patterns, semantic capture names (`target`/`action`/`scope`/`repeal`/`range`/`occurrence`), dynamic per-op f-string regex, multiple `finditer` over the same source text, span-overlap dedup, and 3+ copies of the clause-boundary/range algorithm (rule-of-three as a sensor). Fail new `core/` regex containing jurisdiction tokens (`§`/`momentti`/`kohta`/`luku`) unless in an explicit tools/compat allowlist. This converts the hand-maintained §1.11/§1.12 discipline into a standing gate so the firewall cannot silently re-leak.
 
 ## Ranked replacement targets
 
@@ -134,8 +134,9 @@ The repo already has the right primitives: `core/regex_recognition_coverage.py` 
    parser facts → EEParsedInstruction/EEInstructionWaist → LegalOperation.
    Decide later whether EEParsedInstruction converges with core ClauseSurface.
 8. **Finland `normalize.py` fallback cluster → fold into existing PEG3.** Code
-   docstrings literally say "FALLBACK: remove when PEG3 handles X"; `peg3.py`
-   exists. Lowest-risk recognizer win. (Census rank 1.)
+   docstrings literally say "FALLBACK: remove when PEG3 handles X"; the
+   canonical surface parser (`surface_parse.py`) existed and superseded
+   `peg3.py`. Lowest-risk recognizer win. (Census rank 1.)
 9. **EU `ops_parser.py` → rebuild only when EU is prioritized.** Explicit
    placeholder; leave as compatibility parser.
 

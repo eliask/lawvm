@@ -122,7 +122,7 @@ the target boundaries without requiring a rewrite.
 ## 5. Observation/Warning Taxonomy
 
 Warnings are emitted at 6 layers, documented in
-COMPILER_WARNING_AND_INVARIANT_FRONTIER.md. The rule: emit at the layer that
+COMPILER_OBSERVATION_STREAM.md. The rule: emit at the layer that
 first knows. Key families:
 
 - **Frontend PEG**: duplicate_target_op, semantic_collapse_move_or_renumber,
@@ -139,7 +139,7 @@ first knows. Key families:
 core/           — shared IR, tree_ops, timeline, compile
 finland/        — FI-specific parser (johtolause/), compile/apply, scope, constraints
 estonia/        — EE pipeline (fetch, parse, compile, replay)
-uk/             — UK pipeline (parse, amendment replay)
+uk_legislation/ — UK pipeline (parse, amendment replay)
 norway/, sweden/, eu/  — early-stage pipelines
 tools/          — CLI commands, evidence, rendering
 ```

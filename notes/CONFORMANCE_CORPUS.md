@@ -259,7 +259,7 @@ Expected conformance focus:
 - elaboration summary must show the successful slot bind
 - replay/evidence summary must explain why the clean bind is source-backed
 
-### 2.6 Finland replay-regression micro-suite proposal
+### 2.6a Finland replay-regression micro-suite proposal
 
 This is the smallest stable Finland replay-regression watchlist for the current
 bad set. It is a proposal for bench review, not a new fixture family or a new
@@ -426,7 +426,7 @@ Required behavior:
 Validation examples:
 
 ```bash
-uv run python -m lawvm.finland.johtolause.test_peg_curated
+uv run python -m lawvm.finland.johtolause.curated_cases
 uv run lawvm inspect-amendment 1961/404 --mode legal_pit --source 2005/821
 ```
 
