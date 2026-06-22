@@ -80,8 +80,13 @@ def test_payload_realization_audit_attaches_apply_disposition() -> None:
     )
 
     assert len(findings) == 1
+    assert findings[0].kind == "COVERAGE.PAYLOAD_REALIZATION_BLOCKED_BY_APPLY_FAILURE"
     assert findings[0].detail["apply_disposition"] == "APPLY_FAILED"
     assert findings[0].detail["apply_disposition_source"] == "APPLY.RESOLVED_OP_AUDIT"
+    assert (
+        findings[0].detail["disposition"]
+        == "source_payload_realization_blocked_by_apply_failure"
+    )
 
 
 def test_payload_realization_audit_suppresses_same_amendment_shadowed_gap() -> None:
@@ -213,7 +218,7 @@ def test_payload_realization_audit_keeps_gap_when_shadowing_replace_failed() -> 
 
     assert [finding.kind for finding in findings] == [
         "COVERAGE.PAYLOAD_REALIZATION_GAP",
-        "COVERAGE.PAYLOAD_REALIZATION_GAP",
+        "COVERAGE.PAYLOAD_REALIZATION_BLOCKED_BY_APPLY_FAILURE",
     ]
     assert {finding.detail["unit_id"] for finding in findings} == {
         "insert_subsection",
@@ -252,6 +257,7 @@ def test_final_payload_gap_annotation_joins_same_source_op_audit() -> None:
 
     annotated = attach_payload_gap_apply_dispositions((gap, audit))
 
+    assert annotated[0].kind == "COVERAGE.PAYLOAD_REALIZATION_BLOCKED_BY_APPLY_FAILURE"
     assert annotated[0].detail["apply_disposition"] == "APPLY_FAILED"
 
 

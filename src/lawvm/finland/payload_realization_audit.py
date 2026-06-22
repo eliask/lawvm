@@ -61,10 +61,11 @@ def payload_realization_findings(
     )
     if not apply_dispositions_by_op_id:
         return findings
-    return tuple(
+    findings = tuple(
         _attach_apply_disposition(finding, apply_dispositions_by_op_id)
         for finding in findings
     )
+    return _classify_apply_failed_payload_gaps(findings)
 
 
 def _attach_apply_disposition(
@@ -121,7 +122,23 @@ def attach_payload_gap_apply_dispositions(
                 {op_id: disposition},
             )
         )
-    return _suppress_same_amendment_shadowed_payload_gaps(tuple(annotated))
+    findings = _suppress_same_amendment_shadowed_payload_gaps(tuple(annotated))
+    return _classify_apply_failed_payload_gaps(findings)
+
+
+def _classify_apply_failed_payload_gaps(
+    findings: tuple[Finding, ...],
+) -> tuple[Finding, ...]:
+    classified: list[Finding] = []
+    for finding in findings:
+        if finding.kind != "COVERAGE.PAYLOAD_REALIZATION_GAP":
+            classified.append(finding)
+            continue
+        if str(finding.detail.get("apply_disposition") or "") != "APPLY_FAILED":
+            classified.append(finding)
+            continue
+        classified.append(_apply_failure_finding_from_gap(finding))
+    return tuple(classified)
 
 
 def _suppress_same_amendment_shadowed_payload_gaps(
@@ -259,6 +276,20 @@ def _shadow_finding_from_gap(gap: Finding, shadow: Mapping[str, object]) -> Find
                 f"{kind}:{label}" for kind, label in _address_path_from_apply_audit(shadow)
             ),
             "disposition": "source_payload_shadowed_by_later_same_amendment_replace",
+        },
+    )
+
+
+def _apply_failure_finding_from_gap(gap: Finding) -> Finding:
+    return Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_BLOCKED_BY_APPLY_FAILURE",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute=gap.source_statute,
+        blocking=False,
+        detail={
+            **gap.detail,
+            "disposition": "source_payload_realization_blocked_by_apply_failure",
         },
     )
 
