@@ -79,10 +79,12 @@ from lawvm.finland.apply_runtime_support import (
     _find_insert_parent_path,
     _find_chapter_insert_parent_path,
     _resolve_parallel_container_path,
+    _section_snapshot_identity,
     _legacy_target_section_for_scope,
     _legacy_target_special_for_scope,
     _parent_direct_child_path_with_same_label,
     _same_norm_label,
+    _snapshot_section_los_for_identity,
     _with_preserved_provision_index,
     _with_replaced_provision_subtree_index,
 )
@@ -1070,6 +1072,91 @@ def _insert_missing_chapter_scaffold_under_part(
     )
     new_ir = _tops.insert_sorted(state.ir, _tops._as_path(part_path), chapter)
     return state.with_ir(new_ir), _tops._as_path(part_path) + (("chapter", target_chapter),)
+
+
+def _has_exact_cited_section_snapshot(
+    replay_history_ops: List[_LegalOperation] | None,
+    *,
+    section_path: Path,
+    cited_statute_id: str,
+) -> bool:
+    if not cited_statute_id:
+        return False
+    matches = _snapshot_section_los_for_identity(
+        replay_history_ops,
+        _section_snapshot_identity(section_path),
+    )
+    return any(
+        lo.target.path == section_path
+        and lo.source is not None
+        and lo.source.statute_id == cited_statute_id
+        for lo in matches
+    )
+
+
+def _unique_exact_cited_section_snapshot_path(
+    replay_history_ops: List[_LegalOperation] | None,
+    *,
+    section_label: str,
+    cited_statute_id: str,
+) -> Path | None:
+    if replay_history_ops is None or not section_label or not cited_statute_id:
+        return None
+    paths: list[Path] = []
+    for lo in replay_history_ops:
+        if not lo.op_id.startswith("snapshot_section_"):
+            continue
+        if lo.source is None or lo.source.statute_id != cited_statute_id:
+            continue
+        if not lo.target.path or lo.target.path[-1] != ("section", section_label):
+            continue
+        if lo.payload is None or lo.payload.kind is not IRNodeKind.SECTION:
+            continue
+        path = _tops._as_path(lo.target.path)
+        if path not in paths:
+            paths.append(path)
+    if len(paths) != 1:
+        return None
+    return paths[0]
+
+
+def _scaffold_historical_parent_path(
+    state: "ReplayState",
+    historical_parent_path: Path,
+) -> tuple["ReplayState", Path] | None:
+    """Recreate an exact historical part/chapter parent path when a cited section rebirth proves it."""
+    if not historical_parent_path:
+        return None
+    current_state = state
+    current_parent: Path = ()
+    for kind, label in historical_parent_path:
+        if kind not in {"part", "chapter"}:
+            return None
+        node_kind = IRNodeKind.PART if kind == "part" else IRNodeKind.CHAPTER
+        existing = _parent_direct_child_path_with_same_label(
+            current_state.ir,
+            current_parent,
+            kind=node_kind,
+            label=label,
+        )
+        if existing is not None:
+            current_parent = _tops._as_path(existing)
+            continue
+        if kind == "part":
+            node = IRNode(
+                kind=IRNodeKind.PART,
+                label=label,
+                children=(IRNode(kind=IRNodeKind.NUM, text=f"{label} osa"),),
+            )
+        else:
+            node = IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label=label,
+                children=(IRNode(kind=IRNodeKind.NUM, text=f"{label} luku"),),
+            )
+        current_state = current_state.with_ir(_tops.insert_sorted_required(current_state.ir, current_parent, node))
+        current_parent = current_parent + ((kind, label),)
+    return current_state, current_parent
 
 
 @dataclass(frozen=True)
@@ -2817,9 +2904,70 @@ def _apply_whole_section_op(
                                     [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
                                 ),
                             )
-                        )
+                    )
                     logger.debug("  %s → section replace-as-insert (base prior parent)", ctx_label)
                     return state.with_ir(_tops.insert_sorted(state.ir, live_parent_path, muutos_ir))
+                cited_statute_id = str(getattr(op, "target_version_statute_id", "") or "")
+                if _has_exact_cited_section_snapshot(
+                    replay_history_ops,
+                    section_path=_tops._as_path(base_path),
+                    cited_statute_id=cited_statute_id,
+                ):
+                    scaffolded = _scaffold_historical_parent_path(state, base_parent_path)
+                    if scaffolded is not None:
+                        scaffold_state, scaffold_parent_path = scaffolded
+                        if source_pathologies_out is not None:
+                            source_pathologies_out.append(
+                                build_destructive_shape_loss_risk_pathology(
+                                    source_statute=_source_statute or "",
+                                    target_unit_kind=view.target_unit_kind,
+                                    target_label=f"{_ts} §",
+                                    recovery_kind=RecoveryKind.SECTION_REPLACE_BOOTSTRAP_CITED_PARENT_SCAFFOLD,
+                                    live_sibling_count=0,
+                                    payload_sibling_count=len(
+                                        [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
+                                    ),
+                                )
+                            )
+                        logger.debug(
+                            "  %s → section replace-as-insert (cited-version parent scaffold)",
+                            ctx_label,
+                        )
+                        return scaffold_state.with_ir(
+                            _tops.insert_sorted_required(scaffold_state.ir, scaffold_parent_path, muutos_ir)
+                        )
+
+            cited_statute_id = str(getattr(op, "target_version_statute_id", "") or "")
+            cited_snapshot_path = _unique_exact_cited_section_snapshot_path(
+                replay_history_ops,
+                section_label=_ts,
+                cited_statute_id=cited_statute_id,
+            )
+            if cited_snapshot_path is not None:
+                cited_parent_path = _tops._as_path(cited_snapshot_path[:-1])
+                scaffolded = _scaffold_historical_parent_path(state, cited_parent_path)
+                if scaffolded is not None:
+                    scaffold_state, scaffold_parent_path = scaffolded
+                    if source_pathologies_out is not None:
+                        source_pathologies_out.append(
+                            build_destructive_shape_loss_risk_pathology(
+                                source_statute=_source_statute or "",
+                                target_unit_kind=view.target_unit_kind,
+                                target_label=f"{_ts} §",
+                                recovery_kind=RecoveryKind.SECTION_REPLACE_BOOTSTRAP_CITED_PARENT_SCAFFOLD,
+                                live_sibling_count=0,
+                                payload_sibling_count=len(
+                                    [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
+                                ),
+                            )
+                        )
+                    logger.debug(
+                        "  %s → section replace-as-insert (cited-version snapshot parent scaffold)",
+                        ctx_label,
+                    )
+                    return scaffold_state.with_ir(
+                        _tops.insert_sorted_required(scaffold_state.ir, scaffold_parent_path, muutos_ir)
+                    )
 
             if base_path is None:
                 parent_path = _find_scoped_section_insert_parent_path(

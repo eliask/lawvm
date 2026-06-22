@@ -6978,6 +6978,45 @@ def test_replay_xml_1999_1352_places_inserted_section_headings_after_num() -> No
         assert irnode_to_text(heading).strip() == heading_text
 
 
+@pytest.mark.slow
+def test_replay_xml_1999_132_2024_899_cited_section_replace_rebirths_chapter_parent() -> None:
+    """2024/899 replaces 131 § by citing 2014/41 after chapter 19 was repealed.
+
+    The cited-version selector and replay history prove the exact historical
+    path ``19 luku / 131 §``.  Replay may scaffold that parent and insert the
+    replacement, but the recovery must be witnessed.
+    """
+    failed_ops = []
+    pathologies = []
+
+    replay = replay_xml_for_test(
+        "1999/132",
+        mode="official_consolidation",
+        quiet=True,
+        failed_ops_out=failed_ops,
+        source_pathologies_out=pathologies,
+    )
+
+    section = replay.materialized_state.find_section("131", "19")
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "Rakentamislupahakemus" in text
+    assert "rakentamislupahakemuksen ratkaisemiseksi tarvittava olennainen selvitys" in text
+    assert not any(
+        failed.amendment_id == "2024/899"
+        and failed.target_unit_kind == "section"
+        and failed.target_section == "131"
+        for failed in failed_ops
+    )
+    assert any(
+        pathology.code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+        and pathology.source_statute == "2024/899"
+        and pathology.detail.get("recovery_kind")
+        == "section_replace_bootstrap_cited_parent_scaffold"
+        for pathology in pathologies
+    )
+
+
 # ---------------------------------------------------------------------------
 # StageResult endgame WAIST #3 — the structural write-footprint carrier
 # ---------------------------------------------------------------------------

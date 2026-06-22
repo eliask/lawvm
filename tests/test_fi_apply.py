@@ -303,6 +303,7 @@ def _op(
     has_exact_bound_payload: bool = False,
     witness_rule_id: str | None = None,
     body_chapter_move_from: str | None = None,
+    target_version_statute_id: str | None = None,
 ) -> AmendmentOp:
     return AmendmentOp(
         op_id="test_op",
@@ -328,6 +329,7 @@ def _op(
         has_exact_bound_payload=has_exact_bound_payload,
         witness_rule_id=witness_rule_id,
         body_chapter_move_from=body_chapter_move_from,
+        target_version_statute_id=target_version_statute_id,
     )
 
 
@@ -8002,6 +8004,110 @@ def test_apply_whole_section_replace_records_missing_bootstrap_parent() -> None:
     assert pathologies[0].detail["target_section"] == "3a"
     assert pathologies[0].detail["recovery_kind"] == "section_replace_bootstrap_parent_missing"
     assert pathologies[0].detail["strict_disposition"] == "block"
+
+
+def test_apply_whole_section_replace_scaffolds_parent_from_exact_cited_snapshot() -> None:
+    """A cited-version whole-section replace may rebirth the exact historical parent path.
+
+    This is the narrow form of the 1999/132 + 2024/899 family: the target section
+    has no live parent because an earlier same-effective repeal removed the
+    chapter, but the amending formula cites a concrete earlier version and the
+    replay history contains that exact section snapshot path.
+    """
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(IRNode(kind=IRNodeKind.NUM, text="7 luku"),),
+            )
+        )
+    )
+    base_ir = _body(
+        IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="19",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="19 luku"),
+                _sec("131", _sub("1", _content("historical section 131"))),
+            ),
+        )
+    )
+    cited_path = (("chapter", "19"), ("section", "131"))
+    replay_history_ops = [
+        LegalOperation(
+            op_id="snapshot_section_131",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=cited_path),
+            payload=_sec("131", _sub("1", _content("historical section 131"))),
+            source=OperationSource(statute_id="2014/41"),
+        )
+    ]
+    op = _op(
+        op_type="REPLACE",
+        target_section="131",
+        target_version_statute_id="2014/41",
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        _sec("131", _sub("1", _content("reborn section 131"))),
+        None,
+        _LEGAL_PIT,
+        "131 §",
+        base_ir=base_ir,
+        replay_history_ops=replay_history_ops,
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    section = result.find_section("131", "19")
+    assert section is not None
+    assert "reborn section 131" in irnode_to_text(section)
+    assert result.find("chapter", "19") is not None
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+    assert (
+        pathologies[0].detail["recovery_kind"]
+        == "section_replace_bootstrap_cited_parent_scaffold"
+    )
+
+
+def test_apply_whole_section_replace_refuses_cited_parent_scaffold_without_exact_snapshot() -> None:
+    state = _make_state(_body(IRNode(kind=IRNodeKind.CHAPTER, label="7")))
+    base_ir = _body(
+        IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="19",
+            children=(_sec("131", _sub("1", _content("historical section 131"))),),
+        )
+    )
+    op = _op(
+        op_type="REPLACE",
+        target_section="131",
+        target_version_statute_id="2014/41",
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        _sec("131", _sub("1", _content("reborn section 131"))),
+        None,
+        _LEGAL_PIT,
+        "131 §",
+        base_ir=base_ir,
+        replay_history_ops=[],
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is None
+    assert pathologies == []
+    assert state.find("chapter", "19") is None
 
 
 def test_apply_whole_section_replace_does_not_synthesize_root_insert_for_missing_root_section() -> None:

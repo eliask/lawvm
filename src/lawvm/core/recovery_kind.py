@@ -73,6 +73,7 @@ class RecoveryKind(StrEnum):
     SECTION_MOVE_INSERT_DESTINATION_REBIND = "section_move_insert_destination_rebind"
     SECTION_MOVE_REPLACE_DESTINATION_REBIND = "section_move_replace_destination_rebind"
     SECTION_REPLACE_BOOTSTRAP_BASE_PRIOR_PARENT_INSERT = "section_replace_bootstrap_base_prior_parent_insert"
+    SECTION_REPLACE_BOOTSTRAP_CITED_PARENT_SCAFFOLD = "section_replace_bootstrap_cited_parent_scaffold"
     SECTION_REPLACE_BOOTSTRAP_GAP_ESTABLISH = "section_replace_bootstrap_gap_establish"
     SECTION_REPLACE_BOOTSTRAP_PARENT_MISSING = "section_replace_bootstrap_parent_missing"
     SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE = "section_replace_consume_unscoped_root_duplicate"
