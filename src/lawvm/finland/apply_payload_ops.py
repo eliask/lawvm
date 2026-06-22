@@ -132,6 +132,26 @@ def _find_amend_paragraph(
                 return _as_numbered_payload_paragraph(p, strip_marker=False)
         return None
 
+    def _numbered_subsection_as_item_paragraph(sub: IRNode) -> Optional[IRNode]:
+        num = next((child for child in sub.children if child.kind == IRNodeKind.NUM and child.text), None)
+        if num is None or normalized_label_key(num.text) != item_norm:
+            return None
+        body_children = tuple(
+            child
+            for child in sub.children
+            if child.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT, IRNodeKind.SUBPARAGRAPH)
+        )
+        if not body_children:
+            return None
+        return _relabel_paragraph_ir(
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=item_norm,
+                children=(num, *body_children),
+            ),
+            item_norm,
+        )
+
     if amend_sub is not None:
         result = _paragraph_with_explicit_item_label(amend_sub)
         if result is not None:
@@ -140,6 +160,17 @@ def _find_amend_paragraph(
         for sub_child in muutos_ir.children:
             if sub_child.kind == IRNodeKind.SUBSECTION:
                 result = _paragraph_with_explicit_item_label(sub_child)
+                if result is not None:
+                    return result
+
+    if amend_sub is not None:
+        result = _numbered_subsection_as_item_paragraph(amend_sub)
+        if result is not None:
+            return result
+    if muutos_ir is not None:
+        for sub_child in muutos_ir.children:
+            if sub_child.kind == IRNodeKind.SUBSECTION:
+                result = _numbered_subsection_as_item_paragraph(sub_child)
                 if result is not None:
                     return result
 

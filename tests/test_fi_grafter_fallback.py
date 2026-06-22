@@ -5626,6 +5626,27 @@ def test_find_amend_paragraph_prefers_explicit_intro_item_over_positional_label(
     assert got.children[0].text == "5. Lappeenrannan kaupunki"
 
 
+def test_find_amend_paragraph_promotes_numbered_subsection_item_payload() -> None:
+    amend_sub = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="23",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="23)"),
+            IRNode(kind=IRNodeKind.INTRO, text="oppilaitoksella ammatillisesta koulutuksesta annettua lakia;"),
+        ),
+    )
+
+    got = _find_amend_paragraph("23", amend_sub, None)
+
+    assert got is not None
+    assert got.kind is IRNodeKind.PARAGRAPH
+    assert got.label == "23"
+    assert [(child.kind, child.text) for child in got.children] == [
+        (IRNodeKind.NUM, "23)"),
+        (IRNodeKind.INTRO, "oppilaitoksella ammatillisesta koulutuksesta annettua lakia;"),
+    ]
+
+
 def test_merge_sparse_alakohta_insert_ir_splices_letter_subitem_under_existing_item() -> None:
     master_para = IRNode(
         kind=IRNodeKind.PARAGRAPH,
