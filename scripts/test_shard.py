@@ -293,6 +293,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_proposals_competing.py",
         "test_fi_sections_text.py",
         "test_fi_export_interlinks.py",
+        "test_fi_projection_stage.py",
         "test_fi_interlink_placement_v0.py",
         "test_fi_inline_citation.py",
         "test_fi_preparatory_reference.py",

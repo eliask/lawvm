@@ -130,9 +130,10 @@ def test_project_interlinks_for_statute_adapts_existing_fi_citation_families(
 
     from lawvm.tools.export_fi_interlinks import _project_interlinks_for_statute
 
-    rows, diagnostics = _project_interlinks_for_statute("711/2022", _Store())
+    projection = _project_interlinks_for_statute("711/2022", _Store())
+    rows = list(projection.rows)
 
-    assert diagnostics == []
+    assert projection.residuals == ()
     assert [row["interlink_id"] for row in rows] == [
         "fi.refs:711_2022:0",
         "fi.preparatory_refs:711_2022:0",
