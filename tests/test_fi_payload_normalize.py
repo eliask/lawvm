@@ -1739,7 +1739,9 @@ def test_fold_intro_list_continuation_preserves_multiple_explicit_sparse_targets
 
     normalized = elaborate_payload_against_live(ctx, ops, prepared, set())
     assignment = _slot_assignment_result(normalized)
-    assert [assignment.for_op(op).label if assignment.for_op(op) is not None else None for op in ops] == [
+    assert [
+        (node.label if (node := assignment.for_op(op)) is not None else None) for op in ops
+    ] == [
         "3",
         "5",
         "14",
