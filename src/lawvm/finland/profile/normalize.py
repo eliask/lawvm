@@ -756,7 +756,11 @@ def _apply_nest_repeated_digit_subparagraphs(children: List[IRNode]) -> List[IRN
 
         norm = _norm_num_token(str(child.label))
         body_text = _body_text(child)
-        match = _EMBEDDED_PLAIN_NUM_RE.match(body_text)
+        match = _EMBEDDED_PARAGRAPH_NUM_RE.match(body_text)
+        if match is not None and _digit_item_num_base(match.group(1).lower()) is None:
+            match = None
+        if match is None:
+            match = _EMBEDDED_PLAIN_NUM_RE.match(body_text)
         if pending_parent is not None and pending_parent_norm == norm and match is not None:
             nested_label, remainder = match.groups()
             remainder = remainder.strip()
