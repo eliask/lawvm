@@ -19,6 +19,8 @@ _WS_RE = re.compile(r"\s+")
 _NON_WORD_RE = re.compile(r"[^\w§]+", flags=re.UNICODE)
 _MIN_CHUNK_CHARS = 24
 _MIN_ORDERED_TOKENS = 4
+_MIN_APPROX_TOKENS = 8
+_MIN_APPROX_TOKEN_COVERAGE = 0.80
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,13 +159,18 @@ def _ordered_tokens_in_bounded_window(
     chunk_tokens: tuple[str, ...],
     after_tokens: tuple[str, ...],
 ) -> bool:
-    """Return whether ``chunk_tokens`` appear in order within a local window.
+    """Return whether ``chunk_tokens`` are realized within a local window.
 
     Finnish consolidated text can interleave editorial qualifiers, such as
     English degree translations, between source-owned Finnish tokens.  Exact
     substring matching would report those chunks missing even though the source
     text is present in order.  The bounded window keeps this as a locality check:
     a chunk cannot be satisfied by common words scattered across the statute.
+
+    Later materialization or source normalization can also rewrite a small
+    number of local tokens (renumbered internal references, agency names, OCR
+    spelling).  For longer chunks, accept high-coverage local realization rather
+    than requiring every token to survive byte-for-byte.
     """
 
     if not chunk_tokens or not after_tokens:
@@ -180,7 +187,42 @@ def _ordered_tokens_in_bounded_window(
                 index += 1
                 if index == len(chunk_tokens):
                     return True
+        if _approx_tokens_realized_in_window(
+            chunk_tokens,
+            after_tokens[start:end_limit],
+        ):
+            return True
     return False
+
+
+def _approx_tokens_realized_in_window(
+    chunk_tokens: tuple[str, ...],
+    window_tokens: tuple[str, ...],
+) -> bool:
+    """Return whether most chunk tokens occur in order in one local window."""
+
+    if len(chunk_tokens) < _MIN_APPROX_TOKENS:
+        return False
+    matched = _ordered_lcs_len(chunk_tokens, window_tokens)
+    return matched / len(chunk_tokens) >= _MIN_APPROX_TOKEN_COVERAGE
+
+
+def _ordered_lcs_len(
+    left: tuple[str, ...],
+    right: tuple[str, ...],
+) -> int:
+    """Length of the longest ordered token overlap between two bounded windows."""
+
+    previous = [0] * (len(right) + 1)
+    for left_token in left:
+        current = [0]
+        for col, right_token in enumerate(right, start=1):
+            if left_token == right_token:
+                current.append(previous[col - 1] + 1)
+            else:
+                current.append(max(previous[col], current[-1]))
+        previous = current
+    return previous[-1]
 
 
 def _is_substantive(text: str) -> bool:
