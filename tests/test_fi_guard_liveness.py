@@ -1600,6 +1600,62 @@ def drill_frontend_internal_error_finland_ingress() -> None:
     assert result.has_blocking
 
 
+def drill_lineage_cycle_replay_products_build() -> None:
+    """LINEAGE.CYCLE fires loud from the production migration-ledger build (LS-11).
+
+    Production lane: ``ReplayProducts.__post_init__`` is the central seal for the
+    finished migration ledger — every replay product passes through it, and it
+    already type-checks and effect-graph-validates ``migration_events`` before the
+    bundle is published. The drill builds a real ``ReplayProducts`` with a
+    synthetic 2-node migration cycle (section 1 → section 2 → section 1) and
+    asserts the production ``assert_acyclic`` guard raises ``LineageCycleError``
+    carrying the ``LINEAGE.CYCLE`` code. Without the guard the address resolvers
+    silently truncate the walk at their ``visited`` set, so the non-terminating
+    lineage would otherwise reach materialization as repeated-PIT hash drift.
+    """
+    from lawvm.core.ir import LegalAddress
+    from lawvm.core.provenance import MigrationEvent
+    from lawvm.core.timeline_lineage import LineageCycleError
+    from lawvm.finland.replay_products import ReplayProducts
+    from lawvm.finland.statute import ReplayState
+
+    def _section(label: str) -> LegalAddress:
+        return LegalAddress(path=(("section", label),))
+
+    def _renumber(from_label: str, to_label: str) -> MigrationEvent:
+        return MigrationEvent(
+            event_id=f"mig:2024/1:{from_label}->{to_label}",
+            kind="renumber",
+            from_address=_section(from_label),
+            to_address=_section(to_label),
+            effective="2024-01-01",
+            source_statute="2024/1",
+        )
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    cyclic_events = (_renumber("1", "2"), _renumber("2", "1"))
+
+    with pytest.raises(LineageCycleError, match="LINEAGE.CYCLE") as excinfo:
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            migration_events=cyclic_events,
+        )
+
+    # The raise is self-evidencing: it carries the address cycle witness.
+    assert excinfo.value.cycle, "LineageCycleError must carry the cycle witness"
+    assert excinfo.value.cycle[0] == excinfo.value.cycle[-1]
+
+    # A DAG ledger over the same addresses builds without raising (no false fire).
+    ReplayProducts(
+        replay_fold_state=state,
+        materialized_state=state,
+        timelines=None,
+        migration_events=(_renumber("1", "2"),),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Declarative fire-drill registry
 # ---------------------------------------------------------------------------
@@ -1607,6 +1663,7 @@ def drill_frontend_internal_error_finland_ingress() -> None:
 # code -> fire-drill callable that drives the production lane to the guarded
 # state and asserts the finding reaches its consumer-visible surface.
 FIRE_DRILLS: Dict[str, Callable[[], None]] = {
+    "LINEAGE.CYCLE": drill_lineage_cycle_replay_products_build,
     "APPLY.TREE_INVARIANT_VIOLATION": drill_tree_invariant_violation_duplicate_label,
     "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": drill_effect_lifecycle_target_unresolved_verdict_barrier,
     "APPLY.FAILED_OPERATION": drill_failed_operation_verdict_barrier,
@@ -2020,6 +2077,11 @@ _PRODUCTION_BUILDER_CALLS = (
     "api.parse_clause",
     "parse_clause(",
     "_check_occupancy_policy",
+    # ReplayProducts.__post_init__ is the central production seal for the finished
+    # replay product (migration ledger, effect graph): constructing it runs the
+    # production validation guards (type checks, effect-graph closure, lineage
+    # acyclicity) over the sealed ledger.
+    "ReplayProducts(",
 )
 
 # Codes whose ONLY honest production surface is the strict verdict mapping (a

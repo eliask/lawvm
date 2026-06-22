@@ -31,6 +31,7 @@ from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import FIXED_DATE_KIND, ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline_lineage import (
     MaterializationLineageBridgeClassification,
+    assert_acyclic as _assert_lineage_acyclic,
     classify_materialization_lineage_bridge,
     choose_materialization_lineage_decision,
     rekey_timelines_with_migration_events as _core_rekey_timelines_with_migration_events,
@@ -229,6 +230,11 @@ class ReplayProducts:
             raise TypeError("ReplayProducts.temporal_events must contain TemporalEvent records")
         if not all(isinstance(event, MigrationEvent) for event in migration_events):
             raise TypeError("ReplayProducts.migration_events must contain MigrationEvent records")
+        # LS-11: the sealed migration ledger must form a DAG. A cycle (an eId
+        # migrating into its own ancestry) is a non-terminating-materialization /
+        # repeated-PIT-hash-drift hazard, so fail loud at ledger build rather than
+        # let the address resolvers silently truncate the walk at the visited guard.
+        _assert_lineage_acyclic(migration_events)
         if not all(isinstance(effect, EffectRef) for effect in source_effects):
             raise TypeError("ReplayProducts.source_effects must contain EffectRef records")
         if not all(isinstance(relation, EffectRelation) for relation in effect_relations):
