@@ -1819,7 +1819,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 3,2016/264,suspect,oracle_suspect,base_oracle_only despite amendment 2021/1241 eff 2022-01-01 <= cutoff 2022-08-04,OK
 3,2016/276,core,,,OK
 3,2016/471,suspect,oracle_suspect,2022/793 eff 2023-01-01 > cutoff 2022-08-26,
-3,2016/591,core,,,OK
+3,2016/591,suspect,source_pathology,oracle-check classifies divergences as ORACLE_STALE/SOURCE_INCOMPLETE,OK
 3,2016/730,suspect,oracle_suspect,2021/86 eff 2021-03-01 > cutoff 2021-01-15,
 3,2016/770,suspect,oracle_suspect,base_oracle_only despite amendment 2018/35 eff 2019-11-01 <= cutoff 2022-12-20,OK
 3,2016/853,suspect,oracle_suspect,2020/882 eff 2020-12-01 > cutoff 2020-11-27,
@@ -2308,7 +2308,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 5,2010/1171,core,,,OK
 5,2010/1316,core,,,OK
 5,2010/298,notruth,no_truth_from_run,,NO_TRUTH
-5,2010/373,core,,,OK
+5,2010/373,suspect,oracle_suspect,oracle-check classifies sole divergence as ORACLE_STALE,OK
 5,2010/633,core,,,OK
 5,2010/668,suspect,oracle_suspect,2014/1349 eff 2015-01-01 > cutoff 2014-12-30,
 5,2010/934,suspect,oracle_suspect,2025/711 eff 2026-01-01 > cutoff 2025-06-27,
@@ -2789,7 +2789,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 9,1989/819,suspect,oracle_suspect,1999/1129 eff 2000-01-01 > cutoff 1999-12-03,
 9,1990/1271,suspect,oracle_suspect,2000/387 eff 2000-05-01 > cutoff 2000-04-20,
 9,1990/725,suspect,oracle_suspect,2018/614 eff 2018-08-15 > cutoff 2018-08-10,
-9,1991/1707,core,,,OK
+9,1991/1707,suspect,oracle_suspect,oracle-check classifies all divergences as ORACLE_STALE,OK
 9,1991/626,core,,,OK
 9,1991/758,suspect,oracle_suspect,2019/1131 eff 2020-01-01 > cutoff 2019-11-29,
 9,1992/1336,suspect,oracle_suspect,2010/211 eff 2010-04-01 > cutoff 2010-03-30,
