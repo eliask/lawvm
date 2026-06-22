@@ -388,6 +388,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_identity_intrinsic_audit.py",
         "test_synthetic_label_leak.py",
         "test_replay_determinism.py",
+        "test_guard_liveness_totality.py",
     ),
     "core_ir_contracts": (
         "test_fi_address_parse.py",
