@@ -50,7 +50,9 @@ from lawvm.finland.payload_normalize import (
 )
 from lawvm.finland.compile_group_elaboration import (
     _RESTORE_HEADING_FOR_EXPLICIT_FACET,
+    _merge_source_container_replacement_witness,
     _restore_source_heading_for_explicit_heading_facet,
+    _source_complete_container_replacement_witness,
 )
 from lawvm.finland.replay_notices import (
     reset_replay_verbose as _reset_replay_verbose,
@@ -500,6 +502,15 @@ def build_amendment_bundle(
                 standalone_section_targets,
                 foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
             )
+            payload_completeness = _merge_source_container_replacement_witness(
+                payload_norm.payload_completeness,
+                _source_complete_container_replacement_witness(
+                    raw_muutos_ir=raw_muutos_ir,
+                    group_ops=list(payload_norm.group_ops),
+                    target_unit_kind=target_unit_kind_value,
+                    target_norm=target_norm,
+                ),
+            )
             if _has_unresolved_named_row_targets(filtered_pre, payload_norm.group_ops):
                 # Diagnostic-only recovery for amendment inspection: replay may
                 # correctly elaborate against the current live tree, while the
@@ -546,6 +557,15 @@ def build_amendment_bundle(
                     if not _has_unresolved_named_row_targets(filtered_pre, base_payload_norm.group_ops):
                         payload_ctx = base_payload_ctx
                         payload_norm = base_payload_norm
+                        payload_completeness = _merge_source_container_replacement_witness(
+                            payload_norm.payload_completeness,
+                            _source_complete_container_replacement_witness(
+                                raw_muutos_ir=raw_muutos_ir,
+                                group_ops=list(payload_norm.group_ops),
+                                target_unit_kind=target_unit_kind_value,
+                                target_norm=target_norm,
+                            ),
+                        )
             normalized_muutos_ir = payload_norm.muutos_ir
             slot_assignment = payload_norm.slot_assignment
             fctx.slot_assignment = slot_assignment
@@ -633,6 +653,13 @@ def build_amendment_bundle(
                     else []
                 ),
             }
+            if payload_completeness is not None:
+                group_bundle["payload_completeness"] = {
+                    "payload_completeness_kind": payload_completeness.kind,
+                    "reasons": tuple(payload_completeness.reasons),
+                    "tail_policy": payload_completeness.tail_policy,
+                    **dict(payload_completeness.detail or {}),
+                }
             bundle["groups"].append(group_bundle)
     finally:
         _reset_replay_verbose(verbose_token)

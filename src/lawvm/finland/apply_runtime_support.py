@@ -1456,6 +1456,16 @@ def _emit_section_snapshot(
             return None
         if str(completeness.tail_policy or "").strip() != "replace_if_target_scope_requires":
             return None
+        source_child_labels = completeness.detail.get("source_child_labels")
+        if isinstance(source_child_labels, tuple):
+            labels = {
+                _norm_num_token(label)
+                for label in source_child_labels
+                if str(label or "").strip()
+            }
+            labels.discard("")
+            if labels:
+                return labels
         labels = {
             _norm_num_token(child.label)
             for child in source_payload.children

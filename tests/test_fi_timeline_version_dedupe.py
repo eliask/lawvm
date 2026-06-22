@@ -11,6 +11,7 @@ from lawvm.core.timeline_addresses import STRUCTURAL_RENUMBER_SNAPSHOT_ATTR
 from lawvm.core.timeline_invariants import check_all_timeline_invariants_typed
 from lawvm.finland.timeline_version_dedupe import (
     FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID,
+    FI_TIMELINE_RESTRUCTURE_RELABEL_SHELL_SHADOW_COLLAPSE_RULE_ID,
     FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID,
     FI_TIMELINE_SAME_SOURCE_SEMANTIC_DEDUPE_RULE_ID,
     dedupe_finland_timelines,
@@ -147,6 +148,56 @@ def test_restructure_relabel_snapshot_is_not_shadowed_by_structural_renumber_sna
     assert records == ()
 
 
+def test_restructure_relabel_snapshot_shadows_label_only_section_shell() -> None:
+    address = LegalAddress(path=(("chapter", "7"), ("section", "61")))
+    source = OperationSource(statute_id="1994/318", enacted="1994-04-29")
+    restructure_snapshot = ProvisionVersion(
+        effective="1994-07-01",
+        enacted="1994-04-29",
+        variant_kind="permanent",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="61",
+            attrs={"lawvm_restructure_relabel_section_snapshot": "1"},
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="61 §"),
+                IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="moved body"),
+            ),
+        ),
+        source=source,
+    )
+    label_only_shell = ProvisionVersion(
+        effective="1994-07-01",
+        enacted="1994-04-29",
+        variant_kind="permanent",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="61",
+            attrs={
+                "lawvm_tail_policy": "replace_if_target_scope_requires",
+                "lawvm_payload_completeness_kind": "complete",
+            },
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="61 §"),
+                IRNode(kind=IRNodeKind.OMISSION, attrs={"name": "omission"}),
+            ),
+        ),
+        source=source,
+    )
+    timelines = {
+        address: ProvisionTimeline(
+            address=address,
+            versions=[restructure_snapshot, label_only_shell],
+        )
+    }
+
+    deduped, records = dedupe_finland_timelines(timelines)
+
+    assert deduped[address].versions == [restructure_snapshot]
+    assert len(records) == 1
+    assert records[0].witness_rule_id == FI_TIMELINE_RESTRUCTURE_RELABEL_SHELL_SHADOW_COLLAPSE_RULE_ID
+
+
 def test_semantic_text_cache_reuses_content_hash(monkeypatch) -> None:
     calls = 0
     original_irnode_to_text = timeline_version_dedupe.irnode_to_text
@@ -231,3 +282,26 @@ def test_2000_256_2024_273_item_repeals_survive_timeline_dedupe() -> None:
     assert "16) kirjastoamanuenssilla" not in text
     assert "17) kielenkääntäjällä korkeakoulututkinto tai muu soveltuva tutkinto" in text
     assert "perehtyneisyys viran tehtäväalaan" in text
+
+
+def test_1940_378_1994_318_restructure_relabel_preserves_moved_voimaantulo_section() -> None:
+    master = replay_xml_for_test("1940/378", mode="legal_pit", quiet=True)
+    section = next(
+        child
+        for chapter in master.materialized_state.ir.children
+        if chapter.kind is IRNodeKind.CHAPTER and chapter.label == "7"
+        for child in chapter.children
+        if child.kind is IRNodeKind.SECTION and child.label == "61"
+    )
+    text = " ".join(timeline_version_dedupe.irnode_to_text(section).split())
+
+    assert "Tämä laki tulee voimaan 1 päivänä elokuuta 1940" in text
+    assert "Tätä lakia sovelletaan niihinkin tapauksiin" in text
+    assert "Jos perintö tai lahjaveroasia" in text
+    assert any(
+        record.address == "chapter:7/section:61"
+        and record.source_statute == "1994/318"
+        and record.witness_rule_id
+        == FI_TIMELINE_RESTRUCTURE_RELABEL_SHELL_SHADOW_COLLAPSE_RULE_ID
+        for record in master.products.timeline_version_dedupes
+    )

@@ -16046,6 +16046,17 @@ def test_inspect_amendment_1940_378_1994_318_drops_payloadless_replace_shadowed_
         for rejected in group73["rejected_ops_pre_constraints"]
     )
 
+    group7 = next(
+        group
+        for group in bundle["groups"]
+        if group["target_unit_kind"] == "chapter" and group["target_norm"] == "7"
+    )
+    assert group7["raw_payload"]["children"] == 3
+    assert group7["normalized_payload"]["children"] > group7["raw_payload"]["children"]
+    assert group7["payload_completeness"]["payload_completeness_kind"] == "complete"
+    assert group7["payload_completeness"]["tail_policy"] == "replace_if_target_scope_requires"
+    assert group7["payload_completeness"]["source_child_labels"] == ("61",)
+
 
 def test_inspect_amendment_1966_611_1981_20_recovers_heading_tagged_subsection_payload() -> None:
     """Heading-tagged body text may satisfy an explicit subsection replacement."""
