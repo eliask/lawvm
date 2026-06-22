@@ -2650,6 +2650,30 @@ def test_parse_clause_compound_replace_then_insert_item_via_seka_lisataan() -> N
     assert not result.is_failed
 
 
+def test_parse_clause_compound_replace_then_infinitive_insert_item() -> None:
+    """Coordinated infinitive ``lisätä`` is a real amendment verb.
+
+    Regression for 1993/1495 <- 1994/931: the lexer classified ``lisätä`` as a
+    WORD, so the grammar-owned parser declined and the legacy fallback dropped
+    the ``1 §:ään uuden 7 kohdan`` insert.
+    """
+    text = (
+        "muuttaa maa- ja metsätalousministeriön suoritteista perittävistä "
+        "maksuista 23 päivänä joulukuuta 1993 antamansa päätöksen (1495/93) "
+        "2 §:n 2 momentin 1 kohdan ja liitteenä olevan maksutaulukon sekä "
+        "lisätä 1 §:ään uuden 7 kohdan jolloin nykyiset 7 ja 8 kohta siirtyvät "
+        "8 ja 9 kohdaksi seuraavasti:"
+    )
+
+    result = parse_clause(text, statute_id="1993/1495")
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert result.parser_lane == "grammar_owned"
+    assert result.grammar_decline_reason is None
+    assert "M P 2 2 1" in codes
+    assert "L P 1 1 7" in codes
+
+
 def test_tokenize_restores_ocr_lost_dash_in_section_range() -> None:
     """Two bare adjacent section numbers before a single § are a coalesced range.
 

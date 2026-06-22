@@ -149,6 +149,7 @@ _v("lisännyt", "lisätä", "VERB", verb_code=SourceVerb.LISATA)
 # Verbs — active indicative (rare, pre-1980s)
 _v("muuttaa", "muuttaa", "VERB", verb_code=SourceVerb.MUUTTAA)
 _v("kumota", "kumota", "VERB", verb_code=SourceVerb.KUMOTA)  # also participle stem
+_v("lisätä", "lisätä", "VERB", verb_code=SourceVerb.LISATA)
 # Verbs — alternative passive forms (rare)
 _v("korvataan", "muuttaa", "VERB", verb_code=SourceVerb.MUUTTAA)  # synonym for muutetaan
 # Verbs — archaic necessive passive predicate in historical formulas:

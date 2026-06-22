@@ -6941,6 +6941,24 @@ def test_replay_xml_2017_571_inserts_second_subsection_into_2002_1244_section_1(
     assert "2" in sub_labels, "subsection 2 must be inserted by 2017/571"
 
 
+def test_replay_xml_1993_1495_1994_931_keeps_infinitive_item_insert() -> None:
+    """1994/931 says ``sekä lisätä 1 §:ään uuden 7 kohdan``.
+
+    The infinitive ``lisätä`` must compile as an insertion verb; otherwise the
+    old item 7 remains at slot 7 and the source-owned hunting-law item is absent.
+    """
+    replay = replay_xml_for_test("1993/1495", mode="official_consolidation", quiet=True)
+    sec1 = replay.materialized_state.find_section("1")
+    assert sec1 is not None, "section 1 must be present in replay"
+    text = " ".join(irnode_to_text(sec1).split())
+
+    assert "metsästyslain (615/93) 19 §:ssä" in text
+    assert "sekä metsästysasetuksen (666/93)" in text
+    assert "7) metsästyslain" in text
+    assert "8) valtion varoista myönnettävää avustusta" in text
+    assert "9) ministeriölle kuuluvat yleiset ohjaus-" in text
+
+
 def test_replay_xml_1998_986_inserts_provenance_qualified_plural_subsections_into_section_22() -> None:
     """Plural `uusi N ja M momentti` must survive partial PEG success on mixed clauses.
 
