@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Largely-current, some stale refs. Kind: Normative. CandidateSetCertificate was renamed to CandidateSetCoverage (file `candidate_set_certificate.py` -> `candidate_set_coverage.py`); update §2 file list (line 72) and §7 type name. All other 19 core-file citations verified live.
+
 # LawVM Proof Surfaces
 
 Status: normative, implementation-near.

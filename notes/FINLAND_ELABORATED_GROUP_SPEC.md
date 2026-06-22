@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current-with-noted-drift (intentionally partial). Kind: Living spec / Normative (elaboration→apply contract). One stale consumer ref: `finland/grafter.py` (lines 141-143) was removed — `slot_assignment` is now read by `apply_*`/`payload_normalize`/`elaborated_group.py`. `ElaboratedGroup`/`build_elaborated_group` and the slot carriers verified present.
+
 # Finland Elaborated Group Spec
 
 Status: living spec, intentionally partial.

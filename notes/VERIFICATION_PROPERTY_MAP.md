@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Descriptive (living record). All cited checkers/tests/proof artifacts verified present (proofs/z3_*.py, proofs/tla/LawVMTemporalOverlay.tla, the listed tests/ files, src paths). No PEG3/§1.13 drift. The one "PEG parser" mention (L16) is incidental bug-class prose, not a path cite.
+
 # Verification Property Map
 
 Status: living record.

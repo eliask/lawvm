@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Largely-current, some stale refs. Kind: Normative (exemplar set). Fix line 427: `lawvm.finland.johtolause.test_peg_curated` is now `curated_cases.py` (consumer `tests/test_fi_peg_curated.py`). 'PEG' = legacy name for the canonical surface parser (johtolause/surface_parse.py). Duplicate `### 2.6` header. All cited statute exemplars + CLI commands otherwise valid.
+
 # Conformance Corpus
 
 Status: living spec, intentionally partial.

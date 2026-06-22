@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current (intentionally partial). Kind: Living spec / Normative-intent (target typed clause AST). No code citations to drift; model coherent with the surface-parse pipeline. No findings.
+
 # Finland Clause AST Spec
 
 Status: living spec, intentionally partial.

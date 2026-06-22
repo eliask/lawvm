@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Largely-current, some stale refs. Descriptive (living orientation map). Already self-flags §1/§4 as pre-johtolause-refactor (correct: peg3.py + grafter.py are gone). Additional uncaught drift: §5 cites dead COMPILER_WARNING_AND_INVARIANT_FRONTIER.md (now COMPILER_OBSERVATION_STREAM.md); §6 tree says 'uk/' but the dir is 'uk_legislation/'.
+
 # LawVM Stack Map
 
 Status: living reference.

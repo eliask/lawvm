@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current-with-noted-drift. Normative map + descriptive inventory. All linked paths resolve, but: line 101 'AGENTS.md §1.13' is stale (now §1.11/§1.12, §2.4); and three normative docs AGENTS.md itself cites are missing from the index — DISCIPLINE_GATES.md, UNIFIED_BENCH_CONTRACT.md, FI_JOHTOLAUSE_SURFACE_PARSER_CONTRACT.md (plus NZ/NO/SE status docs, indexed only for US).
+
 # LawVM Spec Index
 
 Status: current public/spec index for the v0.1 release line.

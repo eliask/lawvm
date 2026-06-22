@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current-with-noted-drift. Kind: Normative. Live doctrine accurate; stale symbol names in §4.5: `normalize_group_payload(...)` (now in payload_normalize.py / tag `group_payload_normalization`) and `compile_fi(...)` (now `compile_fi_facade`). §8.4.1 projection.py is core `src/lawvm/semantic/`, not finland/. Case-study .md referenced but absent.
+
 # Source Pathology And Adjudication Spec
 
 Status: living spec, intentionally partial.

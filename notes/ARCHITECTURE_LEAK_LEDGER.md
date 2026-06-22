@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Living backlog, headline STALE. Kind: Descriptive (EV-ranked leak backlog vs LAWVM_PIPELINE_CONTRACT.md). The '~75% to contract / StageResult[T] realized nowhere (rank 12) / 10-of-10 waists mixed' headline is outdated — StageResult[T] is now realized (core/stage_result.py + many consumers) and the StageResult endgame + seam conversions landed; several ranks (10, 17) already marked RESOLVED. Re-score the headline and rank-12 before using as a work queue.
+
 # Architecture Leak Ledger
 
 > EV-ranked backlog of representation/typing/authority leaks found by the e2e architecture-coherence audit (Pro-validated), measured against `notes/LAWVM_PIPELINE_CONTRACT.md`. This is the *audit-and-enforce* work queue Pro called for — **not** a rewrite plan. Each row resolves to a witnessed/typed object, never a silent path.

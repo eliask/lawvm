@@ -1,8 +1,10 @@
+> **Status (2026-06-22):** Current-with-noted-drift. Normative/living roadmap (governs AGENTS.md regex/recognizer doctrine = §1.11/§1.12, §2.4/§2.5 — NOT '§1.13', which does not exist). All 'PEG3'/'peg3.py' = now johtolause/surface_parse.py (regex-free; peg3.py deleted); the doc's line-84 note acknowledges this but stale refs persist at lines 5/43/98/134/135/144/200.
+
 # Regex → Grammar Migration Roadmap
 
 Status: living roadmap. Synthesizes a codebase-grounded ChatGPT Pro review
 (2026-05-29) with the in-tree regex-grammar census (`.tmp/regex_grammar_census.md`).
-Governs how AGENTS.md §1.13 (regex-versus-recognizer) is applied across frontends.
+Governs how AGENTS.md §1.12 (regex-versus-recognizer) is applied across frontends.
 
 ## The three-way split (authoritative)
 
