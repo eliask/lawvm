@@ -13,6 +13,8 @@ import logging
 from typing import Optional, cast
 
 from lawvm.core.tree_ops import check_invariants as _check_tree_invariants
+from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.payload_realization import drop_materialized_payload_realization_false_positives
 from lawvm.finland.amendment_selection import resolve_applicable_amendment_records
 from lawvm.finland.chapter_seed import seed_missing_chapters as _seed_missing_chapters
 from lawvm.finland.consolidated_store import ConsolidatedArtifactSelector
@@ -231,11 +233,15 @@ def replay_xml(
                 quiet=quiet,
             )
         )
+        findings = drop_materialized_payload_realization_false_positives(
+            tuple(signals.findings),
+            materialized_text=irnode_to_text(products.materialized_state.ir),
+        )
 
         return ReplayResult(
             ctx=plan.ctx,
             products=products,
-            findings=tuple(signals.findings),
+            findings=findings,
             oracle_selector_info=_oracle_selector_info(
                 corpus=corpus,
                 parent_id=parent_id,

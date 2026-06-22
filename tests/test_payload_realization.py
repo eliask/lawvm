@@ -3,8 +3,10 @@ from __future__ import annotations
 from lawvm.core.payload_realization import (
     PayloadRealizationUnit,
     audit_payload_realization,
+    drop_materialized_payload_realization_false_positives,
     payload_realization_gap_findings,
 )
+from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
 
 
 def test_audit_payload_realization_reports_missing_substantive_chunk() -> None:
@@ -59,3 +61,27 @@ def test_payload_realization_gap_findings_use_shared_coverage_code() -> None:
 
     assert [finding.kind for finding in findings] == ["COVERAGE.PAYLOAD_REALIZATION_GAP"]
     assert findings[0].source_statute == "2000/1"
+
+
+def test_materialized_payload_filter_drops_realized_gap_only() -> None:
+    realized = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={"chunk_excerpt": "Owned materialized text."},
+    )
+    missing = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={"chunk_excerpt": "Still absent text."},
+    )
+
+    filtered = drop_materialized_payload_realization_false_positives(
+        (realized, missing),
+        materialized_text="The product contains owned materialized text.",
+    )
+
+    assert filtered == (missing,)

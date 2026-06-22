@@ -95,6 +95,35 @@ def payload_realization_gap_findings(
     return tuple(_finding(gap, source_ref=source_ref) for gap in gaps)
 
 
+def drop_materialized_payload_realization_false_positives(
+    findings: tuple[Finding, ...],
+    *,
+    materialized_text: str,
+) -> tuple[Finding, ...]:
+    """Drop payload-gap findings whose chunk is present in materialized text.
+
+    Frontends may audit a replay fold before the final product surface projects
+    timeline/materialization-owned descendants.  A reported realization gap is
+    therefore a false positive when its owned chunk is visible in the materialized
+    statute text used for comparison/export.
+    """
+
+    normalized_materialized = _normalized_text(materialized_text)
+    if not normalized_materialized:
+        return findings
+
+    retained: list[Finding] = []
+    for finding in findings:
+        if finding.kind != "COVERAGE.PAYLOAD_REALIZATION_GAP":
+            retained.append(finding)
+            continue
+        chunk = str(finding.detail.get("chunk_excerpt") or "")
+        if chunk and _normalized_text(chunk) in normalized_materialized:
+            continue
+        retained.append(finding)
+    return tuple(retained)
+
+
 def _display_text(text: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
@@ -133,5 +162,6 @@ __all__ = [
     "PayloadRealizationGap",
     "PayloadRealizationUnit",
     "audit_payload_realization",
+    "drop_materialized_payload_realization_false_positives",
     "payload_realization_gap_findings",
 ]

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
@@ -62,6 +65,21 @@ def test_payload_realization_audit_reports_missing_payload_text() -> None:
     assert findings[0].source_statute == "2000/1"
     assert findings[0].detail["unit_id"] == "op1"
     assert findings[0].detail["disposition"] == "source_payload_text_not_realized_in_post_fold_state"
+
+
+def test_replay_filters_payload_gaps_realized_in_materialized_product() -> None:
+    from lawvm.finland.compile import compile_fi_facade
+
+    with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+        facade = compile_fi_facade(
+            "1998/464",
+            replay_mode="official_consolidation",
+            compile_mode="quirks",
+        )
+
+    gaps = [finding for finding in facade.finding_ledger if finding.kind == "COVERAGE.PAYLOAD_REALIZATION_GAP"]
+
+    assert gaps == []
 
 
 def test_payload_realization_audit_scopes_child_target_to_matching_payload_subtree() -> None:

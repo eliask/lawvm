@@ -653,13 +653,6 @@ def process_muutoslaki_resolved(
             lifecycle_events,
             subject="process canonical operation projection",
         )
-        process_findings.extend(
-            payload_realization_findings(
-                resolved_ops=tuple(resolved),
-                after_ir=final_state.ir,
-                amendment_id=amendment_id,
-            )
-        )
         project_transition_detector_findings(
             before_ir=before_apply_ir,
             operations=amendment_lo_ops,
@@ -740,6 +733,13 @@ def process_muutoslaki_resolved(
             process_findings=process_findings,
             parent_id=parent_id,
             amendment_id=amendment_id,
+        )
+        process_findings.extend(
+            payload_realization_findings(
+                resolved_ops=tuple(resolved),
+                after_ir=final_state.ir,
+                amendment_id=amendment_id,
+            )
         )
         return _finish_process_amendment(
             final_state,
