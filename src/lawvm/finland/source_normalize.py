@@ -1185,6 +1185,113 @@ def _content_item_subsection_payload(node: IRNode) -> tuple[int, IRNode] | None:
     )
 
 
+def _content_only_subsection_payload(node: IRNode) -> tuple[IRNode, ...] | None:
+    if node.kind != IRNodeKind.SUBSECTION:
+        return None
+    if any(child.kind in {IRNodeKind.NUM, IRNodeKind.PARAGRAPH} for child in node.children):
+        return None
+    if _node_has_descendant_kind(node, IRNodeKind.TABLE):
+        return None
+    payload = tuple(child for child in node.children if irnode_to_text(child).strip())
+    return payload or None
+
+
+def _direct_section_item_carrier_label(node: IRNode) -> str | None:
+    if node.kind != IRNodeKind.SUBSECTION:
+        return None
+    num_child = next((child for child in node.children if child.kind == IRNodeKind.NUM), None)
+    if num_child is None:
+        return None
+    raw = (num_child.text or "").strip()
+    compact = "".join(raw.split())
+    if not compact.endswith(")"):
+        return None
+    num_label = _norm_num_token(compact[:-1])
+    node_label = _norm_num_token(str(node.label or ""))
+    if not num_label or node_label != num_label:
+        return None
+    return node_label
+
+
+def _fold_sparse_section_item_subsection_payload(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold sparse section-level item carriers into the first moment wrapper."""
+    subsections = [child for child in children if child.kind == IRNodeKind.SUBSECTION]
+    if not subsections:
+        return children
+    item_labels = [_direct_section_item_carrier_label(child) for child in subsections]
+    if any(label is None for label in item_labels):
+        return children
+    labels = [str(label) for label in item_labels if label is not None]
+    if not any(any(ch.isalpha() for ch in label) for label in labels) and labels == [
+        str(idx) for idx in range(1, len(labels) + 1)
+    ]:
+        return children
+
+    payload_nodes: list[IRNode] = []
+    consumed_paths: list[str] = []
+    for subsection in subsections:
+        payload_nodes.extend(_section_item_style_subsection_payload_nodes(subsection))
+        consumed_paths.append(_node_path_label(subsection))
+
+    rewritten: List[IRNode] = []
+    inserted = False
+    for child in children:
+        if child.kind == IRNodeKind.SUBSECTION:
+            if not inserted:
+                rewritten.append(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=tuple(payload_nodes),
+                    )
+                )
+                inserted = True
+            continue
+        rewritten.append(child)
+
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=BASE_SECTION_ITEM_SUBSECTION_FOLD,
+            basis=SourceNormalizationBasis.PROFILE_INVALID,
+            before=f"sparse section-level item carriers {consumed_paths!r}",
+            after=(
+                "folded into subsection:1 as paragraphs "
+                f"{[node.label for node in payload_nodes if node.kind == IRNodeKind.PARAGRAPH]!r}"
+            ),
+            explanation=(
+                "The source encoded a sparse set of section-level kohdat as "
+                "subsection wrappers. Finnish momentti labels are numeric, while "
+                "the wrapper num/label pair carries item notation such as '1 a)' "
+                "or '5)'. The wrappers are therefore transport shape and are "
+                "folded into the first moment's item list for payload binding."
+            ),
+            path=parent_path,
+            confidence=0.95,
+        )
+    )
+    return rewritten
+
+
+def _append_to_last_numbered_paragraph(
+    children: list[IRNode],
+    payload: tuple[IRNode, ...],
+) -> list[IRNode] | None:
+    for idx in range(len(children) - 1, -1, -1):
+        child = children[idx]
+        if child.kind != IRNodeKind.PARAGRAPH or _numeric_label_value(child.label) is None:
+            continue
+        updated = list(children)
+        updated[idx] = _append_item_continuation(child, payload)
+        return updated
+    return None
+
+
 def _fold_section_content_item_subsection_run(
     children: List[IRNode],
     statute_id: str,
@@ -1229,20 +1336,45 @@ def _fold_section_content_item_subsection_run(
             expected_value = 1
             min_folded = 2
 
+        base_children = list(child.children)
         folded_paragraphs: list[IRNode] = []
         consumed_paths: list[str] = []
         j = i + 1
         while j < len(children):
             candidate = children[j]
             payload = _content_item_subsection_payload(candidate)
-            if payload is None:
+            if payload is not None:
+                value, paragraph = payload
+                if value != expected_value:
+                    break
+                folded_paragraphs.append(paragraph)
+                consumed_paths.append(_node_path_label(candidate))
+                expected_value += 1
+                j += 1
+                continue
+
+            continuation_payload = _content_only_subsection_payload(candidate)
+            next_payload = (
+                _content_item_subsection_payload(children[j + 1])
+                if j + 1 < len(children)
+                else None
+            )
+            if continuation_payload is None or next_payload is None or next_payload[0] != expected_value:
                 break
-            value, paragraph = payload
-            if value != expected_value:
-                break
-            folded_paragraphs.append(paragraph)
+            if folded_paragraphs:
+                folded_paragraphs[-1] = _append_item_continuation(
+                    folded_paragraphs[-1],
+                    continuation_payload,
+                )
+            else:
+                updated_base = _append_to_last_numbered_paragraph(
+                    base_children,
+                    continuation_payload,
+                )
+                if updated_base is None:
+                    break
+                base_children = updated_base
             consumed_paths.append(_node_path_label(candidate))
-            expected_value += 1
             j += 1
 
         if len(folded_paragraphs) < min_folded:
@@ -1256,7 +1388,7 @@ def _fold_section_content_item_subsection_run(
                 label=child.label,
                 text=child.text,
                 attrs=child.attrs,
-                children=tuple(child.children) + tuple(folded_paragraphs),
+                children=tuple(base_children) + tuple(folded_paragraphs),
             )
         )
 
@@ -1479,6 +1611,16 @@ def _subsection_can_start_item_run_at(
     if subsection is None or subsection.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(subsection):
         return False
     if _item_num_value(subsection) == expected_next_value:
+        return True
+    paragraph_values = [
+        value
+        for child in subsection.children
+        for value in (_numbered_paragraph_value(child),)
+        if value is not None
+    ]
+    if paragraph_values and paragraph_values == list(
+        range(expected_next_value, expected_next_value + len(paragraph_values))
+    ):
         return True
     return _subsection_resumes_item_run_after_dash_continuation(
         subsection,
@@ -3724,10 +3866,16 @@ def normalize_source_ir(
         initial_children = _fold_section_content_item_subsection_run(
             initial_children, statute_id, current_path, facts
         )
+        initial_children = _fold_sparse_section_item_subsection_payload(
+            initial_children, statute_id, current_path, facts
+        )
         initial_children = _fold_intro_only_subsection_item_list_wrapper(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_item_subsection_run(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_section_content_item_subsection_run(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _split_unnumbered_subparagraph_moment_payloads(

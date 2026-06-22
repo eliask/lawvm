@@ -2625,6 +2625,22 @@ def test_replay_xml_1970_258_folds_base_item_subsection_run_before_renumber_inse
     assert text.index(inserted) < text.index(final_tail)
 
 
+def test_replay_xml_1994_1505_materializes_sparse_definition_item_payloads() -> None:
+    replay = pinned_replay("1994/1505", oracle_version="20090774", mode="official_consolidation", quiet=True)
+    section3 = extract_ir_sections(replay.materialized_state.ir)["chapter:1/section:3"]
+    text = " ".join(irnode_to_text(section3).split())
+
+    assert "1 a) In vitro -diagnostiikkaan tarkoitetulla" in text
+    assert "5) Markkinoille saattamisella tarkoitetaan terveydenhuollon laitteen" in text
+    assert "6) Käyttöönottamisella tarkoitetaan vaihetta, jolloin" in text
+    assert "7) Valtuutetulla edustajalla tarkoitetaan" in text
+    assert not any(
+        finding.kind == "COVERAGE.PAYLOAD_REALIZATION_GAP"
+        and finding.source_statute == "2000/345"
+        for finding in replay.findings
+    )
+
+
 def test_replay_xml_2014_610_splits_2023_tail_moments_before_2026_renumber() -> None:
     replay = pinned_replay("2014/610", oracle_version="20260352", mode="official_consolidation", quiet=True)
     section = extract_ir_sections(replay.materialized_state.ir)["part:4/chapter:15/section:11"]
