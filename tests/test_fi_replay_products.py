@@ -1259,6 +1259,28 @@ def test_build_amendment_bundle_2000_755_rebinds_cited_version_owned_section_pat
     assert "REPLACE 30b §" not in all_ops
 
 
+def test_build_amendment_bundle_2022_972_2024_70_parses_plural_section_marker() -> None:
+    bundle = build_amendment_bundle("2022/972", "2024/70", "legal_pit")
+
+    assert bundle["compiled_ops"] == [
+        "REPLACE 2 luku 3 §",
+        "REPLACE 4 luku 18 §",
+        "REPLACE 4 luku 22 §",
+        "REPLACE 5 luku 24 §",
+        "REPLACE 5 luku 32 §",
+        "REPLACE 5 luku 35 §",
+        "REPLACE 9 luku 52 §",
+        "INSERT 5 luku 34a §",
+        "INSERT 6 luku 40a §",
+    ]
+    final_ops_by_target = {
+        group["target_norm"]: group["ops_final"]
+        for group in bundle["groups"]
+    }
+    assert final_ops_by_target["34a"] == ["INSERT 5 luku 34a §"]
+    assert final_ops_by_target["40a"] == ["INSERT 6 luku 40a §"]
+
+
 def test_replay_xml_2000_755_applies_2018_945_to_cited_pending_version_paths() -> None:
     replay = pinned_replay("2000/755", mode="legal_pit", quiet=True, as_of="2020-01-02")
 

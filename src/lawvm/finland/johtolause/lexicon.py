@@ -187,6 +187,7 @@ _v("§:ssä", "§", "PYKALA", "NOM")  # inessive
 _v("§:stä", "§", "PYKALA", "NOM")  # elative
 _v("§:ksi", "§", "PYKALA", "NOM")  # translative
 _v("§:", "§", "PYKALA", "NOM")  # colon-terminated
+_v("§:t", "§", "PYKALA", "NOM")  # plural nominative
 
 # Chapter — NOM/GEN/ILL (luku/luvun/lukuun) are engine-derived above.
 
