@@ -4518,6 +4518,77 @@ def test_check_se_official_replay_missing_stamp_is_version_unknown() -> None:
     assert result["rows"][0]["classification"] == "official_oracle_match_version_unknown"
 
 
+def test_check_se_official_replay_successful_path_carries_typed_replay_feasible_outcome() -> None:
+    """Structured outcome field on the successful path (no exception-driven control flow).
+
+    The previous behavior raised ``NotImplementedError`` for the
+    contamination-older-base path; this test pins the new contract: when
+    replay succeeds, the result dict carries ``outcome == "replay_feasible"``
+    alongside the existing fields. Callers dispatch on the typed ``outcome``
+    field rather than catching exceptions / substring-matching messages.
+    """
+    base_payload = {
+        "beteckning": "2026:106",
+        "rubrik": "Förordning (2026:106) om något",
+        "ikraftDateTime": "2026-04-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2026-02-26T00:00:00",
+            "andringInford": None,
+            "forfattningstext": (
+                "11 § /Upphör att gälla U:2026-04-15/\n"
+                "Gammal 11 §.\n\n"
+                "11 § /Träder i kraft I:2026-04-15/\n"
+                "Ny 11 §.\n"
+                "Förordning (2026:286)."
+            ),
+        },
+        "publiceradDateTime": "2026-03-23T12:17:32",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": "Regeringen föreskriver att 11 § förordningen (2026:106) om något ska ha följande lydelse.",
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["11"],
+        "provisions": [{"label": "11", "text": "Ny 11 §."}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2026:106/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2026:286")
+
+    assert result["outcome"] == "replay_feasible"
+    assert result["match_count"] == 1
+    # The existing successful-path fields all survive.
+    assert "rows" in result
+    assert "target_count" in result
+    assert "recovery_mode" in result
+
+    # Scan-summary propagation: the typed outcome propagates to
+    # :func:`scan_se_official_replay_act` as the legacy top-level ``outcome``
+    # for aggregate-compat, AND the structured fields are not present on the
+    # successful path (outcome-only signal is enough when replay succeeds).
+    summary = scan_se_official_replay_act(archive, "2026:286")
+    assert summary["outcome"] == "replay_ok"
+    assert "typed_outcome" not in summary  # no extra structured fields when feasible
+
+
 def test_check_se_official_replay_recompiles_stale_ops_without_effective_date() -> None:
     base_payload = {
         "beteckning": "2026:106",
@@ -4952,13 +5023,28 @@ def test_check_se_official_replay_matches_mixed_section_heading_and_appendix_fam
     )
 
     try:
-        check_se_official_replay(archive, "2026:290")
-    except NotImplementedError as exc:
-        message = str(exc)
-    else:
-        raise AssertionError("expected NotImplementedError")
+        result = check_se_official_replay(archive, "2026:290")
+    except NotImplementedError:
+        raise AssertionError(
+            "check_se_official_replay must surface the unresolved replay state as a typed "
+            "outcome, not raise NotImplementedError (the exception-driven control flow was "
+            "retired; the structured outcome field now carries the typed signal)."
+        )
 
-    assert "section:7a:preexisting_insert_target" in message
+    # The structured outcome surfaces the unresolved replay state without
+    # raising: ``outcome`` is one of ``older_base_required`` /
+    # ``precondition_issues_blocking`` (both are non-fatal replay-frontier
+    # states), and the typed reason_code names the specific unresolved
+    # shape. This fixture triggers the precondition_issues_blocking path
+    # (the recovered pre_statute lacks structural targets the ops require).
+    # The previous NotImplementedError string now lives in the structured
+    # ``message`` / ``outcome_detail`` fields so callers can read the typed
+    # signal without catching exceptions + substring-matching.
+    assert result["outcome"] in {
+        "older_base_required",
+        "precondition_issues_blocking",
+    }
+    assert "section:7a:preexisting_insert_target" in result["message"]
 
 
 def test_check_se_official_replay_reports_current_surface_contamination_for_old_insert_family() -> None:
@@ -5011,16 +5097,23 @@ def test_check_se_official_replay_reports_current_surface_contamination_for_old_
     )
 
     try:
-        check_se_official_replay(archive, "2018:1381", as_of="2018-08-01")
-    except NotImplementedError as exc:
-        message = str(exc)
-    else:
-        raise AssertionError("expected NotImplementedError")
+        result = check_se_official_replay(archive, "2018:1381", as_of="2018-08-01")
+    except NotImplementedError:
+        raise AssertionError(
+            "check_se_official_replay must surface older_base_required as a typed outcome, "
+            "not raise NotImplementedError (the exception-driven control flow was retired; "
+            "the structured outcome field now carries the typed signal)."
+        )
 
-    assert "historical replay requires an older base surface or reverse patching" in message
-    assert "section:16:preexisting_renumber_destination" in message
-    assert "section:17:preexisting_insert_target" in message
-    assert "section:18a:preexisting_insert_target" in message
+    # Structured-typed-outcome surface (replacing the previous
+    # NotImplementedError raise): the contamination-not-recoverable path
+    # returns outcome=older_base_required + reason_code.
+    assert result["outcome"] == "older_base_required"
+    assert result["reason_code"] == "se_replay_base_surface_contains_post_amendment_targets"
+    assert "historical replay requires an older base surface or reverse patching" in result["message"]
+    assert "section:16:preexisting_renumber_destination" in result["message"]
+    assert "section:17:preexisting_insert_target" in result["message"]
+    assert "section:18a:preexisting_insert_target" in result["message"]
 
 
 def test_analyze_se_official_replay_feasibility_reports_contamination() -> None:

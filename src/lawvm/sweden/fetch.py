@@ -3057,6 +3057,63 @@ def analyze_se_official_replay_feasibility(
     }
 
 
+#: Outcome constants surfaced by :func:`check_se_official_replay` so callers
+#: can dispatch on a typed field instead of catching ``NotImplementedError``
+#: and string-matching the message (the previous control flow was
+#: exception-driven; the new flow returns a structured dict).
+SE_REPLAY_OUTCOME_REPLAY_FEASIBLE = "replay_feasible"
+SE_REPLAY_OUTCOME_OLDER_BASE_REQUIRED = "older_base_required"
+SE_REPLAY_OUTCOME_PRECONDITION_ISSUES_BLOCKING = "precondition_issues_blocking"
+
+
+def _se_replay_unresolved_outcome(
+    *,
+    amending_sfs_id: str,
+    base_sfs_id: str,
+    effective_date: str,
+    pre_date: str,
+    recovery_mode: str,
+    outcome: str,
+    reason_code: str,
+    message: str,
+    outcome_detail: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a structured ``outcome != replay_feasible`` return dict.
+
+    Replaces the previous ``raise NotImplementedError(...)`` control flow at
+    the two ``check_se_official_replay`` raise sites. The returned dict carries
+    the typed ``outcome`` / ``reason_code`` / ``message`` fields so callers can
+    dispatch on the structured signal rather than catching
+    :class:`NotImplementedError` and substring-matching the message (which is
+    what :func:`scan_se_official_replay_act` did previously).
+
+    The dict also carries empty-default fields for ``rows`` / ``target_count``
+    / ``match_count`` so defensive readers that accessed those fields (and
+    would otherwise have ``KeyError``'d on the new return shape) keep working.
+    """
+    return {
+        "amending_sfs_id": amending_sfs_id,
+        "base_sfs_id": base_sfs_id,
+        "effective_date": effective_date,
+        "pre_date": pre_date,
+        "recovery_mode": recovery_mode,
+        "outcome": outcome,
+        "reason_code": reason_code,
+        "message": message,
+        "outcome_detail": dict(outcome_detail or {}),
+        # Default-empty fields for defensive readers (the successful-return
+        # shape includes these; reproducing them as empty keeps the contract
+        # uniform across the two outcomes).
+        "rows": [],
+        "target_count": 0,
+        "match_count": 0,
+        "invariant_violations": [],
+        "typed_invariant_violations": [],
+        "adjudications": [],
+        "evidence": {"finding_rows": []},
+    }
+
+
 def check_se_official_replay(
     archive: _ArchiveLike,
     amending_sfs_id: str,
@@ -3139,9 +3196,32 @@ def check_se_official_replay(
         issues_text = ", ".join(
             f"{item['target_kind']}:{item['label']}:{item['issue']}" for item in precondition_issues
         )
-        raise NotImplementedError(
-            f"recovered Sweden base for {resolved_base_sfs_id} still lacks required replay targets "
-            f"for {amending_sfs_id}: {issues_text}"
+        # The recovered Sweden base still lacks replay targets the amending act
+        # needs. Structured ``precondition_issues_blocking`` outcome (previously
+        # a NotImplementedError that check_se_official_replay's callers had to
+        # catch and string-match -- this return surfaces the structured signal).
+        return _se_replay_unresolved_outcome(
+            amending_sfs_id=amending_sfs_id,
+            base_sfs_id=resolved_base_sfs_id,
+            effective_date=effective_date,
+            pre_date=pre_date,
+            # We only reach this path inside the older_base_required branch of
+            # ``analyze_se_official_replay_feasibility`` whose
+            # ``recovery_strategy`` is ``"older_base_required"`` — so this
+            # outcome carries ``older_base_rebuild`` as its recovery_mode
+            # (the rebuilt surface still does not satisfy the preconditions
+            # the amending act needs).
+            recovery_mode="older_base_rebuild",
+            outcome=SE_REPLAY_OUTCOME_PRECONDITION_ISSUES_BLOCKING,
+            reason_code="se_replay_recovered_base_lacks_required_targets",
+            message=(
+                f"recovered Sweden base for {resolved_base_sfs_id} still lacks required replay targets "
+                f"for {amending_sfs_id}: {issues_text}"
+            ),
+            outcome_detail={
+                "precondition_issues": list(precondition_issues),
+                "recovery_strategy": str(analysis.get("recovery_strategy") or ""),
+            },
         )
     replay_base_statute = pre_statute
     comparison_post_statute = post_statute
@@ -3184,10 +3264,38 @@ def check_se_official_replay(
             contamination_text = ", ".join(
                 f"{item['target_kind']}:{item['label']}:{item['issue']}" for item in contamination
             )
-            raise NotImplementedError(
-                f"base current surface for {resolved_base_sfs_id} already contains post-amendment targets "
-                f"before {effective_date}: {contamination_text}; "
-                "historical replay requires an older base surface or reverse patching"
+            # The base current surface already carries post-amendment state and
+            # no reverse-patching rung (self / later-chain) can clear the residual
+            # contamination. Structured ``older_base_required`` outcome
+            # (previously a NotImplementedError that check_se_official_replay's
+            # callers caught + substring-matched the message to classify the
+            # row as ``older_base_required`` -- this return surfaces the
+            # structured signal directly, no string matching required).
+            return _se_replay_unresolved_outcome(
+                amending_sfs_id=amending_sfs_id,
+                base_sfs_id=resolved_base_sfs_id,
+                effective_date=effective_date,
+                pre_date=pre_date,
+                # ``recovery_strategy`` here is ``older_base_required`` per the
+                # analyze-path's classification (contamination is residual after
+                # both the self-reverse and later-chain-reverse rungs were
+                # tried). Surface the same value as the failure's recovery_mode
+                # so the report lane's recovery_mode text does not regress to
+                # the empty ``"direct"`` default the ``else`` branch would
+                # otherwise leave bound.
+                recovery_mode=str(analysis.get("recovery_strategy") or "older_base_required"),
+                outcome=SE_REPLAY_OUTCOME_OLDER_BASE_REQUIRED,
+                reason_code="se_replay_base_surface_contains_post_amendment_targets",
+                message=(
+                    f"base current surface for {resolved_base_sfs_id} already contains post-amendment targets "
+                    f"before {effective_date}: {contamination_text}; "
+                    "historical replay requires an older base surface or reverse patching"
+                ),
+                outcome_detail={
+                    "contamination": list(contamination),
+                    "self_reverse_feasible": bool(analysis.get("self_reverse_feasible")),
+                    "later_chain_reverse_feasible": bool(analysis.get("later_chain_reverse_feasible")),
+                },
             )
     baseline_invariants = set(se_statute_invariant_violations(replay_base_statute))
     baseline_typed_invariant_messages = {
@@ -3383,6 +3491,11 @@ def check_se_official_replay(
         "effective_date_inference_rule": str(analysis.get("effective_date_inference_rule") or ""),
         "pre_date": pre_date,
         "recovery_mode": recovery_mode,
+        # Outcome signal (typed replacement for the previous NotImplementedError
+        # raise control flow -- the successful path carries the structured
+        # ``replay_feasible`` outcome so callers dispatch on the field rather
+        # than catching exceptions).
+        "outcome": SE_REPLAY_OUTCOME_REPLAY_FEASIBLE,
         "oracle_consolidation_stamp": oracle_stamp or "",
         "oracle_consolidation_sfs_id": oracle_stamp_sfs or "",
         "oracle_version_relation": oracle_version_relation,
@@ -3501,25 +3614,36 @@ def scan_se_official_replay_act(
     """
     try:
         result = check_se_official_replay(archive, amending_sfs_id)
-    except NotImplementedError as exc:
-        message = str(exc)
-        outcome = (
-            "older_base_required"
-            if "older base" in message or "lacks required replay targets" in message
-            else "error"
-        )
-        return {
-            "amending_sfs_id": amending_sfs_id,
-            "outcome": outcome,
-            "error_type": "NotImplementedError",
-            "error_detail": message,
-        }
     except (FileNotFoundError, ValueError, KeyError, AssertionError) as exc:
         return {
             "amending_sfs_id": amending_sfs_id,
             "outcome": "error",
             "error_type": type(exc).__name__,
             "error_detail": str(exc),
+        }
+    typed_outcome = str(result.get("outcome") or SE_REPLAY_OUTCOME_REPLAY_FEASIBLE)
+    if typed_outcome != SE_REPLAY_OUTCOME_REPLAY_FEASIBLE:
+        # The structured ``outcome`` signal from check_se_official_replay
+        # carries the typed  older_base_required / precondition_issues_blocking
+        # outcome (previously NotImplementedError raises that this scan caught
+        # and string-matched). For aggregate-compat the summary's top-level
+        # ``outcome`` stays ``"older_base_required"`` (matching the previous
+        # report-lane bucket name), and the typed ``reason_code`` /
+        # ``outcome_detail`` fields distinguish the two unresolved cases.
+        return {
+            "amending_sfs_id": amending_sfs_id,
+            "outcome": "older_base_required",
+            "error_type": "NotImplementedError",  # legacy compat for the
+            # ``aggregate_se_official_coverage`` error_examples bucket key —
+            # stays "NotImplementedError" so existing report tooling keeps
+            # bucketing older_base_required rows in the same lane.
+            "error_detail": str(result.get("message") or ""),
+            "typed_outcome": typed_outcome,
+            "reason_code": str(result.get("reason_code") or ""),
+            "outcome_detail": dict(result.get("outcome_detail") or {}),
+            "base_sfs_id": str(result.get("base_sfs_id") or ""),
+            "effective_date": str(result.get("effective_date") or ""),
+            "recovery_mode": str(result.get("recovery_mode") or ""),
         }
 
     rows = list(result.get("rows") or [])
