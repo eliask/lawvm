@@ -715,7 +715,8 @@ def _apply_intent_section_level(
         and any(binding.op_type == "INSERT" for binding in rop.slot_assignment.sparse_slot_bindings)
     )
     descendant_scoped_target = (
-        rop.effective_target_paragraph is not None
+        rop.resolved_target_subsection_label is not None
+        or rop.effective_target_paragraph is not None
         or rop.effective_target_item_label is not None
         or rop.effective_target_special is not None
     )

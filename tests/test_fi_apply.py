@@ -4587,6 +4587,78 @@ def test_emit_section_snapshot_keeps_part_wrapped_container_child_when_timeline_
     assert snapshot.payload.attrs["lawvm_payload_completeness_kind"] == "complete"
 
 
+def test_emit_section_snapshot_anchors_unscoped_subsection_insert_to_prior_timeline_path() -> None:
+    live_section = _sec(
+        "145f",
+        _sub("1", _content("existing first moment")),
+        _sub("2", _content("inserted second moment")),
+    )
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(live_section,),
+            )
+        )
+    )
+    lo_ops = [
+        LegalOperation(
+            op_id="snapshot_section_145f",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(
+                path=(("part", "3a"), ("chapter", "16a"), ("section", "145f"))
+            ),
+            payload=_sec("145f", _sub("1", _content("existing first moment"))),
+            source=OperationSource(statute_id="1969/628", effective="1969-10-10"),
+        )
+    ]
+    op = AmendmentOp(
+        op_id="insert_145f_sub2",
+        op_type="INSERT",
+        target_section="145f",
+        target_unit_kind="section",
+        target_paragraph=2,
+        source_statute="1973/791",
+        source_issue_date=_DATE,
+    )
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=_sec("145f", _sub("2", _content("inserted second moment"))),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="145f",
+        target_chapter=None,
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="145f",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="1973/791",
+        source_title="Insert",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(),
+        path_hint=(("hcontainer", ""), ("section", "145f")),
+    )
+
+    new_ops = lo_ops[1:]
+    assert [op.target.path for op in new_ops if "145f" in str(op.target.path)] == [
+        (("part", "3a"), ("chapter", "16a"), ("section", "145f")),
+        (("part", "3a"), ("chapter", "16a"), ("section", "145f"), ("subsection", "1")),
+        (("part", "3a"), ("chapter", "16a"), ("section", "145f"), ("subsection", "2")),
+    ]
+    assert not any(op.target.path == (("section", "145f"),) for op in new_ops)
+    assert new_ops[0].action is StructuralAction.REPLACE
+    assert new_ops[0].payload is not None
+    assert "inserted second moment" in irnode_to_text(new_ops[0].payload)
+
+
 def test_emit_section_snapshot_prefers_unique_substantive_section_over_repeal_placeholder_when_unscoped() -> None:
     from lawvm.core import tree_ops as _tops
 
@@ -14925,6 +14997,111 @@ def test_typed_insert_subsection_with_carried_section_shell_uses_descendant_disp
     assert [c.label for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION] == ["1", "2"]
     assert "inserted second moment" in irnode_to_text(new_sec)
     assert [event.helper for event in mutation_events] == ["_apply_deterministic_subsection_op"]
+
+
+def test_typed_insert_subsection_uses_unique_live_section_path_in_nested_tree() -> None:
+    from lawvm.core.canonical_intent import (
+        ExecutionContract,
+        Insert,
+        InsertOrder,
+        IntentKind,
+        NodeTarget,
+        OccupancyPolicy,
+    )
+    from lawvm.core.ir import LegalAddress
+
+    live_section = _sec("145f", _sub("1", _content("existing first moment")))
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="3a",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="16a",
+                        children=(live_section,),
+                    ),
+                ),
+            )
+        )
+    )
+    payload = _sec("145f", _sub("2", _content("inserted second moment")))
+    op = _op(op_type="INSERT", target_section="145f", target_paragraph=2)
+    slot_map = SubsectionSlotMap()
+    mapped_payload = next(c for c in payload.children if c.kind == IRNodeKind.SUBSECTION)
+    slot_map.assign(op, mapped_payload)
+    slot_assignment = SubsectionSlotAssignmentResult(
+        subsec_map=slot_map,
+        sparse_slot_bindings=(),
+        used_subs=(0,),
+        unassigned_payload_slots=(),
+    )
+    intent = Insert(
+        kind=IntentKind.INSERT,
+        target=NodeTarget(address=LegalAddress(path=(("section", "145f"), ("subsection", "2")))),
+        payload=cast(Any, payload),
+        contract=ExecutionContract(
+            occupancy=OccupancyPolicy.fresh_insert(),
+            insert_order=InsertOrder.SORTED_FAMILY,
+        ),
+    )
+    rop = _make_rop(op, intent, muutos_ir=payload, slot_assignment=slot_assignment)
+    ctx = _ctx(_body())
+    mutation_events: List[ApplyMutationEvent] = []
+
+    result = _apply_intent_section_level(
+        state,
+        rop,
+        "test",
+        ctx,
+        _LEGAL_PIT,
+        "145f § 2 mom insert",
+        payload,
+        mutation_events_out=mutation_events,
+    )
+
+    result = _modified(state, result)
+    assert not any(c.kind == IRNodeKind.SECTION and c.label == "145f" for c in result.ir.children)
+    nested = result.find_section("145f", "16a", "3a")
+    assert nested is not None
+    assert [c.label for c in nested.children if c.kind == IRNodeKind.SUBSECTION] == ["1", "2"]
+    assert "inserted second moment" in irnode_to_text(nested)
+    assert [event.helper for event in mutation_events] == ["_apply_deterministic_subsection_op"]
+    assert mutation_events[0].resolved_target_path == (
+        ("part", "3a"),
+        ("chapter", "16a"),
+        ("section", "145f"),
+        ("subsection", "2"),
+    )
+
+
+def test_resolved_op_preserves_subsection_scope_when_lo_target_names_only_section() -> None:
+    lo = LegalOperation(
+        op_id="lo_145f",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "145f"),)),
+        payload=None,
+        source=OperationSource(statute_id="1973/791"),
+    )
+    op = _op(op_type="INSERT", target_section="145f", target_paragraph=2)
+    op.lo = lo
+
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=_sec("145f", _sub("2", _content("new second moment"))),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="145f",
+        target_chapter=None,
+    )
+
+    assert rop.resolved_target_address == LegalAddress(
+        path=(("section", "145f"), ("subsection", "2"))
+    )
+    assert rop.resolved_target_subsection_label == "2"
+    assert rop.effective_target_paragraph == 2
 
 
 def test_typed_repeal_section_emits_mutation_event() -> None:

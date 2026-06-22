@@ -1223,7 +1223,10 @@ class ResolvedOp:
             if target_address is not None
             else (op.lo.target if op.lo is not None else None)
         )
-        resolved_target_address = _canonicalize_replay_address(resolved_target_address) or _synthesize_target_address(
+        resolved_target_address = _augment_replay_address_with_op_descendant_scope(
+            _canonicalize_replay_address(resolved_target_address),
+            op,
+        ) or _synthesize_target_address(
             target_unit_kind=target_unit_kind,
             target_norm=target_norm,
             target_chapter=target_chapter,
@@ -1891,6 +1894,52 @@ def _canonicalize_replay_address(address: LegalAddress | None) -> LegalAddress |
     if not changed:
         return address
     return LegalAddress(path=tuple(canonical_path), special=address.special)
+
+
+def _augment_replay_address_with_op_descendant_scope(
+    address: LegalAddress | None,
+    op: AmendmentOp,
+) -> LegalAddress | None:
+    """Preserve AmendmentOp child scope when a legacy LO only names a section."""
+    if address is None or not address.path:
+        return address
+    if op.target_unit_kind != "section":
+        return address
+    if any(kind in {"subsection", "item", "subitem"} for kind, _label in address.path):
+        return address
+    has_descendant = (
+        op.target_paragraph is not None
+        or op.target_item is not None
+        or op.target_subitem is not None
+    )
+    has_special = op.target_special is not None
+    if not has_descendant and not has_special:
+        return address
+
+    path_parts = list(address.path)
+    if op.target_paragraph is not None:
+        path_parts.append(("subsection", str(op.target_paragraph)))
+    if op.target_item is not None:
+        item_text = str(op.target_item)
+        compound = re.fullmatch(r"(\d+)([a-z])", item_text) if op.target_subitem is None else None
+        if op.target_subitem is not None:
+            if item_text.endswith(str(op.target_subitem)):
+                item_text = item_text[: -len(str(op.target_subitem))]
+            path_parts.append(("item", item_text))
+            path_parts.append(("subitem", str(op.target_subitem)))
+        elif compound is not None:
+            path_parts.append(("item", compound.group(1)))
+            path_parts.append(("subitem", compound.group(2)))
+        else:
+            path_parts.append(("item", item_text))
+
+    special = address.special
+    if special is None:
+        if op.target_special in {"otsikko", "otsikko_edella"}:
+            special = FacetKind.HEADING
+        elif op.target_special == "johd":
+            special = FacetKind.INTRO
+    return LegalAddress(path=tuple(path_parts), special=special)
 
 
 def _rebind_resolved_target_address(
