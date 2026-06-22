@@ -152,6 +152,14 @@ def recover_uncovered_body_ops(
                 preparation.context.source_owned_insert_chapter_labels
             ),
             part_insert_labels=set(preparation.context.part_insert_labels),
+            johto_whole_section_targets=set(preparation.context.johto_whole_section_targets),
+            johto_insert_section_targets=set(preparation.context.johto_insert_section_targets),
+            johto_named_subprovision_section_targets=set(
+                preparation.context.johto_named_subprovision_section_targets
+            ),
+            johto_insert_subsection_section_targets=set(
+                preparation.context.johto_insert_subsection_section_targets
+            ),
         ),
         findings_out=sinks.findings_out,
         source_statute=request.ctx.id,

@@ -642,7 +642,9 @@ def _classify_payload_completeness(
             "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
             "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
             "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
+            _SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE,
             _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+            _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
             "ELAB.CONTAINER_PRUNED_SHADOWED",
         }
     ):
@@ -656,7 +658,9 @@ def _classify_payload_completeness(
                 "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
                 "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
                 "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
+                _SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE,
                 _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+                _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
                 "ELAB.CONTAINER_PRUNED_SHADOWED",
             }
         )
@@ -699,6 +703,8 @@ def _unsupported_payload_rejected_ops(
     reason = "ELAB." + reason_code
     generated: list[FailedOp] = []
     for op in group_ops:
+        if op.op_type == "RENUMBER":
+            continue
         key = (
             op.description(),
             op.target_unit_kind,
@@ -813,6 +819,7 @@ def _slot_ir_has_item(node: IRNode, target: str) -> bool:
     if compound_parent_seen and compound_flat_subitem_seen:
         return True
     sub_text = (node.text or " ".join(child.text or "" for child in node.children)).strip()
+    # lawvm-regex: owning_parser P-item-prefix flat ``N)`` item-label predicate over IR sub text; lexer-shaped, drives slot assignment, no op
     m = re.match(r"^(\d+[a-zA-Z]*)\)", sub_text)
     return bool(m and leaf_label_identity_key(m.group(1)) == target_key)
 
@@ -980,6 +987,117 @@ def _assign_multi_paragraph_item_slot_ops(
     for op in item_ops:
         idx, sub = paragraph_to_slot[int(op.target_paragraph or 0)]
         state.subsec_map.assign(op, sub)
+        state.used_subs.add(idx)
+
+
+def _table_rows_from_content_only_subsection(subsection: IRNode) -> tuple[str, ...]:
+    if subsection.kind is not IRNodeKind.SUBSECTION:
+        return ()
+    content_children = [
+        child
+        for child in subsection.children
+        if child.kind is IRNodeKind.CONTENT and irnode_to_text(child).strip()
+    ]
+    if len(content_children) != 1:
+        return ()
+    if any(
+        child.kind is not IRNodeKind.CONTENT and child.kind is not IRNodeKind.OMISSION
+        for child in subsection.children
+    ):
+        return ()
+    tables = [
+        child
+        for child in content_children[0].children
+        if child.kind is IRNodeKind.TABLE
+    ]
+    if len(tables) != 1:
+        return ()
+    rows: list[str] = []
+    for row in tables[0].children:
+        if row.kind is not IRNodeKind.ROW:
+            return ()
+        text = " ".join(irnode_to_text(row).split())
+        if not text:
+            return ()
+        rows.append(text)
+    return tuple(rows)
+
+
+def _item_table_row_payload_subsection(
+    source_subsection: IRNode,
+    op: AmendmentOp,
+    row_text: str,
+) -> IRNode:
+    item_label = str(op.target_item or "")
+    return IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label=str(op.target_paragraph or source_subsection.label or ""),
+        attrs=dict(source_subsection.attrs),
+        children=(
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=item_label,
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text=f"{item_label})"),
+                    IRNode(kind=IRNodeKind.CONTENT, text=row_text),
+                ),
+            ),
+        ),
+    )
+
+
+def _assign_unlabeled_table_item_row_ops(
+    slot_inputs: SubsectionSlotInputs,
+    state: SubsectionSlotAssignmentState,
+) -> None:
+    """Bind same-moment item ops to unlabeled source table rows by source order."""
+    item_ops = [
+        op
+        for op in slot_inputs.payload_subsec_ops
+        if (
+            op not in state.subsec_map
+            and op.target_item
+            and op.target_paragraph is not None
+            and op.op_type in {"REPLACE", "INSERT"}
+        )
+    ]
+    if len(item_ops) < 2:
+        return
+
+    paragraphs = sorted({int(op.target_paragraph or 0) for op in item_ops})
+    for paragraph in paragraphs:
+        ops_for_paragraph = [
+            op for op in item_ops if int(op.target_paragraph or 0) == paragraph
+        ]
+        if len(ops_for_paragraph) < 2:
+            continue
+        free_slots = [
+            (idx, sub)
+            for idx, sub in enumerate(slot_inputs.amend_subs)
+            if idx not in state.used_subs
+        ]
+        if len(free_slots) != 1:
+            continue
+        idx, sub = free_slots[0]
+        rows = _table_rows_from_content_only_subsection(sub)
+        if len(rows) != len(ops_for_paragraph):
+            continue
+        for op, row_text in zip(ops_for_paragraph, rows, strict=True):
+            state.subsec_map.assign(
+                op,
+                _item_table_row_payload_subsection(sub, op, row_text),
+            )
+            state.binding_rule_by_op_id[id(op)] = "unlabeled_table_item_row_source_order"
+            state.binding_observations.append(
+                _obs(
+                    "ELAB.UNLABELED_TABLE_ITEM_ROW_SOURCE_ORDER",
+                    "sparse_subsection_elaboration",
+                    target_paragraph=op.target_paragraph,
+                    target_item=str(op.target_item or ""),
+                    payload_slot_label=str(sub.label or ""),
+                    op_description=op.description(),
+                )
+            )
         state.used_subs.add(idx)
 
 
@@ -1457,6 +1575,7 @@ def _assign_item_prefix_slot_ops(
         item_norm = leaf_label_identity_key(str(op.target_item))
         for sub in slot_inputs.amend_subs:
             sub_text = (sub.text or " ".join(child.text or "" for child in sub.children)).strip()
+            # lawvm-regex: owning_parser P-item-prefix flat ``N)`` item-label predicate over IR sub text; lexer-shaped
             m = re.match(r"^(\d+[a-zA-Z]*)\)", sub_text)
             if m and leaf_label_identity_key(m.group(1)) == item_norm:
                 state.subsec_map.assign(op, sub)
@@ -1823,6 +1942,7 @@ def _fold_intro_list_continuation_subsection_before_omission(
             if (op.target_paragraph is not None and not op.target_item and op.op_type in ("REPLACE", "INSERT"))
         }
     )
+    subsection_payload_count = sum(1 for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION)
     item_subsection_targets = {
         int(op.target_paragraph)
         for op in (group_ops or [])
@@ -1879,6 +1999,10 @@ def _fold_intro_list_continuation_subsection_before_omission(
                 later_subsection_exists
                 and continuation_text[:1].islower()
             )
+            if len(plain_subsection_targets) >= 2 and subsection_payload_count == len(plain_subsection_targets):
+                new_children.append(child)
+                i += 1
+                continue
             if int(continuation.label) in plain_subsection_targets and not continuation_is_tail_artifact:
                 new_children.append(child)
                 i += 1
@@ -2133,6 +2257,97 @@ def _split_flattened_insert_subsection_tail(
     return _tops._with_children(muutos_ir, new_children), True
 
 
+def _fold_single_insert_subsection_list_tail(
+    ctx: PayloadElaborationContext,
+    target_unit_kind: TargetUnitKind,
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> tuple[Optional[IRNode], dict[str, object] | None]:
+    """Fold a sibling tail into the one explicitly inserted list-shaped moment.
+
+    Some historical Finlex XML serializes ``lisätään ... uusi N momentti`` as
+    two post-omission subsections: the first carries an intro/list, while the
+    second is a content-only condition or wrap-up for the last list item.  The
+    preamble still claims exactly one new moment, so the tail is source-owned
+    by that moment; expanding it into ``N+1 momentti`` invents legal structure.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return muutos_ir, None
+
+    plain_insert_ops = [
+        op
+        for op in group_ops
+        if (op.op_type == "INSERT" and op.target_paragraph is not None and not op.target_item and not op.target_special)
+    ]
+    if len(plain_insert_ops) != 1:
+        return muutos_ir, None
+
+    master_sec = ctx.live_node
+    if master_sec is None or master_sec.kind is not IRNodeKind.SECTION:
+        return muutos_ir, None
+    live_subsecs = [child for child in master_sec.children if child.kind == IRNodeKind.SUBSECTION]
+    target = int(plain_insert_ops[0].target_paragraph or 0)
+    if target != len(live_subsecs) + 1:
+        return muutos_ir, None
+
+    omission_idx = next(
+        (idx for idx, child in enumerate(muutos_ir.children) if child.kind == IRNodeKind.OMISSION),
+        None,
+    )
+    if omission_idx is None:
+        return muutos_ir, None
+    trailing_pairs = [
+        (idx, child)
+        for idx, child in enumerate(muutos_ir.children[omission_idx + 1 :], start=omission_idx + 1)
+        if child.kind is IRNodeKind.SUBSECTION
+    ]
+    if len(trailing_pairs) != 2:
+        return muutos_ir, None
+
+    (prefix_idx, prefix_sub), (tail_idx, tail_sub) = trailing_pairs
+    if tail_idx != prefix_idx + 1:
+        return muutos_ir, None
+    trailing_labels = [(sub.label or "").strip() for _, sub in trailing_pairs]
+    if any(label and not label.isdigit() for label in trailing_labels):
+        return muutos_ir, None
+    if any(trailing_labels):
+        dense_local = ["1", "2"]
+        dense_target = [str(target), str(target + 1)]
+        if trailing_labels not in (dense_local, dense_target):
+            return muutos_ir, None
+
+    if not _is_intro_list_subsection_ir(prefix_sub):
+        return muutos_ir, None
+    tail_text = _content_only_non_item_subsection_text(tail_sub)
+    if tail_text is None:
+        return muutos_ir, None
+
+    folded = _with_payload_normalization_rule(
+        IRNode(
+            kind=prefix_sub.kind,
+            label=str(target),
+            text=prefix_sub.text,
+            attrs=dict(prefix_sub.attrs),
+            children=tuple(prefix_sub.children)
+            + (IRNode(kind=IRNodeKind.WRAP_UP, text=tail_text),),
+        ),
+        _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
+    )
+    new_children = [
+        folded if idx == prefix_idx else child
+        for idx, child in enumerate(muutos_ir.children)
+        if idx != tail_idx
+    ]
+    detail: dict[str, object] = {
+        "target_paragraph": target,
+        "prefix_payload_slot_label": str(prefix_sub.label or ""),
+        "tail_payload_slot_label": str(tail_sub.label or ""),
+        "tail_text_chars": len(tail_text),
+        "rule": _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
+    }
+    return _tops._with_children(muutos_ir, new_children), detail
+
+
 @dataclass(frozen=True, slots=True)
 class FlattenedListRow:
     """One content-only subsection row from a flattened list payload."""
@@ -2165,6 +2380,7 @@ class LeadingSubsectionHeadingPayloadResult:
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
 _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE = "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL"
+_FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE = "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL"
 _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
 _LEADING_SUBSECTION_HEADING_PAYLOAD_RULE = "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD"
 _TEXT_TABLE_ROW_CONTINUATION_RULE = "ELAB.TEXT_TABLE_ROW_CONTINUATION"
@@ -2172,6 +2388,7 @@ _TEXT_TABLE_ROW_CONTINUATION_RULE = "ELAB.TEXT_TABLE_ROW_CONTINUATION"
 
 def _flattened_list_row_from_text(text: str) -> Optional[FlattenedListRow]:
     flat_text = " ".join(text.split())
+    # lawvm-regex: owning_parser P-item-prefix flattened-list-row recognizer over normalized local text; lexer-shaped
     m = re.match(r"^(\d+|[a-z])\s*[\).]\s*(.+)$", flat_text, flags=re.I)
     if m is None:
         return None
@@ -2726,6 +2943,7 @@ def _content_only_non_item_subsection_text(sub: IRNode) -> Optional[str]:
     if child.kind is not IRNodeKind.CONTENT:
         return None
     text = irnode_to_text(child).strip()
+    # lawvm-regex: owning_parser P-item-prefix numbered-prefix guard over the normalizer's OWN child IR text (irnode_to_text self-read, §1.12); lexer-shaped, no op
     if not text or re.match(r"^\d+[.)]\s+", text):
         return None
     return text
@@ -3060,6 +3278,7 @@ def _fold_continuation_row_subsections_into_previous_subsection(
             continue
 
         base_text = _content_text(child)
+        # lawvm-regex: owning_parser P-continuation continuation-row prefix predicate over IR content text; lexer-shaped
         if not base_text or _CONTINUATION_ROW_PREFIX_RE.match(base_text):
             new_children.append(child)
             i += 1
@@ -3072,6 +3291,7 @@ def _fold_continuation_row_subsections_into_previous_subsection(
             if sibling.kind is not IRNodeKind.SUBSECTION:
                 break
             row_text = _content_text(sibling)
+            # lawvm-regex: owning_parser P-continuation continuation-row prefix predicate over IR content text; lexer-shaped
             m = _CONTINUATION_ROW_PREFIX_RE.match(row_text)
             if not m:
                 break
@@ -3236,6 +3456,7 @@ def _normalize_item_like_target(
     def _is_flat_numbered_item_sub(sub: IRNode) -> bool:
         if any(c.kind is IRNodeKind.PARAGRAPH for c in sub.children):
             return False
+        # lawvm-regex: owning_parser P-item-prefix flat-numbered-item predicate over IR sub text; lexer-shaped
         return re.match(r"^(\d+[a-zA-Z]*)\)", _sub_text(sub)) is not None
 
     if (
@@ -3258,11 +3479,17 @@ def _normalize_item_like_target(
     amend_subs = [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION] if muutos_ir is not None else []
     if len(amend_subs) > 1 and not all(_is_flat_numbered_item_sub(sub) for sub in amend_subs):
         return op
+    if amend_subs and any(
+        _norm_num_token(sub.label or "") == str(op.target_paragraph)
+        for sub in amend_subs
+    ):
+        return op
     if amend_subs and op.target_paragraph <= len(amend_subs):
         return op
     if amend_subs and not any(c.kind is IRNodeKind.PARAGRAPH for c in amend_subs[0].children):
         flat_match = False
         for sub in amend_subs:
+            # lawvm-regex: owning_parser P-item-prefix flat-match slot routing predicate over IR sub text; lexer-shaped
             m = re.match(r"^(\d+[a-zA-Z]*)\)", _sub_text(sub))
             if m and _norm_num_token(m.group(1)) == str(op.target_paragraph):
                 flat_match = True
@@ -3296,6 +3523,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     ) = None,
     recodification_transfer_context: bool = False,
     expected_heading_only: bool = False,
+    preserve_dense_new_container_payload: bool = False,
 ) -> ContainerPayloadPruningResult:
     """Drop malformed container payload sections that are targeted separately.
 
@@ -3356,6 +3584,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
                     return label or None
 
         # Family-base fallback: '20a' → try '20'
+        # lawvm-regex: owning_parser family-base ``20a``→``20`` fallback lexer over a normalized label
         m = re.match(r"^(\d+)[a-z]", _norm_num_token(section_label))
         if m:
             base = m.group(1)
@@ -3479,7 +3708,10 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
             pruned_witnesses.append(child_witness)
             continue
         if child_label in foreign_scoped_standalone_section_targets:
-            if foreign_replace_payload_overlap:
+            if foreign_replace_payload_overlap and not (
+                preserve_dense_new_container_payload
+                and has_dense_foreign_replace_bridge
+            ):
                 changed = True
                 pruned_labels.append(child_label)
                 pruned_witnesses.append(child_witness)
@@ -3647,6 +3879,7 @@ def _split_historical_top_level_kohta_payload_ir(
         if child.kind is not IRNodeKind.PARAGRAPH:
             continue
         text = irnode_to_text(child).strip()
+        # lawvm-regex: owning_parser P-item-prefix parenthesized ``(N)`` label predicate over the normalizer's OWN child IR text (irnode_to_text self-read, §1.12); lexer-shaped
         match = re.match(r"^\((\d+(?:\s*[a-z])?)\)", text)
         if match is None:
             continue
@@ -4362,7 +4595,63 @@ def _split_sparse_omission_single_subsection_across_consecutive_replaces(
         return muutos_ir, False
 
     def _collapse_ws(text: str) -> str:
-        return re.sub(r"\s+", " ", text).strip()
+        return " ".join(text.split()).strip()
+
+    def _sentence_start_offsets(text: str) -> list[int]:
+        starts = [0]
+        idx = 0
+        while idx < len(text):
+            if text[idx] not in ".!?":
+                idx += 1
+                continue
+            cursor = idx + 1
+            while cursor < len(text) and text[cursor].isspace():
+                cursor += 1
+            if cursor < len(text) and text[cursor].isupper():
+                starts.append(cursor)
+            idx = cursor
+        return starts
+
+    def _first_sentence(text: str) -> str:
+        starts = _sentence_start_offsets(text)
+        if len(starts) < 2:
+            return text.strip()
+        return text[: starts[1]].strip()
+
+    def _sentence_at(text: str, start: int, starts: list[int]) -> str:
+        next_start = next((candidate for candidate in starts if candidate > start), len(text))
+        return text[start:next_start].strip()
+
+    def _shared_word_prefix_len(left: str, right: str) -> int:
+        count = 0
+        for left_word, right_word in zip(left.split(), right.split(), strict=False):
+            if left_word != right_word:
+                break
+            count += 1
+        return count
+
+    def _find_changed_live_sentence_anchor(
+        payload: str,
+        live_first_sentence: str,
+        *,
+        after: int,
+    ) -> int | None:
+        starts = _sentence_start_offsets(payload)
+        for candidate in starts:
+            if candidate <= after:
+                continue
+            payload_sentence = _sentence_at(payload, candidate, starts)
+            if not payload_sentence:
+                continue
+            if _shared_word_prefix_len(payload_sentence, live_first_sentence) >= 8:
+                return candidate
+            if (
+                len(payload_sentence) >= 48
+                and len(live_first_sentence) >= 48
+                and SequenceMatcher(None, payload_sentence, live_first_sentence).ratio() >= 0.72
+            ):
+                return candidate
+        return None
 
     payload_text = _collapse_ws(irnode_to_text(amend_subs[0]))
     if not payload_text:
@@ -4374,11 +4663,15 @@ def _split_sparse_omission_single_subsection_across_consecutive_replaces(
         live_text = _collapse_ws(irnode_to_text(live_subs[target]))
         if not live_text:
             return muutos_ir, False
-        first_sentence = re.split(r"(?<=[.!?])\s+", live_text, maxsplit=1)[0].strip()
+        first_sentence = _first_sentence(live_text)
         anchor = first_sentence if len(first_sentence) >= 32 else " ".join(live_text.split()[:8])
         if len(anchor.split()) < 4:
             return muutos_ir, False
         pos = payload_text.find(anchor, search_start + 1)
+        if pos <= search_start:
+            pos = _find_changed_live_sentence_anchor(payload_text, first_sentence, after=search_start)
+            if pos is None:
+                return muutos_ir, False
         if pos <= search_start:
             return muutos_ir, False
         split_points.append(pos)
@@ -4416,6 +4709,118 @@ def _split_sparse_omission_single_subsection_across_consecutive_replaces(
     if not replaced:
         return muutos_ir, False
     return _tops._with_children(muutos_ir, new_children), True
+
+
+_SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE = (
+    "ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL"
+)
+
+
+def _split_single_target_subsection_carried_live_tail(
+    ctx: PayloadElaborationContext,
+    target_unit_kind: TargetUnitKind,
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> tuple[Optional[IRNode], dict[str, object] | None]:
+    """Trim carried later live moments out of one explicitly targeted moment.
+
+    Some historical Finlex amendment XML wraps the changed first moment together
+    with the unchanged following moment in one source ``subsection`` even though
+    the johtolause targets only ``N §:n 1 momentti`` and the source section then
+    carries an omission marker.  After omission alignment, the following live
+    moment also appears as its own subsection.  Keeping it inside the target slot
+    makes replay duplicate that text under PIT materialization.
+
+    This rule only uses typed scope and exact live-sibling text as evidence.  It
+    does not infer from Finnish prose substrings.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return muutos_ir, None
+    if ctx.live_node is None or ctx.live_node.kind is not IRNodeKind.SECTION:
+        return muutos_ir, None
+
+    plain_targets = sorted(
+        {
+            int(op.target_paragraph)
+            for op in group_ops
+            if (
+                op.op_type in {"REPLACE", "INSERT"}
+                and op.target_paragraph is not None
+                and not op.target_item
+                and not op.target_special
+            )
+        }
+    )
+    if len(plain_targets) != 1:
+        return muutos_ir, None
+    if any(
+        op.target_paragraph is not None
+        and (
+            bool(op.target_item)
+            or bool(op.target_special)
+            or int(op.target_paragraph) != plain_targets[0]
+        )
+        for op in group_ops
+    ):
+        return muutos_ir, None
+
+    target_label = str(plain_targets[0])
+    amend_subs = [child for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION and child.label]
+    if len(amend_subs) != 1:
+        return muutos_ir, None
+    target_sub = next((child for child in amend_subs if _norm_num_token(child.label or "") == target_label), None)
+    if target_sub is None:
+        return muutos_ir, None
+    target_index = next(idx for idx, child in enumerate(muutos_ir.children) if child is target_sub)
+    if not any(child.kind is IRNodeKind.OMISSION for child in muutos_ir.children[target_index + 1 :]):
+        return muutos_ir, None
+    if len(target_sub.children) != 1 or target_sub.children[0].kind is not IRNodeKind.CONTENT:
+        return muutos_ir, None
+
+    def _collapse_ws(text: str) -> str:
+        return " ".join(text.split()).strip()
+
+    target_text = _collapse_ws(irnode_to_text(target_sub))
+    if not target_text:
+        return muutos_ir, None
+
+    live_subs = [
+        child
+        for child in ctx.live_node.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label and _norm_num_token(child.label).isdigit()
+    ]
+    live_by_label = {_norm_num_token(child.label or ""): child for child in live_subs}
+    carried_anchors: list[tuple[str, int]] = []
+    for live_label, live_sub in live_by_label.items():
+        if int(live_label) <= plain_targets[0]:
+            continue
+        live_text = _collapse_ws(irnode_to_text(live_sub))
+        if not live_text:
+            continue
+        pos = target_text.find(live_text)
+        if pos > 0:
+            carried_anchors.append((live_label, pos))
+    if not carried_anchors:
+        return muutos_ir, None
+
+    carried_label, split_pos = min(carried_anchors, key=lambda item: item[1])
+    retained_text = target_text[:split_pos].strip()
+    if not retained_text:
+        return muutos_ir, None
+
+    replacement_target = IRNode(
+        kind=target_sub.kind,
+        label=target_sub.label,
+        text=target_sub.text,
+        attrs=dict(target_sub.attrs),
+        children=(IRNode(kind=IRNodeKind.CONTENT, text=retained_text),),
+    )
+    new_children = [replacement_target if child is target_sub else child for child in muutos_ir.children]
+    return _tops._with_children(muutos_ir, new_children), {
+        "target_subsection": target_label,
+        "first_carried_subsection": carried_label,
+        "carried_subsections": [label for label, _pos in carried_anchors],
+    }
 
 
 def _build_subsection_override_map(
@@ -4465,6 +4870,7 @@ def _assign_subsection_slots(
     _assign_insert_before_moved_same_target_slot_ops(slot_inputs, state)
     _assign_duplicate_target_slot_ops(slot_inputs, state)
     _assign_multi_paragraph_item_slot_ops(slot_inputs, state)
+    _assign_unlabeled_table_item_row_ops(slot_inputs, state)
     _assign_item_matched_slot_ops(slot_inputs, state)
     _assign_shared_sparse_item_slot_ops(slot_inputs, state)
     _assign_dense_local_target_groups(slot_inputs, state)
@@ -5000,6 +5406,7 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
                     and _live_para_has_specific_item(op.target_paragraph, item_norm)
                     and other.op_type == "REPLACE"
                     and other.target_item is not None
+                    # lawvm-regex: owning_parser compound-item-label shape predicate over a normalized label; lexer-shaped
                     and re.match(r"^\d+[a-z]$", item_norm)
                     and item_norm.rstrip("abcdefghijklmnopqrstuvwxyz")
                     == leaf_label_identity_key(str(other.target_item))
@@ -6399,6 +6806,14 @@ def elaborate_payload_against_live(
         foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
         recodification_transfer_context=recodification_transfer_context,
         expected_heading_only=_container_pruning_is_expected_heading_only(group_ops),
+        preserve_dense_new_container_payload=any(
+            op.op_type == "INSERT"
+            and op.target_unit_kind == target_unit_kind
+            and _norm_num_token(op.target_section or op.target_chapter or op.target_part or "")
+            == target_norm
+            for op in group_ops
+        )
+        and (target_unit_kind != "chapter" or ctx.target_part is not None),
     )
     muutos_ir = pruning_result.muutos_ir
     payload_pruned = pruning_result.changed
@@ -6464,6 +6879,22 @@ def elaborate_payload_against_live(
                 "group_payload_normalization",
                 target_unit_kind=target_unit_kind,
                 target_norm=target_norm,
+            )
+        )
+    muutos_ir, carried_live_tail_detail = _split_single_target_subsection_carried_live_tail(
+        ctx,
+        target_unit_kind,
+        muutos_ir,
+        group_ops,
+    )
+    if carried_live_tail_detail is not None:
+        observations.append(
+            _obs(
+                _SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                **carried_live_tail_detail,
             )
         )
     muutos_ir, fused_restart_split = _split_fused_restarted_subsection_across_consecutive_replaces(
@@ -6583,6 +7014,22 @@ def elaborate_payload_against_live(
                 rewrites=normalized_item_like_target_rewrites,
                 target_unit_kind=target_unit_kind,
                 target_norm=target_norm,
+            )
+        )
+    muutos_ir, single_insert_tail_detail = _fold_single_insert_subsection_list_tail(
+        ctx,
+        target_unit_kind,
+        muutos_ir,
+        group_ops,
+    )
+    if single_insert_tail_detail is not None:
+        observations.append(
+            _obs(
+                _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                **single_insert_tail_detail,
             )
         )
     group_ops = _expand_post_omission_tail_insert_subsections(

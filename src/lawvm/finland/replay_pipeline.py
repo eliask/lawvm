@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional
+
+if TYPE_CHECKING:
+    from lawvm.core.stage_result import StageResult
 
 from lawvm.corpus_store import CorpusStore
 from lawvm.core.effect_lifecycle import (
@@ -105,6 +108,10 @@ class ReplaySignalBuffers:
     effect_relations: list[EffectRelation]
     effect_lifecycle_events: list[EffectLifecycleEvent]
     restructure_plans: list[StructuralTransformPlan]
+    # WAIST #6 carrier buffer: per-amendment canonical-op StageResult accounts
+    # appended by ``compile_amendment_ops`` (via the process sinks). Aggregated at
+    # replay assembly into ``ReplayProducts.canonical_op_stage``.
+    canonical_op_stages: list["StageResult[Any]"]
 
     @classmethod
     def empty(cls) -> "ReplaySignalBuffers":
@@ -126,6 +133,7 @@ class ReplaySignalBuffers:
             effect_relations=[],
             effect_lifecycle_events=[],
             restructure_plans=[],
+            canonical_op_stages=[],
         )
 
     @classmethod
@@ -184,6 +192,7 @@ class ReplaySignalBuffers:
             restructure_plans=(
                 restructure_plans_out if restructure_plans_out is not None else []
             ),
+            canonical_op_stages=[],
         )
 
     def process_sinks(
@@ -210,6 +219,7 @@ class ReplaySignalBuffers:
             write_receipts_out=self.write_receipts,
             migration_events_out=migration_events_out,
             restructure_plans_out=self.restructure_plans,
+            canonical_op_stages_out=self.canonical_op_stages,
         )
 
 

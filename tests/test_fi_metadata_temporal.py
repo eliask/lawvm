@@ -9,13 +9,16 @@ from lawvm.core.semantic_types import FacetKind
 from lawvm.finland.metadata import (
     _amendment_effective_date_with_step,
     _amendment_expiry_date,
+    _chapter_commencement_effective_overrides,
     _commencement_expiry_override,
     _expiry_date_precedes_effective_date,
     _infer_expiry_date_from_temporary_payload_text,
     _normalize_fi_parse_text,
     _section_commencement_effective_override,
+    _section_subsection_application_commencement_effective_override,
     _section_subsection_commencement_effective_override,
     _temporary_provision_expiry_overrides,
+    _temporary_section_applicability_windows,
     _temporary_section_expiry_overrides,
     _temporary_section_expiry_override,
 )
@@ -508,6 +511,31 @@ def test_temporary_section_expiry_override_em_dash_range() -> None:
     assert expiry.isoformat() == "2016-12-31"
 
 
+def test_temporary_section_expiry_override_parses_applicability_transfer_window() -> None:
+    """Amendment 2007/171 style: section applicability is limited by a transfer window."""
+    text = (
+        "Tämä laki tulee voimaan 23 päivänä helmikuuta 2007. "
+        "Lain 43 b ja 43 c §:ää sovelletaan luovutukseen, joka tapahtuu "
+        "1 päivän tammikuuta 2007 ja 31 päivän joulukuuta 2012 välisenä aikana."
+    )
+    tree = _tree(text)
+    windows = _temporary_section_applicability_windows(text, "2007/171")
+    assert len(windows) == 1
+    window = windows[0]
+    assert window.target_mid == "2007/171"
+    assert window.sections == frozenset({"43b", "43c"})
+    assert window.start.isoformat() == "2007-01-01"
+    assert window.expiry.isoformat() == "2012-12-31"
+    assert window.rule_id == "fi_temporary_section_applicability_window"
+
+    override = _temporary_section_expiry_override(tree, "2007/171")
+    assert override is not None
+    target_mid, labels, expiry = override
+    assert target_mid == "2007/171"
+    assert labels == {"43b", "43c"}
+    assert expiry.isoformat() == "2012-12-31"
+
+
 def test_amendment_expiry_date_phased_entry_lakkaa_returns_none() -> None:
     """Section-selective 'lakkaa olemasta voimassa' must NOT set whole-amendment expiry.
 
@@ -849,6 +877,20 @@ def test_section_commencement_effective_override_single_section_unchanged() -> N
     assert effective.isoformat() == "2023-07-01"
 
 
+def test_chapter_commencement_effective_overrides_parse_staged_chapter_clauses() -> None:
+    tree = _tree(
+        "Tämän lain 1, 6 ja 6 a luku tulevat voimaan 19 päivänä kesäkuuta 2026. "
+        "Lain 7 ja 7 a luku tulevat kuitenkin voimaan vasta 20 päivänä marraskuuta 2026."
+    )
+
+    overrides = _chapter_commencement_effective_overrides(tree, "2026/31")
+
+    assert overrides == (
+        ("2026/31", frozenset({"1", "6", "6a"}), dt.date(2026, 6, 19)),
+        ("2026/31", frozenset({"7", "7a"}), dt.date(2026, 11, 20)),
+    )
+
+
 def test_subsection_commencement_effective_override_mixed_enumeration() -> None:
     tree = _tree(
         "Tämä laki tulee voimaan 1 päivänä tammikuuta 2023. "
@@ -910,6 +952,34 @@ def test_subsection_commencement_effective_override_parses_mixed_child_and_repea
         LegalAddress(path=(("section", "12"), ("subsection", "1"))),
     }
     assert effective.isoformat() == "2026-01-01"
+
+
+def test_subsection_application_commencement_effective_override_parses_scoped_application_date() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan valtioneuvoston asetuksella säädettävänä ajankohtana. "
+        "Lain 4 §:n 2 momenttia sovelletaan kuitenkin 1 päivänä tammikuuta 2007 "
+        "tai sen jälkeen aiheutuneista kustannuksista maksettavaan tukeen."
+    )
+
+    override = _section_subsection_application_commencement_effective_override(tree, "2006/1322")
+
+    assert override is not None
+    target_mid, addresses, effective = override
+    assert target_mid == "2006/1322"
+    assert addresses == (LegalAddress(path=(("section", "4"), ("subsection", "2"))),)
+    assert effective.isoformat() == "2007-01-01"
+
+
+def test_subsection_application_commencement_effective_override_rejects_fixed_transition() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2024. "
+        "Lain 4 §:n 2 momenttia sovelletaan kuitenkin 1 päivänä tammikuuta 2024 "
+        "tai sen jälkeen vireille tuleviin asioihin."
+    )
+
+    override = _section_subsection_application_commencement_effective_override(tree, "2023/1")
+
+    assert override is None
 
 
 def test_temporary_provision_expiry_overrides_compose_subref_grammar_and_canonical_date() -> None:

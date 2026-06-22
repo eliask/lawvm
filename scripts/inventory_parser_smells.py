@@ -17,6 +17,7 @@ un-waived semantic-plane count may never increase, only fall.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 from collections import Counter
@@ -105,23 +106,114 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/transparent_store.py": "source_plane",
     "src/lawvm/finland/finlex_api.py": "source_plane",
     "src/lawvm/finland/xml_ir.py": "source_plane",
+    # eId / locator / AKN-component / version-suffix parsers (no legal prose):
+    "src/lawvm/finland/section_text_extractor.py": "source_plane",
+    "src/lawvm/finland/section_resolver.py": "source_plane",
+    "src/lawvm/finland/provision_ref_locator.py": "source_plane",
+    "src/lawvm/finland/interlink_targets.py": "source_plane",
+    "src/lawvm/finland/editorial_adjudication.py": "source_plane",
+    # PDF/XML corrigendum corrector: parses corrigendum PDF text + AKN XML and
+    # emits CORRECTED XML bytes (text_replace on bytes) consumed pre-parse; the
+    # derived LegalAddress is metadata only (not a patch-lookup target). No
+    # timeline op / legal-state is minted from these regexes (C4 triage).
+    "src/lawvm/finland/corrigendum.py": "source_plane",
+    # finlex:// locator + FRBR/AKN identity-byte parsing for canonical artifact
+    # identity / version derivation. Plane A throughout (C4 triage).
+    "src/lawvm/finland/consolidated_artifacts.py": "source_plane",
+    # Source-fact amendment->parent edge discovery over consolidated oracle
+    # metadata; johtolause gating is delegated to the owning citation router, not
+    # local regex. Index/identity layer, not a timeline producer (C4 triage).
+    "src/lawvm/finland/amendment_index.py": "source_plane",
+    # HTML/RSC oracle ingest: regex heading fallback when JSON parse fails. Plane
+    # A byte/HTML ingest (C4 triage).
+    "src/lawvm/finland/finlex_html.py": "source_plane",
+    # Own-source structural normalization between raw XML parse and body-pairing:
+    # every regex reads an IRNode label/text/irnode_to_text of the node being
+    # normalized (plane-A source-IR, the module's own input); every rewrite emits
+    # a witnessed SourceNormalizationFact reaching production (RB-C triage).
+    "src/lawvm/finland/source_normalize.py": "source_plane",
     # --- lexer (B): label / numeric-token normalization only ---
     "src/lawvm/core/tree_ops.py": "lexer",
     "src/lawvm/finland/labels.py": "lexer",
     "src/lawvm/finland/profile/normalize.py": "lexer",
+    # --- lexer (B): johtolause tokenizer (raw johto fragment -> Token) ---
+    "src/lawvm/finland/johtolause/lexer.py": "lexer",
+    # Shared FI date lexer (E1c): pure day-month-year/year-end token recognizer
+    # over already-located clause text; returns value+form, mints no legal state.
+    "src/lawvm/finland/fi_dates.py": "lexer",
     # --- owning parser (B): the canonical parser for a construction family ---
     "src/lawvm/finland/johtolause/api.py": "owning_parser",
     "src/lawvm/finland/johtolause/clause_patterns.py": "owning_parser",
     "src/lawvm/finland/johtolause/clause_surface.py": "owning_parser",
+    "src/lawvm/finland/johtolause/affected_statute.py": "owning_parser",
+    "src/lawvm/finland/johtolause/surface_parse.py": "owning_parser",
+    "src/lawvm/finland/johtolause/grammar/sections.py": "owning_parser",
+    "src/lawvm/finland/johtolause_supplements.py": "owning_parser",
+    "src/lawvm/finland/claim_kinds/inline_statute_resolution.py": "owning_parser",
     "src/lawvm/finland/legal_surface/delegation_parse.py": "owning_parser",
     "src/lawvm/finland/legal_surface/modal_parse.py": "owning_parser",
     "src/lawvm/finland/references/by_name.py": "owning_parser",
     "src/lawvm/finland/references/sections.py": "owning_parser",
     "src/lawvm/finland/amendment_payload_lookup.py": "owning_parser",
+    # references/ core owning recognizers (C5 triage: each OWNS a reference family
+    # per notes/FI_REFERENCE_CATALOGUE.md §4; regex feeds the family parser over the
+    # module's OWN prose / AKN-id surface — mirrors the by_name / sections preclear).
+    "src/lawvm/finland/references/ref_mention_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/internal_refs.py": "owning_parser",
+    "src/lawvm/finland/references/inline_citation_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/cross_refs.py": "owning_parser",
+    "src/lawvm/finland/references/eu_reference.py": "owning_parser",
+    "src/lawvm/finland/references/eu_directive.py": "owning_parser",
+    "src/lawvm/finland/references/preparatory_reference_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/freetext_addresses.py": "owning_parser",
+    "src/lawvm/finland/references/anaphora.py": "owning_parser",
+    "src/lawvm/finland/references/elliptical_resolve.py": "owning_parser",
+    "src/lawvm/finland/references/resolve.py": "owning_parser",
+    "src/lawvm/finland/references/shared_reference_orchestrator.py": "owning_parser",
+    # Cited-version item-clause recognizer (E1b): owns the item-cited-version parse
+    # over its own clause text, routes the cited statute id to the references id
+    # constructor; the snapshot-drop it informs is witnessed (CitedVersionSnapshotDrop).
+    "src/lawvm/finland/references/cited_version.py": "owning_parser",
+    # references/ tail owning recognizers (C6 triage: surface-fact recognizers, each
+    # the owning parser for its family — temporal H3, treaty/SopS, modal actor,
+    # sanction, vague targetless-phrase selector — over their own input `text`).
+    "src/lawvm/finland/references/actor_modal.py": "owning_parser",
+    "src/lawvm/finland/references/sanction.py": "owning_parser",
+    "src/lawvm/finland/references/temporal.py": "owning_parser",
+    "src/lawvm/finland/references/treaty.py": "owning_parser",
+    "src/lawvm/finland/references/treaty_article.py": "owning_parser",
+    "src/lawvm/finland/references/vague.py": "owning_parser",
+    # legal_surface owning construction parsers / lenses (C6 triage: each reads its
+    # own scoped surface text / segment — the §1.12 owning-parser-input carve-out).
+    "src/lawvm/finland/legal_surface/case_frame.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/condition_exception_parse.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/delegation_canonical.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/sentence_parse.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/temporal_parse.py": "owning_parser",
+    # legal_surface source-structure normalizers (C6 triage: parse AKN <num>/eId
+    # surface + already-typed provision_path into labels — source-structure plane).
+    "src/lawvm/finland/legal_surface/provision_index.py": "source_plane",
+    "src/lawvm/finland/legal_surface/reference_projection.py": "source_plane",
+    # THE owning voimaantulosäännös (transitional-provision) cross-statute repeal
+    # extractor: reads its OWN amendment source XML (xml_bytes) and mints REPEAL
+    # ops via the §1.12-sanctioned owning rail; address parse already delegated to
+    # the shared scan_legal_addresses grammar driver; fails closed (records
+    # VtsSkippedTarget/VtsSourceDiagnostic). Local regexes are the citation/title
+    # lexer + fragment-boundary truncation feeding it (C4 triage).
+    "src/lawvm/finland/vts.py": "owning_parser",
+    # scope.py is the canonical chapter/part-scope assignment parser: it
+    # consumes its OWN johtolause + already-typed los to assign/strip scope and
+    # mints no ops. Mirrors johto_scope_mentions / references/sections (both
+    # precleared owning_parser). No reach-back site (none of its 44 regexes read
+    # raw_text/source_text/irnode_to_text/.description). Whole-file preclear.
+    "src/lawvm/finland/scope.py": "owning_parser",
     # --- diagnostic (D/E): audit / oracle-comparison rendering, no authority ---
     "src/lawvm/core/ir_helpers.py": "diagnostic",
     "src/lawvm/finland/inline_repeal_stub.py": "diagnostic",
     "src/lawvm/finland/oracle_comparison.py": "diagnostic",
+    # pure measurement module, explicitly off the replay/apply path
+    # ("changes no production behaviour"); cheap-signal proxy is corroboration only.
+    "src/lawvm/finland/references/annotation_independence_census.py": "diagnostic",
 }
 
 # Inline waiver vocabulary (a use-site is waived if its line, or the line above,
@@ -156,10 +248,232 @@ _RE_REGEX_USE_SITE = re.compile(
 # file is the highest-severity class. An un-waived hit of this shape is reported
 # as ``legacy_escape_hatch`` so the rank-1/2/3/15 raw-text reach-back sites cannot
 # be added to without an explicit waiver naming a leak-ledger rank.
+#
+# Two ways a use-site touches raw text:
+#   (1) line-local: the call line itself names a raw-text accessor (the original,
+#       UNSOUND-on-its-own heuristic — kept for module-const calls like
+#       ``_X_RE.finditer(raw_text)`` and for calls inside comprehensions/exprs).
+#   (2) renamed-local (added here): the searched string is a local variable that
+#       was assigned — directly or transitively, within the same function — from a
+#       raw-text accessor expression. This is the common evading shape
+#       (``txt = op.source.raw_text`` then ``re.search(pat, txt)``). An AST taint
+#       pass (``raw_text_tainted_call_lines``) recovers these so the detector is
+#       sound-leaning: it prefers honest over-flagging (→ explicit waivers) to
+#       silently missing a reach-back.
+_RAW_TEXT_ACCESSOR_ATTRS = frozenset({"raw_text", "source_text", "description"})
+_RAW_TEXT_ACCESSOR_FUNCS = frozenset({"irnode_to_text"})
+# A bare variable literally named like a raw-text accessor token is itself a
+# raw-text string by convention (the line-local heuristic already flags any line
+# containing the word ``raw_text``). Seeding taint with such parameter/local names
+# recovers the inter-procedural case where a helper takes a ``raw_text`` parameter
+# (assigned from ``*.raw_text`` at the call site) and regexes a local derived from
+# it, e.g. ``merge.py`` ``_source_targets_plain_subsection(raw_text, ...)``.
+_RAW_TEXT_SEED_NAMES = frozenset({"raw_text", "source_text"})
 _RE_RAW_TEXT_ACCESSOR = re.compile(
     r"\b(raw_text|source_text|irnode_to_text|\.description)\b"
 )
 _RE_LEAK_LEDGER_RANK = re.compile(r"\brank[\s_-]*\d+\b", re.IGNORECASE)
+
+
+def _expr_is_raw_text_accessor(node: ast.AST, tainted: set[str]) -> bool:
+    """True if ``node`` is (or transitively contains) a raw-text reach-back source.
+
+    Conservative / sound-leaning: returns True if anywhere inside the expression
+    there is
+
+      * an attribute access ending in ``.raw_text`` / ``.source_text`` /
+        ``.description`` (``op.lo.source.raw_text``, ``x.description`` …),
+      * a call to ``irnode_to_text(...)`` (bare or dotted), or
+      * a reference to a name already known to be raw-text tainted in this scope.
+
+    Walking the whole sub-tree means ``a = (op.source.raw_text or "")``,
+    ``b = " ".join(raw.split())``, and ``c = f(tainted)`` all stay tainted — the
+    taint cannot be laundered through wrapping/normalization without the detector
+    seeing it.
+    """
+    for child in ast.walk(node):
+        if isinstance(child, ast.Attribute) and child.attr in _RAW_TEXT_ACCESSOR_ATTRS:
+            return True
+        if isinstance(child, ast.Call):
+            func = child.func
+            fname = ""
+            if isinstance(func, ast.Name):
+                fname = func.id
+            elif isinstance(func, ast.Attribute):
+                fname = func.attr
+            if fname in _RAW_TEXT_ACCESSOR_FUNCS:
+                return True
+        if isinstance(child, ast.Name) and child.id in tainted:
+            return True
+    return False
+
+
+def _assignment_targets(node: ast.AST) -> list[str]:
+    """Bare local names bound by an assignment / for / with / walrus target."""
+    names: list[str] = []
+    targets: list[ast.AST] = []
+    if isinstance(node, ast.Assign):
+        targets = list(node.targets)
+    elif isinstance(node, ast.AnnAssign) and node.value is not None:
+        targets = [node.target]
+    elif isinstance(node, (ast.AugAssign, ast.NamedExpr)):
+        targets = [node.target]
+    elif isinstance(node, (ast.For, ast.AsyncFor)):
+        targets = [node.target]
+    for target in targets:
+        for sub in ast.walk(target):
+            if isinstance(sub, ast.Name):
+                names.append(sub.id)
+    return names
+
+
+def _scope_value_nodes(node: ast.AST) -> list[tuple[list[str], ast.AST]]:
+    """(target-names, value-expr) pairs for binding statements in a scope body."""
+    pairs: list[tuple[list[str], ast.AST]] = []
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+        value = node.value
+        if value is not None:
+            pairs.append((_assignment_targets(node), value))
+    elif isinstance(node, (ast.For, ast.AsyncFor)):
+        # `for name in <iter>:` taints `name` if the iterable is raw text.
+        pairs.append((_assignment_targets(node), node.iter))
+    return pairs
+
+
+def _function_scopes(tree: ast.AST) -> Iterable[ast.AST]:
+    """Yield every function/module scope (each is a separate taint universe)."""
+    yield tree  # module scope catches top-level binds + bare expressions
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            yield node
+
+
+def _nodes_owned_by_scope(scope: ast.AST) -> Iterable[ast.AST]:
+    """Walk ``scope`` but do NOT descend into nested function/lambda bodies.
+
+    Each function is its own taint universe (a local in an inner function must not
+    taint a same-named local of the enclosing one). Comprehensions and class/if/
+    for/with blocks ARE part of the scope and are descended into.
+    """
+    def _push(seq: Iterable[object]) -> None:
+        for child in seq:
+            if not isinstance(child, ast.AST):
+                continue
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue  # a nested scope; handled by its own _function_scopes pass
+            stack.append(child)
+
+    stack: list[ast.AST] = []
+    body = getattr(scope, "body", None)
+    if isinstance(body, list):
+        _push(reversed(body))
+    elif body is not None:
+        _push([body])  # Lambda: single expression body
+    while stack:
+        node = stack.pop()
+        yield node
+        _push(ast.iter_child_nodes(node))
+
+
+def _scope_param_names(scope: ast.AST) -> set[str]:
+    """Parameter names of a function/lambda scope (empty for module scope)."""
+    args = getattr(scope, "args", None)
+    if not isinstance(args, ast.arguments):
+        return set()
+    names: set[str] = set()
+    for group in (args.posonlyargs, args.args, args.kwonlyargs):
+        names.update(a.arg for a in group)
+    if args.vararg is not None:
+        names.add(args.vararg.arg)
+    if args.kwarg is not None:
+        names.add(args.kwarg.arg)
+    return names
+
+
+def _call_arg_names(call: ast.Call) -> set[str]:
+    """Bare names that appear anywhere inside a call's positional/keyword args."""
+    names: set[str] = set()
+    for arg in list(call.args) + [kw.value for kw in call.keywords]:
+        for sub in ast.walk(arg):
+            if isinstance(sub, ast.Name):
+                names.add(sub.id)
+    return names
+
+
+def _is_regex_call(call: ast.Call) -> bool:
+    """True if ``call`` is a targeted regex use-site (``re.<m>(`` or ``*_RE.<m>(``).
+
+    Mirrors ``_RE_REGEX_USE_SITE``: receiver is the ``re`` module or an identifier
+    following the ``*_RE`` / ``*_PATTERN`` / ``*_re`` / ``*_pattern`` convention;
+    method is search / finditer / findall / match.
+    """
+    func = call.func
+    if not isinstance(func, ast.Attribute) or func.attr not in _REGEX_METHODS:
+        return False
+    receiver = func.value
+    if isinstance(receiver, ast.Name):
+        rid = receiver.id
+        if rid == "re":
+            return True
+        return bool(
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:_RE|_PATTERN|_re|_pattern)", rid)
+        )
+    return False
+
+
+def raw_text_tainted_call_lines(text: str) -> set[int]:
+    """Line numbers of regex use-sites whose searched string is raw-text tainted.
+
+    Per function/module scope, iterate a fixpoint over binding statements: a local
+    name becomes tainted when it is bound from an expression that is (or
+    transitively contains) a raw-text accessor or an already-tainted name. A regex
+    call whose arguments reference any tainted name is a renamed-local reach-back;
+    its ``lineno`` is returned.
+
+    The fixpoint (repeat to convergence) makes the analysis order-independent and
+    transitive across an arbitrary number of rename hops within a scope; treating
+    the whole expression as tainted (no kill on re-bind) is the conservative,
+    sound-leaning choice — we never untaint, so we never silently lose a hit.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        # Conservative: if we cannot parse, claim no AST-derived hits (the
+        # line-local heuristic still applies in the caller). Scanned source files
+        # are valid Python, so this only guards malformed test fixtures.
+        return set()
+
+    hit_lines: set[int] = set()
+    for scope in _function_scopes(tree):
+        owned = list(_nodes_owned_by_scope(scope))
+        bind_pairs: list[tuple[list[str], ast.AST]] = []
+        for stmt in owned:
+            bind_pairs.extend(_scope_value_nodes(stmt))
+
+        # Seed: parameters / locals literally named like a raw-text accessor token
+        # (``raw_text`` / ``source_text``) are raw-text strings by convention.
+        tainted: set[str] = set(_scope_param_names(scope) & _RAW_TEXT_SEED_NAMES)
+        for names, _value in bind_pairs:
+            tainted.update(n for n in names if n in _RAW_TEXT_SEED_NAMES)
+        changed = True
+        while changed:
+            changed = False
+            for names, value in bind_pairs:
+                if not names:
+                    continue
+                if any(n in tainted for n in names):
+                    continue
+                if _expr_is_raw_text_accessor(value, tainted):
+                    tainted.update(names)
+                    changed = True
+
+        if not tainted:
+            continue
+        for node in owned:
+            if isinstance(node, ast.Call) and _is_regex_call(node):
+                if _call_arg_names(node) & tainted:
+                    hit_lines.add(node.lineno)
+    return hit_lines
 
 
 _BOUND_COVERAGE_NEARBY_LINES = 80
@@ -703,6 +1017,10 @@ def scan_file_regex_use_sites(
     ``legacy_escape_hatch`` shape.
     """
     lines = text.splitlines()
+    # AST taint pass: line numbers of regex use-sites whose searched string is a
+    # local transitively assigned from a raw-text accessor (the renamed-local
+    # reach-back the line-local heuristic alone misses, e.g. merge.py:2542/2544).
+    tainted_call_lines = raw_text_tainted_call_lines(text)
     records: list[dict[str, Any]] = []
     for idx, line in enumerate(lines):
         stripped = line.lstrip()
@@ -710,7 +1028,9 @@ def scan_file_regex_use_sites(
             continue  # a commented-out call is not a live use-site
         for use_site in _RE_REGEX_USE_SITE.finditer(line):
             waived, waiver_category = _line_is_waived(lines, idx)
-            is_raw_text = bool(_RE_RAW_TEXT_ACCESSOR.search(line))
+            line_local_raw = bool(_RE_RAW_TEXT_ACCESSOR.search(line))
+            renamed_local_raw = (idx + 1) in tainted_call_lines
+            is_raw_text = line_local_raw or renamed_local_raw
             records.append(
                 {
                     "file": rel_path,
@@ -720,6 +1040,13 @@ def scan_file_regex_use_sites(
                     "waived": waived,
                     "waiver_category": waiver_category,
                     "raw_text_accessor": is_raw_text,
+                    "raw_text_via": (
+                        "line_local"
+                        if line_local_raw
+                        else "renamed_local"
+                        if renamed_local_raw
+                        else ""
+                    ),
                     "snippet": stripped,
                 }
             )

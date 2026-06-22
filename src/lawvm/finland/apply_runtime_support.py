@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, List, Optional, cast
 
-from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir_helpers import _kind_str, irnode_to_text
@@ -30,7 +29,12 @@ from lawvm.finland.apply_payload_ops import _find_amend_paragraph
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause.clause_surface import parse_item_shift_clauses
 from lawvm.finland.labels import leaf_label_identity_key
-from lawvm.finland.scope import _unique_section_chapter, infer_letter_suffix_section_chapter_from_stem_host
+from lawvm.finland.scope import (
+    SourceDescendantScopeResult,
+    _unique_section_chapter,
+    infer_letter_suffix_section_chapter_from_stem_host,
+    source_names_descendant_scope_below_section,
+)
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
 from lawvm.finland.replay_capture import ReplayLegalOperationCaptureList
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
@@ -39,6 +43,7 @@ from lawvm.finland.source_normalization_kinds import HEADING_BODY_SUBSECTION_SPL
 from lawvm.finland.source_pathology import (
     build_container_replace_target_absent_pathology,
     build_destructive_shape_loss_risk_pathology,
+    build_unresolved_descendant_scope_cue_pathology,
 )
 if TYPE_CHECKING:
     from lawvm.core.compile_result import SourcePathology
@@ -88,13 +93,6 @@ class _TimelinePayloadTargetIndex:
     indexed_len: int
 
 
-_SECTION_SOURCE_DESCENDANT_SCOPE_RE = compile_classifier_regex(
-    r"\b(?P<section>\d+[a-z]?)\s*§:n\b.{0,240}?\b"
-    r"(?:moment[a-zåäö]{0,20}|koht[a-zåäö]{0,20}|alakoht[a-zåäö]{0,20})\b",
-    re.IGNORECASE,
-    classifier_id="fi.section_source_descendant_scope",
-)
-
 _PROVISION_INDEXED_KINDS = frozenset({"part", "chapter", "section"})
 
 
@@ -115,17 +113,20 @@ def _normalize_snapshot_item_label(label: str | None) -> str:
     return normalized_label_key(label or "")
 
 
-def _section_source_names_descendant_scope(rop: "ResolvedOp", target_norm: str) -> bool:
-    """Return whether the parsed source formula names descendant scope below a section."""
+def _section_source_names_descendant_scope(
+    rop: "ResolvedOp", target_norm: str
+) -> SourceDescendantScopeResult:
+    """Return whether the parsed source formula names descendant scope below a section.
+
+    Routes through scope.py, the canonical owner of the
+    ``N §:n ... moment/kohta/alakohta`` descendant-scope grammar, instead of a
+    duplicate inline ``raw_text`` regex (AGENTS.md §1.12 reach-back). Returns the
+    typed result so the caller witnesses the unparsed-cue residual rather than
+    swallowing it as a silent ``False``.
+    """
     source = rop.resolved_op_source
     raw_text = source.raw_text if source is not None else ""
-    if not raw_text or "§:n" not in raw_text:
-        return False
-    target_label = _norm_num_token(target_norm)
-    for match in _SECTION_SOURCE_DESCENDANT_SCOPE_RE.finditer(raw_text):
-        if _norm_num_token(match.group("section")) == target_label:
-            return True
-    return False
+    return source_names_descendant_scope_below_section(raw_text, target_norm)
 
 
 def _legacy_target_section_for_scope(scope: "ResolvedTargetScopeView", unit_kind: TargetUnitKind) -> str:
@@ -305,8 +306,9 @@ def _snapshot_op_source(
 def _op_source_for_merge_base(op: AmendmentOp | ResolvedOp) -> OperationSource | None:
     if isinstance(op, ResolvedOp):
         return op.resolved_op_source
-    if op.lo is not None:
-        return op.lo.source
+    lo = getattr(op, "lo", None)
+    if lo is not None:
+        return lo.source
     return None
 
 
@@ -1072,7 +1074,8 @@ def _group_has_item_scoped_snapshot_mutations(group_rops: list[ResolvedOp]) -> b
 def _group_has_descendant_scoped_snapshot_mutations(group_rops: list[ResolvedOp]) -> bool:
     """True when child-scoped ops must not promote a sparse whole-section shell."""
     return any(
-        rop.effective_target_paragraph is not None
+        rop.resolved_target_subsection_label is not None
+        or rop.effective_target_paragraph is not None
         or rop.effective_target_item_label is not None
         or rop.effective_target_special is not None
         for rop in group_rops
@@ -1349,11 +1352,18 @@ def _emit_section_snapshot(
         def _whole_section_insert_can_own_snapshot(rop: ResolvedOp) -> bool:
             if not rop.is_insert_action:
                 return False
+            if temporary_signal_for_op(rop):
+                # First-time temporary section inserts often need post-apply
+                # normalization/rebasing.  If an exact prior section snapshot
+                # ended before this insert, the fold may still carry stale
+                # background content at that address; the complete source
+                # section payload is the stronger overlay/rebirth witness.
+                return bool(op_source.expires) and _insert_target_is_not_live_before_effective()
             # A whole-section insert after a prior exact target ended owns the
             # reborn section child surface.  Initial inserts and existing-section
             # insert/merge families still need the post-apply fold snapshot
             # because source payload may need ontology normalization or rebasing.
-            return (not temporary_signal_for_op(rop)) and _insert_target_is_not_live_before_effective()
+            return _insert_target_is_not_live_before_effective()
 
         for rop in group_rops:
             if not rop.targets_whole_unit("section"):
@@ -1377,8 +1387,21 @@ def _emit_section_snapshot(
                 continue
             if str(completeness.tail_policy or "").strip() != "replace_if_target_scope_requires":
                 continue
-            if _section_source_names_descendant_scope(rop, normalized_target_norm):
+            descendant_scope = _section_source_names_descendant_scope(rop, normalized_target_norm)
+            if descendant_scope.matched:
                 descendant_scoped_candidates += 1
+            elif descendant_scope.unparsed_cue is not None and source_pathologies_out is not None:
+                # The source named a section-genitive descendant-scope cue that did
+                # not resolve to this target. Witness it instead of swallowing the
+                # silent negative (does not change the snapshot drop decision).
+                source_pathologies_out.append(
+                    build_unresolved_descendant_scope_cue_pathology(
+                        source_statute=op_source.statute_id,
+                        target_section=target_norm,
+                        target_chapter=target_chapter or "",
+                        unparsed_cue=descendant_scope.unparsed_cue,
+                    )
+                )
             candidates.append(_stamp_exact_section_snapshot_payload(source_payload))
         if len(candidates) == 1 and descendant_scoped_candidates == 1:
             if source_pathologies_out is not None:
@@ -2232,18 +2255,42 @@ def _emit_section_snapshot(
             children=tuple(new_children),
         )
 
+    def _explicitly_targeted_paragraph_labels_by_subsection() -> dict[str, set[str]]:
+        labels: dict[str, set[str]] = {}
+        for rop in group_rops:
+            subsection_label = str(rop.resolved_target_subsection_label or "").strip()
+            item_label = str(rop.resolved_target_item_label or "").strip()
+            if (
+                subsection_label
+                and item_label
+                and (rop.is_insert_action or rop.is_replace_action)
+            ):
+                labels.setdefault(_norm_num_token(subsection_label), set()).add(
+                    leaf_label_identity_key(item_label)
+                )
+        return labels
+
     def _sanitize_section_subsection_payloads(
         section_path: Path,
         section_payload: IRNode,
     ) -> IRNode | None:
         if section_payload.kind is not IRNodeKind.SECTION:
             return None
+        preserve_labels_by_subsection = _explicitly_targeted_paragraph_labels_by_subsection()
         changed = False
         new_children: list[IRNode] = []
         for child in section_payload.children:
             if child.kind is IRNodeKind.SUBSECTION and child.label:
                 child_path = section_path + (("subsection", child.label),)
-                sanitized = _drop_expired_temporary_paragraph_children(child_path, child)
+                child_norm_label = _norm_num_token(child.label)
+                sanitized = _drop_expired_temporary_paragraph_children(
+                    child_path,
+                    child,
+                    preserve_paragraph_labels=preserve_labels_by_subsection.get(
+                        child_norm_label,
+                        set(),
+                    ),
+                )
                 if sanitized is not None:
                     child = sanitized
                     changed = True
@@ -2949,6 +2996,26 @@ def _emit_section_snapshot(
         }
         return candidates[0] if len(candidate_parts) == 1 else None
 
+    def _unique_prior_section_snapshot_path() -> Optional[Path]:
+        if target_unit_kind != "section" or target_chapter or target_part:
+            return None
+        if not _group_has_descendant_scoped_snapshot_mutations(group_rops):
+            return None
+        candidates: list[Path] = []
+        for lo in reversed(lo_ops_out):
+            if lo.target.special is not None:
+                continue
+            path = lo.target.path
+            if not path or path[-1][0] != "section":
+                continue
+            if _norm_num_token(path[-1][1]) != normalized_target_norm:
+                continue
+            if path not in candidates:
+                candidates.append(path)
+        if len(candidates) != 1:
+            return None
+        return candidates[0]
+
     def _base_container_payload() -> Optional[IRNode]:
         if base_ir is None or target_unit_kind not in {"chapter", "part"}:
             return None
@@ -3006,9 +3073,10 @@ def _emit_section_snapshot(
         target_part,
         path_hint,
     )
+    prior_timeline_path = _unique_prior_section_snapshot_path()
     raw_path_from_timeline = False
     if hinted_path is not None:
-        emitted_path = _project_snapshot_path(hinted_path)
+        emitted_path = prior_timeline_path or _project_snapshot_path(hinted_path)
         if emitted_path is None:
             emitted_path = path_hint
         if emitted_path is not None:
@@ -3027,6 +3095,9 @@ def _emit_section_snapshot(
                 substantive_path = _unique_substantive_section_path(state, normalized_target_norm)
                 if substantive_path is not None:
                     raw_path = substantive_path
+        if prior_timeline_path is not None:
+            raw_path = prior_timeline_path
+            raw_path_from_timeline = True
         if not raw_path and _whole_target_repeal():
             # The REPEAL op already removed the section from the IR before this
             # snapshot is called.  Scan the accumulated lo_ops_out in reverse to
@@ -3169,6 +3240,10 @@ def _emit_section_snapshot(
             for label in raw_candidates:
                 raw_path_from_timeline = False
                 raw_path = state.find_section_path(label, target_chapter, target_part)
+                prior_timeline_path = _unique_prior_section_snapshot_path()
+                if prior_timeline_path is not None:
+                    raw_path = prior_timeline_path
+                    raw_path_from_timeline = True
                 if not raw_path and not target_chapter:
                     raw_path = _unique_global_section_path(label)
                 if not raw_path and target_chapter and not target_part:
@@ -3662,21 +3737,14 @@ def _emit_section_snapshot(
             and _snapshot_subsection_target_label(rop)
         }
         explicitly_repealed_paragraph_labels_by_subsection: dict[str, set[str]] = {}
-        explicitly_targeted_paragraph_labels_by_subsection: dict[str, set[str]] = {}
+        explicitly_targeted_paragraph_labels_by_subsection = (
+            _explicitly_targeted_paragraph_labels_by_subsection()
+        )
         source_text_lower = str(op_source.raw_text or "").lower()
         has_post_repeal_item_shift = "muuttuvat kohdiksi" in source_text_lower
         for rop in group_rops:
             subsection_label = str(rop.resolved_target_subsection_label or "").strip()
             item_label = str(rop.resolved_target_item_label or "").strip()
-            if (
-                subsection_label
-                and item_label
-                and (rop.is_insert_action or rop.is_replace_action)
-            ):
-                explicitly_targeted_paragraph_labels_by_subsection.setdefault(
-                    _norm_num_token(subsection_label),
-                    set(),
-                ).add(leaf_label_identity_key(item_label))
             if not rop.is_repeal_action:
                 continue
             if has_post_repeal_item_shift:

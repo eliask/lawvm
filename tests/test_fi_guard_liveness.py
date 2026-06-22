@@ -325,6 +325,124 @@ def drill_leading_subsection_heading_payload_elaboration() -> None:
     )
 
 
+def drill_restore_heading_for_explicit_facet_group_elaboration() -> None:
+    """ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET reaches the group elaboration ledger.
+
+    Production lane: ``elaborate_group`` runs the production payload-prepare lane
+    (``prepare_payload_surface``) over a sparse prepared section payload that has
+    been projected down to its targeted subsection — the section heading is no
+    longer in the payload — and then runs the production guard
+    ``_restore_source_heading_for_explicit_heading_facet``. When the group also
+    carries an explicit same-section heading-facet op (``target_special ==
+    "otsikko"``) and the typed source-model payload still owns the heading, the
+    guard copies that source heading back onto the payload and records the typed
+    ``ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET`` observation, which
+    ``elaborate_group`` projects onto its ``PhaseResult`` finding ledger.
+
+    The heading-less prepared payload is the post-sparse-prepare shape an
+    omission-projected section payload leaves behind; the source-model retains
+    the full source payload (heading included). The guard, the heading copy, and
+    the finding projection are all production code.
+    """
+    from lawvm.core.payload_surface import GroupSurface
+    from lawvm.core.elaboration_context import (
+        snapshot_replay_lookups,
+        snapshot_target_context,
+    )
+    from lawvm.finland.ops import get_replay_profile
+    from lawvm.finland.compile_group_elaboration import (
+        ElaborateGroupRequest,
+        elaborate_group,
+    )
+
+    source_xml = (
+        '<body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<section>"
+        "<num>5 §</num>"
+        "<heading>Otsikko viisi</heading>"
+        "<subsection><num>2</num><content><p>Toinen momentti uusittuna.</p></content></subsection>"
+        "</section>"
+        "</body>"
+    )
+    source_model = AmendmentSourceModel.from_tree(etree.fromstring(source_xml.encode()))
+
+    # Post-sparse-prepare payload shape: the section payload has been projected
+    # down to its single targeted subsection and the heading is gone. The
+    # source-model (above) still owns the section heading.
+    prepared_body_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="5 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Toinen momentti uusittuna."),),
+            ),
+        ),
+    )
+    group_surface = GroupSurface(
+        body_ir=prepared_body_ir,
+        cross_heading_ir=None,
+        source_statute="2099/1",
+        target_unit_kind="section",
+        target_norm="5",
+        target_chapter=None,
+    )
+
+    body_op = AmendmentOp(
+        op_id="replace_5_2",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="5",
+        target_paragraph=2,
+        source_statute="2099/1",
+    )
+    heading_facet_op = AmendmentOp(
+        op_id="replace_5_otsikko",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="5",
+        target_special="otsikko",
+        source_statute="2099/1",
+    )
+    group_ops = [body_op, heading_facet_op]
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    lookups = snapshot_replay_lookups(state)
+    result = elaborate_group(
+        ElaborateGroupRequest(
+            target_ctx=snapshot_target_context(state, "section", "5", None, lookups),
+            lookups=lookups,
+            group_surface=group_surface,
+            group_ops=group_ops,
+            standalone_section_targets=set(),
+            foreign_scoped_standalone_section_targets=set(),
+            foreign_scoped_replace_section_targets=set(),
+            effective_target_part=None,
+            source_model=source_model,
+            johto="muutetaan 5 §:n 2 momentti ja pykälän otsikko",
+            profile=get_replay_profile("legal_pit"),
+            strict_profile=None,
+        )
+    )
+
+    hits = [
+        f for f in result.findings() if f.kind == "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET"
+    ]
+    assert hits, (
+        "explicit heading-facet op over a heading-less sparse payload did not "
+        "surface ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET on the group elaboration "
+        "finding ledger"
+    )
+    # The guard genuinely copied the source heading back onto the payload.
+    elaborated = result.output
+    assert elaborated.muutos_ir is not None
+    assert any(
+        child.kind is IRNodeKind.HEADING for child in elaborated.muutos_ir.children
+    ), "guard fired but did not restore the source heading onto the payload"
+
+
 def drill_sparse_omission_tail_claim_group_surface() -> None:
     """ELAB.SPARSE_OMISSION_TAIL_CLAIM reaches group-surface findings.
 
@@ -1323,6 +1441,7 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED": drill_pending_amendment_effect_unresolved_route_rejection_barrier,
     "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_verdict_barrier,
     "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD": drill_leading_subsection_heading_payload_elaboration,
+    "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET": drill_restore_heading_for_explicit_facet_group_elaboration,
     "ELAB.SPARSE_OMISSION_TAIL_CLAIM": drill_sparse_omission_tail_claim_group_surface,
     "ELAB.SPARSE_OMISSION_TAIL_PRUNED_FROM_CARRIER": drill_sparse_omission_tail_pruned_from_carrier_compile_surface,
     "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_parse_surface,
@@ -1431,7 +1550,9 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     # Payload-normalization strict barrier; add a dedicated production-lane
     # drill when flattened insert-subsection tail splitting gets a small
     # stable fixture in this harness.
+    "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE": ("sparse descendant merge barrier; needs stable fixture", "2026-06-22"),
     "ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL": ("payload-normalize barrier; needs stable fixture", "2026-06-20"),
+    "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL": ("payload-normalize recovery; needs fixture", "2026-06-22"),
     "APPLY.WORD_SUBSTITUTION": ("word-substitution barrier; needs fixture", "2026-06-20"),
     "COMPARE.UNADJUDICATED_ORACLE_DIVERGENCE.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
     "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED": ("coverage barrier; needs fixture", "2026-06-20"),
@@ -1463,6 +1584,7 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.SPARSE_PAYLOAD_LEFTOVER": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL": ("payload-normalize recovery; covered by sparse payload fixture", "2026-06-22"),
     "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.STRICT_REJECTED_OPERATION": ("strict-mode barrier; needs fixture", "2026-06-20"),
@@ -1720,6 +1842,7 @@ _PRODUCTION_BUILDER_CALLS = (
     "normalize_and_compile_ops",
     "build_group_surface",
     "compile_amendment_ops",
+    "elaborate_group",
     "elaborate_payload_against_live",
     "api.parse_clause",
     "parse_clause(",

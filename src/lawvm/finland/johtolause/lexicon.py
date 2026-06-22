@@ -187,6 +187,7 @@ _v("§:ssä", "§", "PYKALA", "NOM")  # inessive
 _v("§:stä", "§", "PYKALA", "NOM")  # elative
 _v("§:ksi", "§", "PYKALA", "NOM")  # translative
 _v("§:", "§", "PYKALA", "NOM")  # colon-terminated
+_v("§:t", "§", "PYKALA", "NOM")  # plural nominative
 
 # Chapter — NOM/GEN/ILL (luku/luvun/lukuun) are engine-derived above.
 
@@ -247,16 +248,16 @@ for _form in (
     _v(_form, "johdantokappale", "JOHD", "NOM")
 
 # Sub-heading
-for _form in ("väliotsikko", "väliotsikon", "väliotsikkoa"):
+for _form in ("väliotsikko", "väliotsikon", "väliotsikkoa", "väliotsikot"):
     _v(_form, "väliotsikko", "OTSIKKO", "NOM")
 # "väliotsake" — older drafting synonym for väliotsikko (1970s–80s acts, e.g.
 # 1979/229 "muutetaan ... 9 §:n edellä oleva väliotsake").
-for _form in ("väliotsake", "väliotsakkeen", "väliotsaketta"):
+for _form in ("väliotsake", "väliotsakkeen", "väliotsaketta", "väliotsakkeet"):
     _v(_form, "väliotsikko", "OTSIKKO", "NOM")
 # Sub-heading variant "alaotsikko" (e.g. 1985/32, 1989/1255
 # "muutetaan ... N §:n edellä oleva alaotsikko"). Without it the heading
 # reference degrades to a bare WORD and the enclosing enumeration is dropped.
-for _form in ("alaotsikko", "alaotsikon", "alaotsikkoa"):
+for _form in ("alaotsikko", "alaotsikon", "alaotsikkoa", "alaotsikot"):
     _v(_form, "alaotsikko", "OTSIKKO", "NOM")
 
 # Appendix
@@ -396,7 +397,9 @@ _LETTER_PYKALA_RE = re.compile(r"^([a-z])(\u00a7.*)$")  # a\u00a7:n
 _NUM_DASH_STRUCT_RE = re.compile(
     rf"^(\d+[a-z]?){_DASH_CLASS}(kohta|kohdan|momentti|momentin|momenttiin)$", re.I
 )
-_LETTER_DASH_STRUCT_RE = re.compile(rf"^([a-z]){_DASH_CLASS}(kohta|kohdan)$", re.I)
+_LETTER_DASH_STRUCT_RE = re.compile(
+    rf"^([a-z]){_DASH_CLASS}(kohta|kohdan|alakohta|alakohdan)$", re.I
+)
 _LETTER_DASH_NUM_RE = re.compile(rf"^([a-z]){_DASH_CLASS}(\d+)$")
 # Letter range for item enumerations: "a-c", "j-l" → LETTER DASH LETTER.
 # Single ASCII letter, one dash, single ASCII letter (no §, no momentti).

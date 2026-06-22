@@ -890,7 +890,12 @@ def _renumber_target_list(s: Stream) -> Optional[list[tuple[str, str]]]:
 
 @dataclass
 class SubRef:
-    """Parsed sub-reference: momentti, item, or facet."""
+    """Parsed sub-reference: momentti, item, or facet.
+
+    This legacy fallback parser still encodes a kohta+alakohta as a single
+    ``item`` label (e.g. ``3d``); the canonical separate-level split is applied
+    downstream in ``_build_target_address`` / address synthesis.
+    """
 
     momentti: int = 0  # 0 = whole section
     item: str = ""

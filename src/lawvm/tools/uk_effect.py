@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
@@ -182,7 +182,7 @@ def lowering_observation_rule_counts(rows: list[dict[str, Any]]) -> dict[str, in
 
 
 def _blocking_rows(rows: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
-    return tuple(row for row in rows if is_blocking_compile_record(row))
+    return tuple(row for row in rows if is_blocking_compile_record(CompileRecord.from_mapping(row)))
 
 
 def affecting_act_xml_missing_rejection(effect) -> dict[str, Any]:
@@ -219,7 +219,7 @@ def blocking_lowering_rejection_rule_counts(
 ) -> dict[str, int]:
     counts: dict[str, int] = {}
     for rejection in rejections:
-        if not is_blocking_compile_record(rejection):
+        if not is_blocking_compile_record(CompileRecord.from_mapping(rejection)):
             continue
         rule_id = str(rejection.get("rule_id") or "unknown")
         counts[rule_id] = counts.get(rule_id, 0) + 1
@@ -227,7 +227,9 @@ def blocking_lowering_rejection_rule_counts(
 
 
 def has_blocking_lowering_rejection(rejections: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> bool:
-    return any(is_blocking_compile_record(rejection) for rejection in rejections)
+    return any(
+        is_blocking_compile_record(CompileRecord.from_mapping(rejection)) for rejection in rejections
+    )
 
 
 def _manual_compile_claim_template_for_effect_report(

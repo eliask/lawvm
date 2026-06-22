@@ -15,8 +15,22 @@ from lawvm.core.mutation_accounting import (
 from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
 from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.phase_result import Finding
+from lawvm.core.stage_result import (
+    AuthoritySurface,
+    CoverageCertificate,
+    EMPTY_EVIDENCE,
+    EvidenceBundle,
+    Residual,
+    StageResult,
+)
+from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.tree_ops import receipt_from_diff
 from lawvm.core.write_receipt import WriteReceipt
+from lawvm.finland.apply_replay_authorization import (
+    WRITE_RECEIPT_VIOLATION_FINDING_CODE,
+    mint_apply_replay_authority,
+    op_replay_authorized,
+)
 from lawvm.finland.apply import apply_op
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.migration_ledger import MigrationLedger
@@ -44,12 +58,18 @@ class ApplyResolvedOpAudit:
     """One visible audit record for a resolved op considered by apply."""
 
     source_statute: str
+    source_effective: str
+    source_expires: str
     op_id: str
+    action_type: str
     description: str
     target_unit_kind: str
     target_norm: str
     target_chapter: str
     target_part: str
+    target_paragraph: str
+    target_item: str
+    target_special: str
     disposition: ApplyDisposition
 
     def to_observation(self) -> dict[str, object]:
@@ -58,12 +78,18 @@ class ApplyResolvedOpAudit:
             "source_statute": self.source_statute,
             "detail": {
                 "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
+                "source_effective": self.source_effective,
+                "source_expires": self.source_expires,
                 "op_id": self.op_id,
+                "action_type": self.action_type,
                 "description": self.description,
                 "target_unit_kind": self.target_unit_kind,
                 "target_norm": self.target_norm,
                 "target_chapter": self.target_chapter,
                 "target_part": self.target_part,
+                "target_paragraph": self.target_paragraph,
+                "target_item": self.target_item,
+                "target_special": self.target_special,
                 "disposition": self.disposition,
             },
         }
@@ -92,7 +118,8 @@ FI_APPLY_OP_WRITE_HELPER = "fi.apply.resolved_op_write"
 # "violation") or whose bound→landed divergence is unexplained. This reuses the
 # registered apply-boundary touch-outside-target violation code (coordinated
 # with the mutation-boundary guard-liveness lane) rather than minting a new one.
-WRITE_RECEIPT_VIOLATION_FINDING_CODE = "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
+# Imported from apply_replay_authorization (above) so the producer and the
+# authority consumer share one literal and cannot silently diverge.
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +211,39 @@ def _apply_required_resolved_op(
             and len(sinks.failed_ops_out) > failed_cursor
         ):
             disposition = "APPLY_FAILED"
+            # Disposition firewall: a soft-failed op (APPLY_FAILED) is NOT an
+            # authorized apply, yet it may still have landed a tree mutation
+            # before failing. The production ``aggregate_replay_authority`` never
+            # inspects disposition, so without this a non-APPLIED op that mutated
+            # the tree would silently authorize the replay. Surface the landed
+            # write as a blocking boundary-violation finding so the aggregate's
+            # ``no_boundary_violation`` conjunct trips: a write that landed under a
+            # non-authorized disposition is, by the op gate predicate
+            # (``op_replay_authorized`` requires ``disposition == "APPLIED"``), an
+            # un-authorized write.
+            if (
+                sinks.findings_out is not None
+                and prev_state.ir is not state.ir
+            ):
+                sinks.findings_out.append(
+                    Finding(
+                        kind=WRITE_RECEIPT_VIOLATION_FINDING_CODE,
+                        role="violation",
+                        stage="apply",
+                        blocking=True,
+                        source_statute=request.amendment_id,
+                        detail={
+                            "message": (
+                                "A soft-failed (APPLY_FAILED) op landed a tree "
+                                "mutation; a write under a non-authorized "
+                                "disposition cannot authorize the replay."
+                            ),
+                            "barrier_code": WRITE_RECEIPT_VIOLATION_FINDING_CODE,
+                            "op_id": rop.op_id or "",
+                            "disposition": disposition,
+                        },
+                    )
+                )
         undeclared_touch: Optional[MutationAccountingResult] = None
         if sinks.mutation_events_out is not None:
             undeclared_touch = cross_check_observed_vs_declared(
@@ -298,15 +358,18 @@ def _collect_op_write_receipt(
     and exactly one independent audit. The totality assertion enforces that the
     receipt/audit counts move in lockstep with landed writes.
 
-    Strict-mode blocking is driven by the genuine production signal: the
-    op-level observed-vs-declared cross-check (``undeclared_touch``). When that
-    cross-check sees a changed tree path the op's declared mutation events do not
-    explain, a strict profile promotes it to a BLOCKING finding instead of the
-    legacy logger.warning / serialize-only passive disposition. The op-level
-    receipt itself is built from landed reality and therefore covers its own
-    observed footprint by construction, so its audit is clean — the
-    receipt/audit are the conservation account; ``undeclared_touch`` is the
-    boundary violation.
+    Boundary blocking is driven by the genuine production signal: the op-level
+    observed-vs-declared cross-check (``undeclared_touch``). When that cross-check
+    sees a changed tree path the op's declared mutation events do not explain, it
+    is promoted to a BLOCKING finding instead of the legacy logger.warning /
+    serialize-only passive disposition — REGARDLESS of the caller's strict
+    profile, so a permissive or absent profile cannot silently authorize a write
+    that landed outside its declared target. The op-level receipt itself is built
+    from landed reality and therefore covers its own observed footprint by
+    construction, so its audit is clean — the receipt/audit are the conservation
+    account; ``undeclared_touch`` is the boundary violation. ``strict_profile`` is
+    retained on the signature for the receipt-binding context but no longer gates
+    surfacing the boundary finding.
     """
     if prev_state.ir is new_state.ir:
         # No landed write: receipts and audits must not grow for this op.
@@ -320,6 +383,7 @@ def _collect_op_write_receipt(
     # apply_op). With no classification hint, receipt_from_diff records every
     # observed changed path as a replaced path, so the declared footprint equals
     # the observed footprint by construction.
+    _rop_source = rop.resolved_op_source
     receipt = receipt_from_diff(
         prev_state.ir,
         new_state.ir,
@@ -327,6 +391,7 @@ def _collect_op_write_receipt(
         helper=FI_APPLY_OP_WRITE_HELPER,
         action=str(rop.resolved_action_type or "").lower(),
         bound_target_path=None,
+        source_anchor=_rop_source.source_anchor if _rop_source is not None else None,
     )
     audit = build_observed_write_audit(prev_state.ir, new_state.ir, receipt)
     sinks.write_receipts_out.append(receipt)
@@ -344,14 +409,18 @@ def _collect_op_write_receipt(
             f"{len(sinks.write_audits_out) - audits_before} observed-write audits (expected 1)"
         )
 
-    # Strict-mode gate: a profile that refuses to guess targets is the profile
-    # that must also refuse an un-accounted landed write. (No single boolean
-    # "strict" exists on StrictProfile; strictness is the absence of permissive
-    # allowances — mirrors the existing `strict_profile is None or allows_X`
-    # pattern used across the apply lanes.) The blocking signal is the genuine
-    # production undeclared-tree-touch cross-check, not a self-clean receipt.
-    strict = strict_profile is not None and not strict_profile.allows_target_guessing
-    if strict and sinks.findings_out is not None and undeclared_touch is not None:
+    # The blocking signal is the genuine production undeclared-tree-touch
+    # cross-check, not a self-clean receipt: when ``undeclared_touch`` is set the
+    # op's landed write touched tree paths its declared mutation events do not
+    # explain, which is a real boundary violation regardless of the caller's
+    # strict profile. Emitting the finding is DECOUPLED from strict mode — a
+    # permissive (or absent) ``strict_profile`` must not silently authorize a
+    # write that landed outside its declared target. The downstream gate
+    # (``aggregate_replay_authority``'s ``no_boundary_violation`` conjunct) then
+    # trips on this blocking finding for ANY caller profile. (Strictness on
+    # StrictProfile is the absence of permissive allowances; the firewall does not
+    # depend on it here, so a None profile no longer bypasses the arm.)
+    if sinks.findings_out is not None and undeclared_touch is not None:
         sinks.findings_out.append(
             Finding(
                 kind=WRITE_RECEIPT_VIOLATION_FINDING_CODE,
@@ -377,18 +446,181 @@ def _collect_op_write_receipt(
         )
 
 
+def apply_resolved_op_staged(
+    request: ApplyResolvedOpRequest,
+    sinks: ApplyResolvedOpSinks,
+) -> StageResult[ReplayState]:
+    """Apply one ResolvedOp and return the typed apply stage (WAIST #7).
+
+    A thin wrapper over :func:`apply_resolved_op_with_audit` (the value-path,
+    kept untouched so existing callers stay 0-delta). It SURFACES the apply
+    boundary's account as the canonical :class:`StageResult` and — the CRUX —
+    mints a real type-carried :class:`AuthoritySurface` (NOT the neutral default)
+    from the SAME facts that already gate whether the write may stand:
+
+      * ``value``    = the mutated :class:`ReplayState`.
+      * ``coverage`` = the receipt declared-footprint partition; every declared
+        path is ``owned``, ``violation==1`` iff the observed-vs-declared
+        cross-check found an undeclared mutation touch.
+      * ``residuals`` = the EXISTING #3 structural mutation-boundary residual
+        (unexplained bound→landed divergence) + an undeclared-touch residual when
+        the cross-check is dirty (REUSED signals, not recomputed semantics).
+      * ``findings``  = the apply findings emitted for THIS op (the #3 blocking
+        ``Finding`` etc.), projected as the typed tuple.
+      * ``evidence``  = a :class:`SourceWitness` from the receipt ``source_anchor``
+        quote-hash when present, else empty footing.
+      * ``authority`` = the minted apply-replay :class:`AuthoritySurface`:
+        ``replay_authorized`` ⟺ ``disposition == "APPLIED"`` AND no blocking
+        structural residual AND a clean undeclared-touch cross-check (the exact
+        conjunction that lets the write stand today). This is the firewall in the
+        type — a permissive strict profile / a bare receipt is named a forbidden
+        shortcut, never authority.
+
+    The apply DECLINE verdict is UNCHANGED (it stays on the #3 residual→`Finding`
+    channel — ESCALATE-3W); the new load-bearing branch the authority adds is at
+    the certificate (the clean-claim gate), not a second apply decline.
+    """
+    receipts_before = len(sinks.write_receipts_out)
+    findings_before = (
+        len(sinks.findings_out) if sinks.findings_out is not None else 0
+    )
+
+    result = apply_resolved_op_with_audit(request, sinks)
+
+    new_receipts = sinks.write_receipts_out[receipts_before:]
+    new_findings = (
+        sinks.findings_out[findings_before:]
+        if sinks.findings_out is not None
+        else []
+    )
+
+    # The op-level receipt (if a write landed) is the footprint + boundary
+    # account; an undeclared touch surfaces as the apply-boundary violation
+    # finding the value-path already emitted.
+    receipt = new_receipts[-1] if new_receipts else None
+    undeclared_touch_present = any(
+        finding.kind == WRITE_RECEIPT_VIOLATION_FINDING_CODE and finding.blocking
+        for finding in new_findings
+    )
+
+    coverage = _staged_apply_coverage(receipt, undeclared_touch_present)
+    residuals = _staged_apply_residuals(receipt, undeclared_touch_present)
+    evidence = _staged_apply_evidence(receipt)
+
+    has_blocking_structural_residual = any(item.blocking for item in residuals)
+    replay_authorized = op_replay_authorized(
+        disposition=result.disposition,
+        has_blocking_structural_residual=has_blocking_structural_residual,
+        undeclared_touch_present=undeclared_touch_present,
+    )
+    authority: AuthoritySurface = mint_apply_replay_authority(
+        replay_authorized=replay_authorized
+    )
+
+    return StageResult(
+        value=result.state,
+        evidence=evidence,
+        residuals=residuals,
+        findings=tuple(new_findings),
+        coverage=coverage,
+        authority=authority,
+    )
+
+
+def _staged_apply_coverage(
+    receipt: Optional[WriteReceipt],
+    undeclared_touch_present: bool,
+) -> CoverageCertificate:
+    """The receipt declared-footprint partition (violation iff undeclared touch)."""
+    declared = len(receipt.declared_footprint) if receipt is not None else 0
+    return CoverageCertificate(
+        unit="paths",
+        total=declared,
+        owned=declared,
+        residual=0,
+        violation=1 if undeclared_touch_present else 0,
+    )
+
+
+def _staged_apply_residuals(
+    receipt: Optional[WriteReceipt],
+    undeclared_touch_present: bool,
+) -> tuple[Residual, ...]:
+    """REUSE the existing #3 structural + undeclared-touch residual signals.
+
+    The op-level receipt carries no resolver binding (``bound_target_path is
+    None``); there is no bound→landed divergence to explain, so the structural
+    mutation-boundary residual only fires for a receipt that bound a target and
+    landed elsewhere with no named rule (the exact #3 condition).
+    """
+    residuals: list[Residual] = []
+    if (
+        receipt is not None
+        and receipt.bound_target_path is not None
+        and not receipt.divergence_explained
+    ):
+        residuals.append(
+            Residual(
+                kind="unowned_violation",
+                reason="unexplained_mutation_boundary_divergence",
+                scope=str(receipt.op_id or ""),
+                text="",
+                blocking=True,
+            )
+        )
+    if undeclared_touch_present:
+        residuals.append(
+            Residual(
+                kind="unowned_violation",
+                reason="undeclared_mutation_touch",
+                scope=str(receipt.op_id or "") if receipt is not None else "",
+                text="",
+                blocking=True,
+            )
+        )
+    return tuple(residuals)
+
+
+def _staged_apply_evidence(receipt: Optional[WriteReceipt]) -> EvidenceBundle:
+    """Project the receipt ``source_anchor`` quote-hash into a SourceWitness."""
+    if receipt is None:
+        return EMPTY_EVIDENCE
+    anchor = receipt.source_anchor
+    if anchor is None:
+        return EMPTY_EVIDENCE
+    algorithm, _, digest = anchor.quote_hash.partition(":")
+    return EvidenceBundle(
+        (
+            SourceWitness(
+                source_role="amendment_source_clause",
+                artifact_id=anchor.source_artifact_id,
+                digest=DigestWitness(digest_algorithm=algorithm, digest=digest),
+            ),
+        )
+    )
+
+
 def _audit_for_rop(
     request: ApplyResolvedOpRequest,
     disposition: ApplyDisposition,
 ) -> ApplyResolvedOpAudit:
     group = request.rop.resolved_group_key_view
+    source = request.rop.resolved_op_source
     return ApplyResolvedOpAudit(
         source_statute=request.amendment_id,
+        source_effective=source.effective if source is not None else "",
+        source_expires=source.expires if source is not None else "",
         op_id=request.rop.op_id or "",
+        action_type=request.rop.resolved_action_type,
         description=request.rop.description(),
         target_unit_kind=str(group.unit_kind or ""),
         target_norm=str(group.target_norm or ""),
         target_chapter=str(group.target_chapter or ""),
         target_part=str(group.target_part or ""),
+        target_paragraph=str(request.rop.effective_target_paragraph)
+        if request.rop.effective_target_paragraph is not None
+        else "",
+        target_item=str(request.rop.effective_target_item_label or "").strip(),
+        target_special=str(request.rop.effective_target_special or "").strip(),
         disposition=disposition,
     )

@@ -50,6 +50,17 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "no parsed structural target (op.fallback_provenance, gated by "
         "allows_target_guessing)."
     ),
+    "fi_recodification_vacated_insert_scope": (
+        "Recodification-vacated insert-scope inference resolves the part/chapter of a "
+        "section INSERT whose original container was vacated by a recodification, by "
+        "reading the recodification context rather than leaving the chapter unscoped "
+        "(frontend_compile.py _infer_recodification_vacated_insert_scope)."
+    ),
+    "fi_duplicate_section_scope_from_source_heading": (
+        "Duplicate section scope from a source heading records a wrapper-level section "
+        "whose label is consumed by a later explicitly scoped section replacement "
+        "rather than promoted as independent replay authority."
+    ),
     # --- pure-kumotaan repeal reconstruction (kumotaan_replay.py) ---
     "fi.recovery.pure_kumotaan_repeal": (
         "Pure-kumotaan repeal injection reconstructs a whole-section/container REPEAL "

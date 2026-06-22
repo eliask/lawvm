@@ -111,6 +111,9 @@ _SPARSE_ALAKOHTA_INSERT_MERGE_RULE_ID = RecoveryKind.SPARSE_ALAKOHTA_INSERT_MERG
 _SPARSE_ALAKOHTA_REPLACE_MERGE_RULE_ID = RecoveryKind.SPARSE_ALAKOHTA_REPLACE_MERGE
 _SPARSE_ITEM_TAIL_SUBSECTION_PRUNE_RULE_ID = RecoveryKind.SPARSE_ITEM_TAIL_SUBSECTION_PRUNE
 _SUBSECTION_REPLACE_SPARSE_GAP_INSERT_RULE_ID = RecoveryKind.SUBSECTION_REPLACE_SPARSE_GAP_INSERT
+_SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE_RULE_ID = (
+    RecoveryKind.SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE
+)
 _SUBSECTION_DISPATCH_LANDED_RECOVERY_RULE_IDS: tuple[RecoveryKind, ...] = (
     _INTRO_LIST_MOMENT_SHAPE_RULE_ID,
     _MISSING_EXACT_SUBSECTION_LABEL_RULE_ID,
@@ -500,6 +503,41 @@ def _subsection_dispatch_landed_recovery_allowances(
     )
 
 
+def _whole_section_unscoped_duplicate_consumed_paths(
+    *,
+    before_state: "ReplayState",
+    after_state: "ReplayState",
+    new_pathologies: tuple[SourcePathology, ...],
+    rop: ResolvedOp,
+    sec_path: Path | None,
+) -> TreePaths:
+    if sec_path is None:
+        return ()
+    if not _new_pathologies_include_recovery_kind(
+        new_pathologies,
+        _SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE_RULE_ID,
+    ):
+        return ()
+    target_label = rop.resolved_target_label or (str(sec_path[-1][1]) if sec_path else "")
+    if not target_label:
+        return ()
+    consumed: list[TreePath] = []
+    for candidate in section_paths_for_label(before_state.provision_index, target_label):
+        path = tuple(candidate)
+        if path == tuple(sec_path):
+            continue
+        if any(kind in {"chapter", "part"} for kind, _value in path[:-1]):
+            continue
+        if _tops.resolve(before_state.ir, path) is None:
+            continue
+        if _tops.resolve(after_state.ir, path) is not None:
+            continue
+        consumed_path = _path_to_tuple(path)
+        if consumed_path is not None:
+            consumed.append(consumed_path)
+    return tuple(consumed)
+
+
 def _find_scoped_section_insert_parent_path(
     ir: IRNode,
     *,
@@ -533,6 +571,38 @@ def _post_apply_section_path(result_state: "ReplayState", rop: ResolvedOp) -> Tr
         chapter_label=rop.resolved_target_scope_chapter_label,
         part_label=rop.resolved_target_scope_part_label,
     )
+
+
+def _event_path_explains_observed(candidate: TreePath | None, observed_paths: TreePaths) -> bool:
+    if candidate is None:
+        return not observed_paths
+    declared = (candidate,)
+    return all(
+        path_has_prefix(path, declared) or path_is_strict_prefix(path, candidate)
+        for path in observed_paths
+    )
+
+
+def _observed_single_write_event_path(
+    before_state: "ReplayState",
+    after_state: "ReplayState",
+    candidate: TreePath | None,
+) -> TreePath | None:
+    """Return the single observed landed path when the nominal event path is stale.
+
+    Section materialization can temporarily make a chapter/section lookup
+    ambiguous. If ``landed_section_event_path`` then falls back to an unrelated
+    same-numbered section, the mutation event under-declares the actual write.
+    For a single observed write, prefer the observed landed container/path.
+    """
+    if before_state.ir is after_state.ir:
+        return candidate
+    observed_paths = diff_ir_paths_identity_pruned(before_state.ir, after_state.ir)
+    if not observed_paths or _event_path_explains_observed(candidate, observed_paths):
+        return candidate
+    if len(observed_paths) == 1:
+        return observed_paths[0]
+    return candidate
 
 
 def _apply_intent_section_level(
@@ -645,7 +715,8 @@ def _apply_intent_section_level(
         and any(binding.op_type == "INSERT" for binding in rop.slot_assignment.sparse_slot_bindings)
     )
     descendant_scoped_target = (
-        rop.effective_target_paragraph is not None
+        rop.resolved_target_subsection_label is not None
+        or rop.effective_target_paragraph is not None
         or rop.effective_target_item_label is not None
         or rop.effective_target_special is not None
     )
@@ -677,6 +748,7 @@ def _apply_intent_section_level(
                     )
                 sec_path = None
 
+    whole_pathology_cursor = len(source_pathologies_out) if source_pathologies_out is not None else 0
     whole_result = None
     if not descendant_scoped_target:
         whole_result = _apply_whole_section_op(
@@ -694,6 +766,9 @@ def _apply_intent_section_level(
             migration_ledger=migration_ledger,
         )
     if whole_result is not None:
+        whole_new_pathologies: tuple[SourcePathology, ...] = ()
+        if source_pathologies_out is not None:
+            whole_new_pathologies = tuple(source_pathologies_out[whole_pathology_cursor:])
         resolved_target_path = _resolved_target_path_for_rop_event(rop, sec_path)
         if migration_rebased_target_path is not None:
             resolved_target_path = migration_rebased_target_path
@@ -701,6 +776,11 @@ def _apply_intent_section_level(
             post_path = _post_apply_section_path(whole_result, rop)
             if post_path is not None:
                 resolved_target_path = post_path
+            resolved_target_path = _observed_single_write_event_path(
+                state,
+                whole_result,
+                resolved_target_path,
+            )
         parent_path = _parent_path(resolved_target_path)
         rebind_paths = _whole_section_move_rebind_paths(state, rop, muutos_ir, sec_path)
         declared_allowances = _whole_section_move_rebind_allowances(state, rop, muutos_ir, sec_path)
@@ -710,6 +790,21 @@ def _apply_intent_section_level(
                     kind="migration_path",
                     paths=(migration_rebase_source_path,),
                     rule_id="pending_source_chain_insert_rebase",
+                ),
+            )
+        consumed_unscoped_duplicate_paths = _whole_section_unscoped_duplicate_consumed_paths(
+            before_state=state,
+            after_state=whole_result,
+            new_pathologies=whole_new_pathologies,
+            rop=rop,
+            sec_path=sec_path,
+        )
+        if consumed_unscoped_duplicate_paths:
+            declared_allowances = declared_allowances + (
+                DeclaredMutationAllowance(
+                    kind="recovery_path",
+                    paths=consumed_unscoped_duplicate_paths,
+                    rule_id=_SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE_RULE_ID,
                 ),
             )
         created_paths: TreePaths = ()
@@ -726,13 +821,20 @@ def _apply_intent_section_level(
         elif rop.resolved_action_type == "REPLACE":
             if resolved_target_path is not None:
                 if sec_path is None:
-                    created_paths = (resolved_target_path,)
+                    if resolved_target_path[-1][0] == "section":
+                        created_paths = (resolved_target_path,)
+                    else:
+                        replaced_paths = (resolved_target_path,)
                 else:
                     replaced_paths = (resolved_target_path,)
                 if rebind_paths:
                     removed_paths = rebind_paths
                 if migration_rebase_source_path is not None:
                     removed_paths = tuple(dict.fromkeys((*removed_paths, migration_rebase_source_path)))
+                if consumed_unscoped_duplicate_paths:
+                    removed_paths = tuple(
+                        dict.fromkeys((*removed_paths, *consumed_unscoped_duplicate_paths))
+                    )
         elif rop.resolved_action_type == "REPEAL":
             if profile.synthesize_repeal_placeholders:
                 if resolved_target_path is not None:
@@ -781,7 +883,19 @@ def _apply_intent_section_level(
                     post_path = _post_apply_section_path(mat_result, rop)
                     if post_path is not None:
                         resolved_target_path = post_path
+                    resolved_target_path = _observed_single_write_event_path(
+                        state,
+                        mat_result,
+                        resolved_target_path,
+                    )
             root_move_paths = _materialization_root_move_paths(state, rop, muutos_ir, sec_path)
+            materialized_created_paths: TreePaths = ()
+            materialized_replaced_paths: TreePaths = ()
+            if resolved_target_path is not None:
+                if resolved_target_path[-1][0] == "section":
+                    materialized_created_paths = (resolved_target_path,)
+                else:
+                    materialized_replaced_paths = (resolved_target_path,)
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
                 rop=rop,
@@ -790,7 +904,8 @@ def _apply_intent_section_level(
                 resolved_target_path=resolved_target_path,
                 parent_path=_parent_path(resolved_target_path),
                 declared_allowances=_materialization_root_move_allowances(state, rop, muutos_ir, sec_path),
-                created_paths=(resolved_target_path,) if resolved_target_path is not None else (),
+                created_paths=materialized_created_paths,
+                replaced_paths=materialized_replaced_paths,
                 removed_paths=root_move_paths,
                 used_fallback_tags=used_fallback_tags,
             )
@@ -953,10 +1068,12 @@ def _apply_intent_container(
     *,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
+    findings_out: Optional[List[Finding]] = None,
     path_hint: Optional[Path] = None,
     standalone_section_targets: StandaloneSectionTargetsInput = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     migration_ledger: Optional[MigrationLedger] = None,
+    strict_profile: Optional[StrictProfile] = None,
     write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
     base_ir = ctx.base_ir
@@ -982,6 +1099,8 @@ def _apply_intent_container(
         migration_ledger=migration_ledger,
         write_receipts_out=write_receipts,
         replay_history_ops=replay_history_ops,
+        findings_out=findings_out,
+        strict_profile=strict_profile,
     )
     if container_result is not None:
         # Receipt-first declaration (apply contract §4): when the container
@@ -1051,6 +1170,7 @@ def _apply_intent_replace(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     strict_profile: Optional[StrictProfile] = None,
     path_hint: Optional[Path] = None,
     standalone_section_targets: StandaloneSectionTargetsInput = None,
@@ -1072,10 +1192,12 @@ def _apply_intent_replace(
                 ctx_label,
                 muutos_ir,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
+                strict_profile=strict_profile,
                 write_audits_out=write_audits_out,
             )
         case FacetTarget(facet=FacetKind.HEADING | FacetKind.INTRO):
@@ -1096,7 +1218,7 @@ def _apply_intent_replace(
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
             )
-        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "row", "subsection"}:
+        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "subitem", "row", "subsection"}:
             return _apply_intent_section_level(
                 state,
                 rop,
@@ -1142,10 +1264,12 @@ def _apply_intent_replace(
                 ctx_label,
                 muutos_ir,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
+                strict_profile=strict_profile,
                 write_audits_out=write_audits_out,
             )
         case _:
@@ -1189,6 +1313,7 @@ def _apply_intent_insert(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     strict_profile: Optional[StrictProfile] = None,
     path_hint: Optional[Path] = None,
     standalone_section_targets: StandaloneSectionTargetsInput = None,
@@ -1200,7 +1325,7 @@ def _apply_intent_insert(
 
     muutos_ir = rop.muutos_ir
     match intent.target:
-        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "row", "subsection"}:
+        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "subitem", "row", "subsection"}:
             return _apply_intent_section_level(
                 state,
                 rop,
@@ -1246,10 +1371,12 @@ def _apply_intent_insert(
                 ctx_label,
                 muutos_ir,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
+                strict_profile=strict_profile,
                 write_audits_out=write_audits_out,
             )
         case _:
@@ -1292,6 +1419,7 @@ def _apply_intent_repeal(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     strict_profile: Optional[StrictProfile] = None,
     path_hint: Optional[Path] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
@@ -1302,7 +1430,7 @@ def _apply_intent_repeal(
 
     muutos_ir = rop.muutos_ir
     match intent.target:
-        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "row", "subsection"}:
+        case NodeTarget(address=addr) if _address_leaf_kind(addr) in {"item", "subitem", "row", "subsection"}:
             return _apply_intent_section_level(
                 state,
                 rop,
@@ -1346,9 +1474,11 @@ def _apply_intent_repeal(
                 ctx_label,
                 muutos_ir,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
+                strict_profile=strict_profile,
                 write_audits_out=write_audits_out,
             )
         case _:
@@ -2105,6 +2235,7 @@ def _apply_canonical_intent(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 replay_history_ops=replay_history_ops,
@@ -2126,6 +2257,7 @@ def _apply_canonical_intent(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 replay_history_ops=replay_history_ops,
@@ -2146,6 +2278,7 @@ def _apply_canonical_intent(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 strict_profile=strict_profile,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,

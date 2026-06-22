@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, List, Literal, Optional
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
+from lawvm.core.phase_result import Finding
+from lawvm.core.recovery_kind import RecoveryKind, coerce_recovery_kind
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, normalized_label_key
@@ -23,6 +25,7 @@ from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 from lawvm.finland.replay_notices import replay_print
 from lawvm.finland.apply_runtime_support import _legacy_dispatch_shell_for_rop, _valid_target_path_hint
 from lawvm.finland.apply_policy import _observe_occupancy_transition
+from lawvm.finland.scoped_section_resolver import section_paths_for_label
 from lawvm.finland.apply_structure_ops import (
     _structure_apply_view_for_op,
     _apply_container_op,
@@ -60,6 +63,10 @@ if TYPE_CHECKING:
     from lawvm.finland.payload_normalize import SubsectionSlotAssignmentResult
 
 logger = logging.getLogger(__name__)
+
+_SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE_RULE_ID = (
+    RecoveryKind.SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE
+)
 
 
 @dataclass(frozen=True)
@@ -102,6 +109,52 @@ def _failure_context(dispatch_op: AmendmentOp, rop: ResolvedOp | None, rop_descr
     )
 
 
+def _pathologies_include_recovery_kind(
+    pathologies: tuple[SourcePathology, ...],
+    recovery_kind: RecoveryKind,
+) -> bool:
+    for pathology in pathologies:
+        raw = pathology.detail.get("recovery_kind") or pathology.detail.get("rebound_kind")
+        if raw is None or raw == "":
+            continue
+        if coerce_recovery_kind(raw) == recovery_kind:
+            return True
+    return False
+
+
+def _legacy_unscoped_duplicate_consumed_paths(
+    *,
+    before_state: "ReplayState",
+    after_state: "ReplayState",
+    new_pathologies: tuple[SourcePathology, ...],
+    dispatch_op: AmendmentOp,
+    sec_path: Path | None,
+) -> TreePaths:
+    if sec_path is None:
+        return ()
+    if not _pathologies_include_recovery_kind(
+        new_pathologies,
+        _SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE_RULE_ID,
+    ):
+        return ()
+    target_label = dispatch_op.target_section or str(sec_path[-1][1])
+    consumed: list[TreePath] = []
+    for candidate in section_paths_for_label(before_state.provision_index, target_label):
+        path = tuple(candidate)
+        if path == tuple(sec_path):
+            continue
+        if any(kind in {"chapter", "part"} for kind, _value in path[:-1]):
+            continue
+        if _tops.resolve(before_state.ir, path) is None:
+            continue
+        if _tops.resolve(after_state.ir, path) is not None:
+            continue
+        consumed_path = _path_to_tuple(path)
+        if consumed_path is not None:
+            consumed.append(consumed_path)
+    return tuple(consumed)
+
+
 def _apply_legacy_dispatch(
     state: "ReplayState",
     op: AmendmentOp,
@@ -115,6 +168,7 @@ def _apply_legacy_dispatch(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     path_hint: Path | None = None,
     standalone_section_targets: StandaloneSectionTargetsInput = None,
     rop: Optional[ResolvedOp] = None,
@@ -248,6 +302,8 @@ def _apply_legacy_dispatch(
         migration_ledger=migration_ledger,
         write_receipts_out=write_receipts,
         replay_history_ops=replay_history_ops,
+        findings_out=findings_out,
+        strict_profile=strict_profile,
     )
     if container_result is not None:
         # Receipt-first declaration (apply contract §4): the chapter/part
@@ -324,6 +380,7 @@ def _apply_legacy_dispatch(
         and dispatch_op.move_clause_target_unit_kind != "chapter"
     )
 
+    whole_pathology_cursor = len(source_pathologies_out) if source_pathologies_out is not None else 0
     whole_result = None
     migration_rebased_target_path = None
     migration_rebase_source_path = None
@@ -365,6 +422,9 @@ def _apply_legacy_dispatch(
             migration_ledger=migration_ledger,
         )
     if whole_result is not None:
+        whole_new_pathologies: tuple[SourcePathology, ...] = ()
+        if source_pathologies_out is not None:
+            whole_new_pathologies = tuple(source_pathologies_out[whole_pathology_cursor:])
         resolved_target_path = (
             _resolved_target_path_for_rop_event(rop, sec_path)
             if rop is not None
@@ -394,6 +454,24 @@ def _apply_legacy_dispatch(
                 ),
             )
             removed_paths = (migration_rebase_source_path,)
+        consumed_unscoped_duplicate_paths = _legacy_unscoped_duplicate_consumed_paths(
+            before_state=state,
+            after_state=whole_result,
+            new_pathologies=whole_new_pathologies,
+            dispatch_op=dispatch_op,
+            sec_path=sec_path,
+        )
+        if consumed_unscoped_duplicate_paths:
+            declared_allowances = declared_allowances + (
+                DeclaredMutationAllowance(
+                    kind="recovery_path",
+                    paths=consumed_unscoped_duplicate_paths,
+                    rule_id=_SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE_RULE_ID,
+                ),
+            )
+            removed_paths = tuple(
+                dict.fromkeys((*removed_paths, *consumed_unscoped_duplicate_paths))
+            )
         if resolved_target_path is not None:
             if dispatch_op.op_type == "INSERT":
                 created_paths = (resolved_target_path,)

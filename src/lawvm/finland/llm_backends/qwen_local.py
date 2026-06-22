@@ -119,6 +119,7 @@ def _extract_json_candidate(raw: str) -> str:
     JSON is typically the last JSON-looking block in the output.
     Returns *raw* unchanged if no {...} block is found (let json.loads fail).
     """
+    # lawvm-regex: owning_parser extracts the JSON object from the model's own backend output/reasoning trace, not statute text
     matches = _JSON_OBJ_RE.findall(raw)
     return matches[-1] if matches else raw
 

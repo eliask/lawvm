@@ -48,6 +48,10 @@ from lawvm.finland.payload_normalize import (
     elaborate_payload_against_live,
     prepare_payload_surface,
 )
+from lawvm.finland.compile_group_elaboration import (
+    _RESTORE_HEADING_FOR_EXPLICIT_FACET,
+    _restore_source_heading_for_explicit_heading_facet,
+)
 from lawvm.finland.replay_notices import (
     reset_replay_verbose as _reset_replay_verbose,
     set_replay_verbose as _set_replay_verbose,
@@ -379,6 +383,7 @@ def build_amendment_bundle(
             used_preamble_body_fallback=used_preamble_body_fallback,
             parent_id=statute_id,
             strict_profile=None,
+            source_model=source_model,
         )
         ops = _naco_result.output
         bundle["compile_projection_rows"] = [
@@ -475,6 +480,16 @@ def build_amendment_bundle(
                 profile=get_replay_profile(mode),
                 strict_profile=None,
             )
+            heading_restore_observation: dict[str, object] | None = None
+            prepared, heading_restore_observation = _restore_source_heading_for_explicit_heading_facet(
+                source_model=source_model,
+                prepared_muutos_ir=prepared,
+                group_ops=group_ops,
+                target_unit_kind=target_unit_kind_value,
+                target_norm=target_norm,
+                target_chapter=target_chapter,
+                target_part=target_part,
+            )
             fctx = _FilterCtx(muutos_ir=prepared, muutos_tree=muutos_tree, johto=johto)
             rejected_pre = []
             filtered_pre = _filter_ops_by_constraints(group_ops, fctx, rejected_ops_out=rejected_pre)
@@ -531,6 +546,7 @@ def build_amendment_bundle(
                     if not _has_unresolved_named_row_targets(filtered_pre, base_payload_norm.group_ops):
                         payload_ctx = base_payload_ctx
                         payload_norm = base_payload_norm
+            normalized_muutos_ir = payload_norm.muutos_ir
             slot_assignment = payload_norm.slot_assignment
             fctx.slot_assignment = slot_assignment
             rejected_post = []
@@ -564,7 +580,7 @@ def build_amendment_bundle(
                 "cross_heading": summarize_node(cross_ir),
                 "raw_payload": summarize_node(raw_muutos_ir),
                 "prepared_payload": summarize_node(prepared),
-                "normalized_payload": summarize_node(payload_norm.muutos_ir),
+                "normalized_payload": summarize_node(normalized_muutos_ir),
                 "ops_raw": [op.description() for op in group_ops],
                 "ops_after_constraints": [op.description() for op in filtered_pre],
                 "rejected_ops_pre_constraints": [failed.as_detail() for failed in rejected_pre],
@@ -605,7 +621,17 @@ def build_amendment_bundle(
                 ],
                 "elaboration_observations": [
                     _serialize_observation(observation) for observation in (payload_norm.elaboration_observations or [])
-                ],
+                ] + (
+                    [
+                        {
+                            "kind": _RESTORE_HEADING_FOR_EXPLICIT_FACET,
+                            "stage": "group_payload_normalization",
+                            "detail": dict(heading_restore_observation),
+                        }
+                    ]
+                    if heading_restore_observation is not None
+                    else []
+                ),
             }
             bundle["groups"].append(group_bundle)
     finally:

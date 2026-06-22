@@ -1,8 +1,9 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
-from lawvm.core.ir import IRNode
-from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.provenance import OperationSource
+from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.finland.scope import (
     _johtolause_explicitly_binds_chapter_section,
     _johtolause_explicitly_mentions_chaptered_section_target,
@@ -811,6 +812,252 @@ def test_assign_scope_from_renumber_destinations_consumes_carry_forward_once() -
     assert "grouped_part_scope" not in scoped[2].provenance_tags
     assert "chapter_scope_carry_forward" not in scoped[2].provenance_tags
 
+
+def test_assign_scope_from_renumber_destinations_repairs_jolloin_companion_scope() -> None:
+    source = OperationSource(statute_id="1990/1367")
+    renumber = LegalOperation(
+        op_id="renumber_47_1_to_2",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "47"), ("subsection", "1"))),
+        destination=LegalAddress(path=(("section", "47"), ("subsection", "2"))),
+        source=source,
+        witness_rule_id="fi.jolloin_renumber",
+    )
+    insert = LegalOperation(
+        op_id="insert_47_1",
+        sequence=2,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "11"), ("section", "47"), ("subsection", "1"))),
+        source=source,
+    )
+
+    scoped = assign_scope_from_renumber_destinations([renumber, insert])
+
+    assert scoped[0].target.path == (
+        ("chapter", "11"),
+        ("section", "47"),
+        ("subsection", "1"),
+    )
+    assert "jolloin_renumber_scope_from_companion_target" in scoped[0].provenance_tags
+    assert scoped[1].target.path == insert.target.path
+
+
+def test_assign_scope_from_renumber_destinations_scans_past_unrelated_same_source_ops() -> None:
+    source = OperationSource(statute_id="1990/1367")
+    renumber = LegalOperation(
+        op_id="renumber_47_1_to_2",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "47"), ("subsection", "1"))),
+        destination=LegalAddress(path=(("section", "47"), ("subsection", "2"))),
+        source=source,
+        witness_rule_id="fi.jolloin_renumber",
+    )
+    unrelated = LegalOperation(
+        op_id="insert_9a",
+        sequence=2,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "9a"))),
+        source=source,
+    )
+    later_insert = LegalOperation(
+        op_id="insert_47_1",
+        sequence=3,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "11"), ("section", "47"), ("subsection", "1"))),
+        source=source,
+    )
+
+    scoped = assign_scope_from_renumber_destinations(
+        [renumber, unrelated, later_insert]
+    )
+
+    assert scoped[0].target.path == (
+        ("chapter", "11"),
+        ("section", "47"),
+        ("subsection", "1"),
+    )
+    assert "jolloin_renumber_scope_from_companion_target" in scoped[0].provenance_tags
+
+
+def test_assign_scope_from_renumber_destinations_does_not_use_non_insert_jolloin_witness() -> None:
+    source = OperationSource(statute_id="1990/1367")
+    renumber = LegalOperation(
+        op_id="renumber_47_1_to_2",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "47"), ("subsection", "1"))),
+        destination=LegalAddress(path=(("section", "47"), ("subsection", "2"))),
+        source=source,
+        witness_rule_id="fi.jolloin_renumber",
+    )
+    replace = LegalOperation(
+        op_id="replace_47_1",
+        sequence=2,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("chapter", "11"), ("section", "47"), ("subsection", "1"))),
+        source=source,
+    )
+
+    scoped = assign_scope_from_renumber_destinations([renumber, replace])
+
+    assert scoped[0].target.path == renumber.target.path
+    assert "jolloin_renumber_scope_from_companion_target" not in scoped[0].provenance_tags
+
+
+def test_assign_scope_from_renumber_destinations_stops_at_same_leaf_non_insert() -> None:
+    source = OperationSource(statute_id="2024/448")
+    renumber = LegalOperation(
+        op_id="renumber_173_2_to_3",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "18"), ("section", "173"), ("subsection", "2"))),
+        destination=LegalAddress(path=(("section", "173"), ("subsection", "3"))),
+        source=source,
+        witness_rule_id="fi.jolloin_renumber",
+    )
+    replace = LegalOperation(
+        op_id="replace_173_2",
+        sequence=2,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("chapter", "18"), ("section", "173"), ("subsection", "2"))),
+        source=source,
+    )
+    later_insert = LegalOperation(
+        op_id="insert_173_2",
+        sequence=3,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(
+            path=(("part", "2"), ("chapter", "18"), ("section", "173"), ("subsection", "2"))
+        ),
+        source=source,
+    )
+
+    scoped = assign_scope_from_renumber_destinations([renumber, replace, later_insert])
+
+    assert scoped[0].target.path == renumber.target.path
+    assert "jolloin_renumber_scope_from_companion_target" not in scoped[0].provenance_tags
+
+
+def test_assign_scope_from_renumber_destinations_stops_at_same_scope_insert() -> None:
+    source = OperationSource(statute_id="2009/226")
+    renumber = LegalOperation(
+        op_id="renumber_66_2_to_3",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "8"), ("section", "66"), ("subsection", "2"))),
+        destination=LegalAddress(path=(("section", "66"), ("subsection", "3"))),
+        source=source,
+        witness_rule_id="fi.jolloin_renumber",
+    )
+    same_scope_insert = LegalOperation(
+        op_id="insert_66_2_current",
+        sequence=2,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "8"), ("section", "66"), ("subsection", "2"))),
+        source=source,
+    )
+    later_insert = LegalOperation(
+        op_id="insert_66_2_later",
+        sequence=3,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "10"), ("section", "66"), ("subsection", "2"))),
+        source=source,
+    )
+
+    scoped = assign_scope_from_renumber_destinations([renumber, same_scope_insert, later_insert])
+
+    assert scoped[0].target.path == renumber.target.path
+    assert "jolloin_renumber_scope_from_companion_target" not in scoped[0].provenance_tags
+
+
+def test_assign_scope_from_renumber_destinations_preserves_live_unique_jolloin_scope() -> None:
+    source = OperationSource(statute_id="2009/226")
+    renumber = LegalOperation(
+        op_id="renumber_66_2_to_3",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "8"), ("section", "66"), ("subsection", "2"))),
+        destination=LegalAddress(path=(("section", "66"), ("subsection", "3"))),
+        source=source,
+        provenance_tags=("renumber_clause", "chapter_scope_from_unique_live_section"),
+        witness_rule_id="fi.jolloin_renumber",
+    )
+    later_insert = LegalOperation(
+        op_id="insert_66_2_later",
+        sequence=2,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "10"), ("section", "66"), ("subsection", "2"))),
+        source=source,
+    )
+
+    scoped = assign_scope_from_renumber_destinations([renumber, later_insert])
+
+    assert scoped[0].target.path == renumber.target.path
+    assert "jolloin_renumber_scope_from_companion_target" not in scoped[0].provenance_tags
+
+
+def test_assign_scope_from_renumber_destinations_skips_multi_jolloin_sources() -> None:
+    source = OperationSource(statute_id="2023/393")
+    renumber_14 = LegalOperation(
+        op_id="renumber_14_4_to_5",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "14"), ("subsection", "4"))),
+        destination=LegalAddress(path=(("section", "14"), ("subsection", "5"))),
+        source=source,
+        witness_rule_id="fi.jolloin_renumber",
+    )
+    renumber_28 = LegalOperation(
+        op_id="renumber_28_2_to_3",
+        sequence=2,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "28"), ("subsection", "2"))),
+        destination=LegalAddress(path=(("section", "28"), ("subsection", "3"))),
+        source=source,
+        witness_rule_id="fi.jolloin_renumber",
+    )
+    insert_14 = LegalOperation(
+        op_id="insert_14_4",
+        sequence=3,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "4"), ("section", "14"), ("subsection", "4"))),
+        source=source,
+    )
+
+    scoped = assign_scope_from_renumber_destinations([renumber_14, renumber_28, insert_14])
+
+    assert scoped[0].target.path == renumber_14.target.path
+    assert scoped[1].target.path == renumber_28.target.path
+    assert "jolloin_renumber_scope_from_companion_target" not in scoped[0].provenance_tags
+    assert "jolloin_renumber_scope_from_companion_target" not in scoped[1].provenance_tags
+
+
+def test_assign_scope_from_renumber_destinations_does_not_cross_source_for_jolloin_scope() -> None:
+    renumber = LegalOperation(
+        op_id="renumber_47_1_to_2",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "47"), ("subsection", "1"))),
+        destination=LegalAddress(path=(("section", "47"), ("subsection", "2"))),
+        source=OperationSource(statute_id="1990/1367"),
+        witness_rule_id="fi.jolloin_renumber",
+    )
+    later_insert = LegalOperation(
+        op_id="insert_47_1_later",
+        sequence=2,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "11"), ("section", "47"), ("subsection", "1"))),
+        source=OperationSource(statute_id="1993/665"),
+    )
+
+    scoped = assign_scope_from_renumber_destinations([renumber, later_insert])
+
+    assert scoped[0].target.path == renumber.target.path
+    assert "jolloin_renumber_scope_from_companion_target" not in scoped[0].provenance_tags
+
+
 def test_strip_unjustified_chapter_scope_keeps_insert_when_section_absent_from_stated_chapter() -> None:
     # Regression test for 2011/587 §4a.
     # §4a exists in chapter:15 (from a VÄLIAIKAINEN amendment) but NOT in chapter:3.
@@ -866,9 +1113,6 @@ def test_strip_unjustified_chapter_scope_keeps_insert_when_section_absent_from_s
 
     assert got[0].target.path == (("chapter", "3"), ("section", "4a"))
     assert "chapter_scope_stripped_unique_section" not in got[0].provenance_tags
-
-
-from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
 
 
 def test_strip_subsection_insert_with_chapter_carryforward_different_chapter() -> None:

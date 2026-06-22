@@ -2370,6 +2370,30 @@ def test_1996_579_1998_518_new_chapter_does_not_reanimate_repealed_section_32() 
     assert "Korvausrahaston jäsenyys" in irnode_to_text(chapter_6_section_32)
 
 
+def test_2008_878_2016_520_reinstated_section_keeps_prior_repeal_scope() -> None:
+    """A cited same-label reinstatement must not follow a stale source chapter wrapper."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2008/878",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
+
+    section_61a = replay.materialized_state.find_section("61a", "6")
+    assert section_61a is not None
+    assert "Johdon toiminnan rajoittaminen" in irnode_to_text(section_61a)
+    assert replay.materialized_state.find_section("61a", "3") is None
+    assert [
+        event
+        for event in getattr(replay, "migration_events", ())
+        if getattr(event, "source_statute", "") == "2016/520"
+        and "61a" in str(event)
+    ] == []
+
+
 @pytest.mark.slow
 def test_1992_1243_2016_118_chapter_8a_repealed_by_2024_853() -> None:
     """Real corpus anchor for single unnumbered chapter-heading migration."""
@@ -3048,7 +3072,14 @@ def test_1993_615_heading_amendments_applied() -> None:
     )
 
 
-def test_2017_93_bench_comparable_first_subsection_replace_drops_stale_flattened_tail() -> None:
+def test_2017_93_bench_comparable_first_subsection_replace_materializes_flattened_list() -> None:
+    # The bench-comparable oracle for 2017/93 is the 2020-12-30 consolidation,
+    # which has commenced (effective date <= today) and is therefore accepted as
+    # the in-force comparison artifact. That consolidation carries a genuine
+    # ten-item flattened intro list in section 1 / subsection 1 (item 9 =
+    # Poliisiammattikorkeakoulu (1164/2013) was added after the 2017 promulgation,
+    # pushing Pelastusopisto to item 10). The first-subsection replace must
+    # materialize all ten list items, matching the oracle.
     replay = call_replay_xml(
         replay_xml,
         request=ReplayXmlRequest(
@@ -3069,7 +3100,7 @@ def test_2017_93_bench_comparable_first_subsection_replace_drops_stale_flattened
     )
     paragraphs = [child for child in sub1.children if child.kind is IRNodeKind.PARAGRAPH]
 
-    assert [paragraph.label for paragraph in paragraphs] == [str(idx) for idx in range(1, 10)]
+    assert [paragraph.label for paragraph in paragraphs] == [str(idx) for idx in range(1, 11)]
     assert "Pelastusopistosta annettu laki (607/2006)." in irnode_to_text(paragraphs[-1])
 
 

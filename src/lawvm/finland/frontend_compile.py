@@ -36,6 +36,7 @@ _LETTER_SUFFIX_CONTINUATION_PREVIOUS_RE = re.compile(r"(\d+)([a-z]?)", flags=re.
 _LETTER_SUFFIX_CONTINUATION_CURRENT_RE = re.compile(r"(\d+)([a-z])", flags=re.I)
 
 if TYPE_CHECKING:
+    from lawvm.core.provenance import SourceAnchor
     from lawvm.finland.johtolause import ClauseParseResult
     from lawvm.finland.source_model import AmendmentSourceModel
 
@@ -85,6 +86,7 @@ from lawvm.finland.scope import (
     assign_chapter_scope_from_johtolause as _assign_chapter_scope_from_johtolause,
     assign_scope_from_renumber_destinations as _assign_scope_from_renumber_destinations,
 )
+from lawvm.finland.scoped_section_resolver import section_paths_for_label
 from lawvm.finland.metadata import (
     TemporaryProvisionExpiryOverride,
     _statute_issue_date,
@@ -371,6 +373,7 @@ def _parenthesized_payload_labels_for_section(
             continue
         for paragraph in section.findall(".//{*}p"):
             text = etree.tostring(paragraph, method="text", encoding="unicode").strip()
+            # lawvm-regex: prefilter leading (N) label lexer over the amendment's own body <p> text payload; pure label-token shape, mints no legal state
             match = _PARENTHESIZED_LEADING_LABEL_RE.match(text)
             if match is not None:
                 labels.add(_norm_num_token(match.group(1)))
@@ -404,6 +407,7 @@ def _postposed_kohta_labels_for_section(johto: str, *, section_label: str) -> se
     tail = normalized[start + len(needle) : start + len(needle) + 240]
     tail = re.split(r"\b(?:lisätään|kumotaan|siirretään)\b|[.;]", tail, maxsplit=1, flags=re.IGNORECASE)[0]
     labels: set[str] = set()
+    # lawvm-regex: owning_parser postposed-kohta label recognizer over a bounded slice of the FI-owned normalized johto surface; not a cross-plane raw_text read
     for match in _POSTPOSED_KOHTA_LABELS_RE.finditer(tail):
         labels.update(_parse_section_list_labels(match.group(1)))
     return {_norm_num_token(label) for label in labels if _norm_num_token(label).isdigit()}
@@ -701,7 +705,7 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
     return ops, []
 
 
-_cited_scope_cache: dict[tuple[str, str], dict[str, tuple[str | None, str | None]]] = {}
+_cited_scope_cache: dict[tuple[str, str, int], dict[str, tuple[str | None, str | None]]] = {}
 _cited_effective_date_cache: dict[str, str | None] = {}
 _REINSTATEMENT_SECTION_LIST_FRAGMENT = (
     r"\d{1,4}(?:\s*[a-zäöå])?"
@@ -757,6 +761,7 @@ def _reinstatement_match_has_local_chapter_insert_scope(
     match_start: int,
 ) -> bool:
     prefix = normalized_johto[max(0, match_start - 180) : match_start]
+    # lawvm-regex: prefilter bounded local-chapter-insert scope disambiguation on owned normalized johto prefix; mints no legal state
     return _LOCAL_CHAPTER_INSERT_SCOPE_BEFORE_REINSTATEMENT_RE.search(prefix) is not None
 
 
@@ -769,7 +774,7 @@ def _compiled_cited_section_scopes(
 ) -> dict[str, tuple[str | None, str | None]]:
     if not cited_id or cited_id == amendment_id:
         return {}
-    cache_key = (parent_id, cited_id)
+    cache_key = (parent_id, cited_id, id(master.ir))
     if cache_key in _cited_scope_cache:
         return _cited_scope_cache[cache_key]
 
@@ -818,6 +823,7 @@ def _cited_repealed_section_scope_for_replacement(
     normalized = _normalize_fi_parse_text(johto)
     if not normalized or "kumot" not in normalized or "tilalle" not in normalized:
         return None
+    # lawvm-regex: owning_parser substring-guarded (kumot/tilalle) single-pass reinstatement recognizer over the FI-owned normalized johto; not a cross-plane raw_text read
     for match in _CITED_REPEALED_SECTION_REPLACEMENT_RE.finditer(normalized):
         if _reinstatement_match_has_local_chapter_insert_scope(normalized, match.start()):
             continue
@@ -1016,7 +1022,7 @@ def _body_chapter_scope_for_section_op(
             and not op.target_item
             and not op.target_special
             and scope_witness is not None
-            and scope_witness.source == "carry_forward"
+            and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
         ):
             return None
 
@@ -1081,7 +1087,7 @@ def _body_chapter_scope_for_section_op(
         if not (
             op.target_chapter
             and scope_witness is not None
-            and scope_witness.source == "carry_forward"
+            and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
             and _source_declares_chapter_heading_wave(muutos_tree=muutos_tree, johto=johto)
         ):
             return None
@@ -1520,6 +1526,7 @@ def _johto_says_repealed_section_replaced_by_new_section(johto: str, section_nor
             match.group("old"),
             match.group("new"),
         )
+        # lawvm-regex: owning_parser reinstatement-list recognizer over the FI-owned normalized johto; not a cross-plane raw_text read
         for match in _REPEALED_SECTION_REPLACEMENT_LIST_RE.finditer(normalized)
     )
 
@@ -1531,6 +1538,7 @@ def _johto_says_statute_level_repealed_section_replaced_by_new_section(
     normalized = _normalize_fi_parse_text(johto)
     if not normalized or "kumot" not in normalized or "tilalle" not in normalized:
         return False
+    # lawvm-regex: owning_parser reinstatement-list recognizer over the FI-owned normalized johto; not a cross-plane raw_text read
     for match in _REPEALED_SECTION_REPLACEMENT_LIST_RE.finditer(normalized):
         if _reinstatement_match_has_local_chapter_insert_scope(normalized, match.start()):
             continue
@@ -1636,7 +1644,7 @@ def _infer_flat_reinstated_section_scope_from_base(
     explicit_absent_statute_level_reinstatement = (
         op.target_chapter is not None
         and scope_witness is not None
-        and scope_witness.source == "explicit_chunk"
+        and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
         and master.find_section_path(section_norm, op.target_chapter, op.target_part) is None
         and _johto_says_statute_level_repealed_section_replaced_by_new_section(
             johto,
@@ -1644,7 +1652,8 @@ def _infer_flat_reinstated_section_scope_from_base(
         )
     )
     if op.target_chapter is not None and (
-        scope_witness is None or scope_witness.source not in {"carry_forward", "explicit_chunk"}
+        scope_witness is None
+        or scope_witness.source not in {ScopeResolutionSource.CARRY_FORWARD, ScopeResolutionSource.EXPLICIT_CHUNK}
     ):
         if not unwitnessed_absent_statute_level_reinstatement:
             return None
@@ -1679,7 +1688,26 @@ def _infer_flat_reinstated_section_scope_from_base(
             part=cited_part,
             chapter=cited_chapter,
         ):
-            return (cited_part, cited_chapter)
+            source_chunk_target_absent = (
+                op.target_chapter is not None
+                and scope_witness is not None
+                and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
+                and master.find_section_path(section_norm, op.target_chapter, op.target_part)
+                is None
+            )
+            cited_repeal_target_present = (
+                master.find_section_path(section_norm, cited_chapter, cited_part) is not None
+            )
+            if (
+                op.target_chapter is None
+                or cited_chapter == op.target_chapter
+                or (
+                    scope_witness is not None
+                    and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
+                )
+                or (source_chunk_target_absent and cited_repeal_target_present)
+            ):
+                return (cited_part, cited_chapter)
     if base_ir is None:
         return None
     base_scope = _base_section_scope_for_unique_section(base_ir=base_ir, section_norm=section_norm)
@@ -1698,7 +1726,7 @@ def _infer_flat_reinstated_section_scope_from_base(
         unwitnessed_absent_statute_level_reinstatement
         or explicit_absent_statute_level_reinstatement
         or op.target_chapter is None
-        or (scope_witness is not None and scope_witness.source == "carry_forward")
+        or (scope_witness is not None and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD)
     ):
         return (base_part, base_chapter)
     if not _source_body_has_flat_whole_section(
@@ -1772,6 +1800,137 @@ def _infer_unique_live_section_chapter_scope(
     )
 
 
+def _direct_heading_text(node: IRNode | None) -> str:
+    if node is None:
+        return ""
+    for child in node.children:
+        if child.kind is IRNodeKind.HEADING:
+            return " ".join(irnode_to_text(child).split())
+    return ""
+
+
+def _infer_duplicate_section_scope_from_source_heading(
+    *,
+    op: AmendmentOp,
+    master: "ReplayState",
+    source_model: "AmendmentSourceModel | None",
+) -> tuple[str | None, str] | None:
+    """Bind an unscoped duplicate section label by unique source/live heading fit."""
+    if source_model is None:
+        return None
+    if (
+        op.target_unit_kind != "section"
+        or op.op_type not in {"REPLACE", "REPEAL"}
+        or not op.target_section
+        or op.target_chapter is not None
+        or op.target_paragraph is not None
+        or op.target_item is not None
+        or op.target_special is not None
+    ):
+        return None
+
+    section_norm = _norm_num_token(op.target_section)
+    source_payload = source_model.lookup_payload_ir(
+        "section",
+        section_norm,
+        target_part=op.target_part,
+    )
+    source_heading = _direct_heading_text(source_payload.payload_ir).casefold()
+    if not source_heading:
+        return None
+
+    candidates: list[tuple[float, str | None, str]] = []
+    for path in section_paths_for_label(
+        master.provision_index,
+        section_norm,
+        target_part=op.target_part,
+    ):
+        node = master.resolve(path)
+        if node is None:
+            continue
+        live_heading = _direct_heading_text(node).casefold()
+        if not live_heading:
+            continue
+        chapter = next((label for kind, label in path if kind == "chapter"), None)
+        if chapter is None:
+            continue
+        part = next((label for kind, label in path if kind == "part"), None)
+        candidates.append(
+            (SequenceMatcher(None, source_heading, live_heading).ratio(), part, chapter)
+        )
+
+    if len(candidates) < 2:
+        return None
+    ranked = sorted(candidates, key=lambda row: row[0], reverse=True)
+    best_score, best_part, best_chapter = ranked[0]
+    second_score = ranked[1][0]
+    if best_score < 0.60 or best_score - second_score < 0.15:
+        return None
+    return (best_part, best_chapter)
+
+
+def _renumbers_same_section_label_away(
+    op: AmendmentOp,
+    ops: List[AmendmentOp],
+) -> bool:
+    """Return True when this amendment explicitly vacates ``op``'s label."""
+    section_label = _norm_num_token(op.target_section or "")
+    if not section_label:
+        return False
+    for candidate in ops:
+        if (
+            candidate is op
+            or candidate.op_type != "RENUMBER"
+            or candidate.target_unit_kind != "section"
+            or _norm_num_token(candidate.target_section or "") != section_label
+            or candidate.lo is None
+            or candidate.lo.destination is None
+        ):
+            continue
+        destination_label = candidate.lo.destination.leaf_label()
+        if _norm_num_token(destination_label) != section_label:
+            return True
+    return False
+
+
+def _infer_recodification_vacated_insert_scope(
+    *,
+    op: AmendmentOp,
+    ops: List[AmendmentOp],
+    master: "ReplayState",
+    source_model: "AmendmentSourceModel | None",
+) -> tuple[str | None, str | None] | None:
+    """Bind a same-wave new section insert to the label vacated by a relabel.
+
+    Historical source XML can keep later provisions inside one overbroad
+    chapter wrapper.  If the same amendment also renumbers the exact live
+    section label away and then inserts a new whole section with that label, the
+    live pre-wave address of the vacated section is the owned target scope for
+    the insert.
+    """
+    if source_model is None or not _is_whole_section_insert(op):
+        return None
+    section_label = _norm_num_token(op.target_section or "")
+    if not _renumbers_same_section_label_away(op, ops):
+        return None
+    body_scope = source_model.body_section_scope(section_label)
+    if body_scope is None:
+        return None
+    _body_part, body_chapter = body_scope
+    if not body_chapter:
+        return None
+    if not source_model.body_chapter_is_single_mixed_wrapper(body_chapter, master):
+        return None
+    live_path = master.find_section_path(section_label, None, op.target_part)
+    if live_path is None:
+        return None
+    live_part = next((label for kind, label in live_path if kind == "part"), None)
+    live_chapter = next((label for kind, label in live_path if kind == "chapter"), None)
+    if not live_chapter or _norm_num_token(live_chapter) == _norm_num_token(body_chapter):
+        return None
+    return live_part, live_chapter
+
+
 def _infer_letter_suffix_insert_chapter_from_stem_host(
     *,
     op: AmendmentOp,
@@ -1807,9 +1966,9 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
     if op.target_chapter is not None:
         if scope_witness is None:
             return None
-        if scope_witness.source == "carry_forward":
+        if scope_witness.source is ScopeResolutionSource.CARRY_FORWARD:
             pass
-        elif scope_witness.source == "explicit_chunk":
+        elif scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK:
             if body_scope is None:
                 return None
             body_part, body_chapter = body_scope
@@ -2087,7 +2246,12 @@ def _retarget_stale_body_scope_for_section_op(
         or not op.target_chapter
         or (
             scope_witness is not None
-            and scope_witness.source not in {"carry_forward", "explicit_scope_rewrite", "explicit_chunk"}
+            and scope_witness.source
+            not in {
+                ScopeResolutionSource.CARRY_FORWARD,
+                ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                ScopeResolutionSource.EXPLICIT_CHUNK,
+            }
         )
     ):
         return None
@@ -2117,7 +2281,7 @@ def _retarget_stale_body_scope_for_section_op(
     body_part, body_chapter = body_scope
     if (
         scope_witness is not None
-        and scope_witness.source == "explicit_chunk"
+        and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
         and op.op_type == "INSERT"
         and op.target_paragraph is None
         and not op.target_item
@@ -2167,6 +2331,10 @@ class _AmendmentTreeMetadata:
     expiry_date: date | None
     provision_expiry_overrides: tuple[TemporaryProvisionExpiryOverride, ...]
     section_expiry_overrides: tuple[tuple[str, set[str], date], ...]
+    # Byte-level anchor of the source clause in the raw amendment bytes, when a
+    # verbatim contiguous span exists; None (fail-loud) otherwise. Stamped by
+    # the acquisition stage, which owns the raw bytes + chosen operative text.
+    source_anchor: "SourceAnchor | None" = None
 
 
 def _amendment_tree_metadata(
@@ -2233,6 +2401,7 @@ def _enrich_ops_from_amendment_tree(
         enacted=source_issue_date.isoformat() if source_issue_date else "",
         effective=eff_date.isoformat() if eff_date else "",
         raw_text=johto.strip(),
+        source_anchor=metadata.source_anchor,
         # _amendment_expiry_date returns the prose-inclusive last in-force day;
         # the kernel `expires` field is an exclusive cutoff, so convert here.
         expires=(
@@ -2245,6 +2414,7 @@ def _enrich_ops_from_amendment_tree(
     last_inferred_section_norm: str | None = None
     last_inferred_section_chapter: str | None = None
     last_inferred_section_part: str | None = None
+    heading_scope_source_model = source_model
     for op in ops:
         scoped_op = op
         body_scoped = False
@@ -2272,7 +2442,7 @@ def _enrich_ops_from_amendment_tree(
                     or scoped_op.target_special is not None
                 )
                 and scope_witness is not None
-                and scope_witness.source == "carry_forward"
+                and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
             ):
                 carry_forward_host = master.find_section_path(
                     _norm_num_token(scoped_op.target_section or ""),
@@ -2313,7 +2483,8 @@ def _enrich_ops_from_amendment_tree(
                 and scoped_op.target_item is None
                 and scoped_op.target_special is None
                 and scope_witness is not None
-                and scope_witness.source in {"carry_forward", "explicit_chunk"}
+                and scope_witness.source
+                in {ScopeResolutionSource.CARRY_FORWARD, ScopeResolutionSource.EXPLICIT_CHUNK}
             ):
                 reinstated_scope = _infer_flat_reinstated_section_scope_from_base(
                     op=scoped_op,
@@ -2353,14 +2524,37 @@ def _enrich_ops_from_amendment_tree(
                             else "fi_letter_suffix_stem_host_chapter_scope"
                         )
                 if inferred_chapter is None:
-                    inferred_chapter = _body_chapter_scope_for_section_op(
+                    if heading_scope_source_model is None:
+                        from lawvm.finland.source_model import AmendmentSourceModel
+
+                        heading_scope_source_model = AmendmentSourceModel.from_tree(muutos_tree)
+                    heading_scope = _infer_duplicate_section_scope_from_source_heading(
                         op=scoped_op,
-                        muutos_tree=muutos_tree,
                         master=master,
-                        johto=johto,
+                        source_model=heading_scope_source_model,
+                    )
+                    if heading_scope is not None:
+                        inferred_part, inferred_chapter = heading_scope
+                        inferred_rule_id = "fi_duplicate_section_scope_from_source_heading"
+                if inferred_chapter is None:
+                    recodification_vacated_scope = _infer_recodification_vacated_insert_scope(
+                        op=scoped_op,
+                        ops=ops,
+                        master=master,
                         source_model=source_model,
                     )
-                    inferred_rule_id = "fi_body_chapter_scope_from_source_body"
+                    if recodification_vacated_scope is not None:
+                        inferred_part, inferred_chapter = recodification_vacated_scope
+                        inferred_rule_id = "fi_recodification_vacated_insert_scope"
+                    else:
+                        inferred_chapter = _body_chapter_scope_for_section_op(
+                            op=scoped_op,
+                            muutos_tree=muutos_tree,
+                            master=master,
+                            johto=johto,
+                            source_model=source_model,
+                        )
+                        inferred_rule_id = "fi_body_chapter_scope_from_source_body"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
                         op=scoped_op,
@@ -2410,9 +2604,12 @@ def _enrich_ops_from_amendment_tree(
                     chapter=inferred_chapter,
                     rule_id=inferred_rule_id,
                 )
-            elif scope_witness is not None and scope_witness.source in {"explicit_scope_rewrite", "explicit_chunk"}:
+            elif scope_witness is not None and scope_witness.source in {
+                ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                ScopeResolutionSource.EXPLICIT_CHUNK,
+            }:
                 body_scoped = True
-            if body_scoped:
+            if body_scoped and inferred_rule_id != "fi_reinstated_section_scope_from_prior_repeal_address":
                 retargeted_scope = _retarget_stale_body_scope_for_section_op(
                     op=scoped_op,
                     muutos_tree=muutos_tree,
@@ -2578,7 +2775,13 @@ def _enrich_ops_from_amendment_tree(
         for op in patched:
             if (
                 op.target_unit_kind == "section"
-                and (op.target_section or "").lower() in labels
+                # Both `labels` and the target_section must pass through the
+                # SAME canonical token normalizer.  `labels` were built by
+                # `_parse_section_list_labels` (internal whitespace stripped,
+                # lowercased → e.g. "21b"); a raw ".lower()" on a spaced path
+                # label like "21 b" would miss "21b".  Normalize both sides.
+                and _norm_num_token(op.target_section or "")
+                in {_norm_num_token(label) for label in labels}
                 and op.lo is not None
                 and op.lo.source is not None
             ):
@@ -2824,14 +3027,17 @@ def _infer_temporary_targets_from_preceding_section_context(
     but the host section is still explicit in the immediately preceding clause.
     """
     lookahead = after_vaali[:80]
+    # lawvm-regex: prefilter bounded `uusi N moment...` modifier-shape gate over owned johto lookahead; mints no legal state
     if _TEMPORARY_MOMENT_SCOPE_RE.match(lookahead) is None:
         return frozenset()
 
+    # lawvm-regex: owning_parser host-section label scan over the owned johto preceding väliaikaisesti; not a cross-plane raw_text read
     preceding_matches = list(_SECTION_REF_RE.finditer(johto[:vaali_start]))
     if not preceding_matches:
         return frozenset()
 
     candidate = _norm_num_token(preceding_matches[-1].group(1))
+    # lawvm-regex: prefilter valid section-label shape gate on a normalized token; mints no legal state
     if not candidate or _VALID_SECTION_LABEL_RE.match(candidate) is None:
         return frozenset()
 
@@ -2877,10 +3083,12 @@ def _extract_temporary_targets_from_johtolause(
         "muutetaan X lain 5 § ja lisätään väliaikaisesti uusi 6 §"
         # fragment = "6" → {"6"} valid → frozenset({"6"})
     """
+    # lawvm-regex: prefilter väliaikaisesti adverb presence guard over owned johto; mints no legal state
     if _VAALIAIKAISESTI_RE.search(johto) is None:
         return None  # caller already checked, but guard anyway
 
     all_valid_labels: set[str] = set()
+    # lawvm-regex: prefilter per-occurrence väliaikaisesti adverb scan over owned johto; mints no legal state
     for m_vaali in _VAALIAIKAISESTI_RE.finditer(johto):
         after_vaali = johto[m_vaali.end():]
 
@@ -2897,6 +3105,7 @@ def _extract_temporary_targets_from_johtolause(
             # Filter: keep only labels that look like valid Finnish section identifiers.
             # "testilain5", "xlain5", etc. are statute-name artifacts → discard.
             valid_labels = frozenset(
+                # lawvm-regex: prefilter valid section-label shape filter on normalized tokens; mints no legal state
                 lbl for lbl in raw_labels if _VALID_SECTION_LABEL_RE.match(lbl)
             )
 
@@ -2925,6 +3134,11 @@ _LETTER_SUFFIX_NUM_RE = re.compile(r"^\d+\s+[a-z]\s*§", re.IGNORECASE)
 _PLAIN_SECTION_NUM_RE = re.compile(r"^\d+\s*§", re.IGNORECASE)
 _OPERATIVE_VERB_RE = re.compile(r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b", re.IGNORECASE)
 _BODY_ONLY_ITEM_LABEL_RE = re.compile(r"^\s*(\d+[a-z]?)\)")
+# Structural-target marker in a johtolause (hoisted per §1.11 from the act-wide
+# body-recovery fallback guard); presence means the johto already names a target.
+_JOHTO_STRUCTURAL_TARGET_MARKER_RE = re.compile(
+    r"\b(?:§|luku|luvun|osa|osan|liite|liitteen)\b"
+)
 
 
 def _body_direct_sections(muutos_tree: "etree._Element") -> "list[etree._Element]":
@@ -2970,6 +3184,7 @@ def _body_section_groups(muutos_tree: "etree._Element") -> "list[tuple[etree._El
 def _is_body_only_amendment_surface(johto: str, source_title: str) -> bool:
     cleaned_johto = _WHITESPACE_RE.sub(" ", johto or "").strip().lower()
     cleaned_title = _WHITESPACE_RE.sub(" ", source_title or "").strip().lower()
+    # lawvm-regex: prefilter operative-verb presence guard over owned johto (any verb -> not a body-only surface); mints no legal state
     if not cleaned_johto or _OPERATIVE_VERB_RE.search(cleaned_johto):
         return False
     if "muuttamisesta" not in cleaned_title or "kumoamisesta" in cleaned_title:
@@ -3010,6 +3225,7 @@ def _body_section_item_labels(
         p_elements.extend(orphan.findall(".//{*}p"))
     for p_el in p_elements:
         text = _WHITESPACE_RE.sub(" ", etree.tostring(p_el, method="text", encoding="unicode")).strip()
+        # lawvm-regex: prefilter leading item-label lexer over the amendment's own body <p> text payload; pure label-token shape, mints no legal state
         match = _BODY_ONLY_ITEM_LABEL_RE.match(text)
         if match:
             labels.append(_norm_num_token(match.group(1)))
@@ -3049,6 +3265,7 @@ def _section_direct_payload_paragraph_count(
         if _direct_child_localname(child) != "subsection":
             continue
         text = _WHITESPACE_RE.sub(" ", etree.tostring(child, method="text", encoding="unicode")).strip()
+        # lawvm-regex: prefilter item-label lexer over the amendment's own body subsection text payload (excludes item-labelled subsections from the count); mints no legal state
         if text and not _BODY_ONLY_ITEM_LABEL_RE.match(text):
             count += 1
     return count
@@ -3171,6 +3388,7 @@ def _extract_enacting_formula_body_insert_ops_fallback(
         if num_el is None:
             continue
         num_text = (num_el.text or "").strip()
+        # lawvm-regex: prefilter letter-suffix num-shape lexer over the amendment's own body <num> payload (gates INSERT fallback); pure label-token shape, mints no legal state
         if not _LETTER_SUFFIX_NUM_RE.match(num_text):
             continue  # plain-number sections handled elsewhere
         label = _norm_num_token(num_text)
@@ -3219,7 +3437,9 @@ def _enacting_formula_body_insert_unowned_section_findings(
             label = _norm_num_token(num_text)
             if label in accepted_targets:
                 continue
+            # lawvm-regex: prefilter letter-suffix num-shape lexer over the amendment's own body <num> payload (diagnostic reason_code); pure label-token shape, mints no legal state
             if not _LETTER_SUFFIX_NUM_RE.match(num_text):
+                # lawvm-regex: prefilter plain-num shape classification over the amendment's own body <num> payload (diagnostic reason_code); mints no legal state
                 if _PLAIN_SECTION_NUM_RE.match(num_text):
                     reason_code = "plain_number_not_owned_by_insert_fallback"
                 else:
@@ -3286,6 +3506,7 @@ def _extract_enacting_formula_body_replace_ops_fallback(
     if num_el is None:
         return []
     num_text = (num_el.text or "").strip()
+    # lawvm-regex: prefilter plain-num shape gate over the amendment's own body <num> payload (ceremonial-formula REPLACE fallback); pure label-token shape, mints no legal state
     if not _PLAIN_SECTION_NUM_RE.match(num_text):
         return []
     label = _norm_num_token(num_text)
@@ -3404,7 +3625,8 @@ def _extract_act_wide_body_section_replace_ops_fallback(
         return []
     if "muuttamisesta" not in cleaned_title or "kumoamisesta" in cleaned_title:
         return []
-    if re.search(r"\b(?:§|luku|luvun|osa|osan|liite|liitteen)\b", cleaned_johto):
+    # lawvm-regex: prefilter structural-target marker guard over owned johto (refuses act-wide body recovery when the johto already names a structural target); mints no legal state
+    if _JOHTO_STRUCTURAL_TARGET_MARKER_RE.search(cleaned_johto):
         return []
     if muutos_tree.find(".//{*}chapter") is not None or muutos_tree.find(".//{*}part") is not None:
         return []
@@ -3888,7 +4110,13 @@ def normalize_and_compile_ops(
             # Section-scoped: only tag ops whose target_section is in the set
             tagged_ops: List[AmendmentOp] = []
             for op in ops:
-                if (op.target_section or "").lower() in _temporary_targets:
+                # Same root-cause asymmetry as the section_expiry_overrides
+                # stamp site above: `_temporary_targets` were normalized by
+                # `_parse_section_list_labels` (→ "21b"), so a raw ".lower()"
+                # of a spaced path label "21 b" would miss the temporary scope.
+                if _norm_num_token(op.target_section or "") in {
+                    _norm_num_token(label) for label in _temporary_targets
+                }:
                     temp_tagged, temp_events = _tag_temporary_ops(
                         [op],
                         amendment_id=amendment_id,
@@ -4334,6 +4562,37 @@ def normalize_and_compile_ops(
             op.extraction_provenance_tags = tuple(
                 dict.fromkeys((*op.extraction_provenance_tags, "extraction_preamble_body"))
             )
+    if ops:
+        reinstated_scope_ops: list[AmendmentOp] = []
+        for op in ops:
+            reinstated_scope = _infer_flat_reinstated_section_scope_from_base(
+                op=op,
+                muutos_tree=muutos_tree,
+                master=master,
+                base_ir=base_ir,
+                johto=johto,
+                amendment_id=amendment_id,
+                parent_id=parent_id,
+                source_model=source_model,
+            )
+            if reinstated_scope is None:
+                reinstated_scope_ops.append(op)
+                continue
+            reinstated_part, reinstated_chapter = reinstated_scope
+            if reinstated_chapter is None or (
+                reinstated_part == op.target_part and reinstated_chapter == op.target_chapter
+            ):
+                reinstated_scope_ops.append(op)
+                continue
+            reinstated_scope_ops.append(
+                _add_inferred_section_chapter_scope(
+                    op,
+                    part=reinstated_part,
+                    chapter=reinstated_chapter,
+                    rule_id="fi_reinstated_section_scope_from_prior_repeal_address",
+                )
+            )
+        ops = reinstated_scope_ops
     if not ops:
         frontend_findings_out.append(
             Finding(
@@ -4367,6 +4626,139 @@ def normalize_and_compile_ops(
     )
 
 
+# ---------------------------------------------------------------------------
+# normalize_and_compile_ops_staged — WAIST #6 canonical-op StageResult adapter
+# ---------------------------------------------------------------------------
+
+
+def phase_result_to_canonical_op_stage(
+    phase_result: "PhaseResult[List[AmendmentOp]]",
+) -> "StageResult[List[AmendmentOp]]":
+    """Adapt the canonical-op ``PhaseResult`` onto the typed ``StageResult`` account.
+
+    WAIST #6 (canonical-operation / normalize / effect-lowering). The existing
+    ``normalize_and_compile_ops`` producer already returns the rich typed
+    ``PhaseResult`` carrier; this is an ADAPTER, not a from-scratch carrier — it
+    PROJECTS that carrier onto the canonical ``StageResult[list[AmendmentOp]]``:
+
+      * ``value``     — ``phase_result.output`` (the emitted ops, unchanged).
+      * ``findings``  — the OBSERVATION-role findings (informational; they do not
+        block). The blocking OBLIGATION/VIOLATION findings become typed
+        ``Residual`` records instead, so blocking lives in exactly one typed
+        account (the §LEDGER's "incompleteness can block a clean claim" home).
+      * ``residuals`` — one ``Residual(kind="unowned_violation", blocking=True)``
+        per blocking obligation/violation finding (a strict-rejected candidate op
+        / source pathology that must block). The reason/scope are sourced verbatim
+        from the finding so the residual is self-evidencing.
+      * ``coverage``  — ESCALATE-3D RESOLVED: ``total = #emitted ops + #rejected
+        candidate ops`` where the rejected lane is the producer's own typed
+        rejection findings (each blocking obligation = one rejected candidate op),
+        i.e. reuse the existing typed partition rather than a synthetic source
+        recount. ``owned`` = emitted ops; ``violation`` = rejected (blocking)
+        candidates. ``is_partition()`` holds.
+      * ``evidence``  — ``EMPTY_EVIDENCE`` (ops cite source downstream via the
+        apply ``WriteReceipt.source_anchor``, not here).
+      * ``authority`` — ``NEUTRAL_AUTHORITY`` (Pro §8): a canonical op is NOT yet
+        execution-authorized; authorization attaches at the apply waist (#7).
+    """
+    from lawvm.core.stage_result import (
+        EMPTY_EVIDENCE,
+        NEUTRAL_AUTHORITY,
+        CoverageCertificate,
+        Residual,
+        StageResult,
+    )
+
+    ops = phase_result.output
+    observations: List[Finding] = []
+    residuals: List[Residual] = []
+    for finding in phase_result.findings():
+        if finding.role == "observation":
+            observations.append(finding)
+            continue
+        # obligation / violation — the blocking decline channel. Project each
+        # onto a typed blocking residual; the reason/scope are self-evidencing.
+        detail = finding.detail
+        message = str(detail.get("message", "") or "")
+        target = str(
+            detail.get("target_section", "")
+            or detail.get("reason", "")
+            or ""
+        )
+        residuals.append(
+            Residual(
+                kind="unowned_violation",
+                reason=(
+                    message
+                    or f"{finding.kind}: strict-rejected canonical operation"
+                ),
+                scope=finding.kind,
+                source_unit_id=finding.source_statute,
+                text=target,
+                blocking=bool(finding.blocking),
+            )
+        )
+
+    emitted = len(ops)
+    rejected = len(residuals)
+    coverage = CoverageCertificate(
+        unit="candidate_ops",
+        total=emitted + rejected,
+        owned=emitted,
+        violation=rejected,
+        totality_claimed=True,
+    )
+    return StageResult(
+        value=ops,
+        evidence=EMPTY_EVIDENCE,
+        residuals=tuple(residuals),
+        findings=tuple(observations),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def normalize_and_compile_ops_staged(
+    johto: str,
+    muutos_tree: "etree._Element",
+    master: "ReplayState",
+    amendment_id: str,
+    source_title: str,
+    used_preamble_body_fallback: bool,
+    parent_id: str = "",
+    strict_profile: Optional[StrictProfile] = None,
+    parse_result: "ClauseParseResult | None" = None,
+    regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None,
+    base_ir: IRNode | None = None,
+    amendment_metadata: "_AmendmentTreeMetadata | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
+) -> "StageResult[List[AmendmentOp]]":
+    """StageResult-carried form of :func:`normalize_and_compile_ops` (WAIST #6).
+
+    Calls the existing producer and adapts its ``PhaseResult`` onto the typed
+    ``StageResult`` account via :func:`phase_result_to_canonical_op_stage`. The
+    ops + observation findings are byte-identical; the blocking decline becomes a
+    typed ``Residual`` (the single load-bearing blocking channel).
+    """
+    phase_result = normalize_and_compile_ops(
+        johto,
+        muutos_tree,
+        master,
+        amendment_id,
+        source_title,
+        used_preamble_body_fallback,
+        parent_id=parent_id,
+        strict_profile=strict_profile,
+        parse_result=parse_result,
+        regex_recognition_coverage_out=regex_recognition_coverage_out,
+        base_ir=base_ir,
+        amendment_metadata=amendment_metadata,
+        source_model=source_model,
+    )
+    return phase_result_to_canonical_op_stage(phase_result)
+
+
 if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState
     from lawvm.core.phase_result import PhaseResult
+    from lawvm.core.stage_result import StageResult

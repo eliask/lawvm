@@ -119,7 +119,29 @@ def _looks_like_fi_meta_repeal(text: str) -> bool:
         return False
     if 'annetun' not in lo:
         return False
+    # lawvm-regex: owning_parser meta-repeal clause recognizer over this module's own johto input string (substring-guarded); not a cross-plane raw_text read
     return bool(_FI_META_REPEAL_RE.search(text))
+
+
+def _title_looks_like_fi_meta_repeal(source_title: str) -> bool:
+    """Return True for titles that repeal a prior amendment instrument.
+
+    Some Finnish acts carry only a bare enacting formula in the preamble while
+    the title itself says ``<parent> N §:n muuttamisesta annetun lain
+    kumoamisesta``. That is lifecycle evidence about the amending instrument,
+    not authorization to execute a repeal of ``N §`` against the parent statute.
+    """
+    lo = source_title.casefold()
+    if "muuttamisesta" not in lo:
+        return False
+    return any(
+        marker in lo
+        for marker in (
+            "annetun lain kumoamisesta",
+            "annetun asetuksen kumoamisesta",
+            "annetun valtioneuvoston asetuksen kumoamisesta",
+        )
+    )
 
 
 OP_KEYWORDS = {
@@ -174,6 +196,7 @@ def _single_target_amending_act_title(source_title: str) -> bool:
     if any(token in source_norm for token in ("eräiden", "väliaikais", "voimaan", "kumoamisesta")):
         return False
     return bool(
+        # lawvm-regex: owning_parser single-target amendment-title shape recognizer over this module's own normalized source_title; not a cross-plane raw_text read
         re.match(
             r"^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+"
             r".+?\s+annetun\s+(?:lain|asetuksen)\s+muuttamisesta$",
@@ -189,6 +212,7 @@ def _source_title_target_reference_variants(source_title: str) -> set[str]:
         return set()
     if any(token in source_norm for token in ("eräiden", "väliaikais", "voimaan", "kumoamisesta")):
         return set()
+    # lawvm-regex: owning_parser amendment-title target-extraction recognizer over this module's own normalized source_title; not a cross-plane raw_text read
     match = re.match(
         r"^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+(.+?)\s+muuttamisesta$",
         source_norm,
@@ -392,6 +416,7 @@ def _title_explicitly_targets_other_statute(source_title: str, parent_title: str
         return False
     if any(token in source_norm for token in ('eräiden', 'väliaikais', 'voimaan', 'kumoamisesta')):
         return False
+    # lawvm-regex: owning_parser amendment-title target-head recognizer over this module's own normalized source_title; not a cross-plane raw_text read
     m = re.match(
         r'^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+(.+?\s+annetun\s+(?:lain|asetuksen))\s+muuttamisesta$',
         source_norm,
@@ -404,8 +429,10 @@ def _title_explicitly_targets_other_statute(source_title: str, parent_title: str
 
     source_kind = 'laki' if source_norm.startswith('laki ') else 'asetus'
     parent_kind = ''
+    # lawvm-regex: owning_parser instrument-kind classifier over this module's own normalized parent_title; not a cross-plane raw_text read
     if re.search(r'(?:^|\s)laki\b|laki$', parent_norm):
         parent_kind = 'laki'
+    # lawvm-regex: owning_parser instrument-kind classifier over this module's own normalized parent_title; not a cross-plane raw_text read
     elif re.search(r'(?:^|\s)asetus\b|asetus$', parent_norm):
         parent_kind = 'asetus'
 
@@ -428,6 +455,7 @@ def _single_target_title_names_other_statute(source_title: str, parent_title: st
         return False
     if any(token in source_norm for token in ("eräiden", "väliaikais", "voimaan", "kumoamisesta")):
         return False
+    # lawvm-regex: owning_parser amendment-title target-extraction recognizer over this module's own normalized source_title; not a cross-plane raw_text read
     match = re.match(
         r"^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+(.+?)\s+muuttamisesta$",
         source_norm,
@@ -516,11 +544,17 @@ def route_amendment(
     if not (parent_id and amendment_id and amendment_id.split("/")[0].isdigit()):
         return True, "no_guard_needed"
 
-    try:
-        amendment_num = amendment_id.split("/")[1]
-        parent_num = parent_id.split("/")[1]
-    except IndexError:
-        amendment_num = parent_num = ""
+    # Both IDs must be well-formed ``YEAR/NUM`` so the downstream citation match
+    # runs against real identifiers. A tuple missing its NUM part (no ``/``)
+    # cannot be parsed — decline the guard rather than continuing the match with
+    # empty identifiers, which would scan the johtolause against a malformed
+    # parent id and could yield a spurious match or a wrong skip reason.
+    amendment_parts = amendment_id.split("/")
+    parent_parts = parent_id.split("/")
+    if len(amendment_parts) < 2 or len(parent_parts) < 2:
+        return True, "no_guard_needed"
+    amendment_num = amendment_parts[1]
+    parent_num = parent_parts[1]
 
     # Primary citation check: does the preamble reference the parent?
     _refs_match = (

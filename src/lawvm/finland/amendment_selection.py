@@ -14,6 +14,8 @@ from typing import Literal
 
 import lxml.etree as etree
 
+from lawvm.core.filter_result import FilterResult, RejectedItem
+from lawvm.core.stage_result import PartitionResult
 from lawvm.corpus_store import CorpusStore
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import (
@@ -30,6 +32,14 @@ from lawvm.finland.metadata import (
 
 
 ReplaySelectionMode = Literal["official_consolidation", "legal_pit"]
+
+# Conservation (Audit C): a candidate the cutoff/oracle-version filter excludes
+# from the replay plan is rejected with this reason rather than silently dropped.
+AMENDMENT_OUT_OF_SCOPE_REASON = (
+    "amendment candidate is later than the selected cutoff / oracle version "
+    "boundary, so it is out of scope for this replay plan"
+)
+AMENDMENT_OUT_OF_SCOPE_REASON_CODE = "fi_amendment_selection_out_of_scope"
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,12 +79,21 @@ class AmendmentSourcePathology:
 
 @dataclass(frozen=True, slots=True)
 class ApplicableAmendmentSelection:
-    """Resolved amendment set plus the oracle/cutoff witness used to select it."""
+    """Resolved amendment set plus the oracle/cutoff witness used to select it.
+
+    Conservation (Audit C): ``out_of_scope`` carries the candidates the cutoff /
+    oracle-version filter excluded from the replay plan. They are no longer
+    silently dropped inside ``_filter_candidates`` — the selection result is the
+    production consumer that reads the filter partition's ``rejected`` lane and
+    surfaces every excluded candidate here for inspection. ``residuals`` keeps the
+    source-pathology drops (missing source bytes) as before.
+    """
 
     records: tuple[dict[str, object], ...]
     cutoff_date: dt.date | None
     oracle_version_amendment_id: str | None
     residuals: tuple[AmendmentSourcePathology, ...] = ()
+    out_of_scope: tuple[RejectedItem[AmendmentSelectionCandidate], ...] = ()
 
 
 @lru_cache(maxsize=1)
@@ -111,7 +130,7 @@ def select_applicable_amendments(
         selector=selector or ConsolidatedArtifactSelector.latest_cached_editorial(),
     )
     candidates, residuals = _read_amendment_candidates(parent_id, corpus)
-    applicable, cutoff_date, selection_basis_by_amendment = _filter_candidates(
+    partition, cutoff_date, selection_basis_by_amendment = _filter_candidates(
         parent_id=parent_id,
         mode=mode,
         candidates=candidates,
@@ -120,6 +139,10 @@ def select_applicable_amendments(
         corpus=corpus,
         selector=selector,
     )
+    # Production consumer of the filter partition: the accepted lane drives the
+    # replay plan; the rejected (out-of-scope) lane is surfaced on the result so
+    # the exclusion is inspectable rather than silent.
+    applicable = partition.accepted
     ordered = sorted(
         applicable,
         key=lambda candidate: (
@@ -141,6 +164,7 @@ def select_applicable_amendments(
         cutoff_date=cutoff_date,
         oracle_version_amendment_id=oracle_version_amendment_id,
         residuals=residuals,
+        out_of_scope=partition.rejected,
     )
 
 
@@ -221,7 +245,20 @@ def _filter_candidates(
     oracle_version_amendment_id: str | None,
     corpus: CorpusStore,
     selector: ConsolidatedArtifactSelector | None,
-) -> tuple[tuple[AmendmentSelectionCandidate, ...], dt.date | None, dict[str, str]]:
+) -> tuple[
+    PartitionResult[AmendmentSelectionCandidate],
+    dt.date | None,
+    dict[str, str],
+]:
+    """Partition the candidate set into accepted (in-scope) vs rejected.
+
+    Conservation (Audit C): the cutoff / oracle-version filter previously dropped
+    out-of-scope candidates silently. It now returns a ``PartitionResult`` whose
+    ``accepted`` lane is byte-identical to the old applicable set and whose
+    ``rejected`` lane carries every excluded candidate with an ``out_of_scope``
+    reason. The acceptance decision is unchanged — only the discarded material is
+    now typed and inspectable.
+    """
     if mode == "legal_pit":
         applicable, cutoff_date = _filter_legal_pit_candidates(
             candidates,
@@ -237,14 +274,32 @@ def _filter_candidates(
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
-    return _readmit_oracle_reflected_candidates(
-        parent_id=parent_id,
-        applicable=applicable,
-        candidates=candidates,
-        cutoff_date=cutoff_date,
-        corpus=corpus,
-        selector=selector,
+    applicable, cutoff_date, selection_basis_by_amendment = (
+        _readmit_oracle_reflected_candidates(
+            parent_id=parent_id,
+            applicable=applicable,
+            candidates=candidates,
+            cutoff_date=cutoff_date,
+            corpus=corpus,
+            selector=selector,
+        )
     )
+
+    accepted_ids = {candidate.amendment_id for candidate in applicable}
+    rejected = tuple(
+        RejectedItem(
+            item=candidate,
+            reason=AMENDMENT_OUT_OF_SCOPE_REASON,
+            reason_code=AMENDMENT_OUT_OF_SCOPE_REASON_CODE,
+            blocking=False,
+        )
+        for candidate in candidates
+        if candidate.amendment_id not in accepted_ids
+    )
+    partition: PartitionResult[AmendmentSelectionCandidate] = PartitionResult(
+        FilterResult(accepted_items=tuple(applicable), rejected_items=rejected),
+    )
+    return partition, cutoff_date, selection_basis_by_amendment
 
 
 def _filter_legal_pit_candidates(

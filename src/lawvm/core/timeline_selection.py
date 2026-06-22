@@ -473,6 +473,32 @@ def _select_temporary_version_from_eligible(
     )
 
 
+def _source_statute_id(version: ProvisionVersion) -> str:
+    if version.source is None:
+        return ""
+    return version.source.statute_id
+
+
+def _independent_later_background_supersedes_overlay(
+    *,
+    overlay: ProvisionVersion,
+    background: ProvisionVersion,
+) -> bool:
+    """Return True when a later act rewrites an active temporary address.
+
+    A temporary same-source overlay may mask its paired background form until
+    expiry. A later independently sourced background version is lex posterior
+    for the same address and must not be hidden by an older temporary snapshot.
+    """
+    if background.effective <= overlay.effective:
+        return False
+    overlay_source = _source_statute_id(overlay)
+    background_source = _source_statute_id(background)
+    if not overlay_source or not background_source:
+        return False
+    return overlay_source != background_source
+
+
 def _select_single_active_version(
     timeline: ProvisionTimeline,
     version: ProvisionVersion,
@@ -703,9 +729,17 @@ def select_active_version_ex_prevalidated(
     if (
         overlay is not None
         and background is not None
-        and overlay.expires
-        and background.effective > overlay.effective
-        and background.effective >= _day_before_iso(overlay.expires)
+        and (
+            _independent_later_background_supersedes_overlay(
+                overlay=overlay,
+                background=background,
+            )
+            or (
+                overlay.expires
+                and background.effective > overlay.effective
+                and background.effective >= _day_before_iso(overlay.expires)
+            )
+        )
     ):
         # Regime-handoff day: a newer permanent version whose effective date
         # falls ON the overlay's LAST in-force day supersedes the overlay for
@@ -713,12 +747,11 @@ def select_active_version_ex_prevalidated(
         # 2021-12-31 — deliberately the same day 1458/2019's temporary text is
         # last in force (exclusive expires 2022-01-01) — and the consolidation
         # shows 1199's text. This deliberately does NOT generalize to
-        # mid-window permanent updates: a temporary overlay continues to
-        # govern over a newer background enacted strictly inside its window
-        # (two-rail doctrine), and twin windows are untouched (their deferred
-        # background is not yet active in-window). Given both versions are
-        # eligible at as_of, this branch can only fire when as_of IS the
-        # handoff day.
+        # same-source mid-window permanent updates: a temporary overlay
+        # continues to govern over its paired/deferred background inside its
+        # window (two-rail doctrine), and twin windows are untouched. Later
+        # independent rewrites of the same address are lex posterior and must
+        # not be masked by an older temporary snapshot.
         overlay = None
     if overlay is not None:
         return VersionSelectionResult(

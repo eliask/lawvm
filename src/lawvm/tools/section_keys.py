@@ -15,9 +15,9 @@ from lxml import etree
 from lawvm.core.timeline import _iter_nodes_with_address
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.oracle_versioned_children import (
-    _oracle_eid_base,
     _sequence_ratio_at_least,
     dedup_versioned_children as _dedup_versioned_children,
+    strip_prior_wording_sibling,
 )
 
 
@@ -189,24 +189,7 @@ _SECTION_EID_VERSION_RE = re.compile(r"(?:^|__)sec_[^_]*?v(?P<version>\d{1,10})(
 
 def _strip_inline_prior_wording_sibling(note: etree._Element) -> None:
     """Drop a same-slot sibling explicitly marked as prior wording by Finlex."""
-    if note.get("name") != "noteAuthorial":
-        return
-    note_text = etree.tostring(note, method="text", encoding="unicode")
-    if not _INLINE_PRIOR_WORDING_RE.search(note_text):
-        return
-    previous = note.getprevious()
-    candidate = note.getnext()
-    if previous is None or candidate is None:
-        return
-    if _tag(previous) != _tag(candidate):
-        return
-    previous_base = _oracle_eid_base(previous)
-    candidate_base = _oracle_eid_base(candidate)
-    if previous_base is None or previous_base != candidate_base:
-        return
-    parent = candidate.getparent()
-    if parent is not None:
-        parent.remove(candidate)
+    strip_prior_wording_sibling(note)
 
 
 def _normalize_oracle_section(sec: etree._Element) -> etree._Element:

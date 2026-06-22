@@ -1776,7 +1776,7 @@ def _resolve_anaphoric_sub_nodes(
             momentti = st.momentti
             if parsed.momentti_from_context and st.item:
                 momentti = prev_mom or 1
-            sub_target = SurfaceSubRef(momentti=momentti, item=st.item, facet=st.facet)
+            sub_target = SurfaceSubRef(momentti=momentti, item=st.item, subitem=st.subitem, facet=st.facet)
         out.append(
             SurfaceInsertion(
                 kind=node.kind,
@@ -1966,6 +1966,7 @@ def _try_cross_verb_anaphoric_insert(
                 sub_target=SurfaceSubRef(
                     momentti=node.sub_target.momentti,
                     item=node.sub_target.item,
+                    subitem=node.sub_target.subitem,
                     facet=node.sub_target.facet,
                 ),
                 witness=SurfaceWitness(rule_id=rule_id, source_span=span),
@@ -2330,6 +2331,8 @@ def _parse_verb_group(
             # real heading node for it, is used, preserving parity.
             if _skip_anaphoric_heading_residue(scan):
                 continue
+            if kind == "insertion" and _skip_tilalle_uusi_tail(scan):
+                continue
             # The old parser otherwise ends the target list here and lets the
             # outer loop swallow the tail. For an INSERTION batch a structural
             # tail the old parser keeps folding into the same list (chained
@@ -2501,7 +2504,7 @@ def _parse_verb_group(
                 continue
         more_batch_start = scan.pos
         try:
-            more, more_kind = _recognize_one_target(scan, chapter, part)
+            more, more_kind = _recognize_one_target(scan, chapter, part, verb)
         except OutOfScope:
             # An anaphoric-determiner insert arm (``sanottuun pykälään uusi 5
             # momentti`` / ``sanottuun lakiin uusi 4 §`` / ``mainittuun lukuun uusi
@@ -2594,7 +2597,7 @@ def _parse_verb_group(
         # still out of scope (a SCOPED chapter/part section arm that would inherit
         # cross-batch scope this driver threads differently).
         if (kind == "insertion") != (more_kind == "insertion"):
-            if not _mixed_continuation_is_foldable(kind, more_kind, more):
+            if not _mixed_continuation_is_foldable(kind, more_kind, more, verb):
                 raise OutOfScope("mixed insertion/non-insertion continuation in verb group")
         nodes.extend(more)
         last_batch = list(more)
@@ -2621,7 +2624,10 @@ def _parse_verb_group(
 
 
 def _mixed_continuation_is_foldable(
-    kind: FamilyKind, more_kind: FamilyKind, more: list[SurfaceNode]
+    kind: FamilyKind,
+    more_kind: FamilyKind,
+    more: list[SurfaceNode],
+    verb: Optional[SourceVerb],
 ) -> bool:
     """Whether a family-switching continuation arm may be folded in faithfully.
 
@@ -2634,15 +2640,37 @@ def _mixed_continuation_is_foldable(
     bare ``uusi …`` insertion arm under the SAME verb) folds the same way.
 
     Fold only when neither side relies on cross-batch scope this driver threads
-    differently from the old parser: the continuation arm must carry no inherited
-    chapter/part scope on its emitted nodes (a SCOPED arm — ``3 luvun 12 §`` —
-    can pick up a chapter the new per-separator split establishes at a different
-    point than the old whole-list pass, so those stay out of scope and decline).
+    differently from the old parser, except for ``lisätään`` section targets that
+    are themselves insertion targets. In that family the section recognizer owns
+    reinstatement-style insert arms such as ``kumotun 4 §:n 3 momentin tilalle
+    uusi 3 momentti``; rejecting the scoped SECTION node makes the parser fall
+    back to the legacy path, which truncates later insert arms in 2007/923-style
+    clauses.
     """
     if more_kind == "heading":
         # Heading batches already coexist with section/container/insertion lists
         # in the old parser; the caller never routes them here.
         return False
+    if kind == "insertion" and more_kind == "section" and verb == SourceVerb.LISATA:
+        for node in more:
+            if isinstance(node, SurfaceTargetRef):
+                if node.kind != TargetKind.SECTION:
+                    return False
+                if node.part:
+                    return False
+                if any(sr.facet for sr in node.sub_refs):
+                    return False
+                continue
+            if isinstance(node, SurfaceDescendantCoordination):
+                if node.base.kind != TargetKind.SECTION:
+                    return False
+                if node.base.chapter or node.base.part:
+                    return False
+                if any(sr.facet for sr in node.arms):
+                    return False
+                continue
+            return False
+        return True
     for node in more:
         if isinstance(node, SurfaceInsertion):
             if node.chapter or node.part:
@@ -3097,6 +3125,45 @@ def _residue_carries_infinitive_verb_insert(scan: _Scan) -> bool:
                     return True
                 if toks[k].cat not in ("NUM", "LETTER", "DASH", "WORD"):
                     break
+    return False
+
+
+def _skip_tilalle_uusi_tail(scan: _Scan) -> bool:
+    """Consume a bounded ``tilalle uusi <number-list> <unit>`` insert tail.
+
+    The preceding section-family target already emitted the legal address in
+    reinstatement forms like ``4 §:n 3 momentin tilalle uusi 3 momentti``. The
+    remaining tail is source evidence for that insertion slot, not a separate
+    target. Keep this strictly local: no forward search, and the tail must close
+    with an explicit legal unit token.
+    """
+    saved = scan.pos
+    if not ((t := scan.peek()) and t.cat == "TILALLE"):
+        return False
+    scan.advance()
+    if not ((t := scan.peek()) and t.cat == "UUSI"):
+        scan.goto(saved)
+        return False
+    scan.advance()
+    saw_number = False
+    while (t := scan.peek()) is not None:
+        if t.cat == "NUM":
+            saw_number = True
+            scan.advance()
+            if (letter := scan.peek()) is not None and letter.cat == "LETTER":
+                scan.advance()
+            continue
+        if saw_number and t.cat in {"COMMA", "CONJ", "DASH", "SEKA"}:
+            scan.advance()
+            continue
+        break
+    if not saw_number:
+        scan.goto(saved)
+        return False
+    if (t := scan.peek()) and t.cat in {"PYKALA", "MOMENTTI", "KOHTA", "LUKU", "OSA"}:
+        scan.advance()
+        return True
+    scan.goto(saved)
     return False
 
 

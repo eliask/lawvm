@@ -21,7 +21,6 @@ from typing import Dict, List, Optional, Set
 
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.references.sections import (
-    parse_body_provision_tail,
     parse_body_provision_tail_spanned,
 )
 
@@ -55,8 +54,8 @@ def _deglue_run(run: str) -> str:
     return _GLUED_LETTER_JOINER_RE.sub(r'\1 ja ', _GLUED_JOINER_DIGIT_RE.sub(r'\1 ', run))
 
 
-def _whole_section_run_before_site(block: str, site_start: int) -> str | None:
-    """Return the grammar-consumed whole-section run before a bare ``§`` marker."""
+def _whole_section_run_before_site(block: str, site_start: int) -> tuple[str, int] | None:
+    """Return the grammar-consumed candidate run before a bare ``§`` marker."""
     window_start = max(0, site_start - _WHOLE_SECTION_SITE_SCAN_WINDOW)
     left = block[window_start:site_start].rstrip()
     for offset, ch in enumerate(left):
@@ -69,7 +68,7 @@ def _whole_section_run_before_site(block: str, site_start: int) -> str | None:
         normalized_tail = _WS_RE.sub(" ", tail).strip()
         parsed = parse_body_provision_tail_spanned(tail)
         if parsed.targets and parsed.consumed_text == normalized_tail:
-            return candidate
+            return candidate, window_start + offset
     return None
 
 
@@ -88,12 +87,22 @@ def _grammar_whole_section_labels(block: str) -> List[str]:
     """
     out: List[str] = []
     seen: Set[str] = set()
+    # lawvm-regex: owning_parser whole-section SITE anchor; section STRUCTURE handed to the shared references.sections grammar
     for m in _WHOLE_SECTION_SITE_RE.finditer(block):
-        site_run = _whole_section_run_before_site(block, m.start())
-        if site_run is None:
+        site_match = _whole_section_run_before_site(block, m.start())
+        if site_match is None:
             continue
-        run = _deglue_run(site_run)
-        for target in parse_body_provision_tail(run + " §"):
+        run, run_start = site_match
+        current_site = parse_body_provision_tail_spanned(_deglue_run(block[run_start:]))
+        if current_site.targets:
+            first = current_site.targets[0]
+            if (
+                first.section_label
+                and (first.subsection_num is not None or first.item_label is not None or first.subitem_label is not None)
+            ):
+                continue
+        parsed = parse_body_provision_tail_spanned(_deglue_run(run + " §"))
+        for target in parsed.targets:
             if (
                 target.subsection_num is None
                 and target.item_label is None
@@ -236,6 +245,7 @@ def _extract_muutetaan_section_refs_frozenset(johto: str) -> frozenset[str]:
     # the lisätään clause (e.g. "lisätään 1 luvun 4 §:ään") are not falsely
     # detected as muutetaan targets — which would trigger the recycle guard
     # and prevent kumotaan expiry override for those section numbers.
+    # lawvm-regex: owning_parser clause-boundary segmenter for the muutetaan sub-clause; structure delegated to the grammar
     muutetaan_match = re.search(
         r'\bmuutetaan\b(.*?)(?:seuraavasti\b|\blisätään\b|$)',
         text, re.DOTALL
@@ -247,6 +257,7 @@ def _extract_muutetaan_section_refs_frozenset(johto: str) -> frozenset[str]:
 
     # Guard: multi-statute muutetaan clauses reference sections from different
     # statutes — skip to avoid false positives.
+    # lawvm-regex: prefilter multi-statute GUARD (counts distinct statute ids to bail on ambiguity); not a producer
     statute_refs = re.findall(r'\d+/\d{2,4}', muutetaan_text)
     if len(set(statute_refs)) > 1 and muutetaan_text.count("§") > 1:
         return frozenset()
@@ -272,6 +283,7 @@ def _extract_muutetaan_chapter_section_map(johto: str) -> Dict[Optional[str], Li
     Returns: {'6': ['4'], '5': ['7']}
     """
     text = johto.lower()
+    # lawvm-regex: owning_parser clause-boundary segmenter for the muutetaan sub-clause
     muutetaan_match = re.search(
         r'\bmuutetaan\b(.*?)(?:seuraavasti\b|\blisätään\b|$)',
         text, re.DOTALL,
@@ -282,11 +294,13 @@ def _extract_muutetaan_chapter_section_map(johto: str) -> Dict[Optional[str], Li
     muutetaan_text = _strip_source_provenance_tail(muutetaan_match.group(1))
 
     # Guard: multi-statute muutetaan clauses reference sections from different statutes
+    # lawvm-regex: prefilter multi-statute GUARD; counts distinct statute ids, not a producer
     statute_refs = re.findall(r'\d+/\d{2,4}', muutetaan_text)
     if len(set(statute_refs)) > 1 and muutetaan_text.count("§") > 1:
         return {}
 
     # Find chapter markers: "N luvun" or "N a luvun"
+    # lawvm-regex: owning_parser chapter-scope marker for the chapter-aware recycle map
     markers = list(_CHAPTER_MARKER_RE.finditer(muutetaan_text))
 
     if not markers:
@@ -337,6 +351,7 @@ def _extract_kumotaan_section_refs_tuple(johto: str) -> tuple[str, ...]:
     """
     text = johto.lower()
     # Find kumotaan clause boundary — stops at muutetaan/lisätään/seuraavasti
+    # lawvm-regex: owning_parser clause-boundary segmenter for the kumotaan sub-clause
     kumotaan_match = re.search(
         r'kumotaan\b(.*?)(?:muutetaan|lisätään|seuraavasti|sekä\s+muutetaan|sekä\s+lisätään|$)',
         text, re.DOTALL
@@ -352,6 +367,7 @@ def _extract_kumotaan_section_refs_tuple(johto: str) -> tuple[str, ...]:
     # These reference sections from different statutes — section numbers
     # would be applied to the wrong master. Detect by counting distinct
     # statute references (NNN/YYYY or NNN/YY patterns).
+    # lawvm-regex: prefilter multi-statute GUARD; counts distinct statute ids, not a producer
     statute_refs = re.findall(r'\d+/\d{2,4}', kumotaan_text)
     if len(set(statute_refs)) > 1 and kumotaan_text.count("§") > 1:
         return ()
@@ -366,6 +382,7 @@ def _extract_kumotaan_section_refs_tuple(johto: str) -> tuple[str, ...]:
     # The provenance strip only removes the tail of the first item, losing
     # any continuation items that appear after it.  Scan the full body for
     # "; (sekä) N)" markers and extract from each continuation separately.
+    # lawvm-regex: owning_parser multi-item kumotaan list segmenter (`1) ...; sekä 2) ...`)
     for cont_m in re.finditer(
         r';\s*(?:sekä\s+)?\d+\)\s*(.*?)(?=;\s*(?:sekä\s+)?\d+\)|\Z)',
         full_body,
@@ -373,6 +390,7 @@ def _extract_kumotaan_section_refs_tuple(johto: str) -> tuple[str, ...]:
     ):
         cont_text = _strip_source_provenance_tail(cont_m.group(1))
         # Only process if no multi-statute ambiguity
+        # lawvm-regex: prefilter per-item multi-statute GUARD; counts distinct statute ids, not a producer
         cont_refs = re.findall(r'\d+/\d{2,4}', cont_text)
         if len(set(cont_refs)) > 1 and cont_text.count("§") > 1:
             continue
@@ -404,6 +422,7 @@ def _extract_kumotaan_chapter_section_map(johto: str) -> Dict[Optional[str], Lis
     Returns: {'1': ['5', '7'], '5': ['2', '3', '4']}
     """
     text = johto.lower()
+    # lawvm-regex: owning_parser clause-boundary segmenter for the kumotaan sub-clause
     kumotaan_match = re.search(
         r'kumotaan\b(.*?)(?:muutetaan|lisätään|seuraavasti|sekä\s+muutetaan|sekä\s+lisätään|$)',
         text, re.DOTALL
@@ -413,11 +432,13 @@ def _extract_kumotaan_chapter_section_map(johto: str) -> Dict[Optional[str], Lis
 
     kumotaan_text = _strip_source_provenance_tail(kumotaan_match.group(1))
 
+    # lawvm-regex: prefilter multi-statute GUARD; counts distinct statute ids, not a producer
     statute_refs = re.findall(r'\d+/\d{2,4}', kumotaan_text)
     if len(set(statute_refs)) > 1 and kumotaan_text.count("§") > 1:
         return {}
 
     # Find chapter markers: "N luvun" or "N a luvun" etc.
+    # lawvm-regex: owning_parser chapter-scope marker for the chapter-aware recycle map
     markers = list(_CHAPTER_MARKER_RE.finditer(kumotaan_text))
 
     if not markers:
@@ -488,6 +509,7 @@ def _extract_kumotaan_subsection_refs(johto: str) -> Dict[str, List[str]]:
     are skipped because subsection numbers could belong to different parents.
     """
     text = johto.lower()
+    # lawvm-regex: owning_parser clause-boundary segmenter for the kumotaan sub-clause
     kumotaan_match = re.search(
         r'kumotaan\b(.*?)(?:muutetaan|lisätään|seuraavasti|sekä\s+muutetaan|sekä\s+lisätään|$)',
         text, re.DOTALL
@@ -498,6 +520,7 @@ def _extract_kumotaan_subsection_refs(johto: str) -> Dict[str, List[str]]:
     full_body = kumotaan_match.group(1)
     kumotaan_text = _strip_source_provenance_tail(full_body)
 
+    # lawvm-regex: prefilter multi-statute GUARD; counts distinct statute ids, not a producer
     statute_refs = re.findall(r'\d+/\d{2,4}', kumotaan_text)
     if len(set(statute_refs)) > 1:
         return {}
@@ -528,6 +551,7 @@ def _extract_kumotaan_subsection_refs(johto: str) -> Dict[str, List[str]]:
     # Pattern: "N §:n M–P momentti" or "N §:n M momentti" or "N §:n M ja P momentti"
     # Skip "N §:n M momentin K kohta" (deeper level — has 'momentin' + number after)
     # The section number is \d+\s*[a-z]? (possibly lettered like "12 a")
+    # lawvm-regex: owning_parser momentti-level repeal recognizer (`N §:n M momentti` sub-provision the whole-section anchor excludes)
     for m in re.finditer(
         r'(\d+(?:\s*[a-z])?)\s*§:n\s+'
         r'([\d\s,–—―\-]+'                   # subsection list (numbers/ranges/commas/ja/sekä)
@@ -557,6 +581,7 @@ def _extract_kumotaan_container_refs(johto: str) -> Dict[TargetUnitKind, List[st
     the operative effect is encoded as prose rather than PEG-friendly ops.
     """
     text = johto.lower()
+    # lawvm-regex: owning_parser clause-boundary segmenter for the kumotaan sub-clause
     kumotaan_match = re.search(
         r'kumotaan\b(.*?)(?:muutetaan|lisätään|seuraavasti|sekä\s+muutetaan|sekä\s+lisätään|$)',
         text, re.DOTALL
@@ -565,6 +590,7 @@ def _extract_kumotaan_container_refs(johto: str) -> Dict[TargetUnitKind, List[st
         return {"chapter": [], "part": []}
 
     kumotaan_text = _strip_source_provenance_tail(kumotaan_match.group(1))
+    # lawvm-regex: prefilter multi-statute GUARD; counts distinct statute ids, not a producer
     statute_refs = re.findall(r'\d+/\d{2,4}', kumotaan_text)
     if len(set(statute_refs)) > 1:
         return {"chapter": [], "part": []}
@@ -573,6 +599,7 @@ def _extract_kumotaan_container_refs(johto: str) -> Dict[TargetUnitKind, List[st
     for kind, suffix in (("chapter", "luku"), ("part", "osa")):
         seen: Set[str] = set()
         vals: List[str] = []
+        # lawvm-regex: owning_parser chapter/part container repeal recognizer (dynamic label-interpolated pattern, left inline per §1.11)
         for m in re.finditer(r'(\d+(?:\s*[a-z])?)\s+' + suffix + r'\b', kumotaan_text):
             norm = re.sub(r'\s+', '', m.group(1).strip())
             if norm and norm not in seen:

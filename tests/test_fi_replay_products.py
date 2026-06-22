@@ -25,6 +25,7 @@ from lawvm.core.effect_lifecycle import (
     SourceProvisionRef,
 )
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.tree_ops import check_invariants
 from lawvm.core.ir import LegalOperation
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.temporal import TemporalEvent, TemporalScope
@@ -343,6 +344,198 @@ def test_reconcile_fold_sections_does_not_split_attachments_for_mixed_chapter_wr
     assert [child.label for child in attachments.children if child.kind is IRNodeKind.SECTION] == ["38"]
 
 
+def test_reconcile_fold_sections_preserves_scoped_same_label_sections() -> None:
+    body_section_4 = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Body-level section"),),
+    )
+    chapter_section_4 = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Chapter 3a section"),),
+    )
+    chapter_3a = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="3a",
+        children=(chapter_section_4,),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(body_section_4, chapter_3a),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(body_section_4,),
+            ),
+            chapter_3a,
+        ),
+    )
+
+    reconciled = _reconcile_materialized_fold_hcontainer_sections(materialized, replay_fold)
+    sections = extract_ir_sections(reconciled)
+
+    assert "section:4" in sections
+    assert "chapter:3a/section:4" in sections
+    assert "Body-level section" in irnode_to_text(sections["section:4"])
+    assert "Chapter 3a section" in irnode_to_text(sections["chapter:3a/section:4"])
+
+
+def test_reconcile_fold_sections_preserves_unowned_scoped_section_in_local_run() -> None:
+    body_section_4 = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Body-level section"),),
+    )
+    chapter_3a = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="3a",
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="3"),
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="4",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Chapter 3a section"),),
+            ),
+            IRNode(kind=IRNodeKind.SECTION, label="5"),
+        ),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(body_section_4, chapter_3a),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(body_section_4,),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3a",
+                children=(
+                    IRNode(kind=IRNodeKind.SECTION, label="3"),
+                    IRNode(kind=IRNodeKind.SECTION, label="5"),
+                ),
+            ),
+        ),
+    )
+
+    reconciled = _reconcile_materialized_fold_hcontainer_sections(materialized, replay_fold)
+    sections = extract_ir_sections(reconciled)
+
+    assert "section:4" in sections
+    assert "chapter:3a/section:4" in sections
+    assert "Chapter 3a section" in irnode_to_text(sections["chapter:3a/section:4"])
+
+
+def test_reconcile_fold_sections_does_not_preserve_synthetic_same_label_sections() -> None:
+    body_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="59a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Body-level section"),),
+    )
+    synthetic_section_a = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="59a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Synthetic 4a section"),),
+    )
+    synthetic_section_b = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="59a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Synthetic 11 section"),),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            body_section,
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="4a",
+                attrs={"lawvm_synthesized_container": "active_descendant"},
+                children=(synthetic_section_a,),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="11",
+                attrs={"lawvm_synthesized_container": "active_descendant"},
+                children=(synthetic_section_b,),
+            ),
+        ),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(body_section,),
+            ),
+            IRNode(kind=IRNodeKind.CHAPTER, label="11"),
+        ),
+    )
+
+    reconciled = _reconcile_materialized_fold_hcontainer_sections(materialized, replay_fold)
+    sections = extract_ir_sections(reconciled)
+
+    assert "section:59a" in sections
+    assert "chapter:4a/section:59a" not in sections
+    assert "chapter:11/section:59a" not in sections
+    assert "Body-level section" in irnode_to_text(sections["section:59a"])
+
+
+def test_reconcile_fold_sections_does_not_preserve_unowned_real_scoped_collision() -> None:
+    body_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="59a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Body-level section"),),
+    )
+    collided_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="59a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Wrong chapter section"),),
+    )
+    local_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="22a",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Local chapter section"),),
+    )
+    chapter_4a = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="4a",
+        children=(local_section, collided_section),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(body_section, chapter_4a),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(body_section,),
+            ),
+            IRNode(kind=IRNodeKind.CHAPTER, label="4a"),
+        ),
+    )
+
+    reconciled = _reconcile_materialized_fold_hcontainer_sections(materialized, replay_fold)
+    sections = extract_ir_sections(reconciled)
+
+    assert "section:59a" in sections
+    assert "chapter:4a/section:22a" in sections
+    assert "chapter:4a/section:59a" not in sections
+    assert "Body-level section" in irnode_to_text(sections["section:59a"])
+
+
 def test_project_materialized_provisions_wrapper_unwraps_direct_sections_without_chapters() -> None:
     section_1 = IRNode(kind=IRNodeKind.SECTION, label="1")
     section_2 = IRNode(kind=IRNodeKind.SECTION, label="2")
@@ -619,6 +812,31 @@ def test_2001_621_materialized_state_keeps_operatives_outside_attachments_and_me
     assert all(child.kind is not IRNodeKind.SECTION for child in attachments[0].children)
 
 
+def test_replay_xml_2001_1488_materialized_state_keeps_chapter_scoped_first_sections() -> None:
+    """Unnumbered topical heading wrappers must not displace chapter ``1 §``."""
+    replay = replay_xml_for_test("2001/1488", mode="official_consolidation", quiet=True)
+
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    assert "chapter:2/section:1" in sections
+    assert "chapter:10/section:1" in sections
+    assert "section:1" in sections
+    assert "Perustajat Osuuskunnan voi perustaa" in irnode_to_text(
+        sections["chapter:2/section:1"]
+    )
+    assert "Voimaantulo Tämän lain voimaantulosta" in irnode_to_text(sections["section:1"])
+
+
+def test_replay_xml_1990_1295_materialized_state_drops_lone_unanchored_scoped_duplicate() -> None:
+    """A lone unanchored scoped duplicate is still reconciled to the body section."""
+    replay = replay_xml_for_test("1990/1295", mode="official_consolidation", quiet=True)
+
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    assert "chapter:4a/section:59a" not in sections
+    assert "section:59a" in sections
+
+
 def test_2017_236_materialized_state_drops_expired_exact_temporary_moments() -> None:
     replay = replay_xml_for_test("2017/236", mode="official_consolidation", quiet=True)
 
@@ -630,6 +848,32 @@ def test_2017_236_materialized_state_drops_expired_exact_temporary_moments() -> 
     assert "Edellä 3 momentin 1 kohdassa tarkoitetussa kalastuksessa" not in section_4_text
     assert "Kun 3 §:n 4 momentissa, 4 §:n 4 momentissa" not in section_7_text
     assert "Lounais-Suomen elinvoimakeskukselle" in section_7_text
+
+
+def test_1996_931_materialized_state_drops_expired_applicability_window_sections() -> None:
+    lo_ops = []
+    replay = replay_xml_for_test(
+        "1996/931",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    window_ops = [
+        op
+        for op in lo_ops
+        if op.source.statute_id == "2007/171"
+        and str(op.target) in {"chapter:6/section:43b", "chapter:6/section:43c"}
+    ]
+    assert {str(op.target): op.source.expires for op in window_ops} == {
+        "chapter:6/section:43b": "2013-01-01",
+        "chapter:6/section:43c": "2013-01-01",
+    }
+
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    assert "chapter:6/section:43b" not in sections
+    assert "chapter:6/section:43c" not in sections
+    assert "chapter:6/section:43a" in sections
 
 
 def test_2018_1069_whole_section_replace_keeps_owned_body_after_temporary_overlay() -> None:
@@ -783,6 +1027,36 @@ def test_replay_xml_1987_1250_chapter_scoped_kumotaan_repeals_right_section() ->
     untouched = replay.materialized_state.find_node("section", "5d", "chapter", "1")
     assert untouched is not None, "1 luvun 5 d § must remain live"
     assert " ".join(irnode_to_text(untouched).split()).startswith("5 d § Pääomalainalle")
+
+
+@pytest.mark.slow
+def test_replay_xml_1996_931_temporary_whole_section_insert_snapshots_source_payload() -> None:
+    """2023/1191 §43a is a temporary whole-section overlay, not stale fold text."""
+    lo_ops: list[LegalOperation] = []
+    replay = pinned_replay(
+        "1996/931",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    snapshot = next(
+        op
+        for op in lo_ops
+        if op.op_id == "snapshot_section_43a"
+        and op.source is not None
+        and op.source.statute_id == "2023/1191"
+    )
+    assert snapshot.payload is not None
+    snapshot_text = " ".join(irnode_to_text(snapshot.payload).split())
+    assert "616/2021" in snapshot_text
+    assert "vuosina 2004" not in snapshot_text
+
+    section = replay.materialized_state.find_node("section", "43a", "chapter", "6")
+    assert section is not None
+    rendered = " ".join(irnode_to_text(section).split())
+    assert "616/2021" in rendered
+    assert "vuosina 2004" not in rendered
 
 
 def test_replay_xml_2011_806_pure_kumotaan_subsection_keeps_chapter_scope() -> None:
@@ -979,6 +1253,24 @@ def test_replay_xml_1992_772_applies_1994_1281_replace_to_section_6() -> None:
     assert "terveydenhoitolain (469/65)" not in text
 
 
+def test_replay_xml_1992_371_preserves_section_6_table_on_johd_replace() -> None:
+    replay = pinned_replay(
+        "1992/371",
+        oracle_version="20100130",
+        mode="official_consolidation",
+        quiet=True,
+    )
+
+    section = replay.materialized_state.find_section("6")
+    assert section is not None
+
+    text = " ".join(irnode_to_text(section).split())
+    assert "mittanormaalijärjestelmästä annetun lain 3 §:n 1 momentissa" in text
+    assert "mittaamisvälineiden vakaamisesta annetun lain 4 §:n 1 momentissa" not in text
+    assert "Etuliite Tunnus Tekijä, jolla mittayksikkö tulee kerrotuksi" in text
+    assert "jokto y 0,000 000 000 000 000 000 000 001 = 10 -24" in text
+
+
 def test_build_amendment_bundle_2002_1000_does_not_collapse_dotted_kohta_repeal_to_section_repeal() -> None:
     bundle = build_amendment_bundle("2002/1000", "2007/180", "official_consolidation")
     all_ops = [op for group in bundle["groups"] for op in group["ops_final"]]
@@ -1046,6 +1338,28 @@ def test_build_amendment_bundle_2000_755_rebinds_cited_version_owned_section_pat
     assert "REPLACE 6 luku 30b §" in all_ops
     assert "REPLACE 3 luku 34a §" in all_ops
     assert "REPLACE 30b §" not in all_ops
+
+
+def test_build_amendment_bundle_2022_972_2024_70_parses_plural_section_marker() -> None:
+    bundle = build_amendment_bundle("2022/972", "2024/70", "legal_pit")
+
+    assert bundle["compiled_ops"] == [
+        "REPLACE 2 luku 3 §",
+        "REPLACE 4 luku 18 §",
+        "REPLACE 4 luku 22 §",
+        "REPLACE 5 luku 24 §",
+        "REPLACE 5 luku 32 §",
+        "REPLACE 5 luku 35 §",
+        "REPLACE 9 luku 52 §",
+        "INSERT 5 luku 34a §",
+        "INSERT 6 luku 40a §",
+    ]
+    final_ops_by_target = {
+        group["target_norm"]: group["ops_final"]
+        for group in bundle["groups"]
+    }
+    assert final_ops_by_target["34a"] == ["INSERT 5 luku 34a §"]
+    assert final_ops_by_target["40a"] == ["INSERT 6 luku 40a §"]
 
 
 def test_replay_xml_2000_755_applies_2018_945_to_cited_pending_version_paths() -> None:
@@ -1118,6 +1432,30 @@ def test_replay_xml_2005_623_applies_2018_947_after_separate_commencement_law() 
     assert resolved[0].detail.get("effective_date") == "2019-01-01"
     assert resolved[0].detail.get("witness_statute") == "2018/937"
     assert resolved[0].detail.get("witness_ref") == "2018/937/1"
+
+
+def test_replay_xml_1991_1707_delays_scoped_2006_application_date() -> None:
+    lo_ops: list[LegalOperation] = []
+    replay = replay_xml_for_test(
+        "1991/1707",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+    section = replay.materialized_state.find_section("4")
+
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "97 prosenttia yleisesti verovelvollisen merenkulkijan" in text
+    assert "1 päivän tammikuuta 2007 ja 31 päivän joulukuuta 2009 väliseltä ajalta" not in text
+
+    retimed_2006_targets = {
+        str(op.target): op.source.effective
+        for op in lo_ops
+        if op.source is not None and op.source.statute_id == "2006/1322"
+    }
+    assert retimed_2006_targets["section:4"] == "2007-01-01"
+    assert retimed_2006_targets["section:4/subsection:2"] == "2007-01-01"
 
 
 def test_replay_xml_2011_1552_composes_pending_amendment_children() -> None:
@@ -2562,6 +2900,98 @@ def test_fold_timeline_backfill_materializes_restructure_renumbered_sections() -
     )
 
 
+def test_fold_timeline_backfill_distinguishes_same_label_sections_across_chapters() -> None:
+    """Same section label in different chapters must each get a distinct backfill op.
+
+    Finnish chaptered statutes repeat section labels (``1 §`` exists in every
+    chapter). A bare-label op_id collides the two distinct sections, so the
+    ``existing_op_ids`` dedup drops the second and its fold-owned content
+    silently vanishes from PIT. The op_id must be keyed by the full address.
+    """
+    from lawvm.finland.replay_fold_timeline_backfill import _fold_backfill_op_id
+
+    def _section(label: str, heading: str) -> IRNode:
+        return IRNode(
+            kind=IRNodeKind.SECTION,
+            label=label,
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text=f"{label} §"),
+                IRNode(kind=IRNodeKind.HEADING, text=heading),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text=f"Body {heading}"),),
+                ),
+            ),
+        )
+
+    # Base IR is empty of these chapters: the fold carries both chapter-1
+    # sections, and timeline compilation has no authority for either.
+    base_body = IRNode(kind=IRNodeKind.BODY, children=())
+    fold_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="1 luku"),
+                    _section("1", "Chapter 1 section 1"),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                    _section("1", "Chapter 2 section 1"),
+                ),
+            ),
+        ),
+    )
+
+    addr_ch1 = LegalAddress(path=(("chapter", "1"), ("section", "1")))
+    addr_ch2 = LegalAddress(path=(("chapter", "2"), ("section", "1")))
+
+    # The OLD bare-label op_id collides the two distinct sections; the NEW
+    # address-keyed op_id distinguishes them.
+    old_op_id_ch1 = f"snapshot_section_{'1'}_fold_timeline_backfill"
+    old_op_id_ch2 = f"snapshot_section_{'1'}_fold_timeline_backfill"
+    assert old_op_id_ch1 == old_op_id_ch2  # collision the dedup acted on
+    new_op_id_ch1 = _fold_backfill_op_id(addr_ch1)
+    new_op_id_ch2 = _fold_backfill_op_id(addr_ch2)
+    assert new_op_id_ch1 != new_op_id_ch2
+    assert new_op_id_ch1.startswith("snapshot_section_")
+    assert new_op_id_ch2.startswith("snapshot_section_")
+    # Deterministic / stable.
+    assert _fold_backfill_op_id(addr_ch1) == new_op_id_ch1
+
+    ctx = StatuteContext(
+        id="synthetic/fold-backfill-collision",
+        title="Synthetic fold backfill collision",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+
+    products = build_replay_products(
+        ctx=ctx,
+        statute_id="synthetic/fold-backfill-collision",
+        replay_fold_state=ReplayState(ir=fold_body),
+        lo_ops_out=[],
+    )
+
+    # Both same-label sections survive PIT materialization with distinct
+    # timelines and distinct backfill records.
+    assert products.timelines is not None
+    assert addr_ch1 in products.timelines
+    assert addr_ch2 in products.timelines
+    assert products.materialized_state.find_section("1", "1") is not None
+    assert products.materialized_state.find_section("1", "2") is not None
+    backfilled_addresses = {record.address for record in products.fold_timeline_backfills}
+    assert str(addr_ch1) in backfilled_addresses
+    assert str(addr_ch2) in backfilled_addresses
+
+
 def test_fold_timeline_backfill_reuses_preview_timelines_when_no_backfills(monkeypatch) -> None:
     import lawvm.core.timeline as timeline_mod
     import lawvm.finland.replay_fold_timeline_backfill as backfill_mod
@@ -3646,6 +4076,19 @@ def test_replay_xml_preserves_sparse_insert_before_terminal_voimaantulo_for_2006
     section_4 = replay.materialized_state.find_section("4")
     assert section_4 is not None
     assert irnode_to_text(section_4).startswith("4 § Voimaantulo")
+
+
+def test_replay_xml_explicit_insert_section_keeps_terminal_voimaantulo_label_for_2020_1266() -> None:
+    replay = replay_xml_for_test("2020/1266", mode="official_consolidation", quiet=True)
+    body = replay.materialized_state.ir
+
+    assert replay.materialized_state.find_section("26a", "6") is None
+
+    section_27 = replay.materialized_state.find_section("27", "6")
+    assert section_27 is not None
+    text = irnode_to_text(section_27)
+    assert text.startswith("27 § Rehualan toimijan ja tilarehustamon vuosi-ilmoitusvelvollisuus")
+    assert "Tämä asetus tulee voimaan 1 päivänä tammikuuta 2021" not in text
 
 
 def test_replay_xml_preserves_inserted_chapter_topology_for_2014_1429(
@@ -6577,6 +7020,41 @@ def test_replay_xml_2017_320_section_19_definitions_do_not_emit_flattened_sublis
         and "section:19" in str(finding.detail.get("path") or "")
     ]
     assert flat_warnings == []
+    section = replay.materialized_state.find_section("19", chapter_num="2", part_num="2")
+    assert section is not None
+    assert check_invariants(section) == []
+
+    subsection = next(child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1")
+    paragraph_labels = [child.label for child in subsection.children if child.kind is IRNodeKind.PARAGRAPH]
+    assert paragraph_labels == ["1", "2"]
+    item_one = next(child for child in subsection.children if child.kind is IRNodeKind.PARAGRAPH and child.label == "1")
+    subparagraph_labels = [child.label for child in item_one.children if child.kind is IRNodeKind.SUBPARAGRAPH]
+    assert subparagraph_labels == ["a", "b", "c"]
+
+
+@pytest.mark.slow
+def test_replay_xml_2017_320_2018_984_bare_section_replace_declares_observed_write() -> None:
+    replay = replay_xml_for_test("2017/320", mode="official_consolidation", quiet=True)
+
+    undeclared = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "APPLY.REPLAY_UNDECLARED_TREE_TOUCH"
+        and finding.detail.get("source_statute") == "2018/984"
+        and finding.detail.get("op_id") == "mixed_bare_section_replace_18_11"
+    ]
+    assert undeclared == []
+
+    receipt = next(
+        receipt
+        for receipt in replay.write_receipts
+        if receipt.op_id == "mixed_bare_section_replace_18_11"
+    )
+    assert receipt.landed_primary_path == (
+        ("hcontainer", ""),
+        ("part", "2"),
+        ("chapter", "3"),
+    )
 
 
 @pytest.mark.slow
@@ -6641,3 +7119,201 @@ def test_replay_xml_1999_1352_places_inserted_section_headings_after_num() -> No
         )
         heading = next(child for child in section.children if child.kind is IRNodeKind.HEADING)
         assert irnode_to_text(heading).strip() == heading_text
+
+
+@pytest.mark.slow
+def test_replay_xml_1999_132_2024_899_cited_section_replace_rebirths_chapter_parent() -> None:
+    """2024/899 replaces 131 § by citing 2014/41 after chapter 19 was repealed.
+
+    The cited-version selector and replay history prove the exact historical
+    path ``19 luku / 131 §``.  Replay may scaffold that parent and insert the
+    replacement, but the recovery must be witnessed.
+    """
+    failed_ops = []
+    pathologies = []
+
+    replay = replay_xml_for_test(
+        "1999/132",
+        mode="official_consolidation",
+        quiet=True,
+        failed_ops_out=failed_ops,
+        source_pathologies_out=pathologies,
+    )
+
+    section = replay.materialized_state.find_section("131", "19")
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "Rakentamislupahakemus" in text
+    assert "rakentamislupahakemuksen ratkaisemiseksi tarvittava olennainen selvitys" in text
+    assert not any(
+        failed.amendment_id == "2024/899"
+        and failed.target_unit_kind == "section"
+        and failed.target_section == "131"
+        for failed in failed_ops
+    )
+    assert any(
+        pathology.code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+        and pathology.source_statute == "2024/899"
+        and pathology.detail.get("recovery_kind")
+        == "section_replace_bootstrap_cited_parent_scaffold"
+        for pathology in pathologies
+    )
+
+
+# ---------------------------------------------------------------------------
+# StageResult endgame WAIST #3 — the structural write-footprint carrier
+# ---------------------------------------------------------------------------
+
+
+def test_structural_stage_carrier_is_populated_and_clean_on_green_corpus(
+    replay_1997_1339_finlex_oracle_full_products: ReplayResult,
+) -> None:
+    """The #3 carrier carries a clean structural footprint account on green corpus.
+
+    ``ReplayProducts.structural_stage`` aggregates the per-op
+    ``structural_stage_result`` accounts over every landed write. On the green
+    corpus every container write explains its boundary
+    (``divergence_explained=True``) → empty blocking residuals + clean coverage.
+    This is a CONTRACT test: the cert-consumer + severance fire-drill land in the
+    next (cert) lane.
+    """
+    replay = replay_1997_1339_finlex_oracle_full_products
+    stage = replay.products.structural_stage
+    assert stage is not None, "full-products replay must carry the #3 structural stage"
+    # The carrier is anchored on the replay's materialized IR tree.
+    assert stage.value is replay.products.materialized_state.ir
+    # Coverage: footprint paths, all owned, a genuine partition, and clean.
+    assert stage.coverage.unit == "paths"
+    assert stage.coverage.owned > 0, "the replay landed writes with a declared footprint"
+    assert stage.coverage.is_partition()
+    assert stage.coverage.is_clean
+    assert stage.coverage.violation == 0
+    # No blocking residuals: every container write explains its boundary.
+    assert stage.residuals == ()
+    assert not stage.has_blocking_residual
+    # Authority is the neutral firewall surface (authorization rides #7).
+    assert stage.authority.is_neutral
+
+
+def test_aggregate_structural_stage_surfaces_unexplained_divergence() -> None:
+    """A landed write with unexplained divergence becomes one blocking residual.
+
+    Aggregator unit test (no corpus): one receipt whose ``bound != landed`` with
+    no named recovery rule (``divergence_explained is False``) folds into exactly
+    one blocking ``unowned_violation`` residual and ``coverage.violation == 1``;
+    an explained write contributes only owned footprint.
+    """
+    from lawvm.core.write_receipt import WriteReceipt
+    from lawvm.finland.replay_products import aggregate_structural_stage
+
+    section_1: tuple[tuple[str, str], ...] = (("section", "1"),)
+    section_2: tuple[tuple[str, str], ...] = (("section", "2"),)
+    explained = WriteReceipt(
+        op_id="op-explained",
+        helper="fi.apply.resolved_op_write",
+        action="replace",
+        bound_target_path=section_1,
+        landed_primary_path=section_1,
+        replaced_paths=(section_1,),
+    )
+    unexplained = WriteReceipt(
+        op_id="op-unexplained",
+        helper="fi.apply.resolved_op_write",
+        action="replace",
+        bound_target_path=section_1,
+        landed_primary_path=section_2,
+        replaced_paths=(section_2,),
+    )
+    materialized_ir = IRNode(kind=IRNodeKind.BODY, children=())
+
+    stage = aggregate_structural_stage(
+        materialized_ir=materialized_ir,
+        write_receipts=(explained, unexplained),
+    )
+    assert stage.value is materialized_ir
+    assert stage.coverage.unit == "paths"
+    # Two landed writes each declare one footprint path → owned == 2.
+    assert stage.coverage.owned == 2
+    assert stage.coverage.violation == 1
+    assert stage.coverage.is_partition()
+    assert not stage.coverage.is_clean
+    assert len(stage.residuals) == 1
+    residual = stage.residuals[0]
+    assert residual.kind == "unowned_violation"
+    assert residual.blocking is True
+    assert stage.has_blocking_residual
+
+    # Empty receipts → trivially clean, empty account.
+    empty = aggregate_structural_stage(materialized_ir=materialized_ir, write_receipts=())
+    assert empty.coverage.owned == 0
+    assert empty.coverage.violation == 0
+    assert empty.residuals == ()
+    assert empty.coverage.is_clean
+
+    # A bound=None op-level receipt (no resolver binding) has no bound→landed
+    # divergence to account: its footprint is owned, it emits NO residual (the
+    # #3/#7 boundary contract — the green FI corpus is entirely such receipts).
+    bound_none = WriteReceipt(
+        op_id="op-bound-none",
+        helper="fi.apply.resolved_op_write",
+        action="replace",
+        bound_target_path=None,
+        landed_primary_path=section_1,
+        replaced_paths=(section_1,),
+    )
+    none_stage = aggregate_structural_stage(
+        materialized_ir=materialized_ir, write_receipts=(bound_none,)
+    )
+    assert none_stage.coverage.owned == 1
+    assert none_stage.coverage.violation == 0
+    assert none_stage.residuals == ()
+    assert none_stage.coverage.is_clean
+
+
+def test_replay_xml_2008_1005_preserves_explicit_item_insertions_during_snapshot_prune() -> None:
+    replay = replay_xml_for_test(
+        "2008/1005",
+        mode="legal_pit",
+        quiet=True,
+        as_of="2022-04-11",
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_37_text = " ".join(irnode_to_text(sections["chapter:7/section:37"]).split())
+
+    assert (
+        "14) markkinavalvonta-asetuksen 4 artiklan 3 kohdan a alakohdassa"
+        in section_37_text
+    )
+    assert (
+        "15) markkinavalvonta-asetuksen 4 artiklan 3 kohdan b alakohdassa"
+        in section_37_text
+    )
+    assert (
+        "16) markkinavalvonta-asetuksen 4 artiklan 3 kohdan c alakohdassa"
+        in section_37_text
+    )
+    assert (
+        "17) markkinavalvonta-asetuksen 4 artiklan 3 kohdan d alakohdassa"
+        in section_37_text
+    )
+
+
+def test_replay_xml_1973_935_folds_single_insert_list_tail_before_later_insert() -> None:
+    replay = replay_xml_for_test(
+        "1973/935",
+        mode="legal_pit",
+        quiet=True,
+        as_of="2004-12-21",
+    )
+    section_16 = extract_ir_sections(replay.materialized_state.ir)["section:16"]
+    subsections = [child for child in section_16.children if child.kind is IRNodeKind.SUBSECTION]
+    section_text = " ".join(irnode_to_text(section_16).split())
+
+    assert len(subsections) == 3
+    assert (
+        "työkyvyttömyysajalta maksamastaan palkasta, mikäli selvityksen esittäminen"
+        in section_text
+    )
+    assert section_text.index("mikäli selvityksen esittäminen") < section_text.index(
+        "Valtiokonttorilla on salassapitosäännösten"
+    )

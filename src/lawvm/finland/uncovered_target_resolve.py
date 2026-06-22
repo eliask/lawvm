@@ -264,11 +264,13 @@ def resolve_insert_chapter(
     if not family_chapter or family_chapter == amend_chapter:
         return InsertChapter(effective_chapter, effective_part, "family_base_same_chapter")
 
+    # lawvm-regex: prefilter family-base extraction from a section label (e.g. `5` from `5a`); label-token lex, no source text
     base_match = re.match(r"^(\d+)[a-z]*$", label)
     family_base_label = base_match.group(1) if base_match else None
     if _family_base_repealed(ops, family_base_label):
         return InsertChapter(effective_chapter, effective_part, "family_base_repealed")
 
+    # lawvm-regex: prefilter sub-chapter base extraction from a chapter label; label-token lex, no source text
     amend_ch_base = re.match(r"^(\d+)", amend_chapter)
     is_sub_chapter = amend_ch_base is not None and amend_ch_base.group(1) == family_chapter
     if is_sub_chapter:

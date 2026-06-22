@@ -79,7 +79,7 @@ def test_parse_clause_alakohta_replace_preserves_later_chapter_scoped_targets():
     )
     result = parse_clause(text)
     assert [op.code() for op in result.parsed_ops] == [
-        "M P L:1 11b 1 6a",
+        "M P L:1 11b 1 6 a",
         "M P L:3 20 1",
         "M P L:4 5 3",
         "M P L:5 2 o",
@@ -1014,7 +1014,7 @@ def test_insertion_alakohta_into_existing_item_uses_compound_item_label() -> Non
     text = "lisätään 1 §:n 1 momentin 1 kohtaan uusi c alakohta seuraavasti:"
     ops = parse_clause(text).parsed_ops
 
-    assert [op.code() for op in ops] == ["L P 1 1 1c"]
+    assert [op.code() for op in ops] == ["L P 1 1 1 c"]
     assert ops[0].witness is not None
     assert ops[0].witness.rule_id == "fi.insertion_alakohta_into_item"
 
@@ -1025,7 +1025,7 @@ def test_replace_alakohta_under_existing_item_uses_compound_item_label() -> None
     text = "muutetaan 1 §:n 2 kohdan h alakohta seuraavasti:"
     codes = [op.code() for op in parse_clause(text).parsed_ops]
 
-    assert codes == ["M P 1 1 2h"]
+    assert codes == ["M P 1 1 2 h"]
 
 
 def test_2002_276_replace_alakohta_then_insert_sibling_alakohta_targets_are_distinct() -> None:
@@ -1041,11 +1041,11 @@ def test_2002_276_replace_alakohta_then_insert_sibling_alakohta_targets_are_dist
     codes = [op.code() for op in parse_clause(text, statute_id="2000/1106").parsed_ops]
 
     assert codes == [
-        "M P 1 1 2h",
-        "M P 3 1 1a",
-        "M P 3 1 2a",
-        "M P 3 1 2d",
-        "L P 1 1 2i",
+        "M P 1 1 2 h",
+        "M P 3 1 1 a",
+        "M P 3 1 2 a",
+        "M P 3 1 2 d",
+        "L P 1 1 2 i",
     ]
 
 
@@ -1055,7 +1055,7 @@ def test_insert_coordinated_alakohta_under_existing_item_uses_compound_item_labe
     text = "lisätään 4 §:n 1 momentin 1 kohtaan uusi e ja f alakohta seuraavasti:"
     codes = [op.code() for op in parse_clause(text).parsed_ops]
 
-    assert codes == ["L P 4 1 1e", "L P 4 1 1f"]
+    assert codes == ["L P 4 1 1 e", "L P 4 1 1 f"]
 
 
 def test_2024_539_replace_and_insert_alakohta_lists_survive_cross_verb_clause() -> None:
@@ -1081,26 +1081,26 @@ def test_2024_539_replace_and_insert_alakohta_lists_survive_cross_verb_clause() 
     assert codes == [
         "M P 1 1 1",
         "M P 2 1 1",
-        "M P 2 1 4a",
-        "M P 2 1 4b",
-        "M P 2 1 5d",
-        "M P 2 1 5e",
+        "M P 2 1 4 a",
+        "M P 2 1 4 b",
+        "M P 2 1 5 d",
+        "M P 2 1 5 e",
         "M P 3 j",
         "M P 3 1 4",
         "M P 3 1 6",
-        "M P 4 1 1a",
-        "M P 4 1 2c",
-        "M P 4 1 2d",
-        "M P 4 1 2f",
-        "M P 4 1 2g",
+        "M P 4 1 1 a",
+        "M P 4 1 2 c",
+        "M P 4 1 2 d",
+        "M P 4 1 2 f",
+        "M P 4 1 2 g",
         "M P 8 1",
         "L P 1 1 10",
-        "L P 2 1 3d",
+        "L P 2 1 3 d",
         "L P 3 1 7",
-        "L P 4 1 1e",
-        "L P 4 1 1f",
-        "L P 4 1 2h",
-        "L P 4 1 2i",
+        "L P 4 1 1 e",
+        "L P 4 1 1 f",
+        "L P 4 1 2 h",
+        "L P 4 1 2 i",
     ]
 
 
@@ -1109,12 +1109,20 @@ def test_2024_539_replace_and_insert_alakohta_lists_survive_cross_verb_clause() 
     [
         (
             "lisätään 4 §:n 2 kohtaan uusi h alakohta seuraavasti:",
-            "L P 4 1 2h",
+            "L P 4 1 2 h",
+        ),
+        (
+            "lisätään 4 §:n 2 kohtaan uusi h-alakohta seuraavasti:",
+            "L P 4 1 2 h",
+        ),
+        (
+            "lisätään 4 §:n 2 kohtaan uusi h -alakohta seuraavasti:",
+            "L P 4 1 2 h",
         ),
         (
             "lisätään 4 §:n 2 kohtaan, sellaisena kuin se on osaksi laissa 650/2014, "
             "uusi i alakohta, seuraavasti:",
-            "L P 4 1 2i",
+            "L P 4 1 2 i",
         ),
     ],
 )
@@ -1128,6 +1136,56 @@ def test_insertion_alakohta_into_item_defaults_omitted_momentti_to_first(
     assert [op.code() for op in ops] == [expected]
     assert ops[0].witness is not None
     assert ops[0].witness.rule_id == "fi.insertion_alakohta_into_item"
+
+
+def test_2011_359_hyphenated_item_subitem_insert_continuations_stay_structural() -> None:
+    """Hyphenated ``e-alakohta`` must not drop to section-reference fallback."""
+
+    text = (
+        "muutetaan ympäristövaikutusten arviointimenettelystä annetun "
+        "valtioneuvoston asetuksen (713/2006) 6 §:n 3 kohdan a-alakohta sekä "
+        "lisätään 6 §:n 7 kohtaan uusi e-alakohta ja 8 kohtaan uusi e, f ja "
+        "g-alakohta seuraavasti:"
+    )
+    result = parse_clause(text, statute_id="2006/713")
+
+    assert result.parser_lane == "grammar_owned"
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 6 1 3 a",
+        "L P 6 1 7 e",
+        "L P 6 1 8 e",
+        "L P 6 1 8 f",
+        "L P 6 1 8 g",
+    ]
+    assert all(op.witness is not None for op in result.parsed_ops)
+    witness_rule_ids = [op.witness.rule_id for op in result.parsed_ops if op.witness is not None]
+    assert witness_rule_ids == [
+        "fi.section_ref",
+        "fi.insertion_alakohta_into_item",
+        "fi.insertion_alakohta_into_item",
+        "fi.insertion_alakohta_into_item",
+        "fi.insertion_alakohta_into_item",
+    ]
+
+
+def test_2011_359_spaced_dash_subitems_stay_structural() -> None:
+    """Finlex spacing ``a- alakohta`` / ``e -alakohta`` is structural trivia."""
+
+    text = (
+        "muutetaan ympäristövaikutusten arviointimenettelystä annetun asetuksen "
+        "(713/2006) 6 §:n 3 kohdan a- alakohta sekä lisätään 6 §:n 7 kohtaan "
+        "uusi e -alakohta ja 8 kohtaan uusi e, f ja g -alakohta seuraavasti:"
+    )
+    result = parse_clause(text, statute_id="2006/713")
+
+    assert result.parser_lane == "grammar_owned"
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 6 1 3 a",
+        "L P 6 1 7 e",
+        "L P 6 1 8 e",
+        "L P 6 1 8 f",
+        "L P 6 1 8 g",
+    ]
 
 
 def test_2014_692_insertion_list_keeps_anaphoric_momentti_and_alakohta_targets() -> None:
@@ -1149,7 +1207,7 @@ def test_2014_692_insertion_list_keeps_anaphoric_momentti_and_alakohta_targets()
         "M P 1 3 6",
         "L P 1 2 16",
         "L P 1 3 7",
-        "L P 4 1 2i",
+        "L P 4 1 2 i",
     ]
 
 
@@ -1505,6 +1563,44 @@ def test_parse_clause_preserves_anaphoric_asetus_target_version_binding_range() 
     ] == [(("4a", "4b", "4c"), "2011/81")]
 
 
+def test_parse_clause_preserves_parenthesized_asetus_target_version_bindings_for_2009_1815() -> None:
+    text = (
+        "muutetaan 22 päivänä joulukuuta 1993 annetun jäteasetuksen "
+        "(1390/1993) 3 a §:n 2 momentin johdantokappale ja 3 momentti, "
+        "sellaisina kuin ne ovat 20 päivänä kesäkuuta 1996 annetussa "
+        "asetuksessa (472/1996), 12 § sellaisena kuin se on 24 päivänä "
+        "tammikuuta 1995 annetussa asetuksessa (64/1995), 14 § ja 14 b §, "
+        "sellaisina kuin ne ovat 18 päivänä helmikuuta 2000 annetussa "
+        "asetuksessa (171/2000), 17 §:n 2 momentin johdantokappale, "
+        "sellaisena kuin se on 24 päivänä tammikuuta 1995 annetussa "
+        "asetuksessa (64/1995) sekä 21 §:n 1 momentin 2 kohta sellaisena "
+        "kuin se on 18 päivänä helmikuuta 2000 annetussa asetuksessa "
+        "(171/2000), seuraavasti:"
+    )
+
+    result = parse_clause(text)
+
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 3a 2 j",
+        "M P 3a 3",
+        "M P 12",
+        "M P 14",
+        "M P 14b",
+        "M P 17 2 j",
+        "M P 21 1 2",
+    ]
+    assert [
+        (binding.target_labels, binding.cited_statute_id)
+        for binding in result.target_version_bindings
+    ] == [
+        (("3a",), "1996/472"),
+        (("12",), "1995/64"),
+        (("14", "14b"), "2000/171"),
+        (("17",), "1995/64"),
+        (("21",), "2000/171"),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Anaphoric provenance must not over-consume the resuming target list
 # ---------------------------------------------------------------------------
@@ -1853,6 +1949,28 @@ def test_jolloin_renumber_followed_by_main_verb_group():
     assert siirtaa_idx == 0, f"SIIRTAA (jolloin) must be first verb group, got index {siirtaa_idx}"
 
 
+def test_jolloin_section_suffix_range_renumber_emits_each_pair() -> None:
+    """A final-label range like ``32 e-32 h`` owns each section relabel."""
+    text = (
+        "muutetaan 7 päivänä kesäkuuta 1978 annetun merimieslain (423/1978) "
+        "32 ja 32 b §, 32 c §:n 1 momentti, 32 e §, 32 f §:n 1 momentti "
+        "sekä 40 §:n 1 ja 4 momentti, lisätään lakiin uusi 32 c ja 32 d §, "
+        "jolloin osaksi muutettu 32 c §, nykyinen 32 d §, muutettu 32 e § "
+        "ja osaksi muutettu 32 f § siirtyy 32 e-32 h §:ksi, seuraavasti:"
+    )
+    result = parse_clause(text)
+    assert result.surface_clause is not None
+
+    renumber_ops = [op for op in result.parsed_ops if op.verb == "S" and op.kind == "P"]
+    assert [(op.number, op.renumber_dest) for op in renumber_ops] == [
+        ("32c", "32e"),
+        ("32d", "32f"),
+        ("32e", "32g"),
+        ("32f", "32h"),
+    ]
+    assert result.surface_clause.verb_groups[0].verb.name == "SIIRTAA"
+
+
 def test_jolloin_renumber_not_enriched_in_api_phase1b():
     """Jolloin renumber must NOT appear in enriched_surface_clause (Phase 1b is a no-op).
 
@@ -1948,6 +2066,38 @@ def test_jolloin_moment_renumber_stops_before_following_doc_insert_clause():
         ("L P 32 1", ""),
         ("L P 118 4", ""),
         ("L P 127a", ""),
+    ]
+
+
+def test_jolloin_reinstatement_insert_keeps_later_chapter_insert_clause() -> None:
+    """2007/923 shape: a scoped reinstatement insert after ``jolloin`` must not
+    truncate the following law-level chapter insert and scoped section inserts.
+    """
+    ops = parse_clause(
+        "lisätään 1 luvun 1 §:ään uusi 11 momentti, lukuun uusi 3 a §, "
+        "mainitulla lailla 581/1996 kumotun 4 §:n 3 momentin tilalle uusi "
+        "3 momentti, 4 §:ään uusi 5 momentti, jolloin nykyinen 5-10 momentti "
+        "siirtyvät 6-11 momentiksi, lukuun uusi 4 b ja 4 c § ja niiden edelle "
+        "uudet väliotsikot, lakiin uusi 3 a luku, 5 lukuun uusi 5 a § ja "
+        "7 lukuun uusi 2 a § seuraavasti:"
+    ).parsed_ops
+
+    assert [(op.code(), op.renumber_dest) for op in ops] == [
+        ("S P L:1 4 5", "6"),
+        ("S P L:1 4 6", "7"),
+        ("S P L:1 4 7", "8"),
+        ("S P L:1 4 8", "9"),
+        ("S P L:1 4 9", "10"),
+        ("S P L:1 4 10", "11"),
+        ("L P L:1 1 11", ""),
+        ("L P L:1 3a", ""),
+        ("L P L:1 4 3", ""),
+        ("L P L:1 4 5", ""),
+        ("L P L:1 4b", ""),
+        ("L P L:1 4c", ""),
+        ("L L 3a", ""),
+        ("L P L:5 5a", ""),
+        ("L P L:7 2a", ""),
     ]
 
 
@@ -2327,6 +2477,32 @@ def test_parse_clause_uusi_otsikko_ja_momentti():
     assert m.witness.rule_id == "fi.insertion_sub_target"
 
 
+def test_parse_clause_uusi_otsikko_ja_uusi_momentti():
+    """Repeated ``uusi`` in the continuation keeps both heading and subsection."""
+    ops = parse_clause("lisätään 8 §:ään uusi otsikko ja uusi 4 momentti").parsed_ops
+    assert len(ops) == 2
+
+    heading_ops = [op for op in ops if op.facet is FacetKind.HEADING]
+    subsection_ops = [op for op in ops if op.momentti == 4]
+    assert len(heading_ops) == 1
+    assert len(subsection_ops) == 1
+    assert heading_ops[0].number == "8"
+    assert subsection_ops[0].number == "8"
+
+
+def test_parse_clause_lisata_otsikko_without_uusi_after_target():
+    """``lisätään N §:ään otsikko`` is an explicit heading insertion."""
+    ops = parse_clause("lisätään 8 §:ään otsikko ja uusi 4 momentti").parsed_ops
+    assert len(ops) == 2
+
+    heading_ops = [op for op in ops if op.facet is FacetKind.HEADING]
+    subsection_ops = [op for op in ops if op.momentti == 4]
+    assert len(heading_ops) == 1
+    assert len(subsection_ops) == 1
+    assert heading_ops[0].verb == "L"
+    assert heading_ops[0].number == "8"
+
+
 def test_parse_clause_skips_temporal_modifier_before_insert_targets() -> None:
     """Leading ``väliaikaisesti`` must not swallow the real insert targets.
 
@@ -2444,7 +2620,7 @@ def test_parse_clause_alakohta_continuation_does_not_block_later_section_targets
 
     codes = [op.code() for op in parse_clause(text).parsed_ops]
 
-    assert "M P L:1 4 1 11i" in codes
+    assert "M P L:1 4 1 11 i" in codes
     assert "M P L:1 4 1 19" in codes
     assert "M P L:3 10 1" in codes
     assert "M P L:3 13 3" in codes
