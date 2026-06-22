@@ -8042,6 +8042,48 @@ def test_item_insert_fallback_coverage_marks_plain_connector_classified() -> Non
     assert coverage["required_proofs"] == []
 
 
+def test_item_insert_fallback_recovers_historical_item_before_kohta_wording() -> None:
+    johto = (
+        "lisätään 30 päivänä maaliskuuta 1973 annetun vuosilomalain (272/73) "
+        "3 §:n 5 momenttiin, sellaisena kuin se on osittain muutettuna "
+        "24 päivänä helmikuuta ja 30 päivänä maaliskuuta 1978 annetuilla laeilla "
+        "(153 ja 233/78), uusi näin kuuluva 11 a kohta:"
+    )
+
+    result = parse_ops_fallback_heuristic_with_coverage(johto)
+
+    got = {
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        for op in result.ops
+    }
+    assert got == {("INSERT", "3", 5, "11a")}
+
+
+def test_normalize_compile_ops_converts_historical_item_insert_wording() -> None:
+    johto = (
+        "lisätään 30 päivänä maaliskuuta 1973 annetun vuosilomalain (272/73) "
+        "3 §:n 5 momenttiin, sellaisena kuin se on osittain muutettuna "
+        "24 päivänä helmikuuta ja 30 päivänä maaliskuuta 1978 annetuilla laeilla "
+        "(153 ja 233/78), uusi näin kuuluva 11 a kohta:"
+    )
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=etree.fromstring("<root/>"),
+        master=ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=())),
+        amendment_id="1979/276",
+        source_title="Laki vuosilomalain 3 §:n muuttamisesta.",
+        used_preamble_body_fallback=False,
+        parent_id="1973/272",
+        strict_profile=None,
+    )
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        for op in phase.output
+    ] == [("INSERT", "3", 5, "11a")]
+
+
 def test_combined_chapter_and_section_insert_owned_by_parser() -> None:
     # The container-insert regex fallback was retired; the PEG owns the combined
     # ``lakiin uusi N luku ja M, … §`` chapter+section insert natively.

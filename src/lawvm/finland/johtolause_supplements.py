@@ -76,8 +76,9 @@ _INSERT_ITEM_RE = re.compile(
     r"\blisätään\b[\s\S]{0,800}?"
     + _OPTIONAL_CHAPTER_SECTION_PREFIX
     + rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
-    r"(?P<moment>\d{1,3})\s+momenttiin\s+uusi\s+kohta\s+"
-    r"(?P<item>\d{1,3})\b",
+    r"(?P<moment>\d{1,3})\s+momenttiin"
+    r"(?:\s*,\s*(?:(?!\buusi\b).){0,500}?)?\s+uusi\s+"
+    rf"(?:(?:näin\s+kuuluva\s+)?(?P<item_before>{_ITEM_LABEL_PATTERN})\s+kohta|kohta\s+(?P<item_after>{_ITEM_LABEL_PATTERN}))\b",
     flags=re.I,
 )
 _ITEM_REPLACE_RE = re.compile(
@@ -555,7 +556,7 @@ def _parse_item_insert_clauses(johto: str) -> tuple[ItemInsertClause, ...]:
     clauses: list[ItemInsertClause] = []
     for match in _INSERT_ITEM_RE.finditer(johto or ""):
         section = _norm_num_token(match.group("section"))
-        item_label = _norm_num_token(match.group("item"))
+        item_label = _norm_num_token(match.group("item_before") or match.group("item_after") or "")
         if not section or not item_label:
             continue
         clauses.append(

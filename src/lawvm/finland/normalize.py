@@ -83,7 +83,7 @@ _RE_NEW_SUBSECTION = re.compile(
     r"\s+momentti\b"
 )
 _RE_NEW_ITEM = re.compile(
-    r"\buusi\s+("
+    r"\buusi\s+(?:näin\s+kuuluva\s+)?("
     r"(?:\d+\s*[a-z]?(?:\s*[–—―-]\s*\d+\s*[a-z]?)?)"
     r"(?:\s*(?:,|ja)\s*\d+\s*[a-z]?(?:\s*[–—―-]\s*\d+\s*[a-z]?)?)*)"
     r"\s+kohta\b"
@@ -1130,7 +1130,9 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
             )
         ]
 
-    return _dedupe_fallback_ops_ir(repeal_range_ops + fallback_insert_ops + ops)
+    return _dedupe_fallback_ops_ir(
+        _prune_shadowed_parent_subsection_insert_fallbacks(repeal_range_ops + fallback_insert_ops + ops)
+    )
 
 
 def parse_ops_fallback_heuristic_with_coverage(
