@@ -1995,6 +1995,74 @@ def test_normalize_group_payload_splits_single_target_carried_live_tail() -> Non
     assert completeness.tail_policy == "preserve_unstated_tail"
 
 
+def test_normalize_group_payload_splits_sparse_replaces_on_changed_live_sentence_anchor() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="7",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Vanha ensimmäinen momentti."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=(
+                            "Verotoimisto antaa verovelvolliselle todistuksen "
+                            "investointitalletuksen nosto-oikeudesta 18 §:n 1 momentissa "
+                            "ja 21 §:ssä tarkoitetuissa tapauksissa."
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "7", live_node=live_sec)
+    group_ops = [
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="7", target_paragraph=1),
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="7", target_paragraph=2),
+    ]
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="7",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=(
+                            "Uusi ensimmäinen momentti. "
+                            "Verotoimisto antaa verovelvolliselle todistuksen "
+                            "investointitalletuksen nosto-oikeudesta 21 §:ssä "
+                            "tarkoitetuissa tapauksissa."
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(kind=IRNodeKind.OMISSION),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, group_ops, muutos_ir, set())
+
+    mapped_first = got.subsec_map.for_op(got.group_ops[0])
+    mapped_second = got.subsec_map.for_op(got.group_ops[1])
+    assert mapped_first is not None
+    assert mapped_second is not None
+    assert mapped_first.label == "1"
+    assert mapped_second.label == "2"
+    assert irnode_to_text(mapped_first) == "Uusi ensimmäinen momentti."
+    assert "21 §:ssä" in irnode_to_text(mapped_second)
+    assert "18 §:n" not in irnode_to_text(mapped_second)
+    assert [obs.kind for obs in _observations(got)] == ["ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE"]
+
+
 def test_normalize_group_payload_does_not_split_multi_subsection_target_payload() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

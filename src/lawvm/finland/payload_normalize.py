@@ -4487,7 +4487,63 @@ def _split_sparse_omission_single_subsection_across_consecutive_replaces(
         return muutos_ir, False
 
     def _collapse_ws(text: str) -> str:
-        return re.sub(r"\s+", " ", text).strip()
+        return " ".join(text.split()).strip()
+
+    def _sentence_start_offsets(text: str) -> list[int]:
+        starts = [0]
+        idx = 0
+        while idx < len(text):
+            if text[idx] not in ".!?":
+                idx += 1
+                continue
+            cursor = idx + 1
+            while cursor < len(text) and text[cursor].isspace():
+                cursor += 1
+            if cursor < len(text) and text[cursor].isupper():
+                starts.append(cursor)
+            idx = cursor
+        return starts
+
+    def _first_sentence(text: str) -> str:
+        starts = _sentence_start_offsets(text)
+        if len(starts) < 2:
+            return text.strip()
+        return text[: starts[1]].strip()
+
+    def _sentence_at(text: str, start: int, starts: list[int]) -> str:
+        next_start = next((candidate for candidate in starts if candidate > start), len(text))
+        return text[start:next_start].strip()
+
+    def _shared_word_prefix_len(left: str, right: str) -> int:
+        count = 0
+        for left_word, right_word in zip(left.split(), right.split(), strict=False):
+            if left_word != right_word:
+                break
+            count += 1
+        return count
+
+    def _find_changed_live_sentence_anchor(
+        payload: str,
+        live_first_sentence: str,
+        *,
+        after: int,
+    ) -> int | None:
+        starts = _sentence_start_offsets(payload)
+        for candidate in starts:
+            if candidate <= after:
+                continue
+            payload_sentence = _sentence_at(payload, candidate, starts)
+            if not payload_sentence:
+                continue
+            if _shared_word_prefix_len(payload_sentence, live_first_sentence) >= 8:
+                return candidate
+            if (
+                len(payload_sentence) >= 48
+                and len(live_first_sentence) >= 48
+                and SequenceMatcher(None, payload_sentence, live_first_sentence).ratio() >= 0.72
+            ):
+                return candidate
+        return None
 
     payload_text = _collapse_ws(irnode_to_text(amend_subs[0]))
     if not payload_text:
@@ -4499,11 +4555,15 @@ def _split_sparse_omission_single_subsection_across_consecutive_replaces(
         live_text = _collapse_ws(irnode_to_text(live_subs[target]))
         if not live_text:
             return muutos_ir, False
-        first_sentence = re.split(r"(?<=[.!?])\s+", live_text, maxsplit=1)[0].strip()
+        first_sentence = _first_sentence(live_text)
         anchor = first_sentence if len(first_sentence) >= 32 else " ".join(live_text.split()[:8])
         if len(anchor.split()) < 4:
             return muutos_ir, False
         pos = payload_text.find(anchor, search_start + 1)
+        if pos <= search_start:
+            pos = _find_changed_live_sentence_anchor(payload_text, first_sentence, after=search_start)
+            if pos is None:
+                return muutos_ir, False
         if pos <= search_start:
             return muutos_ir, False
         split_points.append(pos)
