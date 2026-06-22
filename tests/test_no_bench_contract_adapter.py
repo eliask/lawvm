@@ -398,8 +398,13 @@ def test_no_bench_main_runs_curated_corpus_to_zero_crashes(tmp_path) -> None:
         # An empty file at tmp_path works without altering the summary
         # contract.
         history_csv = tmp_path / "norway_bench_history.csv"
+        runs_csv = tmp_path / "norway_bench_runs" / "adapter-smoke.csv"
         args = SimpleNamespace(
-            corpus=None, data_dir=None, label="adapter-smoke", history_path=history_csv
+            corpus=None,
+            data_dir=None,
+            label="adapter-smoke",
+            history_path=history_csv,
+            runs_path=runs_csv,
         )
         buf = io.StringIO()
         rc = no_bench_main(args)

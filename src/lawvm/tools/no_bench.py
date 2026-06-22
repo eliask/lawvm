@@ -348,6 +348,9 @@ def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentio
     print(f"  Corpus     : {corpus_path}")
     print(f"  Rows run   : {len(results)}")
     print(f"  Workers    : {workers}")
+    runs_path = _persist_per_statute_results(results, label, getattr(args, "runs_path", None))
+    if runs_path is not None:
+        print(f"  Run saved  : {runs_path}")
     _persist_history(results, label, getattr(args, "history_path", None))
     return 0
 
@@ -357,6 +360,95 @@ def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentio
 # data_dir from this global so ProcessPoolExecutor batches do not need to
 # pickle the (heavy) archive connection per task.
 _WORKER_DATA_DIR: "Path | None" = None
+
+
+# Per-statute result CSV header — one row per ``BenchUnitResult`` from the
+# labelled bench run, mirroring lawvm.tools.ee_bench's per-statute CSV at
+# data/ee_bench_runs/<label>.csv. Stored under data/norway_bench_runs/<label>.csv.
+_NO_BENCH_RUNS_HEADER = (
+    "unit_id",
+    "status",
+    "structural_err",
+    "text_err",
+    "headline_error",
+    "headline_accuracy",
+    "residue_total",
+    "residue_buckets",
+    "witnesses",
+)
+
+
+def _persist_per_statute_results(
+    results: list[BenchUnitResult],
+    label: str,
+    runs_path: "Path | None" = None,
+) -> "Path | None":
+    """Persist per-statute ``BenchUnitResult`` rows to a labelled CSV.
+
+    Mirrors EE's ``data/ee_bench_runs/<label>.csv`` convention; the CSV lives
+    under ``data/norway_bench_runs/<label>.csv`` at the repository root, or
+    at the explicit ``runs_path`` override (used by the contract-adapter smoke
+    test to isolate the file to tmp_path).
+
+    The CSV is the per-statute basis for a future ``--regressions`` flag —
+    reload via :func:`lawvm.core.bench_aggregate.load_history` style and feed
+    two labelled runs into :func:`lawvm.core.bench_aggregate.find_regressions`
+    to surface units whose accuracy dropped between runs.
+
+    Failure to persist never aborts the run: per-statute results are
+    observability, not load-bearing for the SCORED verdict. An ``OSError``
+    surfaces as a stderr diagnostic so the bench numbers already printed
+    survive.
+
+    Returns the path written (or ``None`` on failure) so the caller can
+    surface it in the summary footer.
+    """
+    import csv as _csv
+    import sys as _sys
+
+    if runs_path is None:
+        repo_root = Path(__file__).resolve().parents[3]
+        runs_dir = repo_root / "data" / "norway_bench_runs"
+        target_file = runs_dir / f"{label}.csv"
+    else:
+        # Explicit ``runs_path``: if it points at a directory, place the file
+        # under it as ``<label>.csv``; if it points at a file (the canonical
+        # ``--runs-path data/foo.csv`` form), use it verbatim. Either way,
+        # ``runs_dir`` is the directory whose ``mkdir`` will succeed.
+        runs_dir = runs_path if runs_path.is_dir() else runs_path.parent
+        target_file = runs_path if runs_path.suffix == ".csv" else (runs_dir / f"{label}.csv")
+    runs_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with target_file.open("w", newline="", encoding="utf-8") as f:
+            writer = _csv.writer(f)
+            writer.writerow(_NO_BENCH_RUNS_HEADER)
+            for r in results:
+                residue_total = sum(int(v) for v in r.residue_buckets.values())
+                residue_repr = ";".join(
+                    f"{k}={int(v)}" for k, v in sorted(r.residue_buckets.items())
+                )
+                witnesses_repr = "|".join(r.witnesses)
+                writer.writerow(
+                    [
+                        r.unit_id,
+                        r.status.value,
+                        "" if r.structural_err is None else f"{r.structural_err:.6f}",
+                        "" if r.text_err is None else f"{r.text_err:.6f}",
+                        "" if r.headline_error() is None else f"{r.headline_error():.6f}",
+                        "" if r.headline_accuracy() is None else f"{r.headline_accuracy():.6f}",
+                        residue_total,
+                        residue_repr,
+                        witnesses_repr,
+                    ]
+                )
+    except OSError as exc:
+        print(
+            f"  run save: per-statute CSV at {target_file} failed: {exc}",
+            file=_sys.stderr,
+        )
+        return None
+    return target_file
 
 
 def _persist_history(
