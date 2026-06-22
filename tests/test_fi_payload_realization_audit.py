@@ -4,9 +4,13 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 
 from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
-from lawvm.finland.payload_realization_audit import payload_realization_findings
+from lawvm.finland.payload_realization_audit import (
+    attach_payload_gap_apply_dispositions,
+    payload_realization_findings,
+)
 
 
 def _resolved(payload_text: str, *, op_id: str = "op1", op_type: OpType = "REPLACE") -> ResolvedOp:
@@ -65,6 +69,53 @@ def test_payload_realization_audit_reports_missing_payload_text() -> None:
     assert findings[0].source_statute == "2000/1"
     assert findings[0].detail["unit_id"] == "op1"
     assert findings[0].detail["disposition"] == "source_payload_text_not_realized_in_post_fold_state"
+
+
+def test_payload_realization_audit_attaches_apply_disposition() -> None:
+    findings = payload_realization_findings(
+        resolved_ops=(_resolved("Substantive amendment payload appears here."),),
+        after_ir=_after("The folded statute still contains unrelated old text."),
+        amendment_id="2000/1",
+        apply_dispositions_by_op_id={"op1": "APPLY_FAILED"},
+    )
+
+    assert len(findings) == 1
+    assert findings[0].detail["apply_disposition"] == "APPLY_FAILED"
+    assert findings[0].detail["apply_disposition_source"] == "APPLY.RESOLVED_OP_AUDIT"
+
+
+def test_final_payload_gap_annotation_joins_same_source_op_audit() -> None:
+    gap = Finding(
+        kind="COVERAGE.PAYLOAD_REALIZATION_GAP",
+        role=OBSERVATION_ROLE,
+        stage="post_apply_payload_realization",
+        source_statute="2000/1",
+        detail={
+            "unit_id": "op1",
+            "unit_kind": "REPLACE",
+            "observed_label": "1",
+            "parent_label": "section:1",
+            "chunk_index": 0,
+            "chunk_excerpt": "Missing text",
+            "disposition": "source_payload_text_not_realized_in_post_fold_state",
+        },
+    )
+    audit = Finding(
+        kind="APPLY.RESOLVED_OP_AUDIT",
+        role=OBSERVATION_ROLE,
+        stage="apply",
+        source_statute="2000/1",
+        detail={
+            "detail": {
+                "op_id": "op1",
+                "disposition": "APPLY_FAILED",
+            }
+        },
+    )
+
+    annotated = attach_payload_gap_apply_dispositions((gap, audit))
+
+    assert annotated[0].detail["apply_disposition"] == "APPLY_FAILED"
 
 
 def test_replay_filters_payload_gaps_realized_in_materialized_product() -> None:

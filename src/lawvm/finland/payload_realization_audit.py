@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import replace
 
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import irnode_to_text
@@ -23,6 +24,7 @@ def payload_realization_findings(
     resolved_ops: tuple[ResolvedOp, ...],
     after_ir: IRNode,
     amendment_id: str,
+    apply_dispositions_by_op_id: Mapping[str, str] | None = None,
 ) -> tuple[Finding, ...]:
     """Return audit findings for claimed operation payload absent from ``after_ir``.
 
@@ -36,7 +38,70 @@ def payload_realization_findings(
         units=units,
         after_text=irnode_to_text(after_ir),
     )
-    return payload_realization_gap_findings(gaps, source_ref=amendment_id)
+    findings = payload_realization_gap_findings(gaps, source_ref=amendment_id)
+    if not apply_dispositions_by_op_id:
+        return findings
+    return tuple(
+        _attach_apply_disposition(finding, apply_dispositions_by_op_id)
+        for finding in findings
+    )
+
+
+def _attach_apply_disposition(
+    finding: Finding,
+    apply_dispositions_by_op_id: Mapping[str, str],
+) -> Finding:
+    op_id = str(finding.detail.get("unit_id") or "")
+    disposition = apply_dispositions_by_op_id.get(op_id)
+    if not disposition:
+        return finding
+    return replace(
+        finding,
+        detail={
+            **finding.detail,
+            "apply_disposition": disposition,
+            "apply_disposition_source": "APPLY.RESOLVED_OP_AUDIT",
+        },
+    )
+
+
+def attach_payload_gap_apply_dispositions(
+    findings: tuple[Finding, ...],
+) -> tuple[Finding, ...]:
+    """Annotate payload gaps with same-amendment apply audit dispositions."""
+
+    dispositions_by_source_and_op: dict[tuple[str, str], str] = {}
+    for finding in findings:
+        if finding.kind != "APPLY.RESOLVED_OP_AUDIT":
+            continue
+        detail = finding.detail.get("detail", finding.detail)
+        if not isinstance(detail, Mapping):
+            continue
+        op_id = str(detail.get("op_id") or "")
+        disposition = str(detail.get("disposition") or "")
+        if finding.source_statute and op_id and disposition:
+            dispositions_by_source_and_op[(finding.source_statute, op_id)] = disposition
+
+    if not dispositions_by_source_and_op:
+        return findings
+
+    annotated: list[Finding] = []
+    for finding in findings:
+        if finding.kind != "COVERAGE.PAYLOAD_REALIZATION_GAP":
+            annotated.append(finding)
+            continue
+        op_id = str(finding.detail.get("unit_id") or "")
+        disposition = dispositions_by_source_and_op.get((finding.source_statute, op_id))
+        if not disposition:
+            annotated.append(finding)
+            continue
+        annotated.append(
+            _attach_apply_disposition(
+                finding,
+                {op_id: disposition},
+            )
+        )
+    return tuple(annotated)
 
 
 def _payload_realization_units(
@@ -224,5 +289,6 @@ def _collect_chunks(node: IRNode, chunks: list[str]) -> None:
 
 
 __all__ = [
+    "attach_payload_gap_apply_dispositions",
     "payload_realization_findings",
 ]
