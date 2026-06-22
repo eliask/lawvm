@@ -2,6 +2,7 @@ from lxml import etree
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, StructuralAction
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.compile_group_scope_recovery import (
     CompileGroupScopeRecoveryRequest,
     resolve_compile_group_scope_recovery,
@@ -122,6 +123,140 @@ def test_inserted_body_chapter_scopes_following_child_section_insert() -> None:
     assert [finding.kind for finding in result.findings()] == [
         "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
     ]
+
+
+def test_pseudo_marker_body_chapter_scopes_following_child_section_insert() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="7",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="53"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>7 luku</num>
+              <section>
+                <num>7 a luku</num>
+                <heading>Tuontiluvat</heading>
+              </section>
+              <section>
+                <num>53 a §</num>
+                <subsection><content><p>Uusi pykälä.</p></content></subsection>
+              </section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_53a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="53a",
+        target_chapter="7",
+        source_statute="1996/473",
+        lo=LegalOperation(
+            op_id="insert_53a",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "7"), ("section", "53a"))),
+            payload=None,
+        ),
+    )
+
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="53a",
+            target_chapter="7",
+            target_part=None,
+            group_ops=[insert_op],
+            inserted_chapter_labels={"7a"},
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            strict_profile=None,
+        )
+    )
+
+    assert result.output.effective_target_chapter == "7a"
+    assert result.output.group_ops[0].target_chapter == "7a"
+    assert result.output.group_ops[0].lo is not None
+    assert result.output.group_ops[0].lo.target.path == (("chapter", "7a"), ("section", "53a"))
+    assert [finding.kind for finding in result.findings()] == [
+        "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+    ]
+
+
+def test_compile_amendment_uses_pseudo_marker_chapter_as_inserted_scope() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="7",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="53"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>7 luku</num>
+              <section>
+                <num>7 a luku</num>
+                <heading>Tuontiluvat</heading>
+              </section>
+              <section>
+                <num>53 a §</num>
+                <subsection><content><p>Uusi pykälä.</p></content></subsection>
+              </section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_53a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="53a",
+        target_chapter="7",
+        source_statute="1996/473",
+        lo=LegalOperation(
+            op_id="insert_53a",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "7"), ("section", "53a"))),
+            payload=None,
+        ),
+    )
+
+    result = compile_amendment_ops(
+        master,
+        [op],
+        AmendmentSourceModel.from_tree(muutos_tree),
+        "lisätään asetukseen uusi 53 a § seuraavasti:",
+        "legal_pit",
+    )
+
+    assert len(result.output) == 1
+    resolved = result.output[0]
+    assert resolved.resolved_target_scope_view.target_chapter == "7a"
+    assert resolved.resolved_target_address is not None
+    assert resolved.resolved_target_address.path == (("chapter", "7a"), ("section", "53a"))
 
 
 def test_real_inserted_body_chapter_overrides_nonexplicit_family_target() -> None:

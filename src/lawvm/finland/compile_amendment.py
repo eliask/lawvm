@@ -168,6 +168,11 @@ def compile_amendment_ops(
         for op in ops
         if op.target_unit_kind == "chapter" and op.op_type == "INSERT" and op.target_section
     }
+    inserted_chapter_labels.update(
+        _norm_num_token(source_chapter.chapter_label)
+        for source_chapter in source_model.source_pseudo_chapters()
+        if source_chapter.chapter_label
+    )
     shadow_pruning_ops = _scope_recovered_ops_for_shadow_pruning(
         master,
         section_groups,

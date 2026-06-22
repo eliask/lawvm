@@ -451,6 +451,13 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and _norm_num_token(body_chapter) in inserted_chapter_labels
     )
+    body_chapter_is_source_container = (
+        body_chapter is not None
+        and (
+            request.source_model.body_has_real_chapter_container(body_chapter)
+            or request.source_model.body_has_pseudo_chapter_marker(body_chapter)
+        )
+    )
     live_stem_host_scoped = group_has_scope_source(request.group_ops, "live_stem_host")
     combined_root_insert_range_owns_section = (
         body_chapter is not None
@@ -505,7 +512,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and request.target_chapter is not None
         and body_chapter_is_subchapter
         and body_chapter_is_inserted
-        and request.source_model.body_has_real_chapter_container(body_chapter)
+        and body_chapter_is_source_container
         and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
         and not carry_forward_scoped
     )
@@ -513,7 +520,7 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and request.target_chapter is None
         and body_chapter_is_inserted
-        and request.source_model.body_has_real_chapter_container(body_chapter)
+        and body_chapter_is_source_container
         and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
         and not explicit_chapter_scoped
         and not carry_forward_scoped
@@ -565,7 +572,7 @@ def _maybe_apply_body_chapter_insert_correction(
                 and body_chapter_is_inserted
             )
         )
-        and request.source_model.body_has_real_chapter_container(body_chapter)
+        and body_chapter_is_source_container
         and not body_wrapper_overridden_by_scope
         and not body_wrapper_overridden_by_live_target
     )
