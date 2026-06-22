@@ -3905,6 +3905,19 @@ def test_replay_xml_preserves_sparse_insert_before_terminal_voimaantulo_for_2006
     assert irnode_to_text(section_4).startswith("4 § Voimaantulo")
 
 
+def test_replay_xml_explicit_insert_section_keeps_terminal_voimaantulo_label_for_2020_1266() -> None:
+    replay = replay_xml_for_test("2020/1266", mode="official_consolidation", quiet=True)
+    body = replay.materialized_state.ir
+
+    assert replay.materialized_state.find_section("26a", "6") is None
+
+    section_27 = replay.materialized_state.find_section("27", "6")
+    assert section_27 is not None
+    text = irnode_to_text(section_27)
+    assert text.startswith("27 § Rehualan toimijan ja tilarehustamon vuosi-ilmoitusvelvollisuus")
+    assert "Tämä asetus tulee voimaan 1 päivänä tammikuuta 2021" not in text
+
+
 def test_replay_xml_preserves_inserted_chapter_topology_for_2014_1429(
     replay_2014_1429_finlex_oracle: ReplayResult,
 ) -> None:

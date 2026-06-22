@@ -153,6 +153,7 @@ def recover_uncovered_body_ops(
             ),
             part_insert_labels=set(preparation.context.part_insert_labels),
             johto_whole_section_targets=set(preparation.context.johto_whole_section_targets),
+            johto_insert_section_targets=set(preparation.context.johto_insert_section_targets),
             johto_named_subprovision_section_targets=set(
                 preparation.context.johto_named_subprovision_section_targets
             ),

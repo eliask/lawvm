@@ -80,7 +80,7 @@ _RE_NEW_SUBSECTION = re.compile(
     r"\buusi\s+("
     r"(?:\d+(?:\s*[–—―-]\s*\d+)?)"
     r"(?:\s*(?:,|ja)\s*\d+(?:\s*[–—―-]\s*\d+)?)*)"
-    r"\s+momentti\b"
+    r"\s+(?:momentti\b|mom\.)"
 )
 _RE_NEW_ITEM = re.compile(
     r"\buusi\s+(?:näin\s+kuuluva\s+)?("

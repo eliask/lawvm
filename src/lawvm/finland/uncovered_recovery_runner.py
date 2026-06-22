@@ -89,6 +89,7 @@ class UncoveredRecoveryRun:
     source_owned_insert_chapter_labels: Set[str]
     part_insert_labels: Set[str]
     johto_whole_section_targets: Set[str]
+    johto_insert_section_targets: Set[str]
     johto_named_subprovision_section_targets: Set[str]
     johto_insert_subsection_section_targets: Set[str]
 
@@ -134,6 +135,10 @@ class UncoveredRecoveryRun:
     def label_has_whole_section_johto_target(self, label: str) -> bool:
         """Whether the preamble parses this label as a whole-section target."""
         return _norm_num_token(label) in self.johto_whole_section_targets
+
+    def label_has_section_insert_johto_target(self, label: str) -> bool:
+        """Whether the preamble declares ``lisätään ... uusi N §`` for this label."""
+        return _norm_num_token(label) in self.johto_insert_section_targets
 
     def label_has_subsection_insert_johto_target(self, label: str) -> bool:
         """Whether the preamble inserts subsection(s) into this section."""
@@ -353,6 +358,7 @@ class UncoveredRecoveryRun:
             existing_heading.startswith("voimaantulo")
             and amend_heading
             and not amend_heading.startswith("voimaantulo")
+            and not self.label_has_section_insert_johto_target(label)
         ):
             parent_path = existing_path[:-1]
             parent = _tops.resolve(self.state.ir, parent_path) if parent_path else self.state.ir

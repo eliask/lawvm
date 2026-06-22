@@ -302,6 +302,54 @@ def collect_johto_insert_subsection_section_targets(johto_text: str) -> frozense
     return frozenset(targets)
 
 
+def collect_johto_insert_section_targets(johto_text: str) -> frozenset[str]:
+    """Return sections targeted by ``lisätään ... uusi N §`` insertions."""
+    if "lisätään" not in johto_text and "lisataan" not in johto_text:
+        return frozenset()
+
+    from lawvm.finland.johtolause.lexer import tokenize
+
+    tokens = tokenize(johto_text)
+    targets: set[str] = set()
+    in_insert_group = False
+    idx = 0
+    while idx < len(tokens):
+        token = tokens[idx]
+        if token.lemma == "lisätä":
+            in_insert_group = True
+            idx += 1
+            continue
+        if not in_insert_group:
+            idx += 1
+            continue
+        if token.cat != "UUSI":
+            idx += 1
+            continue
+
+        labels: list[str] = []
+        scan_idx = idx + 1
+        while scan_idx < len(tokens):
+            scan = tokens[scan_idx]
+            if scan.cat == "NUM":
+                labels.append(scan.text)
+                scan_idx += 1
+                continue
+            if scan.cat == "CONJ" or scan.text == ",":
+                scan_idx += 1
+                continue
+            if scan.cat == "PYKALA" and scan.case in {"", "NOM"}:
+                targets.update(
+                    label
+                    for label in (_norm_num_token(raw) for raw in labels)
+                    if label
+                )
+                idx = scan_idx
+                break
+            break
+        idx += 1
+    return frozenset(targets)
+
+
 @functools.lru_cache(maxsize=8192)
 def collect_johto_numbered_table_targets(johto_text: str) -> tuple[NumberedTableTarget, ...]:
     """Return explicit ``N §:n taulukko M`` table targets from a Finnish johtolause."""
