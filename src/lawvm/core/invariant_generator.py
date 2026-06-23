@@ -44,6 +44,17 @@ questions that are *structurally* decidable from the declared ClaimSpec shape
         :mod:`lawvm.core.claim_assumption_binding` (handle → assumption) and gated
         by :mod:`tests.test_claim_assumption_binding`. A NEW handle with no binding
         FAILS that gate.
+      * GUARD_LIVENESS — an invariant that names a ``finding_code`` as its
+        enforcement DEMANDS that the code is not a KNOWN-DEAD guard. The fire-drill
+        registry (:mod:`lawvm.core.fire_drill_registry`) records which blocking
+        guards have NO production call site (``RECORDED_DEAD``). A public claim
+        whose enforcement rests on a recorded-dead guard is "authority by
+        proximity" — the claim looks enforced but the guard can never fire. This
+        question raises a gap iff any invariant for the claim cites a finding_code
+        in ``RECORDED_DEAD``. (Boundary: v0 checks the claim does not rest on a
+        KNOWN-dead guard; the full positive liveness proof — that the guard FIRES
+        from production — is owned by the fire-drill suite's three-state partition,
+        whose ``live_drill`` set is test-owned and not importable from core.)
 
     DEFERRED (declared, not silently skipped — Pro §12 versioned completeness):
       * CONSERVATION / DETERMINISM / IDENTITY — substrate-global properties
@@ -53,9 +64,6 @@ questions that are *structurally* decidable from the declared ClaimSpec shape
       * PROVENANCE / SCOPE-TIME — require per-object-field introspection beyond
         the declared ClaimSpec shape; deferred to a later generator version with
         an object-field axis.
-      * GUARD_LIVENESS — the fire-drill obligation (Pro §13 step 4): an invariant
-        carrying a hard/strict finding_code DEMANDS a production fire-drill.
-        Deferred to the fire-drill registry; wire in once it lands.
 
 HONESTY BOUNDARY (constructive-invariant pattern). The generator decides
 APPLICABILITY from declared-shape markers (a closed, conservative keyword set
@@ -79,6 +87,7 @@ from lawvm.core.claim_surface_manifest import (
     ClaimSurfaceManifest,
     v0_claim_surface_manifest,
 )
+from lawvm.core.fire_drill_registry import RECORDED_DEAD
 from lawvm.core.invariant_spec import (
     InvariantSet,
     InvariantSpec,
@@ -261,7 +270,10 @@ class GenerationResult:
 class ObligationRule:
     obligation_id: str
     required_profile: str
-    trigger: Callable[[ClaimSpec], str]
+    # Both hooks receive (claim, its invariants). ``trigger`` returns a non-empty
+    # rationale iff the claim's declared shape (and/or its invariants) raises the
+    # obligation; ``discharge`` returns the ids of the invariants satisfying it.
+    trigger: Callable[[ClaimSpec, tuple[InvariantSpec, ...]], str]
     discharge: Callable[[ClaimSpec, tuple[InvariantSpec, ...]], tuple[str, ...]]
 
 
@@ -279,7 +291,7 @@ def _first_marker(text: str, markers: frozenset[str]) -> str:
 
 
 # --- TOTALITY -------------------------------------------------------------- #
-def _trigger_totality(claim: ClaimSpec) -> str:
+def _trigger_totality(claim: ClaimSpec, invs: tuple[InvariantSpec, ...]) -> str:
     marker = _first_marker(_claim_text(claim), _TOTALITY_MARKERS)
     return f"universal-coverage language ({marker!r})" if marker else ""
 
@@ -296,7 +308,7 @@ def _discharge_totality(
 
 
 # --- CLOSURE --------------------------------------------------------------- #
-def _trigger_closure(claim: ClaimSpec) -> str:
+def _trigger_closure(claim: ClaimSpec, invs: tuple[InvariantSpec, ...]) -> str:
     marker = _first_marker(_claim_text(claim), _CLOSURE_MARKERS)
     return f"closed-set classification language ({marker!r})" if marker else ""
 
@@ -315,7 +327,7 @@ def _discharge_closure(
 
 
 # --- AUTHORITY_FIREWALL ---------------------------------------------------- #
-def _trigger_authority(claim: ClaimSpec) -> str:
+def _trigger_authority(claim: ClaimSpec, invs: tuple[InvariantSpec, ...]) -> str:
     marker = _first_marker(_claim_text(claim), _AUTHORITY_MARKERS)
     return f"authority/conformance/replay language ({marker!r})" if marker else ""
 
@@ -333,7 +345,7 @@ def _discharge_authority(
 
 
 # --- ROOT_COMMITMENT ------------------------------------------------------- #
-def _trigger_root(claim: ClaimSpec) -> str:
+def _trigger_root(claim: ClaimSpec, invs: tuple[InvariantSpec, ...]) -> str:
     return (
         f"declares required_roots {list(claim.required_roots)!r}"
         if claim.required_roots
@@ -357,7 +369,7 @@ def _discharge_root(
 
 
 # --- NON_GUARANTEE_COVERAGE ------------------------------------------------ #
-def _trigger_non_guarantee(claim: ClaimSpec) -> str:
+def _trigger_non_guarantee(claim: ClaimSpec, invs: tuple[InvariantSpec, ...]) -> str:
     return (
         f"declares {len(claim.allowed_non_guarantees)} non-guarantee(s)"
         if claim.allowed_non_guarantees
@@ -374,6 +386,27 @@ def _discharge_non_guarantee(
         if inv.bucket
         in {"declared_non_guarantee", "declared_residual", "deferred_with_owner"}
     )
+
+
+# --- GUARD_LIVENESS -------------------------------------------------------- #
+def _trigger_guard_liveness(
+    claim: ClaimSpec, invs: tuple[InvariantSpec, ...]
+) -> str:
+    coded = [inv.finding_code for inv in invs if inv.finding_code]
+    if not coded:
+        return ""
+    return f"invariant(s) name finding_code guard(s) {sorted(set(coded))!r}"
+
+
+def _discharge_guard_liveness(
+    claim: ClaimSpec, invs: tuple[InvariantSpec, ...]
+) -> tuple[str, ...]:
+    coded = [inv for inv in invs if inv.finding_code]
+    # A public claim must NOT rest on a recorded-dead guard (no authority by
+    # proximity). Gap iff any cited finding_code is in the dead-guard registry.
+    if any(inv.finding_code in RECORDED_DEAD for inv in coded):
+        return ()
+    return tuple(inv.id for inv in coded)
 
 
 #: The v0 active question battery.
@@ -423,6 +456,16 @@ V0_BATTERY: tuple[ObligationRule, ...] = (
         trigger=_trigger_non_guarantee,
         discharge=_discharge_non_guarantee,
     ),
+    ObligationRule(
+        obligation_id="GUARD_LIVENESS",
+        required_profile=(
+            "no invariant naming a finding_code as the claim's enforcement may "
+            "cite a guard recorded dead in fire_drill_registry.RECORDED_DEAD "
+            "(no public claim rests on a guard that cannot fire)"
+        ),
+        trigger=_trigger_guard_liveness,
+        discharge=_discharge_guard_liveness,
+    ),
 )
 
 
@@ -455,7 +498,7 @@ def generate_obligations(
     for claim in manifest.claims:
         claim_invs = invariant_set.for_claim(claim.claim_id)
         for rule in battery:
-            trigger = rule.trigger(claim)
+            trigger = rule.trigger(claim, claim_invs)
             if not trigger:
                 continue
             discharged_by = rule.discharge(claim, claim_invs)

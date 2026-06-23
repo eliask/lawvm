@@ -131,6 +131,64 @@ def test_generator_surfaces_a_totality_gap_drill():
     assert not result.is_fully_discharged
 
 
+def test_generator_surfaces_a_guard_liveness_gap_drill():
+    """A claim whose enforcement finding_code is a RECORDED_DEAD guard is a gap.
+
+    Embodies "no authority by proximity": a public claim may not rest on a guard
+    that can never fire. Uses a real dead-guard code from the fire-drill registry.
+    """
+    from lawvm.core.fire_drill_registry import RECORDED_DEAD
+
+    dead_code = sorted(RECORDED_DEAD)[0]  # a real recorded-dead guard
+    claim = ClaimSpec(
+        claim_id="lawvm.test.rests_on_dead_guard.v1",
+        public_sentence="A claim enforced by a guard.",
+        allowed_non_guarantees=("test_boundary",),
+    )
+    rests_on_dead = InvariantSpec(
+        id="DEAD-CHK",
+        claim_id="lawvm.test.rests_on_dead_guard.v1",
+        plane="legal_state",
+        waist="apply",
+        unit_kind="per-unit",
+        predicate="enforced by a guard that has no production call site",
+        owner="test",
+        bucket="implemented_check",
+        finding_code=dead_code,
+    )
+    boundary = InvariantSpec(
+        id="DEAD-NG",
+        claim_id="lawvm.test.rests_on_dead_guard.v1",
+        plane="declaration",
+        waist="claim_boundary",
+        unit_kind="static",
+        predicate="declared boundary",
+        owner="test",
+        bucket="declared_non_guarantee",
+    )
+    result = generate_obligations(
+        ClaimSurfaceManifest((claim,)), InvariantSet((rests_on_dead, boundary))
+    )
+    assert "GUARD_LIVENESS" in {g.obligation_id for g in result.gaps}
+
+    # Swapping the dead code for a live (non-dead) finding_code discharges it.
+    live_chk = InvariantSpec(
+        id="LIVE-CHK",
+        claim_id="lawvm.test.rests_on_dead_guard.v1",
+        plane="legal_state",
+        waist="apply",
+        unit_kind="per-unit",
+        predicate="enforced by a live guard",
+        owner="test",
+        bucket="implemented_check",
+        finding_code="TEST.SOME_LIVE_FINDING",
+    )
+    ok = generate_obligations(
+        ClaimSurfaceManifest((claim,)), InvariantSet((live_chk, boundary))
+    )
+    assert "GUARD_LIVENESS" not in {g.obligation_id for g in ok.gaps}
+
+
 def test_generator_surfaces_a_root_commitment_gap_drill():
     """A claim naming a required_root with no committing invariant is a gap."""
     rootless_claim = ClaimSpec(
