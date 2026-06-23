@@ -1369,6 +1369,11 @@ def _try_recognize_target(
         return _stamp_insertion_batch(nodes, batch_start, scan.pos), "insertion"
 
     scan.goto(start)
+    parsed_hp = recognize_trailing_heading_placement(scan, chapter, part)
+    if parsed_hp is not None:
+        return emit_headings_nodes(parsed_hp, chapter=chapter, part=part), "heading"
+
+    scan.goto(start)
     parsed = recognize_section_ref(scan)
     if parsed is not None:
         return emit_section_nodes(parsed, chapter=chapter, part=part), "section"

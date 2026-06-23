@@ -1306,6 +1306,16 @@ def test_build_amendment_bundle_1992_552_keeps_heading_and_subsection_scope_sepa
     assert "REPLACE 8 § otsikko" in group8["ops_final"]
 
 
+def test_build_amendment_bundle_1973_692_1979_229_keeps_valiotsake_subsection_insert() -> None:
+    bundle = build_amendment_bundle("1973/692", "1979/229", "legal_pit")
+    group19 = next(group for group in bundle["groups"] if group["target_norm"] == "19")
+
+    assert "INSERT 19 § 2 mom" in bundle["compiled_ops"]
+    assert "INSERT 19 § 2 mom" in group19["ops_final"]
+    assert "RENUMBER 19 § 2 mom" in group19["ops_final"]
+    assert "RENUMBER 19 § 3 mom" in group19["ops_final"]
+
+
 def test_replay_xml_1992_552_preserves_section_8_subsection_4(
     replay_1992_552_finlex_oracle: ReplayResult,
 ) -> None:

@@ -2503,6 +2503,25 @@ def test_parse_clause_lisata_otsikko_without_uusi_after_target():
     assert heading_ops[0].number == "8"
 
 
+def test_parse_clause_target_first_valiotsake_then_subsection_insert() -> None:
+    """``N §:n edelle uusi väliotsake`` must not drop the next insert arm."""
+    text = (
+        "lisätään asetuksen 19 §:n edelle uusi väliotsake ja 19 §:ään, "
+        "sellaisen kuin se on muutettuna 21 päivänä huhtikuuta 1978 annetussa "
+        "asetuksessa (282/78), uusi 2 momentti, jolloin nykyiset 2 ja 3 momentti "
+        "siirtyvät 3 ja 4 momenteiksi seuraavasti:"
+    )
+    ops = parse_clause(text, statute_id="1973/692").parsed_ops
+
+    assert [op.code() for op in ops] == ["S P 19 2", "S P 19 3", "L P 19 o", "L P 19 2"]
+    assert ops[0].renumber_dest == "3"
+    assert ops[1].renumber_dest == "4"
+    assert ops[2].witness is not None
+    assert ops[2].witness.rule_id == "fi.heading_edelle_otsikko_target_list"
+    assert ops[3].witness is not None
+    assert ops[3].witness.rule_id == "fi.insertion_sub_target"
+
+
 def test_parse_clause_skips_temporal_modifier_before_insert_targets() -> None:
     """Leading ``väliaikaisesti`` must not swallow the real insert targets.
 
