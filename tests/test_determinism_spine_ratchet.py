@@ -22,13 +22,19 @@ Two bans:
     must take such values caller-supplied. Baseline: 0.
 
   LS-33 (b) — order-dependent iteration into stored output (HEURISTIC, weaker):
-    iterating a ``set(...)`` / ``frozenset(...)`` / a set-comprehension whose
-    loop value flows into an *output sink* (a name/attr matching
-    ``hash|root|digest|fingerprint|serial|address|path|payload|json|dumps``)
-    inside a spine module. A fully sound dataflow proof is out of scope for a
-    bounded AST visitor, so this arm is deliberately narrowed to the
-    iterate-then-feed-a-sink shape and is documented as a weaker form (see
-    ``_LS33_HEURISTIC_LIMITATION`` below). Baseline freezes the current count.
+    iterating a ``set(...)`` / ``frozenset(...)`` / a set-comprehension — OR a
+    LOCAL bound to one within the same function (the completer, ``s = set(...);
+    for x in s``) — whose loop value flows into an *output sink* (a name/attr
+    matching ``hash|root|digest|fingerprint|serial|address|path|payload|json|
+    dumps``) inside a spine module. A fully sound dataflow proof is out of scope
+    for a bounded AST visitor, so this arm is narrowed to the iterate-then-feed-
+    a-sink shape and documented as a weaker form (see ``_LS33_HEURISTIC_LIMITATION``
+    below; the dict-iteration sub-arm is a deliberate residual). The completer
+    closes the "set bound to a local first" gap and freezes the current count: the
+    spine carries ONE such site (``timeline_lineage`` classify_scope_migrations
+    iterates a set-comp ``relevant_addresses`` whose loop feeds sink-named locals;
+    the computed result is order-invariant booleans, so it is FROZEN as
+    likely-benign debt that may only fall, not asserted clean).
 
 The spine module set is DEFINED below (``SPINE_MODULES``) with the rationale for
 each entry. Adding a module to the spine can only tighten the gate.
@@ -125,12 +131,17 @@ _OUTPUT_SINK_RE = (
 )
 
 _LS33_HEURISTIC_LIMITATION = (
-    "LS-33 arm (b) is a NARROWED heuristic, not a sound dataflow proof: it flags "
-    "only the literal `for x in set(...)/frozenset(...)/{set-comp}` shape whose "
-    "loop body feeds an output-sink name. It will MISS a set bound to a local "
-    "first (`s = set(...); for x in s: root += x`) and may MISS feeding through "
-    "an intermediate. A sound version needs the same intra-procedural taint pass "
-    "the regex ratchet uses; deferred. The wall-clock/random arm (a) is sound."
+    "LS-33 arm (b) flags the literal `for x in set(...)/frozenset(...)/{set-comp}` "
+    "shape AND (completer) a set bound to a local first within the same function "
+    "(`s = set(...); for x in s: root += x`), via a small intra-procedural "
+    "set-taint pass — closing the gap the prior narrowing named. It may still MISS "
+    "feeding through a non-name intermediate, and the DICT-iteration sub-arm is a "
+    "deliberate RESIDUAL: Python dicts are insertion-ordered, so `for k in d` is "
+    "deterministic unless `d` was built from an unordered source — a sound dict "
+    "arm needs full dataflow provenance of the dict, which a bounded AST cannot "
+    "prove (a naive dict arm false-positives on ordered-dict-into-ordered-dict "
+    "rebuilds, e.g. timeline_materialization address re-bucketing). The "
+    "wall-clock/random arm (a) is sound."
 )
 
 
@@ -164,10 +175,54 @@ def _attr_chain(node: ast.AST) -> list[str]:
     return list(reversed(parts))
 
 
+def _set_bound_locals(scope: ast.AST) -> set[str]:
+    """Names assigned ``= set(...)`` / ``= frozenset(...)`` / a set-comprehension
+    anywhere in a function scope's own body (NOT descending into nested defs). The
+    completer for the 'set bound to a local first' gap."""
+    names: set[str] = set()
+    body = getattr(scope, "body", None)
+    stack: list[ast.AST] = [
+        item for item in body if isinstance(item, ast.AST)
+    ] if isinstance(body, list) else []
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue  # a nested scope is its own taint universe
+        if isinstance(node, ast.Assign):
+            value = node.value
+            is_set = (
+                isinstance(value, ast.SetComp)
+                or (
+                    isinstance(value, ast.Call)
+                    and isinstance(value.func, ast.Name)
+                    and value.func.id in {"set", "frozenset"}
+                )
+            )
+            if is_set:
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        names.add(t.id)
+        for child in ast.iter_child_nodes(node):
+            stack.append(child)
+    return names
+
+
 class _SpineVisitor(ast.NodeVisitor):
     def __init__(self) -> None:
         self.wallclock_hits: list[dict[str, object]] = []
         self.iter_sink_hits: list[dict[str, object]] = []
+        # Per-function set-bound local names, refreshed on entering a function.
+        self._set_locals_stack: list[set[str]] = [set()]
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._set_locals_stack.append(_set_bound_locals(node))
+        self.generic_visit(node)
+        self._set_locals_stack.pop()
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._set_locals_stack.append(_set_bound_locals(node))
+        self.generic_visit(node)
+        self._set_locals_stack.pop()
 
     # ---- arm (a): wall-clock / random / uuid sources ----
     def visit_Attribute(self, node: ast.Attribute) -> None:
@@ -196,12 +251,14 @@ class _SpineVisitor(ast.NodeVisitor):
                 )
         self.generic_visit(node)
 
-    @staticmethod
-    def _iter_is_set_like(it: ast.expr) -> bool:
+    def _iter_is_set_like(self, it: ast.expr) -> bool:
         if isinstance(it, ast.SetComp):
             return True
         if isinstance(it, ast.Call) and isinstance(it.func, ast.Name):
             return it.func.id in {"set", "frozenset"}
+        # Completer: a Name that is a set-bound local in the enclosing function.
+        if isinstance(it, ast.Name) and it.id in self._set_locals_stack[-1]:
+            return True
         return False
 
     def _loop_feeds_sink(self, node: ast.For) -> str | None:
@@ -516,6 +573,86 @@ class TestSpineGuardLiveness:
         )
         res = scan_spine_source(self._F, text)
         assert res["iter_sink"] == []
+
+    # ---- LS-33 completer: set bound to a local first ----
+
+    def test_local_bound_set_iteration_into_sink_is_flagged(self) -> None:
+        # `s = set(...); for x in s: root += x` — the gap the prior narrowing missed.
+        text = (
+            "def f(items):\n"
+            "    root = b''\n"
+            "    s = set(items)\n"
+            "    for x in s:\n"
+            "        root += x\n"
+            "    return root\n"
+        )
+        res = scan_spine_source(self._F, text)
+        assert len(res["iter_sink"]) == 1
+        assert res["iter_sink"][0]["sink"] == "root"
+
+    def test_local_bound_frozenset_iteration_into_hash_is_flagged(self) -> None:
+        text = (
+            "def f(items, hasher):\n"
+            "    fs = frozenset(items)\n"
+            "    for x in fs:\n"
+            "        hasher.update(x)\n"
+        )
+        res = scan_spine_source(self._F, text)
+        assert len(res["iter_sink"]) == 1
+
+    def test_local_bound_set_iteration_for_nonsink_is_not_flagged(self) -> None:
+        text = (
+            "def f(items):\n"
+            "    s = set(items)\n"
+            "    n = 0\n"
+            "    for x in s:\n"
+            "        n += 1\n"
+            "    return n\n"
+        )
+        res = scan_spine_source(self._F, text)
+        assert res["iter_sink"] == []
+
+    def test_local_bound_set_in_other_function_does_not_leak(self) -> None:
+        # set-bound local `s` in g() must NOT taint a same-named `s` iterated in f().
+        text = (
+            "def g(items):\n"
+            "    s = set(items)\n"
+            "    return s\n"
+            "def f(s):\n"
+            "    root = b''\n"
+            "    for x in s:\n"
+            "        root += x\n"
+            "    return root\n"
+        )
+        res = scan_spine_source(self._F, text)
+        assert res["iter_sink"] == []
+
+    def test_list_bound_local_iteration_is_not_flagged(self) -> None:
+        # A `list(...)`-bound local is insertion-ordered -> deterministic -> allowed.
+        text = (
+            "def f(items):\n"
+            "    s = list(items)\n"
+            "    root = b''\n"
+            "    for x in s:\n"
+            "        root += x\n"
+            "    return root\n"
+        )
+        res = scan_spine_source(self._F, text)
+        assert res["iter_sink"] == []
+
+    def test_dict_iteration_is_residual_not_flagged(self) -> None:
+        # RESIDUAL (documented): dict iteration is insertion-ordered, so the arm
+        # deliberately does NOT flag `for k in d` — a sound dict arm needs dict
+        # provenance. This pins the residual: an ordered-dict rebuild stays clean.
+        text = (
+            "def f(active):\n"
+            "    by_addr = {}\n"
+            "    for address, content in active.items():\n"
+            "        by_addr[address] = content\n"
+            "    return by_addr\n"
+        )
+        res = scan_spine_source(self._F, text)
+        assert res["iter_sink"] == [], _LS33_HEURISTIC_LIMITATION
 
 
 # ---------------------------------------------------------------------------
