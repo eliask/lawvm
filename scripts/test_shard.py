@@ -350,6 +350,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_statute_proof_algebra.py",
         "test_strict_payload_confidence.py",
         "test_fi_version_drift.py",
+        "test_ev_residual_ledger_and_self_evidencing.py",
     ),
     "evidence_reports": (
         "test_fi_explain_facade.py",
