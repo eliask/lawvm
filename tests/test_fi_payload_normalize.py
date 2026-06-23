@@ -8206,3 +8206,57 @@ def test_assign_subsection_slots_binds_same_target_insert_before_moved_replace()
         ):
             found_binding_observation = True
     assert found_binding_observation
+
+
+def test_assign_subsection_slots_binds_same_target_insert_before_moved_renumber() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="7b",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 b §"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="New inserted third moment."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Carried old third moment."),
+        ),
+    )
+    insert3 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="7b",
+        target_paragraph=3,
+    )
+    renumber3 = AmendmentOp(
+        op_id="renumber_3_to_4",
+        op_type="RENUMBER",
+        target_kind=TargetKind.SECTION,
+        target_section="7b",
+        target_paragraph=3,
+        lo=LegalOperation(
+            op_id="renumber_3_to_4",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "7b"), ("subsection", "3"))),
+            destination=LegalAddress(path=(("section", "7b"), ("subsection", "4"))),
+        ),
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(muutos_ir, [renumber3, insert3])
+    assert slot_inputs is not None
+
+    assignment = _assign_subsection_slots(slot_inputs)
+    insert3_slot = assignment.for_op(insert3)
+    renumber3_slot = assignment.for_op(renumber3)
+
+    assert insert3_slot is not None
+    assert renumber3_slot is not None
+    assert insert3_slot.label == "2"
+    assert renumber3_slot.label == "3"
+    assert assignment.unassigned_payload_slots == ()
+    assert any(
+        obs.kind == "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT"
+        and obs.detail is not None
+        and obs.detail["target_paragraph"] == 3
+        and obs.detail["insert_payload_slot_label"] == "2"
+        and obs.detail["replace_payload_slot_label"] == "3"
+        and obs.detail["renumber_destination"] == 4
+        for obs in assignment.binding_observations
+    )
