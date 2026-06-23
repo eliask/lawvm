@@ -397,6 +397,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_projection_author_set_authority.py",
         "test_explicit_address_level.py",
         "test_guard_liveness_totality.py",
+        # Audit-invariant registry program (CROSS-JURISDICTION, §2.3): row
+        # XJUR-02 — no hidden replay kernel in a frontend (static boundary audit;
+        # monotone ratchet over a discovered-debt baseline).
+        "test_hidden_replay_kernel_ratchet.py",
     ),
     "core_ir_contracts": (
         "test_fi_address_parse.py",
