@@ -11050,6 +11050,77 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit the full typed report as JSON to stdout",
     )
 
+    # --- cross-ref-report ---
+    cross_ref_report_p = sub.add_parser(
+        "cross-ref-report",
+        help=(
+            "render the dangling cross-reference claim as a neutral, "
+            "independently-verifiable Markdown document (fi)"
+        ),
+        description=(
+            "PRESENTATION of the existing dangling-reference claim "
+            "(lawvm.fi.reference.dangling.v1) as a structured Markdown report a "
+            "legal scholar / Finlex maintainer / journalist can read and check. "
+            "Either runs the claim fresh over the fi_refs projection (--fi-refs) "
+            "or renders a saved `dangling-refs --out` JSON (--report-json). Adds "
+            "NO new computation and NO new authority: it reads the typed report's "
+            "counts and DANGLING witnesses verbatim and lays them out with a "
+            "prominent methodology/limits section, deterministic findings grouped "
+            "by target act (no silent truncation — a capped list states 'showing "
+            "top N of M'), and reproducible verification steps. EXISTENCE_UNKNOWN "
+            "rows are excluded from the findings (honest non-determination, never "
+            "reported as broken). A dangling reference is a textual/maintenance "
+            "fact, not a legal conclusion."
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--fi-refs",
+        dest="fi_refs",
+        default=None,
+        metavar="PATH",
+        help=(
+            "path to the fi_refs projection (.jsonl or .parquet) to run the claim "
+            "over. Default: the export's standard output location. Ignored when "
+            "--report-json is given."
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--report-json",
+        dest="report_json",
+        default=None,
+        metavar="PATH",
+        help=(
+            "render a previously saved `dangling-refs --out` JSON report instead "
+            "of recomputing (re-asserts the report's totality/closed-status guards "
+            "on read)"
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--scope-label",
+        dest="scope_label",
+        default=None,
+        metavar="TEXT",
+        help=(
+            "free-text declaration of the corpus slice this run covers, printed "
+            "prominently so a slice is never mistaken for the whole corpus"
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="write the Markdown report to PATH (default: stdout)",
+    )
+    cross_ref_report_p.add_argument(
+        "--top",
+        type=int,
+        default=None,
+        help=(
+            "max number of dangling witnesses rendered inline (the full count is "
+            "always stated; default: 200)"
+        ),
+    )
+
     # --- surface-graph ---
     surface_graph_p = sub.add_parser(
         "surface-graph",
@@ -13874,6 +13945,13 @@ def _main_impl() -> None:
         from lawvm.tools.dangling_references import main as dangling_refs_main
 
         dangling_refs_main(args)
+
+    elif args.command == "cross-ref-report":
+        from lawvm.tools.cross_reference_integrity_report import (
+            main as cross_ref_report_main,
+        )
+
+        cross_ref_report_main(args)
 
     elif args.command == "surface-graph":
         from lawvm.tools.surface_graph import main as surface_graph_main
