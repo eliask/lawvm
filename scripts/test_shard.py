@@ -526,6 +526,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_replay_metamorphic.py",
         "test_replay_small_model.py",
         "test_fi_timeline.py",
+        "test_know_invariants.py",
         "test_timeline_invariants.py",
         "test_timeline_lineage_contracts.py",
         "test_timeline_materialization_stage.py",
