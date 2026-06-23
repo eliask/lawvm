@@ -1756,9 +1756,7 @@ def _temporary_section_expiry_overrides(
             if tail_end == -1:
                 tail_end = len(expiry_scan_text)
             sentence_tail = expiry_scan_text[tail_start:tail_end]
-            # lawvm-regex: owning_parser V-expiry chained-sunset tail after a
-            # normal plural ``ovat voimassa`` head; date via match_fi_date, label
-            # via _parse_section_list_labels.
+            # lawvm-regex: owning_parser V-expiry chained-sunset tail after a normal plural "ovat voimassa" head; date via match_fi_date, labels via _parse_section_list_labels; anchor only
             for m_tail in _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE.finditer(sentence_tail):
                 tail_match = match_fi_date(
                     m_tail.group("datetail"), forms={FiDateForm.ALLATIVE}

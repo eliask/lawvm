@@ -71,8 +71,10 @@ def _surface_expression_kind(surface_text: str, member_count: int) -> str:
     """
     if member_count <= 1:
         return "single"
+    # lawvm-regex: owning_parser canonical surface-shape classifier for an already-extracted citation expression's own literal; structural class only, mints no op/target
     if _RANGE_DASH_RE.search(surface_text):
         return "range"
+    # lawvm-regex: owning_parser canonical surface-shape classifier (coordination arm) over the citation expression's own literal; structural class only, mints no op/target
     if _COORDINATION_RE.search(surface_text):
         return "coordination"
     # Multiple members but no recognised connector surface (e.g. an enumeration

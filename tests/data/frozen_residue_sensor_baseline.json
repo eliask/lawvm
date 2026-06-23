@@ -13,7 +13,7 @@
       "src/lawvm/finland/address_parse.py": 2,
       "src/lawvm/finland/amendment_chapter_precreate.py": 2,
       "src/lawvm/finland/johto_scope_mentions.py": 4,
-      "src/lawvm/finland/metadata.py": 7,
+      "src/lawvm/finland/metadata.py": 8,
       "src/lawvm/finland/normalize.py": 2,
       "src/lawvm/finland/pool_mention_extractor.py": 2,
       "src/lawvm/finland/references/defined_terms.py": 1
@@ -26,23 +26,25 @@
       "src/lawvm/finland/frontend_compile.py": 2,
       "src/lawvm/finland/johtolause/lexicon.py": 7,
       "src/lawvm/finland/merge.py": 2,
-      "src/lawvm/finland/metadata.py": 13,
+      "src/lawvm/finland/metadata.py": 14,
       "src/lawvm/finland/normalize.py": 1,
-      "src/lawvm/finland/references/defined_terms.py": 5
+      "src/lawvm/finland/references/defined_terms.py": 5,
+      "src/lawvm/finland/references/eu_transposition.py": 1
     },
     "span_overlap_dedup": {
       "src/lawvm/finland/delegation.py": 1,
       "src/lawvm/finland/kumotaan.py": 3,
-      "src/lawvm/finland/metadata.py": 1,
+      "src/lawvm/finland/metadata.py": 2,
       "src/lawvm/finland/normalize.py": 1,
-      "src/lawvm/finland/references/defined_terms.py": 1
+      "src/lawvm/finland/references/defined_terms.py": 1,
+      "src/lawvm/finland/references/eu_transposition.py": 1
     }
   },
-  "grand_total": 71,
+  "grand_total": 76,
   "totals": {
     "clause_boundary_dup": 8,
-    "multi_finditer_same_src": 20,
-    "per_op_fstring_regex": 36,
-    "span_overlap_dedup": 7
+    "multi_finditer_same_src": 21,
+    "per_op_fstring_regex": 38,
+    "span_overlap_dedup": 9
   }
 }

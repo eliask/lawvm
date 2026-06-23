@@ -7,9 +7,9 @@
     "src/lawvm/finland/standalone_targets.py"
   ],
   "raw_string_counts": {
-    "src/lawvm/finland/compile_group_scope_recovery.py": 5,
+    "src/lawvm/finland/compile_group_scope_recovery.py": 4,
     "src/lawvm/finland/frontend_observations.py": 4,
     "src/lawvm/finland/lowering_scope_recovery.py": 4
   },
-  "total_raw_string": 13
+  "total_raw_string": 12
 }
