@@ -2065,6 +2065,115 @@ def drill_surface_orphan_entity_node_surface_totality() -> None:
     )
 
 
+def drill_residual_ledger_nonmonotone_stage_account_totality() -> None:
+    """Drive the production EV-03 sweep into a RESIDUAL_LEDGER_NONMONOTONE firing.
+
+    Exercises the real ``sweep_stage_residual_ledger`` over committed-shaped stage
+    account rows: a stage whose coverage counts a ``violation`` but whose residual
+    ledger holds no blocking residual record (a residual counted then dropped). The
+    finding must reach the sweep's typed output; the sweep STAYS SILENT on a balanced
+    account. The drill exercises the production sweep, not a hand-built Finding.
+    """
+    from lawvm.core.stage_residual_monotonicity import (
+        RESIDUAL_LEDGER_NONMONOTONE,
+        sweep_stage_residual_ledger,
+    )
+
+    # violation=1 counted, but the residual ledger is empty -> counted-not-recorded.
+    counted_not_recorded = {
+        "stage": "drill.stage",
+        "coverage_row": {"violation": 1, "owned": 0, "residual": 0, "benign": 0},
+        "residual_rows": [],
+    }
+    findings = sweep_stage_residual_ledger([counted_not_recorded])
+    assert any(f.code == RESIDUAL_LEDGER_NONMONOTONE for f in findings), (
+        "RESIDUAL_LEDGER_NONMONOTONE sweep did not fire on a counted-but-unrecorded "
+        "stage residual"
+    )
+    assert findings[0].direction == "counted_not_recorded"
+
+    # the dual: a blocking residual record present while coverage counts 0.
+    recorded_not_counted = {
+        "stage": "drill.stage2",
+        "coverage_row": {"violation": 0, "owned": 1, "residual": 0, "benign": 0},
+        "residual_rows": [{"kind": "unowned_violation", "blocking": True}],
+    }
+    dual = sweep_stage_residual_ledger([recorded_not_counted])
+    assert dual and dual[0].direction == "recorded_not_counted", (
+        "RESIDUAL_LEDGER_NONMONOTONE sweep did not fire on a recorded-but-uncounted "
+        "stage residual"
+    )
+
+    # and STAYS SILENT on a balanced account (violation discharged by a blocking record).
+    balanced = {
+        "stage": "drill.clean",
+        "coverage_row": {"violation": 1, "owned": 0, "residual": 0, "benign": 0},
+        "residual_rows": [{"kind": "unowned_violation", "blocking": True}],
+    }
+    assert not sweep_stage_residual_ledger([balanced]), (
+        "RESIDUAL_LEDGER_NONMONOTONE sweep fired on a balanced (counted+recorded) account"
+    )
+
+
+def drill_diagnostic_not_self_evidencing_residual_totality() -> None:
+    """Drive the production EV-07 sweep into a DIAGNOSTIC_NOT_SELF_EVIDENCING firing.
+
+    Exercises the real ``sweep_source_text_failure_self_evidencing`` over core
+    ``Residual`` records: a source-text-failure residual (``unowned_violation`` /
+    ``typed_residual``) with an empty ``text`` snippet must fire; a snippet-carrying
+    residual and an out-of-family residual STAY SILENT. The drill exercises the
+    production sweep, not a hand-built Finding.
+    """
+    from lawvm.core.diagnostic_self_evidencing import (
+        DIAGNOSTIC_NOT_SELF_EVIDENCING,
+        sweep_source_text_failure_self_evidencing,
+    )
+    from lawvm.core.stage_result import Residual
+
+    snippetless = Residual(
+        kind="unowned_violation",
+        reason="forest_silent_unowned_cheap_signal:drill",
+        scope="drill/1",
+        source_unit_id="drill/1",
+        char_start=0,
+        char_end=5,
+        text="",  # the opaque-diagnostic defect: no verbatim offending snippet
+        blocking=True,
+    )
+    findings = sweep_source_text_failure_self_evidencing([snippetless])
+    assert any(f.code == DIAGNOSTIC_NOT_SELF_EVIDENCING for f in findings), (
+        "DIAGNOSTIC_NOT_SELF_EVIDENCING sweep did not fire on a snippet-less "
+        "source-text-failure residual"
+    )
+    assert findings[0].kind == "unowned_violation"
+
+    # STAYS SILENT on a self-evidencing residual (verbatim text present)...
+    self_evidencing = Residual(
+        kind="unowned_violation",
+        reason="forest_silent_unowned_cheap_signal:drill",
+        scope="drill/1",
+        source_unit_id="drill/1",
+        char_start=0,
+        char_end=5,
+        text="3 §:n 2 momentti",
+        blocking=True,
+    )
+    assert not sweep_source_text_failure_self_evidencing([self_evidencing]), (
+        "DIAGNOSTIC_NOT_SELF_EVIDENCING sweep fired on a residual carrying its snippet"
+    )
+    # ...and on an OUT-OF-FAMILY residual (out_of_scope carries no source text by design).
+    out_of_family = Residual(
+        kind="out_of_scope",
+        reason="amendment_cutoff_excluded",
+        scope="drill/1",
+        text="",
+        blocking=False,
+    )
+    assert not sweep_source_text_failure_self_evidencing([out_of_family]), (
+        "DIAGNOSTIC_NOT_SELF_EVIDENCING sweep fired on an out-of-family residual"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Per-op apply-authority gate drills (audit lane L1: LS-01, LS-03, EV-05/FW-01)
 # ---------------------------------------------------------------------------
@@ -2702,6 +2811,9 @@ OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "LOWER.VERB_CONVERSION_UNWITNESSED_AT_OP": drill_verb_conversion_unwitnessed_at_op_apply_lane,
     "APPLY.PAYLOAD_SMUGGLING_AT_OP": drill_payload_smuggling_at_op_apply_lane,
     "APPLY.UNSTATED_MIGRATION_AT_OP": drill_unstated_migration_at_op_apply_lane,
+    # EVIDENCE-LEDGER wave (EV-03, EV-07) totality sweeps.
+    "EVID.RESIDUAL_LEDGER_NONMONOTONE": drill_residual_ledger_nonmonotone_stage_account_totality,
+    "EVID.DIAGNOSTIC_NOT_SELF_EVIDENCING": drill_diagnostic_not_self_evidencing_residual_totality,
 }
 
 # code -> (reason, xfail-drill). These guards are verified structurally

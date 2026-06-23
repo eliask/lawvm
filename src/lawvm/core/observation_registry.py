@@ -1382,6 +1382,24 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "info", "evidence_kernel",
                 "bounded negative-evidence search completed without finding a counterexample",
                 ("negative",), role="observation"),
+    # EV-03 (totality, observation): a residual COUNTED in a stage's coverage
+    # violation class but absent from that stage's committed residual ledger (or the
+    # dual: a committed blocking residual the coverage account never counted) — an
+    # uncertainty recorded then silently dropped across the per-stage account fold.
+    FindingSpec("EVID.RESIDUAL_LEDGER_NONMONOTONE", "certificate_dossier",
+                "audit", "warn", "stage_residual_monotonicity",
+                "a residual counted in a stage's coverage violation class is absent "
+                "from that stage's committed residual ledger (or vice versa): a "
+                "non-monotone per-stage residual account (no silent loss)",
+                ("provenance", "preservation"), role="observation"),
+    # EV-07 (totality, observation): a source-text-failure residual
+    # (unowned_violation / typed_residual) carrying no verbatim offending snippet —
+    # an opaque diagnostic about unhandled source text, not self-evidencing.
+    FindingSpec("EVID.DIAGNOSTIC_NOT_SELF_EVIDENCING", "evidence_kernel",
+                "audit", "warn", "diagnostic_self_evidencing",
+                "a source-text-failure residual embeds no verbatim offending snippet "
+                "(empty text field): an opaque diagnostic, not self-evidencing",
+                ("provenance",), role="observation"),
     FindingSpec("PARSE.FRONTEND_INTERNAL_ERROR", "frontend_phase_surface",
                 "violation", "hard_fail", "frontend_phase_surface",
                 "frontend phase diagnostic reports an internal compiler error",

@@ -576,6 +576,70 @@ def _require_clean_materialization_stage(stage: "StageResult[Any]") -> None:
     )
 
 
+def _require_monotone_stage_residual_ledger(
+    stage_account_rows: Sequence[Mapping[str, Any]],
+) -> None:
+    """Self-check (EV-03): no residual silently vanished across the per-stage fold.
+
+    Drives the production EV-03 sweep over the committed per-stage account rows: a
+    residual COUNTED in a stage's coverage ``violation`` class must have ≥1 BLOCKING
+    residual record committed in that stage's ledger (and the dual). A non-monotone
+    account is a producer/aggregator defect (a counted residual the ledger dropped,
+    or a recorded residual the count forgot), never a corpus fact — so the writer
+    refuses to emit a dossier over it rather than silently certifying a torn ledger.
+    On the green corpus every stage carries ``violation == 0`` and no blocking
+    residual → the sweep is empty (0-delta).
+    """
+    from lawvm.core.stage_residual_monotonicity import sweep_stage_residual_ledger
+
+    findings = sweep_stage_residual_ledger(stage_account_rows)
+    if findings:
+        detail = "; ".join(f.detail for f in findings)
+        raise BundleSpecError(
+            "per-stage residual ledger is non-monotone (EV-03): " + detail
+        )
+
+
+def _require_self_evidencing_stage_residuals(
+    stage_account_rows: Sequence[Mapping[str, Any]],
+) -> None:
+    """Self-check (EV-07): every committed source-text-failure residual carries its snippet.
+
+    Sweeps the committed per-stage residual rows (each a
+    :func:`lawvm.core.stage_result_ledger.residual_row` projection carrying ``kind`` +
+    ``source_text``): a row whose ``kind`` is in the source-text-failure family
+    (``unowned_violation`` / ``typed_residual``) with an empty ``source_text`` is an
+    opaque diagnostic about unhandled source text. The writer refuses to emit a
+    dossier carrying a snippet-less source-text-failure residual rather than
+    committing an un-auditable ledger. On the green corpus the forest/surface
+    producers set the verbatim text by construction → silent (0-delta).
+    """
+    from lawvm.core.diagnostic_self_evidencing import (
+        DIAGNOSTIC_NOT_SELF_EVIDENCING,
+        SOURCE_TEXT_FAILURE_KINDS,
+    )
+
+    offenders: List[str] = []
+    for account_row in stage_account_rows:
+        stage = str(account_row.get("stage", ""))
+        for residual_row_dict in account_row.get("residual_rows", ()) or ():
+            kind = str(residual_row_dict.get("kind", ""))
+            if kind not in SOURCE_TEXT_FAILURE_KINDS:
+                continue
+            if str(residual_row_dict.get("source_text", "") or "").strip():
+                continue
+            offenders.append(
+                f"stage {stage!r} residual (kind={kind!r}, "
+                f"reason={residual_row_dict.get('reason', '')!r}) carries no snippet"
+            )
+    if offenders:
+        raise BundleSpecError(
+            f"{DIAGNOSTIC_NOT_SELF_EVIDENCING}: source-text-failure residual(s) "
+            "without a verbatim offending snippet (not self-evidencing): "
+            + "; ".join(offenders)
+        )
+
+
 def _verify_materialization_stage_clean(stage_account_rows: Sequence[Mapping[str, Any]]) -> None:
     """`verify_bundle` consumer: re-assert the materialization branch from rows.
 
@@ -1743,6 +1807,23 @@ def build_certificate_bundle(
     extra_blocking_residual_count = _stage_blocking_residual_count(
         status_contributing_stages
     )
+
+    # EV-03 (residual-ledger monotonicity): assert no residual COUNTED in a stage's
+    # coverage violation class silently vanished from that stage's committed residual
+    # ledger (the §0 conservation law over the per-stage account fold). The existing
+    # `_verify_stage_accounts` recompute proves the rows hash to their subroots; this
+    # is the orthogonal conservation check the arithmetic/hash checks do NOT cover.
+    # On the green corpus every stage carries violation==0 → silent (0-delta). A real
+    # non-monotone account is a producer defect, never a corpus fact, so it fails
+    # loud here rather than silently certifying a dropped-residual ledger.
+    _require_monotone_stage_residual_ledger(stage_account_rows)
+
+    # EV-07 (self-evidencing diagnostic totality): every source-text-failure residual
+    # the per-stage accounts committed (unowned_violation / typed_residual) MUST embed
+    # its verbatim offending snippet — never an opaque, snippet-less diagnostic about
+    # unhandled source text. On the green corpus the forest/surface producers set the
+    # text by construction → silent (0-delta).
+    _require_self_evidencing_stage_residuals(stage_account_rows)
 
     stage_accounts_root_value = stage_accounts_root(stage_account_rows)
 
