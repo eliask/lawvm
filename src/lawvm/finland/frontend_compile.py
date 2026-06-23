@@ -31,7 +31,7 @@ import lxml.etree as etree
 
 _SECTION_LABEL_ORDER_RE = re.compile(r"(\d+)([a-z]?)", flags=re.I)
 _DIGITS_RE = re.compile(r"\d+")
-_LETTER_SUFFIX_SECTION_RE = re.compile(r"\d+[a-z]", flags=re.I)
+_LETTER_SUFFIX_SECTION_RE = re.compile(r"(?P<stem>\d+)[a-z]", flags=re.I)
 _LETTER_SUFFIX_CONTINUATION_PREVIOUS_RE = re.compile(r"(\d+)([a-z]?)", flags=re.I)
 _LETTER_SUFFIX_CONTINUATION_CURRENT_RE = re.compile(r"(\d+)([a-z])", flags=re.I)
 
@@ -2036,6 +2036,116 @@ def _add_inferred_section_chapter_scope(
         lo=scoped_lo,
         witness_rule_id=rule_id,
     )
+
+
+def _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
+    ops: list[AmendmentOp],
+    *,
+    source_model: "AmendmentSourceModel | None",
+) -> list[AmendmentOp]:
+    if source_model is None:
+        return ops
+
+    stem_scopes: dict[str, tuple[str | None, str, ScopeConfidence]] = {}
+    conflicted_stems: set[str] = set()
+    for op in ops:
+        if op.target_unit_kind != "section" or not op.target_section or not op.target_chapter:
+            continue
+        section_label = _norm_num_token(op.target_section)
+        if not section_label.isdigit():
+            continue
+        witness = projection_scope_confidence(
+            scope_confidence=op.scope_confidence,
+            scope_provenance_tags=op.scope_provenance_tags,
+            resolved_chapter=op.target_chapter,
+        )
+        if witness is None or witness.source in {
+            ScopeResolutionSource.LIVE_STEM_HOST,
+            ScopeResolutionSource.CARRY_FORWARD,
+        }:
+            continue
+        candidate = (op.target_part, op.target_chapter, witness)
+        existing = stem_scopes.get(section_label)
+        if existing is not None and existing[:2] != candidate[:2]:
+            conflicted_stems.add(section_label)
+            stem_scopes.pop(section_label, None)
+            continue
+        if section_label not in conflicted_stems:
+            stem_scopes[section_label] = candidate
+
+    if not stem_scopes:
+        return ops
+
+    retargeted: list[AmendmentOp] = []
+    for op in ops:
+        section_label = _norm_num_token(op.target_section or "")
+        match = _LETTER_SUFFIX_SECTION_RE.fullmatch(section_label)
+        if (
+            match is None
+            or not _is_whole_section_insert(op)
+            or not source_model.body_has_section(match.group("stem"))
+            or not source_model.body_has_section(section_label)
+        ):
+            retargeted.append(op)
+            continue
+        stem_scope = stem_scopes.get(match.group("stem"))
+        if stem_scope is None:
+            retargeted.append(op)
+            continue
+        stem_part, stem_chapter, _stem_witness = stem_scope
+        current_witness = projection_scope_confidence(
+            scope_confidence=op.scope_confidence,
+            scope_provenance_tags=op.scope_provenance_tags,
+            resolved_chapter=op.target_chapter,
+        )
+        if (
+            op.target_part == stem_part
+            and op.target_chapter == stem_chapter
+            and (
+                current_witness is None
+                or current_witness.source is not ScopeResolutionSource.LIVE_STEM_HOST
+            )
+        ):
+            retargeted.append(op)
+            continue
+        scoped_lo = _lo_with_path_update(op.lo, part=stem_part, chapter=stem_chapter) if op.lo is not None else op.lo
+        if scoped_lo is not None:
+            scoped_lo = dc_replace(
+                scoped_lo,
+                provenance_tags=tuple(
+                    dict.fromkeys(
+                        (
+                            *scoped_lo.provenance_tags,
+                            "chapter_scope_from_same_amendment_stem",
+                        )
+                    )
+                ),
+                witness_rule_id="fi_same_amendment_stem_scope_for_letter_suffix_insert",
+            )
+        tags = tuple(
+            dict.fromkeys(
+                (
+                    *op.scope_provenance_tags,
+                    "chapter_scope_from_same_amendment_stem",
+                )
+            )
+        )
+        retargeted.append(
+            dc_replace(
+                op,
+                target_part=stem_part,
+                target_chapter=stem_chapter,
+                scope_provenance_tags=tags,
+                scope_confidence=ScopeConfidence(
+                    tag="chapter_scope_from_same_amendment_stem",
+                    source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                    confidence=ScopeResolutionConfidence.INFERRED,
+                    resolved_chapter=stem_chapter,
+                ),
+                lo=scoped_lo,
+            )
+        )
+    return retargeted
 
 
 def _body_scope_for_section_label(
@@ -4073,6 +4183,10 @@ def normalize_and_compile_ops(
         base_ir=base_ir,
         parent_id=parent_id or "",
         metadata=tree_metadata,
+        source_model=source_model,
+    )
+    ops = _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
+        ops,
         source_model=source_model,
     )
     ops, historical_kohta_findings = _normalize_historical_top_level_kohta_subsection_ops(

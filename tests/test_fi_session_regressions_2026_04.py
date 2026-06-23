@@ -2485,6 +2485,83 @@ def test_letter_suffix_insert_uses_live_stem_host_over_stale_explicit_chunk_scop
     assert got == "5"
 
 
+def test_letter_suffix_insert_inherits_same_amendment_stem_scope() -> None:
+    """Same-wave stem scope is stronger than stale pre-amendment stem lookup."""
+    from lxml import etree
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
+    from lawvm.finland.frontend_compile import (
+        _retarget_letter_suffix_inserts_from_same_amendment_stem_scope,
+    )
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>2 luku</num>
+              <section><num>10 §</num><content><p>stem</p></content></section>
+              <section><num>10 a §</num><content><p>suffix</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    stem = AmendmentOp(
+        op_id="replace_10",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="10",
+        target_chapter="3",
+        scope_confidence=ScopeConfidence(
+            tag="body_container_membership_rewrite",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
+            resolved_chapter="3",
+        ),
+        lo=LegalOperation(
+            op_id="replace_10",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"), ("section", "10"))),
+            payload=None,
+        ),
+    )
+    suffix = AmendmentOp(
+        op_id="insert_10a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="10a",
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="2",
+        ),
+        lo=LegalOperation(
+            op_id="insert_10a",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "2"), ("section", "10a"))),
+            payload=None,
+        ),
+    )
+
+    retargeted = _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
+        [stem, suffix],
+        source_model=AmendmentSourceModel.from_tree(source),
+    )
+
+    assert retargeted[1].target_chapter == "3"
+    assert retargeted[1].lo is not None
+    assert retargeted[1].lo.target.path == (("chapter", "3"), ("section", "10a"))
+    assert retargeted[1].scope_confidence is not None
+    assert retargeted[1].scope_confidence.tag == "chapter_scope_from_same_amendment_stem"
+
+
 def test_letter_suffix_insert_keeps_explicit_chapter_scope() -> None:
     """Explicit source chapter scope must not be rewritten by stem-host inference."""
     from lxml import etree

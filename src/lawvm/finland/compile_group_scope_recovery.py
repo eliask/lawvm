@@ -667,6 +667,18 @@ def _maybe_apply_body_chapter_insert_correction(
     body_chapter = body_scope[1] if body_scope is not None else None
     resolved_body_chapter = body_chapter
     carry_forward_scoped = group_has_scope_source(request.group_ops, "carry_forward")
+    same_amendment_stem_scoped = any(
+        (
+            witness := projection_scope_confidence(
+                scope_confidence=op.scope_confidence,
+                scope_provenance_tags=op.scope_provenance_tags,
+                resolved_chapter=op.target_chapter,
+            )
+        )
+        is not None
+        and witness.tag == "chapter_scope_from_same_amendment_stem"
+        for op in request.group_ops
+    )
     explicit_chapter_scoped = _group_has_explicit_chapter_scope(request.group_ops)
     body_chapter_is_subchapter = (
         body_chapter is not None
@@ -774,6 +786,8 @@ def _maybe_apply_body_chapter_insert_correction(
         and body_chapter == request.target_chapter
         and group_targets_whole_section
         and any(op.op_type == "INSERT" for op in request.group_ops)
+        and not explicit_chapter_scoped
+        and not same_amendment_stem_scoped
         and not live_stem_host_scoped
         and request.source_model.body_has_real_chapter_container(body_chapter)
         and request.source_model.body_has_section(
@@ -881,6 +895,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and request.target_chapter is not None
         and body_chapter != request.target_chapter
         and not explicit_chapter_scoped
+        and not same_amendment_stem_scoped
         and not carry_forward_scoped
         and (
             not group_has_scope_source(request.group_ops, "live_stem_host")

@@ -55,6 +55,7 @@ _SCOPE_PROVENANCE_TAGS = frozenset(
         "grouped_part_scope",
         "chapter_scope_from_preamble",
         "chapter_scope_from_explicit_chunk",
+        "chapter_scope_from_same_amendment_stem",
         "chapter_scope_carry_forward",
     }
 )
@@ -214,6 +215,13 @@ def scope_confidence_from_tags(
         return ScopeConfidence(
             tag="chapter_scope_from_preamble",
             source=ScopeResolutionSource.PREAMBLE,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter=resolved_chapter,
+        )
+    if "chapter_scope_from_same_amendment_stem" in normalized:
+        return ScopeConfidence(
+            tag="chapter_scope_from_same_amendment_stem",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
             confidence=ScopeResolutionConfidence.INFERRED,
             resolved_chapter=resolved_chapter,
         )
