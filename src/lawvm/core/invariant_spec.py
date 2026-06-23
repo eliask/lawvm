@@ -907,10 +907,11 @@ _INV_LSG_AUTHORITY_FIREWALL = InvariantSpec(
     status="IMPL",
     audit_registry_ref="",
 )
-# NON_GUARANTEE_COVERAGE: the declared boundaries of the corpus-graph claim — v1
-# merges the reference + anaphora lens edge families only (the newer typed
-# relation families are the declared v2 extension), resolution recall is bounded,
-# and the graph is an as-of surface projection over the declared slice.
+# NON_GUARANTEE_COVERAGE: the declared boundaries of the corpus-graph claim — the
+# graph merges the reference + anaphora backbone AND three typed v2 families
+# (definition-use, EU transposition, dangling status); the DERIVATION family alone
+# is the declared remaining extension, resolution recall is bounded, and the graph
+# is an as-of surface projection over the declared slice.
 _INV_LSG_BOUNDARY = InvariantSpec(
     id="LSG-CORPUS-03",
     claim_id="lawvm.fi.legal_surface_graph.v1",
@@ -918,17 +919,55 @@ _INV_LSG_BOUNDARY = InvariantSpec(
     waist="claim_boundary",
     unit_kind="static",
     predicate=(
-        "v1 merges only the reference + anaphora lens edge families (the "
-        "cross-statute refers_to / has_candidate backbone); the newer typed "
-        "relation families — derivation edges, EU transposition edges, "
-        "definition-use edges, dangling-reference status — are NOT yet merged and "
-        "are the DECLARED v2 extension; resolution recall is bounded (an open / "
-        "statute_only mention is an honest non-promotion); and the graph is an "
-        "as-of surface projection over the declared slice — declared boundaries"
+        "the graph merges the reference + anaphora backbone (refers_to / "
+        "has_candidate) AND three typed relation families — definition-use "
+        "(defines_term / uses_term), EU transposition (transposes), and "
+        "dangling-reference status (the three-way existence verdict on each "
+        "provision-target node); the DERIVATION edge family alone is NOT yet merged "
+        "and is the DECLARED remaining extension (it needs a provision-pair "
+        "candidate source the reference-only build does not produce); resolution "
+        "recall is bounded (an open / statute_only mention is an honest "
+        "non-promotion); and the graph is an as-of surface projection over the "
+        "declared slice — declared boundaries"
     ),
     owner="lawvm.core.assumption_register",
     bucket="declared_non_guarantee",
     checker_ref="lawvm.core.claim_surface_manifest:CLAIM_LEGAL_SURFACE_GRAPH",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+# TRANSPOSITION_NOT_CONFORMANCE: the new ``transposes`` edge family carries a
+# surface-only authority risk — a transposes edge could be MISREAD as a verified
+# conformance / lineage assertion. The boundary is encoded structurally: the edge
+# is minted through the assembler's firewall-enforcing path (surface_only), and the
+# edge payload carries the explicit ``means=act_declares_it_transposes_directive``
+# / ``does_not_imply=verified_conformance`` honesty markers from the corpus
+# transposition pass. The edge is the DECLARED transposition relation (the act SAYS
+# it transposes), NEVER a conformance conclusion (the substantive conformance
+# assessment is outside the oracle — the same boundary the EU-transposition claim
+# and the derivation conformance-absence edge already declare).
+_INV_LSG_TRANSPOSITION_NOT_CONFORMANCE = InvariantSpec(
+    id="LSG-CORPUS-04",
+    claim_id="lawvm.fi.legal_surface_graph.v1",
+    plane="firewall",
+    waist="corpus_edge_pass",
+    unit_kind="per-op",
+    predicate=(
+        "every corpus ``transposes`` edge is minted through the assembler's "
+        "firewall-enforcing path (surface_only) and carries the explicit "
+        "does_not_imply=verified_conformance honesty marker; it is the DECLARED "
+        "transposition relation (the act SAYS it transposes the directive), NEVER "
+        "a conformance conclusion — a CELEX-bound directive is an asserted "
+        "declaration and an unbound directive is a candidate (tag-don't-guess), "
+        "never an invented or verified-conformance edge"
+    ),
+    owner="lawvm.finland.legal_surface.corpus_graph",
+    bucket="writer_refusal",
+    checker_ref=(
+        "lawvm.finland.legal_surface.corpus_graph:CorpusTranspositionEdgePass"
+    ),
     finding_code="",
     root_membership="",
     status="IMPL",
@@ -965,6 +1004,7 @@ V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_LSG_MERGE_TOTALITY,
     _INV_LSG_AUTHORITY_FIREWALL,
     _INV_LSG_BOUNDARY,
+    _INV_LSG_TRANSPOSITION_NOT_CONFORMANCE,
 )
 
 

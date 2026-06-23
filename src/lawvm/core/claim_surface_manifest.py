@@ -547,7 +547,15 @@ CLAIM_LEGAL_SURFACE_GRAPH = ClaimSpec(
         "the citing text already committed — a single resolved provision target "
         "becomes an asserted refers_to, an ambiguous resolution becomes a "
         "has_candidate, and an open / statute_only resolution is left as-is — never "
-        "an invented target. It is an as-of surface projection over a DECLARED "
+        "an invented target. On top of that backbone it folds three typed relation "
+        "families: DEFINITION-USE (defines_term / uses_term, a shared defined term "
+        "collapsing to one term_symbol_entity), EU TRANSPOSITION (a transposes edge "
+        "from the citing act to the EU directive it DECLARES it transposes — "
+        "CELEX-bound is asserted, unbound is a candidate, and the edge is the "
+        "declared relation, NEVER a conformance conclusion), and DANGLING-REFERENCE "
+        "STATUS (each provision-target node carries a three-way PRESENT / DANGLING / "
+        "EXISTENCE_UNKNOWN existence verdict, so a reference into a broken target is "
+        "legible as broken). It is an as-of surface projection over a DECLARED "
         "corpus slice, never a legal conclusion."
     ),
     required_objects=(
@@ -558,12 +566,14 @@ CLAIM_LEGAL_SURFACE_GRAPH = ClaimSpec(
         "CorpusGraphCensus",
     ),
     required_roots=(),
-    # The corpus-graph claim's declared boundaries: v1 merges only the reference +
-    # anaphora lens edge families (the refers_to / has_candidate backbone), NOT the
-    # newer typed relation families (derivation / EU transposition / definition-use
-    # / dangling status — the declared v2 extension); resolution recall is bounded
-    # (an open / statute_only mention is an honest non-promotion); and the graph is
-    # an as-of surface projection over the declared slice, never replay authority.
+    # The corpus-graph claim's declared boundaries: the graph merges the reference +
+    # anaphora backbone AND three typed relation families (definition-use, EU
+    # transposition, dangling-reference status); the DERIVATION edge family alone is
+    # NOT yet merged (the remaining declared extension — it needs a provision-pair
+    # candidate source the reference-only build does not produce); resolution recall
+    # is bounded (an open / statute_only mention is an honest non-promotion); and the
+    # graph is an as-of surface projection over the declared slice, never replay
+    # authority.
     allowed_non_guarantees=(
         "legal_surface_graph_v1_reference_family_only_v2_extends",
         "legal_surface_graph_resolution_recall_bounded",
