@@ -595,6 +595,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_semantic_*.py",
         "test_solver_slot_assignment.py",
         "test_fi_sched_window_totality.py",
+        "test_fi_scope_lattice_totality.py",
         "test_fi_surface_*.py",
         "test_table_*.py",
         "test_fi_table_*.py",

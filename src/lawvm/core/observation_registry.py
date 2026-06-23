@@ -709,6 +709,23 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "NOT carried as a typed residual: a disjoint window the document-"
                 "order fold left unmaterialized, surfaced not silently dropped",
                 ("temporal_selection", "preservation"), role="observation"),
+    # SCOPE-01/02 scope-lattice totality (read-only sweep over the FINAL
+    # timelines). The full disjointness lattice is PART (missing carrier: no
+    # populated structured scope predicate on FI selection rows); the CHECKABLE
+    # part is the precedence-rail residual — two co-effective distinct-content
+    # rows that share the precedence rank key (lex posterior does NOT separate
+    # them) and carry no disjoint scope predicate, so the winner depends on list
+    # order. Non-blocking (a real co-effective tie is a source fact to surface,
+    # not a crash); the apply/selection engine's own ambiguous_missing_scope arm
+    # is the complementary live-query lane. Over the FI corpus it stands at 0.
+    FindingSpec("SCOPE.OVERLAP_WITHOUT_DISJOINT_SCOPE", "scope_lattice_totality",
+                "source_pathology", "warn", "fi_scope_lattice_totality",
+                "two co-effective versions at one address share the precedence-rail "
+                "rank key (effective/enacted/source) with distinct content and NO "
+                "disjoint scope predicate admits the overlap: the selection winner "
+                "would depend on list order, not a proved legal precedence or a "
+                "scope distinction, surfaced not silently order-resolved",
+                ("temporal_selection", "ambiguity_resolution"), role="observation"),
     # Rank-17 silent-drop closure (canonical_op plane). The clause_ast ingress
     # seam (fi extract_legal_ops_from_parse_result) and the legacy lower_surface
     # bridge previously dropped unsupported clause/surface nodes

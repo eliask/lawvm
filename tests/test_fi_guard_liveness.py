@@ -2162,6 +2162,117 @@ def drill_sched_window_unmaterialized_schedule_window_totality() -> None:
     )
 
 
+def drill_scope_overlap_without_disjoint_scope_scope_lattice_totality() -> None:
+    """Drive the production SCOPE-01/02 sweep into an OVERLAP firing.
+
+    Builds a synthetic replay output (``ReplayProducts``) whose timeline holds two
+    co-effective versions at the SAME address sharing the precedence-rail rank key
+    (same variant/effective/enacted/source) with DISTINCT legal content and NO
+    scope predicate to admit the overlap — the equal-rank collision the precedence
+    rail cannot resolve. The real ``sweep_scope_lattice`` must surface it. Then a
+    DISJOINT-SCOPE variant gives the two rows distinct ``territory`` predicates
+    (non-overlapping includes) so the overlap is admitted by scope, and the sweep
+    STAYS SILENT. The drill exercises the production sweep, not a hand-built
+    finding.
+    """
+    from lawvm.core.ir import (
+        LegalAddress,
+        ProvisionTimeline,
+        ProvisionVersion,
+        ScopePredicate,
+    )
+    from lawvm.core.provenance import OperationSource
+    from lawvm.finland.legal_surface.scope_lattice_totality import (
+        SCOPE_OVERLAP_WITHOUT_DISJOINT_SCOPE,
+        sweep_scope_lattice,
+    )
+    from lawvm.finland.replay_products import ReplayProducts
+    from lawvm.finland.statute import ReplayState
+
+    address = LegalAddress(path=(("section", "9"),))
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    source = OperationSource(statute_id="0001/2024", effective="2024-01-01")
+
+    def _content(text: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label="9", text=text)
+
+    # Collision case: two permanent versions at the SAME (effective, enacted,
+    # source) rank key with DISTINCT content and no scope predicate -> the
+    # precedence rail cannot separate them; list order would decide.
+    collision_timeline = ProvisionTimeline(
+        address=address,
+        versions=[
+            ProvisionVersion(
+                effective="2024-01-01",
+                enacted="2024-01-01",
+                variant_kind="permanent",
+                content=_content("variant A"),
+                source=source,
+            ),
+            ProvisionVersion(
+                effective="2024-01-01",
+                enacted="2024-01-01",
+                variant_kind="permanent",
+                content=_content("variant B (distinct)"),
+                source=source,
+            ),
+        ],
+    )
+    collision = ReplayProducts(
+        replay_fold_state=state,
+        materialized_state=state,
+        timelines={address: collision_timeline},
+    )
+    findings = sweep_scope_lattice(collision)
+    assert any(f.code == SCOPE_OVERLAP_WITHOUT_DISJOINT_SCOPE for f in findings), (
+        "SCOPE lattice sweep did not fire on a co-effective equal-rank collision "
+        "with no disjoint scope predicate"
+    )
+    fired = next(f for f in findings if f.code == SCOPE_OVERLAP_WITHOUT_DISJOINT_SCOPE)
+    assert fired.address == str(address)
+    assert fired.effective == "2024-01-01"
+    assert fired.candidate_count == 2
+    assert fired.left_content_hash != fired.right_content_hash
+    assert not fired.scope_disjoint
+
+    # Disjoint-scope case: the SAME co-effective rows carry distinct, disjoint
+    # territory predicates -> the query's scope chooses, not list order -> silent.
+    disjoint_timeline = ProvisionTimeline(
+        address=address,
+        versions=[
+            ProvisionVersion(
+                effective="2024-01-01",
+                enacted="2024-01-01",
+                variant_kind="permanent",
+                content=_content("variant A"),
+                source=source,
+                applicability=[
+                    ScopePredicate(dimension="territory", includes=frozenset({"mainland"}))
+                ],
+            ),
+            ProvisionVersion(
+                effective="2024-01-01",
+                enacted="2024-01-01",
+                variant_kind="permanent",
+                content=_content("variant B (distinct)"),
+                source=source,
+                applicability=[
+                    ScopePredicate(dimension="territory", includes=frozenset({"aland"}))
+                ],
+            ),
+        ],
+    )
+    disjoint = ReplayProducts(
+        replay_fold_state=state,
+        materialized_state=state,
+        timelines={address: disjoint_timeline},
+    )
+    assert not sweep_scope_lattice(disjoint), (
+        "SCOPE lattice sweep fired when disjoint territory predicates admit the "
+        "co-effective overlap"
+    )
+
+
 def drill_residual_ledger_nonmonotone_stage_account_totality() -> None:
     """Drive the production EV-03 sweep into a RESIDUAL_LEDGER_NONMONOTONE firing.
 
@@ -3090,6 +3201,7 @@ OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "WAIST.HANDOFF_PARITY_SOURCE_TO_TOKEN": drill_waist_handoff_parity_source_to_token_surface_totality,
     "SURFACE.ORPHAN_ENTITY_NODE": drill_surface_orphan_entity_node_surface_totality,
     "SCHED.WINDOW_UNMATERIALIZED": drill_sched_window_unmaterialized_schedule_window_totality,
+    "SCOPE.OVERLAP_WITHOUT_DISJOINT_SCOPE": drill_scope_overlap_without_disjoint_scope_scope_lattice_totality,
     "APPLY.OCCUPANCY_POLICY_VIOLATION": drill_occupancy_policy_violation_finland_production,
     "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT": drill_occupancy_temporally_disjoint_insert_finland_production,
     "APPLY.REPLAY_UNDECLARED_TREE_TOUCH": drill_replay_undeclared_tree_touch_apply_lane,
