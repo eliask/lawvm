@@ -3299,6 +3299,12 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.DROP_ITEM_REPLACES_MISSING": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.DROP_REDUNDANT_ITEM_OPS_IN_SPARSE_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.DUPLICATE_TABLE_NOTE_BLOCK_PRUNED": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    # New blocking code from sibling payload-normalize structure-op work
+    # (multi-target subsection list wrap-up folding in payload_normalize.py).
+    # Same payload-normalize-barrier shape as the ELAB.SPLIT_* siblings above;
+    # needs a stable wrap-up-fold fixture before it can be drilled. Debt: this
+    # raised the derived NO_FIRE_DRILL_CEILING by one.
+    "ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS": ("payload-normalize wrap-up-fold recovery; needs fixture", "2026-06-23"),
     "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE": ("merge recovery; needs fixture", "2026-06-20"),
@@ -3335,6 +3341,12 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.UNRESOLVED_POOL_ADDRESS.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
     "ELAB.WRAPPER_ORPHAN_SUBSECTION_CONTINUATION": ("payload-lookup recovery; needs fixture", "2026-06-20"),
     "LINEAGE.UNCLASSIFIED_PROVISION_MIGRATION.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    # New blocking code from sibling scope-recovery work
+    # (body chapter-descendant scope correction in compile_group_scope_recovery.py).
+    # Same scope-recovery-barrier shape as the LOWER.* siblings below; needs a
+    # stable chapter-descendant scope fixture before it can be drilled. Debt:
+    # this raised the derived NO_FIRE_DRILL_CEILING by one.
+    "LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION": ("scope-recovery (chapter-descendant) barrier; needs fixture", "2026-06-23"),
     "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE": ("scope recovery; needs fixture", "2026-06-20"),
     "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET": ("scope recovery; needs fixture", "2026-06-20"),
     "LOWER.CONTEXT_DEPENDENT_ANCHOR": ("scope recovery; needs fixture", "2026-06-20"),
