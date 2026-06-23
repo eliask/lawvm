@@ -643,6 +643,84 @@ _INV_XJUR_BOUNDARY = InvariantSpec(
     audit_registry_ref="LS-04",
 )
 
+# --- Claim: dangling references (tools/dangling_references.py) ------------ #
+# TOTALITY: every RESOLVED reference lands in exactly one of the closed three-way
+# statuses, and the report's own guard refuses a partition that does not sum
+# (present + dangling + existence_unknown == resolved_checked) — a row that
+# escaped classification is a typed finding, never a silent drop.
+_INV_DANGLING_TOTALITY = InvariantSpec(
+    id="REF-DANGLING-01",
+    claim_id="lawvm.fi.reference.dangling.v1",
+    plane="projection",
+    waist="reference",
+    unit_kind="per-unit",
+    predicate=(
+        "every RESOLVED reference (cite_confidence exact/approximate) read from "
+        "the fi_refs projection is classified into exactly one of the closed "
+        "three-way statuses {PRESENT, DANGLING, EXISTENCE_UNKNOWN}; the report "
+        "constructor REFUSES a partition where present+dangling+existence_unknown "
+        "!= resolved_checked (a reference that escaped the three-way status), so "
+        "no resolved reference is silently dropped"
+    ),
+    owner="lawvm.tools.dangling_references",
+    bucket="implemented_check",
+    checker_ref="lawvm.tools.dangling_references:build_dangling_report",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+# CLOSURE: the three-way status set is CLOSED by construction. DanglingReferenceRow
+# (and the report fold) RAISE DanglingReferenceError on a status outside
+# {PRESENT, DANGLING, EXISTENCE_UNKNOWN} — the set cannot be widened at runtime.
+_INV_DANGLING_CLOSURE = InvariantSpec(
+    id="REF-DANGLING-02",
+    claim_id="lawvm.fi.reference.dangling.v1",
+    plane="projection",
+    waist="reference",
+    unit_kind="per-unit",
+    predicate=(
+        "the three-way status set {PRESENT, DANGLING, EXISTENCE_UNKNOWN} is CLOSED "
+        "by construction (DANGLING_STATUSES); a DanglingReferenceRow constructed "
+        "with — or a classification fold producing — a status outside the set is "
+        "REFUSED (raises DanglingReferenceError), never silently bucketed"
+    ),
+    owner="lawvm.tools.dangling_references",
+    bucket="writer_refusal",
+    checker_ref="lawvm.tools.dangling_references:DanglingReferenceRow",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+# NON_GUARANTEE_COVERAGE: the dangling claim's declared boundaries — the existence
+# oracle is AS-OF-NOW (not as-of-citing), is bounded by corpus completeness
+# (absent/unmaterialized act -> EXISTENCE_UNKNOWN, never dangling), and ranges
+# over RESOLVED refs at SECTION granularity only.
+_INV_DANGLING_BOUNDARY = InvariantSpec(
+    id="REF-DANGLING-03",
+    claim_id="lawvm.fi.reference.dangling.v1",
+    plane="declaration",
+    waist="claim_boundary",
+    unit_kind="static",
+    predicate=(
+        "the existence oracle is AS-OF-NOW (the target's CURRENT consolidated "
+        "text-state), NOT as-of-citing — a since-repealed target reads DANGLING "
+        "here though it may not be a defect as-of-writing; the oracle is bounded "
+        "by corpus completeness (an absent / contentAbsent act is "
+        "EXISTENCE_UNKNOWN, never dangling); and the check ranges over RESOLVED "
+        "refs at SECTION granularity only — declared boundaries, not unstated "
+        "convention"
+    ),
+    owner="lawvm.core.assumption_register",
+    bucket="declared_non_guarantee",
+    checker_ref="lawvm.core.claim_surface_manifest:CLAIM_DANGLING_REFERENCE",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+
 #: The v0 invariant rows (one live accounting path + declared boundary per claim).
 V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_BENCH_PROJECTION_FIREWALL,
@@ -662,6 +740,9 @@ V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_COUNTERFACTUAL_UNCOMPUTED,
     _INV_XJUR_GENERALITY,
     _INV_XJUR_BOUNDARY,
+    _INV_DANGLING_TOTALITY,
+    _INV_DANGLING_CLOSURE,
+    _INV_DANGLING_BOUNDARY,
 )
 
 

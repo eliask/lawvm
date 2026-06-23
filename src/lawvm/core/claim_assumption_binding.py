@@ -585,6 +585,80 @@ _B_XJUR_SECTION_UNITS_ONLY = _binding(
 )
 
 
+# --- Claim: dangling references ------------------------------------------- #
+_B_DANGLING_AS_OF_NOW = _binding(
+    "dangling_existence_oracle_as_of_now_not_as_of_citing",
+    kind="doctrine_unresolved",
+    scope=(
+        "The dangling-reference existence oracle checks the cited provision "
+        "against the target act's CURRENT consolidated text-state (as-of-NOW), "
+        "NOT as-of the citation's valid_at interval "
+        "(lawvm.tools.dangling_references)."
+    ),
+    effect="qualifies",
+    expires_when=(
+        "the existence check is run as a point-in-time replay as-of the citation's "
+        "valid_at start (the heavier broken-refs --provenance path), so a target "
+        "that existed when cited but was repealed/renumbered since is "
+        "distinguished from one that never existed."
+    ),
+    public_message=(
+        "A DANGLING verdict means the cited provision is absent in the target "
+        "act's CURRENT consolidated text-state (as-of-NOW). A reference whose "
+        "target existed WHEN THE CITATION WAS WRITTEN but was repealed or "
+        "renumbered since reads DANGLING here, yet may NOT be a defect "
+        "as-of-writing — the as-of-citing check is the declared residual, not done "
+        "in this projection."
+    ),
+)
+_B_DANGLING_CORPUS_INCOMPLETE = _binding(
+    "dangling_existence_oracle_current_state_incomplete_corpus",
+    kind="source_unavailable",
+    scope=(
+        "The dangling-reference existence oracle reads the target act's current "
+        "consolidated oracle XML from the local corpus; a target act absent from "
+        "the corpus, or carrying a contentAbsent (unmaterialized) body, yields "
+        "EXISTENCE_UNKNOWN (lawvm.tools.dangling_references)."
+    ),
+    effect="blocks_clean",
+    expires_when=(
+        "the local corpus materializes every target act a resolved reference can "
+        "point at, so an EXISTENCE_UNKNOWN reflects a real non-determination "
+        "rather than a corpus gap."
+    ),
+    public_message=(
+        "The dangling check is bounded by corpus completeness. A target act that "
+        "is absent from the corpus, or whose body is a contentAbsent placeholder "
+        "(blocked / not-materialized), is reported EXISTENCE_UNKNOWN — NEVER "
+        "DANGLING. A high EXISTENCE_UNKNOWN count is an honest non-determination, "
+        "not a defect rate."
+    ),
+)
+_B_DANGLING_RESOLVED_SECTION_SCOPE = _binding(
+    "dangling_resolved_only_scope_section_granularity",
+    kind="parser_incomplete",
+    scope=(
+        "The dangling check ranges over RESOLVED references only "
+        "(cite_confidence exact/approximate) and resolves existence at SECTION "
+        "(and embedded CHAPTER) granularity; momentti/kohta/alakohta below a "
+        "present section are not separately checked "
+        "(lawvm.tools.dangling_references)."
+    ),
+    effect="qualifies",
+    expires_when=(
+        "the existence oracle resolves below-section granularity (momentti / "
+        "kohta / alakohta) and the in-scope confidence set is justified-extended."
+    ),
+    public_message=(
+        "The dangling check covers RESOLVED references (exact/approximate) at "
+        "SECTION granularity. A reference to a momentti/kohta within a section "
+        "that IS present reads PRESENT — sub-section existence is not separately "
+        "verified — and non-resolved references (statute_only/ambiguous/open/...) "
+        "are out of scope and counted separately, not checked."
+    ),
+)
+
+
 #: The v0 binding set — EVERY V0_CLAIMS handle bound to a registered assumption.
 V0_CLAIM_ASSUMPTION_BINDINGS: tuple[ClaimAssumptionBinding, ...] = (
     _B_BENCH_NOT_SOURCE_TRUTH,
@@ -608,6 +682,9 @@ V0_CLAIM_ASSUMPTION_BINDINGS: tuple[ClaimAssumptionBinding, ...] = (
     _B_XJUR_NOT_BUG_PORTABILITY,
     _B_XJUR_NOT_RECON_PARITY,
     _B_XJUR_SECTION_UNITS_ONLY,
+    _B_DANGLING_AS_OF_NOW,
+    _B_DANGLING_CORPUS_INCOMPLETE,
+    _B_DANGLING_RESOLVED_SECTION_SCOPE,
 )
 
 

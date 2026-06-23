@@ -10996,6 +10996,60 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         ),
     )
 
+    # --- dangling-refs ---
+    dangling_refs_p = sub.add_parser(
+        "dangling-refs",
+        help=(
+            "corpus DANGLING-reference report over the published fi_refs "
+            "projection (fi); three-way PRESENT/DANGLING/EXISTENCE_UNKNOWN"
+        ),
+        description=(
+            "Read-only projection over the published fi_refs artifact: classify "
+            "every RESOLVED cross-reference (cite_confidence exact/approximate — a "
+            "reference asserting a specific target provision) into a CLOSED "
+            "three-way existence status against the target act's CURRENT "
+            "consolidated text-state (as-of-NOW; no replay). PRESENT = the cited "
+            "provision resolves; DANGLING = the act is materialized but the cited "
+            "provision resolves to nothing; EXISTENCE_UNKNOWN = existence could "
+            "NOT be determined (target act absent from corpus, body not "
+            "materialized, or no statute identity). TAG-DON'T-GUESS: an "
+            "EXISTENCE_UNKNOWN is an honest non-determination, NEVER reported as "
+            "DANGLING. Non-resolved references (statute_only/ambiguous/open/...) "
+            "are out of scope and counted separately. The as-of-NOW vs as-of-"
+            "citing distinction is the declared residual (the heavier "
+            "broken-refs --provenance path does the as-of-citing replay). Surface "
+            "fact, not a legal conclusion."
+        ),
+    )
+    dangling_refs_p.add_argument(
+        "--fi-refs",
+        dest="fi_refs",
+        default=None,
+        metavar="PATH",
+        help=(
+            "path to the fi_refs projection (.jsonl or .parquet). Default: the "
+            "export's standard output location under .tmp/projections/ or "
+            "data/fi/v1/."
+        ),
+    )
+    dangling_refs_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="write the full typed report (counts + every DANGLING witness) to PATH as JSON",
+    )
+    dangling_refs_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="number of DANGLING witnesses shown in the text summary (default: 20)",
+    )
+    dangling_refs_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the full typed report as JSON to stdout",
+    )
+
     # --- surface-graph ---
     surface_graph_p = sub.add_parser(
         "surface-graph",
@@ -13763,6 +13817,11 @@ def _main_impl() -> None:
         from lawvm.tools.bitemporal_refs import main as broken_refs_main
 
         broken_refs_main(args)
+
+    elif args.command == "dangling-refs":
+        from lawvm.tools.dangling_references import main as dangling_refs_main
+
+        dangling_refs_main(args)
 
     elif args.command == "surface-graph":
         from lawvm.tools.surface_graph import main as surface_graph_main

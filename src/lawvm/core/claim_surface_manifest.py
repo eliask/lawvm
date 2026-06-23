@@ -432,6 +432,37 @@ CLAIM_MATERIALIZATION_GENERALITY = ClaimSpec(
     checker_level="L1",
 )
 
+# The dangling-reference claim (tools/dangling_references.py). A read-only
+# projection over the published fi_refs artifact: every RESOLVED reference is
+# classified into a closed three-way existence status against the target act's
+# CURRENT consolidated text-state; an act absent/unmaterialized is
+# EXISTENCE_UNKNOWN, NEVER dangling (tag-don't-guess, no false-positive broken).
+CLAIM_DANGLING_REFERENCE = ClaimSpec(
+    claim_id="lawvm.fi.reference.dangling.v1",
+    public_sentence=(
+        "Over the published fi_refs projection, every RESOLVED cross-reference "
+        "(cite_confidence exact/approximate, asserting a specific target provision) "
+        "is classified into exactly one of the closed three-way statuses "
+        "{PRESENT, DANGLING, EXISTENCE_UNKNOWN}: PRESENT iff the cited provision "
+        "resolves in the target act's CURRENT consolidated text-state, DANGLING "
+        "iff the act is materialized but the cited provision resolves to nothing, "
+        "and EXISTENCE_UNKNOWN iff existence could not be determined (target act "
+        "absent from the corpus, body not materialized, or no statute identity) — "
+        "an EXISTENCE_UNKNOWN is an honest non-determination, NEVER reported as "
+        "DANGLING. Non-resolved references (statute_only/ambiguous/open/...) are "
+        "OUT of scope and counted separately. It is an AS-OF-NOW surface fact, "
+        "NOT an as-of-citing defect and NOT a legal conclusion."
+    ),
+    required_objects=("DanglingReferenceReport", "DanglingReferenceRow"),
+    required_roots=(),
+    allowed_non_guarantees=(
+        "dangling_existence_oracle_as_of_now_not_as_of_citing",
+        "dangling_existence_oracle_current_state_incomplete_corpus",
+        "dangling_resolved_only_scope_section_granularity",
+    ),
+    checker_level="L1",
+)
+
 #: The v0 declared claim surface (a DECLARED SUBSET, not all claims; Pro §12).
 V0_CLAIMS: tuple[ClaimSpec, ...] = (
     CLAIM_BENCH_AGREEMENT,
@@ -442,6 +473,7 @@ V0_CLAIMS: tuple[ClaimSpec, ...] = (
     CLAIM_DERIVATION_EDGE,
     CLAIM_COUNTERFACTUAL_EFFECTS,
     CLAIM_MATERIALIZATION_GENERALITY,
+    CLAIM_DANGLING_REFERENCE,
 )
 
 
@@ -454,6 +486,7 @@ __all__ = [
     "CHECKER_LEVELS",
     "CLAIM_BENCH_AGREEMENT",
     "CLAIM_COUNTERFACTUAL_EFFECTS",
+    "CLAIM_DANGLING_REFERENCE",
     "CLAIM_DERIVATION_EDGE",
     "CLAIM_EU_TRANSPOSITION",
     "CLAIM_MATERIALIZATION_GENERALITY",
