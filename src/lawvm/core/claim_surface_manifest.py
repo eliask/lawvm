@@ -463,6 +463,69 @@ CLAIM_DANGLING_REFERENCE = ClaimSpec(
     checker_level="L1",
 )
 
+# The fixed-term / temporary whole-law expiry safety claim
+# (finland/fixed_term_expiry.py + core/statute_validity.py). A whole-law
+# fixed-term clause (määräaikainen laki) is resolved to a typed validity bound
+# under the inclusive/exclusive discipline (expires_on = valid_until + 1 day;
+# expired at D iff D >= expires_on iff D > valid_until) OR raised as a strict
+# finding — never a silently-wrong "still in force" answer.
+CLAIM_FIXED_TERM_EXPIRY = ClaimSpec(
+    claim_id="lawvm.fi.expiry.fixed_term.v1",
+    public_sentence=(
+        "Every recognised whole-law fixed-term/temporary expiry clause "
+        "(määräaikainen laki) is resolved to a typed statute validity bound — "
+        "from which a query at point-in-time D answers expired exactly when "
+        "D is at or after expires_on (the exclusive cutoff = the inclusive "
+        "source valid_until + 1 day) — OR, where the validity date cannot be "
+        "parsed, two bounds with the same effective date conflict, or an "
+        "anaphoric year is genuinely ambiguous, is raised as a strict finding; "
+        "it is never silently degraded into a live 'still in force' answer."
+    ),
+    required_objects=("StatuteValidityBound", "FixedTermValidityProof"),
+    required_roots=(),
+    # The fixed-term claim's declared boundaries: the inclusive valid_until vs
+    # exclusive expires_on convention is a stored fact (not re-derivable from one
+    # date); ambiguous/anaphoric expiry is a strict finding, never a guess; and
+    # the VÄLIAIKAINEN temporary-amendment unresolved-expiry case is a WARN, not
+    # a strict block (a weaker, separately-declared enforcement).
+    allowed_non_guarantees=(
+        "fixed_term_inclusive_valid_until_vs_exclusive_expires_on",
+        "fixed_term_ambiguous_expiry_is_strict_finding_not_guess",
+        "fixed_term_temporary_unresolved_expiry_is_warn_not_strict",
+    ),
+    checker_level="L1",
+)
+
+# The version-timeline integrity claim (core/timeline_invariants.py). A
+# provision's version timeline has no overlapping permanent versions, consistent
+# temporary overlays, and a preserved (monotone) expiry chain; any violation is
+# a typed TimelineInvariantViolation, never silent.
+CLAIM_TIMELINE_INTEGRITY = ClaimSpec(
+    claim_id="lawvm.fi.timeline.integrity.v1",
+    public_sentence=(
+        "Every provision version timeline is checked for three structural "
+        "integrity properties — no two permanent versions share an effective "
+        "date with ambiguous precedence, each temporary overlay carries a "
+        "well-formed (present, non-inverted, non-overlapping) expiry interval, "
+        "and every expiry-extension chain is monotonically increasing — and any "
+        "breach is surfaced as a typed TimelineInvariantViolation carrying the "
+        "section attribution, never silently tolerated."
+    ),
+    required_objects=("TimelineInvariantViolation",),
+    required_roots=(),
+    # The timeline-integrity claim's declared boundaries: the typed-violation
+    # surface is computed by check_all_timeline_invariants_typed over a SELECTED
+    # family set (robust families); the heavier replay/materialization-drift
+    # check (IR-vs-timeline) is a SEPARATE, materialization-variant-tier check
+    # not part of the three robust structural properties; and a violation is a
+    # detection, never a legal conclusion or an automatic repair.
+    allowed_non_guarantees=(
+        "timeline_integrity_robust_families_replay_drift_separate",
+        "timeline_integrity_violation_is_detection_not_conclusion",
+    ),
+    checker_level="L1",
+)
+
 #: The v0 declared claim surface (a DECLARED SUBSET, not all claims; Pro §12).
 V0_CLAIMS: tuple[ClaimSpec, ...] = (
     CLAIM_BENCH_AGREEMENT,
@@ -474,6 +537,8 @@ V0_CLAIMS: tuple[ClaimSpec, ...] = (
     CLAIM_COUNTERFACTUAL_EFFECTS,
     CLAIM_MATERIALIZATION_GENERALITY,
     CLAIM_DANGLING_REFERENCE,
+    CLAIM_FIXED_TERM_EXPIRY,
+    CLAIM_TIMELINE_INTEGRITY,
 )
 
 
@@ -489,6 +554,8 @@ __all__ = [
     "CLAIM_DANGLING_REFERENCE",
     "CLAIM_DERIVATION_EDGE",
     "CLAIM_EU_TRANSPOSITION",
+    "CLAIM_FIXED_TERM_EXPIRY",
+    "CLAIM_TIMELINE_INTEGRITY",
     "CLAIM_MATERIALIZATION_GENERALITY",
     "CLAIM_MATERIALIZATION_SELECTED",
     "CLAIM_REFERENCE_CLASSIFICATION",

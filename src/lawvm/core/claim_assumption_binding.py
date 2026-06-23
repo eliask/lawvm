@@ -659,6 +659,130 @@ _B_DANGLING_RESOLVED_SECTION_SCOPE = _binding(
 )
 
 
+# --- Claim: fixed-term / temporary whole-law expiry safety ---------------- #
+_B_FIXED_TERM_INCLUSIVE_EXCLUSIVE = _binding(
+    "fixed_term_inclusive_valid_until_vs_exclusive_expires_on",
+    kind="doctrine_unresolved",
+    scope=(
+        "The inclusive source valid_until (the law is in force ON that date) vs "
+        "the kernel's exclusive expires_on cutoff (a version drops out once "
+        "as_of >= expires_on); the convention is expires_on = valid_until + 1 "
+        "day, so a statute is expired at D iff D >= expires_on iff D > "
+        "valid_until (lawvm.core.statute_validity)."
+    ),
+    effect="qualifies",
+    expires_when=(
+        "never for v0 — the inclusive/exclusive split is a deliberate stored "
+        "convention (both valid_until and expires_on are stored on the bound and "
+        "validated expires_on > valid_until); it is not a defect to be removed "
+        "but a boundary a consumer must read correctly."
+    ),
+    public_message=(
+        "A fixed-term statute is expired at date D iff D is at or after "
+        "expires_on, the EXCLUSIVE cutoff, which equals the INCLUSIVE source "
+        "last-in-force day valid_until PLUS ONE DAY. A consumer comparing "
+        "against valid_until directly (inclusive) versus expires_on (exclusive) "
+        "must use the right one — the two differ by exactly one day by design."
+    ),
+)
+_B_FIXED_TERM_AMBIGUOUS_STRICT = _binding(
+    "fixed_term_ambiguous_expiry_is_strict_finding_not_guess",
+    kind="doctrine_unresolved",
+    scope=(
+        "A whole-law fixed-term clause whose validity date cannot be parsed, "
+        "whose two bounds conflict on the same effective date, or whose "
+        "anaphoric year ('sanotun vuoden loppuun') has multiple plausible "
+        "same-sentence antecedents (lawvm.finland.fixed_term_expiry)."
+    ),
+    effect="blocks_clean",
+    expires_when=(
+        "never for v0 — an unparseable/conflicting/genuinely-ambiguous expiry "
+        "date is raised as a strict_fail finding rather than guessed; resolving "
+        "it would require source disambiguation, not a default-fill heuristic."
+    ),
+    public_message=(
+        "When a whole-law fixed-term expiry clause cannot be parsed, two bounds "
+        "conflict on the same effective date, or the anaphoric year is "
+        "genuinely ambiguous, LawVM raises a STRICT finding "
+        "(TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE / _AMBIGUOUS / "
+        "_ANAPHORA_AMBIGUOUS) — it never guesses the validity end and never "
+        "emits a live 'still in force' answer over an unsafe bound."
+    ),
+)
+_B_FIXED_TERM_TEMPORARY_WARN = _binding(
+    "fixed_term_temporary_unresolved_expiry_is_warn_not_strict",
+    kind="parser_incomplete",
+    scope=(
+        "The VÄLIAIKAINEN (temporary) amendment whose expiry date is "
+        "unparseable: emitted as a temporary version WITHOUT expiry under a WARN "
+        "finding (TIME.UNRESOLVED_TEMPORARY_EXPIRY), a weaker enforcement than "
+        "the whole-law fixed-term strict block "
+        "(lawvm.core.observation_registry)."
+    ),
+    effect="qualifies",
+    expires_when=(
+        "the temporary-amendment unresolved-expiry path is hardened to a strict "
+        "block, or the expiry parser covers the currently-unparseable temporary "
+        "forms so the WARN no longer fires."
+    ),
+    public_message=(
+        "The VÄLIAIKAINEN temporary-amendment unresolved-expiry case is a WARN "
+        "(TIME.UNRESOLVED_TEMPORARY_EXPIRY), NOT a strict block: such a version "
+        "is emitted as temporary-without-expiry. This is a deliberately weaker "
+        "enforcement than the whole-law fixed-term strict-fail discipline — a "
+        "declared boundary, not silent."
+    ),
+)
+
+# --- Claim: version-timeline integrity ------------------------------------ #
+_B_TIMELINE_ROBUST_REPLAY_SEPARATE = _binding(
+    "timeline_integrity_robust_families_replay_drift_separate",
+    kind="parser_incomplete",
+    scope=(
+        "The version-timeline integrity claim covers the three ROBUST structural "
+        "families (temporal_overlap / temporary_overlay / expiry_chain); the "
+        "replay/materialization-drift check (IR-vs-timeline consistency, "
+        "check_replay_timeline_consistency) is a SEPARATE "
+        "materialization-variant-tier check (lawvm.core.timeline_invariants)."
+    ),
+    effect="qualifies",
+    expires_when=(
+        "the replay/materialization-drift consistency check is brought into the "
+        "same robust-tier guarantee surface as the three structural families, "
+        "rather than carried as a separate materialization-variant tier."
+    ),
+    public_message=(
+        "The timeline-integrity guarantee covers the three ROBUST structural "
+        "properties (no overlapping permanent versions, well-formed temporary "
+        "overlays, monotone expiry chains). The heavier IR-vs-timeline "
+        "replay-drift check is a SEPARATE, materialization-variant-tier check — "
+        "it is not one of the three structural properties this claim asserts."
+    ),
+)
+_B_TIMELINE_DETECTION_NOT_CONCLUSION = _binding(
+    "timeline_integrity_violation_is_detection_not_conclusion",
+    kind="doctrine_unresolved",
+    scope=(
+        "Whether a TimelineInvariantViolation is a legal conclusion or an "
+        "automatic repair, vs a typed DETECTION only "
+        "(lawvm.core.timeline_invariants)."
+    ),
+    effect="outside_claim",
+    expires_when=(
+        "never for v0 — a timeline invariant violation records a detected "
+        "structural inconsistency in the compiled timeline; resolving it (which "
+        "version governs, or whether the source is itself defective) is a "
+        "separate legal/editorial judgement the check does not make."
+    ),
+    public_message=(
+        "A TimelineInvariantViolation is a DETECTION of a structural timeline "
+        "inconsistency, not a legal conclusion and not an automatic repair. "
+        "LawVM surfaces the breach with its kind and section attribution; it "
+        "does NOT decide which version governs or edit the timeline to fix it."
+    ),
+)
+
+
 #: The v0 binding set — EVERY V0_CLAIMS handle bound to a registered assumption.
 V0_CLAIM_ASSUMPTION_BINDINGS: tuple[ClaimAssumptionBinding, ...] = (
     _B_BENCH_NOT_SOURCE_TRUTH,
@@ -685,6 +809,11 @@ V0_CLAIM_ASSUMPTION_BINDINGS: tuple[ClaimAssumptionBinding, ...] = (
     _B_DANGLING_AS_OF_NOW,
     _B_DANGLING_CORPUS_INCOMPLETE,
     _B_DANGLING_RESOLVED_SECTION_SCOPE,
+    _B_FIXED_TERM_INCLUSIVE_EXCLUSIVE,
+    _B_FIXED_TERM_AMBIGUOUS_STRICT,
+    _B_FIXED_TERM_TEMPORARY_WARN,
+    _B_TIMELINE_ROBUST_REPLAY_SEPARATE,
+    _B_TIMELINE_DETECTION_NOT_CONCLUSION,
 )
 
 
