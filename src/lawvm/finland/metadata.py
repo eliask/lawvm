@@ -2266,6 +2266,7 @@ def _infer_expiry_date_from_temporary_payload_text(text: str) -> Optional[dt.dat
 
     - ``Vuosilta 1982 ja 1983 toimitettavissa verotuksissa ...``
     - ``Vuodelta 1984 toimitettavassa verotuksessa ...``
+    - ``Vuoden 2000 verotuksessa ...``
 
     For these temporary tax-year windows, the latest named tax year is a safe
     sunset for PIT materialization: the provision is not current after the end
@@ -2298,6 +2299,14 @@ def _infer_expiry_date_from_temporary_payload_text(text: str) -> Optional[dt.dat
         flags=re.IGNORECASE,
     ):
         years.append(int(singular.group(1)))
+
+    # lawvm-regex: owning_parser V-expiry tax-year-window expiry inference (current-year "Vuoden … verotuksessa")
+    for current_year in re.finditer(
+        r"\bVuoden\s+(\d{4})\s+verotuksessa\b",
+        normalized,
+        flags=re.IGNORECASE,
+    ):
+        years.append(int(current_year.group(1)))
 
     if not years:
         return None

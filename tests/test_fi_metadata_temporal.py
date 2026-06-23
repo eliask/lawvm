@@ -348,6 +348,14 @@ def test_infer_expiry_date_from_temporary_payload_text_singular_tax_year() -> No
     assert expiry.isoformat() == "1984-12-31"
 
 
+def test_infer_expiry_date_from_temporary_payload_text_current_tax_year() -> None:
+    expiry = _infer_expiry_date_from_temporary_payload_text(
+        "Vuoden 2000 verotuksessa myönnetään kuorma-autoille vapautus."
+    )
+    assert expiry is not None
+    assert expiry.isoformat() == "2000-12-31"
+
+
 def test_temporary_section_expiry_override_infers_tax_year_window_from_payload() -> None:
     tree = _tree(
         """

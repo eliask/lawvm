@@ -1231,6 +1231,22 @@ def test_replay_xml_1968_360_handles_temporary_tax_year_window_without_crashing(
     assert "vuodelta 1983 toimitettavassa verotuksessa" in text
 
 
+@pytest.mark.slow
+def test_replay_xml_1966_722_expires_temporary_current_tax_year_section() -> None:
+    replay = pinned_replay("1966/722", mode="official_consolidation", quiet=True)
+    addr = LegalAddress(path=(("section", "9a"),))
+
+    assert replay.timelines is not None
+    timeline = replay.timelines[addr]
+    version = timeline.versions[-1]
+    assert version.variant_kind == "temporary"
+    assert version.source is not None
+    assert version.source.statute_id == "2000/877"
+    assert version.source.expires == "2001-01-01"
+    assert select_active_version(timeline, "2000-12-31") is not None
+    assert select_active_version(timeline, "2001-01-01") is None
+
+
 def test_replay_xml_1987_322_repeals_sections_10a_to_10f_after_2023_741() -> None:
     replay = pinned_replay("1987/322", mode="official_consolidation", quiet=True)
     for label in ("10a", "10b", "10c", "10d", "10e", "10f"):
