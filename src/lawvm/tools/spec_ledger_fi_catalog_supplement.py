@@ -244,6 +244,10 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
     "fi.jolloin_section_renumber": (
         "A 'jolloin nykyinen N § siirtyy M §:ksi' clause renumbers the displaced section."
     ),
+    "fi.current_section_renumber_tail": (
+        "A SIIRTAA tail 'nykyinen N § uudeksi M §:ksi' renumbers the current section N "
+        "to section M."
+    ),
     "fi.jolloin_chapter_renumber": (
         "A 'jolloin nykyinen N luku siirtyy M luvuksi' clause renumbers the displaced "
         "chapter."
@@ -326,6 +330,10 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "shadow only when a same-source semantic snapshot already owns the legal "
         "content for the relabeled provision."
     ),
+    "fi.timeline.restructure_relabel_shell_shadow_collapse": (
+        "Timeline materialization collapses an empty restructure-relabel shell shadow "
+        "only when same-source relabel evidence owns the legal content elsewhere."
+    ),
     "fi_flat_body_replace_scope_from_bracketing_live_siblings": (
         "A flat-body whole-section replacement infers its chapter from live sibling "
         "sections bracketing the replaced label."
@@ -333,6 +341,10 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
     "fi_letter_suffix_insert_scope_from_stem_host": (
         "A letter-suffix section insert can inherit the stem section's live chapter "
         "when the source gives no stronger container scope."
+    ),
+    "fi_same_amendment_stem_scope_for_letter_suffix_insert": (
+        "A letter-suffix section insert can inherit chapter scope from a same-amendment "
+        "stem section when that stem establishes stronger local scope than live lookup."
     ),
     "fi_materialized_attachments_wrapper_split_v1": (
         "Materialization splits attachment wrappers into typed projected provisions "

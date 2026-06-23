@@ -13,7 +13,7 @@ import lxml.etree as etree
 
 import pytest
 
-from lawvm.core.ir import IRNode, OperationSource
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.uncovered_recovery_runner import _UncoveredRecoveryRun
 from lawvm.finland.uncovered_recovery_support import (
@@ -43,6 +43,8 @@ from lawvm.finland.uncovered_recovery_state import (
     uncovered_section_key as _uncovered_section_key,
 )
 from lawvm.finland.uncovered_recovery_context import build_uncovered_recovery_context
+from lawvm.finland.uncovered_recovery_iteration import peg_owned_section_targets
+from lawvm.finland.ops import AmendmentOp
 
 
 def _section_with_heading(text: str) -> IRNode:
@@ -79,6 +81,26 @@ def test_next_letter_label_rejects_non_numeric() -> None:
 def test_part_label_from_path_finds_part() -> None:
     path = (("part", "2"), ("chapter", "3"), ("section", "5"))
     assert _part_label_from_path(path) == "2"
+
+
+def test_peg_owned_section_targets_do_not_treat_relabel_source_as_payload_owner() -> None:
+    op = AmendmentOp(
+        op_id="renumber_64_to_70",
+        op_type="RENUMBER",
+        lo=LegalOperation(
+            op_id="renumber_64_to_70",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("chapter", "8"), ("section", "64"))),
+            destination=LegalAddress(path=(("section", "70"),)),
+        ),
+        witness_rule_id="fi.current_section_renumber_tail",
+    )
+
+    owned = peg_owned_section_targets([op])
+
+    assert ("8", "64") not in owned.by_chapter
+    assert "64" not in owned.labels
 
 
 def test_uncovered_context_treats_named_subprovision_as_non_whole_section_scope() -> None:

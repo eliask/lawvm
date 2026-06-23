@@ -44,6 +44,23 @@ class UncoveredSectionCandidate:
     source_ref: BodyCoveragePayloadRef
 
 
+def _is_payloadless_section_relabel_source(op: AmendmentOp, label: str) -> bool:
+    """True when a whole-section RENUMBER's source label is not a payload claim."""
+    if (
+        op.op_type != "RENUMBER"
+        or op.target_unit_kind != "section"
+        or op.target_paragraph is not None
+        or op.target_item
+        or op.target_special
+        or op.lo is None
+        or op.lo.destination is None
+        or not op.lo.destination.path
+    ):
+        return False
+    destination_leaf = op.lo.destination.leaf_label()
+    return bool(destination_leaf) and _norm_num_token(destination_leaf) != label
+
+
 def peg_owned_section_targets(ops: Iterable[AmendmentOp]) -> PegOwnedSectionTargets:
     """Return section labels already owned by deterministic PEG output."""
     targeted_sections: set[Tuple[Optional[str], str]] = set()
@@ -53,6 +70,8 @@ def peg_owned_section_targets(ops: Iterable[AmendmentOp]) -> PegOwnedSectionTarg
     for op in ops:
         if op.target_unit_kind == "section" and op.target_section:
             label = _norm_num_token(op.target_section)
+            if _is_payloadless_section_relabel_source(op, label):
+                continue
             chapter = op.target_chapter
             if op.target_paragraph is not None or op.target_item or op.target_special:
                 descendant_sections.add((chapter, label))

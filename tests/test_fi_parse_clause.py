@@ -20,10 +20,12 @@ from lawvm.finland.johtolause.compat import ClauseParseResult, parse_clause
 from lawvm.finland.ops import lo_scope_confidence
 from lawvm.finland.johtolause.surface_model import (
     ScopeKind,
+    SurfaceRenumberTail,
     TargetKind,
     SurfaceTargetRef,
     SurfaceScopeBlock,
     SurfaceDescendantCoordination,
+    VerbKind,
 )
 from tests.fixtures.fi_curated_cases import CURATED_CASES
 
@@ -1926,6 +1928,36 @@ def test_jolloin_section_renumber_emits_native_siirtaa_vg():
     assert target.label == "5"
     assert isinstance(tail, SurfaceRenumberTail)
     assert tail.new_label == "6"
+
+
+def test_siirtaa_current_section_renumber_tail_keeps_explicit_pairs() -> None:
+    text = (
+        "siirretään 8 luvun otsikko uuden 67 §:n edelle sekä nykyinen 63 § "
+        "uudeksi 69 §:ksi ja nykyinen 64 § uudeksi 70 §:ksi"
+    )
+    result = parse_clause(text)
+    sc = result.surface_clause
+    assert sc is not None
+
+    assert sc.verb_groups[0].verb == VerbKind.SIIRTAA
+    pairs: list[tuple[str, str, str]] = []
+    nodes = sc.verb_groups[0].nodes
+    for idx, node in enumerate(nodes[:-1]):
+        tail = nodes[idx + 1]
+        if isinstance(node, SurfaceTargetRef) and isinstance(tail, SurfaceRenumberTail):
+            pairs.append((node.chapter, node.label, tail.new_label))
+
+    assert pairs == [("8", "63", "69"), ("8", "64", "70")]
+    assert [op.code() for op in result.parsed_ops if op.renumber_dest] == [
+        "S L 8 o",
+        "S P L:8 63",
+        "S P L:8 64",
+    ]
+    assert [op.renumber_dest for op in result.parsed_ops if op.renumber_dest] == [
+        "8",
+        "69",
+        "70",
+    ]
 
 
 def test_jolloin_renumber_followed_by_main_verb_group():
