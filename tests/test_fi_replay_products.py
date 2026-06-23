@@ -954,7 +954,7 @@ def test_replay_xml_2016_769_keeps_replacements_after_same_wave_chapter_migratio
         oracle_version="20180012",
         mode="official_consolidation",
         quiet=True,
-        build_full_products=False,
+        build_full_products=True,
     )
     sections = extract_ir_sections(replay.materialized_state.ir)
 

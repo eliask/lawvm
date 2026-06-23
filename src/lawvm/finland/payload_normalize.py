@@ -907,6 +907,7 @@ def _assign_insert_before_moved_same_target_slot_ops(
         for op in slot_inputs.renumber_subsec_ops
         if (
             op.target_paragraph is not None
+            and _renumber_consumes_source_payload(op)
             and (destination := _destination_subsection_label_for_renumber(op)).isdigit()
         )
     }
@@ -977,6 +978,7 @@ def _assign_insert_before_moved_same_target_slot_ops(
         for op in slot_inputs.renumber_subsec_ops
         if (
             op.target_paragraph is not None
+            and _renumber_consumes_source_payload(op)
             and _destination_subsection_label_for_renumber(op).isdigit()
             and int(_destination_subsection_label_for_renumber(op)) == int(op.target_paragraph) + 1
         )
@@ -1857,13 +1859,23 @@ def _destination_subsection_label_for_renumber(op: AmendmentOp) -> str:
     )
 
 
+def _renumber_consumes_source_payload(op: AmendmentOp) -> bool:
+    return "jolloin_moment_renumber_supplement" not in op.extraction_provenance_tags
+
+
 def _assign_renumber_destination_slot_ops(
     slot_inputs: SubsectionSlotInputs,
     state: SubsectionSlotAssignmentState,
 ) -> None:
     """Bind carried source payload slots to explicit subsection renumber destinations."""
     for op in slot_inputs.renumber_subsec_ops:
-        if op in state.subsec_map or op.target_paragraph is None or op.target_item or op.target_special:
+        if (
+            op in state.subsec_map
+            or op.target_paragraph is None
+            or op.target_item
+            or op.target_special
+            or not _renumber_consumes_source_payload(op)
+        ):
             continue
         destination_label = _destination_subsection_label_for_renumber(op)
         if not destination_label:

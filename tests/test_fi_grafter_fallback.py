@@ -71,6 +71,7 @@ from lawvm.finland.johto_scope_mentions import (
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.johtolause_supplements import (
     _supplement_item_and_moment_clause_ops,
+    _supplement_jolloin_moment_renumber_ops,
     _supplement_mixed_explicit_clause_ops,
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
@@ -13422,6 +13423,53 @@ def test_supplement_item_and_moment_clause_ops_recovers_item_targets() -> None:
     ]
     assert got[0].witness_rule_id == "fi.item_and_moment_target_supplement.v1"
     assert got[0].extraction_provenance_tags == ("item_and_moment_target_supplement",)
+
+
+def test_supplement_jolloin_moment_renumber_ops_recovers_insert_continuation_shift() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="insert_15_2",
+            op_type="INSERT",
+            target_section="15",
+            target_kind=TargetKind.SECTION,
+            target_paragraph=2,
+        )
+    ]
+    johto = (
+        "lisätään 15 §:ään uusi 2 ja 3 momentti, jolloin nykyinen 2 ja 3 "
+        "momentti siirtyvät 4 ja 5 momentiksi, lakiin uusi 24 a-24 d §"
+    )
+
+    got = _supplement_jolloin_moment_renumber_ops(ops, johto)
+    recovered_inserts = [
+        op
+        for op in got
+        if op.op_type == "INSERT"
+        and op.extraction_provenance_tags == ("jolloin_moment_renumber_supplement",)
+    ]
+    renumbers = [op for op in got if op.op_type == "RENUMBER"]
+
+    assert [
+        (op.target_section, op.target_paragraph)
+        for op in got
+        if op.op_type == "INSERT"
+    ] == [
+        ("15", 2),
+        ("15", 3),
+    ]
+    assert [(op.target_section, op.target_paragraph) for op in recovered_inserts] == [
+        ("15", 3)
+    ]
+    assert [
+        (op.target_section, op.target_paragraph, op.lo.destination.path[-1][1])
+        for op in renumbers
+        if op.lo is not None and op.lo.destination is not None
+    ] == [("15", 2, "4"), ("15", 3, "5")]
+    assert all(op.witness_rule_id == "fi.jolloin_renumber" for op in renumbers)
+    assert all(
+        op.extraction_provenance_tags == ("jolloin_moment_renumber_supplement",)
+        for op in renumbers
+    )
 
 
 def test_supplement_mixed_explicit_clause_ops_recovers_skipped_targets() -> None:

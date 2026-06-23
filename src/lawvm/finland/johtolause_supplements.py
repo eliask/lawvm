@@ -229,6 +229,7 @@ class JolloinMomentRenumberClause:
     section: str
     source_moment: int
     destination_moment: int
+    inserted_moments: tuple[int, ...]
 
 
 # ---------------------------------------------------------------------------
@@ -353,11 +354,11 @@ def _supplement_missing_repeals_after_item_shift_clause(
     return supplemented
 
 
-def _jolloin_moment_renumber_anchor_section(
+def _jolloin_moment_renumber_anchor(
     tokens: Sequence[object],
     jolloin_pos: int,
-) -> str | None:
-    """Return the section owning a dropped ``jolloin`` moment renumber.
+) -> tuple[str, tuple[int, ...]] | None:
+    """Return the section and inserted moments owning a dropped ``jolloin`` renumber.
 
     The evidence comes from the token scanner, not a prose regex: only a
     preceding ``N §:ään ... uusi ... momentti`` insertion span immediately before
@@ -383,7 +384,22 @@ def _jolloin_moment_renumber_anchor_section(
         return None
     if not any(getattr(token, "cat", "") == "MOMENTTI" for token in between):
         return None
-    return _norm_num_token(str(getattr(section_token, "text", "") or ""))
+    inserted: list[int] = []
+    seen_uusi = False
+    for token in between:
+        cat = getattr(token, "cat", "")
+        if cat == "UUSI":
+            seen_uusi = True
+            continue
+        if not seen_uusi:
+            continue
+        if cat == "MOMENTTI":
+            break
+        if cat == "NUM":
+            text = str(getattr(token, "text", "") or "")
+            if text.isdigit():
+                inserted.append(int(text))
+    return _norm_num_token(str(getattr(section_token, "text", "") or "")), tuple(inserted)
 
 
 def _parse_jolloin_moment_renumber_clauses(
@@ -394,9 +410,10 @@ def _parse_jolloin_moment_renumber_clauses(
         return ()
     clauses: list[JolloinMomentRenumberClause] = []
     for jolloin_pos, pairs in sorted(jolloin_pairs.items()):
-        section = _jolloin_moment_renumber_anchor_section(tokens, jolloin_pos)
-        if not section:
+        anchor = _jolloin_moment_renumber_anchor(tokens, jolloin_pos)
+        if anchor is None:
             continue
+        section, inserted_moments = anchor
         for source, destination, kind in pairs:
             if kind != "M":
                 continue
@@ -407,6 +424,7 @@ def _parse_jolloin_moment_renumber_clauses(
                     section=section,
                     source_moment=int(source),
                     destination_moment=int(destination),
+                    inserted_moments=inserted_moments,
                 )
             )
     return tuple(clauses)
@@ -452,23 +470,53 @@ def _supplement_jolloin_moment_renumber_ops(
                 ("subsection", str(clause.destination_moment)),
             )
         )
-        supplemented.extend(
-            AmendmentOp.from_lo(
-                LegalOperation(
-                    op_id=(
-                        "jolloin_moment_renumber_"
-                        f"{clause.section}_{clause.source_moment}_to_{clause.destination_moment}_{idx}"
-                    ),
-                    sequence=0,
-                    action=StructuralAction.RENUMBER,
-                    target=target,
-                    destination=destination,
-                    provenance_tags=(_JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG,),
-                    witness_rule_id="fi.jolloin_renumber",
+        renumber_ops = AmendmentOp.from_lo(
+            LegalOperation(
+                op_id=(
+                    "jolloin_moment_renumber_"
+                    f"{clause.section}_{clause.source_moment}_to_{clause.destination_moment}_{idx}"
                 ),
-                len(supplemented),
-            )
+                sequence=0,
+                action=StructuralAction.RENUMBER,
+                target=target,
+                destination=destination,
+                provenance_tags=(_JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG,),
+                witness_rule_id="fi.jolloin_renumber",
+            ),
+            len(supplemented),
         )
+        for op in renumber_ops:
+            op.extraction_provenance_tags = (
+                *(
+                    tag
+                    for tag in op.extraction_provenance_tags
+                    if tag != _JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG
+                ),
+                _JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG,
+            )
+        supplemented.extend(renumber_ops)
+        for moment in clause.inserted_moments:
+            insert_already_present = any(
+                op.op_type == "INSERT"
+                and _norm_num_token(op.target_section or "") == clause.section
+                and op.target_paragraph == moment
+                and not op.target_item
+                and not op.target_special
+                for op in supplemented
+            )
+            if insert_already_present:
+                continue
+            supplemented.append(
+                AmendmentOp(
+                    op_id=f"jolloin_moment_insert_{clause.section}_{moment}_{idx}",
+                    op_type="INSERT",
+                    target_section=clause.section,
+                    target_unit_kind="section",
+                    target_paragraph=moment,
+                    extraction_provenance_tags=(_JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG,),
+                    witness_rule_id="fi.jolloin_renumber",
+                )
+            )
     return supplemented
 
 
