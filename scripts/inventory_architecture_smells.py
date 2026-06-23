@@ -502,6 +502,209 @@ def scope_source_baseline_snapshot(repo_root: Path | None = None) -> dict[str, A
 
 
 # ===========================================================================
+# Ratchet — author-set replay authority at projection (audit row PROJ-02)
+# ===========================================================================
+#
+# PROJECTION plane invariant (LAWVM_AUDIT_INVARIANT_REGISTRY.md §7 / §3.E,
+# core/stage_result.py AuthoritySurface): a projection row is NON-AUTHORITATIVE by
+# construction. ``replay_authorized`` (the legal-state replay-authority field) may
+# be granted ONLY by an explicit, granting ``ExecutionAuthorization`` carrier — it
+# may NEVER be author-set to True on any other row / dataclass / dict at projection
+# time. The fi_refs deterministic export was the canonical violation (it stamped
+# ``replay_authorized: True`` on every deterministic extraction row via
+# ``_DETERMINISTIC_ROW_EXTRAS``; fixed in 2f7f30e6 to ``False`` + a positive
+# ``deterministic_extraction`` surface fact). This scan GENERALIZES that fix
+# tree-wide: it finds every site that author-sets ``replay_authorized`` to a TRUTHY
+# literal and classifies it as
+#   * ALLOWED   — the assignment is a keyword inside an ``ExecutionAuthorization(...)``
+#                 construction (the sole legitimate authority-grant carrier), or
+#   * VIOLATION — a truthy ``replay_authorized`` set ANYWHERE else (a dataclass
+#                 default, a dict literal, a kwarg to a non-ExecutionAuthorization
+#                 constructor) — an author-set authority on a projection row.
+# Comparisons (``replay_authorized == True``), reads, and ``False``/falsy literals
+# are NOT flagged; only a truthy AUTHOR-SET is. The committed baseline is 0
+# violations (the firewall is type-enforced by the FrontierWorkItem validator + the
+# legal_surface_graph assembler today); the scan fences any NEW author-set truthy
+# ``replay_authorized`` crossing under ``src/lawvm`` so the firewall cannot regress.
+_REPLAY_AUTHORITY_FIELD = "replay_authorized"
+_AUTHORITY_GRANT_CARRIER = "ExecutionAuthorization"
+_PROJECTION_AUTHORITY_SCAN_ROOTS = ("src/lawvm",)
+
+
+def _is_truthy_literal(node: ast.expr) -> bool:
+    """True for an author-set TRUTHY constant (``True`` / ``1``).
+
+    A ``False`` / ``0`` / ``None`` literal is the surface-truthful default and is
+    NOT an author-set authority claim, so it is not flagged. A non-literal value
+    (a derived expression / name) is also not flagged here — the firewall is about
+    a hard-coded author-set authority, not a derived one (a derived True must come
+    through an ``ExecutionAuthorization`` carrier, which this scan allows).
+    """
+    if not isinstance(node, ast.Constant):
+        return False
+    value = node.value
+    if value is True:
+        return True
+    return isinstance(value, int) and not isinstance(value, bool) and value != 0
+
+
+def _call_is_authority_grant_carrier(node: ast.Call) -> bool:
+    """True if ``node`` constructs an ``ExecutionAuthorization`` (the grant carrier)."""
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id == _AUTHORITY_GRANT_CARRIER
+    if isinstance(func, ast.Attribute):
+        return func.attr == _AUTHORITY_GRANT_CARRIER
+    return False
+
+
+def scan_file_projection_authority(rel_path: str, text: str) -> list[dict[str, Any]]:
+    """Find every author-set ``replay_authorized=<truthy>`` site in one file.
+
+    Two author-set shapes are caught:
+      (1) a keyword ``replay_authorized=True`` in a CALL (constructor / factory);
+      (2) a dict entry ``"replay_authorized": True`` in a dict literal.
+    A class-body / module default ``replay_authorized: bool = True`` (AnnAssign /
+    Assign to a truthy literal) is also caught (it author-sets the default).
+
+    Each keyword (1) site is classified ALLOWED iff its enclosing call constructs
+    an ``ExecutionAuthorization`` (the legitimate grant carrier). Dict-literal and
+    default sites are ALWAYS violations when truthy — a projection row's dict /
+    default authority is never the grant carrier.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    records: list[dict[str, Any]] = []
+
+    # (1) keyword in a call: classify by the enclosing call's callee.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        allowed = _call_is_authority_grant_carrier(node)
+        for kw in node.keywords:
+            if (
+                kw.arg == _REPLAY_AUTHORITY_FIELD
+                and _is_truthy_literal(kw.value)
+                and not allowed
+            ):
+                records.append(
+                    {
+                        "file": rel_path,
+                        "line": getattr(kw.value, "lineno", node.lineno),
+                        "kind": "keyword_non_grant_carrier",
+                    }
+                )
+
+    # (2) dict literal entry "replay_authorized": True.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values, strict=False):
+            if (
+                isinstance(key, ast.Constant)
+                and key.value == _REPLAY_AUTHORITY_FIELD
+                and _is_truthy_literal(value)
+            ):
+                records.append(
+                    {
+                        "file": rel_path,
+                        "line": getattr(value, "lineno", node.lineno),
+                        "kind": "dict_literal",
+                    }
+                )
+
+    # (3) class-body / module default: replay_authorized[: bool] = True.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AnnAssign):
+            target = node.target
+            if (
+                isinstance(target, ast.Name)
+                and target.id == _REPLAY_AUTHORITY_FIELD
+                and node.value is not None
+                and _is_truthy_literal(node.value)
+            ):
+                records.append(
+                    {
+                        "file": rel_path,
+                        "line": node.lineno,
+                        "kind": "default_assignment",
+                    }
+                )
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id == _REPLAY_AUTHORITY_FIELD
+                    and _is_truthy_literal(node.value)
+                ):
+                    records.append(
+                        {
+                            "file": rel_path,
+                            "line": node.lineno,
+                            "kind": "default_assignment",
+                        }
+                    )
+    return records
+
+
+def scan_projection_authority_ratchet(repo_root: Path | None = None) -> dict[str, Any]:
+    """Compute the author-set-replay-authority-at-projection ratchet state.
+
+    Returns per-file VIOLATION counts (the monotone quantity, baseline 0), the
+    total, and every record. A violation is a truthy ``replay_authorized`` set
+    outside an ``ExecutionAuthorization`` grant carrier.
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    records: list[dict[str, Any]] = []
+    for rel in _iter_python_files(root, *_PROJECTION_AUTHORITY_SCAN_ROOTS):
+        path = root / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        records.extend(scan_file_projection_authority(rel, text))
+
+    violation_counts: Counter[str] = Counter()
+    for rec in records:
+        violation_counts[rec["file"]] += 1
+
+    return {
+        "violation_counts": dict(sorted(violation_counts.items())),
+        "total_violations": sum(violation_counts.values()),
+        "records": records,
+    }
+
+
+PROJECTION_AUTHORITY_BASELINE_PATH = Path(
+    "tests/data/projection_authority_ratchet_baseline.json"
+)
+
+
+def projection_authority_baseline_snapshot(
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    state = scan_projection_authority_ratchet(repo_root)
+    return {
+        "_doc": (
+            "Monotone author-set-replay-authority-at-projection ratchet baseline "
+            "(audit row PROJ-02). Counts truthy `replay_authorized` author-set "
+            "OUTSIDE an ExecutionAuthorization grant carrier (a dict literal, a "
+            "non-grant constructor kwarg, or a class/module default) — a projection "
+            "row claiming legal-state replay authority it cannot hold. The firewall "
+            "is type-enforced today (FrontierWorkItem validator + legal_surface_graph "
+            "assembler both raise), so the baseline is 0 and may only stay 0; a new "
+            "crossing fails CI. Regenerate with `uv run python "
+            "scripts/inventory_architecture_smells.py --ratchet projection "
+            "--update-baseline`. See tests/test_projection_author_set_authority.py."
+        ),
+        "total_violations": state["total_violations"],
+        "violation_counts": state["violation_counts"],
+    }
+
+
+# ===========================================================================
 # Ratchet — source-witness liveness (StageResult WAIST #1)
 # ===========================================================================
 #
@@ -642,13 +845,25 @@ def write_scope_source_baseline(repo_root: Path | None = None) -> Path:
     return out_path
 
 
+def write_projection_authority_baseline(repo_root: Path | None = None) -> Path:
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    out_path = root / PROJECTION_AUTHORITY_BASELINE_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = projection_authority_baseline_snapshot(root)
+    out_path.write_text(
+        json.dumps(snapshot, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return out_path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate architecture-coherence smell inventories / ratchets."
     )
     parser.add_argument(
         "--ratchet",
-        choices=("authority", "scope", "witness", "all"),
+        choices=("authority", "scope", "witness", "projection", "all"),
         default="all",
         help="Which ratchet to scan / update.",
     )
@@ -687,6 +902,10 @@ def main(argv: list[str] | None = None) -> int:
             out = write_witness_liveness_baseline()
             snap = json.loads(out.read_text(encoding="utf-8"))
             print(f"wrote {out} (total_nontest_callers={snap['total_nontest_callers']})")
+        if args.ratchet in {"projection", "all"}:
+            out = write_projection_authority_baseline()
+            snap = json.loads(out.read_text(encoding="utf-8"))
+            print(f"wrote {out} (total_violations={snap['total_violations']})")
         return 0
 
     payload: dict[str, Any] = {}
@@ -696,6 +915,8 @@ def main(argv: list[str] | None = None) -> int:
         payload["scope_source"] = scan_scope_source_ratchet()
     if args.ratchet in {"witness", "all"}:
         payload["witness_liveness"] = scan_witness_liveness_ratchet()
+    if args.ratchet in {"projection", "all"}:
+        payload["projection_authority"] = scan_projection_authority_ratchet()
     print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
     return 0
 

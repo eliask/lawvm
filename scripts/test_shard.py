@@ -386,9 +386,15 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_confidence_control_ratchet.py",
         "test_determinism_spine_ratchet.py",
         "test_typed_carrier_boundary_ratchet.py",
+        "test_waist_contract_ratchet.py",
         "test_identity_intrinsic_audit.py",
         "test_synthetic_label_leak.py",
         "test_replay_determinism.py",
+        # Audit-invariant registry program (PROJECTION plane): row PROJ-01
+        # (projection re-derivability from committed matter) + row PROJ-02
+        # (tree-wide no-author-set-replay_authorized-at-projection sweep).
+        "test_projection_rederivability.py",
+        "test_projection_author_set_authority.py",
         "test_explicit_address_level.py",
         "test_guard_liveness_totality.py",
     ),
@@ -404,6 +410,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_canonical_intent_kinds.py",
         "test_fi_canonical_op_stage.py",
         "test_fi_canonical_op_stage_carrier.py",
+        "test_fi_op_coverage_totality.py",
         "test_fi_clause_ast.py",
         "test_fi_coordination_parser.py",
         "test_core_locator.py",

@@ -1439,6 +1439,25 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "an ingest structural-repair heuristic re-parented or merged tree "
                 "shape on a regex/letter-sequence guess; detail.repair names the rule",
                 ("preservation", "ambiguity_resolution"), role="observation"),
+    # XP-03 — op-coverage totality (runtime parity arm). At the canonical-op
+    # lowering waist (#6) every candidate operation MUST lower to exactly one
+    # canonical op (coverage.owned) OR a typed candidate-effect residual
+    # (coverage.violation), never silently dropped — i.e. the candidate-op
+    # CoverageCertificate must be a partition (owned + violation == total under
+    # totality_claimed). The partition holds BY CONSTRUCTION today (the lowering
+    # seam computes total = emitted + rejected; see compile_amendment.build_canonical_op_stage),
+    # so this code is a defensive RUNTIME pin: a candidate op that neither lowered
+    # nor residualized would break is_partition() and surface here as a typed
+    # residual. NON-BLOCKING (role=observation): a real uncovered op should be
+    # SURFACED for triage, not silently block the corpus; the population is the
+    # finding, not a hard fail.
+    FindingSpec("CANONICAL_OP.OP_COVERAGE_GAP", "build_canonical_op_stage",
+                "violation", "warn", "compile_amendment",
+                "a candidate operation neither lowered to a canonical op nor "
+                "residualized at the canonical-op lowering waist: the candidate-op "
+                "coverage account is not a partition (owned + violation != total); "
+                "detail carries the owned/violation/total counts witnessing the gap",
+                ("parse_witness", "preservation"), role="observation"),
 )}
 
 
