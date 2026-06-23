@@ -85,15 +85,18 @@ def parse_leading_structural_address_path(text: str) -> List[tuple[str, str]]:
 
     window = prefix[:240]
 
+    # lawvm-regex: prefilter leading structural-address-path probe over flat-hcontainer leading heading text, returns a structural path not amendment ops
     section_m = _LEADING_SECTION_RE.search(window)
     if section_m is not None:
         leading = window[: section_m.start()]
         path: List[tuple[str, str]] = []
 
+        # lawvm-regex: prefilter leading-path part-arm probe over flat-hcontainer heading text
         part_m = list(_LEADING_PART_RE.finditer(leading))
         if part_m:
             path.append(("part", _norm_section(part_m[-1].group(1))))
 
+        # lawvm-regex: prefilter leading-path chapter-arm probe over flat-hcontainer heading text
         chapter_m = list(_LEADING_CHAPTER_RE.finditer(leading))
         if chapter_m:
             path.append(("chapter", _norm_section(chapter_m[-1].group(1))))
@@ -102,10 +105,12 @@ def parse_leading_structural_address_path(text: str) -> List[tuple[str, str]]:
         return path
 
     # Chapter/part-only bodies are rare, but keep them recoverable too.
+    # lawvm-regex: prefilter leading-path part-only fallback probe over flat-hcontainer heading text
     part_m = list(_LEADING_PART_RE.finditer(window))
     if part_m:
         return [("part", _norm_section(part_m[-1].group(1)))]
 
+    # lawvm-regex: prefilter leading-path chapter-only fallback probe over flat-hcontainer heading text
     chapter_m = list(_LEADING_CHAPTER_RE.finditer(window))
     if chapter_m:
         return [("chapter", _norm_section(chapter_m[-1].group(1)))]

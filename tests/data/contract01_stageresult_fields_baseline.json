@@ -1,0 +1,30 @@
+{
+  "_doc": "CONTRACT-01 baseline: per-waist-MODULE set of the six StageResult fields never explicitly passed to a StageResult-family construction in that module (the 'stub set'). May only SHRINK. MODULE-granular + STATIC: not a runtime-non-triviality proof, and a `<no-local-construction>` sentinel marks waists whose carrier is built in a cross-module helper. Regenerate: uv run python tests/test_waist_field_contract_ratchet.py --update-baseline. See registry row CONTRACT-01.",
+  "waist_stub_sets": {
+    "apply_receipt": [],
+    "canonical_op": [],
+    "certificate": [
+      "evidence"
+    ],
+    "overlay": [],
+    "projection": [
+      "authority",
+      "evidence",
+      "findings"
+    ],
+    "source_identity": [
+      "findings",
+      "residuals"
+    ],
+    "surface_families": [],
+    "surface_syntax": [
+      "findings"
+    ],
+    "timeline_materialization": [
+      "<no-local-construction>"
+    ],
+    "token_structure": [
+      "findings"
+    ]
+  }
+}

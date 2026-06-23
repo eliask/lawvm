@@ -612,6 +612,7 @@ def _section_bisect_support(
                 kind in {
                     "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
                     "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
+                    "ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL",
                 }
                 for kind in blame_elaboration_kinds
             ) or blame_sparse_leftover_count > 0
@@ -708,6 +709,7 @@ def _section_bisect_support(
                 kind in {
                     "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
                     "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
+                    "ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL",
                     "ELAB.MIXED_SPARSE_SLOT_CROSS_PARAGRAPH",
                 }
                 for kind in first_drop_elaboration_kinds

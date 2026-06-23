@@ -29,7 +29,11 @@ from lawvm.core.effect_intent import Commencement, EffectIntent
 from lawvm.core.phase_result import Finding
 from lawvm.core.temporal import ActivationRule, TemporalEvent
 from lawvm.core.semantic_types import MetaClauseKind
-from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER, parse_fi_day_month_year
+from lawvm.finland.fi_dates import (
+    FI_MONTH_PARTITIVE_TO_NUMBER,
+    FiDateForm,
+    match_fi_date,
+)
 from lawvm.finland.johtolause.surface_model import SurfaceMetaClause
 
 _MONTH_MAP = FI_MONTH_PARTITIVE_TO_NUMBER
@@ -89,6 +93,7 @@ def activation_rule_from_commencement(intent: Commencement) -> ActivationRule:
         return ActivationRule(kind="immediate", raw_text=raw)
 
     # Contingent: distinguish pending_decree vs pending_condition
+    # lawvm-regex: owning_parser contingent-class discriminator over already-commencement-classified Commencement.raw_text; mints only the rule kind
     if _SIMULTANEOUS_PATTERN.search(raw):
         # Extract condition reference from text (best-effort)
         condition_ref = _extract_simultaneous_ref(raw)
@@ -111,6 +116,8 @@ def _extract_simultaneous_ref(raw: str) -> str:
     Example: "tulee voimaan samanaikaisesti kuin laki X" → "laki X"
     This is a heuristic — returns the raw text tail after the pattern match.
     """
+    # State-free reach-back the intra-procedural detector misses (binding `raw = intent.raw_text` lives in the caller). condition_ref is a best-effort opaque reference STRING, not a resolved address; mints no date/op/scope/lifecycle.
+    # lawvm-regex: owning_parser discriminator + opaque-tail slice over already-commencement-classified text; produces only the condition_ref payload string
     m = _SIMULTANEOUS_PATTERN.search(raw)
     if m is None:
         return ""
@@ -256,34 +263,23 @@ def lower_temporal_events_to_activation_rules_with_findings(
 # text classification. The _DECREE_SET_PATTERN and _SIMULTANEOUS_PATTERN are
 # the same Finnish-language patterns used for Commencement lowering.
 
-_COMMENCEMENT_DATE_PATTERN = re.compile(
-    r"(\d{1,2})\s+päivän[aä]\s+([a-zäöå]+)\s+(\d{4})",
-    re.IGNORECASE,
-)
-
 def _extract_date_from_text(text: str) -> str:
-    """Extract ISO-8601 date from Finnish commencement text, or empty string."""
-    m = _COMMENCEMENT_DATE_PATTERN.search(text)
-    if m is None:
+    """Extract ISO-8601 date from Finnish commencement text, or empty string.
+
+    Commencement dates are stated in the essive ``NN päivänä Kkkuuta YYYY``;
+    the shared recognizer is restricted to that form here so an incidental
+    allative expiry date in the same text cannot be mistaken for the
+    commencement date.
+    """
+    match = match_fi_date(text, forms={FiDateForm.ESSIVE})
+    if match is None:
         return ""
-    parsed = parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
-    if parsed is None:
-        return ""
-    return parsed.isoformat()
+    return match.value.isoformat()
 
 
 # ---------------------------------------------------------------------------
 # Expiry date extraction — "on voimassa ... DD päivään MM YYYY"
 # ---------------------------------------------------------------------------
-
-# Finnish expiry clause: "on voimassa NN päivään MM YYYY asti"
-# The ordinal suffix on the day is "päivään" (allative) not "päivänä" (essive).
-# Both forms can appear; match both.
-_EXPIRY_DATE_PATTERN = re.compile(
-    r"(\d{1,2})\s+päivä[äa]n\s+([a-zäöå]+)\s+(\d{4})"
-    r"|(\d{1,2})\s+päivän[aä]\s+([a-zäöå]+)\s+(\d{4})",
-    re.IGNORECASE,
-)
 
 
 def _extract_expiry_date_from_text(text: str) -> str:
@@ -293,22 +289,17 @@ def _extract_expiry_date_from_text(text: str) -> str:
         "Tämä laki on voimassa 31 päivään joulukuuta 2025."
         "on voimassa 31 päivänä joulukuuta 2025 asti"
 
-    Both "päivään" (allative) and "päivänä" (essive) are matched — the
+    Both "päivään" (allative) and "päivänä" (essive) are accepted — the
     essive form also appears in commencement clauses so the caller should
-    only invoke this on EXPIRY-classified sentences.
+    only invoke this on EXPIRY-classified sentences. The earliest-occurring
+    of the two forms wins (matching the legacy alternation order).
     """
-    m = _EXPIRY_DATE_PATTERN.search(text)
-    if m is None:
+    match = match_fi_date(
+        text, forms={FiDateForm.ALLATIVE, FiDateForm.ESSIVE}
+    )
+    if match is None:
         return ""
-    # Group layout: (g1,g2,g3) for päivään form, (g4,g5,g6) for päivänä form
-    if m.group(1):
-        day_s, month_s, year_s = m.group(1), m.group(2), m.group(3)
-    else:
-        day_s, month_s, year_s = m.group(4), m.group(5), m.group(6)
-    parsed = parse_fi_day_month_year(day_s, month_s, year_s)
-    if parsed is None:
-        return ""
-    return parsed.isoformat()
+    return match.value.isoformat()
 
 
 def extract_expiry_date_from_meta_clauses(
@@ -390,6 +381,7 @@ def activation_rules_from_meta_clauses_with_findings(
             continue
         text = clause.text
 
+        # lawvm-regex: owning_parser contingent-class discriminator over COMMENCEMENT-classified SurfaceMetaClause text; mints only the rule kind
         if _DECREE_SET_PATTERN.search(text):
             rules.append(ActivationRule(
                 kind="pending_decree",
@@ -397,6 +389,7 @@ def activation_rules_from_meta_clauses_with_findings(
             ))
             continue
 
+        # lawvm-regex: owning_parser contingent-class discriminator over COMMENCEMENT-classified SurfaceMetaClause text; mints only the rule kind
         if _SIMULTANEOUS_PATTERN.search(text):
             condition_ref = _extract_simultaneous_ref(text)
             rules.append(ActivationRule(

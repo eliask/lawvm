@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Normative (operating contract for agents). Authoritative section numbering: §0-§4; invariants run §1.0-§1.12 (there is NO §1.13 — the regex/recognizer doctrine is §1.11 + §1.12, expanded in §2.4/§2.5). Other docs that cite "AGENTS.md §1.13" are stale against this file.
+
 # LawVM Agent Guide
 
 LawVM treats legislation as an executable state-transition system: amendment acts are legal-language programs that replace, repeal, insert, renumber, move, delay commencement, restrict scope, and otherwise mutate a statute tree. LawVM compiles those instructions into typed operations, replays them over legal text structure, materializes point-in-time text, and emits an auditable account of how that text-state came to be — source facts, repairs, and remaining disagreement or uncertainty.

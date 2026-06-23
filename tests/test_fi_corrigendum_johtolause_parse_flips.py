@@ -21,7 +21,7 @@ from __future__ import annotations
 import pytest
 
 from lawvm.finland import corrigendum as corr
-from lawvm.finland.johtolause.compat import parse_clause
+from lawvm.finland.johtolause.api import parse_clause
 
 
 # Each case pins:

@@ -102,6 +102,47 @@ def test_build_amendment_index_supplements_explicit_cross_statute_vts_edges() ->
     assert diagnostics == []
 
 
+def test_build_amendment_index_supplements_dated_title_cross_statute_vts_edges() -> None:
+    oracle_xml = b"""
+    <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <meta>
+        <identification>
+          <FRBRWork>
+            <FRBRdate date="1901-04-23" name="dateIssued"/>
+          </FRBRWork>
+        </identification>
+      </meta>
+      <preface><docTitle>Laki kuolleeksi julistamisesta</docTitle></preface>
+    </act>
+    """
+    source_xml = """
+    <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <body>
+        <hcontainer eId="entryIntoForce" name="entryIntoForce">
+          <content>
+            <p>2. Kumottavat säännökset. Tällä lailla kumotaan avioliittolain
+            voimaanpanosta 13 päivänä kesäkuuta 1929 annetun lain (235/29) 10,
+            11 ja 15§, rikoslain 19 luvun 6 § sekä kuolleeksi julistamisesta
+            23 päivänä huhtikuuta 1901 annetun lain 15 §, sellaisena kuin se on
+            23 päivänä toukokuuta 1975 annetussa laissa (351/75).</p>
+          </content>
+        </hcontainer>
+      </body>
+    </act>
+    """.encode("utf-8")
+    corpus = _FakeCorpus(
+        oracle_map={"1901/15-001": oracle_xml},
+        source_map={"1987/411": source_xml},
+    )
+
+    diagnostics: list[dict[str, object]] = []
+
+    edges = build_amendment_index(cs=corpus, diagnostics_out=diagnostics)
+
+    assert ("1987/411", "1901/15-001", "source_vts_explicit") in edges
+    assert diagnostics == []
+
+
 def test_build_amendment_index_ignores_bare_citation_without_vts_effect() -> None:
     source_xml = """
     <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -281,7 +322,7 @@ def test_ensure_amendment_index_rebuilds_old_two_column_schema(tmp_path: Path) -
     ensure_amendment_index(cs=corpus, csv_path=csv_path)
 
     header = csv_path.read_text(encoding="utf-8").splitlines()[0]
-    assert header == "amendment_id,parent_id,edge_kind"
+    assert header == ",".join(amendment_index._CSV_HEADER)
 
 
 def test_default_amendment_index_cache_uses_canonical_data_root(
@@ -340,7 +381,8 @@ def test_ensure_amendment_index_adopts_current_schema_csv_when_meta_missing(
     meta_path = csv_path.with_suffix(".meta.json")
     db_path = tmp_path / "finlex.farchive"
     csv_path.write_text(
-        "amendment_id,parent_id,edge_kind\n1991/806,1986/506,oracle_amendedBy\n",
+        ",".join(amendment_index._CSV_HEADER)
+        + "\n1991/806,1986/506,oracle_amendedBy,source_vts_title_date_v2\n",
         encoding="utf-8",
     )
     db_path.write_bytes(b"current")
@@ -361,7 +403,7 @@ def test_ensure_amendment_index_adopts_current_schema_csv_when_meta_missing(
 
     assert calls == []
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    assert meta["schema"] == ["amendment_id", "parent_id", "edge_kind"]
+    assert meta["schema"] == amendment_index._CSV_HEADER
     assert meta["source"] == amendment_index._corpus_source_fingerprint(corpus)
 
 
@@ -415,13 +457,14 @@ def test_ensure_amendment_index_rebuilds_when_farchive_fingerprint_changes(
     )
     old_fingerprint = amendment_index._corpus_source_fingerprint(corpus)
     csv_path.write_text(
-        "amendment_id,parent_id,edge_kind\n1991/806,1986/506,oracle_amendedBy\n",
+        ",".join(amendment_index._CSV_HEADER)
+        + "\n1991/806,1986/506,oracle_amendedBy,source_vts_title_date_v2\n",
         encoding="utf-8",
     )
     meta_path.write_text(
         json.dumps(
             {
-                "schema": ["amendment_id", "parent_id", "edge_kind"],
+                "schema": amendment_index._CSV_HEADER,
                 "source": old_fingerprint,
             }
         )
@@ -441,7 +484,10 @@ def test_ensure_amendment_index_rebuilds_when_farchive_fingerprint_changes(
     ensure_amendment_index(cs=corpus, csv_path=csv_path)
 
     assert len(calls) == 1
-    assert "2026/269,2011/805,oracle_amendedBy" in csv_path.read_text(encoding="utf-8")
+    assert (
+        "2026/269,2011/805,oracle_amendedBy,source_vts_title_date_v2"
+        in csv_path.read_text(encoding="utf-8")
+    )
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     assert meta["source"] == amendment_index._corpus_source_fingerprint(corpus)
 
@@ -495,7 +541,8 @@ def test_ensure_amendment_index_tolerates_path_representation_change(
         archive=_FakeArchive(db_path),
     )
     csv_path.write_text(
-        "amendment_id,parent_id,edge_kind\n1991/806,1986/506,oracle_amendedBy\n",
+        ",".join(amendment_index._CSV_HEADER)
+        + "\n1991/806,1986/506,oracle_amendedBy,source_vts_title_date_v2\n",
         encoding="utf-8",
     )
     fingerprint = amendment_index._corpus_source_fingerprint(corpus)
@@ -508,7 +555,7 @@ def test_ensure_amendment_index_tolerates_path_representation_change(
     meta_path.write_text(
         json.dumps(
             {
-                "schema": ["amendment_id", "parent_id", "edge_kind"],
+                "schema": amendment_index._CSV_HEADER,
                 "source": stored,
             }
         )
@@ -538,13 +585,14 @@ def test_ensure_amendment_index_skips_when_farchive_fingerprint_matches(
         archive=_FakeArchive(db_path),
     )
     csv_path.write_text(
-        "amendment_id,parent_id,edge_kind\n1991/806,1986/506,oracle_amendedBy\n",
+        ",".join(amendment_index._CSV_HEADER)
+        + "\n1991/806,1986/506,oracle_amendedBy,source_vts_title_date_v2\n",
         encoding="utf-8",
     )
     meta_path.write_text(
         json.dumps(
             {
-                "schema": ["amendment_id", "parent_id", "edge_kind"],
+                "schema": amendment_index._CSV_HEADER,
                 "source": amendment_index._corpus_source_fingerprint(corpus),
             }
         )

@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Superseded as a plan; keep as design rationale. Kind: Explanatory (design/migration proposal, now implemented). The typed claim algebra it proposes is LIVE — evidence_claim_algebra.py / evidence_section_rules.py / evidence_claims.py exist and build_section_claims_typed is the production path (94 tests, dual-run parity in CI). Read the 'Step 1…6 / freeze legacy / flip later' migration sections as historical, not a TODO.
+
 # Proof Claim Algebra
 
 The core migration constraint is:

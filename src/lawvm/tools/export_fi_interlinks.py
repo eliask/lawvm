@@ -11,13 +11,23 @@ consume this projection and must not parse legal prose themselves.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from lawvm.core.filter_result import FilterResult
 from lawvm.core.interlinks import (
     INTERLINK_ROW_COLUMNS,
     legal_interlink_to_row,
+)
+from lawvm.core.stage_result import (
+    NEUTRAL_AUTHORITY,
+    AuthoritySurface,
+    CoverageCertificate,
+    PartitionResult,
+    Residual,
 )
 from lawvm.finland.interlinks import (
     fi_interlink_from_inline_citation,
@@ -28,6 +38,78 @@ from lawvm.finland.legal_surface.overlay_projection import (
     OVERLAY_ROW_COLUMNS,
     graph_to_overlay_rows,
 )
+
+
+@dataclasses.dataclass(frozen=True)
+class FiProjectionResult(PartitionResult[Dict[str, Any]]):
+    """Conserving carrier for a Finnish viewer/overlay projection (WAIST #10).
+
+    Composes the canonical :class:`PartitionResult` over the emitted projection
+    rows (``accepted``), the previously-discarded extractor diagnostics + any
+    dropped universe member as typed :class:`Residual` (``residuals``), and a
+    :class:`CoverageCertificate` partition account (``coverage``).
+
+    It additionally carries an :class:`AuthoritySurface`, fixed at
+    :data:`NEUTRAL_AUTHORITY`: a viewer/projection row is NOT a legal-state fact
+    and carries NO replay authority (Pro §8 / §13.9). This is the one waist where
+    ``NEUTRAL_AUTHORITY`` is the CORRECT, load-bearing value — the firewall that
+    keeps a projection from being mistaken for a legal conclusion.
+    """
+
+    authority: AuthoritySurface = NEUTRAL_AUTHORITY
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not isinstance(self.authority, AuthoritySurface):
+            raise ValueError("FiProjectionResult.authority must be an AuthoritySurface")
+
+    @property
+    def rows(self) -> Tuple[Dict[str, Any], ...]:
+        """Convenience alias for the accepted (emitted) projection rows."""
+        return self.accepted
+
+
+def _projection_residual_from_diagnostic(
+    diagnostic: Dict[str, Any],
+    *,
+    statute_id: str,
+) -> Residual:
+    """Map one currently-discarded extractor diagnostic onto a typed Residual."""
+    family = str(diagnostic.get("family", ""))
+    rule_id = str(diagnostic.get("rule_id", "")) or "fi_projection_diagnostic"
+    reason = str(diagnostic.get("reason", "") or diagnostic.get("kind", ""))
+    parts = [part for part in (family, rule_id, reason) if part]
+    return Residual(
+        kind="projection_residual",
+        reason=": ".join(parts) if parts else rule_id,
+        scope=f"{family or 'fi_projection'}:{statute_id}",
+        source_unit_id=statute_id,
+        text=str(diagnostic.get("raw_text", "")),
+        blocking=bool(diagnostic.get("blocking", False)),
+    )
+
+
+def _build_projection_coverage(
+    *,
+    unit: str,
+    rows: List[Dict[str, Any]],
+    residuals: Tuple[Residual, ...],
+    dropped_universe_members: int,
+) -> CoverageCertificate:
+    """Build the four-class coverage account for a projection.
+
+    ``violation`` counts silently-dropped universe members (the rank-21
+    silent-drop class): a statute the projector was asked to project but which
+    yielded neither an emitted row nor a recorded residual.
+    """
+    return CoverageCertificate(
+        unit=unit,
+        total=len(rows) + len(residuals) + dropped_universe_members,
+        owned=len(rows),
+        residual=len(residuals),
+        violation=dropped_universe_members,
+        totality_claimed=True,
+    )
 
 
 def _load_corpus_store() -> Any:
@@ -54,19 +136,47 @@ def _stable_interlink_id(family: str, statute_id: str, index: int) -> str:
 def _project_interlinks_for_statute(
     statute_id: str,
     store: Any,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Project neutral interlink rows for one Finnish statute."""
+) -> FiProjectionResult:
+    """Project neutral interlink rows for one Finnish statute as a conserving partition.
+
+    Returns a :class:`FiProjectionResult`: ``accepted`` are the emitted interlink
+    rows (byte-identical to the previous bare-row return), ``residuals`` carry one
+    typed :class:`Residual` per previously-discarded extractor diagnostic (and one
+    blocking residual when the statute XML is absent — a drop that used to be
+    silent), ``coverage`` is the four-class account, and ``authority`` is the
+    load-bearing :data:`NEUTRAL_AUTHORITY` (a projection row is not a legal-state
+    fact).
+    """
     from lawvm.finland.references.inline_citation_extractor import (
         extract_inline_citations,
     )
     from lawvm.finland.references.preparatory_reference_extractor import (
         extract_preparatory_refs,
     )
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
 
     xml_bytes = _get_statute_xml(statute_id, store)
     if xml_bytes is None:
-        return [], []
+        # A universe member the projector was asked to project but could not:
+        # record it as a blocking residual instead of dropping it silently, and
+        # count it as a coverage violation (the rank-21 silent-drop class).
+        absent = Residual(
+            kind="projection_residual",
+            reason="fi_interlinks: statute_xml_absent: no oracle/source XML for statute",
+            scope=f"fi_interlinks:{statute_id}",
+            source_unit_id=statute_id,
+            blocking=True,
+        )
+        return FiProjectionResult(
+            FilterResult(),
+            residuals=(absent,),
+            coverage=_build_projection_coverage(
+                unit="projection_rows",
+                rows=[],
+                residuals=(absent,),
+                dropped_universe_members=1,
+            ),
+        )
 
     rows: List[Dict[str, Any]] = []
     diagnostics: List[Dict[str, Any]] = []
@@ -143,21 +253,37 @@ def _project_interlinks_for_statute(
             "blocking": match.blocking,
         })
 
-    return rows, diagnostics
+    residuals = tuple(
+        _projection_residual_from_diagnostic(diagnostic, statute_id=statute_id)
+        for diagnostic in diagnostics
+    )
+    return FiProjectionResult(
+        FilterResult(accepted_items=tuple(rows)),
+        residuals=residuals,
+        coverage=_build_projection_coverage(
+            unit="projection_rows",
+            rows=rows,
+            residuals=residuals,
+            dropped_universe_members=0,
+        ),
+    )
 
 
 def _project_overlays_for_statute(
     statute_id: str,
     store: Any,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> FiProjectionResult:
     """Project FULL Legal Surface Graph overlay rows for one Finnish statute.
 
     Builds the whole-statute Legal Surface Graph (all 9 lenses + edges) and
     projects every renderable surface node into a ``lawvm_surface_overlays`` row.
-    Returns ``(overlay_rows, [])`` — no diagnostics channel (the graph build's own
-    diagnostics live on the graph; the overlay projection adds none). Returns
-    ``([], [])`` when the statute XML is absent (same fail-by-absence as the
-    interlink projector).
+    Returns a :class:`FiProjectionResult` whose ``accepted`` are the overlay rows
+    (byte-identical to the previous bare-row return) — the overlay projection has
+    no diagnostics channel of its own (the graph build's diagnostics live on the
+    graph), so ``residuals`` is empty UNLESS the statute XML is absent, in which
+    case the dropped universe member is recorded as a blocking residual + coverage
+    violation instead of being dropped silently. ``authority`` is
+    :data:`NEUTRAL_AUTHORITY`.
 
     The ``rendered_*`` columns are NULL here: the v0 whole-body graph anchor
     carries no effective_date / segment_index / address, so no
@@ -169,10 +295,128 @@ def _project_overlays_for_statute(
 
     xml_bytes = _get_statute_xml(statute_id, store)
     if xml_bytes is None:
-        return [], []
+        absent = Residual(
+            kind="projection_residual",
+            reason="fi_surface_overlays: statute_xml_absent: no oracle/source XML for statute",
+            scope=f"fi_surface_overlays:{statute_id}",
+            source_unit_id=statute_id,
+            blocking=True,
+        )
+        return FiProjectionResult(
+            FilterResult(),
+            residuals=(absent,),
+            coverage=_build_projection_coverage(
+                unit="overlay_rows",
+                rows=[],
+                residuals=(absent,),
+                dropped_universe_members=1,
+            ),
+        )
 
     graph = build_legal_surface_graph(xml_bytes, statute_id)
-    return graph_to_overlay_rows(graph), []
+    rows = graph_to_overlay_rows(graph)
+    return FiProjectionResult(
+        FilterResult(accepted_items=tuple(rows)),
+        coverage=_build_projection_coverage(
+            unit="overlay_rows",
+            rows=rows,
+            residuals=(),
+            dropped_universe_members=0,
+        ),
+    )
+
+
+# ── Parallel-harness adapters ─────────────────────────────────────────────────
+# ``_parallel_corpus.project_corpus_parallel`` (shared by every export_fi_* tool)
+# fixes the per-statute projector return to ``(rows, diag_rows)`` of plain dicts.
+# These adapters drive the carrier-returning projectors and flatten the typed
+# ``residuals`` lane onto the diagnostics list, tagging each with the fields the
+# entrypoint needs to reassemble a corpus-level CoverageCertificate (and the
+# blocking flag the console branch reads). The accepted rows are returned
+# unchanged → byte-identity is preserved.
+
+_PROJECTION_RESIDUAL_DIAG_KIND = "fi_projection_residual"
+
+
+def _residual_to_diag_row(residual: Residual) -> Dict[str, Any]:
+    return {
+        "kind": _PROJECTION_RESIDUAL_DIAG_KIND,
+        "residual_kind": residual.kind,
+        "reason": residual.reason,
+        "scope": residual.scope,
+        "statute_id": residual.source_unit_id,
+        "blocking": residual.blocking,
+        # An xml-absent residual is a dropped universe member (the coverage
+        # ``violation`` class); any other diagnostic is a ``residual``. The
+        # entrypoint partitions the corpus account on this marker.
+        "is_universe_drop": "statute_xml_absent" in residual.reason,
+    }
+
+
+def _project_interlinks_rows_and_diags(
+    statute_id: str,
+    store: Any,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Parallel-harness adapter: ``(rows, residual_diag_rows)`` for interlinks."""
+    projection = _project_interlinks_for_statute(statute_id, store)
+    return (
+        list(projection.rows),
+        [_residual_to_diag_row(residual) for residual in projection.residuals],
+    )
+
+
+def _project_overlays_rows_and_diags(
+    statute_id: str,
+    store: Any,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Parallel-harness adapter: ``(rows, residual_diag_rows)`` for overlays."""
+    projection = _project_overlays_for_statute(statute_id, store)
+    return (
+        list(projection.rows),
+        [_residual_to_diag_row(residual) for residual in projection.residuals],
+    )
+
+
+def _corpus_projection_coverage(
+    *,
+    unit: str,
+    rows: List[Dict[str, Any]],
+    residual_diag_rows: List[Dict[str, Any]],
+) -> CoverageCertificate:
+    """Reassemble a corpus-level CoverageCertificate from the flattened lanes."""
+    drops = sum(1 for d in residual_diag_rows if d.get("is_universe_drop"))
+    residual_count = len(residual_diag_rows) - drops
+    return CoverageCertificate(
+        unit=unit,
+        total=len(rows) + residual_count + drops,
+        owned=len(rows),
+        residual=residual_count,
+        violation=drops,
+        totality_claimed=True,
+    )
+
+
+def _emit_projection_residual_branch(
+    *,
+    label: str,
+    residual_diag_rows: List[Dict[str, Any]],
+) -> int:
+    """Read the residual lane and fail-loud on blocking residue (export console).
+
+    Mirrors the ``interlink_targets.project_fi_interlinks_for_transition_graph``
+    console convention. Returns the number of blocking residuals surfaced.
+    """
+    blocking = [d for d in residual_diag_rows if d.get("blocking")]
+    if blocking:
+        sample = "; ".join(str(d.get("reason", "")) for d in blocking[:5])
+        print(
+            f"[export] WARNING: fi {label} carry {len(blocking)} blocking "
+            f"projection residual(s) that are NOT emitted as rows "
+            f"(dropped universe members / blocking diagnostics): {sample}",
+            file=sys.stderr,
+            flush=True,
+        )
+    return len(blocking)
 
 
 def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> int:
@@ -196,11 +440,39 @@ def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
     return table.replace_schema_metadata(meta)
 
 
+def _coverage_leaf(coverage: CoverageCertificate) -> Dict[str, Any]:
+    """The honest per-table projection-coverage leaf (rank-21 shape)."""
+    return {
+        "universe_kind": "corpus_statute_set",
+        "address_source": "export_fi_interlinks.corpus",
+        "unit": coverage.unit,
+        "total": coverage.total,
+        "row_count": coverage.owned,
+        "residual_count": coverage.residual,
+        "omitted_row_count": coverage.violation,
+        "is_partition": coverage.is_partition(),
+        "is_clean": coverage.is_clean,
+    }
+
+
+def _write_coverage_leaf(path: Path, coverage: CoverageCertificate) -> None:
+    """Write the coverage leaf as a JSON sidecar so the artifact carries an
+    honest per-table account even when pyarrow is unavailable. A
+    ``violation > 0`` (silent drop) is then a recorded, checkable fact."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(_coverage_leaf(coverage), ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 def _try_write_parquet(
     path: Path,
     rows: List[Dict[str, Any]],
     compile_metadata: Any = None,
     empty_schema_columns: Tuple[str, ...] = INTERLINK_ROW_COLUMNS,
+    *,
+    coverage: Optional[CoverageCertificate] = None,
 ) -> bool:
     try:
         import pyarrow as pa
@@ -214,6 +486,13 @@ def _try_write_parquet(
         schema = pa.schema([pa.field(col, pa.string()) for col in empty_schema_columns])
         table = pa.table({col: [] for col in schema.names}, schema=schema)
     table = _attach_compile_metadata(table, compile_metadata)
+    if coverage is not None:
+        existing = table.schema.metadata or {}
+        meta = dict(existing)
+        meta[b"lawvm.projection_coverage"] = json.dumps(
+            _coverage_leaf(coverage), ensure_ascii=False, sort_keys=True
+        ).encode()
+        table = table.replace_schema_metadata(meta)
     path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, str(path), compression="zstd")
     return True
@@ -236,10 +515,13 @@ def export_fi_interlinks(
     from lawvm.tools._parallel_corpus import project_corpus_parallel
 
     statute_ids = [sid for _, sid in corpus]
+    # The carrier-returning projectors are driven through the parallel-harness
+    # adapters, which flatten the typed ``residuals`` lane onto the diagnostics
+    # list (preserving the byte-identical accepted rows).
     all_rows, all_diagnostics = project_corpus_parallel(
         statute_ids=statute_ids,
-        projector_ref=(__name__, "_project_interlinks_for_statute"),
-        serial_projector=_project_interlinks_for_statute,
+        projector_ref=(__name__, "_project_interlinks_rows_and_diags"),
+        serial_projector=_project_interlinks_rows_and_diags,
         store=store,
         workers=workers,
     )
@@ -248,12 +530,29 @@ def export_fi_interlinks(
         f"{len(statute_ids):,} statutes"
     )
 
+    # BRANCH on the projection account (WAIST #10): read the residual lane and
+    # fail-loud on blocking residue (dropped universe members), and reassemble
+    # the corpus CoverageCertificate so a silent drop becomes a recorded,
+    # checkable fact (the coverage leaf) rather than a clean-looking artifact.
+    _emit_projection_residual_branch(label="interlinks", residual_diag_rows=all_diagnostics)
+    interlinks_coverage = _corpus_projection_coverage(
+        unit="interlink_rows",
+        rows=all_rows,
+        residual_diag_rows=all_diagnostics,
+    )
+
     out = Path(data_dir)
     out.mkdir(parents=True, exist_ok=True)
     jsonl_count = _write_jsonl(out / "lawvm_interlinks.jsonl", all_rows)
+    _write_coverage_leaf(out / "lawvm_interlinks.coverage.json", interlinks_coverage)
 
     if use_parquet:
-        ok = _try_write_parquet(out / "lawvm_interlinks.parquet", all_rows, compile_metadata)
+        ok = _try_write_parquet(
+            out / "lawvm_interlinks.parquet",
+            all_rows,
+            compile_metadata,
+            coverage=interlinks_coverage,
+        )
         if ok:
             print(f"  lawvm_interlinks: {jsonl_count:,} rows (Parquet + JSONL)")
         else:
@@ -272,10 +571,10 @@ def export_fi_interlinks(
     # surface node (defined terms, term-uses, temporal markers, delegation /
     # sanction / exception frames, actor/modal frames, references). Placeable by
     # the SAME rendered-span columns the interlink rows carry.
-    overlay_rows, _ = project_corpus_parallel(
+    overlay_rows, overlay_diagnostics = project_corpus_parallel(
         statute_ids=statute_ids,
-        projector_ref=(__name__, "_project_overlays_for_statute"),
-        serial_projector=_project_overlays_for_statute,
+        projector_ref=(__name__, "_project_overlays_rows_and_diags"),
+        serial_projector=_project_overlays_rows_and_diags,
         store=store,
         workers=workers,
     )
@@ -283,13 +582,23 @@ def export_fi_interlinks(
         f"  surface_overlays: {len(overlay_rows):,} rows over "
         f"{len(statute_ids):,} statutes"
     )
+    _emit_projection_residual_branch(
+        label="surface_overlays", residual_diag_rows=overlay_diagnostics
+    )
+    overlays_coverage = _corpus_projection_coverage(
+        unit="overlay_rows",
+        rows=overlay_rows,
+        residual_diag_rows=overlay_diagnostics,
+    )
     overlay_jsonl_count = _write_jsonl(out / "lawvm_surface_overlays.jsonl", overlay_rows)
+    _write_coverage_leaf(out / "lawvm_surface_overlays.coverage.json", overlays_coverage)
     if use_parquet:
         ok = _try_write_parquet(
             out / "lawvm_surface_overlays.parquet",
             overlay_rows,
             compile_metadata,
             empty_schema_columns=OVERLAY_ROW_COLUMNS,
+            coverage=overlays_coverage,
         )
         if ok:
             print(f"  lawvm_surface_overlays: {overlay_jsonl_count:,} rows (Parquet + JSONL)")

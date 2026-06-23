@@ -213,6 +213,45 @@ def _ancestor_snapshot_carries_path(
     return False
 
 
+def _version_rank(version: ProvisionVersion) -> tuple[str, str]:
+    """Return the ordering key used to compare selected PIT versions."""
+    return (version.effective, version.enacted)
+
+
+def _suppress_stale_descendant_overlays(
+    active: dict[LegalAddress, Optional[IRNode]],
+    active_versions: dict[LegalAddress, ProvisionVersion],
+) -> tuple[dict[LegalAddress, Optional[IRNode]], dict[LegalAddress, ProvisionVersion]]:
+    """Drop older descendant overlays already carried by a complete parent snapshot."""
+    filtered_active = dict(active)
+    filtered_versions = dict(active_versions)
+    for address in sorted(active, key=lambda candidate: len(candidate.path), reverse=True):
+        content = filtered_active.get(address)
+        if content is None:
+            continue
+        descendant_version = filtered_versions.get(address)
+        if descendant_version is None:
+            continue
+        for depth in range(len(address.path) - 1, 0, -1):
+            ancestor = LegalAddress(path=address.path[:depth])
+            ancestor_content = filtered_active.get(ancestor)
+            if ancestor_content is None:
+                continue
+            ancestor_version = filtered_versions.get(ancestor)
+            if ancestor_version is None:
+                continue
+            if not _node_is_complete_snapshot_owner(ancestor_content):
+                continue
+            if _version_rank(ancestor_version) <= _version_rank(descendant_version):
+                continue
+            if not _node_has_relative_address(ancestor_content, address.path[depth:]):
+                continue
+            filtered_active.pop(address, None)
+            filtered_versions.pop(address, None)
+            break
+    return filtered_active, filtered_versions
+
+
 def _base_child_matches_active_descendant(
     child: IRNode,
     child_path: TreePath,
@@ -758,6 +797,7 @@ def materialize_body(
             if depth == 1:
                 top_keys.add(parent)
 
+    active, active_versions = _suppress_stale_descendant_overlays(active, active_versions)
     active_child_overrides = _build_active_child_overrides(active)
 
     if base is None:

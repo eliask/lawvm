@@ -83,6 +83,18 @@ _NUMBERED_TABLE_TARGET_RE = re.compile(
     r"tauluk(?:ko|on)\s+(?P<table>\d{1,4}+\s{0,3}+[a-z]?)\b",
     re.I,
 )
+_ILLATIVE_SECTION_SUBSECTION_INSERT_RE = re.compile(
+    r"(?P<labels>(?:" + _SEC_LABEL_RANGE + r")"
+    r"(?:\s{0,3}(?:,|ja|sekä)\s{0,3}(?:" + _SEC_LABEL_RANGE + r"))*)"
+    r"\s*§\s*:\s*(?:ään|aan)\b"
+    r"(?=[^§.;]{0,180}?\bmoment(?:ti|in)\b)",
+    re.I,
+)
+_PRECEDING_ILLATIVE_SECTION_SIBLING_RE = re.compile(
+    r"(?P<section>\d{1,4}+\s{0,3}+[a-z]?)\s*§\s*:\s*(?:ään|aan)\s+"
+    r"(?:ja|sekä)\s*$",
+    re.I,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +198,158 @@ def collect_johto_moment_targets(johto_text: str) -> dict[str, frozenset[int]]:
     return {section: frozenset(moments) for section, moments in targets.items()}
 
 
+def collect_johto_whole_section_targets(johto_text: str) -> frozenset[str]:
+    """Return section labels parsed as whole-section targets in the preamble.
+
+    Unlike ``collect_johto_mentioned_section_labels``, this intentionally does
+    not use the supplemental section-site anchor. The anchor captures declined
+    item-like insertion sites such as ``13 §:ään ... uusi merkkiä 141 a koskeva
+    kohta`` for broad body-coverage guarding; those sites must not authorize a
+    section-level omission merge.
+    """
+    targets: set[str] = set()
+    for addr in scan_legal_addresses(johto_text):
+        if (
+            not addr.section
+            or addr.subsection is not None
+            or addr.item is not None
+            or addr.subitem is not None
+            or addr.special
+        ):
+            continue
+        section = _norm_num_token(addr.section)
+        if section:
+            targets.add(section)
+    return frozenset(targets)
+
+
+@functools.lru_cache(maxsize=8192)
+def collect_johto_named_subprovision_section_targets(johto_text: str) -> frozenset[str]:
+    """Return sections whose johtolause target is a named sub-provision.
+
+    Drafting such as ``16 §:n merkkiä 317 koskeva kohta`` names a row-like
+    sub-provision by description, not the host section as a whole. These labels
+    are negative evidence for uncovered-body omission merge: until LawVM has a
+    typed address for the named row, recovery must not widen the target to a
+    whole-section replacement.
+    """
+    if "§" not in johto_text or "koht" not in johto_text:
+        return frozenset()
+
+    from lawvm.finland.johtolause.lexer import tokenize
+    from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs
+    from lawvm.finland.johtolause.surface_model import (
+        SurfaceScopeBlock,
+        SurfaceTargetRef,
+        TargetKind,
+    )
+    from lawvm.finland.parser_facade import parse_tokens_production
+
+    raw_tokens = tokenize(johto_text)
+    tokens, jolloin_pairs = apply_annotations_with_jolloin_pairs(raw_tokens)
+    parsed = parse_tokens_production(
+        tokens,
+        jolloin_renumber_pairs=jolloin_pairs if jolloin_pairs else None,
+    )
+
+    labels: set[str] = set()
+
+    def visit_node(node: object) -> None:
+        if isinstance(node, SurfaceScopeBlock):
+            for child in node.targets:
+                visit_node(child)
+            return
+        if not isinstance(node, SurfaceTargetRef):
+            return
+        if node.kind is not TargetKind.SECTION:
+            return
+        if not any(
+            sub.special and sub.facet is None and not sub.momentti and not sub.item
+            for sub in node.sub_refs
+        ):
+            return
+        label = _norm_num_token(node.label)
+        if label:
+            labels.add(label)
+
+    for group in parsed.clause.verb_groups:
+        for node in group.nodes:
+            visit_node(node)
+    return frozenset(labels)
+
+
+def collect_johto_insert_subsection_section_targets(johto_text: str) -> frozenset[str]:
+    """Return sections targeted by ``N §:ään uusi M momentti`` insertions.
+
+    This is narrower than a section mention: it authorizes sparse omission
+    merge only for subsection insertions into an existing section. Item/special
+    insertion phrases such as ``uusi merkkiä ... koskeva kohta`` deliberately do
+    not match.
+    """
+    if "§:" not in johto_text or "moment" not in johto_text:
+        return frozenset()
+    targets: set[str] = set()
+    # lawvm-regex: owning_parser bounded illative subsection-insert anchor over owned johto, supplementing the scan_legal_addresses grammar driver; not a cross-plane raw_text read
+    for match in _ILLATIVE_SECTION_SUBSECTION_INSERT_RE.finditer(johto_text):
+        targets.update(_expand_section_label_run(match.group("labels")))
+        prefix = johto_text[max(0, match.start() - 80) : match.start()]
+        # lawvm-regex: owning_parser bounded preceding-section sibling anchor over owned johto window; not a cross-plane raw_text read
+        sibling = _PRECEDING_ILLATIVE_SECTION_SIBLING_RE.search(prefix)
+        if sibling:
+            section = _norm_num_token(sibling.group("section"))
+            if section:
+                targets.add(section)
+    return frozenset(targets)
+
+
+def collect_johto_insert_section_targets(johto_text: str) -> frozenset[str]:
+    """Return sections targeted by ``lisätään ... uusi N §`` insertions."""
+    if "lisätään" not in johto_text and "lisataan" not in johto_text:
+        return frozenset()
+
+    from lawvm.finland.johtolause.lexer import tokenize
+
+    tokens = tokenize(johto_text)
+    targets: set[str] = set()
+    in_insert_group = False
+    idx = 0
+    while idx < len(tokens):
+        token = tokens[idx]
+        if token.lemma == "lisätä":
+            in_insert_group = True
+            idx += 1
+            continue
+        if not in_insert_group:
+            idx += 1
+            continue
+        if token.cat != "UUSI":
+            idx += 1
+            continue
+
+        labels: list[str] = []
+        scan_idx = idx + 1
+        while scan_idx < len(tokens):
+            scan = tokens[scan_idx]
+            if scan.cat == "NUM":
+                labels.append(scan.text)
+                scan_idx += 1
+                continue
+            if scan.cat == "CONJ" or scan.text == ",":
+                scan_idx += 1
+                continue
+            if scan.cat == "PYKALA" and scan.case in {"", "NOM"}:
+                targets.update(
+                    label
+                    for label in (_norm_num_token(raw) for raw in labels)
+                    if label
+                )
+                idx = scan_idx
+                break
+            break
+        idx += 1
+    return frozenset(targets)
+
+
 @functools.lru_cache(maxsize=8192)
 def collect_johto_numbered_table_targets(johto_text: str) -> tuple[NumberedTableTarget, ...]:
     """Return explicit ``N §:n taulukko M`` table targets from a Finnish johtolause."""
@@ -265,6 +429,7 @@ def collect_johto_mentioned_section_labels_frozenset(johto_text: str) -> frozens
 
     # Anchor supplement: § sites the grammar declined/could-not-lex. Capturing
     # the flat number-run before the § keeps these mentioned sections in scope.
+    # lawvm-regex: owning_parser bounded §-site anchor floor over owned johto for sites the grammar declined/could-not-lex (proven strict superset of legacy); not a cross-plane raw_text read
     for match in _SECTION_SITE_ANCHOR_RE.finditer(johto_text):
         labels.update(_expand_section_label_run(match.group(1)))
 
@@ -279,6 +444,7 @@ def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMe
     moved_section_destinations: list[MovedSectionDestination] = []
     seen_moved_destinations: set[tuple[str, str]] = set()
 
+    # lawvm-regex: owning_parser bounded new-chapter ownership-clue anchor over owned johto; not a cross-plane raw_text read
     for match in _NEW_CHAPTER_RE.finditer(johto_text):
         start_label = _norm_num_token(match.group(1)).removesuffix("luku")
         end_label = _norm_num_token(match.group(2)).removesuffix("luku") if match.group(2) else None
@@ -289,11 +455,13 @@ def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMe
         elif start_label:
             new_chapter_labels.add(start_label)
 
+    # lawvm-regex: owning_parser bounded move-destination chapter anchor over owned johto; not a cross-plane raw_text read
     for match in _MOVE_DESTINATION_CHAPTER_RE.finditer(johto_text):
         dest_chapter = _norm_num_token(match.group(1)).removesuffix("luku")
         if dest_chapter:
             moved_destination_chapter_labels.add(dest_chapter)
 
+    # lawvm-regex: owning_parser bounded section->chapter move-pairing anchor over owned johto; not a cross-plane raw_text read
     for match in _MOVE_SECTION_TO_CHAPTER_RE.finditer(johto_text):
         source_label = _norm_num_token(match.group(1))
         dest_chapter = _norm_num_token(match.group(2)).removesuffix("luku")
@@ -307,6 +475,7 @@ def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMe
 
     if len(new_chapter_labels) == 1:
         (new_chapter_label,) = tuple(new_chapter_labels)
+        # lawvm-regex: owning_parser bounded anaphor anchor over owned johto; the section list itself is parsed by scan_legal_addresses (grammar), regex only ties it to the declared new-chapter antecedent; not a cross-plane raw_text read
         for match in _ANAPHORIC_NEW_CHAPTER_MOVE_TAIL_RE.finditer(johto_text):
             for addr in scan_legal_addresses(match.group("section_tail")):
                 if (
@@ -324,12 +493,16 @@ def collect_johto_chapter_scope_mentions(johto_text: str) -> JohtoChapterScopeMe
                     destination_chapter_label=new_chapter_label,
                 )
 
+    # lawvm-regex: owning_parser muutetaan keyword presence guard over owned johto; not a cross-plane raw_text read
     if _MUUTETAAN_RE.search(johto_text):
+        # lawvm-regex: owning_parser bounded `luku` anchor windowing over owned johto; not a cross-plane raw_text read
         for luku_match in _LUKU_RE.finditer(johto_text):
             start = max(0, luku_match.start() - 200)
             prefix = johto_text[start : luku_match.start()]
+            # lawvm-regex: owning_parser chapter-number anchor lexer over the bounded prefix window of owned johto; not a cross-plane raw_text read
             for range_match in _CHAPTER_NUMBER_RE.finditer(prefix):
                 between = prefix[range_match.end() :]
+                # lawvm-regex: owning_parser §/luvun disambiguation guard within the owned johto window; not a cross-plane raw_text read
                 if _SECTION_OR_GENITIVE_CHAPTER_RE.search(between):
                     continue
                 start_chapter = _norm_num_token(range_match.group(1)).removesuffix("luku")

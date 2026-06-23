@@ -1,0 +1,5 @@
+{
+  "_doc": "Monotone confidence-as-control ratchet baseline (registry OV-03). Counts UN-waived if/while/ternary tests that compare a confidence/certified/certainty/selected-named value against a raw numeric or string LITERAL threshold (a typed-enum / None / bool branch is sanctioned and NOT counted). Per-file 'unwaived' counts may only FALL; a fall must be committed (regenerate with `uv run python scripts/inventory_control_flow_smells.py --ratchet confidence --update-baseline`). Waive with `# lawvm-confidence-control: <reason>`. See tests/test_confidence_control_ratchet.py.",
+  "total_unwaived": 0,
+  "unwaived_counts": {}
+}

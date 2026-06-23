@@ -12,6 +12,7 @@ In LawVM terms, this is part of the 'Source Fact Extraction' layer for Finland.
 
 import argparse
 import csv
+import datetime as dt
 import fcntl
 import json
 import os
@@ -30,7 +31,8 @@ from lawvm.corpus_store import (
     get_corpus_store,
 )
 from lawvm.finland.citation_routing import johtolause_cited_target_ids
-from lawvm.finland.metadata import get_johtolause
+from lawvm.finland.fi_dates import parse_fi_day_month_year
+from lawvm.finland.metadata import _statute_issue_date, get_johtolause
 from lawvm.finland.vts import extract_voimaantulo_repeals
 
 # Pattern for /akn/fi/act/statute-consolidated/YEAR/NUMBER...
@@ -40,7 +42,8 @@ REF_PATTERN = re.compile(r'/akn/fi/act/statute(?:-consolidated)?/(\d{4})/(\d+(?:
 # Fallback cache path when no canonical data checkout is configured.
 _DEFAULT_CACHE_CSV = Path(".cache/finland/amendment_parents.csv")
 _DEFAULT_CACHE_META = _DEFAULT_CACHE_CSV.with_suffix(".meta.json")
-_CSV_HEADER = ["amendment_id", "parent_id", "edge_kind"]
+_INDEX_SCHEMA_VERSION = "source_vts_title_date_v2"
+_CSV_HEADER = ["amendment_id", "parent_id", "edge_kind", "index_schema_version"]
 _DEFAULT_CACHE_ENV = "LAWVM_FINLAND_AMENDMENT_INDEX_CACHE"
 
 
@@ -50,6 +53,26 @@ class _AmendmentIndexSourceKey:
     corpus_size: int
     corpus_mtime_ns: int
     cache_csv_path: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ParentTitleDateCandidate:
+    statute_id: str
+    title: str
+    issue_date: dt.date
+
+
+_VTS_DATED_PARENT_TITLE_RE = re.compile(
+    # lawvm-regex: owning_parser source-VTS parent-title DATE FRAME locator; date
+    # is parsed by parse_fi_day_month_year and parent authority is validated by
+    # extract_voimaantulo_repeals(parent_id, parent_title), so this only proposes
+    # issue-date-index candidates for the typed VTS extractor.
+    r"\b(?P<day>\d{1,2})\.?\s+päivänä\s+"
+    r"(?P<month>[a-zäöå]+)\s+"
+    r"(?P<year>\d{4})\s+annetun\s+"
+    r"(?P<instrument>lain|asetuksen|päätöksen)\b",
+    re.IGNORECASE,
+)
 
 
 def _default_cache_csv() -> Path:
@@ -117,6 +140,7 @@ def _extract_explicit_cross_statute_vts_parents(
     xml_data: bytes,
     amendment_id: str,
     *,
+    parent_title_date_candidates: dict[dt.date, tuple[_ParentTitleDateCandidate, ...]] | None = None,
     diagnostics_out: list[dict[str, object]] | None = None,
 ) -> Set[str]:
     """Extract explicit parent statute IDs mentioned in VTS cross-statute clauses.
@@ -153,6 +177,7 @@ def _extract_explicit_cross_statute_vts_parents(
         return set()
 
     cited_ids: Set[str] = set()
+    dated_parent_candidates: dict[str, _ParentTitleDateCandidate] = {}
     elements = tree.findall(".//{*}section") + tree.findall('.//{*}hcontainer[@eId="entryIntoForce"]')
     seen_texts: Set[str] = set()
     for el in elements:
@@ -174,6 +199,18 @@ def _extract_explicit_cross_statute_vts_parents(
             norm = _normalize_source_citation_id(raw_citation, source_year)
             if norm and norm != amendment_id:
                 cited_ids.add(norm)
+        if parent_title_date_candidates:
+            for match in _VTS_DATED_PARENT_TITLE_RE.finditer(target_zone):
+                issue_date = parse_fi_day_month_year(
+                    match.group("day"),
+                    match.group("month"),
+                    match.group("year"),
+                )
+                if issue_date is None:
+                    continue
+                for candidate in parent_title_date_candidates.get(issue_date, ()):
+                    if candidate.statute_id != amendment_id:
+                        dated_parent_candidates.setdefault(candidate.statute_id, candidate)
 
     candidates: Set[str] = set()
     for parent_id in cited_ids:
@@ -196,7 +233,52 @@ def _extract_explicit_cross_statute_vts_parents(
                 },
             )
             continue
+    if dated_parent_candidates:
+        for parent_id, candidate in sorted(dated_parent_candidates.items()):
+            try:
+                if extract_voimaantulo_repeals(
+                    xml_data,
+                    parent_id,
+                    parent_title=candidate.title,
+                ):
+                    candidates.add(parent_id)
+            except Exception as exc:
+                _append_amendment_index_diagnostic(
+                    diagnostics_out,
+                    rule_id="fi_amendment_index_source_vts_parent_extraction_failed",
+                    phase="parse",
+                    family="source_pathology",
+                    reason="Finland amendment index skipped a candidate source VTS parent because extraction failed.",
+                    detail={
+                        "amendment_id": amendment_id,
+                        "parent_id": parent_id,
+                        "edge_kind": "source_vts_explicit",
+                        "exception_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                )
+                continue
     return candidates
+
+
+def _parent_title_date_candidate(
+    parent_id: str,
+    root: etree._Element,
+) -> _ParentTitleDateCandidate | None:
+    title_el = root.find(".//{*}docTitle")
+    if title_el is None:
+        return None
+    title = " ".join(etree.tostring(title_el, method="text", encoding="unicode").split())
+    if not title:
+        return None
+    issue_date = _statute_issue_date(root)
+    if issue_date is None:
+        return None
+    return _ParentTitleDateCandidate(
+        statute_id=parent_id,
+        title=title,
+        issue_date=issue_date,
+    )
 
 def _johtolause_cited_parents(xml_data: bytes, amendment_id: str) -> Set[str]:
     """Target statute IDs named by an amendment's johtolause (enacting clause).
@@ -285,6 +367,7 @@ def build_amendment_index(
     # parent so an over-broad ``amendedBy`` entry cannot attach an amendment to
     # a statute its enacting clause never names.
     oracle_candidates: Set[Tuple[str, str]] = set()
+    parent_title_date_candidates: dict[dt.date, list[_ParentTitleDateCandidate]] = {}
 
     # Use oracle_path_index() to enumerate sids, then read each statute via
     # its already-selected locator. Calling read_oracle(sid) here instead
@@ -331,6 +414,12 @@ def build_amendment_index(
                 )
                 continue
             root = etree.fromstring(xml_data)
+            title_date_candidate = _parent_title_date_candidate(parent_id, root)
+            if title_date_candidate is not None:
+                parent_title_date_candidates.setdefault(
+                    title_date_candidate.issue_date,
+                    [],
+                ).append(title_date_candidate)
             for ref_elem in cast(list[etree._Element], root.xpath('.//*[local-name()="amendedBy"]//*[local-name()="ref"]')):
                 href = ref_elem.get('href', '')
                 m = REF_PATTERN.search(href)
@@ -418,6 +507,10 @@ def build_amendment_index(
     # Supplement from source VTS clauses. These are not represented by
     # consolidated amendedBy metadata when an amendment touches another statute
     # only via entry-into-force prose.
+    parent_title_date_index = {
+        key: tuple(value)
+        for key, value in parent_title_date_candidates.items()
+    }
     statute_ids = sorted(cs.list_statute_ids())
     for n, amendment_id in enumerate(statute_ids, start=1):
         if n % 5000 == 0:
@@ -440,6 +533,7 @@ def build_amendment_index(
             for parent_id in _extract_explicit_cross_statute_vts_parents(
                 xml_data,
                 amendment_id,
+                parent_title_date_candidates=parent_title_date_index,
                 diagnostics_out=diagnostics_out,
             ):
                 edges.add((amendment_id, parent_id, "source_vts_explicit"))
@@ -593,7 +687,7 @@ def _write_amendment_index_cache(
     with open(csv_tmp_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(_CSV_HEADER)
-        writer.writerows(edges)
+        writer.writerows((*edge, _INDEX_SCHEMA_VERSION) for edge in edges)
     os.replace(csv_tmp_path, csv_path)
     _write_cache_meta_atomic(meta_path, source_fingerprint)
 
@@ -619,7 +713,7 @@ def _amendment_index_cache_is_current(
     if not csv_path.exists():
         return False
     header = _read_csv_header(csv_path)
-    header_is_current = header[:3] == _CSV_HEADER
+    header_is_current = header == _CSV_HEADER
     if not header_is_current:
         return False
     if source_fingerprint is None:
@@ -645,7 +739,7 @@ def _amendment_index_rebuild_reason(
     if not csv_path.exists():
         return f"[amendment_index] Building {csv_path}..."
     header = _read_csv_header(csv_path)
-    if header[:3] != _CSV_HEADER:
+    if header != _CSV_HEADER:
         return f"[amendment_index] {csv_path} schema is stale — rebuilding"
     if source_fingerprint is None:
         return f"[amendment_index] Building {csv_path}..."
@@ -780,7 +874,7 @@ def main():
         with open(args.out, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(_CSV_HEADER)
-            writer.writerows(edges)
+            writer.writerows((*edge, _INDEX_SCHEMA_VERSION) for edge in edges)
 
         print(f"Successfully wrote {len(edges)} mappings to {args.out}")
     except (FileNotFoundError, OSError, etree.XMLSyntaxError) as e:

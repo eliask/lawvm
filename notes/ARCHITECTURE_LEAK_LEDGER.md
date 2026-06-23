@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Living backlog, headline STALE. Kind: Descriptive (EV-ranked leak backlog vs LAWVM_PIPELINE_CONTRACT.md). The '~75% to contract / StageResult[T] realized nowhere (rank 12) / 10-of-10 waists mixed' headline is outdated — StageResult[T] is now realized (core/stage_result.py + many consumers) and the StageResult endgame + seam conversions landed; several ranks (10, 17) already marked RESOLVED. Re-score the headline and rank-12 before using as a work queue.
+
 # Architecture Leak Ledger
 
 > EV-ranked backlog of representation/typing/authority leaks found by the e2e architecture-coherence audit (Pro-validated), measured against `notes/LAWVM_PIPELINE_CONTRACT.md`. This is the *audit-and-enforce* work queue Pro called for — **not** a rewrite plan. Each row resolves to a witnessed/typed object, never a silent path.
@@ -9,7 +11,7 @@
 3. **Coverage certificates exist but are detached from the live path** (ranks 2, 8, 11, 21) — `materialize_pit` discards the cert its `_ex` twin computes; `LAWVM_PARSE_TOTALITY` (the only silent-drop detector) is OFF by default; exports ship no coverage leaf.
 4. **One author-set authority leak at the fi_refs export** (rank 4) — deterministic rows stamped `replay_authorized=True`/`HUMAN_REVIEWED`/`SPAN_VERIFIED`.
 
-Boundary matrix: 10/10 waists `mixed` (none fully type-carried, none fully convention-only). Audit findings: representation_regression 4(0 high), untyped_boundary 5(1 high), filter_conservation 3(0 high), authority_bleed 7(0 high), guard_liveness 3(0 high).
+Boundary matrix: 10/10 waists now fully type-carried (StageResult endgame complete; this superseded the earlier `mixed`/none-type-carried state). Audit findings: representation_regression 4(0 high), untyped_boundary 5(1 high), filter_conservation 3(0 high), authority_bleed 7(0 high), guard_liveness 3(0 high).
 
 **`witnessed_or_silent`** — `silent_violation` = no typed record (highest priority); `needs_witness` = firewalled-but-untyped; `witnessed_ok` = hardening target, recorded today.
 
@@ -97,8 +99,9 @@ reconciliation is deliberately landing first. Canonical vocabulary owner is
 - Namespace every bare `status` field (e.g. `certificate_status`,
   `projection_status`, `resolution_status`, `authorization_status`) so no public
   or cross-phase schema carries an unqualified `status`.
-- `StageResult[T]` adoption beyond the two seams above (rank-12, doc→code; the
-  name has zero current src/ hits). Incremental, NOT a mass migration: adopt at
+- `StageResult[T]` adoption beyond the two seams above (rank-12, doc→code; now
+  live in `src/lawvm/core/stage_result.py` with many consumers — the StageResult
+  endgame reached 10/10 waists type-carried). Incremental, NOT a mass migration: adopt at
   the two seam conversions first, then extend stage-by-stage.
 - `FilterResult`/`PartitionResult` adoption at the remaining silent-drop sites,
   notably FI delegation (rank-14), so accepted/rejected-with-reason lanes are

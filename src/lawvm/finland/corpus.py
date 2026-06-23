@@ -26,6 +26,7 @@ from lawvm.finland.consolidated_store import select_cached_consolidated_path_ind
 from lawvm.finland.consolidated_store import select_cached_consolidated_artifact_with_info
 from lawvm.finland.helpers import _parse_iso_date
 from lawvm.finland.oracle_comparison import normalize_finlex_oracle_comparison_text
+from lawvm.finland.oracle_versioned_children import strip_prior_wording_sibling
 importlib.import_module("lawvm.finland.inline_repeal_stub")
 from lawvm.finland.metadata import (
     _amendment_effective_date,
@@ -243,6 +244,26 @@ def _selected_consolidated_locator_for_statute(
     return locator
 
 
+def get_oracle_selection_provenance(
+    statute_id: str,
+    corpus: Optional[CorpusStore] = None,
+    selector: ConsolidatedArtifactSelector | None = None,
+) -> SelectionProvenance | None:
+    """Return the :class:`SelectionProvenance` for *statute_id*'s selected oracle.
+
+    Reuses the same per-statute selection (and its cache) that the oracle-path
+    accessors use, so callers can surface tolerance/rejection qualifiers without
+    re-running selection or affecting which oracle is chosen.  Returns ``None``
+    when no provenance is available (e.g. the non-archive corpus path).
+    """
+    _locator, provenance = _selected_consolidated_locator_and_provenance_for_statute(
+        statute_id,
+        corpus,
+        selector,
+    )
+    return provenance
+
+
 def get_oracle_path(
     statute_id: str,
     corpus: Optional[CorpusStore] = None,
@@ -451,7 +472,7 @@ def get_consolidated_oracle_reflected_source_vts_children(
 
 
 _FINLEX_ORIGINAL_VERSION_ATTR = "{http://data.finlex.fi/schema/finlex}originalVersion"
-_FINLEX_VERSIONED_EID_SUFFIX_RE = re.compile(r"v\d{8}$")
+_FINLEX_VERSIONED_EID_SUFFIX_RE = re.compile(r"v(?P<version>\d{8})$")
 _ORACLE_FUTURE_REPEAL_NOTICE_RE = re.compile(r"\btulee\s+voimaan\b", re.IGNORECASE)
 
 
@@ -469,19 +490,37 @@ def _finlex_section_eid_base(section_el: etree._Element) -> str:
     return _FINLEX_VERSIONED_EID_SUFFIX_RE.sub("", eid)
 
 
+def _finlex_eid_version_to_statute_id(el: etree._Element) -> str:
+    eid = str(el.get("eId") or "").strip()
+    if not eid:
+        return ""
+    match = _FINLEX_VERSIONED_EID_SUFFIX_RE.search(eid)
+    if match is None:
+        return ""
+    return _finlex_original_version_to_statute_id(match.group("version"))
+
+
+def _finlex_el_has_versioned_eid(el: etree._Element) -> bool:
+    eid = str(el.get("eId") or "").strip()
+    return bool(eid and _FINLEX_VERSIONED_EID_SUFFIX_RE.search(eid))
+
+
 def get_consolidated_oracle_reflected_section_original_versions(
     statute_id: str,
     corpus: Optional[CorpusStore] = None,
     selector: ConsolidatedArtifactSelector | None = None,
 ) -> set[str]:
-    """Return source ids reflected by section-level ``finlex:originalVersion``.
+    """Return source ids reflected by section/provision version markers.
 
     This is a narrow oracle-surface witness for consolidated bodies whose
     ``dateConsolidated`` lags behind the provision text actually present in the
-    selected artifact.  We intentionally use only section-level originalVersion
-    attributes, and ignore future-repeal overlay sections ("tulee voimaan")
-    because those are editorial notices for a future state rather than current
-    body materialization.
+    selected artifact.  We use section-level ``finlex:originalVersion`` and the
+    equivalent Finlex versioned ``eId`` suffix on subsections inside an already
+    versioned section.  The subsection case is needed for mixed-section bodies
+    such as one subsection from a delayed amendment while the surrounding
+    section remains otherwise sourced to an older version.  Future-repeal
+    overlay sections ("tulee voimaan") are ignored because those are editorial
+    notices for a future state rather than current body materialization.
     """
     if corpus is None:
         corpus = _get_corpus_store()
@@ -505,17 +544,21 @@ def get_consolidated_oracle_reflected_section_original_versions(
     reflected: set[str] = set()
     for section_el in sections:
         original_version = str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
-        if not original_version:
-            continue
         section_eid_base = _finlex_section_eid_base(section_el)
-        if section_eid_base and section_eid_base in current_section_eid_bases:
-            continue
         section_text = " ".join("".join(str(part) for part in section_el.itertext()).split())
         if _ORACLE_FUTURE_REPEAL_NOTICE_RE.search(section_text):
             continue
-        statute_id_from_version = _finlex_original_version_to_statute_id(original_version)
-        if statute_id_from_version:
-            reflected.add(statute_id_from_version)
+        if original_version:
+            if section_eid_base and section_eid_base in current_section_eid_bases:
+                continue
+            statute_id_from_version = _finlex_original_version_to_statute_id(original_version)
+            if statute_id_from_version:
+                reflected.add(statute_id_from_version)
+        if _finlex_el_has_versioned_eid(section_el):
+            for provision_el in section_el.findall(".//{*}subsection"):
+                statute_id_from_eid = _finlex_eid_version_to_statute_id(provision_el)
+                if statute_id_from_eid:
+                    reflected.add(statute_id_from_eid)
     return reflected
 
 
@@ -800,6 +843,7 @@ def _strip_editorial_note_containers(root: "etree._Element") -> None:
     for name in _STRIP_NAMES:
         for tag in ("hcontainer", "block", "container"):
             for el in cast(List["etree._Element"], root.xpath(f'//*[local-name()="{tag}" and @name="{name}"]')):
+                strip_prior_wording_sibling(el)
                 parent = el.getparent()
                 if parent is not None:
                     parent.remove(el)

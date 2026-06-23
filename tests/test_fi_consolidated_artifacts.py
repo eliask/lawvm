@@ -3,6 +3,8 @@ from __future__ import annotations
 import datetime as dt
 from typing import cast
 
+from lxml import etree
+
 from lawvm.corpus_store import CorpusStore
 from lawvm.finland import consolidated_store
 from lawvm.finland import corpus as fi_corpus
@@ -87,6 +89,37 @@ def _source_xml(*, effective_date: str, issued_date: str | None = None) -> bytes
   </act>
 </akomaNtoso>
 """.encode("utf-8")
+
+
+def test_strip_editorial_notes_removes_prior_wording_sibling() -> None:
+    root = etree.fromstring(
+        b"""<body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+             xmlns:finlex="http://data.finlex.fi/schema/finlex">
+          <section eId="sec_4av20100489">
+            <num>4 a \xc2\xa7</num>
+            <subsection eId="sec_4av20100489__subsec_1v20230053">
+              <content><p>Current first subsection.</p></content>
+            </subsection>
+            <hcontainer eId="note_3" name="noteAuthorial" finlex:outline="huomautus">
+              <content><p>L:lla 53/2023 muutettu 1 momentti tulee voimaan 1.6.2023. Aiempi sanamuoto kuuluu:</p></content>
+            </hcontainer>
+            <subsection eId="sec_4av20100489__subsec_1v20100489">
+              <content><p>Prior first subsection.</p></content>
+            </subsection>
+            <subsection eId="sec_4av20100489__subsec_2v20230806">
+              <content><p>Current second subsection.</p></content>
+            </subsection>
+          </section>
+        </body>"""
+    )
+
+    fi_corpus._strip_editorial_note_containers(root)
+
+    text = etree.tostring(root, method="text", encoding="unicode")
+    assert "Current first subsection." in text
+    assert "Current second subsection." in text
+    assert "Aiempi sanamuoto" not in text
+    assert "Prior first subsection." not in text
 
 
 def test_extract_consolidated_xml_identity_prefers_frbrthis_version() -> None:
@@ -488,7 +521,7 @@ def test_select_cached_consolidated_artifact_bench_comparable_prefers_self_comme
     variant.
 
     Fixture:
-    - ``20250001`` has effective 2025-02-01 and date_consolidated 2024-01-15.
+    - ``20990001`` has effective 2099-02-01 and date_consolidated 2098-01-15.
       Gap = ~383 days → **rejected** by the 180-day tolerance refinement
       added in T5-fix (a3870eea).
     - ``20240012`` has effective 2024-01-01 and date_consolidated 2024-01-15.
@@ -502,6 +535,44 @@ def test_select_cached_consolidated_artifact_bench_comparable_prefers_self_comme
     (commit a3870eea) restored the 180-day tolerance matching the
     long-standing ``corpus.py:404`` convention.
     """
+    class DummyArchive:
+        def locators(self, pattern: str = "%") -> list[str]:
+            assert pattern == "finlex://sd-cons/2014/1429/fin@%/main.xml"
+            return [
+                "finlex://sd-cons/2014/1429/fin@20990001/main.xml",
+                "finlex://sd-cons/2014/1429/fin@20240012/main.xml",
+            ]
+
+        def get(self, url: str) -> bytes | None:
+            payloads = {
+                "finlex://sd-cons/2014/1429/fin@20990001/main.xml": _xml(
+                    frbrthis_version="20990001",
+                    frbrversion_number="20990001",
+                    date_consolidated="2098-01-15",
+                ),
+                "finlex://sd-cons/2014/1429/fin@20240012/main.xml": _xml(
+                    frbrthis_version="20240012",
+                    frbrversion_number="20240012",
+                    date_consolidated="2024-01-15",
+                ),
+                "finlex://sd/2099/1/fin/main.xml": _source_xml(effective_date="2099-02-01"),
+                "finlex://sd/2024/12/fin/main.xml": _source_xml(effective_date="2024-01-01"),
+            }
+            return payloads.get(url)
+
+    artifact = consolidated_store.select_cached_consolidated_artifact(
+        DummyArchive(),
+        "2014/1429",
+        selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+
+    # 180-day tolerance: 20990001 rejected (gap ~383 days); 20240012 wins.
+    assert artifact is not None
+    assert artifact.version_tag == "20240012"
+    assert artifact.canonical_locator == "finlex://sd-cons/2014/1429/fin@20240012/main.xml"
+
+
+def test_select_cached_consolidated_artifact_bench_comparable_keeps_commenced_early_artifact() -> None:
     class DummyArchive:
         def locators(self, pattern: str = "%") -> list[str]:
             assert pattern == "finlex://sd-cons/2014/1429/fin@%/main.xml"
@@ -533,7 +604,5 @@ def test_select_cached_consolidated_artifact_bench_comparable_prefers_self_comme
         selector=ConsolidatedArtifactSelector.bench_comparable(),
     )
 
-    # 180-day tolerance: 20250001 rejected (gap ~383 days); 20240012 wins.
     assert artifact is not None
-    assert artifact.version_tag == "20240012"
-    assert artifact.canonical_locator == "finlex://sd-cons/2014/1429/fin@20240012/main.xml"
+    assert artifact.version_tag == "20250001"

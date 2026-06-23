@@ -188,6 +188,7 @@ def _source_version_witness_detail(
 
 
 def iso_date_prefix(value: str) -> str:
+    # lawvm-regex: prefilter ISO-8601 date-prefix tokenizer on a version-date string; this module enforces replay_claims=False, so it mints no legal state
     match = _ISO_DATE_PREFIX_RE.match(value.strip())
     return match.group(1) if match else ""
 

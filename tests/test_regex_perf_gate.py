@@ -261,11 +261,6 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "(CATEGORY false-positives partially resolved by A18; bounded .{N} "
         "adjacent pairs remain). Pre-existing baseline."
     ),
-    "src/lawvm/finland/ref_mention_extractor.py": (
-        "Pre-existing baseline: verbose plain-text Finnish statute mention "
-        "recognizer is a parser-smell inventory target. Evidence extraction only; "
-        "replace with a structured recognizer when this family is next touched."
-    ),
     "src/lawvm/finland/scope.py": (
         "_SAME_LABEL_MOVE_CLAUSE_RE and _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE are "
         "the grammar-subordinate same-label move ANCHORs (Q6 demotion): every "

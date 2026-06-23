@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+from lawvm.core.filter_result import FilterResult, RejectedItem
+from lawvm.core.stage_result import PartitionResult, Residual
 from lawvm.finland.chapter_seed import _op_targets_chapter
 from lawvm.finland.chapter_seed_targets import (
     ChapterSeedSkipInput,
@@ -74,15 +76,28 @@ class ProcessStructuralPrepareContext:
     replay_print: ReplayPrint
 
     def prepare(self) -> list[AmendmentOp]:
-        ops = self._drop_seeded_chapter_ops(self.ops)
+        # Conservation (Audit C): the seed-skip filter returns a conserving
+        # PartitionResult — accepted (kept) ops + rejected (dropped) ops carrying
+        # the typed ChapterSeedDroppedOp record + a typed Residual naming the
+        # seeded chapters. This method is the production consumer: it reads
+        # ``.rejected`` / ``.residuals`` and surfaces them on the elaboration
+        # observation ledger (the same ledger replay already drains). Nothing is
+        # dropped silently — the drop is the rejected lane.
+        partition = self._drop_seeded_chapter_ops(self.ops)
+        self._record_chapter_seed_skip(partition)
+        ops = list(partition.accepted)
         self._preseed_restructure_plan(ops)
         return ops
 
-    def _drop_seeded_chapter_ops(self, ops: list[AmendmentOp]) -> list[AmendmentOp]:
+    def _drop_seeded_chapter_ops(
+        self, ops: list[AmendmentOp]
+    ) -> PartitionResult[AmendmentOp]:
         # The seeded content is already in state.ir. Re-applying the same ops
-        # would either fail (REPLACE on existing) or duplicate.
+        # would either fail (REPLACE on existing) or duplicate. The matching ops
+        # are not silently dropped — they are routed to the rejected lane with a
+        # typed reason so the conservation account stays total.
         if not self.chapter_seed_skip or not ops:
-            return ops
+            return PartitionResult(FilterResult(accepted_items=tuple(ops)))
 
         seeded_labels = {
             skip.chapter_label
@@ -90,14 +105,59 @@ class ProcessStructuralPrepareContext:
             if skip.amendment_id == self.amendment_id
         }
         if not seeded_labels:
-            return ops
+            return PartitionResult(FilterResult(accepted_items=tuple(ops)))
 
         dropped_ops = [op for op in ops if _op_targets_chapter(op, seeded_labels)]
         if not dropped_ops:
-            return ops
+            return PartitionResult(FilterResult(accepted_items=tuple(ops)))
 
         kept_ops = [op for op in ops if not _op_targets_chapter(op, seeded_labels)]
+        rejected = tuple(
+            RejectedItem(
+                item=op,
+                reason=(
+                    "chapter body was already seeded from this amendment; "
+                    "re-applying matching chapter op would duplicate or fail"
+                ),
+                reason_code=FI_CHAPTER_SEED_SKIP_RULE_ID,
+                blocking=False,
+            )
+            for op in dropped_ops
+        )
+        residuals = tuple(
+            Residual(
+                kind="out_of_scope",
+                reason=(
+                    "chapter body already seeded from this amendment; "
+                    f"chapter(s) {label} matching ops suppressed at structural prepare"
+                ),
+                scope=f"{self.amendment_id}:chapter:{label}",
+                blocking=False,
+            )
+            for label in sorted(seeded_labels)
+        )
+        return PartitionResult(
+            FilterResult(accepted_items=tuple(kept_ops), rejected_items=rejected),
+            residuals=residuals,
+        )
+
+    def _record_chapter_seed_skip(
+        self, partition: PartitionResult[AmendmentOp]
+    ) -> None:
+        """Surface the rejected lane onto the elaboration-observation ledger.
+
+        This is the production consumer of the partition's ``.rejected`` /
+        ``.residuals``: the dropped ops are turned back into the same elaboration
+        observation replay already drains. No-op when nothing was rejected.
+        """
+        if not partition.rejected:
+            return
+
+        dropped_ops = [rejected.item for rejected in partition.rejected]
         dropped_records = tuple(ChapterSeedDroppedOp.from_op(op) for op in dropped_ops)
+        seeded_chapters = sorted(
+            residual.scope.rsplit(":", 1)[-1] for residual in partition.residuals
+        )
         self.elaboration_observations.append(
             {
                 "kind": "ELAB.CHAPTER_SEED_SKIP",
@@ -111,7 +171,7 @@ class ProcessStructuralPrepareContext:
                     "chapter body was already seeded from this amendment; "
                     "re-applying matching chapter op would duplicate or fail"
                 ),
-                "seeded_chapters": sorted(seeded_labels),
+                "seeded_chapters": seeded_chapters,
                 "dropped_count": len(dropped_ops),
                 "dropped_ops": [op.description() for op in dropped_ops],
                 "dropped_op_records": [record.as_detail() for record in dropped_records],
@@ -119,9 +179,8 @@ class ProcessStructuralPrepareContext:
         )
         self.replay_print(
             f"  [{self.amendment_id}] SEED-SKIP: dropped {len(dropped_ops)} op(s) "
-            f"targeting seeded chapter(s) {sorted(seeded_labels)}"
+            f"targeting seeded chapter(s) {seeded_chapters}"
         )
-        return kept_ops
 
     def _preseed_restructure_plan(self, ops: list[AmendmentOp]) -> None:
         # Pre-seed pure relabel restructure plans before the main apply loop so
@@ -129,12 +188,13 @@ class ProcessStructuralPrepareContext:
         # path and the restructure executor. Coverage-aware plans may still be
         # added later during uncovered-body analysis; exact duplicates are
         # suppressed there.
-        if not ops:
+        preseed_ops = [op for op in ops if op.op_type == "RENUMBER"]
+        if not preseed_ops:
             return
         early_plan = build_restructure_plan(
             self.target_statute,
             self.amendment_id,
-            ops=list(ops),
+            ops=preseed_ops,
             uncov_ratio=0.0,
             total_units=0,
             body_unit_ids_by_chapter=None,

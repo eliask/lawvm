@@ -6,6 +6,11 @@ import pytest
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.elaboration_context import (
+    PayloadElaborationContext,
+    ReplayLookups,
+    TargetUnitKind,
+)
 from lawvm.finland.merge import (
     MergeContainerContext,
     _has_section_omissions_ir,
@@ -17,8 +22,9 @@ from lawvm.finland.merge import (
     _merge_subsection_with_omission_ir,
     _multi_subsection_sparse_item_section_replace_merge_ir,
     _paragraph_signatures_ir,
+    _pre_resolve_omissions,
 )
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, get_replay_profile
 
 # ---------------------------------------------------------------------------
 # IRNode fixture helpers
@@ -33,6 +39,10 @@ def _para(label: str, text: str = "") -> IRNode:
     return IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=text)
 
 
+def _subpara(label: str, text: str = "") -> IRNode:
+    return IRNode(kind=IRNodeKind.SUBPARAGRAPH, label=label, text=text)
+
+
 def _omission() -> IRNode:
     return IRNode(kind=IRNodeKind.OMISSION)
 
@@ -43,6 +53,18 @@ def _sec(label: str, *children: IRNode) -> IRNode:
 
 def _content(text: str) -> IRNode:
     return IRNode(kind=IRNodeKind.CONTENT, text=text)
+
+
+def _heading(text: str) -> IRNode:
+    return IRNode(kind=IRNodeKind.HEADING, text=text)
+
+
+def _cross_heading(text: str) -> IRNode:
+    return IRNode(kind=IRNodeKind.CROSS_HEADING, text=text)
+
+
+def _num(text: str) -> IRNode:
+    return IRNode(kind=IRNodeKind.NUM, text=text)
 
 
 def _has_omission(node: IRNode) -> bool:
@@ -956,6 +978,84 @@ def test_merge_section_with_leading_omission_preserves_same_subsection_anchor_pr
     assert labeled_paragraphs == [("1", "Old 1961 substance")]
 
 
+def test_merge_section_inner_omission_replaces_unique_labelled_descendant() -> None:
+    category = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(
+            _content("HALLINNOLLISET KYSYMYKSET"),
+            _subpara("78", "Old automatic transmission text."),
+            _subpara("79", "Preserved code 79."),
+        ),
+    )
+    master_sec = _sec(
+        "4",
+        _sub(
+            "1",
+            _content("Ajokorttimerkinnöissä käytettävät koodit ovat:"),
+            category,
+        ),
+    )
+    amend_sec = _sec(
+        "4",
+        _sub(
+            "1",
+            _content("Ajokorttimerkinnöissä käytettävät koodit ovat:"),
+            _omission(),
+            _para("78.", "New no-clutch text."),
+        ),
+    )
+
+    result = _merge_section_with_omission_ir(master_sec, amend_sec)
+
+    assert result is not None
+    text = irnode_to_text(result)
+    assert "New no-clutch text." in text
+    assert "Old automatic transmission text." not in text
+    assert "Preserved code 79." in text
+    result_sub = next(child for child in result.children if child.kind is IRNodeKind.SUBSECTION)
+    assert result_sub.attrs["lawvm_payload_normalization_rule"] == (
+        "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE",
+    )
+    category_after = next(child for child in result_sub.children if child.kind is IRNodeKind.PARAGRAPH)
+    replaced = next(child for child in category_after.children if child.label == "78")
+    assert replaced.kind is IRNodeKind.SUBPARAGRAPH
+    assert replaced.attrs["lawvm_payload_normalization_rule"] == (
+        "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE",
+    )
+
+
+def test_merge_section_inner_omission_does_not_guess_duplicate_labelled_descendants() -> None:
+    master_sec = _sec(
+        "4",
+        _sub(
+            "1",
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="3",
+                children=(_subpara("78", "First old 78."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="4",
+                children=(_subpara("78", "Second old 78."),),
+            ),
+        ),
+    )
+    amend_sec = _sec(
+        "4",
+        _sub("1", _content("Context"), _omission(), _para("78.", "New text.")),
+    )
+
+    result = _merge_section_with_omission_ir(master_sec, amend_sec)
+
+    assert result is not None
+    result_sub = next(child for child in result.children if child.kind is IRNodeKind.SUBSECTION)
+    assert result_sub.attrs.get("lawvm_payload_normalization_rule") != (
+        "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE",
+    )
+
+
 def test_merge_subsection_with_omission_fails_closed_on_duplicate_paragraph_labels() -> None:
     master_sub = _sub(
         "1",
@@ -1247,6 +1347,50 @@ def test_merge_container_insert_payload_repeats_overlay_not_a_merge_caused_dupli
     assert labels.count("3") == 1
     # The master baseline ("2" once) is never exceeded either.
     assert labels.count("2") == 1
+
+
+def test_container_merge_replaces_cross_heading_context_for_amended_section_span() -> None:
+    master = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="12",
+        children=(
+            _num("12 luku"),
+            _heading("Old chapter heading"),
+            _cross_heading("Old heading for replaced section"),
+            _sec("1", _sub("1", _content("old one"))),
+            _cross_heading("Old heading for preserved tail"),
+            _sec("9", _sub("1", _content("old nine"))),
+        ),
+    )
+    amend = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="12",
+        children=(
+            _num("12 luku"),
+            _heading("New chapter heading"),
+            _cross_heading("New heading for section one"),
+            _sec("1", _sub("1", _content("new one"))),
+            _cross_heading("New heading for inserted section"),
+            _sec("2", _sub("1", _content("new two"))),
+        ),
+    )
+
+    result = _merge_same_numbered_container_insert_ir(master, amend)
+
+    assert result is not None
+    assert [child.text for child in result.children if child.kind is IRNodeKind.CROSS_HEADING] == [
+        "New heading for section one",
+        "New heading for inserted section",
+        "Old heading for preserved tail",
+    ]
+    assert [child.label for child in result.children if child.kind is IRNodeKind.SECTION] == [
+        "1",
+        "2",
+        "9",
+    ]
+    assert "old one" not in irnode_to_text(result)
+    assert "new one" in irnode_to_text(result)
+    assert "old nine" in irnode_to_text(result)
 
 
 def test_merge_clean_insert_over_preexisting_duplicate_does_not_warn(
@@ -2062,3 +2206,143 @@ def test_heading_intro_replace_returns_none_when_intro_unchanged() -> None:
     result = _heading_intro_replace_preserve_items_ir(master_sec, amend_sec)
 
     assert result is None, "Should not match when intro text is already identical"
+
+
+# ---------------------------------------------------------------------------
+# _pre_resolve_omissions — container (chapter/part) REPLACE with omissions
+# ---------------------------------------------------------------------------
+
+
+def _container_replace_ctx(
+    live: IRNode, target_unit_kind: TargetUnitKind = "chapter"
+) -> PayloadElaborationContext:
+    """Minimal PayloadElaborationContext for a container REPLACE target.
+
+    The container branch of _pre_resolve_omissions only reads live_node,
+    target_unit_kind and target_norm, so the indexes can stay empty.
+    """
+    return PayloadElaborationContext(
+        target_unit_kind=target_unit_kind,
+        target_norm="1",
+        target_chapter=None,
+        target_part=None,
+        live_node=live,
+        parent_node=None,
+        subsection_slots=(),
+        live_subsections=(),
+        subsection_by_label={},
+        item_index={},
+        row_anchor_index={},
+        container_member_labels=None,
+        lookups=ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset(),
+        ),
+    )
+
+
+def _whole_replace_op(target_unit_kind: TargetUnitKind) -> AmendmentOp:
+    return AmendmentOp(
+        op_id=f"replace_{target_unit_kind}_1",
+        op_type="REPLACE",
+        target_unit_kind=target_unit_kind,
+        source_statute="2006/395",
+    )
+
+
+def test_pre_resolve_omissions_container_replace_routes_through_container_merge() -> None:
+    """A chapter REPLACE whose payload carries section-omission markers must be
+    routed through _merge_same_numbered_container_insert_ir so the live residue
+    the omission represents is spliced back in and the markers are resolved.
+
+    Regression guard: the container branch used to be nested under the
+    ``target_unit_kind == "section"`` block, making it unsatisfiable dead code.
+    Control fell to ``return muutos_ir`` and the omission markers survived
+    unresolved (later tripping OMISSION_SURVIVES_NON_MERGE). This pins that the
+    branch is now a function-body sibling and actually fires for chapter input.
+    """
+    live = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="1",
+        children=(
+            _sec("1", _sub("1", _content("live one"))),
+            _sec(
+                "2",
+                _sub("1", _content("live 2.1")),
+                _sub("2", _content("live 2.2")),
+                _sub("3", _content("live 2.3")),
+            ),
+        ),
+    )
+    # Compact REPLACE shell for section "2": first subsection plus an omission
+    # marker standing in for the unchanged tail (subsections 2 and 3).
+    amend = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="1",
+        children=(
+            _sec("2", _sub("1", _content("new 2.1")), _omission()),
+        ),
+    )
+    assert _has_section_omissions_ir(amend)
+
+    ctx = _container_replace_ctx(live)
+    profile = get_replay_profile("official_consolidation")
+
+    result = _pre_resolve_omissions(
+        ctx, amend, "chapter", "1", None, [_whole_replace_op("chapter")], profile
+    )
+
+    assert result is not None
+    # Not the raw payload returned by the old dead-code fall-through.
+    assert result is not amend
+    # The container merge resolved the omission markers.
+    assert not _has_section_omissions_ir(result)
+    # The live residue the omission represented (subsections 2.2, 2.3) is
+    # spliced back in instead of being dropped.
+    sec2 = next(
+        c for c in result.children if c.kind is IRNodeKind.SECTION and c.label == "2"
+    )
+    sec2_text = irnode_to_text(sec2)
+    assert "live 2.2" in sec2_text
+    assert "live 2.3" in sec2_text
+
+
+def test_pre_resolve_omissions_part_replace_routes_through_container_merge() -> None:
+    """The same activation holds for ``part`` container targets."""
+    live = IRNode(
+        kind=IRNodeKind.PART,
+        label="1",
+        children=(
+            _sec(
+                "5",
+                _sub("1", _content("live 5.1")),
+                _sub("2", _content("live 5.2")),
+            ),
+        ),
+    )
+    amend = IRNode(
+        kind=IRNodeKind.PART,
+        label="1",
+        children=(
+            _sec("5", _sub("1", _content("new 5.1")), _omission()),
+        ),
+    )
+    assert _has_section_omissions_ir(amend)
+
+    ctx = _container_replace_ctx(live, target_unit_kind="part")
+    profile = get_replay_profile("official_consolidation")
+
+    result = _pre_resolve_omissions(
+        ctx, amend, "part", "1", None, [_whole_replace_op("part")], profile
+    )
+
+    assert result is not None
+    assert result is not amend
+    assert not _has_section_omissions_ir(result)
+    sec5 = next(
+        c for c in result.children if c.kind is IRNodeKind.SECTION and c.label == "5"
+    )
+    assert "live 5.2" in irnode_to_text(sec5)

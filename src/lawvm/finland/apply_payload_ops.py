@@ -25,6 +25,13 @@ _LEADING_ITEM_MARKER_RE = re.compile(r"^\s*((?:\d+\s*[a-z]?)|[a-z])\s*[\).]\s*",
 _PLAIN_INTRO_ONLY_SUBSECTION_RE = re.compile(r"^\d+[.)]\s+")
 _LEADING_SPACED_ITEM_RE = re.compile(r"(\d+)\s+([a-z])")
 _LEADING_COMPACT_ITEM_RE = re.compile(r"^(\d+[a-z]?)\s*[\).]", re.I)
+# Letter-item marker shape tests on owned payload text (``a) ``).
+_LETTER_ITEM_MARKER_RE = re.compile(r"[a-z]\s*\)")
+_LETTER_ITEM_LABEL_RE = re.compile(r"([a-z])\s*\)")
+# Leading digit-item-marker presence test on owned payload text.
+_LEADING_DIGIT_MARKER_RE = re.compile(r"\d+")
+# Leading numeric item-marker (``12a) ``) capture on owned payload text.
+_LEADING_NUMERIC_ITEM_RE = re.compile(r"^(\d+[a-z]?)\s*\)")
 
 
 def _has_consecutive_numeric_labels(labels: List[str]) -> bool:
@@ -49,6 +56,7 @@ def _is_plain_intro_only_subsection(sub: IRNode) -> bool:
     text = " ".join(part for part in text_parts if part).strip()
     if not text:
         return False
+    # lawvm-regex: owning_parser intro-only shape test on owned payload text, not source text
     return _PLAIN_INTRO_ONLY_SUBSECTION_RE.match(text) is None
 
 
@@ -60,6 +68,7 @@ def _find_amend_paragraph(
     """Find a paragraph with matching label in the amendment subsection or muutos tree."""
 
     def _strip_leading_item_marker(text: str) -> str:
+        # lawvm-regex: owning_parser leading item-marker strip on owned payload text, not source text
         match = _LEADING_ITEM_MARKER_RE.match(text)
         if match is None:
             return text
@@ -108,6 +117,7 @@ def _find_amend_paragraph(
             if ch.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT) and ch.text:
                 text = ch.text.lstrip()
                 compact = _LEADING_SPACED_ITEM_RE.sub(r"\1\2", text)
+                # lawvm-regex: owning_parser leading compact item-marker on owned payload text, not source text
                 m = _LEADING_COMPACT_ITEM_RE.match(compact)
                 if m:
                     return normalized_label_key(m.group(1))
@@ -122,6 +132,26 @@ def _find_amend_paragraph(
                 return _as_numbered_payload_paragraph(p, strip_marker=False)
         return None
 
+    def _numbered_subsection_as_item_paragraph(sub: IRNode) -> Optional[IRNode]:
+        num = next((child for child in sub.children if child.kind == IRNodeKind.NUM and child.text), None)
+        if num is None or normalized_label_key(num.text) != item_norm:
+            return None
+        body_children = tuple(
+            child
+            for child in sub.children
+            if child.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT, IRNodeKind.SUBPARAGRAPH)
+        )
+        if not body_children:
+            return None
+        return _relabel_paragraph_ir(
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=item_norm,
+                children=(num, *body_children),
+            ),
+            item_norm,
+        )
+
     if amend_sub is not None:
         result = _paragraph_with_explicit_item_label(amend_sub)
         if result is not None:
@@ -130,6 +160,17 @@ def _find_amend_paragraph(
         for sub_child in muutos_ir.children:
             if sub_child.kind == IRNodeKind.SUBSECTION:
                 result = _paragraph_with_explicit_item_label(sub_child)
+                if result is not None:
+                    return result
+
+    if amend_sub is not None:
+        result = _numbered_subsection_as_item_paragraph(amend_sub)
+        if result is not None:
+            return result
+    if muutos_ir is not None:
+        for sub_child in muutos_ir.children:
+            if sub_child.kind == IRNodeKind.SUBSECTION:
+                result = _numbered_subsection_as_item_paragraph(sub_child)
                 if result is not None:
                     return result
 
@@ -170,6 +211,7 @@ def _find_amend_paragraph(
             return None
         content_text = (content_node.text or "").lstrip()
         content_compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", content_text)
+        # lawvm-regex: owning_parser owned-label-prefix presence test on owned payload text (dynamic re.escape(item_norm)), not source text
         if re.match(re.escape(item_norm) + r"\s*\)", content_compact):
             return _as_numbered_payload_paragraph(
                 IRNode(
@@ -199,8 +241,10 @@ def _find_amend_paragraph(
                     if later_content is None:
                         break
                     later_text = (later_content.text or "").lstrip()
-                    if re.match(r"[a-z]\s*\)", later_text):
-                        lbl_m = re.match(r"([a-z])\s*\)", later_text)
+                    # lawvm-regex: owning_parser letter item-marker shape test on owned payload text, not source text
+                    if _LETTER_ITEM_MARKER_RE.match(later_text):
+                        # lawvm-regex: owning_parser letter item-label capture on owned payload text, not source text
+                        lbl_m = _LETTER_ITEM_LABEL_RE.match(later_text)
                         if lbl_m:
                             letter_children.append(IRNode(
                                 kind=IRNodeKind.SUBPARAGRAPH,
@@ -208,7 +252,8 @@ def _find_amend_paragraph(
                                 children=tuple(later.children),
                                 text=later_content.text,
                             ))
-                    elif re.match(r"\d+", later_text):
+                    # lawvm-regex: owning_parser leading digit-marker shape test on owned payload text, not source text
+                    elif _LEADING_DIGIT_MARKER_RE.match(later_text):
                         break  # next digit-labeled item
                     else:
                         break
@@ -314,7 +359,8 @@ def _flattened_item_paragraph_from_subsection_ir(sub: IRNode) -> Optional[IRNode
         return None
     content_text = (content_node.text or "").lstrip()
     content_compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", content_text)
-    m = re.match(r"^(\d+[a-z]?)\s*\)", content_compact)
+    # lawvm-regex: owning_parser leading numeric item-marker on owned payload text, not source text
+    m = _LEADING_NUMERIC_ITEM_RE.match(content_compact)
     if not m:
         return None
     item_label = normalized_label_key(m.group(1))
@@ -337,6 +383,7 @@ def _has_single_intro_numbered_item_list_ir(sub: IRNode) -> bool:
             return False
         text = irnode_to_text(p).lstrip()
         compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", text, flags=re.I)
+        # lawvm-regex: owning_parser own-subtree (irnode_to_text(p)) owned-label-prefix shape test (dynamic re.escape), not source-plane mint
         if not re.match(r"^" + re.escape(normalized_label_key(p.label)) + r"\s*[\).]", compact):
             return False
     return True

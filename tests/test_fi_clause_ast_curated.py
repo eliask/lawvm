@@ -792,6 +792,39 @@ class TestInsertionCases:
         labels = [dict(n.target.path).get("section", "") for n in insert_nodes]
         assert "5a" in labels, f"Expected section '5a' in insert targets, got {labels}"
 
+    def test_plural_pykala_marker_keeps_mixed_replace_insert_clause(self):
+        """Plural '§:t' is the section-list marker, not residual WORD text."""
+        result = parse_clause(
+            "muutetaan asetuksen 3, 18, 22, 24, 32, 35 ja 52 §:t, "
+            "sekä lisätään asetukseen uudet 34 a ja 40 a §:t seuraavasti:"
+        )
+
+        assert result.parser_lane == "grammar_owned"
+        assert [op.code() for op in result.parsed_ops] == [
+            "M P 3",
+            "M P 18",
+            "M P 22",
+            "M P 24",
+            "M P 32",
+            "M P 35",
+            "M P 52",
+            "L P 34a",
+            "L P 40a",
+        ]
+        nodes = _flat_nodes(result.clause_ast)
+        replace_sections = {
+            dict(node.target.path).get("section")
+            for node in nodes
+            if isinstance(node, RefAmend) and node.action is StructuralAction.REPLACE
+        }
+        insert_sections = {
+            dict(node.target.path).get("section")
+            for node in nodes
+            if isinstance(node, RefAmend) and node.action is StructuralAction.INSERT
+        }
+        assert replace_sections == {"3", "18", "22", "24", "32", "35", "52"}
+        assert insert_sections == {"34a", "40a"}
+
     def test_section_level_insert_new_momentti(self):
         """'lisätään 8 §:ään uusi 3 momentti' -> RefAmend(insert, section:8/subsection:3)."""
         result = parse_clause("lisätään 8 §:ään uusi 3 momentti")

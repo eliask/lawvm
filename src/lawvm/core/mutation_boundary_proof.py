@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Literal, Mapping, cast
+from typing import Any, Literal, Mapping, Sequence, cast
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
@@ -18,8 +18,13 @@ from lawvm.core.mutation_accounting import (
     MUTATION_ACCOUNTING_HARD_CODES,
     MutationInvariantReport,
 )
+from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.core.mutation_boundary import (
+    TreePath,
     TreePaths,
+    diff_ir_paths,
+    operation_storage_boundary_prefixes,
+    partition_changed_paths,
     tree_path_to_diagnostic_string,
     validate_tree_path,
 )
@@ -205,6 +210,109 @@ class MutationBoundaryProof:
             "forbidden_shortcuts": list(self.forbidden_shortcuts),
             "detail": _plain_jsonable(self.detail),
         }
+
+
+# The registered per-op blocking finding code for LS-01: a landed op whose
+# observed changed paths are NOT a subset of (target ∪ declared migration ∪
+# declared recovery ∪ declared editorial projection). Registered in
+# ``core/observation_registry.py`` as a blocking violation; the producer
+# (apply_resolved_op) and any consumer import this literal so they cannot drift.
+MUTATION_BOUNDARY_VIOLATION_AT_OP_CODE = "APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP"
+# The non-blocking quirks-mode accounting companion: the same per-op boundary
+# escape, recorded (not blocked) so a permissive profile still leaves a visible
+# receipt of the unowned mutation.
+MUTATION_BOUNDARY_FINDING_AT_OP_CODE = "APPLY.MUTATION_BOUNDARY_FINDING_AT_OP"
+
+PerOpBoundaryStatus = Literal["within_boundary", "out_of_boundary"]
+
+
+@dataclass(frozen=True, slots=True)
+class PerOpMutationBoundaryVerdict:
+    """Typed per-op mutation-boundary verdict (LS-01).
+
+    ``boundary_status == "out_of_boundary"`` ⟺ the op landed at least one changed
+    tree path outside its declared mutation boundary
+    (target ∪ declared_migration ∪ declared_recovery ∪ declared_editorial_projection).
+    That is a §1.0 per-op violation: under strict it BLOCKS the op, under quirks
+    it is recorded as a non-blocking accounting finding. ``out_of_boundary_paths``
+    carries the offending diagnostic-string paths (self-evidencing).
+
+    The disposition field is namespaced ``boundary_status`` (not a bare ``status``)
+    per the public-schema status-vocabulary discipline (audit-registry VOCAB-02 /
+    naming-hygiene Gate 46a).
+    """
+
+    op_id: str
+    boundary_status: PerOpBoundaryStatus
+    changed_paths: tuple[str, ...]
+    out_of_boundary_paths: tuple[str, ...]
+
+    @property
+    def within_boundary(self) -> bool:
+        return self.boundary_status == "within_boundary"
+
+
+def verify_per_op(
+    before: IRNode,
+    after: IRNode,
+    op: LegalOperation,
+    *,
+    op_id: str,
+    declared_migration_prefixes: Sequence[TreePath] = (),
+    declared_recovery_prefixes: Sequence[TreePath] = (),
+    declared_editorial_projection_prefixes: Sequence[TreePath] = (),
+    strip_root_prefix: TreePath = (),
+) -> PerOpMutationBoundaryVerdict:
+    """Per-op mutation-boundary REJECT gate (LS-01 / §1.0).
+
+    Computes the operation's storage mutation boundary
+    (target ∪ the supplied declared migration / recovery / editorial-projection
+    prefixes) and diffs ``before``→``after``. Any observed changed path outside
+    that boundary is an ``out_of_boundary`` per-op violation. The aggregate
+    fold-end boundary closure (LS-02) only proves the SUM balances; this asserts
+    the containment PER OP so a sibling-path edit fails loud on the op that did it
+    rather than being absorbed into an aggregate that still nets to zero.
+
+    ``strip_root_prefix`` lets the caller drop a leading materialization wrapper
+    step (the FI replay IR is rooted under an unlabeled ``("hcontainer", "")``
+    wrapper that tree-diff paths carry but op-nominal LegalAddress targets do
+    not) so the observed and declared surfaces align — exactly the normalization
+    ``mutation_accounting`` already applies. Without it every wrapped diff path is
+    spuriously "out of boundary".
+
+    Pure projection: it computes the verdict and never mutates or emits. The
+    production apply site decides the strict (block) / quirks (record) disposition.
+    """
+    declared_extra: tuple[TreePath, ...] = (
+        *declared_migration_prefixes,
+        *declared_recovery_prefixes,
+        *declared_editorial_projection_prefixes,
+    )
+    allowed_prefixes = operation_storage_boundary_prefixes(op, declared_extra)
+    changed_paths = tuple(
+        _strip_leading_prefix(path, strip_root_prefix)
+        for path in diff_ir_paths(before, after)
+    )
+    partition = partition_changed_paths(changed_paths, allowed_prefixes)
+    out_of_boundary = tuple(
+        _cached_tree_path_to_diagnostic_string(path)
+        for path in partition.unexplained_changed_paths
+    )
+    return PerOpMutationBoundaryVerdict(
+        op_id=str(op_id or ""),
+        boundary_status="out_of_boundary" if out_of_boundary else "within_boundary",
+        changed_paths=tuple(
+            _cached_tree_path_to_diagnostic_string(path) for path in changed_paths
+        ),
+        out_of_boundary_paths=out_of_boundary,
+    )
+
+
+def _strip_leading_prefix(path: TreePath, prefix: TreePath) -> TreePath:
+    """Drop a leading wrapper prefix from a tree path when present."""
+    if prefix and path[: len(prefix)] == prefix:
+        return path[len(prefix):]
+    return path
 
 
 def mutation_boundary_evidence_report(

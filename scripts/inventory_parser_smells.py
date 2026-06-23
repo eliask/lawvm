@@ -17,6 +17,7 @@ un-waived semantic-plane count may never increase, only fall.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 from collections import Counter
@@ -105,23 +106,114 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/transparent_store.py": "source_plane",
     "src/lawvm/finland/finlex_api.py": "source_plane",
     "src/lawvm/finland/xml_ir.py": "source_plane",
+    # eId / locator / AKN-component / version-suffix parsers (no legal prose):
+    "src/lawvm/finland/section_text_extractor.py": "source_plane",
+    "src/lawvm/finland/section_resolver.py": "source_plane",
+    "src/lawvm/finland/provision_ref_locator.py": "source_plane",
+    "src/lawvm/finland/interlink_targets.py": "source_plane",
+    "src/lawvm/finland/editorial_adjudication.py": "source_plane",
+    # PDF/XML corrigendum corrector: parses corrigendum PDF text + AKN XML and
+    # emits CORRECTED XML bytes (text_replace on bytes) consumed pre-parse; the
+    # derived LegalAddress is metadata only (not a patch-lookup target). No
+    # timeline op / legal-state is minted from these regexes (C4 triage).
+    "src/lawvm/finland/corrigendum.py": "source_plane",
+    # finlex:// locator + FRBR/AKN identity-byte parsing for canonical artifact
+    # identity / version derivation. Plane A throughout (C4 triage).
+    "src/lawvm/finland/consolidated_artifacts.py": "source_plane",
+    # Source-fact amendment->parent edge discovery over consolidated oracle
+    # metadata; johtolause gating is delegated to the owning citation router, not
+    # local regex. Index/identity layer, not a timeline producer (C4 triage).
+    "src/lawvm/finland/amendment_index.py": "source_plane",
+    # HTML/RSC oracle ingest: regex heading fallback when JSON parse fails. Plane
+    # A byte/HTML ingest (C4 triage).
+    "src/lawvm/finland/finlex_html.py": "source_plane",
+    # Own-source structural normalization between raw XML parse and body-pairing:
+    # every regex reads an IRNode label/text/irnode_to_text of the node being
+    # normalized (plane-A source-IR, the module's own input); every rewrite emits
+    # a witnessed SourceNormalizationFact reaching production (RB-C triage).
+    "src/lawvm/finland/source_normalize.py": "source_plane",
     # --- lexer (B): label / numeric-token normalization only ---
     "src/lawvm/core/tree_ops.py": "lexer",
     "src/lawvm/finland/labels.py": "lexer",
     "src/lawvm/finland/profile/normalize.py": "lexer",
+    # --- lexer (B): johtolause tokenizer (raw johto fragment -> Token) ---
+    "src/lawvm/finland/johtolause/lexer.py": "lexer",
+    # Shared FI date lexer (E1c): pure day-month-year/year-end token recognizer
+    # over already-located clause text; returns value+form, mints no legal state.
+    "src/lawvm/finland/fi_dates.py": "lexer",
     # --- owning parser (B): the canonical parser for a construction family ---
     "src/lawvm/finland/johtolause/api.py": "owning_parser",
     "src/lawvm/finland/johtolause/clause_patterns.py": "owning_parser",
     "src/lawvm/finland/johtolause/clause_surface.py": "owning_parser",
+    "src/lawvm/finland/johtolause/affected_statute.py": "owning_parser",
+    "src/lawvm/finland/johtolause/surface_parse.py": "owning_parser",
+    "src/lawvm/finland/johtolause/grammar/sections.py": "owning_parser",
+    "src/lawvm/finland/johtolause_supplements.py": "owning_parser",
+    "src/lawvm/finland/claim_kinds/inline_statute_resolution.py": "owning_parser",
     "src/lawvm/finland/legal_surface/delegation_parse.py": "owning_parser",
     "src/lawvm/finland/legal_surface/modal_parse.py": "owning_parser",
     "src/lawvm/finland/references/by_name.py": "owning_parser",
     "src/lawvm/finland/references/sections.py": "owning_parser",
     "src/lawvm/finland/amendment_payload_lookup.py": "owning_parser",
+    # references/ core owning recognizers (C5 triage: each OWNS a reference family
+    # per notes/FI_REFERENCE_CATALOGUE.md §4; regex feeds the family parser over the
+    # module's OWN prose / AKN-id surface — mirrors the by_name / sections preclear).
+    "src/lawvm/finland/references/ref_mention_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/internal_refs.py": "owning_parser",
+    "src/lawvm/finland/references/inline_citation_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/cross_refs.py": "owning_parser",
+    "src/lawvm/finland/references/eu_reference.py": "owning_parser",
+    "src/lawvm/finland/references/eu_directive.py": "owning_parser",
+    "src/lawvm/finland/references/preparatory_reference_extractor.py": "owning_parser",
+    "src/lawvm/finland/references/freetext_addresses.py": "owning_parser",
+    "src/lawvm/finland/references/anaphora.py": "owning_parser",
+    "src/lawvm/finland/references/elliptical_resolve.py": "owning_parser",
+    "src/lawvm/finland/references/resolve.py": "owning_parser",
+    "src/lawvm/finland/references/shared_reference_orchestrator.py": "owning_parser",
+    # Cited-version item-clause recognizer (E1b): owns the item-cited-version parse
+    # over its own clause text, routes the cited statute id to the references id
+    # constructor; the snapshot-drop it informs is witnessed (CitedVersionSnapshotDrop).
+    "src/lawvm/finland/references/cited_version.py": "owning_parser",
+    # references/ tail owning recognizers (C6 triage: surface-fact recognizers, each
+    # the owning parser for its family — temporal H3, treaty/SopS, modal actor,
+    # sanction, vague targetless-phrase selector — over their own input `text`).
+    "src/lawvm/finland/references/actor_modal.py": "owning_parser",
+    "src/lawvm/finland/references/sanction.py": "owning_parser",
+    "src/lawvm/finland/references/temporal.py": "owning_parser",
+    "src/lawvm/finland/references/treaty.py": "owning_parser",
+    "src/lawvm/finland/references/treaty_article.py": "owning_parser",
+    "src/lawvm/finland/references/vague.py": "owning_parser",
+    # legal_surface owning construction parsers / lenses (C6 triage: each reads its
+    # own scoped surface text / segment — the §1.12 owning-parser-input carve-out).
+    "src/lawvm/finland/legal_surface/case_frame.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/condition_exception_parse.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/delegation_canonical.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/sentence_parse.py": "owning_parser",
+    "src/lawvm/finland/legal_surface/temporal_parse.py": "owning_parser",
+    # legal_surface source-structure normalizers (C6 triage: parse AKN <num>/eId
+    # surface + already-typed provision_path into labels — source-structure plane).
+    "src/lawvm/finland/legal_surface/provision_index.py": "source_plane",
+    "src/lawvm/finland/legal_surface/reference_projection.py": "source_plane",
+    # THE owning voimaantulosäännös (transitional-provision) cross-statute repeal
+    # extractor: reads its OWN amendment source XML (xml_bytes) and mints REPEAL
+    # ops via the §1.12-sanctioned owning rail; address parse already delegated to
+    # the shared scan_legal_addresses grammar driver; fails closed (records
+    # VtsSkippedTarget/VtsSourceDiagnostic). Local regexes are the citation/title
+    # lexer + fragment-boundary truncation feeding it (C4 triage).
+    "src/lawvm/finland/vts.py": "owning_parser",
+    # scope.py is the canonical chapter/part-scope assignment parser: it
+    # consumes its OWN johtolause + already-typed los to assign/strip scope and
+    # mints no ops. Mirrors johto_scope_mentions / references/sections (both
+    # precleared owning_parser). No reach-back site (none of its 44 regexes read
+    # raw_text/source_text/irnode_to_text/.description). Whole-file preclear.
+    "src/lawvm/finland/scope.py": "owning_parser",
     # --- diagnostic (D/E): audit / oracle-comparison rendering, no authority ---
     "src/lawvm/core/ir_helpers.py": "diagnostic",
     "src/lawvm/finland/inline_repeal_stub.py": "diagnostic",
     "src/lawvm/finland/oracle_comparison.py": "diagnostic",
+    # pure measurement module, explicitly off the replay/apply path
+    # ("changes no production behaviour"); cheap-signal proxy is corroboration only.
+    "src/lawvm/finland/references/annotation_independence_census.py": "diagnostic",
 }
 
 # Inline waiver vocabulary (a use-site is waived if its line, or the line above,
@@ -156,10 +248,232 @@ _RE_REGEX_USE_SITE = re.compile(
 # file is the highest-severity class. An un-waived hit of this shape is reported
 # as ``legacy_escape_hatch`` so the rank-1/2/3/15 raw-text reach-back sites cannot
 # be added to without an explicit waiver naming a leak-ledger rank.
+#
+# Two ways a use-site touches raw text:
+#   (1) line-local: the call line itself names a raw-text accessor (the original,
+#       UNSOUND-on-its-own heuristic — kept for module-const calls like
+#       ``_X_RE.finditer(raw_text)`` and for calls inside comprehensions/exprs).
+#   (2) renamed-local (added here): the searched string is a local variable that
+#       was assigned — directly or transitively, within the same function — from a
+#       raw-text accessor expression. This is the common evading shape
+#       (``txt = op.source.raw_text`` then ``re.search(pat, txt)``). An AST taint
+#       pass (``raw_text_tainted_call_lines``) recovers these so the detector is
+#       sound-leaning: it prefers honest over-flagging (→ explicit waivers) to
+#       silently missing a reach-back.
+_RAW_TEXT_ACCESSOR_ATTRS = frozenset({"raw_text", "source_text", "description"})
+_RAW_TEXT_ACCESSOR_FUNCS = frozenset({"irnode_to_text"})
+# A bare variable literally named like a raw-text accessor token is itself a
+# raw-text string by convention (the line-local heuristic already flags any line
+# containing the word ``raw_text``). Seeding taint with such parameter/local names
+# recovers the inter-procedural case where a helper takes a ``raw_text`` parameter
+# (assigned from ``*.raw_text`` at the call site) and regexes a local derived from
+# it, e.g. ``merge.py`` ``_source_targets_plain_subsection(raw_text, ...)``.
+_RAW_TEXT_SEED_NAMES = frozenset({"raw_text", "source_text"})
 _RE_RAW_TEXT_ACCESSOR = re.compile(
     r"\b(raw_text|source_text|irnode_to_text|\.description)\b"
 )
 _RE_LEAK_LEDGER_RANK = re.compile(r"\brank[\s_-]*\d+\b", re.IGNORECASE)
+
+
+def _expr_is_raw_text_accessor(node: ast.AST, tainted: set[str]) -> bool:
+    """True if ``node`` is (or transitively contains) a raw-text reach-back source.
+
+    Conservative / sound-leaning: returns True if anywhere inside the expression
+    there is
+
+      * an attribute access ending in ``.raw_text`` / ``.source_text`` /
+        ``.description`` (``op.lo.source.raw_text``, ``x.description`` …),
+      * a call to ``irnode_to_text(...)`` (bare or dotted), or
+      * a reference to a name already known to be raw-text tainted in this scope.
+
+    Walking the whole sub-tree means ``a = (op.source.raw_text or "")``,
+    ``b = " ".join(raw.split())``, and ``c = f(tainted)`` all stay tainted — the
+    taint cannot be laundered through wrapping/normalization without the detector
+    seeing it.
+    """
+    for child in ast.walk(node):
+        if isinstance(child, ast.Attribute) and child.attr in _RAW_TEXT_ACCESSOR_ATTRS:
+            return True
+        if isinstance(child, ast.Call):
+            func = child.func
+            fname = ""
+            if isinstance(func, ast.Name):
+                fname = func.id
+            elif isinstance(func, ast.Attribute):
+                fname = func.attr
+            if fname in _RAW_TEXT_ACCESSOR_FUNCS:
+                return True
+        if isinstance(child, ast.Name) and child.id in tainted:
+            return True
+    return False
+
+
+def _assignment_targets(node: ast.AST) -> list[str]:
+    """Bare local names bound by an assignment / for / with / walrus target."""
+    names: list[str] = []
+    targets: list[ast.AST] = []
+    if isinstance(node, ast.Assign):
+        targets = list(node.targets)
+    elif isinstance(node, ast.AnnAssign) and node.value is not None:
+        targets = [node.target]
+    elif isinstance(node, (ast.AugAssign, ast.NamedExpr)):
+        targets = [node.target]
+    elif isinstance(node, (ast.For, ast.AsyncFor)):
+        targets = [node.target]
+    for target in targets:
+        for sub in ast.walk(target):
+            if isinstance(sub, ast.Name):
+                names.append(sub.id)
+    return names
+
+
+def _scope_value_nodes(node: ast.AST) -> list[tuple[list[str], ast.AST]]:
+    """(target-names, value-expr) pairs for binding statements in a scope body."""
+    pairs: list[tuple[list[str], ast.AST]] = []
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+        value = node.value
+        if value is not None:
+            pairs.append((_assignment_targets(node), value))
+    elif isinstance(node, (ast.For, ast.AsyncFor)):
+        # `for name in <iter>:` taints `name` if the iterable is raw text.
+        pairs.append((_assignment_targets(node), node.iter))
+    return pairs
+
+
+def _function_scopes(tree: ast.AST) -> Iterable[ast.AST]:
+    """Yield every function/module scope (each is a separate taint universe)."""
+    yield tree  # module scope catches top-level binds + bare expressions
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            yield node
+
+
+def _nodes_owned_by_scope(scope: ast.AST) -> Iterable[ast.AST]:
+    """Walk ``scope`` but do NOT descend into nested function/lambda bodies.
+
+    Each function is its own taint universe (a local in an inner function must not
+    taint a same-named local of the enclosing one). Comprehensions and class/if/
+    for/with blocks ARE part of the scope and are descended into.
+    """
+    def _push(seq: Iterable[object]) -> None:
+        for child in seq:
+            if not isinstance(child, ast.AST):
+                continue
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue  # a nested scope; handled by its own _function_scopes pass
+            stack.append(child)
+
+    stack: list[ast.AST] = []
+    body = getattr(scope, "body", None)
+    if isinstance(body, list):
+        _push(reversed(body))
+    elif body is not None:
+        _push([body])  # Lambda: single expression body
+    while stack:
+        node = stack.pop()
+        yield node
+        _push(ast.iter_child_nodes(node))
+
+
+def _scope_param_names(scope: ast.AST) -> set[str]:
+    """Parameter names of a function/lambda scope (empty for module scope)."""
+    args = getattr(scope, "args", None)
+    if not isinstance(args, ast.arguments):
+        return set()
+    names: set[str] = set()
+    for group in (args.posonlyargs, args.args, args.kwonlyargs):
+        names.update(a.arg for a in group)
+    if args.vararg is not None:
+        names.add(args.vararg.arg)
+    if args.kwarg is not None:
+        names.add(args.kwarg.arg)
+    return names
+
+
+def _call_arg_names(call: ast.Call) -> set[str]:
+    """Bare names that appear anywhere inside a call's positional/keyword args."""
+    names: set[str] = set()
+    for arg in list(call.args) + [kw.value for kw in call.keywords]:
+        for sub in ast.walk(arg):
+            if isinstance(sub, ast.Name):
+                names.add(sub.id)
+    return names
+
+
+def _is_regex_call(call: ast.Call) -> bool:
+    """True if ``call`` is a targeted regex use-site (``re.<m>(`` or ``*_RE.<m>(``).
+
+    Mirrors ``_RE_REGEX_USE_SITE``: receiver is the ``re`` module or an identifier
+    following the ``*_RE`` / ``*_PATTERN`` / ``*_re`` / ``*_pattern`` convention;
+    method is search / finditer / findall / match.
+    """
+    func = call.func
+    if not isinstance(func, ast.Attribute) or func.attr not in _REGEX_METHODS:
+        return False
+    receiver = func.value
+    if isinstance(receiver, ast.Name):
+        rid = receiver.id
+        if rid == "re":
+            return True
+        return bool(
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:_RE|_PATTERN|_re|_pattern)", rid)
+        )
+    return False
+
+
+def raw_text_tainted_call_lines(text: str) -> set[int]:
+    """Line numbers of regex use-sites whose searched string is raw-text tainted.
+
+    Per function/module scope, iterate a fixpoint over binding statements: a local
+    name becomes tainted when it is bound from an expression that is (or
+    transitively contains) a raw-text accessor or an already-tainted name. A regex
+    call whose arguments reference any tainted name is a renamed-local reach-back;
+    its ``lineno`` is returned.
+
+    The fixpoint (repeat to convergence) makes the analysis order-independent and
+    transitive across an arbitrary number of rename hops within a scope; treating
+    the whole expression as tainted (no kill on re-bind) is the conservative,
+    sound-leaning choice — we never untaint, so we never silently lose a hit.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        # Conservative: if we cannot parse, claim no AST-derived hits (the
+        # line-local heuristic still applies in the caller). Scanned source files
+        # are valid Python, so this only guards malformed test fixtures.
+        return set()
+
+    hit_lines: set[int] = set()
+    for scope in _function_scopes(tree):
+        owned = list(_nodes_owned_by_scope(scope))
+        bind_pairs: list[tuple[list[str], ast.AST]] = []
+        for stmt in owned:
+            bind_pairs.extend(_scope_value_nodes(stmt))
+
+        # Seed: parameters / locals literally named like a raw-text accessor token
+        # (``raw_text`` / ``source_text``) are raw-text strings by convention.
+        tainted: set[str] = set(_scope_param_names(scope) & _RAW_TEXT_SEED_NAMES)
+        for names, _value in bind_pairs:
+            tainted.update(n for n in names if n in _RAW_TEXT_SEED_NAMES)
+        changed = True
+        while changed:
+            changed = False
+            for names, value in bind_pairs:
+                if not names:
+                    continue
+                if any(n in tainted for n in names):
+                    continue
+                if _expr_is_raw_text_accessor(value, tainted):
+                    tainted.update(names)
+                    changed = True
+
+        if not tainted:
+            continue
+        for node in owned:
+            if isinstance(node, ast.Call) and _is_regex_call(node):
+                if _call_arg_names(node) & tainted:
+                    hit_lines.add(node.lineno)
+    return hit_lines
 
 
 _BOUND_COVERAGE_NEARBY_LINES = 80
@@ -703,6 +1017,10 @@ def scan_file_regex_use_sites(
     ``legacy_escape_hatch`` shape.
     """
     lines = text.splitlines()
+    # AST taint pass: line numbers of regex use-sites whose searched string is a
+    # local transitively assigned from a raw-text accessor (the renamed-local
+    # reach-back the line-local heuristic alone misses, e.g. merge.py:2542/2544).
+    tainted_call_lines = raw_text_tainted_call_lines(text)
     records: list[dict[str, Any]] = []
     for idx, line in enumerate(lines):
         stripped = line.lstrip()
@@ -710,7 +1028,9 @@ def scan_file_regex_use_sites(
             continue  # a commented-out call is not a live use-site
         for use_site in _RE_REGEX_USE_SITE.finditer(line):
             waived, waiver_category = _line_is_waived(lines, idx)
-            is_raw_text = bool(_RE_RAW_TEXT_ACCESSOR.search(line))
+            line_local_raw = bool(_RE_RAW_TEXT_ACCESSOR.search(line))
+            renamed_local_raw = (idx + 1) in tainted_call_lines
+            is_raw_text = line_local_raw or renamed_local_raw
             records.append(
                 {
                     "file": rel_path,
@@ -720,6 +1040,13 @@ def scan_file_regex_use_sites(
                     "waived": waived,
                     "waiver_category": waiver_category,
                     "raw_text_accessor": is_raw_text,
+                    "raw_text_via": (
+                        "line_local"
+                        if line_local_raw
+                        else "renamed_local"
+                        if renamed_local_raw
+                        else ""
+                    ),
                     "snippet": stripped,
                 }
             )
@@ -823,6 +1150,295 @@ def write_ratchet_baseline(repo_root: Path | None = None) -> Path:
     return out_path
 
 
+# ===========================================================================
+# FW-08: frozen-residue structural sensors (registry row FW-08)
+# ===========================================================================
+#
+# FW-08 wires four LONG-KNOWN structural smell categories (the §45 enforcement
+# gate (2) "frozen residue" sensors) as a monotone ratchet over the scanned
+# (semantic-plane) Finland/core files. These are the recurring per-op-parse smell
+# shapes the parser-smell inventory has flagged as prose for a while; FW-08 freezes
+# the current count at a committed baseline that may only fall. All four are
+# AST-based (so comments / docstrings never mis-count) and intentionally narrow —
+# each is a STRUCTURAL sensor (a shape), not a semantic proof.
+#
+# The four categories (all over the SAME scanned-file set as the regex ratchet —
+# post-parse semantic-plane core/finland files, source/lexer/owning-parser/
+# diagnostic preclears excluded):
+#
+#   per_op_fstring_regex     — an f-string (JoinedStr) used as the PATTERN argument
+#                              of re.compile/re.search/.../finditer. A per-op
+#                              f-string-built regex bakes a value into the pattern
+#                              at call time (the classic per-op recompile smell);
+#                              the pattern should be a module constant or built via
+#                              compile_classifier_regex.
+#   multi_finditer_same_src  — two or more `<X>.finditer(<same-name>)` /
+#                              `re.finditer(_, <same-name>)` calls over the SAME
+#                              searched-string name within one function scope (a
+#                              multi-pass scan over one source — span-ownership smell).
+#   span_overlap_dedup       — a function that both computes a span/interval overlap
+#                              (`*.start`/`*.end`/`.span()` compared) AND maintains a
+#                              dedup/seen set (`seen`/`used`/`_dedup` membership) —
+#                              the ad-hoc span-overlap-dedup shape that should be a
+#                              typed partition/coverage account.
+#   clause_boundary_dup      — rule-of-three clause-boundary duplication: three or
+#                              more near-identical clause-boundary literal patterns
+#                              (a repeated boundary token like a §/subsection/clause
+#                              splitter) within one file — the missing-abstraction
+#                              signal (CLAUDE.md rule-of-three).
+
+_FW08_SCAN_ROOTS = (
+    Path("src/lawvm/core"),
+    Path("src/lawvm/finland"),
+)
+
+_FW08_REGEX_PATTERN_METHODS = frozenset(
+    {"compile", "search", "finditer", "findall", "match", "sub", "subn", "split"}
+)
+_FW08_BOUNDARY_TOKEN_RE = re.compile(
+    r"(?:§|pykäl|momentt|subsection|paragraph|clause|kohdan|kohta)",
+    re.IGNORECASE,
+)
+
+
+def _fw08_iter_scanned_files(repo_root: Path) -> list[str]:
+    """Scanned (non-precleared) post-parse core/finland files — the regex-ratchet
+    scan set, so FW-08 sensors share the semantic-plane scope."""
+    root = repo_root.resolve()
+    scanned: list[str] = []
+    for scan_root in _FW08_SCAN_ROOTS:
+        base = root / scan_root
+        if not base.exists():
+            continue
+        for pyfile in sorted(base.rglob("*.py")):
+            rel = _rel_posix(pyfile, root)
+            if "/tests/" in f"/{rel}" or pyfile.name.startswith("test_"):
+                continue
+            if rel in CATEGORY_MAP:
+                continue
+            scanned.append(rel)
+    return scanned
+
+
+def _fw08_is_regex_call(call: ast.Call) -> tuple[bool, str | None]:
+    """(is_regex_call, first_pattern_arg_is_fstring? marker). Recognises
+    ``re.<m>(...)`` and ``<CONST>.<m>(...)`` for the targeted methods."""
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return False, None
+    if func.attr not in _FW08_REGEX_PATTERN_METHODS:
+        return False, None
+    receiver = func.value
+    is_re_module = isinstance(receiver, ast.Name) and receiver.id == "re"
+    is_const = isinstance(receiver, ast.Name) and bool(
+        re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:_RE|_PATTERN|_re|_pattern)", receiver.id)
+    )
+    if not (is_re_module or is_const):
+        return False, None
+    return True, None
+
+
+def _searched_name(call: ast.Call) -> str | None:
+    """For a `.finditer(x)` / `re.finditer(pat, x)` call, the bare NAME of the
+    searched string argument (the last positional arg for re.* calls, the first
+    for `<CONST>.finditer(x)`). None if not a bare name."""
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return None
+    args = call.args
+    if not args:
+        return None
+    is_re_module = isinstance(func.value, ast.Name) and func.value.id == "re"
+    arg = args[-1] if is_re_module else args[0]
+    return arg.id if isinstance(arg, ast.Name) else None
+
+
+def _fw08_per_op_fstring_regex(tree: ast.AST) -> list[int]:
+    """Lines where an f-string (JoinedStr) is the PATTERN arg of a regex call."""
+    hits: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        ok, _ = _fw08_is_regex_call(node)
+        if not ok:
+            continue
+        func = node.func
+        assert isinstance(func, ast.Attribute)
+        is_re_module = isinstance(func.value, ast.Name) and func.value.id == "re"
+        # Pattern arg: first positional for re.compile/re.search(...); for a
+        # `<CONST>.finditer(text)` the receiver is the compiled pattern, so a
+        # JoinedStr pattern only arises on the re-module form.
+        if not is_re_module or not node.args:
+            continue
+        if isinstance(node.args[0], ast.JoinedStr):
+            hits.append(getattr(node, "lineno", 0))
+    return hits
+
+
+def _fw08_multi_finditer_same_source(tree: ast.AST) -> list[int]:
+    """Lines of the 2nd+ finditer call over the SAME searched-string name within a
+    function scope (a multi-pass scan over one source)."""
+    hits: list[int] = []
+    for scope in ast.walk(tree):
+        if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        seen_names: dict[str, int] = {}
+        for node in ast.walk(scope):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute) or func.attr != "finditer":
+                continue
+            name = _searched_name(node)
+            if name is None:
+                continue
+            if name in seen_names:
+                hits.append(getattr(node, "lineno", 0))
+            else:
+                seen_names[name] = getattr(node, "lineno", 0)
+    return sorted(hits)
+
+
+def _fw08_span_overlap_dedup(tree: ast.AST) -> list[int]:
+    """Function-def lines where the body BOTH compares span endpoints AND keeps a
+    dedup/seen membership set (the ad-hoc span-overlap-dedup shape)."""
+    hits: list[int] = []
+    for scope in ast.walk(tree):
+        if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        has_span = False
+        has_dedup = False
+        for node in ast.walk(scope):
+            if isinstance(node, ast.Attribute) and node.attr in {"start", "end", "span"}:
+                has_span = True
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                # seen.add(...) / used.add(...)
+                recv = node.func.value
+                if (
+                    node.func.attr == "add"
+                    and isinstance(recv, ast.Name)
+                    and any(tok in recv.id.lower() for tok in ("seen", "used", "dedup", "emitted"))
+                ):
+                    has_dedup = True
+            if isinstance(node, ast.Compare):
+                # membership test `x in seen`
+                for op, comp in zip(node.ops, node.comparators, strict=False):
+                    if isinstance(op, ast.In) and isinstance(comp, ast.Name):
+                        if any(tok in comp.id.lower() for tok in ("seen", "used", "dedup", "emitted")):
+                            has_dedup = True
+        if has_span and has_dedup:
+            hits.append(getattr(scope, "lineno", 0))
+    return hits
+
+
+def _fw08_clause_boundary_dup(text: str) -> list[int]:
+    """File-level rule-of-three: a clause-boundary regex literal (a string that
+    BOTH names a clause-boundary token AND looks like a regex) that is REPEATED
+    verbatim 3+ times in one file. Returns the lines of the 3rd+ occurrence of each
+    such repeated literal (the over-threshold duplication debt).
+
+    NARROW by design: it flags genuine COPY duplication of the SAME boundary
+    pattern (the missing-abstraction signal), not merely the presence of many
+    distinct boundary patterns. A near-duplicate (differing by a char) is NOT
+    caught — a verbatim-repeat sensor, not a fuzzy-similarity proof."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    by_literal: dict[str, list[int]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            v = node.value
+            # Looks like a regex (has a metachar) AND names a clause boundary token.
+            if _FW08_BOUNDARY_TOKEN_RE.search(v) and re.search(r"[\\\[\](){}|+*?^$]", v):
+                by_literal.setdefault(v, []).append(getattr(node, "lineno", 0))
+    over: list[int] = []
+    for lines in by_literal.values():
+        if len(lines) >= 3:
+            over.extend(sorted(lines)[2:])
+    return sorted(over)
+
+
+def scan_frozen_residue_sensors(repo_root: Path | None = None) -> dict[str, Any]:
+    """FW-08 structural-sensor scan over the scanned semantic-plane file set.
+
+    Returns ``{"category_counts": {cat: {rel: count}}, "totals": {cat: int},
+    "grand_total": int}``. Each category's per-file count is a monotone ratchet
+    quantity (may only fall).
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    category_counts: dict[str, dict[str, int]] = {
+        "per_op_fstring_regex": {},
+        "multi_finditer_same_src": {},
+        "span_overlap_dedup": {},
+        "clause_boundary_dup": {},
+    }
+    for rel in _fw08_iter_scanned_files(root):
+        path = root / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+            tree = ast.parse(text)
+        except (OSError, SyntaxError):
+            continue
+        per_op = len(_fw08_per_op_fstring_regex(tree))
+        multi = len(_fw08_multi_finditer_same_source(tree))
+        span = len(_fw08_span_overlap_dedup(tree))
+        clause = len(_fw08_clause_boundary_dup(text))
+        if per_op:
+            category_counts["per_op_fstring_regex"][rel] = per_op
+        if multi:
+            category_counts["multi_finditer_same_src"][rel] = multi
+        if span:
+            category_counts["span_overlap_dedup"][rel] = span
+        if clause:
+            category_counts["clause_boundary_dup"][rel] = clause
+    totals = {cat: sum(files.values()) for cat, files in category_counts.items()}
+    return {
+        "category_counts": {
+            cat: dict(sorted(files.items()))
+            for cat, files in category_counts.items()
+        },
+        "totals": dict(sorted(totals.items())),
+        "grand_total": sum(totals.values()),
+    }
+
+
+FROZEN_RESIDUE_SENSOR_BASELINE_PATH = Path(
+    "tests/data/frozen_residue_sensor_baseline.json"
+)
+
+
+def frozen_residue_baseline_snapshot(repo_root: Path | None = None) -> dict[str, Any]:
+    state = scan_frozen_residue_sensors(repo_root)
+    return {
+        "_doc": (
+            "Monotone FW-08 frozen-residue structural-sensor baseline. Four "
+            "AST-based categories (per_op_fstring_regex, multi_finditer_same_src, "
+            "span_overlap_dedup, clause_boundary_dup) over the scanned semantic-"
+            "plane core/finland files (the regex-ratchet scan set). Each per-file "
+            "count may only FALL; a fall must be committed. Regenerate with "
+            "`uv run python scripts/inventory_parser_smells.py "
+            "--update-frozen-residue-baseline`. See "
+            "tests/test_frozen_residue_sensors_ratchet.py and registry row FW-08."
+        ),
+        "category_counts": state["category_counts"],
+        "totals": state["totals"],
+        "grand_total": state["grand_total"],
+    }
+
+
+def write_frozen_residue_baseline(repo_root: Path | None = None) -> Path:
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    out_path = root / FROZEN_RESIDUE_SENSOR_BASELINE_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = frozen_residue_baseline_snapshot(root)
+    out_path.write_text(
+        json.dumps(snapshot, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return out_path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate parser smell inventory from known heuristic patterns."
@@ -834,6 +1450,15 @@ def build_parser() -> argparse.ArgumentParser:
             "Regenerate tests/data/regex_ratchet_baseline.json from the current "
             "tree (the regex ratchet baseline). Only ever commit a baseline whose "
             "counts are <= the committed one."
+        ),
+    )
+    parser.add_argument(
+        "--update-frozen-residue-baseline",
+        action="store_true",
+        help=(
+            "Regenerate tests/data/frozen_residue_sensor_baseline.json (FW-08) "
+            "from the current tree. Only ever commit a baseline whose per-category "
+            "counts are <= the committed one (the ratchet only tightens)."
         ),
     )
     parser.add_argument(
@@ -886,6 +1511,14 @@ def main(argv: list[str] | None = None) -> int:
             f"(total_unwaived={snapshot['total_unwaived']}, "
             f"legacy_escape_hatch_ceiling="
             f"{snapshot['legacy_escape_hatch_unwaived_ceiling']})"
+        )
+        return 0
+    if args.update_frozen_residue_baseline:
+        out_path = write_frozen_residue_baseline()
+        snapshot = json.loads(out_path.read_text(encoding="utf-8"))
+        print(
+            f"wrote {out_path} (grand_total={snapshot['grand_total']}, "
+            f"totals={snapshot['totals']})"
         )
         return 0
     categories = None if args.category is None else {category.strip() for category in args.category}

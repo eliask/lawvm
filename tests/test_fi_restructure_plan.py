@@ -1798,6 +1798,42 @@ class TestExecuteRelabel:
         assert executed[0].success is False
         assert executed[0].reason_code == "missing_destination"
 
+    def test_self_relabel_skips_without_migration_or_snapshot(self) -> None:
+        """A self-relabel is not legal migration authority."""
+        tree = _make_body_with_chapters(("3", ["19"]))
+        ledger = MigrationLedger()
+        plan = _make_plan([
+            StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="chapter:3/section:19",
+                destination="chapter:3/section:19",
+            ),
+        ])
+
+        new_tree, executed = execute_restructure_plan(
+            plan,
+            tree,
+            migration_ledger=ledger,
+        )
+        lo_ops: list[LegalOperation] = []
+        emitted = emit_restructure_plan_section_snapshot_legal_operations(
+            lo_ops_out=lo_ops,
+            state_ir=new_tree,
+            executed_ops=executed,
+            amendment_id="1982/601",
+            source_title="",
+            amendment_issue_date=dt.date(1982, 8, 6),
+            amendment_effective_date=dt.date(1983, 1, 1),
+        )
+
+        assert new_tree == tree
+        assert len(executed) == 1
+        assert executed[0].success is False
+        assert executed[0].reason_code == "self_relabel_noop"
+        assert ledger.events == ()
+        assert emitted == 0
+        assert lo_ops == []
+
 
 class TestRelabelSkipFinding:
     def test_maps_missing_destination(self) -> None:

@@ -229,6 +229,7 @@ _REGISTER_TIERS: dict[str, Register] = {
     "fi.jolloin_section_renumber": "canonical",  # "jolloin nykyinen N § siirtyy"
     "fi.jolloin_chapter_renumber": "canonical",
     "fi.jolloin_renumber": "canonical",  # canonical consequence-clause emitter
+    "fi.current_section_renumber_tail": "canonical",  # "nykyinen N § uudeksi M §:ksi"
     "fi.meta_commencement": "canonical",
     "fi.meta_expiry": "canonical",
     "fi.meta_transition": "canonical",
@@ -1079,6 +1080,26 @@ def _build_registry() -> RuleRegistry:
             category="renumber",
             shape="JOLLOIN RENUMBER_PAIR",
             examples=(),
+        )
+    )
+
+    reg.register(
+        ParseRule(
+            rule_id="fi.current_section_renumber_tail",
+            description="Explicit SIIRTAA tail renumbering current sections to new section labels",
+            node_kind="SurfaceRenumberTail",
+            category="renumber",
+            shape="nykyinen NUM+ PYKALA uudeksi NUM+ PYKALA:TRANS",
+            examples=(
+                RuleExample(
+                    input_text=(
+                        "siirretään 8 luvun otsikko uuden 67 §:n edelle sekä "
+                        "nykyinen 63 § uudeksi 69 §:ksi"
+                    ),
+                    expected_node_kind="SurfaceRenumberTail",
+                    description="current section renumber tail in SIIRTAA target list",
+                ),
+            ),
         )
     )
 

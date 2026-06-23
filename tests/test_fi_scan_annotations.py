@@ -266,7 +266,7 @@ class TestJolloiSectionRenumber:
 
     def test_parse_clause_emits_section_renumber_op(self):
         """parse_clause must prepend S P op for jolloin section renumber."""
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
         text = (
             "lisätään uusi 10 §, jolloin nykyinen 10 § siirtyy 10 a §:ksi, "
             "sekä muutetaan 14 §"
@@ -321,7 +321,7 @@ class TestJolloiSectionRenumber:
 
     def test_parse_clause_keeps_trailing_explicit_insert_after_jolloin_clause(self):
         """A trailing explicit insert after jolloin must keep its own chapter scope."""
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
 
         text = (
             "lisätään 15 luvun 2 §:ään, sellaisena kuin se on laissa 1278/2015, "
@@ -369,7 +369,7 @@ class TestJolloiSectionRenumber:
         ]
 
     def test_parse_clause_keeps_chapter_heading_after_jolloin_clause(self) -> None:
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
 
         text = (
             "muutetaan 5 luvun otsikko, 63 §, 69 §, jolloin 69 § siirtyy "
@@ -399,7 +399,7 @@ class TestJolloiSectionRenumber:
 
     def test_parse_clause_chapter_renumber_still_emits_kind_L(self):
         """parse_clause must still emit S L for jolloin chapter renumber."""
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
         text = "lisätään uusi 3 luku, jolloin nykyinen 8 ja 9 luku siirtyvät 10 ja 11 luvuksi"
         ops = parse_clause(text).parsed_ops
         renumber_ops = [op for op in ops if op.verb == "S" and op.kind == "L"]
@@ -459,6 +459,21 @@ class TestJolloinRangeExpansion:
         tokens = tokenize("jolloin nykyinen 10 \u00a7 siirtyy 10 a \u00a7:ksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
         assert pairs == [("10", "10a", "P")]
+
+    def test_same_number_letter_suffix_range(self):
+        """Section suffix range: 32 e-32 h expands to 32e, 32f, 32g, 32h."""
+        tokens = tokenize(
+            "jolloin osaksi muutettu 32 c \u00a7, nykyinen 32 d \u00a7, "
+            "muutettu 32 e \u00a7 ja osaksi muutettu 32 f \u00a7 siirtyy "
+            "32 e\u201532 h \u00a7:ksi"
+        )
+        pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
+        assert pairs == [
+            ("32c", "32e", "P"),
+            ("32d", "32f", "P"),
+            ("32e", "32g", "P"),
+            ("32f", "32h", "P"),
+        ]
 
     def test_mismatched_range_sizes_returns_empty(self):
         """Mismatched expanded range sizes (3\u20135 \u2192 4\u20138) returns empty."""

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from lawvm.finland.johtolause.compat import parse_clause
+from lawvm.finland.johtolause.api import parse_clause
 
 
 # (name, johtolause text, expected op codes)

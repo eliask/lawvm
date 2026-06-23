@@ -176,7 +176,7 @@ CURATED_CASES = [
             "sanamuoto ja c alakohta, 5 §:n 1 momentti, 8 §:n 1 momentin 1 kohta "
             "sekä 9 §:n 1 momentin johdantokappale"
         ),
-        "expected": ["M P 3 1 5 j", "M P 3 1 5c", "M P 5 1", "M P 8 1 1", "M P 9 1 j"],
+        "expected": ["M P 3 1 5 j", "M P 3 1 5 c", "M P 5 1", "M P 8 1 1", "M P 9 1 j"],
         "features": {
             "verb_muuttaa", "section_ref", "sub_ref_momentti",
             "sub_ref_kohta", "sub_ref_johd", "conj_target_list",
@@ -208,7 +208,7 @@ CURATED_CASES = [
         ),
         "expected": [
             "M P 2 1 1", "M P 2 1 2", "M P 2 1 3", "M P 2 1 5", "M P 2 1 6",
-            "M P 2 1 7", "M P 2 1 9", "M P 2 1 10", "M P 2 1 12a", "M P 2 1 13",
+            "M P 2 1 7", "M P 2 1 9", "M P 2 1 10", "M P 2 1 12 a", "M P 2 1 13",
             "M P 2 1 14", "M P 2 1 17", "M P 2 1 20", "M P 2 1 21",
             "M P 2 1 22", "M P 2 1 23", "M P 2 1 24", "M P 4 1 1",
         ],
@@ -220,7 +220,7 @@ CURATED_CASES = [
     {
         "name": "section_ref initial alakohta qualifier keeps later sibling item alive",
         "text": "muutetaan 2 §:n 1 kohdan h alakohta ja 10 kohta",
-        "expected": ["M P 2 1 1h", "M P 2 1 10"],
+        "expected": ["M P 2 1 1 h", "M P 2 1 10"],
         "features": {
             "verb_muuttaa", "section_ref", "sub_ref_kohta", "conj_target_list",
         },
@@ -357,7 +357,7 @@ CURATED_CASES = [
     {
         "name": "section_ref captures alakohta tail and continues list",
         "text": "muutetaan 6 §:n 1 momentin 3 kohdan d ja e alakohta ja 4 kohta, 7 §:n 1 ja 3 momentti",
-        "expected": ["M P 6 1 3d", "M P 6 1 3e", "M P 6 1 4", "M P 7 1", "M P 7 3"],
+        "expected": ["M P 6 1 3 d", "M P 6 1 3 e", "M P 6 1 4", "M P 7 1", "M P 7 3"],
         "features": {
             "verb_muuttaa", "section_ref", "sub_ref_momentti",
             "sub_ref_kohta", "conj_target_list",

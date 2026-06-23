@@ -13,7 +13,7 @@ import lxml.etree as etree
 
 import pytest
 
-from lawvm.core.ir import IRNode, OperationSource
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.uncovered_recovery_runner import _UncoveredRecoveryRun
 from lawvm.finland.uncovered_recovery_support import (
@@ -30,6 +30,7 @@ from lawvm.finland.uncovered_recovery_support import (
 )
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.source_model import AmendmentSourceModel
+from lawvm.finland.johto_scope_mentions import collect_johto_insert_section_targets
 from lawvm.finland.uncovered_chapter_scaffold import (
     FI_RECOVERY_UNCOVERED_CHAPTER_SCAFFOLD_RULE_ID,
     UncoveredChapterScaffoldDraft,
@@ -42,6 +43,8 @@ from lawvm.finland.uncovered_recovery_state import (
     uncovered_section_key as _uncovered_section_key,
 )
 from lawvm.finland.uncovered_recovery_context import build_uncovered_recovery_context
+from lawvm.finland.uncovered_recovery_iteration import peg_owned_section_targets
+from lawvm.finland.ops import AmendmentOp
 
 
 def _section_with_heading(text: str) -> IRNode:
@@ -78,6 +81,50 @@ def test_next_letter_label_rejects_non_numeric() -> None:
 def test_part_label_from_path_finds_part() -> None:
     path = (("part", "2"), ("chapter", "3"), ("section", "5"))
     assert _part_label_from_path(path) == "2"
+
+
+def test_peg_owned_section_targets_do_not_treat_relabel_source_as_payload_owner() -> None:
+    op = AmendmentOp(
+        op_id="renumber_64_to_70",
+        op_type="RENUMBER",
+        lo=LegalOperation(
+            op_id="renumber_64_to_70",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("chapter", "8"), ("section", "64"))),
+            destination=LegalAddress(path=(("section", "70"),)),
+        ),
+        witness_rule_id="fi.current_section_renumber_tail",
+    )
+
+    owned = peg_owned_section_targets([op])
+
+    assert ("8", "64") not in owned.by_chapter
+    assert "64" not in owned.labels
+
+
+def test_uncovered_context_treats_named_subprovision_as_non_whole_section_scope() -> None:
+    ctx = build_uncovered_recovery_context(
+        preamble_text=(
+            "muutetaan tieliikenneasetuksen (182/1982) 16 §:n merkkiä 317 "
+            "koskeva kohta ja 18 §:n merkkejä 416, 417 ja 426 koskevat kohdat, "
+            "sellaisina kuin ne ovat asetuksessa 328/1994, seuraavasti:"
+        ),
+        ops=[],
+        new_chapter_labels=None,
+    )
+
+    assert "16" in ctx.johto_mentioned_labels
+    assert "16" in ctx.johto_named_subprovision_section_targets
+    assert "16" not in ctx.johto_whole_section_targets
+
+
+def test_collect_johto_insert_section_targets_reads_uusi_section_not_moment() -> None:
+    targets = collect_johto_insert_section_targets(
+        "lisätään 2 §:ään uusi 9 ja 10 mom. ja asetukseen uusi 27 § seuraavasti:"
+    )
+
+    assert targets == frozenset({"27"})
 
 
 def test_part_label_from_path_none_when_absent() -> None:
@@ -255,6 +302,8 @@ def _empty_run(
     johto_mentioned_replaced_chapters: set[str] | None = None,
     owned_chapter_labels: set[str] | None = None,
     part_insert_labels: set[str] | None = None,
+    johto_insert_section_targets: set[str] | None = None,
+    johto_named_subprovision_section_targets: set[str] | None = None,
 ) -> _UncoveredRecoveryRun:
     rstate = _empty_state(None)
     return _UncoveredRecoveryRun(
@@ -273,6 +322,10 @@ def _empty_run(
         johto_mentioned_labels=johto_mentioned_labels or set(),
         johto_moment_targets={},
         johto_numbered_table_targets={},
+        johto_whole_section_targets=set(),
+        johto_insert_section_targets=johto_insert_section_targets or set(),
+        johto_named_subprovision_section_targets=johto_named_subprovision_section_targets or set(),
+        johto_insert_subsection_section_targets=set(),
         johto_mentioned_replaced_chapters=johto_mentioned_replaced_chapters or set(),
         moved_section_destinations={},
         owned_chapter_labels=owned_chapter_labels or set(),
@@ -326,6 +379,13 @@ def test_recovery_run_label_gate_allows_part_insert_subtree_sections() -> None:
     )
     assert run.label_allowed_by_johto("110", "1", amend_part_label="5")
     assert not run.label_allowed_by_johto("110", "1", amend_part_label="4")
+
+
+def test_recovery_run_records_explicit_section_insert_target() -> None:
+    run = _empty_run(johto_insert_section_targets={"27"})
+
+    assert run.label_has_section_insert_johto_target("27")
+    assert not run.label_has_section_insert_johto_target("26a")
 
 
 def test_uncovered_recovery_context_collects_johto_moment_targets() -> None:

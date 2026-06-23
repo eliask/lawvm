@@ -467,6 +467,75 @@ def test_dedup_versioned_children_preserves_same_slot_subsection_with_distinct_l
     assert "sec_28v20190979__subsec_2v20221048" in eids
 
 
+def test_dedup_versioned_children_preserves_both_original_version_same_slot_live_subsections() -> None:
+    """2007/1461 §2: Finlex can reuse subsec_1 for two in-force moments.
+
+    Both siblings carry ``finlex:originalVersion`` and no explicit <num>, but
+    their texts are distinct live provisions.  Section comparison must preserve
+    both just like oracle-text does.
+    """
+    ns = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+    fin = "http://data.finlex.fi/schema/finlex"
+    oracle = etree.fromstring(
+        f"""<akn xmlns="{ns}" xmlns:finlex="{fin}">
+          <body>
+            <section eId="sec_2v20151730" finlex:originalVersion="@20151730">
+              <num>2 §</num>
+              <subsection eId="sec_2v20151730__subsec_1v20251188" finlex:originalVersion="@20251188">
+                <content><p>Valtioneuvosto määrää neuvottelukunnan jäsenet.</p></content>
+              </subsection>
+              <subsection eId="sec_2v20151730__subsec_1v20170688" finlex:originalVersion="@20170688">
+                <content><p>Jos jäsen eroaa kesken toimikauden, ministeriö määrää uuden jäsenen.</p></content>
+              </subsection>
+            </section>
+          </body>
+        </akn>"""
+    )
+
+    section = extract_oracle_sections(oracle)["section:2"]
+
+    text = etree.tostring(section, method="text", encoding="unicode")
+    assert "Valtioneuvosto määrää neuvottelukunnan jäsenet" in text
+    assert "Jos jäsen eroaa kesken toimikauden" in text
+
+
+def test_dedup_versioned_children_drops_both_original_version_prior_shadow_without_section_version() -> None:
+    """1978/591 §1: an unversioned section can carry stale same-slot history.
+
+    The old shadow is not an additional live moment even though both same-slot
+    subsection siblings have ``finlex:originalVersion``.  Without a versioned
+    section surface, the later same-slot originalVersion child remains a
+    prior-wording shadow for comparison.
+    """
+    ns = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+    fin = "http://data.finlex.fi/schema/finlex"
+    oracle = etree.fromstring(
+        f"""<akn xmlns="{ns}" xmlns:finlex="{fin}">
+          <body>
+            <section eId="sec_1">
+              <num>1 §</num>
+              <subsection eId="sec_1__subsec_1v19960981" finlex:originalVersion="@19960981">
+                <content><p>Uusi pitkä ensimmäinen momentti, joka kattaa nykyisen soveltamisalan.</p></content>
+              </subsection>
+              <subsection eId="sec_1__subsec_1v19900106" finlex:originalVersion="@19900106">
+                <content><p>Vanha erillinen tekstikatkelma.</p></content>
+              </subsection>
+              <subsection eId="sec_1__subsec_2">
+                <content><p>Seuraava live momentti.</p></content>
+              </subsection>
+            </section>
+          </body>
+        </akn>"""
+    )
+
+    section = extract_oracle_sections(oracle)["section:1"]
+
+    text = etree.tostring(section, method="text", encoding="unicode")
+    assert "Uusi pitkä ensimmäinen momentti" in text
+    assert "Vanha erillinen tekstikatkelma" not in text
+    assert "Seuraava live momentti" in text
+
+
 def test_dedup_versioned_children_prefers_versioned_same_slot_subsection_over_plain_shadow() -> None:
     ns = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
     sec = etree.fromstring(

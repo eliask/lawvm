@@ -85,6 +85,7 @@ def finland_bench_run_evidence_surface(
             "worker_count": int(payload.get("worker_count") or 0),
             "fast_mode": bool(payload.get("fast_mode") or False),
             "diagnostic_replay": bool(payload.get("diagnostic_replay") or False),
+            "selection_as_of": str(payload.get("selection_as_of") or ""),
         },
     ).to_dict()
 

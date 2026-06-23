@@ -260,6 +260,12 @@ def _emit_token(raw: str, out: list[Token], char_offset: int = -1) -> None:
             return Token(text_, lemma_, cat_, case_, verb_code_, char_offset + sub_start, char_offset + sub_end)
         return Token(text_, lemma_, cat_, case_, verb_code_)
 
+    if low and _DASH_ONLY_RE.match(low[0]):
+        entry = _VOCAB.get(low[1:])
+        if entry and entry[1] == "ALAKOHTA":
+            out.append(_tok(raw, entry[0], entry[1], entry[2], entry[3], 0, len(raw)))
+            return
+
     # N§:suffix (e.g. "20§:n", "16a§:ään")
     m = _NPYKALA_RE.match(raw)
     if m:

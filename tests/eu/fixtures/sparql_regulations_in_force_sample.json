@@ -1,0 +1,7 @@
+{ "head": { "link": [], "vars": ["celex"] },
+  "results": { "distinct": false, "ordered": true, "bindings": [
+    { "celex": { "type": "literal", "datatype": "http://www.w3.org/2001/XMLSchema#string", "value": "31958R0001" }},
+    { "celex": { "type": "literal", "datatype": "http://www.w3.org/2001/XMLSchema#string", "value": "32016R0679" }},
+    { "celex": { "type": "literal", "datatype": "http://www.w3.org/2001/XMLSchema#string", "value": "31958R0005" }},
+    { "celex": { "type": "literal", "datatype": "http://www.w3.org/2001/XMLSchema#string", "value": "32016R0679" }},
+    { "celex": { "type": "literal", "datatype": "http://www.w3.org/2001/XMLSchema#string", "value": "31958R0006" }} ] } }

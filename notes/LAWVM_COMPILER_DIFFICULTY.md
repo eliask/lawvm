@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Explanatory (why the compiler is hard). Cross-ref to FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md verified present; no src path or section drift; no PEG3/§1.13.
+
 # LawVM Compiler Difficulty
 
 This note explains why LawVM, and especially the Finland frontend, is a
