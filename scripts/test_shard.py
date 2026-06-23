@@ -410,6 +410,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # accounting path; zero invariants in the forbidden implicit_convention
         # bucket.
         "test_claim_surface_coverage.py",
+        # Claim-surface backbone, continued: the finite-axis invariant GENERATOR
+        # (Pro §13 step 1 — invariants generated from claim shape; undischarged
+        # obligation = typed gap); the MUST-trace ledger + drift detector (step 5);
+        # and the per-handle non-guarantee binding gate (every declared
+        # allowed_non_guarantee handle resolves to a registered assumption).
+        "test_invariant_generator.py",
+        "test_must_trace.py",
+        "test_claim_assumption_binding.py",
         # Audit-invariant registry program (CROSS-JURISDICTION, §2.3): row
         # XJUR-02 — no hidden replay kernel in a frontend (static boundary audit;
         # monotone ratchet over a discovered-debt baseline).
