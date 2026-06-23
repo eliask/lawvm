@@ -15,6 +15,8 @@ precedence-rail residual checked here is the implementable arm.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from lawvm.core.ir import (
     IRNode,
     LegalAddress,
@@ -51,7 +53,7 @@ def _version(
     text: str,
     effective: str = "2024-01-01",
     enacted: str = "2024-01-01",
-    variant_kind: str = "permanent",
+    variant_kind: Literal["permanent", "temporary"] = "permanent",
     source: OperationSource | None = _SOURCE,
     applicability: list[ScopePredicate] | None = None,
 ) -> ProvisionVersion:
