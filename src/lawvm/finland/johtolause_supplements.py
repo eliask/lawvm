@@ -30,8 +30,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace as dc_replace
+from collections.abc import Sequence
 from typing import List, Tuple, cast
 
+from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.phase_result import Finding
 from lawvm.core.tree_ops import normalized_label_key
 from lawvm.core.clause_ast import ItemShiftClause, NamedRowClause
@@ -44,6 +46,8 @@ from lawvm.finland.johtolause.clause_surface import (
     parse_item_shift_after_repeal_clauses,
     parse_item_shift_clauses,
 )
+from lawvm.finland.johtolause.lexer import tokenize
+from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johto_scope_mentions import (
     collect_johto_numbered_table_targets,
@@ -59,6 +63,7 @@ _ITEM_AND_MOMENT_TARGET_RULE_ID = "fi.item_and_moment_target_supplement.v1"
 _ITEM_AND_MOMENT_TARGET_TAG = "item_and_moment_target_supplement"
 _MIXED_EXPLICIT_TARGET_RULE_ID = "fi.mixed_explicit_target_supplement.v1"
 _MIXED_EXPLICIT_TARGET_TAG = "mixed_explicit_target_supplement"
+_JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG = "jolloin_moment_renumber_supplement"
 _EXPLICIT_CHAPTER_SCOPE_TAG = "chapter_scope_from_explicit_chunk"
 _SECTION_LABEL_PATTERN = r"\d{1,4}(?:[a-zäöå]|\s[a-zäöå])?"
 _CHAPTER_LABEL_PATTERN = _SECTION_LABEL_PATTERN
@@ -217,6 +222,15 @@ class MomentTargetClause:
     table_labels: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class JolloinMomentRenumberClause:
+    """Typed supplement for dropped ``jolloin`` subsection renumber pairs."""
+
+    section: str
+    source_moment: int
+    destination_moment: int
+
+
 # ---------------------------------------------------------------------------
 # Clause-waist parsers (inlined from former clause_waist.py)
 # ---------------------------------------------------------------------------
@@ -336,6 +350,125 @@ def _supplement_missing_repeals_after_item_shift_clause(
         if already_present:
             continue
         supplemented.append(extra_op)
+    return supplemented
+
+
+def _jolloin_moment_renumber_anchor_section(
+    tokens: Sequence[object],
+    jolloin_pos: int,
+) -> str | None:
+    """Return the section owning a dropped ``jolloin`` moment renumber.
+
+    The evidence comes from the token scanner, not a prose regex: only a
+    preceding ``N §:ään ... uusi ... momentti`` insertion span immediately before
+    the ``JOLLOIN_MOVE`` sentinel can anchor the consequence renumber.
+    """
+
+    pykala_pos = None
+    for idx in range(jolloin_pos - 1, -1, -1):
+        token = tokens[idx]
+        cat = getattr(token, "cat", "")
+        if cat == "PYKALA":
+            pykala_pos = idx
+            break
+        if cat == "VERB":
+            break
+    if pykala_pos is None or pykala_pos == 0:
+        return None
+    section_token = tokens[pykala_pos - 1]
+    if getattr(section_token, "cat", "") != "NUM":
+        return None
+    between = tokens[pykala_pos + 1 : jolloin_pos]
+    if not any(getattr(token, "cat", "") == "UUSI" for token in between):
+        return None
+    if not any(getattr(token, "cat", "") == "MOMENTTI" for token in between):
+        return None
+    return _norm_num_token(str(getattr(section_token, "text", "") or ""))
+
+
+def _parse_jolloin_moment_renumber_clauses(
+    johto: str,
+) -> tuple[JolloinMomentRenumberClause, ...]:
+    tokens, jolloin_pairs = apply_annotations_with_jolloin_pairs(tokenize(johto))
+    if not jolloin_pairs:
+        return ()
+    clauses: list[JolloinMomentRenumberClause] = []
+    for jolloin_pos, pairs in sorted(jolloin_pairs.items()):
+        section = _jolloin_moment_renumber_anchor_section(tokens, jolloin_pos)
+        if not section:
+            continue
+        for source, destination, kind in pairs:
+            if kind != "M":
+                continue
+            if not source.isdigit() or not destination.isdigit():
+                continue
+            clauses.append(
+                JolloinMomentRenumberClause(
+                    section=section,
+                    source_moment=int(source),
+                    destination_moment=int(destination),
+                )
+            )
+    return tuple(clauses)
+
+
+def _supplement_jolloin_moment_renumber_ops(
+    ops: List[AmendmentOp],
+    johto: str,
+) -> List[AmendmentOp]:
+    """Recover scanner-owned ``jolloin`` subsection renumbers dropped by fallback parsing."""
+
+    clauses = _parse_jolloin_moment_renumber_clauses(johto)
+    if not clauses:
+        return ops
+    supplemented = list(ops)
+    for idx, clause in enumerate(clauses):
+        already_present = False
+        for op in supplemented:
+            if op.op_type != "RENUMBER":
+                continue
+            if _norm_num_token(op.target_section or "") != clause.section:
+                continue
+            if op.target_paragraph != clause.source_moment:
+                continue
+            destination = op.lo.destination if op.lo is not None else None
+            if destination is None:
+                continue
+            dest_path = {kind: label for kind, label in destination.path}
+            if dest_path.get("subsection") == str(clause.destination_moment):
+                already_present = True
+                break
+        if already_present:
+            continue
+        target = LegalAddress(
+            path=(
+                ("section", clause.section),
+                ("subsection", str(clause.source_moment)),
+            )
+        )
+        destination = LegalAddress(
+            path=(
+                ("section", clause.section),
+                ("subsection", str(clause.destination_moment)),
+            )
+        )
+        supplemented.extend(
+            AmendmentOp.from_lo(
+                LegalOperation(
+                    op_id=(
+                        "jolloin_moment_renumber_"
+                        f"{clause.section}_{clause.source_moment}_to_{clause.destination_moment}_{idx}"
+                    ),
+                    sequence=0,
+                    action=StructuralAction.RENUMBER,
+                    target=target,
+                    destination=destination,
+                    provenance_tags=(_JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG,),
+                    witness_rule_id="fi.jolloin_renumber",
+                ),
+                len(supplemented),
+            )
+        )
     return supplemented
 
 
