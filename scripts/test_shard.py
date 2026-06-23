@@ -405,6 +405,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_projection_author_set_authority.py",
         "test_explicit_address_level.py",
         "test_guard_liveness_totality.py",
+        # Claim-surface backbone (Pro invariant-mining §13 step 1+3 + §4): the
+        # generated coverage gate — every declared public claim has a live
+        # accounting path; zero invariants in the forbidden implicit_convention
+        # bucket.
+        "test_claim_surface_coverage.py",
         # Audit-invariant registry program (CROSS-JURISDICTION, §2.3): row
         # XJUR-02 — no hidden replay kernel in a frontend (static boundary audit;
         # monotone ratchet over a discovered-debt baseline).

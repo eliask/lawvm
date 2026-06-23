@@ -10,6 +10,7 @@
     "src/lawvm/core/frontend_contract.py": 2,
     "src/lawvm/core/frontend_phase_surface.py": 1,
     "src/lawvm/core/frontier_work_item.py": 1,
+    "src/lawvm/core/invariant_spec.py": 2,
     "src/lawvm/core/legal_surface_graph.py": 2,
     "src/lawvm/core/legal_surface_lens.py": 3,
     "src/lawvm/core/legal_surface_lints.py": 1,
@@ -211,7 +212,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 143,
+  "public_schema_count": 147,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -231,6 +232,8 @@
     "lawvm.change_dates.v0",
     "lawvm.checker.v0",
     "lawvm.checker_contract.v0",
+    "lawvm.claim_spec.v0",
+    "lawvm.claim_surface_manifest.v0",
     "lawvm.consumed_by_build.v0",
     "lawvm.content_blob.v0",
     "lawvm.content_blobs.v0",
@@ -271,6 +274,8 @@
     "lawvm.frontier_work_item_report.v1",
     "lawvm.initial_state_event.v1",
     "lawvm.interpretation_policy.v0",
+    "lawvm.invariant_set.v0",
+    "lawvm.invariant_spec.v0",
     "lawvm.keeper_correction_event.v1",
     "lawvm.know_source_monotonicity_report.v1",
     "lawvm.legal_relation_edge.v0",
@@ -357,5 +362,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 360
+  "total_bare_status": 362
 }
