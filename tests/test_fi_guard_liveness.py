@@ -46,13 +46,22 @@ from lawvm.core.compile_result import (
     strict_fail_reasons_from_finding_ledger,
 )
 from lawvm.core.elaboration_context import PayloadElaborationContext, ReplayLookups
-from lawvm.core.ir import IRNode
+from lawvm.core.fire_drill_registry import (
+    RECORDED_DEAD,
+    classify_guard_liveness,
+    hard_or_strict_codes,
+)
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.observation_registry import FINDING_REGISTRY, FindingSpec
 from lawvm.core.phase_result import Finding, PhaseResult
-from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.core.tree_ops import check_invariants
 from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.compile_group_scope_recovery import (
+    CompileGroupScopeRecoveryRequest,
+    resolve_compile_group_scope_recovery,
+)
 from lawvm.finland.compile_group_surface import BuildGroupSurfaceRequest, build_group_surface
 from lawvm.finland.corpus import get_corpus_store
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
@@ -589,6 +598,253 @@ def drill_fold_single_insert_subsection_list_tail_payload_elaboration() -> None:
         observation.kind == "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL"
         for observation in (near_miss.elaboration_observations or [])
     ), "fold fired on a list-item sibling tail that it must leave as a distinct moment"
+
+
+def _numbered_list_subsection(label: str) -> IRNode:
+    """A live ``N momentti`` that is already an intro + numbered-list moment."""
+    return IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label=label,
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="Sovelletaan seuraavia:"),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="ensimmäinen luettelokohta;"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="toinen luettelokohta."),),
+            ),
+        ),
+    )
+
+
+def drill_fold_multi_target_subsection_list_wrapups_payload_elaboration() -> None:
+    """ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS reaches payload elaboration output.
+
+    Production lane: ``elaborate_payload_against_live`` normalizes a section
+    payload whose preamble explicitly replaces ``N ja M momentti`` (two plain
+    section-subsection REPLACE ops). Historical Finlex XML serialized each
+    changed legal moment as two adjacent source subsections — an intro/numbered-
+    list body followed by a content-only wrap-up. Every targeted moment is
+    already a numbered-list moment in the live tree, so the production guard
+    ``_fold_multi_target_subsection_list_wrapups`` folds each content-only
+    wrap-up into its preceding list moment and emits the blocking ``strict_fail``
+    elaboration observation.
+    """
+    live1 = _numbered_list_subsection("1")
+    live2 = _numbered_list_subsection("2")
+    live_node = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(IRNode(kind=IRNodeKind.NUM, text="5 §"), live1, live2),
+    )
+    ctx = PayloadElaborationContext(
+        target_unit_kind="section",
+        target_norm="5",
+        target_chapter=None,
+        target_part=None,
+        live_node=live_node,
+        parent_node=None,
+        subsection_slots=(),
+        live_subsections=(live1, live2),
+        subsection_by_label={"1": live1, "2": live2},
+        item_index={},
+        row_anchor_index={},
+        container_member_labels=None,
+        lookups=ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset(),
+        ),
+    )
+
+    def _replace_moment(paragraph: int) -> AmendmentOp:
+        return AmendmentOp(
+            op_type="REPLACE",
+            target_kind=TargetKind.SECTION,
+            target_section="5",
+            target_paragraph=paragraph,
+            source_statute="2099/1",
+        )
+
+    # "muutetaan 5 §:n 1 ja 2 momentti": two plain, contiguous subsection replaces.
+    group_ops = [_replace_moment(1), _replace_moment(2)]
+
+    def _intro_list_prefix() -> IRNode:
+        return IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="Sovelletaan seuraavia:"),
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="ensimmäinen muutettu;"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="toinen muutettu."),),
+                ),
+            ),
+        )
+
+    def _content_only_tail(text: str) -> IRNode:
+        return IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            children=(IRNode(kind=IRNodeKind.CONTENT, text=text),),
+        )
+
+    # len(targets) * 2 == 4 source subsections, as (intro/list prefix, wrap-up) pairs.
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="5 §"),
+            _intro_list_prefix(),
+            _content_only_tail("Edellä tarkoitettu päätös tehdään viivytyksettä."),
+            _intro_list_prefix(),
+            _content_only_tail("Näitä sovelletaan vastaavasti."),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, group_ops, muutos_ir, set())
+
+    observations = got.elaboration_observations
+    assert observations is not None
+    hits = [
+        observation
+        for observation in observations
+        if observation.kind == "ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS"
+    ]
+    assert hits, (
+        "two explicit list-moment replaces with content-only sibling wrap-ups did "
+        "not surface ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS on the payload "
+        "elaboration ledger"
+    )
+    detail = hits[0].detail or {}
+    assert detail["target_paragraphs"] == [1, 2]
+    assert detail["tail_text_chars"] and all(chars > 0 for chars in detail["tail_text_chars"])
+
+    # The guard genuinely folded: the two wrap-up siblings collapse into the two
+    # targeted list moments, each carrying a wrap-up tail.
+    normalized = got.muutos_ir
+    assert normalized is not None
+    folded_subs = [c for c in normalized.children if c.kind is IRNodeKind.SUBSECTION]
+    assert len(folded_subs) == 2, "wrap-up siblings were not folded into the targeted moments"
+    assert all(
+        any(c.kind is IRNodeKind.WRAP_UP for c in sub.children) for sub in folded_subs
+    ), "fold fired but a content-only wrap-up was not carried into its moment"
+
+
+def drill_body_chapter_descendant_scope_correction_compile_group_recovery() -> None:
+    """LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION reaches the recovery ledger.
+
+    Production lane: ``resolve_compile_group_scope_recovery`` runs the production
+    pre-snapshot scope recovery over a descendant (subsection-intro) REPLACE whose
+    preamble scopes ``2 luku`` but whose amendment body places ``10 b §`` under a
+    freshly inserted letter-suffix chapter ``2 a luku``. The production guard
+    ``_maybe_apply_descendant_body_chapter_scope`` rebounds the descendant target
+    chapter to the source body chapter and emits the blocking ``strict_fail``
+    recovery finding.
+    """
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2a",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="10b",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="1",
+                                    children=(IRNode(kind=IRNodeKind.INTRO, text="old intro"),),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>2 a luku</num>
+              <section>
+                <num>10 b §</num>
+                <subsection>
+                  <content><p>new intro:</p></content>
+                  <paragraph><num>1)</num><content><p>carried item</p></content></paragraph>
+                </subsection>
+              </section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    replace_intro_op = AmendmentOp(
+        op_id="replace_10b_intro",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="10b",
+        target_chapter="2",
+        target_paragraph=1,
+        target_special="johd",
+        source_statute="2008/732",
+        lo=LegalOperation(
+            op_id="replace_10b_intro",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(
+                path=(("chapter", "2"), ("section", "10b"), ("subsection", "1")),
+                special=FacetKind.INTRO,
+            ),
+            payload=None,
+        ),
+    )
+
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="10b",
+            target_chapter="2",
+            target_part=None,
+            group_ops=[replace_intro_op],
+            inserted_chapter_labels=set(),
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            johto="lisätään asetukseen uusi 9 b § ja sen edelle uusi 2 a luvun otsikko",
+            strict_profile=None,
+        )
+    )
+
+    kinds = [finding.kind for finding in result.findings()]
+    assert "LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION" in kinds, (
+        "descendant section REPLACE under a body-owned letter-suffix chapter did "
+        "not surface LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION on the "
+        "scope-recovery finding ledger"
+    )
+    finding = next(
+        f
+        for f in result.findings()
+        if f.kind == "LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION"
+    )
+    assert finding.detail["body_chapter"] == "2a"
+    # The guard genuinely retargeted: the descendant op rebounds onto the body chapter.
+    assert result.output.effective_target_chapter == "2a"
+    assert result.output.group_ops[0].target_chapter == "2a"
 
 
 def drill_restore_heading_for_explicit_facet_group_elaboration() -> None:
@@ -3144,6 +3400,8 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_apply_lane,
     "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD": drill_leading_subsection_heading_payload_elaboration,
     "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL": drill_fold_single_insert_subsection_list_tail_payload_elaboration,
+    "ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS": drill_fold_multi_target_subsection_list_wrapups_payload_elaboration,
+    "LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION": drill_body_chapter_descendant_scope_correction_compile_group_recovery,
     "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET": drill_restore_heading_for_explicit_facet_group_elaboration,
     "ELAB.SPARSE_OMISSION_TAIL_CLAIM": drill_sparse_omission_tail_claim_group_surface,
     "ELAB.SPARSE_OMISSION_TAIL_PRUNED_FROM_CARRIER": drill_sparse_omission_tail_pruned_from_carrier_compile_surface,
@@ -3299,12 +3557,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.DROP_ITEM_REPLACES_MISSING": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.DROP_REDUNDANT_ITEM_OPS_IN_SPARSE_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.DUPLICATE_TABLE_NOTE_BLOCK_PRUNED": ("payload-normalize recovery; needs fixture", "2026-06-20"),
-    # New blocking code from sibling payload-normalize structure-op work
-    # (multi-target subsection list wrap-up folding in payload_normalize.py).
-    # Same payload-normalize-barrier shape as the ELAB.SPLIT_* siblings above;
-    # needs a stable wrap-up-fold fixture before it can be drilled. Debt: this
-    # raised the derived NO_FIRE_DRILL_CEILING by one.
-    "ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS": ("payload-normalize wrap-up-fold recovery; needs fixture", "2026-06-23"),
     "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE": ("merge recovery; needs fixture", "2026-06-20"),
@@ -3341,12 +3593,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.UNRESOLVED_POOL_ADDRESS.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
     "ELAB.WRAPPER_ORPHAN_SUBSECTION_CONTINUATION": ("payload-lookup recovery; needs fixture", "2026-06-20"),
     "LINEAGE.UNCLASSIFIED_PROVISION_MIGRATION.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
-    # New blocking code from sibling scope-recovery work
-    # (body chapter-descendant scope correction in compile_group_scope_recovery.py).
-    # Same scope-recovery-barrier shape as the LOWER.* siblings below; needs a
-    # stable chapter-descendant scope fixture before it can be drilled. Debt:
-    # this raised the derived NO_FIRE_DRILL_CEILING by one.
-    "LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION": ("scope-recovery (chapter-descendant) barrier; needs fixture", "2026-06-23"),
     "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE": ("scope recovery; needs fixture", "2026-06-20"),
     "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET": ("scope recovery; needs fixture", "2026-06-20"),
     "LOWER.CONTEXT_DEPENDENT_ANCHOR": ("scope recovery; needs fixture", "2026-06-20"),
@@ -3589,6 +3835,10 @@ _PRODUCTION_BUILDER_CALLS = (
     "compile_amendment_ops",
     "elaborate_group",
     "elaborate_payload_against_live",
+    # Pre-snapshot scope/action recovery for one compile group: the production
+    # entrypoint that runs every LOWER.* scope-recovery guard
+    # (_maybe_apply_descendant_body_chapter_scope etc.) over the lowered group ops.
+    "resolve_compile_group_scope_recovery",
     "api.parse_clause",
     "parse_clause(",
     "_check_occupancy_policy",
@@ -3838,3 +4088,101 @@ def test_downgraded_consistency_codes_match_their_only_producer() -> None:
             f"{code} is still classified blocking; the rank-18 reconciliation did "
             "not take effect"
         )
+
+
+# ---------------------------------------------------------------------------
+# Guard-liveness coverage gate: the three-state FireDrillRegistry partition
+# ---------------------------------------------------------------------------
+#
+# The classifier in lawvm.core.fire_drill_registry partitions every hard/strict
+# finding code into exactly one of {live_drill, recorded_dead, no_drill_yet}.
+# The drilled set and the debt allowlist are owned HERE (with the drills); the
+# owned-deadness set is owned in the core module (RECORDED_DEAD). A code that is
+# both drilled here AND recorded-dead is classified recorded_dead: the
+# production-call-site honesty (no execution path reaches the gate) dominates the
+# weaker "a drill can drive the gate function" claim.
+
+
+def _guard_liveness_live_drill_codes() -> frozenset[str]:
+    """The drilled codes that count as live_drill for the three-state partition.
+
+    A FIRE_DRILLS code is live_drill UNLESS it is recorded-dead: the
+    promotion-chain gates have a drill that drives the gate FUNCTION, but no
+    production call site reaches the emit site, so production-reachability honesty
+    reclassifies them as recorded_dead (see RECORDED_DEAD).
+    """
+    in_range = hard_or_strict_codes()
+    return (frozenset(FIRE_DRILLS) & in_range) - frozenset(RECORDED_DEAD)
+
+
+def test_guard_liveness_three_state_partition_is_consistent() -> None:
+    """Coverage gate: every hard/strict finding lands in exactly one of three states.
+
+    The guard-liveness states are {live_drill, recorded_dead, no_drill_yet}. This
+    asserts the partition over all hard_fail/strict_fail finding codes is
+    exhaustive (no code is silently un-accounted) and mutually exclusive (no code
+    is in two states). This is the structural guard-liveness coverage gate: a new
+    hard/strict guard cannot be added without consciously landing in one state.
+
+    HONESTY BOUNDARY: live_drill proves the guard FIRES from production, not that
+    it is semantically correct. recorded_dead is an OWNED deadness (no production
+    call site), not a fix. no_drill_yet is declared debt. Never "all guards fire".
+    """
+    classification = classify_guard_liveness(
+        live_drill_codes=_guard_liveness_live_drill_codes(),
+        no_drill_yet_codes=frozenset(NO_FIRE_DRILL_YET) & hard_or_strict_codes(),
+    )
+    assert not classification.unaccounted, (
+        "hard/strict finding codes silently un-accounted by the guard-liveness "
+        f"three-state partition: {sorted(classification.unaccounted)}. Each must "
+        "gain a fire-drill (live_drill), be recorded dead (recorded_dead, owned), "
+        "or be declared debt (no_drill_yet)."
+    )
+    assert not classification.overlapping, (
+        "hard/strict finding codes in more than one guard-liveness state (the "
+        f"states must be mutually exclusive): {sorted(classification.overlapping)}"
+    )
+    assert classification.is_consistent()
+
+
+def test_recorded_dead_entries_are_real_hard_or_strict_codes() -> None:
+    """RECORDED_DEAD must name registered hard/strict codes with a named owner+reason."""
+    in_range = hard_or_strict_codes()
+    for code in sorted(RECORDED_DEAD):
+        spec = FINDING_REGISTRY.get(code)
+        assert spec is not None, f"RECORDED_DEAD names unregistered code: {code}"
+        assert code in in_range, (
+            f"RECORDED_DEAD names non-hard/strict code {code!r}; the classifier "
+            "ranges over hard_fail/strict_fail only"
+        )
+        owner, reason = RECORDED_DEAD[code]
+        assert owner.strip(), f"RECORDED_DEAD[{code!r}] has an empty owner"
+        assert reason.strip(), f"RECORDED_DEAD[{code!r}] has an empty reason"
+
+
+def test_recorded_dead_guards_have_no_production_call_site() -> None:
+    """Owned deadness must stay honest: recorded-dead gates have no production caller.
+
+    Each RECORDED_DEAD code's gate function lives in finland/apply_promotion_chain.py
+    and must have NO call site outside that module (and outside tests). The moment a
+    production caller is wired, the code becomes reachable and must move to a
+    live_drill — this test fails until it does, so the deadness cannot rot into a
+    silent false claim.
+    """
+    import pathlib
+
+    src_root = pathlib.Path(__file__).resolve().parent.parent / "src" / "lawvm"
+    gate_callers = ("gate_authorization_scope_match", "gate_promotion_chain_links", "gate_downchain_retraction")
+    offenders: list[str] = []
+    for path in src_root.rglob("*.py"):
+        if path.name == "apply_promotion_chain.py":
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for gate in gate_callers:
+            # A call site is "<gate>(" — the import-less invocation form.
+            if f"{gate}(" in text:
+                offenders.append(f"{path}: {gate}")
+    assert not offenders, (
+        "recorded-dead promotion-chain gate now has a production call site; move "
+        f"the corresponding RECORDED_DEAD code to a live_drill: {offenders}"
+    )
