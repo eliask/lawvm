@@ -2339,7 +2339,16 @@ def test_2011_948_2021_546_chapter_5a_boundary_and_later_inserts() -> None:
 
 
 def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() -> None:
-    """Real corpus anchor for uncovered chapter payload moving 32 § from chapter 5 to 4."""
+    """Real corpus anchor: §32 stays in chapter 5 per the Finlex oracle.
+
+    The original expectation (2002/716 moves §32 from chapter 5 to chapter 4)
+    was oracle-incorrect: the consolidated 1992/733 (through 2009/1706) keeps
+    §32 (Valtionavustuslain eräiden säännösten soveltaminen) under 5 luku
+    alongside §31 — chapter 4 holds §§20-30. The scope-recovery cluster
+    (cf036e58 "Fix FI stale body chapter scope wrappers" .. 410d9528 "Keep FI
+    descendant-scoped replacements ...") corrected the placement to chapter 5,
+    so this anchor now asserts the oracle-correct location.
+    """
     replay = call_replay_xml(
         replay_xml,
         request=ReplayXmlRequest(
@@ -2349,8 +2358,8 @@ def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() 
         ),
     )
 
-    assert replay.materialized_state.find_section("32", "4") is not None
-    assert replay.materialized_state.find_section("32", "5") is None
+    assert replay.materialized_state.find_section("32", "5") is not None
+    assert replay.materialized_state.find_section("32", "4") is None
 
 
 def test_1996_579_1998_518_new_chapter_does_not_reanimate_repealed_section_32() -> None:

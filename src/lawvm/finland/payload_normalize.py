@@ -846,6 +846,41 @@ def _slot_ir_has_paragraph_row(node: IRNode) -> bool:
     return any(child.kind is IRNodeKind.PARAGRAPH for child in node.children)
 
 
+def _slot_ir_carries_item_row_marker(node: IRNode, target_item: str) -> bool:
+    """Return whether ``node``'s flat content carries the item's own row marker.
+
+    A content-only subsection can hold the source-owned text for an item under
+    its own row marker:
+
+    * a lettered fee-table row ``H. Poronlihan ...`` for item ``h`` (addressed
+      ``N kohta h``); or
+    * a flat ``8 a) meriliikenteen ...`` item-prefix row for item ``8a``
+      (addressed ``N momentin 8 a kohta``), where the digit/letter compound may
+      carry an internal space in the source text.
+
+    When the candidate slot literally carries the item's own marker, the item op
+    is NOT being mis-bound to an unrelated intro/body fragment — the slot IS the
+    item's content — so the sparse-fallback guard must not drop it. Matching is
+    restricted to a leading/standalone ``LABEL.`` or ``LABEL)`` marker so an
+    incidental letter inside prose does not falsely exempt the op.
+    """
+    item_key = leaf_label_identity_key(str(target_item or ""))
+    if not item_key:
+        return False
+    text = irnode_to_text(node).strip()
+    if not text:
+        return False
+    # lawvm-regex: owning_parser P-item-row-marker lettered/numbered
+    # ``LABEL.``/``LABEL)`` row-prefix predicate over flat content (compound
+    # ``N a`` markers may carry an internal space); lexer-shaped, drives slot
+    # assignment exemption only, no op.
+    for match in re.finditer(r"(?:^|\s)([0-9]+\s*[a-zA-Z]*|[a-zA-Z])[.)]\s", text):
+        marker = re.sub(r"\s+", "", match.group(1))
+        if leaf_label_identity_key(marker) == item_key:
+            return True
+    return False
+
+
 def _assign_duplicate_target_slot_ops(
     slot_inputs: SubsectionSlotInputs,
     state: SubsectionSlotAssignmentState,
@@ -1662,7 +1697,13 @@ def _assign_fallback_plain_slot_ops(
             and not candidate.target_special
             for candidate in slot_inputs.payload_subsec_ops
         )
-        if op.target_item and (
+        candidate_carries_item_row = (
+            candidate_sub_idx < len(slot_inputs.amend_subs)
+            and _slot_ir_carries_item_row_marker(
+                slot_inputs.amend_subs[candidate_sub_idx], str(op.target_item or "")
+            )
+        )
+        if op.target_item and not candidate_carries_item_row and (
             slot_inputs.has_omission_slots
             or candidate_is_intro_only
             or (candidate_has_no_paragraph_rows and not has_plain_payload_owner)
@@ -1696,15 +1737,21 @@ def _assign_item_prefix_slot_ops(
     state: SubsectionSlotAssignmentState,
 ) -> None:
     for op in slot_inputs.payload_subsec_ops:
-        if not op.target_item:
+        if op in state.subsec_map or not op.target_item:
             continue
         item_norm = leaf_label_identity_key(str(op.target_item))
-        for sub in slot_inputs.amend_subs:
+        for idx, sub in enumerate(slot_inputs.amend_subs):
+            if idx in state.used_subs:
+                continue
             sub_text = (sub.text or " ".join(child.text or "" for child in sub.children)).strip()
-            # lawvm-regex: owning_parser P-item-prefix flat ``N)`` item-label predicate over IR sub text; lexer-shaped
-            m = re.match(r"^(\d+[a-zA-Z]*)\)", sub_text)
-            if m and leaf_label_identity_key(m.group(1)) == item_norm:
+            # lawvm-regex: owning_parser P-item-prefix flat ``N)`` item-label
+            # predicate over IR sub text; lexer-shaped. The digit/letter compound
+            # may carry an internal space in the source (``8 a)``) — normalize it
+            # away before comparing to the addressed item label.
+            m = re.match(r"^(\d+\s*[a-zA-Z]*)\)", sub_text)
+            if m and leaf_label_identity_key(re.sub(r"\s+", "", m.group(1))) == item_norm:
                 state.subsec_map.assign(op, sub)
+                state.used_subs.add(idx)
                 break
 
 
@@ -6012,7 +6059,23 @@ def _split_mixed_sparse_slot_cross_paragraph_payloads(
                 kept_children.append(child)
             if not removed_labels:
                 continue
-            patched_map.assign(plain_op, _tops._with_children(mapped, kept_children))
+            pruned_slot = _tops._with_children(mapped, kept_children)
+            # Record that this plain-moment slot was carved out of a slot whose
+            # remaining (cross-paragraph) item bodies belong to ANOTHER moment.
+            # A language-variant ("ruotsinkielinen sanamuoto") plain replace that
+            # only rides the shared item payload owns no genuine content of its
+            # own; the downstream language-variant shadow constraint matches the
+            # plain op against the item op's slot, which the split would otherwise
+            # sever by re-binding to this pruned copy. The marker lets the
+            # constraint still recognize the shadowing relationship.
+            pruned_slot = IRNode(
+                kind=pruned_slot.kind,
+                label=pruned_slot.label,
+                text=pruned_slot.text,
+                attrs={**pruned_slot.attrs, "lawvm_split_from_shared_item_slot": "1"},
+                children=pruned_slot.children,
+            )
+            patched_map.assign(plain_op, pruned_slot)
             changed = True
             observations.append(
                 _obs(

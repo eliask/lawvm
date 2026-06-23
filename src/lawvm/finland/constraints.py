@@ -883,6 +883,26 @@ def _c_language_variant_plain_replace_shadowed_by_sparse_item_payload(
     if mapped_sub is None:
         return True, ""
 
+    # The mixed-sparse-slot split (payload_normalize) can re-bind a plain
+    # language-variant moment replace from the shared item-bearing slot onto a
+    # pruned copy, marked ``lawvm_split_from_shared_item_slot``. That severs the
+    # ``mapped is mapped_sub`` identity the shadow detection below relies on. When
+    # the plain op rides such a split copy and the group still carries a
+    # same-section item REPLACE (the payload it was riding), it owns no genuine
+    # content of its own — drop it as a shadowed language variant.
+    if mapped_sub.attrs.get("lawvm_split_from_shared_item_slot") == "1" and any(
+        other is not op
+        and other.op_type == "REPLACE"
+        and other.target_unit_kind == op.target_unit_kind
+        and other.target_section == op.target_section
+        and other.target_chapter == op.target_chapter
+        and other.target_paragraph is not None
+        and bool(other.target_item)
+        and not other.target_special
+        for other in all_ops
+    ):
+        return False, "language-variant context replace shadowed by split sparse item payload"
+
     same_scope_context_ops = [
         other
         for other in all_ops

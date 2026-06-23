@@ -733,23 +733,38 @@ def infer_letter_suffix_section_chapter_from_stem_host(
     return stem_chapter
 
 
-def _letter_suffix_insert_has_unchaptered_live_stem(
+def _letter_suffix_insert_live_stem_wrapper(
     master: "ReplayState",
     section_label: str,
     *,
     part_label: str | None = None,
-) -> bool:
+) -> tuple[bool, bool] | None:
+    """Locate the live stem of a letter-suffix section and report its wrapper.
+
+    Returns ``(stem_unchaptered, stem_unparted)`` when the stem exists live, or
+    ``None`` when it cannot be located. The op may carry a stale part wrapper
+    that the stem does not actually live under, so the stem is looked up first
+    with the op's part and then unparted — a stem found only at body level is
+    both unchaptered and unparted, and the suffix insert's stale part wrapper
+    must be dropped along with the chapter.
+    """
     section_norm = _norm_num_token(section_label)
     stem_match = re.fullmatch(r"(\d+)([a-z])", section_norm, flags=re.I)
     if stem_match is None:
-        return False
+        return None
     find_section_path = getattr(master, "find_section_path", None)
     if not callable(find_section_path):
-        return False
-    live_path = find_section_path(stem_match.group(1), None, part_label)
+        return None
+    live_path = None
+    if part_label is not None:
+        live_path = find_section_path(stem_match.group(1), None, part_label)
     if live_path is None:
-        return False
-    return not any(kind == "chapter" for kind, _label in live_path)
+        live_path = find_section_path(stem_match.group(1), None, None)
+    if live_path is None:
+        return None
+    stem_unchaptered = not any(kind == "chapter" for kind, _label in live_path)
+    stem_unparted = not any(kind == "part" for kind, _label in live_path)
+    return stem_unchaptered, stem_unparted
 
 
 def _source_body_places_letter_suffix_with_unchaptered_stem_wrapper(
@@ -1305,6 +1320,11 @@ def strip_unjustified_chapter_scope_from_unique_sections(
             result.append(lo)
             continue
         if lo.action is StructuralAction.INSERT:
+            live_stem_wrapper = _letter_suffix_insert_live_stem_wrapper(
+                master,
+                str(section),
+                part_label=str(part) if part else None,
+            )
             if (
                 not (
                     pd.get("subsection")
@@ -1312,11 +1332,8 @@ def strip_unjustified_chapter_scope_from_unique_sections(
                     or pd.get("paragraph")
                     or facet in {"intro", "heading"}
                 )
-                and _letter_suffix_insert_has_unchaptered_live_stem(
-                    master,
-                    str(section),
-                    part_label=str(part) if part else None,
-                )
+                and live_stem_wrapper is not None
+                and live_stem_wrapper[0]
                 and not _johtolause_explicitly_mentions_chaptered_section_target(
                     johto,
                     str(chapter),
@@ -1329,7 +1346,15 @@ def strip_unjustified_chapter_scope_from_unique_sections(
                     part_label=str(part) if part else None,
                 )
             ):
-                lo_new = _lo_with_path_update(lo, chapter=None)
+                # Drop the stale chapter wrapper, and the stale part wrapper too
+                # when the live stem itself sits at body level (unparted) — the
+                # suffix must follow its stem's placement.
+                stem_unparted = live_stem_wrapper[1]
+                lo_new = (
+                    _lo_with_path_update(lo, chapter=None, part=None)
+                    if stem_unparted
+                    else _lo_with_path_update(lo, chapter=None)
+                )
                 result.append(lo_with_added_scope_tag(lo_new, "chapter_scope_stripped_stale_stem_body_wrapper"))
                 continue
             # If the section doesn't yet exist in the op's stated chapter, this
@@ -1487,6 +1512,11 @@ def assign_chapter_scope_from_johtolause(
                             )
                         ):
                             continue
+                    insert_live_stem_wrapper = _letter_suffix_insert_live_stem_wrapper(
+                        master,
+                        section_label,
+                        part_label=part_label,
+                    )
                     if (
                         lo.action is StructuralAction.INSERT
                         and not (
@@ -1495,11 +1525,8 @@ def assign_chapter_scope_from_johtolause(
                             or pd.get("paragraph")
                             or facet in {"intro", "heading"}
                         )
-                        and _letter_suffix_insert_has_unchaptered_live_stem(
-                            master,
-                            section_label,
-                            part_label=part_label,
-                        )
+                        and insert_live_stem_wrapper is not None
+                        and insert_live_stem_wrapper[0]
                         and not _johtolause_explicitly_mentions_chaptered_section_target(
                             johto,
                             chapter_label,

@@ -4336,7 +4336,21 @@ def test_prune_container_payload_sections_shadowed_by_standalone_targets_in_new_
     assert [c.label for c in got.children if c.kind is IRNodeKind.SECTION] == ["19j"]
 
 
-def test_prune_container_payload_sections_keeps_foreign_scoped_shadow_in_new_chapter() -> None:
+def test_prune_container_payload_sections_drops_foreign_scoped_shadow_in_new_chapter() -> None:
+    """Foreign-scoped standalone INSERT targets must be pruned from a new chapter.
+
+    Sibling 3e08b575 ("Prune foreign-scoped FI container payload sections")
+    corrected the contract: when a new container's source payload carries
+    sections that are separately INSERTed into a FOREIGN chapter (their real
+    home), those payload entries are shadows and must be pruned — otherwise the
+    section is duplicated in both chapters. Oracle-grounded on the real
+    2016/591 / 2022/296 amendment (§§22a/22b insert into chapter 4, pruned from
+    the new chapter 3b payload; see
+    test_inspect_amendment_2016_591_2022_296_prunes_foreign_scoped_sections_from_new_chapter).
+
+    This synthetic case previously asserted the pre-correction "keep" behaviour,
+    which left the foreign-scoped sections doubly placed.
+    """
     state = ReplayState(
         ir=IRNode(
             kind=IRNodeKind.BODY,
@@ -4385,9 +4399,10 @@ def test_prune_container_payload_sections_keeps_foreign_scoped_shadow_in_new_cha
         foreign_scoped_standalone_section_targets={"20a", "20h"},
     )
 
-    assert changed is False
-    assert got is muutos_ir
-    assert pruned == []
+    assert changed is True
+    assert isinstance(got, IRNode)
+    assert pruned == ["20a", "20h"]
+    assert [c.label for c in got.children if c.kind is IRNodeKind.SECTION] == ["19j"]
 
 
 def test_prune_container_payload_sections_prunes_foreign_insert_when_payload_is_overwrapped_context() -> None:

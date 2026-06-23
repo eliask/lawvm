@@ -1,3 +1,4 @@
+import pytest
 from lxml import etree
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, StructuralAction
@@ -120,8 +121,15 @@ def test_inserted_body_chapter_scopes_following_child_section_insert() -> None:
         ("section", "25"),
         ("subsection", "2"),
     )
+    # The group carries a descendant-scoped REPLACE (the §25 heading replace), so
+    # the descendant-scope phase (added by sibling a3aafa26 "Guard FI sparse slot
+    # ownership") is the precise owner of the body-chapter rebind and emits
+    # BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION. The insert-scope phase abstains for
+    # descendant-replace-bearing groups; the scope correction itself (6 -> 6a, with
+    # both ops repathed) is unchanged. Pre-split this case fell to the generic
+    # insert-scope finding.
     assert [finding.kind for finding in result.findings()] == [
-        "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+        "LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION"
     ]
 
 
@@ -206,6 +214,27 @@ def test_source_body_part_scope_is_promoted_when_chapter_already_matches() -> No
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "DECLARED NON-GUARANTEE (2026-06-23 stale-vs-real triage). This synthetic "
+        "case asserts source-body scope (chapter 13a) OVERRIDES the prior-repeal "
+        "carry-forward reinstatement address (chapter 14). That hypothesis "
+        "(feature `source_owned_body_scope_over_prior_repeal_address`, sibling "
+        "4d7171b4 'Prefer FI source-body scope for recovered inserts') has NO "
+        "real-corpus anchor and is contradicted by the official Finlex oracle: "
+        "the real pinned_replay `test_replay_xml_1973_36_materializes_live_missing_sections` "
+        "requires the live/carry-forward chapter to WIN for a reinstated section "
+        "(1973/36 §27 stays in chapter 4), which makes the live-target gate "
+        "(broadened by sibling 6d831571) load-bearing. The two siblings turn on "
+        "the same predicate (`body_wrapper_overridden_by_live_target`) with "
+        "opposite oracle-correct answers and no compile-time discriminator was "
+        "found. Real oracle > synthetic: production correctly keeps chapter 14. "
+        "Re-enable source-body override ONLY with (a) a real-corpus anchor for it "
+        "AND (b) a signal that distinguishes it from the 1973/36 case. strict=True "
+        "so this flips loud the moment such a discriminator lands."
+    ),
+)
 def test_source_body_scope_overrides_prior_repeal_reinstatement_address() -> None:
     master = ReplayState(
         ir=IRNode(
