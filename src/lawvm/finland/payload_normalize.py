@@ -1912,6 +1912,8 @@ def prepare_payload_surface(
     if _has_historical_top_level_kohta_subsection_ops(group_ops):
         return _split_historical_top_level_kohta_payload_ir(target_unit_kind, group_ops, muutos_ir)
     omission_allowed = strict_profile is None or strict_profile.allows_omission_expansion
+    if _single_plain_insert_sparse_payload_is_self_contained(target_unit_kind, group_ops, muutos_ir):
+        omission_allowed = False
     if omission_allowed:
         return _pre_resolve_omissions(
             ctx,
@@ -1923,6 +1925,41 @@ def prepare_payload_surface(
             profile,
         )
     return muutos_ir
+
+
+def _single_plain_insert_sparse_payload_is_self_contained(
+    target_unit_kind: TargetUnitKind,
+    group_ops: List[AmendmentOp],
+    muutos_ir: Optional[IRNode],
+) -> bool:
+    """Return True when omission expansion would only import carried live slots.
+
+    A source body shaped as ``omission + one subsection`` under a single explicit
+    ``lisätään uusi N momentti`` already owns the inserted slot body.  Expanding
+    the omission against live state before sparse-slot assignment can admit a
+    stale same-numbered live subsection and let exact-label binding pick that
+    carried text instead of the source-owned insert payload.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return False
+    plain_insert_ops = [
+        op
+        for op in group_ops
+        if (
+            op.op_type == "INSERT"
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+        )
+    ]
+    if len(group_ops) != 1 or len(plain_insert_ops) != 1:
+        return False
+    slot_kinds = [
+        child.kind
+        for child in muutos_ir.children
+        if child.kind in {IRNodeKind.SUBSECTION, IRNodeKind.OMISSION}
+    ]
+    return slot_kinds.count(IRNodeKind.SUBSECTION) == 1 and IRNodeKind.OMISSION in slot_kinds
 
 
 def _prepare_sparse_subsection_payload_ir(

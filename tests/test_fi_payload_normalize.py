@@ -4443,6 +4443,61 @@ def test_assign_subsection_slots_binds_lone_sparse_insert_to_trailing_slot() -> 
     assert got.unassigned_payload_slots == ("1:1", "2:2")
 
 
+def test_prepare_payload_surface_keeps_single_sparse_insert_source_payload() -> None:
+    """A single sparse INSERT owns its one source subsection, not carried live text.
+
+    Mirrors 2018/11 §43 under 2023/662: the amendment source prints an omission
+    marker and one new subsection for ``uusi 5 momentti``.  Expanding the
+    omission against a live/expired slot 5 before slot assignment lets exact
+    label binding pick stale carried text.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="43",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="old 1"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="old 2"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", children=(IRNode(kind=IRNodeKind.CONTENT, text="old 3"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="4", children=(IRNode(kind=IRNodeKind.CONTENT, text="old 4"),)),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="expired temporary fifth"),),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "43", live_node=live_sec)
+    op_insert = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="43",
+        target_paragraph=5,
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="43",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="43 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Maksujärjestelyn edellytykset"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="new automatic decision payload"),),
+            ),
+        ),
+    )
+
+    prepared = prepare_payload_surface(ctx, [op_insert], muutos_ir, _replay_profile_stub(), None)
+    got = elaborate_payload_against_live(ctx, [op_insert], prepared, set())
+
+    mapped = got.subsec_map.for_op(op_insert)
+    assert mapped is not None
+    assert mapped.label == "5"
+    assert "new automatic decision payload" in irnode_to_text(mapped)
+    assert "expired temporary fifth" not in irnode_to_text(mapped)
+
+
 def test_prepare_payload_surface_does_not_merge_new_subsection_insert_inner_omission() -> None:
     """A new-moment INSERT with inner omission must not import live siblings.
 
