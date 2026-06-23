@@ -519,6 +519,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "core_materialization_invariants": (
         "test_fi_materialization_invariants.py",
         "test_fi_materialization_totality.py",
+        "test_crossjur_materialization_universe.py",
     ),
     "core_replay_timeline": (
         "test_part_snapshot_section_retention.py",
