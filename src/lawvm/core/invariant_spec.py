@@ -851,6 +851,90 @@ _INV_TIMELINE_INTEGRITY_BOUNDARY = InvariantSpec(
     audit_registry_ref="",
 )
 
+# --- Claim: corpus Legal Surface Graph ----------------------------------- #
+# TOTALITY: the corpus merge accounts EVERY per-statute node — each statute
+# graph's nodes are merged into the union, and a same-node-id collision with a
+# divergent payload_hash RAISES (SurfaceAssemblyError) rather than silently
+# overwriting. So no per-statute node is silently dropped or silently mutated in
+# the merge: a node either dedups idempotently (same payload_hash) or fails loud.
+_INV_LSG_MERGE_TOTALITY = InvariantSpec(
+    id="LSG-CORPUS-01",
+    claim_id="lawvm.fi.legal_surface_graph.v1",
+    plane="surface",
+    waist="corpus_merge",
+    unit_kind="per-unit",
+    predicate=(
+        "every per-statute surface node is merged into the corpus union; a "
+        "same-node-id collision with a divergent payload_hash RAISES "
+        "(SurfaceAssemblyError) rather than silently overwriting, and an "
+        "identical-hash duplicate dedups idempotently to the one shared entity "
+        "node — so no per-statute node is silently dropped or silently mutated "
+        "across the cross-statute merge"
+    ),
+    owner="lawvm.finland.legal_surface.corpus_graph",
+    bucket="implemented_check",
+    checker_ref="lawvm.finland.legal_surface.corpus_graph:build_corpus_surface_graph",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+# AUTHORITY_FIREWALL: every cross-statute edge is minted through the assembler's
+# firewall-enforcing path (run_edge_passes -> _mint_edge_from_seed ->
+# _enforce_edge_firewall), which RAISES AuthorityFirewallError on any node/edge
+# carrying replay_authorized=True or surface_only=False. The corpus graph can
+# never carry legal authority or replay authorization — it is structurally
+# surface-only.
+_INV_LSG_AUTHORITY_FIREWALL = InvariantSpec(
+    id="LSG-CORPUS-02",
+    claim_id="lawvm.fi.legal_surface_graph.v1",
+    plane="firewall",
+    waist="corpus_edge_pass",
+    unit_kind="per-op",
+    predicate=(
+        "every cross-statute reference/candidate edge is minted through the "
+        "assembler's firewall-enforcing path (run_edge_passes -> "
+        "_enforce_edge_firewall), which RAISES AuthorityFirewallError on any "
+        "node/edge with replay_authorized=True or surface_only=False; the corpus "
+        "graph never carries legal authority and is never replay authorization — "
+        "the firewall is structural, not a tunable threshold"
+    ),
+    owner="lawvm.core.legal_surface_assembler",
+    bucket="writer_refusal",
+    checker_ref="lawvm.core.legal_surface_assembler:run_edge_passes",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+# NON_GUARANTEE_COVERAGE: the declared boundaries of the corpus-graph claim — v1
+# merges the reference + anaphora lens edge families only (the newer typed
+# relation families are the declared v2 extension), resolution recall is bounded,
+# and the graph is an as-of surface projection over the declared slice.
+_INV_LSG_BOUNDARY = InvariantSpec(
+    id="LSG-CORPUS-03",
+    claim_id="lawvm.fi.legal_surface_graph.v1",
+    plane="declaration",
+    waist="claim_boundary",
+    unit_kind="static",
+    predicate=(
+        "v1 merges only the reference + anaphora lens edge families (the "
+        "cross-statute refers_to / has_candidate backbone); the newer typed "
+        "relation families — derivation edges, EU transposition edges, "
+        "definition-use edges, dangling-reference status — are NOT yet merged and "
+        "are the DECLARED v2 extension; resolution recall is bounded (an open / "
+        "statute_only mention is an honest non-promotion); and the graph is an "
+        "as-of surface projection over the declared slice — declared boundaries"
+    ),
+    owner="lawvm.core.assumption_register",
+    bucket="declared_non_guarantee",
+    checker_ref="lawvm.core.claim_surface_manifest:CLAIM_LEGAL_SURFACE_GRAPH",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+
 #: The v0 invariant rows (one live accounting path + declared boundary per claim).
 V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_BENCH_PROJECTION_FIREWALL,
@@ -878,6 +962,9 @@ V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_FIXED_TERM_BOUNDARY,
     _INV_TIMELINE_INTEGRITY_TYPED,
     _INV_TIMELINE_INTEGRITY_BOUNDARY,
+    _INV_LSG_MERGE_TOTALITY,
+    _INV_LSG_AUTHORITY_FIREWALL,
+    _INV_LSG_BOUNDARY,
 )
 
 

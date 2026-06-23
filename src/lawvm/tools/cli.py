@@ -11075,6 +11075,58 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit the graph summary as JSON",
     )
 
+    # --- corpus-graph ---
+    corpus_graph_p = sub.add_parser(
+        "corpus-graph",
+        help="export the cross-statute corpus Legal Surface Graph (fi)",
+        description=(
+            "Build the CROSS-STATUTE corpus Legal Surface Graph over a DECLARED "
+            "corpus slice (--ids or --limit; never a silent full-corpus "
+            "truncation) and export a typed artifact: the node set + edge set "
+            "(each edge carrying edge_kind, endpoints, provenance, resolution "
+            "status, and the surface_only firewall flag) plus a census (node-kind "
+            "/ edge-kind counts, the cross-statute interlink fabric, the "
+            "resolution-status breakdown, and the count of genuinely inter-statute "
+            "reference edges). The same cited target collapses to ONE shared "
+            "entity node, so 'what cites this act/provision' is a graph query. "
+            "READ-ONLY, surface-fact only — the authority firewall holds (every "
+            "node/edge is surface_only); a fail-loud merge (same node id + "
+            "divergent payload RAISES) and tag-don't-guess (ambiguous -> "
+            "has_candidate, never an invented target). Backed by the claim "
+            "lawvm.fi.legal_surface_graph.v1."
+        ),
+    )
+    corpus_graph_p.add_argument(
+        "--ids",
+        default=None,
+        help="explicit comma-separated statute ids to build the slice over "
+        "(takes precedence over --limit)",
+    )
+    corpus_graph_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="build over the first N statute ids of the corpus (required if "
+        "--ids is not given; the full build is heavy, so the scope must be "
+        "declared explicitly)",
+    )
+    corpus_graph_p.add_argument(
+        "--surface-time",
+        dest="surface_time",
+        default=None,
+        help="as-of surface time for resolution (optional)",
+    )
+    corpus_graph_p.add_argument(
+        "--out",
+        default=None,
+        help="write the full export artifact (JSON) to this path",
+    )
+    corpus_graph_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the full export artifact as JSON to stdout",
+    )
+
     # --- parse-characterize ---
     parse_char_p = sub.add_parser(
         "parse-characterize",
@@ -13827,6 +13879,11 @@ def _main_impl() -> None:
         from lawvm.tools.surface_graph import main as surface_graph_main
 
         surface_graph_main(args)
+
+    elif args.command == "corpus-graph":
+        from lawvm.tools.corpus_surface_graph import main as corpus_graph_main
+
+        corpus_graph_main(args)
 
     elif args.command == "parse-characterize":
         from lawvm.tools.parse_characterize import main as parse_characterize_main

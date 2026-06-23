@@ -147,6 +147,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_corpus_archive_guard.py",
         "test_fi_corpus_graph.py",
         "test_fi_corpus_lints.py",
+        "test_corpus_surface_graph_export.py",
         "test_fi_finlex_*.py",
         "test_fi_name_registry_build.py",
         "test_fi_scan_absent_ajantasa.py",

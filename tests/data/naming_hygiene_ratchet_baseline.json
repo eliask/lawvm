@@ -92,6 +92,7 @@
     "src/lawvm/tools/blame.py": 2,
     "src/lawvm/tools/certificate_bundle.py": 1,
     "src/lawvm/tools/cmd_claim.py": 1,
+    "src/lawvm/tools/corpus_surface_graph.py": 4,
     "src/lawvm/tools/corrigendum.py": 7,
     "src/lawvm/tools/destructive_repair_ledger.py": 1,
     "src/lawvm/tools/ee_bench.py": 1,
@@ -212,7 +213,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 153,
+  "public_schema_count": 154,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -239,6 +240,7 @@
     "lawvm.content_blob.v0",
     "lawvm.content_blobs.v0",
     "lawvm.content_leaf.v1",
+    "lawvm.corpus_surface_graph_export.v1",
     "lawvm.corpus_totality.v0",
     "lawvm.cose_sign1.v1",
     "lawvm.coverage.v0",
@@ -368,5 +370,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 362
+  "total_bare_status": 366
 }
