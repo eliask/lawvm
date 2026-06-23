@@ -3,9 +3,12 @@ import logging
 from contextlib import redirect_stdout
 from io import StringIO
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+
+if TYPE_CHECKING:
+    from lawvm.core.stage_result import StageResult
 from lxml import etree
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
@@ -21,13 +24,14 @@ from lawvm.core.elaboration_context import (
     snapshot_replay_lookups,
     snapshot_target_context,
 )
+from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.corpus_store import CorpusStore
 from lawvm.finland.helpers import _fi_label_postprocessor
-from lawvm.finland.johtolause.compat import parse_clause, derive_features
+from lawvm.finland.johtolause.api import parse_clause, derive_features
 from lawvm.finland.kumotaan import (
     _extract_kumotaan_container_refs,
     _extract_kumotaan_chapter_section_map,
@@ -61,11 +65,13 @@ from lawvm.finland.group_plan import (
 )
 from lawvm.finland.johto_scope_mentions import (
     collect_johto_chapter_scope_mentions as _collect_johto_chapter_scope_mentions,
+    collect_johto_insert_subsection_section_targets,
     collect_johto_mentioned_section_labels as _collect_johto_mentioned_section_labels,
 )
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.johtolause_supplements import (
     _supplement_item_and_moment_clause_ops,
+    _supplement_jolloin_moment_renumber_ops,
     _supplement_mixed_explicit_clause_ops,
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
@@ -137,6 +143,7 @@ from lawvm.finland.temporal_rewrites import (
 )
 from lawvm.finland.payload_normalize import (
     _container_pruning_is_expected_heading_only,
+    _unsupported_payload_rejected_ops,
     _prune_container_payload_sections_shadowed_by_standalone_targets as _prune_container_payload_sections_shadowed_by_standalone_targets_impl,
 )
 from lawvm.finland.process_pipeline import process_muutoslaki as _process_muutoslaki_typed
@@ -150,7 +157,10 @@ from lawvm.finland.compile_group_elaboration import (
     _drop_payloadless_source_replace_shadowed_by_same_group_relabel,
     elaborate_group as _elaborate_group,
 )
-from lawvm.finland.compile_amendment import _split_numbered_table_child_group_ops
+from lawvm.finland.compile_amendment import (
+    _split_numbered_table_child_group_ops,
+    compile_amendment_ops,
+)
 from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
 from lawvm.finland.compile_group_scope_recovery import (
     CompileGroupScopeRecoveryRequest,
@@ -202,7 +212,7 @@ from lawvm.finland.uncovered_recovery_state import (
 )
 from tests.corpus_pin_helpers import pinned_replay
 from lawvm.finland.apply import apply_op
-from lawvm.finland.constraints import _find_muutos_node
+from lawvm.finland.constraints import _FilterCtx, _filter_ops_by_constraints, _find_muutos_node
 from lawvm.finland.group_ops import append_compiled_group_ops, normalize_group_ops_for_repeal_reenact
 from lawvm.finland.group_plan import GroupTargetKey
 from lawvm.finland.scope import assign_scope_from_renumber_destinations
@@ -351,6 +361,18 @@ class _MapCorpus:
 
     def read_source(self, statute_id: str) -> bytes | None:
         return self._mapping.get(statute_id)
+
+    def read_source_staged(self, statute_id: str) -> "StageResult[bytes] | None":
+        from lawvm.corpus_store import _read_with_content_witness
+        from lawvm.core.stage_result import EvidenceBundle, StageResult
+
+        witnessed = _read_with_content_witness(
+            self._mapping.get(statute_id), statute_id, "amendment_source_xml"
+        )
+        if witnessed is None:
+            return None
+        data, witness = witnessed
+        return StageResult(value=data, evidence=EvidenceBundle((witness,)))
 
     def read_locator(self, locator: str) -> bytes | None:
         return self._mapping.get(locator)
@@ -966,12 +988,18 @@ def test_apply_ops_to_tree_records_resolved_op_apply_audit(monkeypatch: pytest.M
             "source_statute": "1996/1261",
             "detail": {
                 "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
+                "source_effective": "",
+                "source_expires": "",
                 "op_id": "replace_7",
+                "action_type": "REPLACE",
                 "description": "REPLACE 7 §",
                 "target_unit_kind": "section",
                 "target_norm": "7",
                 "target_chapter": "",
                 "target_part": "",
+                "target_paragraph": "",
+                "target_item": "",
+                "target_special": "",
                 "disposition": "APPLIED",
             },
         }
@@ -4308,7 +4336,21 @@ def test_prune_container_payload_sections_shadowed_by_standalone_targets_in_new_
     assert [c.label for c in got.children if c.kind is IRNodeKind.SECTION] == ["19j"]
 
 
-def test_prune_container_payload_sections_keeps_foreign_scoped_shadow_in_new_chapter() -> None:
+def test_prune_container_payload_sections_drops_foreign_scoped_shadow_in_new_chapter() -> None:
+    """Foreign-scoped standalone INSERT targets must be pruned from a new chapter.
+
+    Sibling 3e08b575 ("Prune foreign-scoped FI container payload sections")
+    corrected the contract: when a new container's source payload carries
+    sections that are separately INSERTed into a FOREIGN chapter (their real
+    home), those payload entries are shadows and must be pruned — otherwise the
+    section is duplicated in both chapters. Oracle-grounded on the real
+    2016/591 / 2022/296 amendment (§§22a/22b insert into chapter 4, pruned from
+    the new chapter 3b payload; see
+    test_inspect_amendment_2016_591_2022_296_prunes_foreign_scoped_sections_from_new_chapter).
+
+    This synthetic case previously asserted the pre-correction "keep" behaviour,
+    which left the foreign-scoped sections doubly placed.
+    """
     state = ReplayState(
         ir=IRNode(
             kind=IRNodeKind.BODY,
@@ -4357,9 +4399,10 @@ def test_prune_container_payload_sections_keeps_foreign_scoped_shadow_in_new_cha
         foreign_scoped_standalone_section_targets={"20a", "20h"},
     )
 
-    assert changed is False
-    assert got is muutos_ir
-    assert pruned == []
+    assert changed is True
+    assert isinstance(got, IRNode)
+    assert pruned == ["20a", "20h"]
+    assert [c.label for c in got.children if c.kind is IRNodeKind.SECTION] == ["19j"]
 
 
 def test_prune_container_payload_sections_prunes_foreign_insert_when_payload_is_overwrapped_context() -> None:
@@ -5602,6 +5645,27 @@ def test_find_amend_paragraph_prefers_explicit_intro_item_over_positional_label(
     assert got.children[0].text == "5. Lappeenrannan kaupunki"
 
 
+def test_find_amend_paragraph_promotes_numbered_subsection_item_payload() -> None:
+    amend_sub = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="23",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="23)"),
+            IRNode(kind=IRNodeKind.INTRO, text="oppilaitoksella ammatillisesta koulutuksesta annettua lakia;"),
+        ),
+    )
+
+    got = _find_amend_paragraph("23", amend_sub, None)
+
+    assert got is not None
+    assert got.kind is IRNodeKind.PARAGRAPH
+    assert got.label == "23"
+    assert [(child.kind, child.text) for child in got.children] == [
+        (IRNodeKind.NUM, "23)"),
+        (IRNodeKind.INTRO, "oppilaitoksella ammatillisesta koulutuksesta annettua lakia;"),
+    ]
+
+
 def test_merge_sparse_alakohta_insert_ir_splices_letter_subitem_under_existing_item() -> None:
     master_para = IRNode(
         kind=IRNodeKind.PARAGRAPH,
@@ -6265,6 +6329,71 @@ def test_drop_payloadless_source_replace_shadowed_by_same_group_relabel_keeps_re
     assert rejected == []
 
 
+def test_false_positive_reference_constraint_keeps_payloadless_relabel() -> None:
+    relabel_op = AmendmentOp(
+        op_id="renumber_27h_27i",
+        op_type="RENUMBER",
+        target_section="27h",
+        target_unit_kind="section",
+        target_chapter="6a",
+        source_statute="2003/444",
+        lo=LegalOperation(
+            op_id="renumber_27h_27i",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("chapter", "6a"), ("section", "27h"))),
+            destination=LegalAddress(path=(("chapter", "6a"), ("section", "27i"))),
+            source=OperationSource(statute_id="2003/444"),
+        ),
+    )
+    rejected: list[Any] = []
+
+    kept = _filter_ops_by_constraints(
+        [relabel_op],
+        _FilterCtx(
+            muutos_ir=None,
+            johto="nykyinen 27 g-27 i § siirtyy 27 h-27 j §:ksi",
+        ),
+        rejected_ops_out=rejected,
+    )
+
+    assert kept == [relabel_op]
+    assert rejected == []
+
+
+def test_unsupported_payload_rejection_does_not_reject_relabel() -> None:
+    relabel_op = AmendmentOp(
+        op_id="renumber_27i_27j",
+        op_type="RENUMBER",
+        target_section="27i",
+        target_unit_kind="section",
+        target_chapter="6a",
+        source_statute="2003/444",
+    )
+    replace_op = AmendmentOp(
+        op_id="replace_27i",
+        op_type="REPLACE",
+        target_section="27i",
+        target_unit_kind="section",
+        target_chapter="6a",
+        source_statute="2003/444",
+    )
+
+    rejected = _unsupported_payload_rejected_ops(
+        group_ops=[relabel_op, replace_op],
+        rejected_ops=[],
+        payload_completeness=PayloadCompletenessWitness(
+            kind="unsupported",
+            reasons=("missing_payload_ir",),
+            tail_policy="classify_only",
+            detail={},
+        ),
+    )
+
+    assert [item.description for item in rejected] == [replace_op.description()]
+    assert rejected[0].reason_code == "UNSUPPORTED_PAYLOAD_MISSING_PAYLOAD_IR"
+
+
 def test_build_amendment_bundle_keeps_scoped_move_targets_as_section_groups(
     amendment_bundle_2010_182_2020_766: dict[str, Any],
 ) -> None:
@@ -6346,6 +6475,82 @@ def test_build_amendment_bundle_salvages_malformed_chapter_insert_surface() -> N
     assert "INSERT 37 luku 301a §" in final_ops
     assert "INSERT 38 luku 304 § 1 mom 14 kohta" in final_ops
     assert "INSERT 38 luku 304 § 1 mom 17 kohta" in final_ops
+
+
+def test_compile_2020_1207_keeps_explicit_insert_scope_over_body_wrappers() -> None:
+    try:
+        before_master = inspect_amendment.call_replay_xml(
+            inspect_amendment.replay_xml,
+            request=ReplayXmlRequest(
+                parent_id="2014/917",
+                mode="legal_pit",
+                stop_before="2020/1207",
+                build_full_products=False,
+                quiet=True,
+            ),
+        )
+        xml_bytes = get_corpus().read_source("2020/1207")
+    except (OSError, RuntimeError) as exc:
+        pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
+    if xml_bytes is None:
+        pytest.skip("Finlex archive missing amendment 2020/1207")
+
+    _, xml_bytes = inspect_amendment.extract_inline_corrections(xml_bytes, "2020/1207")
+    xml_bytes, _ = inspect_amendment.get_patch_table().patch_source_xml(xml_bytes, "2020/1207")
+    xml_bytes, _ = inspect_amendment.get_patch_table().patch_source_body_xml(xml_bytes, "2020/1207")
+
+    muutos_tree = etree.fromstring(xml_bytes)
+    source_title = inspect_amendment._tree_title(muutos_tree)
+    muutos_tree, johto, used_preamble_body_fallback, should_apply, _route_reason = (
+        inspect_amendment._working_johtolause(
+            "2014/917",
+            before_master.title,
+            "2020/1207",
+            xml_bytes,
+            source_title,
+        )
+    )
+    assert should_apply
+
+    source_model = AmendmentSourceModel.from_tree(muutos_tree, source_ref="2020/1207")
+    normalized = normalize_and_compile_ops(
+        johto,
+        muutos_tree,
+        before_master.replay_fold_state,
+        "2020/1207",
+        source_title=source_title,
+        used_preamble_body_fallback=used_preamble_body_fallback,
+        parent_id="2014/917",
+        strict_profile=None,
+        source_model=source_model,
+    )
+    compiled = compile_amendment_ops(
+        before_master.replay_fold_state,
+        normalized.output,
+        source_model,
+        johto,
+        "legal_pit",
+        strict_profile=None,
+        source_ref="2020/1207",
+        source_title=source_title,
+        target_statute="2014/917",
+    )
+    descendant_inserts = {
+        (op.target_section, str(op.target_paragraph or "")): (
+            rop.resolved_target_scope_part_label,
+            rop.resolved_target_scope_chapter_label,
+        )
+        for rop in compiled.output
+        if (op := rop.op).op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_section in {"60", "99", "100", "102"}
+        and op.target_paragraph is not None
+    }
+
+    assert descendant_inserts[("60", "3")] == ("3", "9")
+    assert descendant_inserts[("99", "4")] == ("4", "14")
+    assert descendant_inserts[("100", "6")] == ("4", "14")
+    assert descendant_inserts[("102", "2")] == ("4", "14")
 
 
 def test_build_amendment_bundle_expands_letter_suffix_range_with_hyphen_dash() -> None:
@@ -7021,6 +7226,19 @@ def test_extract_kumotaan_section_refs_expands_numeric_to_lettered_range_to_vali
     assert set(got) == {"5", "6", "8", "9", "10", "16", "17"}
 
 
+def test_extract_kumotaan_section_refs_excludes_bare_section_descendant_repeal() -> None:
+    """``9 § 4 kohta`` is an item repeal, while the coordinated ``13 §`` is whole-section."""
+    johto = (
+        "kumotaan laivanrakennuksen innovaatioihin myönnettävästä "
+        "valtionavustuksesta annetun valtioneuvoston asetuksen (364/2015) "
+        "9 § 4 kohta sekä 13 §, ja muutetaan 10 § seuraavasti:"
+    )
+
+    got = _extract_kumotaan_section_refs(johto)
+
+    assert got == ["13"]
+
+
 def test_extract_kumotaan_section_refs_ignores_attachment_number_ranges_without_section_marker() -> None:
     johto = (
         "Tällä lailla kumotaan 29 päivänä joulukuuta 1994 annetun sairausvakuutuslain "
@@ -7441,10 +7659,19 @@ def test_resolve_applicable_amendment_records_re_admits_oracle_reflected_source_
     import lawvm.finland.amendment_selection as selection_mod
 
     orig_children = selection_mod.amendment_children_by_parent
+    orig_edges = selection_mod.amendment_child_edges_by_parent
     orig_reflected = selection_mod.get_consolidated_oracle_reflected_source_vts_children
     try:
         selection_patch = cast(Any, selection_mod)
         selection_patch.amendment_children_by_parent = lambda: {"1986/506": ["1991/806", "1993/872", "1994/1264", "2024/1049"]}
+        selection_patch.amendment_child_edges_by_parent = lambda: {
+            "1986/506": [
+                ("1991/806", "oracle_amendedBy"),
+                ("1993/872", "oracle_amendedBy"),
+                ("1994/1264", "oracle_amendedBy"),
+                ("2024/1049", "source_vts_explicit"),
+            ]
+        }
         selection_patch.get_consolidated_oracle_reflected_source_vts_children = lambda _parent_id, corpus=None, selector=None: {"2024/1049"}
         records, cutoff_date, oracle_version = selection_mod.resolve_applicable_amendment_records(
             "1986/506",
@@ -7454,12 +7681,14 @@ def test_resolve_applicable_amendment_records_re_admits_oracle_reflected_source_
         )
     finally:
         selection_mod.amendment_children_by_parent = orig_children
+        selection_mod.amendment_child_edges_by_parent = orig_edges
         selection_mod.get_consolidated_oracle_reflected_source_vts_children = orig_reflected
 
     assert oracle_version == "1994/1264"
     assert cutoff_date == dt.date(2025, 1, 1)
     assert [record["statute_id"] for record in records] == ["1991/806", "1993/872", "1994/1264", "2024/1049"]
     assert records[-1]["selection_basis"] == "oracle_editorial_repeal_stub_override"
+    assert records[-1]["edge_kind"] == "source_vts_explicit"
 
 
 def test_oracle_ref_body_surface_excludes_amendment_history_metadata() -> None:
@@ -7829,6 +8058,20 @@ def test_subsection_insert_fallback_expands_plural_momentti_insert_after_provena
     assert ("INSERT", "22", 6) in got
 
 
+def test_subsection_insert_fallback_expands_mom_abbreviation_before_section_insert() -> None:
+    johto = (
+        "muutetaan 2 §:n 1 mom. sekä lisätään 2 §:ään uusi 9 ja 10 mom. "
+        "ja asetukseen uusi 27 § seuraavasti:"
+    )
+
+    ops = _extract_insert_subsection_ops_fallback(johto)
+    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+
+    assert ("INSERT", "2", 9) in got
+    assert ("INSERT", "2", 10) in got
+    assert not any(op.target_section == "27" for op in ops)
+
+
 def test_subsection_insert_fallback_stops_at_next_chapter_scoped_section_ref() -> None:
     johto = (
         "lisätään 6 luvun 1 §:ään, sellaisena kuin se on osaksi laeissa 821/2017, "
@@ -7944,6 +8187,48 @@ def test_item_insert_fallback_coverage_marks_plain_connector_classified() -> Non
     assert coverage["coverage_status"] == "fully_classified"
     assert coverage["ignored_spans"] == []
     assert coverage["required_proofs"] == []
+
+
+def test_item_insert_fallback_recovers_historical_item_before_kohta_wording() -> None:
+    johto = (
+        "lisätään 30 päivänä maaliskuuta 1973 annetun vuosilomalain (272/73) "
+        "3 §:n 5 momenttiin, sellaisena kuin se on osittain muutettuna "
+        "24 päivänä helmikuuta ja 30 päivänä maaliskuuta 1978 annetuilla laeilla "
+        "(153 ja 233/78), uusi näin kuuluva 11 a kohta:"
+    )
+
+    result = parse_ops_fallback_heuristic_with_coverage(johto)
+
+    got = {
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        for op in result.ops
+    }
+    assert got == {("INSERT", "3", 5, "11a")}
+
+
+def test_normalize_compile_ops_converts_historical_item_insert_wording() -> None:
+    johto = (
+        "lisätään 30 päivänä maaliskuuta 1973 annetun vuosilomalain (272/73) "
+        "3 §:n 5 momenttiin, sellaisena kuin se on osittain muutettuna "
+        "24 päivänä helmikuuta ja 30 päivänä maaliskuuta 1978 annetuilla laeilla "
+        "(153 ja 233/78), uusi näin kuuluva 11 a kohta:"
+    )
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=etree.fromstring("<root/>"),
+        master=ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=())),
+        amendment_id="1979/276",
+        source_title="Laki vuosilomalain 3 §:n muuttamisesta.",
+        used_preamble_body_fallback=False,
+        parent_id="1973/272",
+        strict_profile=None,
+    )
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        for op in phase.output
+    ] == [("INSERT", "3", 5, "11a")]
 
 
 def test_combined_chapter_and_section_insert_owned_by_parser() -> None:
@@ -9010,10 +9295,12 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
             </formula>
           </preamble>
           <body>
+            <crossHeading>First recovered source cross-heading</crossHeading>
             <section>
               <num>4 a §</num>
               <subsection><content><p>foo</p></content></subsection>
             </section>
+            <crossHeading>Second recovered source cross-heading</crossHeading>
             <section>
               <num>4 b §</num>
               <subsection><content><p>bar</p></content></subsection>
@@ -9051,8 +9338,19 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
 
     assert got.find_section("4a") is not None
     assert got.find_section("4b") is not None
+    recovered_cross_headings = [
+        child.text for child in got.ir.children if child.kind is IRNodeKind.CROSS_HEADING
+    ]
+    assert recovered_cross_headings == [
+        "First recovered source cross-heading",
+        "Second recovered source cross-heading",
+    ]
     # Recovered op ids are mirrored onto ResolvedOp for audit joins.
     assert [rop.op_id for rop in rops] == ["uncovered_insert_4a", "uncovered_insert_4b"]
+    assert [rop.cross_ir.text if rop.cross_ir is not None else "" for rop in rops] == [
+        "First recovered source cross-heading",
+        "Second recovered source cross-heading",
+    ]
     assert [rop.op_id for rop in rops] == [rop.op.op_id for rop in rops]
     assert {rop.witness_rule_id for rop in rops} == {FI_RECOVERY_UNCOVERED_BODY_RULE_ID}
     assert {rop.op.witness_rule_id for rop in rops} == {FI_RECOVERY_UNCOVERED_BODY_RULE_ID}
@@ -9393,11 +9691,284 @@ def test_uncovered_body_records_peg_owned_label_collision_skip_finding() -> None
     )
 
     assert rops == []
-    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_PEG_LABEL_COLLISION"]
+    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_LABEL_COLLISION"]
     assert len(skipped) == 1
-    assert skipped[0].detail.get("reason") == "peg_owned_label_collision"
+    assert skipped[0].detail.get("reason") == "peg_owned_descendant_label_collision"
     assert skipped[0].detail.get("target_section") == "55a"
     assert skipped[0].detail.get("target_chapter") == "7a"
+
+
+def test_uncovered_body_skips_section_candidate_owned_by_descendant_op() -> None:
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="13",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="13 §"),
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="1",
+                                    children=(IRNode(kind=IRNodeKind.CONTENT, text="live text"),),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <preamble>
+            lisätään 13 §:ään uusi merkkiä 141 a koskeva kohta seuraavasti:
+          </preamble>
+          <body>
+            <section>
+              <num>13 §</num>
+              <hcontainer name="omission"/>
+              <subsection><content><p>Merkki 141 a</p></content></subsection>
+              <subsection><content><p>Merkillä voidaan varoittaa töyssystä.</p></content></subsection>
+            </section>
+          </body>
+        </akn>
+        """
+    )
+    findings_out: list[Finding] = []
+    ops = [
+        AmendmentOp(
+            op_id="insert_13_4_141a",
+            op_type="INSERT",
+            target_section="13",
+            target_chapter="3",
+            target_paragraph=4,
+            target_item="141a",
+            target_unit_kind="section",
+            source_statute="2010/625",
+        )
+    ]
+    rops = _recover_uncovered_body_ops(
+        state,
+        ctx,
+        ops,
+        muutos_tree,
+        "2010/625",
+        failed_ops_out=[],
+        findings_out=findings_out,
+    )
+
+    assert rops == []
+    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_LABEL_COLLISION"]
+    assert len(skipped) == 1
+    assert skipped[0].detail.get("reason") == "peg_owned_descendant_label_collision"
+    assert skipped[0].detail.get("target_section") == "13"
+    assert skipped[0].detail.get("target_chapter") == ""
+
+
+def test_uncovered_body_omission_merge_requires_scoped_target_witness() -> None:
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="13",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="13 §"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="live one"),
+                    ),
+                ),
+            ),
+        )
+    )
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <preamble>lisätään 13 §:ään uusi merkkiä 141 a koskeva kohta seuraavasti:</preamble>
+          <body>
+            <section>
+              <num>13 §</num>
+              <hcontainer name="omission"/>
+              <subsection><content><p>sparse addition</p></content></subsection>
+            </section>
+          </body>
+        </akn>
+        """
+    )
+
+    findings_out: list[Finding] = []
+    ops = [
+        AmendmentOp(
+            op_id="unrelated_replace_99",
+            op_type="REPLACE",
+            target_section="99",
+            target_unit_kind="section",
+            source_statute="2010/625",
+        )
+    ]
+    rops = _recover_uncovered_body_ops(
+        state,
+        ctx,
+        ops,
+        muutos_tree,
+        "2010/625",
+        failed_ops_out=[],
+        findings_out=findings_out,
+    )
+
+    assert rops == []
+    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_OMISSION_MERGE_MISSING_SCOPE"]
+    assert len(skipped) == 1
+    assert skipped[0].detail.get("reason") == "omission_merge_missing_scope"
+    assert skipped[0].detail.get("target_section") == "13"
+
+
+def test_uncovered_body_omission_merge_rejects_named_subprovision_scope() -> None:
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="16",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="16 §"),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="live section"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <preamble>muutetaan asetuksen 16 §:n merkkiä 317 koskeva kohta seuraavasti:</preamble>
+          <body>
+            <chapter>
+              <num>3 luku</num>
+              <section>
+                <num>16 §</num>
+                <hcontainer name="omission"/>
+                <subsection><content><p>Merkki 317</p></content></subsection>
+              </section>
+            </chapter>
+          </body>
+        </akn>
+        """
+    )
+    findings_out: list[Finding] = []
+
+    rops = _recover_uncovered_body_ops(
+        state,
+        ctx,
+        [],
+        muutos_tree,
+        "2018/1311",
+        failed_ops_out=[],
+        findings_out=findings_out,
+    )
+
+    assert rops == []
+    skipped = [
+        f
+        for f in findings_out
+        if f.kind == "APPLY.UNCOVERED_BODY_SPECIAL_SUBPROVISION_SCOPE"
+    ]
+    assert len(skipped) == 1
+    assert skipped[0].detail.get("reason") == "omission_merge_special_subprovision_scope"
+    assert skipped[0].detail.get("target_section") == "16"
+
+
+def test_uncovered_body_omission_merge_allows_explicit_section_johto_witness() -> None:
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="13",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="13 §"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="live one"),
+                    ),
+                ),
+            ),
+        )
+    )
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <preamble>muutetaan asetuksen 13 § seuraavasti:</preamble>
+          <body>
+            <section>
+              <num>13 §</num>
+              <hcontainer name="omission"/>
+              <subsection><content><p>sparse addition</p></content></subsection>
+            </section>
+          </body>
+        </akn>
+        """
+    )
+
+    findings_out: list[Finding] = []
+    ops = [
+        AmendmentOp(
+            op_id="unrelated_replace_99",
+            op_type="REPLACE",
+            target_section="99",
+            target_unit_kind="section",
+            source_statute="2010/625",
+        )
+    ]
+    rops = _recover_uncovered_body_ops(
+        state,
+        ctx,
+        ops,
+        muutos_tree,
+        "2010/625",
+        failed_ops_out=[],
+        findings_out=findings_out,
+    )
+
+    assert len(rops) == 1
+    assert rops[0].op_id == "uncovered_merge_13"
+    assert rops[0].op.op_type == "REPLACE"
+    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_OMISSION_MERGE_MISSING_SCOPE"]
+    assert skipped == []
+
+
+def test_johto_insert_subsection_targets_exclude_item_insertions() -> None:
+    assert collect_johto_insert_subsection_section_targets(
+        "lisätään 15 §:ään uusi 2 ja 3 momentti seuraavasti:"
+    ) == frozenset({"15"})
+    assert collect_johto_insert_subsection_section_targets(
+        "lisätään lain 20 §:ään ja 37 §:ään uusi 2 momentti seuraavasti:"
+    ) == frozenset({"20", "37"})
+    assert collect_johto_insert_subsection_section_targets(
+        "lisätä päätökseen uuden 4 a §:n sekä 2 ja 8 §:ään uuden 2 momentin"
+    ) == frozenset({"2", "8"})
+    assert collect_johto_insert_subsection_section_targets(
+        "lisätään 13 §:ään uusi merkkiä 141 a koskeva kohta seuraavasti:"
+    ) == frozenset()
 
 
 def test_uncovered_body_ignores_malformed_chapter_marker_section() -> None:
@@ -9454,6 +10025,24 @@ def test_uncovered_body_skip_helper_maps_peg_owned_same_chapter_reason() -> None
     assert finding.detail.get("target_chapter") == "7a"
 
 
+def test_uncovered_body_skip_helper_maps_peg_owned_descendant_reasons() -> None:
+    same_chapter = _uncovered_body_recovery_skipped_finding(
+        source_statute="2020/1207",
+        target_section="55a",
+        target_chapter="7a",
+        reason="peg_owned_descendant_same_chapter",
+    )
+    label_collision = _uncovered_body_recovery_skipped_finding(
+        source_statute="2020/1207",
+        target_section="55a",
+        target_chapter="8a",
+        reason="peg_owned_descendant_label_collision",
+    )
+
+    assert same_chapter.kind == "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_SAME_CHAPTER_OWNED"
+    assert label_collision.kind == "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_LABEL_COLLISION"
+
+
 @pytest.mark.parametrize(
     ("reason", "expected_kind"),
     [
@@ -9466,6 +10055,7 @@ def test_uncovered_body_skip_helper_maps_peg_owned_same_chapter_reason() -> None
         ("omission_merge_low_text_ratio", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_LOW_TEXT_RATIO"),
         ("omission_merge_duplicate_subsection_labels", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_DUPLICATE_LABELS"),
         ("omission_merge_would_lose_subsections", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_WOULD_LOSE_SUBSECTIONS"),
+        ("omission_merge_missing_scope", "APPLY.UNCOVERED_BODY_OMISSION_MERGE_MISSING_SCOPE"),
     ],
 )
 def test_uncovered_body_skip_helper_maps_additional_typed_reasons(
@@ -11080,6 +11670,406 @@ def test_enrich_ops_prefers_letter_suffix_stem_host_before_unborn_body_wrapper_f
     assert got[0].scope_confidence.resolved_chapter == "5"
 
 
+def test_enrich_ops_overrides_live_stem_host_with_corroborated_source_body_chapter() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="16",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="130"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="17",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="131"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>17 luku</num>
+              <section><num>130 a §</num><content><p>new source section</p></content></section>
+              <section><num>131 §</num><content><p>existing section replacement</p></content></section>
+              <section><num>136 §</num><content><p>Edellä 130 a ja 135 c §:ssä tarkoitetut ilmoitukset toimitetaan vuosittain.</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_130a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="130a",
+        target_chapter="16",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="16",
+        ),
+        scope_provenance_tags=("chapter_scope_from_letter_suffix_stem_host",),
+        lo=LegalOperation(
+            op_id="insert_130a",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "16"), ("section", "130a"))),
+        ),
+    )
+    replace_op = AmendmentOp(
+        op_id="replace_131",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="131",
+        target_chapter="17",
+        lo=LegalOperation(
+            op_id="replace_131",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "17"), ("section", "131"))),
+        ),
+    )
+    insert_subsection_op = AmendmentOp(
+        op_id="insert_136_5",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="136",
+        target_chapter="17",
+        target_paragraph=5,
+        lo=LegalOperation(
+            op_id="insert_136_5",
+            sequence=3,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "17"), ("section", "136"), ("subsection", "5"))),
+            payload=IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        text="Edellä 130 a ja 135 c §:ssä tarkoitetut ilmoitukset toimitetaan vuosittain.",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = _enrich_ops_from_amendment_tree(
+        [insert_op, replace_op, insert_subsection_op],
+        "2024/1",
+        muutos_tree,
+        master=master,
+        source_model=AmendmentSourceModel.from_tree(muutos_tree),
+    )
+
+    assert got[0].target_chapter == "17"
+    assert got[0].witness_rule_id == "fi_live_stem_scope_overridden_by_corroborated_source_body"
+    assert got[0].lo is not None
+    assert got[0].lo.target.path == (("chapter", "17"), ("section", "130a"))
+
+
+def test_enrich_ops_keeps_live_stem_host_without_existing_section_corroboration() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="16",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="130"),),
+                ),
+                IRNode(kind=IRNodeKind.CHAPTER, label="17", children=()),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>17 luku</num>
+              <section><num>130 a §</num><content><p>new source section</p></content></section>
+              <section><num>135 b §</num><content><p>another new source section</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_130a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="130a",
+        target_chapter="16",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="16",
+        ),
+        scope_provenance_tags=("chapter_scope_from_letter_suffix_stem_host",),
+        lo=LegalOperation(
+            op_id="insert_130a",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "16"), ("section", "130a"))),
+        ),
+    )
+    sibling_insert_op = AmendmentOp(
+        op_id="insert_135b",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="135b",
+        target_chapter="17",
+    )
+
+    got = _enrich_ops_from_amendment_tree(
+        [insert_op, sibling_insert_op],
+        "2024/1",
+        muutos_tree,
+        master=master,
+        source_model=AmendmentSourceModel.from_tree(muutos_tree),
+    )
+
+    assert got[0].target_chapter == "16"
+    assert got[0].witness_rule_id != "fi_live_stem_scope_overridden_by_corroborated_source_body"
+
+
+def test_enrich_ops_keeps_live_stem_host_without_internal_reference_witness() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="6"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="7"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>3 luku</num>
+              <section><num>6 a §</num><content><p>new source section</p></content></section>
+              <section><num>7 §</num><content><p>existing adjacent section replacement</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_6a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="6a",
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="2",
+        ),
+        scope_provenance_tags=("chapter_scope_from_letter_suffix_stem_host",),
+        lo=LegalOperation(
+            op_id="insert_6a",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "2"), ("section", "6a"))),
+        ),
+    )
+    replace_op = AmendmentOp(
+        op_id="replace_7",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="7",
+        target_chapter="3",
+        lo=LegalOperation(
+            op_id="replace_7",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"), ("section", "7"))),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="7", text="No reference to the new suffix section."),
+        ),
+    )
+
+    got = _enrich_ops_from_amendment_tree(
+        [insert_op, replace_op],
+        "2024/1",
+        muutos_tree,
+        master=master,
+        source_model=AmendmentSourceModel.from_tree(muutos_tree),
+    )
+
+    assert got[0].target_chapter == "2"
+    assert got[0].witness_rule_id != "fi_live_stem_scope_overridden_by_corroborated_source_body"
+
+
+def test_enrich_ops_keeps_live_stem_host_when_source_body_corroborator_is_distant() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="10"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="18"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>3 luku</num>
+              <section><num>10 c §</num><content><p>new source section</p></content></section>
+              <section><num>18 §</num><content><p>distant existing section replacement</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_10c",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="10c",
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="2",
+        ),
+        scope_provenance_tags=("chapter_scope_from_letter_suffix_stem_host",),
+        lo=LegalOperation(
+            op_id="insert_10c",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "2"), ("section", "10c"))),
+        ),
+    )
+    replace_op = AmendmentOp(
+        op_id="replace_18",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="18",
+        target_chapter="3",
+    )
+
+    got = _enrich_ops_from_amendment_tree(
+        [insert_op, replace_op],
+        "2024/1",
+        muutos_tree,
+        master=master,
+        source_model=AmendmentSourceModel.from_tree(muutos_tree),
+    )
+
+    assert got[0].target_chapter == "2"
+    assert got[0].witness_rule_id != "fi_live_stem_scope_overridden_by_corroborated_source_body"
+
+
+def test_enrich_ops_uses_vacated_live_scope_for_recodification_insert_under_mixed_wrapper() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="14a"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="6a",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="25"),
+                        IRNode(kind=IRNodeKind.SECTION, label="27f"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="9",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="42"),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>3 luku</num>
+            <section><num>14 a §</num><content><p>new 14a</p></content></section>
+            <section><num>25 §</num><content><p>old 25 body</p></content></section>
+            <section><num>27 f §</num><content><p>new 27f body</p></content></section>
+            <section><num>42 §</num><content><p>old 42 body</p></content></section>
+          </chapter>
+        </body>
+        """
+    )
+    renumber = AmendmentOp(
+        op_id="renumber_27f",
+        op_type="RENUMBER",
+        target_unit_kind="section",
+        target_section="27f",
+        lo=LegalOperation(
+            op_id="renumber_27f",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "27f"),)),
+            destination=LegalAddress(path=(("section", "27g"),)),
+        ),
+    )
+    insert = AmendmentOp(
+        op_id="insert_27f",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="27f",
+    )
+    source_model = AmendmentSourceModel.from_tree(muutos_tree, source_ref="2003/444")
+
+    got = _enrich_ops_from_amendment_tree(
+        [renumber, insert],
+        "2003/444",
+        muutos_tree,
+        master=master,
+        source_model=source_model,
+    )
+
+    got_insert = next(op for op in got if op.op_id == "insert_27f")
+    assert got_insert.target_chapter == "6a"
+    assert got_insert.witness_rule_id == "fi_recodification_vacated_insert_scope"
+    assert got_insert.scope_confidence is not None
+    assert got_insert.scope_confidence.source == "carry_forward"
+    assert got_insert.scope_confidence.resolved_chapter == "6a"
+
+
 def test_flat_body_insert_chapter_scope_uses_bracketing_live_siblings() -> None:
     from lawvm.finland.frontend_compile import (
         _infer_flat_body_insert_chapter_from_bracketing_live_siblings,
@@ -11962,6 +12952,10 @@ def test_strict_replay_emits_explicit_source_pathology_rejection_for_1994_1472()
             "DESTRUCTIVE_SHAPE_LOSS_RISK",
             "MALFORMED_BROAD_REPLACE_BODY",
             "PARTIAL_WHOLE_SECTION_PAYLOAD",
+            # A section-genitive descendant-scope cue that does not resolve to the
+            # target is now witnessed (was a silent ``return False``); additive
+            # observability only — the replay/drop decisions are unchanged.
+            "UNRESOLVED_DESCENDANT_SCOPE_CUE",
         }
 
 
@@ -12444,6 +13438,53 @@ def test_supplement_item_and_moment_clause_ops_recovers_item_targets() -> None:
     ]
     assert got[0].witness_rule_id == "fi.item_and_moment_target_supplement.v1"
     assert got[0].extraction_provenance_tags == ("item_and_moment_target_supplement",)
+
+
+def test_supplement_jolloin_moment_renumber_ops_recovers_insert_continuation_shift() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="insert_15_2",
+            op_type="INSERT",
+            target_section="15",
+            target_kind=TargetKind.SECTION,
+            target_paragraph=2,
+        )
+    ]
+    johto = (
+        "lisätään 15 §:ään uusi 2 ja 3 momentti, jolloin nykyinen 2 ja 3 "
+        "momentti siirtyvät 4 ja 5 momentiksi, lakiin uusi 24 a-24 d §"
+    )
+
+    got = _supplement_jolloin_moment_renumber_ops(ops, johto)
+    recovered_inserts = [
+        op
+        for op in got
+        if op.op_type == "INSERT"
+        and op.extraction_provenance_tags == ("jolloin_moment_renumber_supplement",)
+    ]
+    renumbers = [op for op in got if op.op_type == "RENUMBER"]
+
+    assert [
+        (op.target_section, op.target_paragraph)
+        for op in got
+        if op.op_type == "INSERT"
+    ] == [
+        ("15", 2),
+        ("15", 3),
+    ]
+    assert [(op.target_section, op.target_paragraph) for op in recovered_inserts] == [
+        ("15", 3)
+    ]
+    assert [
+        (op.target_section, op.target_paragraph, op.lo.destination.path[-1][1])
+        for op in renumbers
+        if op.lo is not None and op.lo.destination is not None
+    ] == [("15", 2, "4"), ("15", 3, "5")]
+    assert all(op.witness_rule_id == "fi.jolloin_renumber" for op in renumbers)
+    assert all(
+        op.extraction_provenance_tags == ("jolloin_moment_renumber_supplement",)
+        for op in renumbers
+    )
 
 
 def test_supplement_mixed_explicit_clause_ops_recovers_skipped_targets() -> None:
@@ -13510,6 +14551,34 @@ def test_resort_children_sorts_paragraphs_within_subsection() -> None:
     para_labels = [c.label for c in result_sub.children if c.kind is IRNodeKind.PARAGRAPH]
     assert para_labels == ["1", "2", "3"], f"Expected ['1', '2', '3'], got {para_labels}"
     assert check_invariants(result) == [], "post-condition: no invariant violations"
+
+
+def test_resort_children_preserves_mixed_numbered_lettered_paragraph_order() -> None:
+    """Mixed digit/letter paragraph lists are source-ordered, not structural-sortable."""
+    from lawvm.core.ir import IRNode
+    from lawvm.core.tree_ops import resort_children, check_invariants
+
+    def _para(label: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text="", attrs={}, children=())
+
+    subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="",
+        attrs={},
+        children=(_para("1"), _para("2"), _para("a"), _para("b"), _para("3")),
+    )
+    section = IRNode(kind=IRNodeKind.SECTION, label="1", text="", attrs={}, children=(subsection,))
+    body = IRNode(kind=IRNodeKind.BODY, label=None, text="", attrs={}, children=(section,))
+
+    result = resort_children(body)
+    result_sec = next(c for c in result.children if c.kind is IRNodeKind.SECTION)
+    result_sub = next(c for c in result_sec.children if c.kind is IRNodeKind.SUBSECTION)
+    para_labels = [c.label for c in result_sub.children if c.kind is IRNodeKind.PARAGRAPH]
+
+    assert result is body
+    assert para_labels == ["1", "2", "a", "b", "3"]
+    assert check_invariants(result) == []
 
 
 def test_replay_xml_2014_834_voimaantulo_only_amendment_keeps_section_7a() -> None:
@@ -15460,6 +16529,17 @@ def test_inspect_amendment_1940_378_1994_318_drops_payloadless_replace_shadowed_
         for rejected in group73["rejected_ops_pre_constraints"]
     )
 
+    group7 = next(
+        group
+        for group in bundle["groups"]
+        if group["target_unit_kind"] == "chapter" and group["target_norm"] == "7"
+    )
+    assert group7["raw_payload"]["children"] == 3
+    assert group7["normalized_payload"]["children"] > group7["raw_payload"]["children"]
+    assert group7["payload_completeness"]["payload_completeness_kind"] == "complete"
+    assert group7["payload_completeness"]["tail_policy"] == "replace_if_target_scope_requires"
+    assert group7["payload_completeness"]["source_child_labels"] == ("61",)
+
 
 def test_inspect_amendment_1966_611_1981_20_recovers_heading_tagged_subsection_payload() -> None:
     """Heading-tagged body text may satisfy an explicit subsection replacement."""
@@ -15487,6 +16567,27 @@ def test_inspect_amendment_1966_611_1981_20_recovers_heading_tagged_subsection_p
         and observation["detail"]["rule"] == "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
         for observation in group["elaboration_observations"]
     )
+
+
+def test_inspect_amendment_1966_611_1986_193_binds_unlabeled_table_item_rows_by_source_order() -> None:
+    bundle = build_amendment_bundle("1966/611", "1986/193", mode="legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "5")
+
+    assert group["ops_final"] == [
+        "REPLACE 5 § 1 mom 12 kohta",
+        "INSERT 5 § 1 mom 13 kohta",
+    ]
+    mapped = {entry["op"]: entry["mapped_payload"] for entry in group["subsection_map"]}
+    assert "12) rehtorina, apulaisrehtorina" in mapped[
+        "REPLACE 5 § 1 mom 12 kohta"
+    ]["text"]
+    assert "13) johtajana, asuntolanjohtajana" in mapped[
+        "INSERT 5 § 1 mom 13 kohta"
+    ]["text"]
+    assert {
+        observation["kind"]
+        for observation in group["elaboration_observations"]
+    } >= {"ELAB.UNLABELED_TABLE_ITEM_ROW_SOURCE_ORDER"}
 
 
 def test_inspect_amendment_2020_811_2021_278_promotes_leading_subsection_heading_payload() -> None:
@@ -15536,6 +16637,22 @@ def test_inspect_amendment_1962_420_2024_247_keeps_heading_insert_out_of_subsect
     assert group12["sparse_slot_bindings"] == []
     assert all(
         observation["kind"] != "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
+        for observation in group12["elaboration_observations"]
+    )
+
+
+def test_inspect_amendment_1990_656_2021_652_keeps_source_heading_facet() -> None:
+    """Explicit heading op survives sparse projection when raw source has heading."""
+    bundle = build_amendment_bundle("1990/656", "2021/652", mode="legal_pit")
+    group12 = next(group for group in bundle["groups"] if group["target_norm"] == "12")
+
+    assert group12["ops_final"] == [
+        "REPLACE 12 § 1 mom",
+        "INSERT 12 § otsikko",
+    ]
+    assert group12["rejected_ops_post_constraints"] == []
+    assert any(
+        observation["kind"] == "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET"
         for observation in group12["elaboration_observations"]
     )
 
@@ -16355,6 +17472,28 @@ def test_inspect_amendment_1996_1266_2012_963_recovers_section_30_replace_from_s
 
     assert group30["ops_raw"] == ["REPLACE 3 luku 30 §"]
     assert group30["ops_final"] == ["REPLACE 3 luku 30 §"]
+
+
+def test_inspect_amendment_2016_591_2022_296_prunes_foreign_scoped_sections_from_new_chapter() -> None:
+    bundle = build_amendment_bundle("2016/591", "2022/296", mode="official_consolidation")
+    group3b = next(
+        group
+        for group in bundle["groups"]
+        if group["target_unit_kind"] == "chapter" and group["target_norm"] == "3b"
+    )
+    group22a = next(group for group in bundle["groups"] if group["target_norm"] == "22a")
+    group22b = next(group for group in bundle["groups"] if group["target_norm"] == "22b")
+
+    assert group3b["ops_final"] == ["INSERT 3b luku"]
+    assert group22a["ops_final"] == ["INSERT 4 luku 22a §"]
+    assert group22b["ops_final"] == ["INSERT 4 luku 22b §"]
+    assert any(
+        observation["kind"] == "ELAB.CONTAINER_PRUNED_SHADOWED"
+        and observation.get("detail", {}).get("pruned_sections") == ["22a", "22b"]
+        for observation in group3b["elaboration_observations"]
+    )
+    assert "22 a §" not in group3b["normalized_payload"]["text"]
+    assert "22 b §" not in group3b["normalized_payload"]["text"]
 
 
 def test_replay_xml_1996_1266_updates_section_30_after_2012_963() -> None:

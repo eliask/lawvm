@@ -367,6 +367,30 @@ def test_1966_612_section_item_subsection_fold_preserves_first_moment_items() ->
     assert "Valtiovarainministeri oi erityisistä" not in section_text
 
 
+def test_1974_1086_intro_item_wrapper_fold_prevents_section_4_duplicate_list() -> None:
+    """Base §4 item-list wrapper belongs to 1 momentti, not a peer momentti."""
+
+    replay = pinned_replay(
+        "1974/1086",
+        oracle_version="19900806",
+        quiet=True,
+        build_full_products=False,
+    )
+    section_node = replay.find_section("4", None, None)
+    assert section_node is not None
+    subsections = [
+        child
+        for child in section_node.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label
+    ]
+    assert [child.label for child in subsections] == ["1", "2"]
+
+    section_text = " ".join(irnode_to_text(section_node).split())
+    assert section_text.count("1) että tuki katsotaan tarpeelliseksi") == 1
+    assert "korkotukea tai investointiavustusta haetaan" in section_text
+    assert "rahoitustukea haetaan, arvioidaan olevan toimintaedellytyksiä" not in section_text
+
+
 def test_1990_1207_dotted_paragraph_rows_materialize_as_peer_moments() -> None:
     """Base §4 dotted paragraph rows are momentit, not items under 1 momentti."""
 
@@ -977,6 +1001,11 @@ class TestNoDuplicatesInPIT:
             for child in root.children
             if child.kind is IRNodeKind.PART and child.label == "4"
         )
+        part_5 = next(
+            child
+            for child in root.children
+            if child.kind is IRNodeKind.PART and child.label == "5"
+        )
         part_6 = next(
             child
             for child in root.children
@@ -1035,6 +1064,26 @@ class TestNoDuplicatesInPIT:
 
         assert chapter_1_part_3_labels == ["1", "2", "3", "4"]
         assert {"5", "6", "7"} <= set(chapter_2_part_3_labels)
+
+        chapter_5_part_5 = next(
+            child
+            for child in part_5.children
+            if child.kind is IRNodeKind.CHAPTER and child.label == "5"
+        )
+        chapter_5_part_5_sections = [
+            child
+            for child in chapter_5_part_5.children
+            if child.kind is IRNodeKind.SECTION
+        ]
+        assert [child.label for child in chapter_5_part_5_sections] == [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+        ]
+        section_2 = next(child for child in chapter_5_part_5_sections if child.label == "2")
+        assert "Väyläviraston tiedonsaantioikeus" in irnode_to_text(section_2)
 
     def test_2017_519_no_root_section_10_after_jolloin_renumber_insert(
         self,
@@ -1369,6 +1418,15 @@ class TestNoDuplicatesInPIT:
         assert "6, 10-13 ja 16-17 b §:ssä määrätyt" in text
         assert "6 ja 9-19 §:ssä määrätyt" not in text
         assert "sähköiseen allekirjoitukseen liittyviä laatuvarmenteita" in text
+
+    def test_1948_404_versioned_subsection_extends_oracle_horizon(self) -> None:
+        """fin@20240118 embeds delayed 2024/118 text in §6 b subsection 3."""
+        ir = _replay("1948/404")
+        section_6b = _first_descendant(ir, IRNodeKind.SECTION, "6b")
+        text = irnode_to_text(section_6b)
+
+        assert "vuosittain viimeistään tammikuun 31 päivänä" in text
+        assert "kahdessatoista yhtä suuressa erässä" not in text
 
     def test_1995_57_misspelled_momenti_targets_section_8_subsection_3(self) -> None:
         """2000/235 typo ``8 §:n 3 momenti`` must not widen to whole §8."""

@@ -114,8 +114,10 @@ class TimelineBreak:
 
 def timeline_breaks_from_findings(findings: Iterable[Any]) -> tuple[TimelineBreak, ...]:
     """Classify replay findings into typed timeline breaks (dates unfilled)."""
+    findings_tuple = tuple(findings)
+    reconciled_occupancy_keys = _reconciled_occupancy_keys(findings_tuple)
     breaks: list[TimelineBreak] = []
-    for finding in findings:
+    for finding in findings_tuple:
         kind = str(getattr(finding, "kind", "") or "")
         detail: Mapping[str, Any] = getattr(finding, "detail", None) or {}
         source_statute = str(getattr(finding, "source_statute", "") or "")
@@ -128,6 +130,12 @@ def timeline_breaks_from_findings(findings: Iterable[Any]) -> tuple[TimelineBrea
             target_chapter = str(detail.get("target_chapter") or "")
             if not target_chapter:
                 target_chapter = _chapter_from_ctx_label(str(detail.get("ctx_label") or ""))
+            if (
+                source_statute,
+                norm_section_label(target_section),
+                norm_section_label(target_chapter),
+            ) in reconciled_occupancy_keys:
+                continue
             breaks.append(
                 TimelineBreak(
                     amendment_id=source_statute,
@@ -186,6 +194,26 @@ def timeline_breaks_from_findings(findings: Iterable[Any]) -> tuple[TimelineBrea
                 )
             )
     return tuple(breaks)
+
+
+def _reconciled_occupancy_keys(findings: Iterable[Any]) -> set[tuple[str, str, str]]:
+    """Return occupancy-violation keys consumed by a temporal-window proof."""
+    keys: set[tuple[str, str, str]] = set()
+    for finding in findings:
+        kind = str(getattr(finding, "kind", "") or "")
+        if kind != DISJOINT_INSERT_KIND:
+            continue
+        detail: Mapping[str, Any] = getattr(finding, "detail", None) or {}
+        if detail.get("reconciles_finding") != OCCUPANCY_VIOLATION_KIND:
+            continue
+        keys.add(
+            (
+                str(getattr(finding, "source_statute", "") or ""),
+                norm_section_label(str(detail.get("target_label") or "")),
+                norm_section_label(str(detail.get("target_chapter") or "")),
+            )
+        )
+    return keys
 
 
 def _chapter_from_ctx_label(ctx_label: str) -> str:

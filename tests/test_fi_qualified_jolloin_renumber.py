@@ -44,6 +44,14 @@ def test_1990_811_compiles_the_qualified_jolloin_chapter_renumber() -> None:
     assert "INSERT 8 luku" in compiled_ops
 
 
+def test_2007_349_compiles_siirtaa_current_section_renumber_tail() -> None:
+    bundle = build_amendment_bundle("2007/349", "2010/322", "legal_pit")
+    compiled_ops = bundle["compiled_ops"]
+
+    assert "RENUMBER 8 luku 63 §" in compiled_ops
+    assert "RENUMBER 8 luku 64 §" in compiled_ops
+
+
 def test_1978_38_preserves_shifted_old_chapter_9_after_1990_811() -> None:
     state = pinned_replay("1978/38", mode="legal_pit", stop_before="1994/16", quiet=True)
     chapter_labels = [

@@ -53,7 +53,7 @@ from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifec
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
-from tests.corpus_pin_helpers import pinned_replay
+from tests.corpus_pin_helpers import pinned_replay, replay_xml_for_test
 
 
 @dataclass(frozen=True, slots=True)
@@ -796,6 +796,16 @@ def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> 
     assert "ei myöskään estä" in fifth_text
     assert "kuuden kuukauden kuluessa" not in fifth_text
     assert "kuuden kuukauden kuluessa" in sixth_text
+
+
+def test_replay_xml_1984_603_applies_2007_473_whole_section_replace_before_2015_update() -> None:
+    replay = pinned_replay("1984/603", mode="official_consolidation", quiet=True)
+    section = extract_ir_sections(replay.materialized_state.ir)["chapter:5/section:16"]
+
+    text = irnode_to_text(section)
+    assert "Tilintarkastaja voi erota toimestaan" not in text
+    assert "Tilintarkastajan voi erottaa toimestaan" not in text
+    assert "Jos tilintarkastajan toimi tulee kesken toimikautta avoimeksi" in text
 
 
 @pytest.mark.slow
@@ -1995,6 +2005,48 @@ def test_compile_fi_surfaces_source_pathology_with_neutral_target_unit_kind(
     assert _source_pathology_rows(facade)[0]["target_unit_kind"] == "chapter"
 
 
+def test_compile_fi_surfaces_targetless_acquisition_source_pathology(
+    monkeypatch,
+) -> None:
+    def fake_replay_xml(
+        parent_id: str,
+        *,
+        mode: str = "legal_pit",
+        compiled_ops_out=None,
+        replay_meta_out=None,
+        lo_ops_out=None,
+        failed_ops_out=None,
+        _adjudications_out=None,
+        strict_profile=None,
+        strict_johto_temporal: bool = False,
+    ):
+        assert parent_id == "1990/1295"
+        assert mode == "legal_pit"
+        if replay_meta_out is not None:
+            replay_meta_out["lineage"] = []
+            replay_meta_out["source_pathologies"] = [
+                {
+                    "code": "fi_amendment_selection_source_artifact_missing",
+                    "message": "source XML bytes missing",
+                    "source_statute": "1990/1295",
+                    "amendment_id": "1974/974",
+                    "target_unit_kind": "",
+                }
+            ]
+        return _replay_result_stub()
+
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
+
+    facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
+
+    source_pathologies = [a for a in _projection_rows(facade) if a["kind"] == "APPLY.SOURCE_PATHOLOGY_DETECTED"]
+    assert len(source_pathologies) == 1
+    detail = cast(dict[str, Any], source_pathologies[0]["detail"])
+    assert detail["code"] == "fi_amendment_selection_source_artifact_missing"
+    assert detail.get("target_unit_kind", "") == ""
+    assert _source_pathology_rows(facade)[0]["target_unit_kind"] == ""
+
+
 @pytest.mark.slow
 def test_compile_fi_surfaces_recodification_source_chain_gap_for_2017_320() -> None:
     facade = compile_fi_facade("2017/320", replay_mode="legal_pit")
@@ -2015,6 +2067,75 @@ def test_compile_fi_surfaces_recodification_source_chain_gap_for_2017_320() -> N
         for row in rows
     }
     assert ("2 luku 7 §", "target_leaf_absent_under_existing_parent") in details
+
+
+@pytest.mark.slow
+def test_compile_fi_2017_320_preserves_sparse_subsection_target_labels() -> None:
+    facade = compile_fi_facade("2017/320", replay_mode="legal_pit")
+
+    subsection_ops = [
+        op
+        for op in facade.bundle.structural_ops
+        if op.source is not None
+        and op.source.statute_id == "2020/1256"
+        and op.target.path[:3] == (("part", "2"), ("chapter", "10"), ("section", "107"))
+        and len(op.target.path) == 4
+        and op.target.path[-1][0] == "subsection"
+    ]
+    by_label = {op.target.path[-1][1]: " ".join(irnode_to_text(op.payload).split()) for op in subsection_ops}
+
+    assert "Lisäksi pätevyyskirjan ja lisäpätevyystodistuksen myöntämisen edellytyksenä" in by_label["3"]
+    assert "Liikenne- ja viestintävirasto vahvistaa pätevyyskirjan" in by_label["5"]
+    assert not any(
+        finding.kind == "COVERAGE.PAYLOAD_REALIZATION_GAP"
+        and finding.source_statute == "2020/1256"
+        and cast(dict[str, Any], finding.detail).get("unit_id") == "op_27"
+        for finding in facade.finding_ledger
+    )
+
+
+@pytest.mark.slow
+def test_compile_fi_2017_320_keeps_dense_inserted_chapter_members_for_later_targets() -> None:
+    replay_before = replay_xml_for_test(
+        "2017/320",
+        mode="official_consolidation",
+        quiet=True,
+        stop_before="2018/984",
+    )
+
+    def chapter_sections(part_label: str, chapter_label: str) -> list[str]:
+        found: list[str] = []
+
+        def walk(node: IRNode, path: tuple[tuple[str, str], ...] = ()) -> None:
+            next_path = path
+            if node.kind in {IRNodeKind.PART, IRNodeKind.CHAPTER, IRNodeKind.SECTION} and node.label:
+                next_path = (*path, (node.kind.value, node.label))
+            if next_path == (("part", part_label), ("chapter", chapter_label)):
+                found.extend(
+                    child.label
+                    for child in node.children
+                    if child.kind is IRNodeKind.SECTION and child.label
+                )
+                return
+            for child in node.children:
+                walk(child, next_path)
+
+        walk(replay_before.products.replay_fold_state.ir)
+        return found
+
+    assert chapter_sections("2", "7") == [str(n) for n in range(1, 22)]
+    assert chapter_sections("2", "10") == [str(n) for n in range(1, 19)]
+
+    failed_ops: list[Any] = []
+    replay_xml_for_test(
+        "2017/320",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+        failed_ops_out=failed_ops,
+    )
+
+    assert not [op for op in failed_ops if getattr(op, "amendment_id", "") == "2018/984"]
 
 
 def test_compile_fi_surfaces_apply_legacy_dispatch_fallback_as_projection_row(
@@ -2573,6 +2694,22 @@ def test_replay_xml_1970_258_folds_base_item_subsection_run_before_renumber_inse
     assert text.index(inserted) < text.index(final_tail)
 
 
+def test_replay_xml_1994_1505_materializes_sparse_definition_item_payloads() -> None:
+    replay = pinned_replay("1994/1505", oracle_version="20090774", mode="official_consolidation", quiet=True)
+    section3 = extract_ir_sections(replay.materialized_state.ir)["chapter:1/section:3"]
+    text = " ".join(irnode_to_text(section3).split())
+
+    assert "1 a) In vitro -diagnostiikkaan tarkoitetulla" in text
+    assert "5) Markkinoille saattamisella tarkoitetaan terveydenhuollon laitteen" in text
+    assert "6) Käyttöönottamisella tarkoitetaan vaihetta, jolloin" in text
+    assert "7) Valtuutetulla edustajalla tarkoitetaan" in text
+    assert not any(
+        finding.kind == "COVERAGE.PAYLOAD_REALIZATION_GAP"
+        and finding.source_statute == "2000/345"
+        for finding in replay.findings
+    )
+
+
 def test_replay_xml_2014_610_splits_2023_tail_moments_before_2026_renumber() -> None:
     replay = pinned_replay("2014/610", oracle_version="20260352", mode="official_consolidation", quiet=True)
     section = extract_ir_sections(replay.materialized_state.ir)["part:4/chapter:15/section:11"]
@@ -2690,6 +2827,119 @@ def test_replay_xml_1966_611_applies_heading_tagged_subsection_payload() -> None
     assert "kihlakunnantuomarin virka B 4" in text
     assert "ulosottoapulaisen toimi V 18" in text
     assert "henkikirjoittajan" not in text
+
+
+def test_replay_xml_1966_611_preserves_section_5_items_after_sparse_table_row_replace() -> None:
+    replay = replay_xml(
+        "1966/611",
+        mode="legal_pit",
+        stop_before="1991/234",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.state.ir)
+    section5 = sections["section:5"]
+    subsection1 = next(
+        child
+        for child in section5.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+
+    labels = [
+        child.label
+        for child in subsection1.children
+        if child.kind is IRNodeKind.PARAGRAPH
+    ]
+    text = " ".join(irnode_to_text(subsection1).split())
+
+    assert "7" in labels
+    assert "12" in labels
+    assert "13" in labels
+    assert "poliisissa palvelevana rikosylikonstaapelina" in text
+    assert "taikka naiskonstaapelina" not in text
+    assert "johtajana, asuntolanjohtajana tai opettajana kuulovammaisten ammattikoulussa" in text
+    assert (
+        "rehtorina, apulaisrehtorina, oppilaskodinjohtajana tai opettajana "
+        "kuulovammaisten tai näkövammaisten koulussa"
+    ) in text
+
+
+def test_compile_fi_1997_786_combines_split_preamble_body_lead_formula() -> None:
+    facade = compile_fi_facade("1997/786", replay_mode="official_consolidation")
+
+    section9_ops = [
+        op
+        for op in facade.bundle.structural_ops
+        if op.action is StructuralAction.REPLACE
+        and str(op.target) == "section:9"
+        and op.source is not None
+        and op.source.statute_id == "1999/638"
+    ]
+    assert len(section9_ops) == 1
+    assert section9_ops[0].source is not None
+    raw_text = " ".join(section9_ops[0].source.raw_text.split())
+    assert "kumotaan yritystuen yleisistä ehdoista" in raw_text
+    assert "muutetaan 9 § seuraavasti" in raw_text
+
+
+@pytest.mark.slow
+def test_compile_fi_2009_1698_keeps_source_body_chapter_for_56a_insert() -> None:
+    facade = compile_fi_facade("2009/1698", replay_mode="legal_pit")
+
+    inserts = [
+        op
+        for op in facade.bundle.structural_ops
+        if op.action is StructuralAction.INSERT
+        and str(op.target) == "chapter:12/section:56a"
+        and op.source is not None
+        and op.source.statute_id == "2018/1120"
+    ]
+
+    assert len(inserts) == 1
+
+
+@pytest.mark.slow
+def test_compile_fi_1993_1501_keeps_source_body_chapter_for_209b_replace() -> None:
+    facade = compile_fi_facade("1993/1501", replay_mode="legal_pit")
+
+    replacements = [
+        op
+        for op in facade.bundle.structural_ops
+        if op.action is StructuralAction.REPLACE
+        and str(op.target).endswith("chapter:22/section:209b")
+        and op.source is not None
+        and op.source.statute_id == "2012/399"
+    ]
+
+    assert len(replacements) == 1
+
+
+def test_normalize_and_compile_ops_2007_473_repairs_split_muutetaan_verb() -> None:
+    before = replay_xml("1984/603", stop_before="2007/473", mode="legal_pit", quiet=True, build_full_products=False)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2007/473")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+    assert "muute" in johto and "taan" in johto
+    from lawvm.finland.metadata import _normalize_johtolause_verbs
+
+    normalized_johto = _normalize_johtolause_verbs(johto)
+    assert "muutetaan" in normalized_johto
+
+    phase = normalize_and_compile_ops(
+        johto=normalized_johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2007/473",
+        source_title="Laki työttömyyskassalain 16 §:n muuttamisesta",
+        used_preamble_body_fallback=False,
+        parent_id="1984/603",
+        strict_profile=None,
+    )
+
+    assert [op.description() for op in phase.output] == ["REPLACE 5 luku 16 §"]
 
 
 def test_replay_xml_1996_1200_merges_sparse_omission_item_rows_in_targeted_subsection() -> None:
@@ -3873,6 +4123,107 @@ def test_strip_impossible_chapter_scope_for_bare_body_section_op_keeps_real_chap
     )
 
     assert patched is None
+
+
+def test_duplicate_section_scope_from_source_heading_binds_unique_live_duplicate() -> None:
+    import lawvm.finland.frontend_compile as frontend_compile
+    from lawvm.finland.ops import AmendmentOp
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="17",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="17 §"),
+                                IRNode(kind=IRNodeKind.HEADING, text="Unrelated costs"),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="17",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="17 §"),
+                                IRNode(kind=IRNodeKind.HEADING, text="Water administration tasks"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    source_tree = etree.fromstring(
+        """
+        <act>
+          <body>
+            <section>
+              <num>17 §</num>
+              <heading>Water administration task</heading>
+              <subsection><content><p>Payload.</p></content></subsection>
+            </section>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="replace-17",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="17",
+    )
+
+    assert frontend_compile._infer_duplicate_section_scope_from_source_heading(
+        op=op,
+        master=master,
+        source_model=AmendmentSourceModel.from_tree(source_tree),
+    ) == (None, "5")
+
+
+def test_normalize_and_compile_ops_1993_1390_1995_64_scopes_duplicate_17_by_heading() -> None:
+    from tests.corpus_pin_helpers import replay_xml_for_test
+
+    before = replay_xml_for_test("1993/1390", stop_before="1995/64", mode="official_consolidation", quiet=True)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("1995/64")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        amendment_id="1995/64",
+        source_title="Asetus jäteasetuksen muuttamisesta",
+        used_preamble_body_fallback=False,
+        parent_id="1993/1390",
+        strict_profile=None,
+    )
+
+    section17 = [
+        op
+        for op in phase2.output
+        if op.op_type == "REPLACE"
+        and op.target_unit_kind == "section"
+        and op.target_section == "17"
+        and op.target_paragraph is None
+    ]
+    assert len(section17) == 1
+    assert section17[0].target_chapter == "5"
+    assert section17[0].witness_rule_id == "fi_duplicate_section_scope_from_source_heading"
 
 
 def test_normalize_and_compile_ops_1996_627_does_not_leak_parent_title_chapter_scope() -> None:

@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative (phase-boundary target architecture; current-code ownership deferred to LAWVM_ARCHITECTURE_INDEX.md). Five-layer model coherent with AGENTS.md invariants; no code-path citations to drift. No findings.
+
 # Finland Frontend / Elaboration Architecture
 
 This document states the intended target architecture for the Finland replay

@@ -18,6 +18,7 @@ from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.phase_result import Finding
 from lawvm.finland.citation_routing import (
     _looks_like_fi_meta_repeal,
+    _title_looks_like_fi_meta_repeal,
     _title_explicitly_targets_other_statute,
     johtolause_cited_target_ids,
 )
@@ -110,7 +111,7 @@ def classify_route_rejection(
             branch=RouteRejectionBranch.DELEGATED_AUTHORITY_NOJALLA,
         )
     normalized_reason = str(route_reason or "citation_mismatch_skip")
-    if _looks_like_fi_meta_repeal(johto):
+    if _looks_like_fi_meta_repeal(johto) or _title_looks_like_fi_meta_repeal(source_title):
         return RouteRejectionDisposition(
             rule_id=FI_ROUTE_REJECTION_META_REPEAL_RULE_ID,
             route_reason=normalized_reason,
@@ -163,11 +164,7 @@ class ProcessRouteRejectionContext:
         dropped/garbled citation against ``parent_id`` directly, or a generic
         phrase when no statute citation is parseable from the working clause.
         """
-        try:
-            source_year = int(self.amendment_id.split("/", 1)[0])
-        except (ValueError, IndexError):
-            source_year = 0
-        cited = johtolause_cited_target_ids(self.johto, source_year) if source_year else []
+        cited = list(self._cited_statute_ids())
         if cited:
             return f"johtolause cites {', '.join(cited)}"
         return "johtolause cites no parseable statute"
@@ -177,11 +174,29 @@ class ProcessRouteRejectionContext:
             source_year = int(self.amendment_id.split("/", 1)[0])
         except (ValueError, IndexError):
             return ()
-        return tuple(johtolause_cited_target_ids(self.johto, source_year)) if source_year else ()
+        if not source_year:
+            return ()
+        cited = list(johtolause_cited_target_ids(self.johto, source_year))
+        if not cited and self.source_title:
+            cited = list(johtolause_cited_target_ids(self.source_title, source_year))
+        return tuple(cited)
 
     def handle(self) -> RouteRejectionResult:
-        self._record_source_incomplete()
+        disposition = classify_route_rejection(
+            route_reason=self.route_reason,
+            johto=self.johto,
+            source_title=self.source_title,
+            parent_title=self.parent_title,
+        )
+        self._record_source_incomplete(disposition)
         self._apply_skipped_amendment_expiry_override()
+        if disposition.branch is RouteRejectionBranch.META_REPEAL:
+            return RouteRejectionResult(
+                ops=(),
+                vts_ops_enrich_done=False,
+                skip_to_compile=False,
+                should_return_state=True,
+            )
         vts_ops = self.source_model.extract_vts_cross_statute_repeals(
             parent_id=self.parent_id,
             parent_title=self.parent_title,
@@ -212,14 +227,14 @@ class ProcessRouteRejectionContext:
             should_return_state=False,
         )
 
-    def _record_source_incomplete(self) -> None:
-        disposition = classify_route_rejection(
-            route_reason=self.route_reason,
-            johto=self.johto,
-            source_title=self.source_title,
-            parent_title=self.parent_title,
-        )
-
+    def _record_source_incomplete(self, disposition: RouteRejectionDisposition | None = None) -> None:
+        if disposition is None:
+            disposition = classify_route_rejection(
+                route_reason=self.route_reason,
+                johto=self.johto,
+                source_title=self.source_title,
+                parent_title=self.parent_title,
+            )
         if disposition.branch is RouteRejectionBranch.NUM_COLLISION:
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — NUM-collision false mapping: "

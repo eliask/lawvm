@@ -372,7 +372,7 @@ def _extract_law_refs_from_he_body(
     Returns (ref_rows, rejected_records).
     """
     from lawvm.core.reference_mention import reference_mention_to_row
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
 
     # Use a synthetic statute_id in HE URI space for source-side identification.
     he_source_id = f"he/{he_year}/{he_number}"

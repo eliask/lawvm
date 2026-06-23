@@ -1,0 +1,16 @@
+{
+  "_doc": "CONTRACT-02 baseline: per-waist count of `(TODAY: \u2026)` type-conformance-gap parentheticals in the \u00a72 waist table of notes/LAWVM_PIPELINE_CONTRACT.md. May only FALL (closing a gap = deleting the parenthetical). DOC-derived: it fences the self-reported backlog, not an independent runtime-type check. Regenerate: uv run python tests/test_waist_field_contract_ratchet.py --update-baseline. See registry row CONTRACT-02.",
+  "today_gap_counts": {
+    "apply_receipt": 2,
+    "canonical_op": 1,
+    "certificate": 1,
+    "overlay": 0,
+    "projection": 1,
+    "source_identity": 1,
+    "surface_families": 1,
+    "surface_syntax": 0,
+    "timeline_materialization": 1,
+    "token_structure": 2
+  },
+  "total_gaps": 10
+}

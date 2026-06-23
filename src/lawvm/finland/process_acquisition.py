@@ -9,6 +9,7 @@ import lxml.etree as etree
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.phase_result import Finding
+from lawvm.core.provenance import SourceAnchor
 from lawvm.finland.acquisition import (
     AmendmentAcquisitionResult,
     build_amendment_acquisition_result,
@@ -38,6 +39,7 @@ class ProcessAcquisitionResult:
     acquisition: AmendmentAcquisitionResult
     used_preamble_body_fallback: bool
     sec1_text: str
+    source_anchor: "SourceAnchor | None" = None
 
 
 @dataclass(slots=True)
@@ -105,8 +107,10 @@ class ProcessAcquisitionContext:
             used_preamble_body_fallback=(
                 acquisition.decision.pre_routing_sec1_applied
                 or acquisition.decision.post_routing_sec1_applied
+                or acquisition.decision.preamble_body_lead_combine_applied
             ),
             sec1_text=sec1_text,
+            source_anchor=acquisition.source_anchor,
         )
 
     def _apply_source_corrections(self, xml_bytes: bytes) -> tuple[bytes, tuple[str, ...]]:

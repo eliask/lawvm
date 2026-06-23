@@ -107,6 +107,7 @@ from lawvm.finland.apply_typed_dispatch import (
     _materialization_root_move_allowances,
     _whole_section_move_rebind_allowances,
 )
+from lawvm.finland.compile_group_elaboration import _source_complete_container_replacement_witness
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.apply_ir_ops import (
     _rebuild_subsection_with_items_ir,
@@ -117,6 +118,7 @@ from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.strict_profile import default_finland_strict_profile
 from lawvm.finland.standalone_targets import (
     StandaloneSectionTarget,
+    build_standalone_section_targets,
     normalize_standalone_section_target,
 )
 from tests.corpus_pin_helpers import pinned_replay
@@ -214,6 +216,38 @@ def test_standalone_section_target_is_normalized_typed_record() -> None:
         StandaloneSectionTarget(part=None, chapter="6", label="")
 
 
+def test_build_standalone_section_targets_does_not_let_unscoped_replace_shadow_new_chapter_child() -> None:
+    """Unscoped REPLACE is too weak to strip same-label children from a fresh chapter."""
+    unscoped_replace = AmendmentOp(
+        op_id="replace_2",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="2",
+    )
+    unscoped_insert = AmendmentOp(
+        op_id="insert_3",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="3",
+    )
+    scoped_replace = AmendmentOp(
+        op_id="replace_ch5_2",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_part="5",
+        target_chapter="5",
+        target_section="2",
+    )
+
+    assert build_standalone_section_targets([unscoped_replace]) == frozenset()
+    assert build_standalone_section_targets([unscoped_insert]) == frozenset(
+        {StandaloneSectionTarget(part=None, chapter=None, label="3")}
+    )
+    assert build_standalone_section_targets([scoped_replace]) == frozenset(
+        {StandaloneSectionTarget(part="5", chapter="5", label="2")}
+    )
+
+
 def test_replay_state_section_path_cache_is_state_local() -> None:
     state = ReplayState(
         ir=_body(
@@ -267,7 +301,10 @@ def _op(
     extraction_provenance_tags: tuple[str, ...] = (),
     target_guessing_provenance_tags: tuple[str, ...] = (),
     scope_provenance_tags: tuple[str, ...] = (),
+    has_exact_bound_payload: bool = False,
     witness_rule_id: str | None = None,
+    body_chapter_move_from: str | None = None,
+    target_version_statute_id: str | None = None,
 ) -> AmendmentOp:
     return AmendmentOp(
         op_id="test_op",
@@ -290,7 +327,10 @@ def _op(
         source_statute="2020/1",
         source_issue_date=_DATE,
         is_temporary=is_temporary,
+        has_exact_bound_payload=has_exact_bound_payload,
         witness_rule_id=witness_rule_id,
+        body_chapter_move_from=body_chapter_move_from,
+        target_version_statute_id=target_version_statute_id,
     )
 
 
@@ -1299,6 +1339,72 @@ def test_apply_materialization_skips_subsection_insert_when_section_exists_in_di
     assert result is None
 
 
+def test_apply_materialization_skips_unscoped_subsection_op_when_section_exists_in_chapter() -> None:
+    """Unscoped subsection ops must not materialize root-level section shells.
+
+    Historical Finnish amendments may cite only ``20 §:n 3 momentti`` even when
+    the live base statute nests section 20 under chapter 3. Materialization is
+    only allowed for genuinely missing sections; existing chapter-contained
+    sections are handled by subsection dispatch/resolution.
+    """
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("20", _sub("1", _content("existing 20 subsection 1"))),
+                ),
+            )
+        )
+    )
+    payload = _sec("20", _sub("3", _content("new subsection 3")))
+    op = AmendmentOp(
+        op_id="subsec_replace_20_3",
+        op_type="REPLACE",
+        target_section="20",
+        target_unit_kind="section",
+        target_paragraph=3,
+        source_statute="1990/270",
+        source_issue_date=_DATE,
+    )
+
+    result = _apply_materialization(state, op, payload, "test")
+
+    assert result is None
+
+
+def test_apply_materialization_skips_unscoped_missing_subsection_op_in_chaptered_statute() -> None:
+    """Missing child targets in chaptered statutes need scope before materialization."""
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("19", _sub("1", _content("neighbor section"))),
+                ),
+            )
+        )
+    )
+    payload = _sec("20", _sub("3", _content("new subsection 3")))
+    op = AmendmentOp(
+        op_id="subsec_replace_missing_20_3",
+        op_type="REPLACE",
+        target_section="20",
+        target_unit_kind="section",
+        target_paragraph=3,
+        source_statute="1990/270",
+        source_issue_date=_DATE,
+    )
+
+    result = _apply_materialization(state, op, payload, "test")
+
+    assert result is None
+
+
 def test_apply_materialization_skips_unscoped_whole_section_replace() -> None:
     state = _make_state(
         _body(
@@ -1323,6 +1429,67 @@ def test_apply_materialization_skips_unscoped_whole_section_replace() -> None:
     )
 
     result = _apply_materialization(state, op, payload, "test")
+
+    assert result is None
+
+
+def test_apply_whole_section_replace_skips_unscoped_missing_section_in_chaptered_statute() -> None:
+    """A chaptered statute must not receive a direct section from unscoped REPLACE."""
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("14", _content("neighbor section")),
+                ),
+            )
+        )
+    )
+    payload = _sec("15", _content("replacement section"))
+    op = _op(op_type="REPLACE", target_section="15")
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        payload,
+        None,
+        _LEGAL_PIT,
+        "15 §",
+    )
+
+    assert result is None
+
+
+def test_apply_whole_section_replace_skips_unscoped_base_root_parent_in_chaptered_statute() -> None:
+    """Base-prior parent bootstrap cannot override a chaptered live tree."""
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("14", _content("neighbor section")),
+                ),
+            )
+        )
+    )
+    payload = _sec("15", _content("replacement section"))
+    op = _op(op_type="REPLACE", target_section="15")
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        payload,
+        None,
+        _LEGAL_PIT,
+        "15 §",
+        base_ir=_body(_sec("15", _content("base root section"))),
+    )
 
     assert result is None
 
@@ -2326,6 +2493,197 @@ def test_emit_section_snapshot_skips_payload_child_that_same_group_explicitly_re
     )
 
 
+def test_emit_section_snapshot_keeps_replacement_section_child_after_old_child_repeal() -> None:
+    """A replacement whole-section insert may reuse the old subsection label.
+
+    Real shape: 1991/714 / 1973/692 repeals old 21 § 1 mom and inserts a new
+    21 § in its place. The new section's 1 mom is fresh payload, not stale
+    carried text to prune because the repealed old subsection had the same
+    label.
+    """
+    base_section = _sec(
+        "21",
+        IRNode(kind=IRNodeKind.NUM, text="21 §"),
+        _sub("1", _content("old vacation compensation text")),
+    )
+    replacement_section = _sec(
+        "21",
+        IRNode(kind=IRNodeKind.NUM, text="21 §"),
+        _sub("1", _content("new transfer vacation text")),
+    )
+    state = _make_state(_body(base_section))
+    lo_ops: list[LegalOperation] = []
+
+    repeal_rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="repeal_old_21_1",
+            op_type="REPEAL",
+            target_section="21",
+            target_unit_kind="section",
+            target_paragraph=1,
+            source_statute="1991/714",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="21",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "21"), ("subsection", "1"))),
+    )
+    insert_rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="insert_new_21",
+            op_type="INSERT",
+            target_section="21",
+            target_unit_kind="section",
+            source_statute="1991/714",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=replacement_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="21",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "21"),)),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("synthetic_whole_section_replacement",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="21",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[repeal_rop, insert_rop],
+        lo_ops_out=lo_ops,
+        amendment_id="1991/714",
+        source_title="Repealed section replacement",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(base_section),
+    )
+
+    assert any(
+        op.target.path == (("section", "21"), ("subsection", "1"))
+        and op.action is not StructuralAction.REPEAL
+        and op.payload is not None
+        and "new transfer vacation text" in irnode_to_text(op.payload)
+        for op in lo_ops
+    )
+    assert not any(
+        op.target.path == (("section", "21"), ("subsection", "1"))
+        and op.action is StructuralAction.REPEAL
+        for op in lo_ops
+    )
+
+
+def test_emit_section_snapshot_skips_shifted_child_that_same_group_repeals() -> None:
+    """A repealed old subsection must not be carried forward under a shifted
+    label after an earlier same-group insert.
+
+    Real shape: 1991/1081 / 1958/438 §32 adds a new 2 mom, moves old 2 mom to
+    3 mom, and repeals old 3 mom. Snapshot emission must not preserve old 3 mom
+    as a synthetic 4 mom merely because insert-at-2 shifted the live tree.
+    """
+    base_section = _sec(
+        "32",
+        IRNode(kind=IRNodeKind.NUM, text="32 §"),
+        _sub("1", _content("old first")),
+        _sub("2", _content("old second to move")),
+        _sub("3", _content("old third to repeal")),
+    )
+    final_section = _sec(
+        "32",
+        IRNode(kind=IRNodeKind.NUM, text="32 §"),
+        _sub("1", _content("changed first")),
+        _sub("2", _content("new second")),
+        _sub("3", _content("old second to move")),
+        _sub("4", _content("old third to repeal")),
+    )
+    state = _make_state(_body(final_section))
+    lo_ops: list[LegalOperation] = []
+
+    insert2 = ResolvedOp.from_amendment_op(
+        _op(op_type="INSERT", target_section="32", target_paragraph=2),
+        muutos_ir=_sub("2", _content("new second")),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "32"), ("subsection", "2"))),
+    )
+    renumber2 = ResolvedOp.from_amendment_op(
+        dc_replace(
+            _op(op_type="RENUMBER", target_section="32", target_paragraph=2),
+            op_id="renumber_2_to_3",
+            lo=LegalOperation(
+                op_id="renumber_2_to_3",
+                sequence=0,
+                action=StructuralAction.RENUMBER,
+                target=LegalAddress(path=(("section", "32"), ("subsection", "2"))),
+                destination=LegalAddress(path=(("section", "32"), ("subsection", "3"))),
+            ),
+        ),
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+    )
+    repeal3 = ResolvedOp.from_amendment_op(
+        _op(op_type="REPEAL", target_section="32", target_paragraph=3),
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "32"), ("subsection", "3"))),
+    )
+    replace_section = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="32"),
+        muutos_ir=final_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "32"),)),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[insert2, renumber2, repeal3, replace_section],
+        lo_ops_out=lo_ops,
+        amendment_id="1991/1081",
+        source_title="Mixed insert move repeal",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(base_section),
+    )
+
+    assert not any(
+        op.target.path == (("section", "32"), ("subsection", "4"))
+        and op.action is not StructuralAction.REPEAL
+        for op in lo_ops
+    )
+    sub3 = next(
+        op
+        for op in lo_ops
+        if op.target.path == (("section", "32"), ("subsection", "3"))
+    )
+    assert sub3.action is not StructuralAction.REPEAL
+    assert sub3.payload is not None
+    assert "old second to move" in irnode_to_text(sub3.payload)
+
+
 def test_emit_section_snapshot_sparse_chapter_replace_skips_missing_child_repeals() -> None:
     base_ir = _body(
         IRNode(
@@ -2405,6 +2763,119 @@ def test_emit_section_snapshot_sparse_chapter_replace_skips_missing_child_repeal
     assert [p.detail["recovery_kind"] for p in pathologies] == [
         "container_snapshot_sparse_missing_child_repeal_skip"
     ]
+
+
+def test_source_complete_part_replacement_witness_records_chapter_labels() -> None:
+    payload = IRNode(
+        kind=IRNodeKind.PART,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(_sec("1", _content("new 1")),)),
+            IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(_sec("4", _content("new 4")),)),
+        ),
+    )
+
+    witness = _source_complete_container_replacement_witness(
+        raw_muutos_ir=payload,
+        group_ops=[
+            AmendmentOp(
+                op_id="replace_part_1",
+                op_type="REPLACE",
+                target_section="1",
+                target_unit_kind="part",
+                source_statute="1987/411",
+                source_issue_date=_DATE,
+            )
+        ],
+        target_unit_kind="part",
+        target_norm="1",
+    )
+
+    assert witness is not None
+    assert witness.kind == "complete"
+    assert witness.tail_policy == "replace_if_target_scope_requires"
+    assert witness.detail["source_child_labels"] == ("1", "2")
+
+
+def test_emit_section_snapshot_complete_part_replace_repeals_missing_chapters() -> None:
+    base_ir = _body(
+        IRNode(
+            kind=IRNodeKind.PART,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(_sec("1", _content("old 1")),)),
+                IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(_sec("4", _content("old stale 4")),)),
+            ),
+        )
+    )
+    payload = IRNode(
+        kind=IRNodeKind.PART,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(_sec("1", _content("new 1")),)),
+        ),
+    )
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(_sec("1", _content("new 1")),)),
+                    IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(_sec("4", _content("old stale 4")),)),
+                ),
+            )
+        )
+    )
+    rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="replace_part_1",
+            op_type="REPLACE",
+            target_section="1",
+            target_unit_kind="part",
+            source_statute="1987/411",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="part",
+        target_norm="1",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("part", "1"),)),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("source_complete_container_replacement",),
+            tail_policy="replace_if_target_scope_requires",
+            detail={"source_child_labels": ("1",)},
+        ),
+    )
+    lo_ops: list[LegalOperation] = []
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="part",
+        target_norm="1",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="1987/411",
+        source_title="Avioliittolain kokonaisuudistus",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=base_ir,
+    )
+
+    part_snapshot = next(op for op in lo_ops if op.op_id == "snapshot_part_1")
+    assert part_snapshot.payload is not None
+    assert part_snapshot.payload.attrs["lawvm_tail_policy"] == "replace_if_target_scope_requires"
+    assert part_snapshot.payload.attrs["lawvm_payload_completeness_kind"] == "complete"
+    assert any(
+        op.action is StructuralAction.REPEAL
+        and op.op_id == "snapshot_repeal_missing_chapter_2_from_part_1"
+        and op.target.path == (("part", "1"), ("chapter", "2"))
+        for op in lo_ops
+    )
 
 
 def test_subsection_repeal_does_not_copy_whole_section_heading_from_muutos_ir() -> None:
@@ -4423,6 +4894,78 @@ def test_emit_section_snapshot_keeps_part_wrapped_container_child_when_timeline_
     assert snapshot.payload.attrs["lawvm_payload_completeness_kind"] == "complete"
 
 
+def test_emit_section_snapshot_anchors_unscoped_subsection_insert_to_prior_timeline_path() -> None:
+    live_section = _sec(
+        "145f",
+        _sub("1", _content("existing first moment")),
+        _sub("2", _content("inserted second moment")),
+    )
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(live_section,),
+            )
+        )
+    )
+    lo_ops = [
+        LegalOperation(
+            op_id="snapshot_section_145f",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(
+                path=(("part", "3a"), ("chapter", "16a"), ("section", "145f"))
+            ),
+            payload=_sec("145f", _sub("1", _content("existing first moment"))),
+            source=OperationSource(statute_id="1969/628", effective="1969-10-10"),
+        )
+    ]
+    op = AmendmentOp(
+        op_id="insert_145f_sub2",
+        op_type="INSERT",
+        target_section="145f",
+        target_unit_kind="section",
+        target_paragraph=2,
+        source_statute="1973/791",
+        source_issue_date=_DATE,
+    )
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=_sec("145f", _sub("2", _content("inserted second moment"))),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="145f",
+        target_chapter=None,
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="145f",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="1973/791",
+        source_title="Insert",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(),
+        path_hint=(("hcontainer", ""), ("section", "145f")),
+    )
+
+    new_ops = lo_ops[1:]
+    assert [op.target.path for op in new_ops if "145f" in str(op.target.path)] == [
+        (("part", "3a"), ("chapter", "16a"), ("section", "145f")),
+        (("part", "3a"), ("chapter", "16a"), ("section", "145f"), ("subsection", "1")),
+        (("part", "3a"), ("chapter", "16a"), ("section", "145f"), ("subsection", "2")),
+    ]
+    assert not any(op.target.path == (("section", "145f"),) for op in new_ops)
+    assert new_ops[0].action is StructuralAction.REPLACE
+    assert new_ops[0].payload is not None
+    assert "inserted second moment" in irnode_to_text(new_ops[0].payload)
+
+
 def test_emit_section_snapshot_prefers_unique_substantive_section_over_repeal_placeholder_when_unscoped() -> None:
     from lawvm.core import tree_ops as _tops
 
@@ -4807,6 +5350,117 @@ def test_expired_temporary_section_merge_base_case_b_fires_when_live_is_temp_sta
     assert rebase_kind == "temporary_previous_snapshot_latest_snapshot"
 
 
+def test_apply_whole_section_heading_only_replace_uses_rebased_merge_base() -> None:
+    """Heading-only mixed-sparse REPLACE must carry the rebased (clean) body.
+
+    BITE for the bug where the heading-only branch decided eligibility from the
+    rebased ``live_merge_sec`` but then rebuilt the section from ``live_sec`` (the
+    expired-temporary-contaminated live fold).  When ``merge_base_sec`` differs
+    from ``live_sec``, the heading must be swapped onto the rebased permanent
+    body, never the contaminated live body.
+    """
+    heading_old = IRNode(kind=IRNodeKind.HEADING, text="Vanha otsikko")
+    heading_new = IRNode(kind=IRNodeKind.HEADING, text="Uusi otsikko")
+    # Safe permanent snapshot: clean body.
+    perm_section = _sec("24", heading_old, _sub("1", _content("perm body")))
+    # Expired-temporary contamination living in the fold.
+    temp_section = _sec("24", heading_old, _sub("1", _content("expired temp body")))
+    current_live_section = temp_section
+    section_path = (("section", "24"),)
+    state = _make_state(_body(current_live_section))
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_section_24",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=temp_section,
+            source=OperationSource(
+                effective="2021-01-01",
+                enacted="2021-01-01",
+                expires="2022-04-30",
+                statute_id="2021/541",
+            ),
+        ),
+        LegalOperation(
+            op_id="snapshot_section_24",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=perm_section,
+            source=OperationSource(
+                effective="2022-01-01",
+                enacted="2022-01-01",
+                expires="",
+                statute_id="2022/300",
+            ),
+        ),
+    ]
+    # Confirm the rebase fires and disagrees with the live fold (BITE precondition).
+    merge_base = _expired_temporary_section_merge_base(
+        op=ResolvedOp.from_amendment_op(
+            _op(op_type="REPLACE", target_section="24"),
+            muutos_ir=None,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="24",
+            target_chapter=None,
+            op_source=OperationSource(
+                statute_id="2022/331",
+                enacted="2022-03-11",
+                effective="2022-05-01",
+                expires="",
+            ),
+        ),
+        section_path=section_path,
+        replay_history_ops=replay_history,
+        base_ir=_body(perm_section),
+        current_live_section=current_live_section,
+    )
+    assert merge_base == perm_section
+    assert merge_base != current_live_section
+
+    # Heading-only mixed-sparse REPLACE: 1 subsection each side + a new heading.
+    muutos_ir = _sec("24", heading_new, _sub("1", _content("perm body")))
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="24"),
+        muutos_ir=muutos_ir,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="24",
+        target_chapter=None,
+        op_source=OperationSource(
+            statute_id="2022/331",
+            enacted="2022-03-11",
+            effective="2022-05-01",
+            expires="",
+        ),
+    )
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        section_path,
+        muutos_ir,
+        None,
+        _LEGAL_PIT,
+        "24 §",
+        base_ir=_body(perm_section),
+        replay_history_ops=replay_history,
+        mixed_sparse_insert=True,
+    )
+
+    result = _modified(state, result)
+    live = result.find_section("24")
+    assert live is not None
+    live_text = irnode_to_text(live)
+    # New heading was swapped in.
+    assert "Uusi otsikko" in live_text
+    # Body comes from the REBASED permanent snapshot — no expired-temp carried.
+    assert "perm body" in live_text
+    assert "expired temp body" not in live_text
+
+
 def test_apply_whole_section_replace_emits_temporary_section_rebase_pathology() -> None:
     base_section = _sec(
         "3",
@@ -5105,6 +5759,55 @@ def test_apply_whole_section_op_clean_replace_stays_quiet() -> None:
         != "apply_whole_section_op:suspicious_partial_fallback_fragment_replace_declined"
         for p in pathologies
     )
+
+
+def test_apply_whole_section_op_crossheading_carrier_does_not_carry_old_heading() -> None:
+    """A source crossHeading before a section replacement blocks stale heading carry."""
+    master = _sec(
+        "11",
+        IRNode(kind=IRNodeKind.HEADING, text="Old heading"),
+        _sub("1", _content("old section body")),
+    )
+    amend = _sec("11", _sub("1", _content("Ylijohtajan ollessa estynyt toimii sijainen.")))
+    cross = IRNode(kind=IRNodeKind.CROSS_HEADING, text="Ylijohtajan sijainen")
+    state = _make_state(_body(master))
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="11"),
+        muutos_ir=amend,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="11",
+        target_chapter=None,
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("synthetic_complete_section",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
+        op_source=OperationSource(
+            statute_id="2099/11",
+            enacted="2099-01-01",
+            effective="2099-01-01",
+            expires="",
+            raw_text="muutetaan 11 § ja 11 §:n edellä oleva väliotsikko",
+        ),
+    )
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        (("section", "11"),),
+        amend,
+        cross,
+        _LEGAL_PIT,
+        "11 §",
+        base_ir=_body(master),
+    )
+
+    applied = _modified(state, result)
+    live = applied.find_section("11")
+    assert live is not None
+    assert [c.text for c in live.children if c.kind == IRNodeKind.HEADING] == []
+    assert irnode_to_text(live) == "Ylijohtajan ollessa estynyt toimii sijainen."
 
 
 def _paragraph_labels(sub: IRNode) -> List[str]:
@@ -7007,6 +7710,70 @@ class TestApplySubsectionReplace:
         assert "sairaanhoitokortin" not in text
         assert "rajatyöntekijän" not in text
 
+    def test_exact_bound_complete_momentti_replace_drops_stale_item_tail_without_trailing_omission(self) -> None:
+        # Regression for 1946/148 §1a, 2013/977.  A prior amendment inserted
+        # item 1a, then a later explicit "replace 1 a § 2 mom" payload restated
+        # the whole numbered list as 1..3 with a leading context omission.  The
+        # exact slot binding owns subsection 2, so the old item 1a is stale
+        # target-region residue, not a preserved sparse tail.
+        state = _make_state(
+            _body(
+                _sec(
+                    "1a",
+                    _sub("1", _content("old first moment")),
+                    _sub(
+                        "2",
+                        _intro("Arvonlisäverottomasta liikevaihdosta vähennetään:"),
+                        _para("1a", "nikotiinivalmisteiden myynti"),
+                        _para("2", "muiden tuotteiden myynti"),
+                        _para("3", "sivuapteekin myynti"),
+                    ),
+                )
+            )
+        )
+        sec_path = [("section", "1a")]
+        sec = state.ir.children[0]
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        amend_sub = _sub(
+            "1",
+            _intro("Arvonlisäverottomasta liikevaihdosta vähennetään lisäksi seuraavat osuudet:"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            _para("1", "sopimusvalmistuksen myynnin arvo"),
+            _para("2", "nikotiinivalmisteiden myynnin arvo"),
+            _para("3", "1 ja 2 kohdan mukaan vähennetty liikevaihto"),
+        )
+        muutos_ir = _sec("1a", amend_sub)
+        op = _op(
+            op_type="REPLACE",
+            target_section="1a",
+            target_paragraph=2,
+            has_exact_bound_payload=True,
+        )
+
+        result = _apply_subsection_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            _FINLEX_ORACLE,
+            "1 a § 2 mom",
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(
+            c for c in new_sec.children if c.kind is IRNodeKind.SUBSECTION and c.label == "2"
+        )
+        item_labels = [c.label for c in new_sub.children if c.kind is IRNodeKind.PARAGRAPH]
+        assert item_labels == ["1", "2", "3"]
+        text = irnode_to_text(new_sub)
+        assert "sopimusvalmistuksen" in text
+        assert "1 ja 2 kohdan" in text
+        assert "1a)" not in text
+
     def test_not_applicable_for_item_op(self):
         state, sec_path, sec = self._make_sec_and_path()
         op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
@@ -7181,6 +7948,235 @@ def test_apply_whole_section_replace_moves_unique_root_section_into_target_chapt
     assert len(pathologies) == 1
     assert pathologies[0].code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
     assert pathologies[0].detail["recovery_kind"] == "section_move_replace_destination_rebind"
+
+
+def test_scoped_section_replace_consumes_stale_unscoped_root_duplicate() -> None:
+    wrapper = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("15", _content("old scoped text")),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(
+                    _sec("15", _content("stale unscoped text")),
+                ),
+            ),
+        ),
+    )
+    state = _make_state(_body(wrapper))
+    op = _op(
+        op_type="REPLACE",
+        target_section="15",
+        target_chapter="3",
+    )
+    op.source_statute = "1994/328"
+    ctx = _ctx(state.ir)
+    pathologies: list[SourcePathology] = []
+    mutation_events: list[ApplyMutationEvent] = []
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_chapter_3",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"),)),
+            source=OperationSource(statute_id="1994/328"),
+        )
+    ]
+
+    result = apply_op(
+        state,
+        op,
+        ctx,
+        muutos_ir=_sec("15", _content("new scoped text")),
+        replay_mode="legal_pit",
+        replay_history_ops=replay_history,
+        source_pathologies_out=pathologies,
+        mutation_events_out=mutation_events,
+    )
+
+    result_wrapper = result.ir.children[0]
+    assert result_wrapper.kind == IRNodeKind.HCONTAINER
+    stale_bucket_sections = [
+        grandchild
+        for child in result_wrapper.children
+        if child.kind is IRNodeKind.HCONTAINER
+        for grandchild in child.children
+        if grandchild.kind is IRNodeKind.SECTION and grandchild.label == "15"
+    ]
+    assert stale_bucket_sections == []
+    scoped = result.find_section("15", "3")
+    assert scoped is not None
+    assert "new scoped text" in irnode_to_text(scoped)
+    assert len(pathologies) == 1
+    assert pathologies[0].code == "UNSCOPED_ROOT_DUPLICATE_CONSUMED"
+    assert (
+        pathologies[0].detail["recovery_kind"]
+        == "section_replace_consume_unscoped_root_duplicate"
+    )
+    assert len(mutation_events) == 1
+    assert ("hcontainer", "") in mutation_events[0].removed_paths[0]
+    assert ("section", "15") in mutation_events[0].removed_paths[0]
+    assert any(
+        allowance.rule_id == "section_replace_consume_unscoped_root_duplicate"
+        for allowance in mutation_events[0].declared_allowances
+    )
+
+
+def test_scoped_section_replace_keeps_unscoped_duplicate_when_source_targets_same_label_elsewhere() -> None:
+    wrapper = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="1 luku"),
+                    _sec("15", _content("other scoped text")),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="3 luku"),
+                    _sec("15", _content("old scoped text")),
+                ),
+            ),
+            _sec("15", _content("ambiguous unscoped text")),
+        ),
+    )
+    state = _make_state(_body(wrapper))
+    op = _op(
+        op_type="REPLACE",
+        target_section="15",
+        target_chapter="3",
+    )
+    op.source_statute = "1998/522"
+    ctx = _ctx(state.ir)
+    pathologies: list[SourcePathology] = []
+    mutation_events: list[ApplyMutationEvent] = []
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_chapter_3",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"),)),
+            payload=IRNode(kind=IRNodeKind.CHAPTER, label="3"),
+            source=OperationSource(statute_id="1998/522"),
+        ),
+        LegalOperation(
+            op_id="snapshot_section_15",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "1"), ("section", "15"))),
+            payload=_sec("15", _content("other replacement text")),
+            source=OperationSource(statute_id="1998/522"),
+        ),
+    ]
+
+    result = apply_op(
+        state,
+        op,
+        ctx,
+        muutos_ir=_sec("15", _content("new scoped text")),
+        replay_mode="legal_pit",
+        replay_history_ops=replay_history,
+        source_pathologies_out=pathologies,
+        mutation_events_out=mutation_events,
+    )
+
+    result_wrapper = result.ir.children[0]
+    direct_sections = [
+        child
+        for child in result_wrapper.children
+        if child.kind is IRNodeKind.SECTION and child.label == "15"
+    ]
+    assert len(direct_sections) == 1
+    assert "ambiguous unscoped text" in irnode_to_text(direct_sections[0])
+    assert pathologies == []
+    assert all(
+        allowance.rule_id != "section_replace_consume_unscoped_root_duplicate"
+        for event in mutation_events
+        for allowance in event.declared_allowances
+    )
+
+
+def test_scoped_section_replace_keeps_headed_unscoped_same_label_section() -> None:
+    wrapper = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="6",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="6 luku"),
+                    _sec("4", _content("old scoped text")),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="4",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="4 §"),
+                    IRNode(kind=IRNodeKind.HEADING, text="Voimaantulo"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(_content("root text"),)),
+                ),
+            ),
+        ),
+    )
+    state = _make_state(_body(wrapper))
+    op = _op(
+        op_type="REPLACE",
+        target_section="4",
+        target_chapter="6",
+    )
+    op.source_statute = "2006/442"
+    ctx = _ctx(state.ir)
+    pathologies: list[SourcePathology] = []
+    mutation_events: list[ApplyMutationEvent] = []
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_chapter_6",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "6"),)),
+            payload=IRNode(kind=IRNodeKind.CHAPTER, label="6"),
+            source=OperationSource(statute_id="2006/442"),
+        )
+    ]
+
+    result = apply_op(
+        state,
+        op,
+        ctx,
+        muutos_ir=_sec("4", _content("new scoped text")),
+        replay_mode="legal_pit",
+        replay_history_ops=replay_history,
+        source_pathologies_out=pathologies,
+        mutation_events_out=mutation_events,
+    )
+
+    result_wrapper = result.ir.children[0]
+    direct_sections = [
+        child
+        for child in result_wrapper.children
+        if child.kind is IRNodeKind.SECTION and child.label == "4"
+    ]
+    assert len(direct_sections) == 1
+    assert "Voimaantulo" in irnode_to_text(direct_sections[0])
+    assert pathologies == []
+    assert all(
+        allowance.rule_id != "section_replace_consume_unscoped_root_duplicate"
+        for event in mutation_events
+        for allowance in event.declared_allowances
+    )
 
 
 def test_apply_whole_section_replace_materializes_inside_existing_chapter_for_missing_section() -> None:
@@ -7424,6 +8420,110 @@ def test_apply_whole_section_replace_records_missing_bootstrap_parent() -> None:
     assert pathologies[0].detail["target_section"] == "3a"
     assert pathologies[0].detail["recovery_kind"] == "section_replace_bootstrap_parent_missing"
     assert pathologies[0].detail["strict_disposition"] == "block"
+
+
+def test_apply_whole_section_replace_scaffolds_parent_from_exact_cited_snapshot() -> None:
+    """A cited-version whole-section replace may rebirth the exact historical parent path.
+
+    This is the narrow form of the 1999/132 + 2024/899 family: the target section
+    has no live parent because an earlier same-effective repeal removed the
+    chapter, but the amending formula cites a concrete earlier version and the
+    replay history contains that exact section snapshot path.
+    """
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(IRNode(kind=IRNodeKind.NUM, text="7 luku"),),
+            )
+        )
+    )
+    base_ir = _body(
+        IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="19",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="19 luku"),
+                _sec("131", _sub("1", _content("historical section 131"))),
+            ),
+        )
+    )
+    cited_path = (("chapter", "19"), ("section", "131"))
+    replay_history_ops = [
+        LegalOperation(
+            op_id="snapshot_section_131",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=cited_path),
+            payload=_sec("131", _sub("1", _content("historical section 131"))),
+            source=OperationSource(statute_id="2014/41"),
+        )
+    ]
+    op = _op(
+        op_type="REPLACE",
+        target_section="131",
+        target_version_statute_id="2014/41",
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        _sec("131", _sub("1", _content("reborn section 131"))),
+        None,
+        _LEGAL_PIT,
+        "131 §",
+        base_ir=base_ir,
+        replay_history_ops=replay_history_ops,
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    section = result.find_section("131", "19")
+    assert section is not None
+    assert "reborn section 131" in irnode_to_text(section)
+    assert result.find("chapter", "19") is not None
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+    assert (
+        pathologies[0].detail["recovery_kind"]
+        == "section_replace_bootstrap_cited_parent_scaffold"
+    )
+
+
+def test_apply_whole_section_replace_refuses_cited_parent_scaffold_without_exact_snapshot() -> None:
+    state = _make_state(_body(IRNode(kind=IRNodeKind.CHAPTER, label="7")))
+    base_ir = _body(
+        IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="19",
+            children=(_sec("131", _sub("1", _content("historical section 131"))),),
+        )
+    )
+    op = _op(
+        op_type="REPLACE",
+        target_section="131",
+        target_version_statute_id="2014/41",
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        _sec("131", _sub("1", _content("reborn section 131"))),
+        None,
+        _LEGAL_PIT,
+        "131 §",
+        base_ir=base_ir,
+        replay_history_ops=[],
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is None
+    assert pathologies == []
+    assert state.find("chapter", "19") is None
 
 
 def test_apply_whole_section_replace_does_not_synthesize_root_insert_for_missing_root_section() -> None:
@@ -7690,7 +8790,12 @@ def test_apply_whole_section_insert_moves_unique_parent_section_into_letter_suff
             ),
         )
     )
-    op = _op(op_type="INSERT", target_section="55", target_chapter="7c")
+    op = _op(
+        op_type="INSERT",
+        target_section="55",
+        target_chapter="7c",
+        body_chapter_move_from="7",
+    )
     muutos_ir = _sec("55", _content("new subchapter text"))
     pathologies: list[SourcePathology] = []
 
@@ -7713,6 +8818,52 @@ def test_apply_whole_section_insert_moves_unique_parent_section_into_letter_suff
     assert len(pathologies) == 1
     assert pathologies[0].code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
     assert pathologies[0].detail["recovery_kind"] == "section_move_insert_destination_rebind"
+
+
+def test_apply_whole_section_insert_does_not_move_parent_section_without_declared_body_move() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="6",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="6 luku"),
+                    _sec("2a", _content("chapter six native text")),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="6b",
+                children=(IRNode(kind=IRNodeKind.NUM, text="6 b luku"),),
+            ),
+        )
+    )
+    op = _op(op_type="INSERT", target_section="2a", target_chapter="6b")
+    muutos_ir = _sec("2a", _content("chapter six b native text"))
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        muutos_ir,
+        None,
+        _LEGAL_PIT,
+        "6 b luku 2 a §",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    original = result.find_section("2a", "6")
+    inserted = result.find_section("2a", "6b")
+    assert original is not None
+    assert inserted is not None
+    assert "chapter six native text" in irnode_to_text(original)
+    assert "chapter six b native text" in irnode_to_text(inserted)
+    assert not any(
+        pathology.detail.get("recovery_kind") == "section_move_insert_destination_rebind"
+        for pathology in pathologies
+    )
 
 
 def test_apply_whole_section_insert_into_existing_chapter_emits_pathology() -> None:
@@ -14370,6 +15521,111 @@ def test_typed_insert_subsection_with_carried_section_shell_uses_descendant_disp
     assert [event.helper for event in mutation_events] == ["_apply_deterministic_subsection_op"]
 
 
+def test_typed_insert_subsection_uses_unique_live_section_path_in_nested_tree() -> None:
+    from lawvm.core.canonical_intent import (
+        ExecutionContract,
+        Insert,
+        InsertOrder,
+        IntentKind,
+        NodeTarget,
+        OccupancyPolicy,
+    )
+    from lawvm.core.ir import LegalAddress
+
+    live_section = _sec("145f", _sub("1", _content("existing first moment")))
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="3a",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="16a",
+                        children=(live_section,),
+                    ),
+                ),
+            )
+        )
+    )
+    payload = _sec("145f", _sub("2", _content("inserted second moment")))
+    op = _op(op_type="INSERT", target_section="145f", target_paragraph=2)
+    slot_map = SubsectionSlotMap()
+    mapped_payload = next(c for c in payload.children if c.kind == IRNodeKind.SUBSECTION)
+    slot_map.assign(op, mapped_payload)
+    slot_assignment = SubsectionSlotAssignmentResult(
+        subsec_map=slot_map,
+        sparse_slot_bindings=(),
+        used_subs=(0,),
+        unassigned_payload_slots=(),
+    )
+    intent = Insert(
+        kind=IntentKind.INSERT,
+        target=NodeTarget(address=LegalAddress(path=(("section", "145f"), ("subsection", "2")))),
+        payload=cast(Any, payload),
+        contract=ExecutionContract(
+            occupancy=OccupancyPolicy.fresh_insert(),
+            insert_order=InsertOrder.SORTED_FAMILY,
+        ),
+    )
+    rop = _make_rop(op, intent, muutos_ir=payload, slot_assignment=slot_assignment)
+    ctx = _ctx(_body())
+    mutation_events: List[ApplyMutationEvent] = []
+
+    result = _apply_intent_section_level(
+        state,
+        rop,
+        "test",
+        ctx,
+        _LEGAL_PIT,
+        "145f § 2 mom insert",
+        payload,
+        mutation_events_out=mutation_events,
+    )
+
+    result = _modified(state, result)
+    assert not any(c.kind == IRNodeKind.SECTION and c.label == "145f" for c in result.ir.children)
+    nested = result.find_section("145f", "16a", "3a")
+    assert nested is not None
+    assert [c.label for c in nested.children if c.kind == IRNodeKind.SUBSECTION] == ["1", "2"]
+    assert "inserted second moment" in irnode_to_text(nested)
+    assert [event.helper for event in mutation_events] == ["_apply_deterministic_subsection_op"]
+    assert mutation_events[0].resolved_target_path == (
+        ("part", "3a"),
+        ("chapter", "16a"),
+        ("section", "145f"),
+        ("subsection", "2"),
+    )
+
+
+def test_resolved_op_preserves_subsection_scope_when_lo_target_names_only_section() -> None:
+    lo = LegalOperation(
+        op_id="lo_145f",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "145f"),)),
+        payload=None,
+        source=OperationSource(statute_id="1973/791"),
+    )
+    op = _op(op_type="INSERT", target_section="145f", target_paragraph=2)
+    op.lo = lo
+
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=_sec("145f", _sub("2", _content("new second moment"))),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="145f",
+        target_chapter=None,
+    )
+
+    assert rop.resolved_target_address == LegalAddress(
+        path=(("section", "145f"), ("subsection", "2"))
+    )
+    assert rop.resolved_target_subsection_label == "2"
+    assert rop.effective_target_paragraph == 2
+
+
 def test_typed_repeal_section_emits_mutation_event() -> None:
     """Typed Repeal(NodeTarget/section) path must emit a mutation event."""
     state = _make_state(_body(_sec("5", _sub("1", _content("old text")))))
@@ -16959,13 +18215,9 @@ def test_subsection_replace_forced_append_emits_pathology() -> None:
     result_sec = tree_resolve(result.ir, (("section", "13"),))
     assert result_sec is not None
     result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
-    assert [sub.label for sub in result_subsecs] == ["1", "2", "3", "4"]
-    assert [p.code for p in pathologies] == [
-        "DESTRUCTIVE_SHAPE_LOSS_RISK",
-        "SUBSECTION_TARGET_REBOUND",
-    ]
+    assert [sub.label for sub in result_subsecs] == ["1", "2", "3", "6"]
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
     assert pathologies[0].detail["recovery_kind"] == "subsection_replace_forced_append"
-    assert pathologies[1].detail["rebound_kind"] == "missing_exact_subsection_label"
 
 
 def test_subsection_replace_strict_blocks_forced_append() -> None:
@@ -18071,6 +19323,113 @@ def test_subsection_replace_merges_section_level_sparse_omission_item_rows() -> 
     assert pathologies[0].detail["recovery_kind"] == "subsection_replace_sparse_omission_item_merge"
 
 
+def test_subsection_replace_merges_single_unlabeled_sparse_table_row_by_intro_anchor() -> None:
+    live_first = _sub(
+        "1",
+        _intro("Special pension age applies to state service"),
+        _para("1", "alpha beta gamma delta old text 55 years"),
+        _para("2", "police service senior constable old text 58 years"),
+        _para("3", "customs service old text 58 years"),
+    )
+    sec = _sec("5", live_first)
+    state = _make_state(_body(sec))
+    op = _op(op_type="REPLACE", target_section="5", target_paragraph=1)
+    muutos_ir = _sec(
+        "5",
+        _sub(
+            "1",
+            _content(
+                "Special pension age applies to state service police service senior "
+                "constable new text 58 years"
+            ),
+        ),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_subsection_replace(
+        state,
+        op,
+        [("section", "5")],
+        sec,
+        [live_first],
+        _sub(
+            "1",
+            _content(
+                "Special pension age applies to state service police service senior "
+                "constable new text 58 years"
+            ),
+        ),
+        muutos_ir,
+        _LEGAL_PIT,
+        "5 § 1 mom",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    new_sec = next(c for c in result.ir.children if c.kind is IRNodeKind.SECTION)
+    first = next(c for c in new_sec.children if c.kind is IRNodeKind.SUBSECTION)
+    assert [child.label for child in first.children if child.kind is IRNodeKind.PARAGRAPH] == [
+        "1",
+        "2",
+        "3",
+    ]
+    text = irnode_to_text(first)
+    assert "alpha beta gamma delta old text" in text
+    assert "police service senior constable old text" not in text
+    assert "2) police service senior constable new text 58 years" in text
+    assert "customs service old text" in text
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+    assert pathologies[0].detail["recovery_kind"] == "subsection_replace_unlabeled_sparse_item_merge"
+
+
+def test_subsection_replace_single_unlabeled_sparse_table_row_strict_blocks_recovery() -> None:
+    live_first = _sub(
+        "1",
+        _intro("Special pension age applies to state service"),
+        _para("1", "alpha beta gamma delta old text 55 years"),
+        _para("2", "police service senior constable old text 58 years"),
+        _para("3", "customs service old text 58 years"),
+    )
+    sec = _sec("5", live_first)
+    state = _make_state(_body(sec))
+    op = _op(op_type="REPLACE", target_section="5", target_paragraph=1)
+    muutos_ir = _sec(
+        "5",
+        _sub(
+            "1",
+            _content(
+                "Special pension age applies to state service police service senior "
+                "constable new text 58 years"
+            ),
+        ),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_subsection_replace(
+        state,
+        op,
+        [("section", "5")],
+        sec,
+        [live_first],
+        _sub(
+            "1",
+            _content(
+                "Special pension age applies to state service police service senior "
+                "constable new text 58 years"
+            ),
+        ),
+        muutos_ir,
+        _LEGAL_PIT,
+        "5 § 1 mom",
+        source_pathologies_out=pathologies,
+        strict_profile=default_finland_strict_profile(),
+    )
+
+    assert result is None
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+    assert pathologies[0].detail["recovery_kind"] == "subsection_replace_unlabeled_sparse_item_merge"
+
+
 def test_subsection_replace_sparse_omission_item_rows_strict_blocks_recovery() -> None:
     live_first = _sub(
         "1",
@@ -18171,6 +19530,63 @@ def test_apply_container_otsikko_replace_applies_crossheading_payload() -> None:
     headings = [c.text for c in new_chapter.children if c.kind is IRNodeKind.HEADING]
     assert headings == ["New chapter heading"]
     # crossHeading recovery is a clean apply, not a pathology.
+    assert pathologies == []
+
+
+def test_apply_container_otsikko_replace_applies_heading_nested_under_target_container() -> None:
+    """A wrapped amendment payload may carry the target chapter below a carrier.
+
+    The heading is owned only when the typed target container is unique; apply
+    must not treat the wrapper's lack of an immediate heading as an absent
+    payload.
+    """
+    chapter = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old chapter heading"),
+            _sec("93", _content("body")),
+        ),
+    )
+    state = _make_state(_body(chapter))
+    payload = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+                    IRNode(kind=IRNodeKind.HEADING, text="New chapter heading"),
+                    _sec("93", _content("body")),
+                ),
+            ),
+        ),
+    )
+    op = ResolvedOp.from_amendment_op(
+        _otsikko_container_op(target_unit_kind="chapter", target_section="7"),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="chapter",
+        target_norm="7",
+        target_chapter=None,
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_container_op(
+        state,
+        op,
+        payload,
+        _LEGAL_PIT,
+        "7 luku otsikko",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    new_chapter = next(c for c in result.ir.children if c.kind is IRNodeKind.CHAPTER)
+    headings = [c.text for c in new_chapter.children if c.kind is IRNodeKind.HEADING]
+    assert headings == ["New chapter heading"]
     assert pathologies == []
 
 

@@ -9,9 +9,12 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+import sys
 import xml.etree.ElementTree as ET
 from typing import Protocol, cast
 
+from lawvm.core.filter_result import FilterResult
+from lawvm.core.stage_result import CoverageCertificate, PartitionResult
 from lawvm.finland.section_text_extractor import (
     SectionTextExtractionResult,
     extract_sections_text,
@@ -91,17 +94,84 @@ def build_fi_interlink_target_row(
     )
 
 
+@dataclasses.dataclass(frozen=True)
+class InterlinkProjection(PartitionResult[LawvmInterlinkRow]):
+    """Conserving carrier for transition-graph interlink projection (Audit C).
+
+    Composes the canonical :class:`PartitionResult` (accepted = projected rows,
+    plus typed core ``residuals`` and a ``coverage`` account) over the interlink
+    projection. The reference/preparatory/inline diagnostics the projector emits
+    were previously discarded here; they are now carried as typed ``residuals``
+    so nothing is silently dropped. ``rows`` is a convenience alias for the
+    accepted lane.
+    """
+
+    @property
+    def rows(self) -> tuple[LawvmInterlinkRow, ...]:
+        return self.accepted
+
+
+def project_fi_interlinks_partition(
+    statute_id: str,
+    corpus: object,
+) -> InterlinkProjection:
+    """Project Finnish interlink rows as a conserving partition.
+
+    Conservation (Audit C): the underlying projector returns ``(rows,
+    diagnostics)``; the diagnostics were previously discarded by
+    ``project_fi_interlinks_for_transition_graph``. They are now carried as typed
+    ``residuals`` (blocking iff the diagnostic was blocking) plus a coverage
+    account over rows + residuals, so the projection plane no longer silently
+    drops its accounting.
+    """
+    from lawvm.tools.export_fi_interlinks import _project_interlinks_for_statute
+
+    projection = _project_interlinks_for_statute(
+        statute_id, cast(_PreviewCorpus, corpus)
+    )
+    interlink_rows = tuple(
+        LawvmInterlinkRow.from_mapping(row) for row in projection.rows
+    )
+    coverage = CoverageCertificate(
+        unit="interlink_rows",
+        total=projection.coverage.total,
+        owned=len(interlink_rows),
+        residual=projection.coverage.residual,
+        violation=projection.coverage.violation,
+        totality_claimed=projection.coverage.totality_claimed,
+    )
+    return InterlinkProjection(
+        FilterResult(accepted_items=interlink_rows),
+        residuals=projection.residuals,
+        coverage=coverage,
+    )
+
+
 def project_fi_interlinks_for_transition_graph(
     statute_id: str,
     corpus: object,
 ) -> list[LawvmInterlinkRow]:
-    """Project Finnish citation/interlink rows for transition-graph export."""
-    from lawvm.tools.export_fi_interlinks import _project_interlinks_for_statute
+    """Project Finnish citation/interlink rows for transition-graph export.
 
-    rows, _diagnostics = _project_interlinks_for_statute(
-        statute_id, cast(_PreviewCorpus, corpus)
-    )
-    return [LawvmInterlinkRow.from_mapping(row) for row in rows]
+    Production consumer of :func:`project_fi_interlinks_partition`: it reads the
+    projection's ``residuals`` (the diagnostics that were previously discarded)
+    and surfaces any blocking residue on the export console (the projection-plane
+    visibility surface, mirroring the export collision-warning convention) so the
+    drop is no longer silent. The provider protocol fixes the return to the row
+    list, so the accepted lane is returned to the caller.
+    """
+    projection = project_fi_interlinks_partition(statute_id, corpus)
+    blocking = [residual for residual in projection.residuals if residual.blocking]
+    if blocking:
+        sample = "; ".join(residual.reason for residual in blocking[:5])
+        print(
+            f"[export] WARNING: fi interlinks for {statute_id} carry "
+            f"{len(blocking)} blocking projection residual(s) that are not "
+            f"emitted as interlink rows: {sample}",
+            file=sys.stderr,
+            flush=True,
+        )
+    return list(projection.rows)
 
 
 def project_fi_surface_overlays_for_transition_graph(
@@ -117,8 +187,8 @@ def project_fi_surface_overlays_for_transition_graph(
     """
     from lawvm.tools.export_fi_interlinks import _project_overlays_for_statute
 
-    rows, _diagnostics = _project_overlays_for_statute(statute_id, corpus)
-    return rows
+    projection = _project_overlays_for_statute(statute_id, corpus)
+    return list(projection.rows)
 
 
 def fi_transition_graph_overlay_provider() -> LawvmSurfaceOverlayExportProvider:

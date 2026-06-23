@@ -68,6 +68,13 @@ class _SubsectionApplyView:
     resolved_op: ResolvedOp | None = None
 
 
+@dataclass(frozen=True)
+class _SparseSubsectionItemMergeResult:
+    node: IRNode
+    recovery_kind: RecoveryKind
+    payload_sibling_count: int
+
+
 def _coerce_subsection_apply_view(op: "_SubsectionApplyView | AmendmentOp | ResolvedOp") -> _SubsectionApplyView:
     if isinstance(op, _SubsectionApplyView):
         return op
@@ -169,6 +176,7 @@ def _is_content_only_continuation_fragment(
     if len(content_children) != 1:
         return False
     continuation_text = " ".join(irnode_to_text(content_children[0]).split())
+    # lawvm-regex: owning_parser own-subtree (irnode_to_text) leading-lowercase continuation shape test on owned live-section text, not source-plane mint
     if not continuation_text or not re.match(r"^[a-zåäö]", continuation_text, flags=re.I) or continuation_text[:1].upper() == continuation_text[:1]:
         return False
 
@@ -241,6 +249,7 @@ def _tail_after_first_sentence(text: str) -> str:
     stripped = text.strip()
     if not stripped:
         return ""
+    # lawvm-regex: owning_parser sentence-boundary split on owned payload text (tail-paragraph extraction), not source text
     match = re.search(r"[.!?]\s+", stripped)
     if match is None:
         return ""
@@ -585,6 +594,51 @@ def _strip_context_carried_omission_for_complete_numbered_replace(
     )
 
 
+def _strip_owned_bound_omissions_for_complete_numbered_replace(
+    replacement_subsection: IRNode,
+) -> IRNode | None:
+    """Strip omission delimiters from an exact-bound whole-subsection payload.
+
+    Sparse subsection payloads use omission nodes to preserve unstated live
+    item rows.  Once elaboration has bound a single owned payload to a
+    whole-subsection ``REPLACE``, a contiguous numbered list starting at 1 owns
+    the target subsection's child list even if the source XML still carries a
+    context omission before the rows.  In that shape omission nodes delimit the
+    source excerpt; they do not authorize splicing stale live children back in.
+    """
+    if not any(_is_omission_ir(child) for child in replacement_subsection.children):
+        return None
+
+    non_omission_children = tuple(
+        child for child in replacement_subsection.children if not _is_omission_ir(child)
+    )
+    numbered = [
+        child
+        for child in non_omission_children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    ]
+    if not numbered:
+        return None
+    numbered_labels = [normalized_label_key(child.label) for child in numbered]
+    if any(not label.isdigit() for label in numbered_labels):
+        return None
+    if numbered_labels != [str(i) for i in range(1, len(numbered_labels) + 1)]:
+        return None
+    if any(
+        child.kind is IRNodeKind.PARAGRAPH and child.label and child not in numbered
+        for child in non_omission_children
+    ):
+        return None
+
+    return IRNode(
+        kind=replacement_subsection.kind,
+        label=replacement_subsection.label,
+        text=replacement_subsection.text,
+        attrs=dict(replacement_subsection.attrs),
+        children=non_omission_children,
+    )
+
+
 def _split_sparse_omission_item_row_text(text: str) -> tuple[str, str] | None:
     stripped = text.strip()
     for idx, char in enumerate(stripped[:8]):
@@ -634,10 +688,193 @@ def _item_row_from_sparse_omission_subsection(subsection: IRNode) -> IRNode | No
     )
 
 
+def _leading_anchor_tokens(text: str, *, count: int = 4) -> tuple[str, ...]:
+    tokens: list[str] = []
+    for raw in text.split():
+        token = raw.strip(" \t\r\n.,;:()[]{}")
+        if token:
+            tokens.append(token.casefold())
+        if len(tokens) == count:
+            return tuple(tokens)
+    return ()
+
+
+def _anchor_token_set(text: str) -> set[str]:
+    tokens: set[str] = set()
+    for raw in text.split():
+        token = raw.strip(" \t\r\n.,;:()[]{}").casefold()
+        if len(token) >= 3:
+            tokens.add(token)
+    return tokens
+
+
+def _unique_sparse_row_match_by_text(
+    row_text: str,
+    live_rows: list[IRNode],
+) -> IRNode | None:
+    leading_anchor = _leading_anchor_tokens(row_text)
+    if len(leading_anchor) >= 4:
+        leading_matches = [
+            live_row
+            for live_row in live_rows
+            if _leading_anchor_tokens(irnode_to_text(live_row)) == leading_anchor
+        ]
+        if len(leading_matches) == 1:
+            return leading_matches[0]
+
+    payload_tokens = _anchor_token_set(row_text)
+    if len(payload_tokens) < 8:
+        return None
+    scored: list[tuple[float, IRNode]] = []
+    for live_row in live_rows:
+        live_tokens = _anchor_token_set(irnode_to_text(live_row))
+        if not live_tokens:
+            continue
+        common = len(payload_tokens & live_tokens)
+        coverage = common / max(1, min(len(payload_tokens), len(live_tokens)))
+        scored.append((coverage, live_row))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: item[0], reverse=True)
+    best_score, best_row = scored[0]
+    runner_up = scored[1][0] if len(scored) > 1 else 0.0
+    if best_score < 0.55 or best_score - runner_up < 0.20:
+        return None
+    return best_row
+
+
+def _single_unlabeled_sparse_item_row(
+    master_subsection: IRNode,
+    replacement_subsection: IRNode,
+) -> IRNode | None:
+    """Recover one table-carried item row whose source lost the item label.
+
+    Historical Finland XML sometimes encodes a single changed numbered-list row
+    as a table directly after the live subsection intro, with no item number in
+    the source row. This is only safe when the carried intro matches the live
+    intro exactly and the row's leading tokens uniquely identify one existing
+    live item.
+    """
+    if replacement_subsection.kind is not IRNodeKind.SUBSECTION:
+        return None
+    if any(child.kind is IRNodeKind.PARAGRAPH for child in replacement_subsection.children):
+        return None
+
+    master_intro = next(
+        (child for child in master_subsection.children if child.kind is IRNodeKind.INTRO),
+        None,
+    )
+    if master_intro is None:
+        return None
+    live_rows = [
+        child
+        for child in master_subsection.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    ]
+    if len(live_rows) < 3:
+        return None
+
+    content_children = [
+        child
+        for child in replacement_subsection.children
+        if child.kind in {IRNodeKind.CONTENT, IRNodeKind.INTRO} and irnode_to_text(child).strip()
+    ]
+    if len(content_children) != len(replacement_subsection.children) or not content_children:
+        return None
+
+    replacement_text = " ".join(
+        " ".join(irnode_to_text(child).split())
+        for child in content_children
+    ).strip()
+    row_text = _strip_leading_text_prefix(replacement_text, irnode_to_text(master_intro))
+    if row_text is None:
+        return None
+    row_text = " ".join(row_text.split())
+    anchor = _leading_anchor_tokens(row_text)
+    if len(anchor) < 4:
+        if len(_anchor_token_set(row_text)) < 8:
+            return None
+
+    matched_row = _unique_sparse_row_match_by_text(row_text, live_rows)
+    if matched_row is None:
+        return None
+
+    label = normalized_label_key(matched_row.label)
+    if not label:
+        return None
+    return IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label=label,
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text=f"{label})"),
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=row_text,
+                attrs=dict(content_children[-1].attrs),
+            ),
+        ),
+    )
+
+
+def _merge_single_unlabeled_sparse_item_row_into_subsection(
+    master_subsection: IRNode,
+    muutos_ir: IRNode | None,
+) -> _SparseSubsectionItemMergeResult | None:
+    if master_subsection.kind is not IRNodeKind.SUBSECTION:
+        return None
+    if muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return None
+    payload_subsections = [
+        child for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION
+    ]
+    non_structural = [
+        child
+        for child in muutos_ir.children
+        if child.kind not in {IRNodeKind.NUM, IRNodeKind.SUBSECTION}
+        and not _is_omission_ir(child)
+    ]
+    if len(payload_subsections) != 1 or non_structural:
+        return None
+
+    payload_row = _single_unlabeled_sparse_item_row(
+        master_subsection,
+        payload_subsections[0],
+    )
+    if payload_row is None:
+        return None
+
+    live_children = list(master_subsection.children)
+    replaced = False
+    merged_children: list[IRNode] = []
+    for child in live_children:
+        if (
+            child.kind is IRNodeKind.PARAGRAPH
+            and child.label
+            and normalized_label_key(child.label) == payload_row.label
+        ):
+            merged_children.append(payload_row)
+            replaced = True
+            continue
+        merged_children.append(child)
+    if not replaced:
+        return None
+    return _SparseSubsectionItemMergeResult(
+        node=IRNode(
+            kind=master_subsection.kind,
+            label=master_subsection.label,
+            text=master_subsection.text,
+            attrs=dict(master_subsection.attrs),
+            children=tuple(merged_children),
+        ),
+        recovery_kind=RecoveryKind.SUBSECTION_REPLACE_UNLABELED_SPARSE_ITEM_MERGE,
+        payload_sibling_count=1,
+    )
+
+
 def _merge_sparse_omission_item_rows_into_subsection(
     master_subsection: IRNode,
     muutos_ir: IRNode | None,
-) -> IRNode | None:
+) -> _SparseSubsectionItemMergeResult | None:
     """Merge omission-bracketed sparse item rows into one live subsection.
 
     Finland amendment bodies sometimes say "replace section N subsection M" but
@@ -653,6 +890,13 @@ def _merge_sparse_omission_item_rows_into_subsection(
         return None
     if muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
         return None
+    unlabeled_row_merge = _merge_single_unlabeled_sparse_item_row_into_subsection(
+        master_subsection,
+        muutos_ir,
+    )
+    if unlabeled_row_merge is not None:
+        return unlabeled_row_merge
+
     slots = [
         child
         for child in muutos_ir.children
@@ -726,12 +970,16 @@ def _merge_sparse_omission_item_rows_into_subsection(
         payload_by_num[num] if num in payload_by_num else live_by_num[num]
         for num in merged_nums
     ]
-    return IRNode(
-        kind=master_subsection.kind,
-        label=master_subsection.label,
-        text=master_subsection.text,
-        attrs=dict(master_subsection.attrs),
-        children=tuple([*live_children[:first_para], *merged_rows, *live_children[last_para + 1 :]]),
+    return _SparseSubsectionItemMergeResult(
+        node=IRNode(
+            kind=master_subsection.kind,
+            label=master_subsection.label,
+            text=master_subsection.text,
+            attrs=dict(master_subsection.attrs),
+            children=tuple([*live_children[:first_para], *merged_rows, *live_children[last_para + 1 :]]),
+        ),
+        recovery_kind=RecoveryKind.SUBSECTION_REPLACE_SPARSE_OMISSION_ITEM_MERGE,
+        payload_sibling_count=len(payload_rows),
     )
 
 
@@ -1098,6 +1346,39 @@ def _apply_subsection_replace(
                 state,
                 _tops.replace_at(state.ir, sec_path, sparse_gap_insert),
             )
+        unlabeled_sparse_item_merge = _merge_single_unlabeled_sparse_item_row_into_subsection(
+            subsecs[n],
+            muutos_ir,
+        ) if n < len(subsecs) else None
+        if unlabeled_sparse_item_merge is not None:
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_destructive_shape_loss_risk_pathology(
+                        source_statute=view.legacy_source_statute_id,
+                        target_unit_kind="section",
+                        target_label=f"{view.target_section} § {view.target_paragraph} mom",
+                        recovery_kind=unlabeled_sparse_item_merge.recovery_kind,
+                        live_sibling_count=len(
+                            [
+                                child
+                                for child in subsecs[n].children
+                                if child.kind is IRNodeKind.PARAGRAPH
+                            ]
+                        ),
+                        payload_sibling_count=unlabeled_sparse_item_merge.payload_sibling_count,
+                    )
+                )
+            if strict_profile is not None:
+                return None
+            new_sec = _tops.replace_nth(sec, "subsection", n, unlabeled_sparse_item_merge.node)
+            if stale_fragment_idx is not None:
+                new_sec = _tops.remove_nth(new_sec, "subsection", stale_fragment_idx)
+            logger.debug("  %s → momentti replace (unlabeled sparse item merge)", ctx_label)
+            _report_fragment_rebound()
+            return _with_preserved_provision_index(
+                state,
+                _tops.replace_at(state.ir, sec_path, new_sec),
+            )
         if _looks_like_standalone_tail_subsection(_replace_sub):
             if n >= len(subsecs):
                 # Target subsection does not exist in the replay state (missed by an
@@ -1271,7 +1552,7 @@ def _apply_subsection_replace(
                 )
             return None
         if n == len(subsecs):
-            append_label = str(len(subsecs) + 1)
+            append_label = str(view.target_paragraph)
             if _replace_sub.label != append_label:
                 _replace_sub = IRNode(
                     kind=_replace_sub.kind,
@@ -1323,18 +1604,18 @@ def _apply_subsection_replace(
                             )
                         )
                     return None
-            sparse_omission_item_merge = _merge_sparse_omission_item_rows_into_subsection(
+            sparse_item_merge = _merge_sparse_omission_item_rows_into_subsection(
                 subsecs[n],
                 muutos_ir,
             )
-            if sparse_omission_item_merge is not None:
+            if sparse_item_merge is not None:
                 if source_pathologies_out is not None:
                     source_pathologies_out.append(
                         build_destructive_shape_loss_risk_pathology(
                             source_statute=view.legacy_source_statute_id,
                             target_unit_kind="section",
                             target_label=f"{view.target_section} § {view.target_paragraph} mom",
-                            recovery_kind=RecoveryKind.SUBSECTION_REPLACE_SPARSE_OMISSION_ITEM_MERGE,
+                            recovery_kind=sparse_item_merge.recovery_kind,
                             live_sibling_count=len(
                                 [
                                     child
@@ -1342,18 +1623,12 @@ def _apply_subsection_replace(
                                     if child.kind is IRNodeKind.PARAGRAPH
                                 ]
                             ),
-                            payload_sibling_count=len(
-                                [
-                                    child
-                                    for child in (muutos_ir.children if muutos_ir is not None else ())
-                                    if child.kind is IRNodeKind.SUBSECTION
-                                ]
-                            ),
+                            payload_sibling_count=sparse_item_merge.payload_sibling_count,
                         )
                     )
                 if strict_profile is not None:
                     return None
-                new_sec = _tops.replace_nth(sec, "subsection", n, sparse_omission_item_merge)
+                new_sec = _tops.replace_nth(sec, "subsection", n, sparse_item_merge.node)
                 if stale_fragment_idx is not None:
                     new_sec = _tops.remove_nth(new_sec, "subsection", stale_fragment_idx)
                 logger.debug("  %s → momentti replace (sparse omission item merge)", ctx_label)
@@ -1417,11 +1692,21 @@ def _apply_subsection_replace(
                 )
             complete_numbered_rewrite = _strip_context_carried_omission_for_complete_numbered_replace(_replace_sub)
             if complete_numbered_rewrite is not None:
+                logger.debug(
+                    "  %s → stripped context-carried omission from complete numbered whole-subsection replace payload",
+                    ctx_label,
+                )
+                _replace_sub = complete_numbered_rewrite
+            elif view.has_exact_bound_payload:
+                owned_bound_rewrite = _strip_owned_bound_omissions_for_complete_numbered_replace(
+                    _replace_sub
+                )
+                if owned_bound_rewrite is not None:
                     logger.debug(
-                        "  %s → stripped context-carried omission from complete numbered whole-subsection replace payload",
+                        "  %s → stripped owned bound omission from complete numbered whole-subsection replace payload",
                         ctx_label,
                     )
-                    _replace_sub = complete_numbered_rewrite
+                    _replace_sub = owned_bound_rewrite
             merged = _merge_intro_only_subsection_replace(subsecs[n], _replace_sub)
             if merged is None:
                 merged = _merge_subsection_accumulate_inner_omission_ir(subsecs[n], _replace_sub)
@@ -1504,7 +1789,7 @@ def _apply_subsection_replace(
                         )
                     )
                 return None
-            append_label = str(len(subsecs) + 1)
+            append_label = str(view.target_paragraph)
             if _replace_sub.label != append_label:
                 _replace_sub = IRNode(
                     kind=_replace_sub.kind,
@@ -1528,7 +1813,6 @@ def _apply_subsection_replace(
             if strict_profile is not None:
                 return None
             logger.debug("  %s → momentti replace (forced append, master had %s subsecs)", ctx_label, len(subsecs))
-            _report_fragment_rebound()
             return _with_preserved_provision_index(
                 state,
                 _tops.replace_at(state.ir, sec_path, new_sec),

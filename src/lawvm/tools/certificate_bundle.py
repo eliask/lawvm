@@ -37,6 +37,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from lawvm.core.observation_registry import FINDING_REGISTRY, FindingSpec
+from lawvm.core.provenance import SourceAnchor
+from lawvm.core.stage_result import AuthoritySurface, StageResult
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 from lawvm.tools.export_transition_graph import (
     DEFAULT_GRANULARITY,
@@ -65,6 +67,10 @@ PROFILE_ID = "fi.strict.current"
 POLICY_ID = "lawvm.fi.default.v1"
 HASH_PROFILE = "lawvm.hash.canonical_json.v1"
 CHECKER_VERSION = "lawvm.checker.v0"
+# BOOT-01 (Pro §3): honest name for the root set certificate_root commits — the
+# FULL per-work temporal dossier root (all §3 subroots + policy-bindings trust
+# root), NOT a sparse minimal-state pack.
+CERTIFICATE_ROOT_PROFILE = "lawvm.certificate.full_work_dossier.v0"
 
 D_CERT_ROOT = "lawvm.certificate.v0.root"
 D_TRACE = "lawvm.certified_tree_transition_trace.v0"
@@ -89,10 +95,55 @@ D_INTERPRETATION_POLICY = "lawvm.interpretation_policy.v0"
 D_PROJECTION_SPECS = "lawvm.projection_specs.v0"
 D_DIAGNOSTIC_REGISTRY = "lawvm.diagnostic_registry.v0"
 D_CHECKER_CONTRACT = "lawvm.checker_contract.v0"
+# BOOT-01 (audit-invariant registry; Pro §2/§8): the (code × profile →
+# blocks/qualifies/permits) disposition matrix, rooted INDEPENDENTLY of the
+# diagnostic-registry rows so the certification fold's defining policy input is
+# content-bound on its own. The matrix is re-derived from the engine
+# (FINDING_REGISTRY + the pinned strict-profile fields), never trusted from a
+# row's asserted profile_disposition.
+D_DISPOSITION_MATRIX = "lawvm.disposition_matrix.v0"
+# BOOT-01: the policy-bindings object — aggregates the content-addressed roots
+# of EVERY policy input the certification fold depends on into one object whose
+# root is committed in the certificate root set. A forged registry/profile/
+# disposition matrix changes a bound root → changes policy_bindings_root →
+# changes certificate_root (detectable). See `build_policy_bindings`.
+D_POLICY_BINDINGS = "lawvm.policy_bindings.v0"
 # Certificate spec §2.1: change_dates_root is a VALUE SET — raw ISO date
 # strings under this domain, the one named exception to the digest-member
 # rule of §3.1.1.
 D_CHANGE_DATES = "lawvm.change_dates.v0"
+
+# StageResult endgame (WAIST #9): the per-stage account ledger. The dossier
+# commits, ADDITIVELY beside the flat residual/finding/coverage roots, one
+# subroot per pipeline stage's `core.stage_result.StageResult` account so a
+# checker can attribute a divergence to a SPECIFIC stage. These roots aggregate
+# the per-stage residual/finding/coverage subroots; they are NOT folded into the
+# writer's flat §5.4 ledgers (which stay value-identical — 0-delta). See
+# `core.stage_result_ledger` for the canonical row mapping.
+D_STAGE_RESIDUAL_LEDGER = "lawvm.stage_residual_ledger.v0"
+D_STAGE_FINDING_LEDGER = "lawvm.stage_finding_ledger.v0"
+D_STAGE_COVERAGE = "lawvm.stage_coverage.v0"
+D_STAGE_ACCOUNT = "lawvm.stage_account.v0"
+D_STAGE_ACCOUNTS = "lawvm.stage_accounts.v0"
+# WAIST #7 — the apply/replay execution-authority subroot. Additive: with an
+# authorized replay (the green-corpus default) its single leaf is value-stable
+# and it NEVER folds into the flat residual/finding/coverage roots, so those stay
+# value-identical (0-delta). The checker can read WHICH replay was unauthorized.
+D_APPLY_AUTHORITY = "lawvm.apply_authority.v0"
+
+# Stage ids for the per-stage account ledger (WAIST #8/#9 live feeders).
+STAGE_TIMELINE_MATERIALIZATION = "fi.timeline.materialization"
+# StageResult endgame Wave-5: the remaining per-stage account ids routed
+# into `stage_account_rows` so `verify_bundle` recomputes each one UNCONDITIONALLY
+# (the WAIST #9 mechanism). All additive — 0-delta on the flat residual/finding/
+# coverage roots; only `stage_accounts_root` gains members.
+STAGE_SOURCE_IDENTITY = "fi.source.identity"  # #1
+STAGE_STRUCTURE_WRITE_FOOTPRINT = "fi.structure.write_footprint"  # #3 (SEAM B)
+STAGE_SOURCE_SYNTAX_FOREST = "fi.source_syntax.forest"  # #4 (SEAM A)
+STAGE_LEGAL_SURFACE_GRAPH = "fi.legal_surface.graph"  # #5 (SEAM A)
+STAGE_CANONICAL_OP_COMPILE = "fi.canonical_op.compile"  # #6 (SEAM B)
+STAGE_PROJECTION_INTERLINKS = "fi.projection.interlinks"  # #10 (SEAM A)
+STAGE_PROJECTION_OVERLAYS = "fi.projection.overlays"  # #10 (SEAM A)
 
 # Certificate spec §3.5: bundle-local certificate-layer code (CERT.
 # namespace) carried by kind=source_anchor_unavailable residuals (§5.4,
@@ -111,6 +162,14 @@ SOURCE_ANCHOR_UNAVAILABLE_CODE = "CERT.SOURCE_ANCHOR_UNAVAILABLE"
 # restorations, the enacted-base first materialization) carry no attributed ops
 # and are NOT flagged — they are recorded as writer notes only.
 RECEIPT_TRANSITION_DIVERGENCE_CODE = "CERT.RECEIPT_TRANSITION_DIVERGENCE"
+
+# WAIST #7 firewall: a landed WriteReceipt carried into the dossier under a
+# replay whose aggregate apply authority is NOT replay_authorized (a neutral /
+# un-granted ExecutionAuthorization, or a write that does not stand under the
+# conservative apply gate). This BLOCKS the clean claim: an unauthorized replay
+# cannot masquerade as an authoritative receipt/dossier (Pro §8 the authority
+# firewall; Pro §10 "clean claims forbidden when scoped blocking residue exists").
+UNAUTHORIZED_REPLAY_RECEIPT_CODE = "CERT.UNAUTHORIZED_REPLAY_RECEIPT"
 
 # Certificate spec §3.4 + §3.5: per-family run-provenance exclusion list.
 # The seam payload's `engine` block (git commit/dirty/repository) is
@@ -155,6 +214,17 @@ _PROFILE_GATED_CODES: Dict[str, str] = {
     "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION": "allows_context_dependent_anchor_resolution",
     "APPLY.WORD_SUBSTITUTION": "allows_word_substitution",
     "APPLY.SOURCE_CORRECTED_BY_PATCH": "allows_source_correction_rules",
+}
+
+# BOOT-01: bundle-local diagnostic codes (outside FINDING_REGISTRY) carry their
+# canonical role here so the disposition matrix can derive their disposition by
+# the SAME _profile_disposition rule the engine codes use — the disposition is
+# never a row-authored literal. SOURCE_ANCHOR_UNAVAILABLE is special-cased in
+# _profile_disposition (qualifies); RECEIPT_TRANSITION_DIVERGENCE is an
+# observation (permits).
+_BUNDLE_LOCAL_CODE_ROLES: Dict[str, str] = {
+    SOURCE_ANCHOR_UNAVAILABLE_CODE: "obligation",
+    RECEIPT_TRANSITION_DIVERGENCE_CODE: "observation",
 }
 
 _RESIDUAL_KINDS = (
@@ -230,6 +300,642 @@ def _sha256_rendered(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# StageResult endgame (WAIST #9): per-stage account subroots.
+#
+# Each pipeline stage's `core.stage_result.StageResult` account maps (via the
+# canonical `core.stage_result_ledger` row mapping) onto three subroots built
+# with the EXISTING leaf_hash/set_root vocabulary — no new hash machinery:
+#
+#   residual_subroot = set_root(D_STAGE_RESIDUAL_LEDGER, [leaf_hash(...) per row])
+#   finding_subroot  = set_root(D_STAGE_FINDING_LEDGER,  [leaf_hash(...) per row])
+#   coverage_subroot = leaf_hash(D_STAGE_COVERAGE, coverage_row)
+#
+# A per-stage `stage_account_root` commits the three together with the stage id;
+# the aggregate `stage_accounts_root` is the set_root over the per-stage account
+# roots. This is the additive attribution layer: with ZERO stages it is the
+# empty set_root (a stable constant) and it never perturbs the flat
+# residual/finding/coverage roots.
+# ---------------------------------------------------------------------------
+
+
+def stage_residual_subroot(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Subroot over one stage's canonical residual rows (order-independent set).
+
+    ``StageResult``/``Residual`` permit duplicate residual records (no dedup), and
+    ``residual_row`` drops distinguishing context, so two residuals differing only
+    in dropped context map to identical rows. ``set_root`` has SET semantics — a
+    repeated leaf is the same set member — so the leaf-hash list is de-duplicated
+    before ``set_root`` (which rejects duplicate leaves). The committed root is
+    unchanged when no duplicates exist (0-delta); without dedup an identical-row
+    duplicate would crash the whole certificate build.
+    """
+    leaves = list(dict.fromkeys(leaf_hash(D_STAGE_RESIDUAL_LEDGER, row) for row in rows))
+    return set_root(D_STAGE_RESIDUAL_LEDGER, leaves)
+
+
+def stage_finding_subroot(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Subroot over one stage's canonical finding rows (order-independent set).
+
+    Findings can likewise collapse to identical canonical rows; ``set_root`` is a
+    SET so the leaf-hash list is de-duplicated first (0-delta when no duplicates,
+    no crash when there are).
+    """
+    leaves = list(dict.fromkeys(leaf_hash(D_STAGE_FINDING_LEDGER, row) for row in rows))
+    return set_root(D_STAGE_FINDING_LEDGER, leaves)
+
+
+def stage_coverage_subroot(row: Mapping[str, Any]) -> str:
+    """Subroot over one stage's canonical coverage row (single leaf)."""
+    return leaf_hash(D_STAGE_COVERAGE, row)
+
+
+def stage_account_root(account_row: Mapping[str, Any]) -> str:
+    """Root committing one stage's three subroots + its stage id (a leaf)."""
+    return leaf_hash(
+        D_STAGE_ACCOUNT,
+        {
+            "stage": account_row["stage"],
+            "residual_subroot": account_row["residual_subroot"],
+            "finding_subroot": account_row["finding_subroot"],
+            "coverage_subroot": account_row["coverage_subroot"],
+        },
+    )
+
+
+def build_stage_account_row(stage_id: str, stage: StageResult[Any]) -> Dict[str, Any]:
+    """Project ONE StageResult onto its committed stage-account row.
+
+    The row carries the canonical residual/finding/coverage rows (so the artifact
+    is self-evidencing — a checker reads WHAT was accounted, not just a hash) plus
+    the three subroots and the per-stage account root the aggregate folds.
+    """
+    from lawvm.core.stage_result_ledger import (
+        stage_coverage_row,
+        stage_finding_rows,
+        stage_residual_rows,
+    )
+
+    residual_rows = stage_residual_rows(stage)
+    finding_rows = stage_finding_rows(stage)
+    coverage = stage_coverage_row(stage)
+    residual_subroot = stage_residual_subroot(residual_rows)
+    finding_subroot = stage_finding_subroot(finding_rows)
+    coverage_subroot = stage_coverage_subroot(coverage)
+    row: Dict[str, Any] = {
+        "stage": stage_id,
+        "residual_rows": residual_rows,
+        "finding_rows": finding_rows,
+        "coverage_row": coverage,
+        "residual_subroot": residual_subroot,
+        "finding_subroot": finding_subroot,
+        "coverage_subroot": coverage_subroot,
+    }
+    row["stage_account_root"] = stage_account_root(row)
+    return row
+
+
+def stage_accounts_root(account_rows: Sequence[Mapping[str, Any]]) -> str:
+    """Aggregate root over the per-stage account roots (the additive layer).
+
+    Order-independent set over the stage account roots. With zero stages this is
+    the empty set_root under D_STAGE_ACCOUNTS — a stable constant — so an empty
+    stage-account ledger never perturbs anything.
+    """
+    return set_root(
+        D_STAGE_ACCOUNTS, [stage_account_root(row) for row in account_rows]
+    )
+
+
+def _verify_coverage_row_arithmetic(stage: str, coverage_row: Mapping[str, Any]) -> None:
+    """Re-derive the coverage partition FROM the committed counts, not its hash.
+
+    ``stage_coverage_subroot`` only proves the committed ``coverage_row`` hashes to
+    its committed ``coverage_subroot`` (circular self-consistency). It never checks
+    that the four classes actually sum to ``total`` nor that the committed
+    ``is_partition`` matches the counts. So a forged row like ``{total:999,
+    owned:0, benign:0, residual:0, violation:0, is_partition:true}`` would pass the
+    hash recompute untouched. This re-derives both verdicts from the counts:
+
+    * when totality is claimed, ``owned+benign+residual+violation`` MUST equal
+      ``total`` (no leaked, unaccounted units);
+    * the committed ``is_partition`` MUST equal the recomputed
+      ``totality_claimed and partition_total == total`` (mirrors
+      :meth:`CoverageCertificate.is_partition`).
+    """
+    owned = int(coverage_row.get("owned", 0))
+    benign = int(coverage_row.get("benign", 0))
+    residual = int(coverage_row.get("residual", 0))
+    violation = int(coverage_row.get("violation", 0))
+    total = int(coverage_row.get("total", 0))
+    totality_claimed = bool(coverage_row.get("totality_claimed", False))
+    partition_total = owned + benign + residual + violation
+    if totality_claimed:
+        _require(
+            partition_total == total,
+            f"stage {stage!r} coverage claims totality but its classes "
+            f"({owned}+{benign}+{residual}+{violation}={partition_total}) do not "
+            f"sum to total {total}",
+        )
+    recomputed_is_partition = totality_claimed and partition_total == total
+    _require(
+        bool(coverage_row.get("is_partition", False)) == recomputed_is_partition,
+        f"stage {stage!r} coverage is_partition "
+        f"{bool(coverage_row.get('is_partition', False))!r} does not recompute "
+        f"from its counts (expected {recomputed_is_partition!r})",
+    )
+
+
+def _verify_stage_accounts(account_rows: Sequence[Mapping[str, Any]]) -> str:
+    """Recompute the per-stage subroots FROM the committed rows and re-aggregate.
+
+    The writer-side self-check consumer (`verify_bundle`): a stage account that
+    was dropped/severed before the dossier, or whose committed subroot disagrees
+    with its committed rows, makes this recompute diverge from the committed
+    `stage_accounts_root` (BundleSelfCheckError) — the guard-liveness property.
+
+    The coverage check is two-layered: the subroot recompute proves the committed
+    coverage_row hashes to its committed coverage_subroot (self-consistency), and
+    :func:`_verify_coverage_row_arithmetic` re-derives the partition/totality
+    verdict from the counts so a forged row with inconsistent counts cannot pass.
+    """
+    for row in account_rows:
+        _require(
+            stage_residual_subroot(row["residual_rows"]) == row["residual_subroot"],
+            f"stage {row['stage']!r} residual_subroot does not recompute from its rows",
+        )
+        _require(
+            stage_finding_subroot(row["finding_rows"]) == row["finding_subroot"],
+            f"stage {row['stage']!r} finding_subroot does not recompute from its rows",
+        )
+        _require(
+            stage_coverage_subroot(row["coverage_row"]) == row["coverage_subroot"],
+            f"stage {row['stage']!r} coverage_subroot does not recompute from its row",
+        )
+        _verify_coverage_row_arithmetic(row["stage"], row["coverage_row"])
+        _require(
+            stage_account_root(row) == row["stage_account_root"],
+            f"stage {row['stage']!r} stage_account_root does not recompute from its subroots",
+        )
+    return stage_accounts_root(account_rows)
+
+
+# StageResult endgame Wave-5 (ORCH-2): the stages whose BLOCKING residual
+# contributes to the certificate status (the (C) closure — a broken-ref #5 or a
+# dropped-universe-member #10 forces blocked). Their (D)-routed account is the
+# reachable, tamper-checkable carrier of that blocking signal.
+STATUS_CONTRIBUTING_STAGE_IDS = frozenset(
+    {
+        STAGE_LEGAL_SURFACE_GRAPH,
+        STAGE_PROJECTION_INTERLINKS,
+        STAGE_PROJECTION_OVERLAYS,
+    }
+)
+
+
+def _committed_stage_blocking_residual_count(
+    account_rows: Sequence[Mapping[str, Any]],
+) -> int:
+    """Count blocking residuals in the (C)-contributing committed stage rows.
+
+    The verify-side recompute of :func:`_stage_blocking_residual_count`: it reads
+    the COMMITTED ``residual_rows`` of the #5/#10 stage accounts (which
+    ``_verify_stage_accounts`` has already proven recompute from their subroots) and
+    counts the blocking ones. A tampered/forged #5/#10 row that drops a blocking
+    residual changes the stage subroot (caught by ``_verify_stage_accounts``); a row
+    that legitimately carries one forces ``blocked`` here — the genuine (C) bite.
+    """
+    count = 0
+    for row in account_rows:
+        if row.get("stage") not in STATUS_CONTRIBUTING_STAGE_IDS:
+            continue
+        count += sum(1 for r in row.get("residual_rows", []) if bool(r.get("blocking")))
+    return count
+
+
+def _fi_materialization_stage(bundle: Any, as_of: str) -> "StageResult[Any]":
+    """Return the FI PIT materialization `StageResult` for one boundary date.
+
+    Mirrors `materialize_fi_transition_graph_tree` but keeps the FULL replay
+    products so the carried `materialization_stage` (StageResult endgame WAIST #8)
+    reaches the dossier instead of being discarded with everything-but-`.ir`. The
+    coverage is the FI replay's own account (same materialization the rest of the
+    bundle is built from) — no independent re-materialization that could diverge.
+    """
+    from lawvm.finland.replay_products import build_replay_products
+
+    result = bundle.result
+    products = build_replay_products(
+        ctx=result.ctx,
+        statute_id=bundle.engine_id,
+        replay_fold_state=result.products.replay_fold_state,
+        lo_ops_out=bundle.lo_ops,
+        as_of=as_of,
+        expires_as_of=as_of,
+        synthesize_repeal_placeholders=True,
+        temporal_events=result.products.temporal_events,
+        migration_events=result.products.migration_events,
+        fold_backfill_preview_cache=bundle.materialization_cache,
+    )
+    stage = products.materialization_stage
+    if stage is None:
+        raise BundleSpecError(
+            "FI replay produced no materialization StageResult account for the "
+            f"certificate date {as_of!r}; the materialization coverage cannot be "
+            "routed into the dossier (the experimental writer requires the "
+            "StageResult-carried materialization, not the discarding path)"
+        )
+    return stage
+
+
+def _materialization_coverage_violation(coverage_row: Mapping[str, Any]) -> int:
+    """The committed unowned-signal violation count for a materialization stage."""
+    return int(coverage_row.get("violation", 0))
+
+
+def _require_clean_materialization_stage(stage: "StageResult[Any]") -> None:
+    """Self-check: a degraded/violating materialization forbids a clean cert.
+
+    The load-bearing branch (WAIST #8): the certificate claims totality over a
+    fully-materialized work. If the materialization coverage carries an
+    unowned-signal violation (e.g. `degraded_missing_scope`) or a blocking
+    residual, the writer MUST refuse to emit a clean dossier. RED if the
+    coverage is severed back to the plain discarding path (the account would be
+    the identity-clean default and this guard could never fire).
+    """
+    _require(
+        stage.coverage.violation == 0,
+        "materialization coverage carries "
+        f"{stage.coverage.violation} unowned-signal violation(s); a clean "
+        "certificate cannot be claimed over a degraded materialization",
+    )
+    _require(
+        not stage.has_blocking_residual,
+        "materialization stage carries a blocking residual; a clean certificate "
+        "cannot be claimed over a degraded materialization",
+    )
+
+
+def _require_monotone_stage_residual_ledger(
+    stage_account_rows: Sequence[Mapping[str, Any]],
+) -> None:
+    """Self-check (EV-03): no residual silently vanished across the per-stage fold.
+
+    Drives the production EV-03 sweep over the committed per-stage account rows: a
+    residual COUNTED in a stage's coverage ``violation`` class must have ≥1 BLOCKING
+    residual record committed in that stage's ledger (and the dual). A non-monotone
+    account is a producer/aggregator defect (a counted residual the ledger dropped,
+    or a recorded residual the count forgot), never a corpus fact — so the writer
+    refuses to emit a dossier over it rather than silently certifying a torn ledger.
+    On the green corpus every stage carries ``violation == 0`` and no blocking
+    residual → the sweep is empty (0-delta).
+    """
+    from lawvm.core.stage_residual_monotonicity import sweep_stage_residual_ledger
+
+    findings = sweep_stage_residual_ledger(stage_account_rows)
+    if findings:
+        detail = "; ".join(f.detail for f in findings)
+        raise BundleSpecError(
+            "per-stage residual ledger is non-monotone (EV-03): " + detail
+        )
+
+
+def _require_self_evidencing_stage_residuals(
+    stage_account_rows: Sequence[Mapping[str, Any]],
+) -> None:
+    """Self-check (EV-07): every committed source-text-failure residual carries its snippet.
+
+    Sweeps the committed per-stage residual rows (each a
+    :func:`lawvm.core.stage_result_ledger.residual_row` projection carrying ``kind`` +
+    ``source_text``): a row whose ``kind`` is in the source-text-failure family
+    (``unowned_violation`` / ``typed_residual``) with an empty ``source_text`` is an
+    opaque diagnostic about unhandled source text. The writer refuses to emit a
+    dossier carrying a snippet-less source-text-failure residual rather than
+    committing an un-auditable ledger. On the green corpus the forest/surface
+    producers set the verbatim text by construction → silent (0-delta).
+    """
+    from lawvm.core.diagnostic_self_evidencing import (
+        DIAGNOSTIC_NOT_SELF_EVIDENCING,
+        SOURCE_TEXT_FAILURE_KINDS,
+    )
+
+    offenders: List[str] = []
+    for account_row in stage_account_rows:
+        stage = str(account_row.get("stage", ""))
+        for residual_row_dict in account_row.get("residual_rows", ()) or ():
+            kind = str(residual_row_dict.get("kind", ""))
+            if kind not in SOURCE_TEXT_FAILURE_KINDS:
+                continue
+            if str(residual_row_dict.get("source_text", "") or "").strip():
+                continue
+            offenders.append(
+                f"stage {stage!r} residual (kind={kind!r}, "
+                f"reason={residual_row_dict.get('reason', '')!r}) carries no snippet"
+            )
+    if offenders:
+        raise BundleSpecError(
+            f"{DIAGNOSTIC_NOT_SELF_EVIDENCING}: source-text-failure residual(s) "
+            "without a verbatim offending snippet (not self-evidencing): "
+            + "; ".join(offenders)
+        )
+
+
+def _verify_materialization_stage_clean(stage_account_rows: Sequence[Mapping[str, Any]]) -> None:
+    """`verify_bundle` consumer: re-assert the materialization branch from rows.
+
+    The writer-side recompute of :func:`_require_clean_materialization_stage` over
+    the COMMITTED stage-account rows. A clean certificate MUST carry the
+    materialization stage account with a clean coverage (no unowned-signal
+    violation, no blocking residual). If the materialization coverage was severed
+    before the dossier (the discarding path), the account is absent — also a
+    failure here, so the un-sever cannot regress silently.
+    """
+    materialization_account = next(
+        (
+            row
+            for row in stage_account_rows
+            if row.get("stage") == STAGE_TIMELINE_MATERIALIZATION
+        ),
+        None,
+    )
+    _require(
+        materialization_account is not None,
+        "clean certificate is missing the "
+        f"{STAGE_TIMELINE_MATERIALIZATION!r} stage account (the materialization "
+        "coverage was not routed into the dossier)",
+    )
+    assert materialization_account is not None
+    coverage_row = materialization_account["coverage_row"]
+    _require(
+        _materialization_coverage_violation(coverage_row) == 0,
+        "clean certificate carries a materialization coverage with "
+        f"{_materialization_coverage_violation(coverage_row)} unowned-signal "
+        "violation(s); a degraded materialization cannot be certified clean",
+    )
+    _require(
+        not any(bool(r.get("blocking")) for r in materialization_account["residual_rows"]),
+        "clean certificate carries a blocking materialization residual; a "
+        "degraded materialization cannot be certified clean",
+    )
+
+
+# ---------------------------------------------------------------------------
+# WAIST #7 — the apply/replay execution-authority firewall at the certificate.
+# ---------------------------------------------------------------------------
+
+
+def _fi_apply_authority(bundle: Any) -> "AuthoritySurface":
+    """The per-replay apply execution authority for this dossier (firewall input).
+
+    READS the type-carried ``ReplayProducts.apply_authority`` (WAIST #7), which the
+    replay assembly minted via :func:`aggregate_replay_authority` over the landed
+    write receipts + findings. The carrier is load-bearing: a clean dossier's
+    firewall stands on the authority the producer carried, not a cert-side
+    re-derivation (the re-derivation duplication the exit re-audit flagged).
+
+    When the carrier is absent (a replay path that never set it — never the green
+    corpus default), FALL BACK to the descriptive re-derivation from
+    ``bundle.result`` so the writer still never trusts an un-set carrier. Both
+    compute the IDENTICAL conjunction over the same receipts/findings, so on a
+    faithful replay the carried value and the fallback agree byte-for-byte (0-delta).
+    """
+    from lawvm.finland.apply_replay_authorization import aggregate_replay_authority
+
+    result = bundle.result
+    carried = getattr(result.products, "apply_authority", None)
+    if carried is not None:
+        return carried
+    return aggregate_replay_authority(
+        write_receipts=result.write_receipts,
+        findings=result.findings,
+    )
+
+
+# ---------------------------------------------------------------------------
+# StageResult endgame Wave-5: the SEAM-A cert-side stage feeders. Each
+# builds ONE StageResult account from artifacts the cert already holds (the
+# enacted body bytes / the corpus store) and routes it into `stage_account_rows`
+# so `_verify_stage_accounts` recomputes it UNCONDITIONALLY (checkable on the
+# BLOCKED 482/2024). All additive read-offs of accounts the value path already
+# produces — 0-delta on the flat roots.
+# ---------------------------------------------------------------------------
+
+
+def _fi_source_identity_stage(
+    source_identities: Sequence[Mapping[str, Any]],
+) -> "StageResult[None]":
+    """Source-identity stage account (WAIST #1) from the witnessed reads in hand.
+
+    Built from the SAME content-witnessed source identities the cert already read
+    + content-hashed into ``source_bundle_root`` (no second read — 0-delta). The
+    coverage is a single-class ``source_artifacts`` partition: every bundled source
+    was read and content-addressed (``owned`` = number of bundled sources, zero
+    residual/violation). The witness DIGESTS keep their unconditional content check
+    on ``source_bundle_root`` (ORCH-3: no ledger evidence extension); this stage row
+    is the per-stage checkable attribution the (D) goal demands.
+    """
+    from lawvm.core.stage_result import CoverageCertificate, StageResult
+
+    total = len(source_identities)
+    return StageResult(
+        value=None,
+        coverage=CoverageCertificate(
+            unit="source_artifacts",
+            total=total,
+            owned=total,
+            totality_claimed=True,
+        ),
+    )
+
+
+def _fi_source_syntax_stage(
+    surface_bundle: Any,
+) -> "StageResult[Any]":
+    """Source-syntax forest stage account (WAIST #4, SEAM A) over the #2 bundle.
+
+    Mirrors :func:`graph_build._gate_forest_coverage` exactly: for each unit of the
+    already-built #2 ``SourceSurfaceBundle`` assemble the forest as a typed
+    StageResult and aggregate the token-partition accounts. For the v0 single
+    whole-body unit this is a pure read-off of the SAME forest ``_gate_forest_coverage``
+    builds — 0-delta. ``violation>0`` ⟺ a silent-unowned span; on the green corpus
+    it is 0 (the residue rides as non-blocking ``typed_residual``). Per the #4 §LEDGER
+    row the forest violation is the established totality-scoped frontier (NOT a
+    clean-cert (C) gap), so this routes its account ONLY.
+    """
+    from lawvm.core.stage_result import (
+        NEUTRAL_AUTHORITY,
+        CoverageCertificate,
+        StageResult,
+    )
+    from lawvm.finland.legal_surface.source_syntax_graph import (
+        assemble_source_syntax_graph_staged,
+    )
+
+    owned = benign = residual_n = violation = 0
+    residuals: list[Any] = []
+    last_value: Any = None
+    for unit in surface_bundle.units:
+        forest_stage = assemble_source_syntax_graph_staged(
+            subject=surface_bundle.subject, unit=unit
+        )
+        cov = forest_stage.coverage
+        owned += cov.owned
+        benign += cov.benign
+        residual_n += cov.residual
+        violation += cov.violation
+        residuals.extend(forest_stage.residuals)
+        last_value = forest_stage.value
+    coverage = CoverageCertificate(
+        unit="tokens",
+        total=owned + benign + residual_n + violation,
+        owned=owned,
+        benign=benign,
+        residual=residual_n,
+        violation=violation,
+        totality_claimed=True,
+    )
+    return StageResult(
+        value=last_value,
+        residuals=tuple(residuals),
+        findings=(),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def _fi_legal_surface_graph_stage(body_bytes: bytes, statute_id: str) -> "StageResult[Any]":
+    """Legal Surface Graph stage account (WAIST #5, SEAM A) from the enacted body.
+
+    Calls the staged producer over the enacted body bytes the cert already bundled
+    (``source_blobs[base_artifact_id]``). The ``value`` is byte-identical to the
+    value-only ``build_legal_surface_graph``; the account carries the surface-node
+    four-class partition + per-non-owned-node residuals (a ``broken`` ref →
+    BLOCKING ``unowned_violation``). 0-delta D-routing; its blocking residual ALSO
+    contributes to ``compute_certificate_status`` so a broken ref forces blocked
+    (PART 2 status-contribution, reachable — NOT a clean-gated firewall).
+    """
+    from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph_staged
+
+    return build_legal_surface_graph_staged(body_bytes, statute_id)
+
+
+def _fi_projection_stage(
+    project_fn: Any, statute_id: str, corpus: Any
+) -> "StageResult[None]":
+    """Projection stage account (WAIST #10, SEAM A) wrapping a ``FiProjectionResult``.
+
+    ``project_fn`` is ``_project_interlinks_for_statute`` or
+    ``_project_overlays_for_statute``. The producer returns a ``FiProjectionResult``
+    (a ``PartitionResult`` with ``.coverage``/``.residuals``); wrap it into a
+    ``StageResult`` so ``build_stage_account_row`` can project it (ORCH-5: both
+    interlinks + overlays are routed). A silently-dropped universe member rides as a
+    BLOCKING ``projection_residual`` (``coverage.violation>0``); that blocking
+    residual ALSO contributes to ``compute_certificate_status`` (PART 2). On
+    482/2024 the statute XML is present → ``violation==0`` → 0-delta.
+    """
+    from lawvm.core.stage_result import NEUTRAL_AUTHORITY, StageResult
+
+    proj = project_fn(statute_id, corpus)
+    return StageResult(
+        value=None,
+        residuals=tuple(proj.residuals),
+        findings=(),
+        coverage=proj.coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def _stage_blocking_residual_count(stages: Sequence[Tuple[str, "StageResult[Any]"]]) -> int:
+    """Count blocking residuals across the (C)-contributing stages (#5, #10).
+
+    PART 2 status-contribution (ORCH-2): a #5 broken-ref / #10 dropped-universe-
+    member BLOCKING residual must UNCONDITIONALLY force ``certificate_status=blocked``
+    (reachable, genuine (C) — NOT a clean-gated firewall that never fires on FI). The
+    count is passed to :func:`compute_certificate_status` as EXTRA blocking residue;
+    it does NOT fold into the flat ``residual_root`` (which stays value-identical), so
+    on the green corpus (every contributing stage's ``violation==0``, no blocking
+    residual) the count is 0 → 0-delta (every FI cert is already ``blocked`` from its
+    ledger residue; a non-zero count here keeps a blocked cert blocked, never flips a
+    clean one — if it did, that is a NEW-CORRECT finding).
+    """
+    count = 0
+    for _stage_id, stage in stages:
+        count += sum(1 for r in stage.residuals if getattr(r, "blocking", False))
+    return count
+
+
+def apply_authority_row(authority: "AuthoritySurface") -> Dict[str, Any]:
+    """Project the per-replay :class:`AuthoritySurface` onto a committed row.
+
+    Self-evidencing: it carries the typed authorization fields (a checker reads
+    WHY the replay was/was not authorized), not just a flag.
+    """
+    authorization = authority.authorization
+    return {
+        "replay_authorized": bool(authority.replay_authorized),
+        "is_neutral": bool(authority.is_neutral),
+        "authorization": authorization.to_dict() if authorization is not None else None,
+    }
+
+
+def apply_authority_root(authority: "AuthoritySurface") -> str:
+    """Subroot over the single per-replay apply-authority row (additive layer).
+
+    A single leaf under ``D_APPLY_AUTHORITY``; with an authorized replay (the
+    green-corpus default) it is value-stable and never folds into the flat
+    residual/finding/coverage roots (0-delta).
+    """
+    return leaf_hash(D_APPLY_AUTHORITY, apply_authority_row(authority))
+
+
+def _require_authorized_replay(authority: "AuthoritySurface") -> None:
+    """Writer-side firewall (WAIST #7): an unauthorized replay forbids a clean cert.
+
+    The load-bearing branch: a clean/authoritative dossier requires the
+    per-replay apply authority to be ``replay_authorized`` (granted by an explicit
+    :class:`ExecutionAuthorization`). A neutral / un-granted surface, or a replay
+    that landed a write outside the conservative apply gate, makes a clean claim
+    impossible — "an unauthorized replay cannot produce an authoritative receipt".
+    RED if the authority is severed back to the neutral default (it would be
+    ``replay_authorized=False`` and this guard fires) or if the gate is wired to
+    ignore it.
+    """
+    _require(
+        authority.replay_authorized,
+        "apply/replay authority is not replay_authorized (the per-replay "
+        "ExecutionAuthorization does not grant replay authority); a clean "
+        "certificate cannot be claimed over an unauthorized replay — an "
+        "unauthorized replay cannot produce an authoritative receipt",
+    )
+
+
+def _verify_apply_authority_clean(
+    apply_authority_rows: Sequence[Mapping[str, Any]],
+) -> None:
+    """`verify_bundle` consumer: re-assert the firewall from the COMMITTED row.
+
+    The writer-side recompute of :func:`_require_authorized_replay` over the
+    committed apply-authority row. A clean certificate MUST carry exactly one
+    apply-authority row whose ``replay_authorized`` is True. If the row was
+    severed before the dossier (the authority dropped to neutral), the row is
+    absent or non-authorized — a failure here, so the firewall cannot regress
+    silently. Raises :class:`BundleSelfCheckError`.
+    """
+    _require(
+        len(apply_authority_rows) == 1,
+        "clean certificate must carry exactly one apply-authority row "
+        f"(found {len(apply_authority_rows)}); the apply/replay authority was not "
+        "routed into the dossier",
+    )
+    row = apply_authority_rows[0]
+    _require(
+        bool(row.get("replay_authorized")) is True,
+        "clean certificate carries an apply-authority row that is NOT "
+        "replay_authorized; an unauthorized replay cannot be certified clean "
+        "(an unauthorized replay cannot produce an authoritative receipt)",
+    )
+
+
 def projection_hash_view(payload: Mapping[str, Any], excluded_members: Sequence[str]) -> Dict[str, Any]:
     """Certificate spec §3.4 hash view: payload minus declared run-provenance.
 
@@ -294,6 +1000,10 @@ def _profile_disposition(code: str, spec: Optional[FindingSpec], profile_fields:
         # Diff-derived experimental transitions carry no byte anchors; the
         # gap qualifies the asserted state — it never reads as clean.
         return "qualifies"
+    if code == RECEIPT_TRANSITION_DIVERGENCE_CODE:
+        # Bundle-local non-blocking observation (role=observation -> permits);
+        # derived here so its disposition is never a row-authored literal.
+        return "permits"
     if spec is None:
         raise BundleSpecError(f"unregistered diagnostic code {code!r} has no derivable disposition")
     gate = _PROFILE_GATED_CODES.get(code)
@@ -309,13 +1019,98 @@ def _profile_disposition(code: str, spec: Optional[FindingSpec], profile_fields:
     return "permits"
 
 
+def build_disposition_matrix(profile_fields: Mapping[str, Any]) -> Dict[str, Dict[str, str]]:
+    """The canonical (code -> {profile_id: disposition}) matrix (BOOT-01).
+
+    Derived from the engine ONLY — ``FINDING_REGISTRY`` plus the two bundle-local
+    codes — evaluated through ``_profile_disposition`` under the pinned
+    strict-profile fields. This is the SINGLE authority for a code's
+    blocks/qualifies/permits disposition; the diagnostic-registry rows and the
+    residual ``profile_effect`` copies both derive from it (Pro §8 item B: a row
+    never author-controls its own disposition). The matrix is content-bound via
+    :func:`disposition_matrix_root` into the policy-bindings object so a forged
+    registry that flips a disposition cannot recompute clean (Pro §2 forge).
+    """
+    matrix: Dict[str, Dict[str, str]] = {}
+    for code in sorted(FINDING_REGISTRY):
+        spec = FINDING_REGISTRY[code]
+        if spec.role == "barrier":
+            # §3.5: barrier roles can never produce a runtime finding -> excluded
+            # from the registry, so excluded from the matrix.
+            continue
+        matrix[code] = {PROFILE_ID: _profile_disposition(code, spec, profile_fields)}
+    for code in _BUNDLE_LOCAL_CODE_ROLES:
+        matrix[code] = {PROFILE_ID: _profile_disposition(code, None, profile_fields)}
+    return matrix
+
+
+def disposition_matrix_root(matrix: Mapping[str, Mapping[str, str]]) -> str:
+    """Content-addressed root over the canonical disposition matrix (BOOT-01).
+
+    A single leaf over the full matrix object: every (code, profile) cell is
+    committed, so flipping any disposition (e.g. kind X from ``blocks`` to
+    ``permits``) changes the root.
+    """
+    canonical = {code: dict(cells) for code, cells in matrix.items()}
+    return leaf_hash(D_DISPOSITION_MATRIX, {"schema": D_DISPOSITION_MATRIX, "matrix": canonical})
+
+
+def build_policy_bindings(
+    *,
+    diagnostic_registry_root: str,
+    profile_manifest_root: str,
+    disposition_matrix_root: str,
+    source_policy_root: Optional[str],
+    selection_profile_root: Optional[str],
+) -> Dict[str, Any]:
+    """Aggregate the certification fold's policy-input roots (BOOT-01, Pro §2).
+
+    Every policy input the certification fold depends on is bound here by its
+    content-addressed root. HONESTY (DUAL-01): a policy input with no real
+    committed source object is bound as ``None`` (explicit absent marker), NOT a
+    fabricated hash. The object's own root (:func:`leaf_hash` under
+    ``D_POLICY_BINDINGS``) is committed into the certificate root set so a forged
+    policy input flows through to ``certificate_root``.
+
+    Bound (real committed objects): ``diagnostic_registry_root`` (the §3.5
+    registry manifest), ``profile_manifest_root`` (the strict-profile manifest),
+    ``disposition_matrix_root`` (the engine-derived disposition matrix),
+    ``source_policy_root`` (the interpretation-policy manifest — the operative
+    source/selection policy parameters this bundle was emitted under).
+
+    Absent-with-reason: ``selection_profile_root`` — the engine has no reified
+    selection-profile object DISTINCT from the interpretation policy (selection
+    parameters live inside the interpretation-policy manifest already bound as
+    ``source_policy_root``); binding a separate fabricated root would violate
+    DUAL-01, so it is an explicit ``None``.
+    """
+    return {
+        "schema": D_POLICY_BINDINGS,
+        "diagnostic_registry_root": diagnostic_registry_root,
+        "profile_manifest_root": profile_manifest_root,
+        "disposition_matrix_root": disposition_matrix_root,
+        "source_policy_root": source_policy_root,
+        "selection_profile_root": selection_profile_root,
+    }
+
+
+def policy_bindings_root(bindings: Mapping[str, Any]) -> str:
+    """Content-addressed root over the policy-bindings object (BOOT-01)."""
+    return leaf_hash(D_POLICY_BINDINGS, bindings)
+
+
 def build_diagnostic_registry_rows(profile_fields: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Emit §3.5 registry rows from the live engine observation registry.
 
     Registry "barrier" roles are strictness taxonomy metadata that can never
     appear on a runtime Finding; certificate spec §3.5 forbids registering
     codes whose role cannot produce a runtime finding, so they are excluded.
+
+    BOOT-01 (item B): each row's ``profile_disposition`` is READ FROM the
+    canonical engine-derived disposition matrix, never authored independently —
+    a row cannot soften its own disposition out of step with the matrix.
     """
+    matrix = build_disposition_matrix(profile_fields)
     rows: List[Dict[str, Any]] = []
     for code in sorted(FINDING_REGISTRY):
         spec = FINDING_REGISTRY[code]
@@ -339,7 +1134,7 @@ def build_diagnostic_registry_rows(profile_fields: Mapping[str, Any]) -> List[Di
                 "deprecated_in": None,
                 "role": spec.role,
                 "allowed_residual_kinds": allowed_kinds,
-                "profile_disposition": {PROFILE_ID: _profile_disposition(code, spec, profile_fields)},
+                "profile_disposition": dict(matrix[code]),
                 "jurisdiction_scope": jurisdiction_scope,
                 "doctrine_scope": ["fi.fixed_term_expiry.v1"] if is_fixed_term else [],
                 "surface_language": "fi" if is_fixed_term else None,
@@ -358,7 +1153,7 @@ def build_diagnostic_registry_rows(profile_fields: Mapping[str, Any]) -> List[Di
             "deprecated_in": None,
             "role": "obligation",
             "allowed_residual_kinds": ["source_anchor_unavailable"],
-            "profile_disposition": {PROFILE_ID: "qualifies"},
+            "profile_disposition": dict(matrix[SOURCE_ANCHOR_UNAVAILABLE_CODE]),
             "jurisdiction_scope": [],
             "doctrine_scope": [],
             "surface_language": None,
@@ -379,7 +1174,7 @@ def build_diagnostic_registry_rows(profile_fields: Mapping[str, Any]) -> List[Di
             "deprecated_in": None,
             "role": "observation",
             "allowed_residual_kinds": [],
-            "profile_disposition": {PROFILE_ID: "permits"},
+            "profile_disposition": dict(matrix[RECEIPT_TRANSITION_DIVERGENCE_CODE]),
             "jurisdiction_scope": [],
             "doctrine_scope": [],
             "surface_language": None,
@@ -615,9 +1410,20 @@ def compute_certificate_status(
     registered_codes: frozenset[str],
     profile_id: str = PROFILE_ID,
     required_artifacts_present: bool = True,
+    extra_blocking_residual_count: int = 0,
 ) -> str:
-    """Certificate spec §5.2 status algebra — computed, never author-chosen."""
+    """Certificate spec §5.2 status algebra — computed, never author-chosen.
+
+    ``extra_blocking_residual_count`` (StageResult endgame Wave-5, ORCH-2): the
+    number of BLOCKING per-stage residuals contributed by stages whose
+    incompleteness must block a clean claim but whose residue does NOT fold into the
+    flat ``residual_root`` (#5 broken refs, #10 dropped universe members). A non-zero
+    count UNCONDITIONALLY forces ``blocked`` (reachable on the blocked FI corpus,
+    genuine (C)) without perturbing the flat residual ledger (0-delta).
+    """
     if not required_artifacts_present:
+        return "blocked"
+    if extra_blocking_residual_count > 0:
         return "blocked"
     for residual in residual_rows:
         code = residual.get("diagnostic_code") or ""
@@ -834,13 +1640,29 @@ def build_certificate_bundle(
     artifact_id_by_engine_sid: Dict[str, str] = {}
     for sid in sorted(source_statutes):
         role = source_statutes[sid]
-        data = corpus.read_source(sid) if role == "enacted_text" else corpus.read_amendment(sid)
-        if data is None:
+        # Read through the content-witnessed surface (WAIST #1): the witness's
+        # sha256 DigestWitness over the ACTUAL bytes becomes the source identity's
+        # raw_source_hash committed into source_bundle_root — so the witness flows
+        # from the read into the dossier root, derived from the read and never
+        # reconstructed from sid. This un-severs read_source_witness /
+        # read_amendment_witness in the certificate path.
+        witnessed = (
+            corpus.read_source_witness(sid)
+            if role == "enacted_text"
+            else corpus.read_amendment_witness(sid)
+        )
+        if witnessed is None:
             raise BundleSpecError(
                 f"source bytes for {sid} unavailable in local corpus; the experimental "
                 "writer MUST bundle all source bytes (§11.3) — no URL-only references"
             )
-        raw_hash = _sha256_rendered(data)
+        data, source_witness = witnessed
+        if source_witness.digest is None:
+            raise BundleSpecError(
+                f"source witness for {sid} carries no content digest; the source "
+                "identity must commit a content-addressed hash"
+            )
+        raw_hash = f"{source_witness.digest.digest_algorithm}:{source_witness.digest.digest}"
         aid = _artifact_id(sid)
         artifact_id_by_engine_sid[sid] = aid
         source_blobs[aid] = data
@@ -862,6 +1684,159 @@ def build_certificate_bundle(
     source_leaves = [leaf_hash(D_SOURCE_ARTIFACT, identity) for identity in source_identities]
     source_bundle_root = set_root(D_SOURCE_BUNDLE, source_leaves)
     base_artifact_id = artifact_id_by_engine_sid[engine_id]
+
+    # --- per-stage account subroots (StageResult endgame WAIST #9) ---
+    # The FI token/source-unit stage is the first LIVE feeder: its
+    # `StageResult[SourceSurfaceBundle]` coverage/residuals (the segmentation
+    # partition) flow into the dossier as a per-stage account. Built from the
+    # SAME enacted body bytes already bundled above (0-delta: no new read). Each
+    # later StageResult-carried waist appends its row here.
+    from lawvm.finland.legal_surface.bundle import build_surface_bundle_staged
+
+    stage_account_rows: List[Dict[str, Any]] = []
+    surface_stage = build_surface_bundle_staged(
+        source_blobs[base_artifact_id], canonical_id
+    )
+    stage_account_rows.append(
+        build_stage_account_row("fi.legal_surface.source_unit", surface_stage)
+    )
+
+    # The FI timeline/materialization stage (StageResult endgame WAIST #8): the
+    # PIT materialization coverage account that the plain `materialize_pit` path
+    # used to DISCARD. The FI replay carries it on `ReplayProducts` as a typed
+    # `StageResult[IRStatute]`; we route it into the dossier as a per-stage
+    # account here, and `verify_bundle` BRANCHES on its `coverage.violation` so a
+    # degraded/violating materialization makes a CLEAN certificate impossible.
+    materialization_stage = _fi_materialization_stage(bundle, boundary[-1])
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_TIMELINE_MATERIALIZATION, materialization_stage)
+    )
+    # The cert claims totality over a fully-materialized work; a materialization
+    # whose coverage carries an unowned-signal violation cannot be silently
+    # certified clean (the §LEDGER "incompleteness blocks a clean claim").
+    _require_clean_materialization_stage(materialization_stage)
+
+    # --- StageResult endgame Wave-5: route the remaining 6 per-stage
+    # accounts so EVERY pipeline stage emits a checkable certificate root (the (D)
+    # deliverable). All additive read-offs of accounts the value path already
+    # produces; each lands in the UNCONDITIONAL `_verify_stage_accounts` recompute
+    # (checkable on the BLOCKED 482/2024). 0-delta on the flat roots — only
+    # `stage_accounts_root` gains members (the #2/#8 precedent).
+
+    # #1 source identity — coverage over the witnessed reads already in hand.
+    source_identity_stage = _fi_source_identity_stage(source_identities)
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_SOURCE_IDENTITY, source_identity_stage)
+    )
+
+    # #3 structure write-footprint (SEAM B) — the type-carried per-op structural
+    # account aggregated on ReplayProducts (apply already owns the divergence
+    # Finding verdict; this is the additive checkable attribution).
+    structural_stage = bundle.result.products.structural_stage
+    if structural_stage is None:
+        raise BundleSpecError(
+            "FI replay carried no structural write-footprint StageResult "
+            f"(ReplayProducts.structural_stage) for {engine_id}; the #3 account "
+            "cannot be routed into the dossier"
+        )
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_STRUCTURE_WRITE_FOOTPRINT, structural_stage)
+    )
+
+    # #4 source-syntax forest (SEAM A) — the token-partition forest account over
+    # the #2 bundle units (the same forest `_gate_forest_coverage` builds).
+    source_syntax_stage = _fi_source_syntax_stage(surface_stage.value)
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_SOURCE_SYNTAX_FOREST, source_syntax_stage)
+    )
+
+    # #5 legal-surface graph (SEAM A) — the surface-node partition from the enacted
+    # body bytes. Its BLOCKING residual (a broken ref) contributes to the cert
+    # status below (PART 2 status-contribution, reachable — NOT a clean-gated
+    # firewall).
+    surface_graph_stage = _fi_legal_surface_graph_stage(
+        source_blobs[base_artifact_id], engine_id
+    )
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_LEGAL_SURFACE_GRAPH, surface_graph_stage)
+    )
+
+    # #6 canonical-op compile (SEAM B) — the per-amendment compile partition
+    # aggregated on ReplayProducts (the decline VERDICT rides the existing #6
+    # residual/finding channel; this is the additive checkable account).
+    canonical_op_stage = bundle.result.products.canonical_op_stage
+    if canonical_op_stage is None:
+        raise BundleSpecError(
+            "FI replay carried no canonical-op compile StageResult "
+            f"(ReplayProducts.canonical_op_stage) for {engine_id}; the #6 account "
+            "cannot be routed into the dossier"
+        )
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_CANONICAL_OP_COMPILE, canonical_op_stage)
+    )
+
+    # #10 projection interlinks + overlays (SEAM A, ORCH-5: both). A
+    # silently-dropped universe member rides as a BLOCKING projection_residual; that
+    # residual contributes to the cert status below (PART 2).
+    from lawvm.tools.export_fi_interlinks import (
+        _project_interlinks_for_statute,
+        _project_overlays_for_statute,
+    )
+
+    projection_interlinks_stage = _fi_projection_stage(
+        _project_interlinks_for_statute, engine_id, corpus
+    )
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_PROJECTION_INTERLINKS, projection_interlinks_stage)
+    )
+    projection_overlays_stage = _fi_projection_stage(
+        _project_overlays_for_statute, engine_id, corpus
+    )
+    stage_account_rows.append(
+        build_stage_account_row(STAGE_PROJECTION_OVERLAYS, projection_overlays_stage)
+    )
+
+    # PART 2 (ORCH-2): the #5/#10 BLOCKING residuals contribute to the residue
+    # `compute_certificate_status` reads so a broken-ref / dropped-universe-member
+    # UNCONDITIONALLY forces blocked (genuine (C), reachable). 0 on the green corpus.
+    status_contributing_stages: List[Tuple[str, "StageResult[Any]"]] = [
+        (STAGE_LEGAL_SURFACE_GRAPH, surface_graph_stage),
+        (STAGE_PROJECTION_INTERLINKS, projection_interlinks_stage),
+        (STAGE_PROJECTION_OVERLAYS, projection_overlays_stage),
+    ]
+    extra_blocking_residual_count = _stage_blocking_residual_count(
+        status_contributing_stages
+    )
+
+    # EV-03 (residual-ledger monotonicity): assert no residual COUNTED in a stage's
+    # coverage violation class silently vanished from that stage's committed residual
+    # ledger (the §0 conservation law over the per-stage account fold). The existing
+    # `_verify_stage_accounts` recompute proves the rows hash to their subroots; this
+    # is the orthogonal conservation check the arithmetic/hash checks do NOT cover.
+    # On the green corpus every stage carries violation==0 → silent (0-delta). A real
+    # non-monotone account is a producer defect, never a corpus fact, so it fails
+    # loud here rather than silently certifying a dropped-residual ledger.
+    _require_monotone_stage_residual_ledger(stage_account_rows)
+
+    # EV-07 (self-evidencing diagnostic totality): every source-text-failure residual
+    # the per-stage accounts committed (unowned_violation / typed_residual) MUST embed
+    # its verbatim offending snippet — never an opaque, snippet-less diagnostic about
+    # unhandled source text. On the green corpus the forest/surface producers set the
+    # text by construction → silent (0-delta).
+    _require_self_evidencing_stage_residuals(stage_account_rows)
+
+    stage_accounts_root_value = stage_accounts_root(stage_account_rows)
+
+    # --- apply/replay execution-authority firewall (StageResult endgame WAIST
+    # #7) --- The per-replay apply authority (AND over every landed write):
+    # re-derived descriptively from the landed receipts + findings this dossier
+    # already consumes. Routed into the dossier as an additive subroot (0-delta:
+    # an authorized replay yields a value-stable single leaf that never folds into
+    # the flat roots). The firewall bite (the clean-claim gate) lives just below,
+    # after `certificate_status` is computed.
+    apply_authority = _fi_apply_authority(bundle)
+    apply_authority_row_value = apply_authority_row(apply_authority)
+    apply_authority_root_value = apply_authority_root(apply_authority)
 
     # --- trace: covering-state evolution per boundary date (§10 carve-out) ---
     ops_by_date = _index_ops_by_date(bundle.lo_ops)
@@ -975,6 +1950,67 @@ def build_certificate_bundle(
                 op_transitions.setdefault(op.op_id, []).append(transition_id)
         prev_state = cur_state
 
+    # --- byte-level source anchoring (trace spec §5.1/§7) ---
+    # Promote genuine source anchors carried by landed receipts onto the
+    # transition rows that the receipts drove. The anchor is RE-VERIFIED against
+    # the bundle's own source bytes before it is certified: a certified anchor
+    # must satisfy source_blobs[aid][off:off+len] == quote bytes AND match the
+    # recorded quote_hash. Any anchor that fails this independent re-derivation
+    # (e.g. the receipt anchored a corrigendum-corrected byte stream that
+    # differs from the bundled raw source) is dropped — the transition then
+    # keeps its fail-loud SOURCE_ANCHOR_UNAVAILABLE residual. Anchors are never
+    # fabricated and never trusted blindly. ``anchored_refs`` records the
+    # (transition_id, source_ref) pairs that earned a certified anchor so the
+    # residual loop can suppress only those.
+    #
+    # The join is on the SOURCE ARTIFACT, not on op_id: a receipt's anchor names
+    # the amendment clause (source_artifact_id) whose verbatim source bytes drove
+    # the write. Receipt op_ids and the engine's lo_op op_ids live in different
+    # id spaces (the receipt boundary mints its own), so an op_id join would
+    # never fire. Anchoring a transition to its driving source artifact is the
+    # sound relation: the certified anchor is that artifact's clause provenance,
+    # and the transition declares that artifact in ``source_refs``.
+    def _verified_anchor_json(anchor: "SourceAnchor", artifact_id: str) -> Optional[Dict[str, Any]]:
+        blob = source_blobs.get(artifact_id)
+        if blob is None:
+            return None
+        end = anchor.byte_offset + anchor.byte_len
+        if end > len(blob):
+            return None
+        quoted = blob[anchor.byte_offset:end]
+        if "sha256:" + hashlib.sha256(quoted).hexdigest() != anchor.quote_hash:
+            return None
+        return anchor.as_jsonable()
+
+    # One verified anchor per source artifact, keyed by bundle artifact_id.
+    verified_anchor_by_artifact: Dict[str, Dict[str, Any]] = {}
+    for _receipt in bundle.result.write_receipts:
+        anchor = _receipt.source_anchor
+        if anchor is None:
+            continue
+        artifact_id = artifact_id_by_engine_sid.get(
+            _engine_statute_id(anchor.source_artifact_id)
+        )
+        if artifact_id is None or artifact_id in verified_anchor_by_artifact:
+            continue
+        verified = _verified_anchor_json(anchor, artifact_id)
+        if verified is None:
+            continue
+        verified_anchor_by_artifact[artifact_id] = verified
+
+    anchored_refs: set[Tuple[str, str]] = set()
+    for row in transition_rows:
+        transition_id = row["transition_id"]
+        anchors_for_row: Dict[str, Dict[str, Any]] = {}
+        for ref in row["source_refs"]:
+            verified = verified_anchor_by_artifact.get(ref)
+            if verified is None:
+                continue
+            anchors_for_row[ref] = verified
+            anchored_refs.add((transition_id, ref))
+        if anchors_for_row:
+            row["source_anchors"] = [anchors_for_row[aid] for aid in sorted(anchors_for_row)]
+
     transition_leaves = [leaf_hash(D_TRANSITION, _certified_core(r)) for r in transition_rows]
     certified_tree_transition_root = list_root(D_TRACE, transition_leaves)
 
@@ -1051,11 +2087,34 @@ def build_certificate_bundle(
     }
     projection_specs_hash = leaf_hash(D_PROJECTION_SPECS, projection_specs_manifest)
 
+    # BOOT-01: the canonical engine-derived disposition matrix is the single
+    # authority for blocks/qualifies/permits. The registry rows AND the residual
+    # profile_effect copies both derive from it (item B); the residual stamp uses
+    # `disposition_by_code` which reads the MATRIX, not the registry rows.
+    disposition_matrix = build_disposition_matrix(profile_fields)
+    disposition_matrix_hash = disposition_matrix_root(disposition_matrix)
     registry_rows = build_diagnostic_registry_rows(profile_fields)
     diagnostic_registry_manifest = {"schema": D_DIAGNOSTIC_REGISTRY, "rows": registry_rows}
     diagnostic_registry_hash = leaf_hash(D_DIAGNOSTIC_REGISTRY, diagnostic_registry_manifest)
     registered_codes = frozenset(r["code"] for r in registry_rows)
-    disposition_by_code = {r["code"]: r["profile_disposition"][PROFILE_ID] for r in registry_rows}
+    disposition_by_code = {code: cells[PROFILE_ID] for code, cells in disposition_matrix.items()}
+
+    # BOOT-01 (Pro §2/§8 item A): bind every policy input the certification fold
+    # depends on by content root into one policy-bindings object, whose root is
+    # committed in the certificate root set. A forged registry/profile/disposition
+    # matrix changes a bound root -> policy_bindings_root -> certificate_root.
+    policy_bindings_manifest = build_policy_bindings(
+        diagnostic_registry_root=diagnostic_registry_hash,
+        profile_manifest_root=profile_hash,
+        disposition_matrix_root=disposition_matrix_hash,
+        # The interpretation-policy manifest is the operative source/selection
+        # policy this bundle was emitted under (real committed object).
+        source_policy_root=policy_hash,
+        # Absent-with-reason (DUAL-01): no reified selection-profile object
+        # distinct from the interpretation policy — see build_policy_bindings.
+        selection_profile_root=None,
+    )
+    policy_bindings_hash = policy_bindings_root(policy_bindings_manifest)
 
     checker_contract = {"checker_version": CHECKER_VERSION, "hash_profile": HASH_PROFILE}
     checker_contract_manifest = {"schema": D_CHECKER_CONTRACT, **checker_contract}
@@ -1194,10 +2253,16 @@ def build_certificate_bundle(
             )
         )
 
-    # Trace spec §7: every source_ref without an anchor needs a
+    # Trace spec §7: every source_ref WITHOUT a certified byte anchor needs a
     # kind=source_anchor_unavailable residual naming the transition and ref.
+    # When a (transition, ref) pair earned a re-verified byte anchor above, it
+    # is omitted from the unavailable ledger — the certified anchor on the
+    # transition row's certified core IS its provenance. The fail-loud residual
+    # remains for every ref that genuinely could not be anchored.
     for row in transition_rows:
         for ref in row["source_refs"]:
+            if (row["transition_id"], ref) in anchored_refs:
+                continue
             _add_residual(
                 _residual_row(
                     kind="source_anchor_unavailable",
@@ -1375,7 +2440,19 @@ def build_certificate_bundle(
         residual_rows=residual_rows,
         certification_statuses=certification_statuses,
         registered_codes=registered_codes,
+        extra_blocking_residual_count=extra_blocking_residual_count,
     )
+
+    # WAIST #7 firewall bite: a CLEAN/authoritative dossier requires the
+    # per-replay apply authority to be replay_authorized. An unauthorized replay
+    # (neutral/un-granted ExecutionAuthorization, or a write outside the
+    # conservative apply gate) cannot produce an authoritative receipt — the clean
+    # claim is forbidden here (it may still emit a BLOCKED dossier). On the green
+    # corpus every replay authorizes, so this never fires (0-delta). RED if the
+    # authority is severed to neutral or the gate is wired to ignore it.
+    if certificate_status == "clean":
+        _require_authorized_replay(apply_authority)
+
     projection_coverage = {
         "seam": {
             "universe_kind": "all_address_interval_states",
@@ -1420,6 +2497,18 @@ def build_certificate_bundle(
             "schema": D_DIAGNOSTIC_REGISTRY,
             "root": diagnostic_registry_hash,
             "locator": "policy/diagnostic_registry.json",
+        },
+        # BOOT-01: the engine-derived disposition matrix manifest and the
+        # policy-bindings object that aggregates the fold's policy-input roots.
+        "disposition_matrix_manifest": {
+            "schema": D_DISPOSITION_MATRIX,
+            "root": disposition_matrix_hash,
+            "locator": "policy/disposition_matrix.json",
+        },
+        "policy_bindings_manifest": {
+            "schema": D_POLICY_BINDINGS,
+            "root": policy_bindings_hash,
+            "locator": "policy/policy_bindings.json",
         },
         "checker_contract_manifest": {
             "schema": D_CHECKER_CONTRACT,
@@ -1473,6 +2562,16 @@ def build_certificate_bundle(
             "root": potential_op_coverage_root,
             "locator": "coverage/potential_operation_coverage.jsonl",
         },
+        "stage_accounts": {
+            "schema": D_STAGE_ACCOUNTS,
+            "root": stage_accounts_root_value,
+            "locator": "stages/stage_accounts.jsonl",
+        },
+        "apply_authority": {
+            "schema": D_APPLY_AUTHORITY,
+            "root": apply_authority_root_value,
+            "locator": "stages/apply_authority.jsonl",
+        },
     }
 
     roots = {
@@ -1485,6 +2584,17 @@ def build_certificate_bundle(
         "residual_root": residual_root,
         "finding_root": finding_root,
         "coverage_root": coverage_root,
+        # Additive per-stage attribution layer (WAIST #9); does NOT fold into the
+        # flat residual/finding/coverage roots above (they stay value-identical).
+        "stage_accounts_root": stage_accounts_root_value,
+        # Additive apply/replay authority subroot (WAIST #7); value-stable for an
+        # authorized replay, never folds into the flat roots (0-delta).
+        "apply_authority_root": apply_authority_root_value,
+        # BOOT-01: the policy-bindings root — the trust root that content-binds
+        # the registry/profile/disposition-matrix the certification fold depends
+        # on. Committed in `roots` so it folds into certificate_root; a forged
+        # policy input changes this and therefore the cert root (Pro §2).
+        "policy_bindings_root": policy_bindings_hash,
     }
 
     envelope: Dict[str, Any] = {
@@ -1507,6 +2617,14 @@ def build_certificate_bundle(
             "max_date": boundary[-1],
         },
         "roots": roots,
+        # BOOT-01 (Pro §3 / item C-3): name the root set honestly so a reader
+        # cannot mistake WHICH members `certificate_root` commits. This is the
+        # full per-work dossier root (every §3 subroot + the policy-bindings
+        # trust root), NOT a sparse minimal-state pack. `root_members` is the
+        # authoritative member list; verify_bundle asserts it equals the actual
+        # `roots` keys.
+        "certificate_root_profile": CERTIFICATE_ROOT_PROFILE,
+        "root_members": sorted(roots),
         "certificate_status": certificate_status,
         "residual_summary": residual_summary,
         "projection_coverage": projection_coverage,
@@ -1532,6 +2650,11 @@ def build_certificate_bundle(
     _write_json(out_path / "policy" / "interpretation_policy.json", policy_manifest)
     _write_json(out_path / "policy" / "projection_specs.json", projection_specs_manifest)
     _write_json(out_path / "policy" / "diagnostic_registry.json", diagnostic_registry_manifest)
+    _write_json(
+        out_path / "policy" / "disposition_matrix.json",
+        {"schema": D_DISPOSITION_MATRIX, "matrix": disposition_matrix},
+    )
+    _write_json(out_path / "policy" / "policy_bindings.json", policy_bindings_manifest)
     _write_json(out_path / "policy" / "checker_contract.json", checker_contract_manifest)
     _write_jsonl(out_path / "trace" / "certified_tree_transitions.jsonl", transition_rows)
     (out_path / "trace" / "certified_tree_transitions.root").write_text(
@@ -1564,6 +2687,10 @@ def build_certificate_bundle(
     _write_jsonl(out_path / "residue" / "findings.jsonl", finding_rows)
     _write_jsonl(out_path / "coverage" / "source_unit_coverage.jsonl", source_unit_rows)
     _write_jsonl(out_path / "coverage" / "potential_operation_coverage.jsonl", potential_op_rows)
+    _write_jsonl(out_path / "stages" / "stage_accounts.jsonl", stage_account_rows)
+    _write_jsonl(
+        out_path / "stages" / "apply_authority.jsonl", [apply_authority_row_value]
+    )
 
     # Writer-side self-check: recompute every committed root from the bundle
     # files independently. Not a checker; raises on writer inconsistency.
@@ -1686,6 +2813,38 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
     roots: Dict[str, str] = envelope["roots"]
     artifacts = envelope["artifacts"]
     recomputed: Dict[str, str] = {}
+
+    # WAIST #8 load-bearing branch (FIRST content self-check, before any root
+    # recompute): the materialization stage account's coverage must be CLEAN for a
+    # clean certificate. A degraded/violating materialization (`coverage.violation
+    # > 0` or a blocking residual) makes a clean dossier impossible —
+    # `verify_bundle` re-asserts it from the COMMITTED rows so the
+    # discarded-coverage failure class cannot be silently certified. Placed first
+    # so this branch's specific diagnostic fires before unrelated guards.
+    if envelope["certificate_status"] == "clean":
+        _verify_materialization_stage_clean(
+            _read_jsonl(bundle_path / artifacts["stage_accounts"]["locator"])
+        )
+        # WAIST #7 firewall recompute: a clean certificate MUST carry a
+        # replay_authorized apply-authority row. Re-asserted from the COMMITTED
+        # row so a severed authority (dropped to neutral) makes the self-check
+        # raise BundleSelfCheckError — the guard-liveness property.
+        _verify_apply_authority_clean(
+            _read_jsonl(bundle_path / artifacts["apply_authority"]["locator"])
+        )
+
+    # apply/replay authority subroot (additive): recompute from the committed row.
+    apply_authority_rows = _read_jsonl(
+        bundle_path / artifacts["apply_authority"]["locator"]
+    )
+    _require(
+        len(apply_authority_rows) == 1,
+        "apply_authority artifact must carry exactly one row "
+        f"(found {len(apply_authority_rows)})",
+    )
+    recomputed["apply_authority_root"] = leaf_hash(
+        D_APPLY_AUTHORITY, apply_authority_rows[0]
+    )
 
     # sources
     identities = json.loads(
@@ -1898,6 +3057,36 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
     registry_rows = registry["rows"]
     registered_codes = frozenset(row["code"] for row in registry_rows)
     registry_by_code = {row["code"]: row for row in registry_rows}
+
+    # ----- BOOT-01: re-derive the disposition matrix from the ENGINE -----
+    # The certification fold's defining policy input is the (code x profile ->
+    # disposition) matrix. The forge (Pro §2) is: rewrite the registry so a kind
+    # that BLOCKS instead permits, recompute every root, ship clean. We close it
+    # by RE-DERIVING the matrix from the engine (FINDING_REGISTRY under the
+    # PINNED profile fields) and refusing if the committed registry/matrix
+    # disagrees — a row's asserted disposition is NEVER trusted.
+    profile_manifest_committed = json.loads(
+        (bundle_path / artifacts["profile_manifest"]["locator"]).read_text(encoding="utf-8")
+    )
+    pinned_profile_fields = profile_manifest_committed["engine_profile"]
+    engine_matrix = build_disposition_matrix(pinned_profile_fields)
+    # NOTE: disposition_matrix_root is committed via the artifacts manifest and
+    # inside policy_bindings, NOT as a top-level `roots` member — keep it out of
+    # `recomputed` (which is cross-checked key-for-key against `roots`).
+    engine_disposition_matrix_root = disposition_matrix_root(engine_matrix)
+
+    committed_matrix_doc = json.loads(
+        (bundle_path / artifacts["disposition_matrix_manifest"]["locator"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    committed_matrix = committed_matrix_doc["matrix"]
+    _require(
+        committed_matrix == {code: dict(cells) for code, cells in engine_matrix.items()},
+        "committed disposition matrix disagrees with the engine re-derivation "
+        "(BOOT-01 forged-registry/matrix: a disposition was edited post-hoc)",
+    )
+
     for row in residual_rows:
         code = row["diagnostic_code"]
         _require(code in registered_codes, f"residual carries unregistered code {code!r}")
@@ -1905,12 +3094,21 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
             row["kind"] in registry_by_code[code]["allowed_residual_kinds"],
             f"residual kind {row['kind']!r} not allowed for code {code!r}",
         )
-        # §5.4: profile_effect is derived; the cached copy must equal the
-        # registry-derived disposition.
+        # §5.4 + BOOT-01: profile_effect is DERIVED. The cached copy must equal
+        # the ENGINE-re-derived disposition (not merely the committed registry
+        # row) — so a forged registry row cannot license a softened residual.
+        engine_disposition = engine_matrix[code][PROFILE_ID]
         _require(
-            row["profile_effect"].get(PROFILE_ID)
-            == registry_by_code[code]["profile_disposition"][PROFILE_ID],
-            f"residual profile_effect for {code!r} disagrees with the pinned registry",
+            row["profile_effect"].get(PROFILE_ID) == engine_disposition,
+            f"residual profile_effect for {code!r} disagrees with the engine-derived "
+            "disposition (BOOT-01)",
+        )
+        # BOOT-01 (item B): the registry row may not author a disposition out of
+        # step with the engine matrix either.
+        _require(
+            registry_by_code[code]["profile_disposition"][PROFILE_ID] == engine_disposition,
+            f"registry profile_disposition for {code!r} disagrees with the engine "
+            "matrix (BOOT-01 forged registry)",
         )
     # §5.6: every blocking finding has a residual recording its disposition.
     residual_finding_refs = {ref for row in residual_rows for ref in row["finding_refs"]}
@@ -1952,6 +3150,18 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         {"source_unit_coverage": src_cov_root, "potential_operation_coverage": op_cov_root},
     )
 
+    # per-stage account subroots (WAIST #9): recompute each stage's subroots FROM
+    # its committed rows and re-aggregate. A stage account severed before the
+    # dossier (or whose subroot disagrees with its rows) diverges here — the
+    # guard-liveness property the StageResult endgame demands.
+    stage_account_rows = _read_jsonl(bundle_path / artifacts["stage_accounts"]["locator"])
+    recomputed["stage_accounts_root"] = _verify_stage_accounts(stage_account_rows)
+    # PART 2 status-contribution recompute (ORCH-2): re-count the #5/#10 BLOCKING
+    # per-stage residuals FROM the committed rows so the status recompute below
+    # honors them. A broken-ref/dropped-universe-member blocking residual forces
+    # `blocked` UNCONDITIONALLY (reachable on the blocked FI corpus, genuine (C)).
+    verify_extra_blocking = _committed_stage_blocking_residual_count(stage_account_rows)
+
     # policy manifest hashes
     for key, domain, envelope_hash in (
         ("profile_manifest", D_STRICT_PROFILE, envelope["profile"]["profile_hash"]),
@@ -1962,6 +3172,8 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         ),
         ("projection_spec_manifest", D_PROJECTION_SPECS, None),
         ("diagnostic_registry_manifest", D_DIAGNOSTIC_REGISTRY, None),
+        ("disposition_matrix_manifest", D_DISPOSITION_MATRIX, None),
+        ("policy_bindings_manifest", D_POLICY_BINDINGS, None),
         ("checker_contract_manifest", D_CHECKER_CONTRACT, None),
     ):
         manifest = json.loads(
@@ -1971,6 +3183,91 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         _require(manifest_hash == artifacts[key]["root"], f"{key} root mismatch")
         if envelope_hash is not None:
             _require(manifest_hash == envelope_hash, f"{key} hash != envelope commitment")
+
+    # ----- BOOT-01: policy-bindings binds the REAL committed policy roots -----
+    # The policy-bindings object's root is the trust root committed in `roots`.
+    # Re-assert that (a) every bound root names the ACTUAL committed manifest
+    # root, (b) the disposition_matrix_root it binds is the engine re-derivation,
+    # and (c) policy_bindings_root recomputes. A forged policy input that did not
+    # also rewrite policy_bindings is caught here; one that did rewrite it changes
+    # policy_bindings_root -> certificate_root (caught by the cert-root recompute).
+    policy_bindings = json.loads(
+        (bundle_path / artifacts["policy_bindings_manifest"]["locator"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    _require(
+        policy_bindings["diagnostic_registry_root"]
+        == artifacts["diagnostic_registry_manifest"]["root"],
+        "policy_bindings.diagnostic_registry_root != committed registry root (BOOT-01)",
+    )
+    _require(
+        policy_bindings["profile_manifest_root"] == artifacts["profile_manifest"]["root"],
+        "policy_bindings.profile_manifest_root != committed profile root (BOOT-01)",
+    )
+    _require(
+        policy_bindings["disposition_matrix_root"] == engine_disposition_matrix_root,
+        "policy_bindings.disposition_matrix_root != engine-derived matrix root (BOOT-01)",
+    )
+    _require(
+        policy_bindings["disposition_matrix_root"]
+        == artifacts["disposition_matrix_manifest"]["root"],
+        "policy_bindings.disposition_matrix_root != committed matrix manifest root (BOOT-01)",
+    )
+    _require(
+        policy_bindings["source_policy_root"]
+        == artifacts["interpretation_policy_manifest"]["root"],
+        "policy_bindings.source_policy_root != committed interpretation-policy root (BOOT-01)",
+    )
+    # DUAL-01 honesty: selection_profile_root is bound absent (no reified
+    # selection-profile object) — it must be the explicit null, never a hash.
+    _require(
+        policy_bindings["selection_profile_root"] is None,
+        "policy_bindings.selection_profile_root must be null (no reified object; DUAL-01)",
+    )
+    recomputed["policy_bindings_root"] = policy_bindings_root(policy_bindings)
+
+    # BOOT-01 (item C-3): certificate_root_profile must name this root set
+    # honestly and root_members must equal the ACTUAL committed roots keys, so a
+    # reader can never mistake which members certificate_root commits.
+    _require(
+        envelope.get("certificate_root_profile") == CERTIFICATE_ROOT_PROFILE,
+        f"certificate_root_profile {envelope.get('certificate_root_profile')!r} != "
+        f"{CERTIFICATE_ROOT_PROFILE!r} (BOOT-01 item C-3)",
+    )
+    _require(
+        envelope.get("root_members") == sorted(roots),
+        "root_members does not match the actual committed roots keys (BOOT-01 item C-3)",
+    )
+
+    # ----- BOOT-01 (Pro §8 item C) writer-refusal gate -----
+    # A clean certificate is FORBIDDEN if any residual blocks under the engine
+    # re-derived disposition. We do NOT trust a row's asserted profile_effect:
+    # the disposition comes from `engine_matrix`. This re-derives the §5.2 fold's
+    # blocking arm from the pinned policy inputs, so a forged registry that
+    # softened a real blocker to clean is refused here even before the status
+    # recompute.
+    if envelope["certificate_status"] == "clean":
+        for row in residual_rows:
+            code = row["diagnostic_code"]
+            if engine_matrix.get(code, {}).get(PROFILE_ID) == "blocks":
+                raise BundleSelfCheckError(
+                    f"clean certificate carries residual {code!r} that BLOCKS under the "
+                    "engine-derived disposition (BOOT-01 writer-refusal)"
+                )
+    # A blocked certificate must cite at least one blocking residual KIND
+    # (item C-2). Reachable on the blocked FI corpus; honors the additive
+    # stage-contributed blockers that do not fold into the flat ledger.
+    if envelope["certificate_status"] == "blocked":
+        cites_blocking = any(
+            engine_matrix.get(row["diagnostic_code"], {}).get(PROFILE_ID) == "blocks"
+            or row["diagnostic_code"] not in registered_codes
+            for row in residual_rows
+        )
+        _require(
+            cites_blocking or verify_extra_blocking > 0,
+            "blocked certificate cites no blocking residual kind (BOOT-01 item C-2)",
+        )
 
     # envelope root members vs recomputed
     for name, value in recomputed.items():
@@ -1987,6 +3284,8 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         ("materialization_index", "materialization_root"),
         ("residual_ledger", "residual_root"),
         ("finding_ledger", "finding_root"),
+        ("stage_accounts", "stage_accounts_root"),
+        ("apply_authority", "apply_authority_root"),
     ):
         _require(artifacts[key]["root"] == roots[root_name], f"artifacts.{key}.root != roots.{root_name}")
 
@@ -1995,6 +3294,7 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         residual_rows=residual_rows,
         certification_statuses=certification_statuses,
         registered_codes=registered_codes,
+        extra_blocking_residual_count=verify_extra_blocking,
     )
     _require(
         recomputed_status == envelope["certificate_status"],

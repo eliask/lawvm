@@ -348,7 +348,7 @@ def test_numero_renumber_destination_end_to_end():
     The NUMERO-based renumber path now lowers to a true renumber op with
     destination=LegalAddress(section:3).
     """
-    from lawvm.finland.johtolause.compat import parse_clause
+    from lawvm.finland.johtolause.api import parse_clause
     from lawvm.core.clause_ast import clause_ast_to_legal_ops
 
     ops = clause_ast_to_legal_ops(parse_clause("muutetaan 1 §:n numero 3:ksi").clause_ast)
@@ -362,7 +362,7 @@ def test_numero_renumber_destination_end_to_end():
 
 def test_numero_renumber_multi_section_destination():
     """muutetaan 5 ja 6 §:n numero 7 ja 8:ksi → both ops get destination."""
-    from lawvm.finland.johtolause.compat import parse_clause
+    from lawvm.finland.johtolause.api import parse_clause
     from lawvm.core.clause_ast import clause_ast_to_legal_ops
 
     ops = clause_ast_to_legal_ops(parse_clause("muutetaan 5 ja 6 §:n numero 7 ja 8:ksi").clause_ast)
@@ -377,7 +377,7 @@ def test_numero_renumber_backref_subref_no_destination():
     Only whole-section ops get the renumber destination; subsection-level
     ops (from backref continuation) are regular replace ops.
     """
-    from lawvm.finland.johtolause.compat import parse_clause
+    from lawvm.finland.johtolause.api import parse_clause
     from lawvm.core.clause_ast import clause_ast_to_legal_ops
 
     ops = clause_ast_to_legal_ops(
@@ -406,7 +406,7 @@ def test_verb_s_renumber_destination():
 
 def test_direct_section_relabel_preserves_full_destination_path():
     """Relative-clause relabel should keep source and full destination path."""
-    from lawvm.finland.johtolause.compat import parse_clause
+    from lawvm.finland.johtolause.api import parse_clause
     from lawvm.core.clause_ast import clause_ast_to_legal_ops
 
     ops = clause_ast_to_legal_ops(parse_clause("muutetaan 7 luvun 73 §:ää, joka siirretään 61 §:ksi,").clause_ast)
@@ -418,7 +418,7 @@ def test_direct_section_relabel_preserves_full_destination_path():
 
 def test_direct_section_relabel_preserves_part_scoped_destination_path():
     """Part-scoped relative-clause relabel should keep source and destination part."""
-    from lawvm.finland.johtolause.compat import parse_clause
+    from lawvm.finland.johtolause.api import parse_clause
     from lawvm.core.clause_ast import clause_ast_to_legal_ops
 
     ops = clause_ast_to_legal_ops(
@@ -432,7 +432,7 @@ def test_direct_section_relabel_preserves_part_scoped_destination_path():
 
 def test_old_move_destination_part_preserves_full_destination_path():
     """Old move continuations should lower destination-part moves natively."""
-    from lawvm.finland.johtolause.compat import parse_clause
+    from lawvm.finland.johtolause.api import parse_clause
     from lawvm.core.clause_ast import clause_ast_to_legal_ops
 
     ops = clause_ast_to_legal_ops(parse_clause("siirretään I osaan, II osan 4 luvun otsikko sekä 38-40 §").clause_ast)
@@ -450,7 +450,7 @@ def test_old_move_destination_part_preserves_full_destination_path():
 
 def test_relative_move_to_part_tail_retargets_prior_section_refs():
     """Relative-clause move tails to a part should keep the retargeted sections alive."""
-    from lawvm.finland.johtolause.compat import parse_clause
+    from lawvm.finland.johtolause.api import parse_clause
     from lawvm.core.clause_ast import clause_ast_to_legal_ops
 
     ops = clause_ast_to_legal_ops(
@@ -512,7 +512,7 @@ def test_cross_part_move_parsed_op():
 
 def test_provenance_heavy_relative_move_to_part_tail_retargets_prior_section_refs():
     """Provenance after a part ref should still preserve later moved section refs."""
-    from lawvm.finland.johtolause.compat import parse_clause
+    from lawvm.finland.johtolause.api import parse_clause
     from lawvm.core.clause_ast import clause_ast_to_legal_ops
 
     ops = clause_ast_to_legal_ops(

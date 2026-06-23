@@ -21,6 +21,8 @@ import pytest
 
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.tools.certificate_bundle import (
+    CERTIFICATE_ROOT_PROFILE,
+    D_POLICY_BINDINGS,
     PROFILE_ID,
     RECEIPT_TRANSITION_DIVERGENCE_CODE,
     SEAM_HASH_EXCLUDED_MEMBERS,
@@ -28,12 +30,16 @@ from lawvm.tools.certificate_bundle import (
     BundleSelfCheckError,
     BundleSpecError,
     build_diagnostic_registry_rows,
+    build_disposition_matrix,
+    build_policy_bindings,
     canonical_json_bytes,
     certification_status_for_row,
     compute_certificate_status,
     cross_check_transitions_against_receipts,
+    disposition_matrix_root,
     leaf_hash,
     list_root,
+    policy_bindings_root,
     projection_hash_view,
     projection_payload_hash,
     set_root,
@@ -742,3 +748,203 @@ def test_cross_check_quiet_on_legitimate_zero_receipt_transition() -> None:
     assert divergences == []
     assert "1 legitimate zero-receipt" in notes[0]
     assert "0 diff-vs-receipt divergence" in notes[0]
+
+
+# ---------------------------------------------------------------------------
+# BOOT-01: policy-bindings + disposition-matrix content binding (Pro §2/§8)
+# ---------------------------------------------------------------------------
+
+
+def test_disposition_matrix_is_engine_derived_and_rooted() -> None:
+    # The matrix derives blocks/qualifies/permits from FINDING_REGISTRY under
+    # the pinned profile fields. Flipping a profile gate changes a cell -> root.
+    gated = build_disposition_matrix({"allows_estimated_dates": True})
+    ungated = build_disposition_matrix({"allows_estimated_dates": False})
+    assert (
+        gated["TIME.ESTIMATED_EFFECTIVE_DATE"][PROFILE_ID] == "qualifies"
+        and ungated["TIME.ESTIMATED_EFFECTIVE_DATE"][PROFILE_ID] == "blocks"
+    )
+    assert disposition_matrix_root(gated) != disposition_matrix_root(ungated)
+
+
+def test_registry_rows_derive_disposition_from_matrix() -> None:
+    # BOOT-01 item B: a row's profile_disposition equals the engine matrix cell;
+    # the row never authors its own disposition independently.
+    fields = {"allows_estimated_dates": False}
+    matrix = build_disposition_matrix(fields)
+    rows = build_diagnostic_registry_rows(fields)
+    for row in rows:
+        assert row["profile_disposition"] == matrix[row["code"]]
+
+
+def test_policy_bindings_binds_real_roots_and_marks_absent_honestly() -> None:
+    # DUAL-01: the absent selection-profile is an explicit null, never a fake
+    # hash; the bound roots are exactly the values passed.
+    pb = build_policy_bindings(
+        diagnostic_registry_root="sha256:" + "a" * 64,
+        profile_manifest_root="sha256:" + "b" * 64,
+        disposition_matrix_root="sha256:" + "c" * 64,
+        source_policy_root="sha256:" + "d" * 64,
+        selection_profile_root=None,
+    )
+    assert pb["selection_profile_root"] is None
+    assert pb["diagnostic_registry_root"] == "sha256:" + "a" * 64
+    assert pb["schema"] == D_POLICY_BINDINGS
+    # the root is sensitive to a bound member changing.
+    other = dict(pb, disposition_matrix_root="sha256:" + "0" * 64)
+    assert policy_bindings_root(pb) != policy_bindings_root(other)
+
+
+@_corpus_skip
+def test_policy_bindings_committed_in_cert_root_set(bundle_482: Path) -> None:
+    env = _envelope(bundle_482)
+    assert env["certificate_root_profile"] == CERTIFICATE_ROOT_PROFILE
+    assert "policy_bindings_root" in env["roots"]
+    assert env["root_members"] == sorted(env["roots"])
+    pb = json.loads((bundle_482 / "policy/policy_bindings.json").read_text(encoding="utf-8"))
+    # bound to the ACTUAL committed manifest roots; absent input is honest null.
+    assert pb["diagnostic_registry_root"] == env["artifacts"]["diagnostic_registry_manifest"]["root"]
+    assert pb["profile_manifest_root"] == env["artifacts"]["profile_manifest"]["root"]
+    assert pb["disposition_matrix_root"] == env["artifacts"]["disposition_matrix_manifest"]["root"]
+    assert pb["source_policy_root"] == env["artifacts"]["interpretation_policy_manifest"]["root"]
+    assert pb["selection_profile_root"] is None
+
+
+def _reroot_after_policy_forge(bundle_dir: Path) -> None:
+    """Faithfully recompute every policy/cert root after a registry/matrix edit.
+
+    Mirrors a real attacker who rewrites a policy input AND recomputes all
+    dependent roots so the bundle is INTERNALLY self-consistent. The only thing
+    that must still betray the forge is the engine re-derivation in verify_bundle.
+    """
+    matrix_path = bundle_dir / "policy/disposition_matrix.json"
+    registry_path = bundle_dir / "policy/diagnostic_registry.json"
+    pb_path = bundle_dir / "policy/policy_bindings.json"
+    cert_path = bundle_dir / "certificate.json"
+
+    matrix_doc = json.loads(matrix_path.read_text(encoding="utf-8"))
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    pb = json.loads(pb_path.read_text(encoding="utf-8"))
+    env = json.loads(cert_path.read_text(encoding="utf-8"))
+
+    new_matrix_root = disposition_matrix_root(matrix_doc["matrix"])
+    new_registry_root = leaf_hash("lawvm.diagnostic_registry.v0", registry)
+    pb["disposition_matrix_root"] = new_matrix_root
+    pb["diagnostic_registry_root"] = new_registry_root
+    new_pb_root = policy_bindings_root(pb)
+
+    env["artifacts"]["disposition_matrix_manifest"]["root"] = new_matrix_root
+    env["artifacts"]["diagnostic_registry_manifest"]["root"] = new_registry_root
+    env["artifacts"]["policy_bindings_manifest"]["root"] = new_pb_root
+    env["roots"]["policy_bindings_root"] = new_pb_root
+
+    matrix_path.write_text(json.dumps(matrix_doc, sort_keys=True), encoding="utf-8")
+    registry_path.write_text(json.dumps(registry, sort_keys=True), encoding="utf-8")
+    pb_path.write_text(json.dumps(pb, sort_keys=True), encoding="utf-8")
+
+    env.pop("certificate_id", None)
+    new_cert_root = leaf_hash("lawvm.certificate.v0.root", env)
+    env["certificate_id"] = new_cert_root
+    cert_path.write_text(json.dumps(env, sort_keys=True), encoding="utf-8")
+
+    # A complete attacker also re-points the seam parentage at the new cert root,
+    # so the bundle is FULLY internally consistent; the engine re-derivation is
+    # then the SOLE remaining betrayal.
+    seam_path = bundle_dir / "projections/seam_rows.jsonl"
+    wrappers = [
+        json.loads(line)
+        for line in seam_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    for wrapper in wrappers:
+        wrapper["certificate"]["certificate_id"] = new_cert_root
+        wrapper["certificate"]["certificate_root"] = new_cert_root
+    seam_path.write_text(
+        "\n".join(canonical_json_bytes(w).decode("ascii") for w in wrappers) + "\n",
+        encoding="utf-8",
+    )
+
+
+@_corpus_skip
+def test_forged_registry_disposition_caught(bundle_482: Path, tmp_path: Path) -> None:
+    # THE load-bearing BOOT-01 drill: a residual kind blocks under the original
+    # registry; rewrite registry+matrix so that kind PERMITS; recompute every
+    # dependent root (so the bundle is internally consistent); verify_bundle MUST
+    # still fail because the disposition is re-derived from the engine.
+    forged = tmp_path / "forged_registry"
+    shutil.copytree(bundle_482, forged)
+
+    env = _envelope(forged)
+    residuals = [
+        json.loads(line)
+        for line in (forged / "residue/residuals.jsonl").read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    blocking_codes = sorted(
+        {r["diagnostic_code"] for r in residuals if r["profile_effect"].get(PROFILE_ID) == "blocks"}
+    )
+    assert blocking_codes, "fixture must carry a blocking residual to forge"
+    victim = blocking_codes[0]
+
+    # Forge the matrix cell + registry row for the victim: blocks -> permits.
+    matrix_path = forged / "policy/disposition_matrix.json"
+    matrix_doc = json.loads(matrix_path.read_text(encoding="utf-8"))
+    assert matrix_doc["matrix"][victim][PROFILE_ID] == "blocks"
+    matrix_doc["matrix"][victim][PROFILE_ID] = "permits"
+    matrix_path.write_text(json.dumps(matrix_doc, sort_keys=True), encoding="utf-8")
+
+    registry_path = forged / "policy/diagnostic_registry.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    for row in registry["rows"]:
+        if row["code"] == victim:
+            row["profile_disposition"][PROFILE_ID] = "permits"
+    registry_path.write_text(json.dumps(registry, sort_keys=True), encoding="utf-8")
+
+    _reroot_after_policy_forge(forged)
+
+    with pytest.raises(BundleSelfCheckError) as exc:
+        verify_bundle(forged)
+    assert "BOOT-01" in str(exc.value)
+
+
+@_corpus_skip
+def test_forged_registry_without_reroot_also_caught(bundle_482: Path, tmp_path: Path) -> None:
+    # Even a lazy attacker who edits the matrix but does NOT recompute roots is
+    # caught (the engine re-derivation disagrees before any root check).
+    forged = tmp_path / "forged_lazy"
+    shutil.copytree(bundle_482, forged)
+    matrix_path = forged / "policy/disposition_matrix.json"
+    matrix_doc = json.loads(matrix_path.read_text(encoding="utf-8"))
+    victim = next(
+        c for c, cells in matrix_doc["matrix"].items() if cells[PROFILE_ID] == "blocks"
+    )
+    matrix_doc["matrix"][victim][PROFILE_ID] = "permits"
+    matrix_path.write_text(json.dumps(matrix_doc, sort_keys=True), encoding="utf-8")
+    with pytest.raises(BundleSelfCheckError):
+        verify_bundle(forged)
+
+
+@_corpus_skip
+def test_row_authored_blocking_forged_derives_from_registry(
+    bundle_482: Path, tmp_path: Path
+) -> None:
+    # Flip a residual row's cached profile_effect blocks->permits WITHOUT touching
+    # the engine policy. verify_bundle derives the disposition from the engine, so
+    # the tampered row field is rejected (the verdict is registry/engine-derived,
+    # not row-authored).
+    forged = tmp_path / "row_forged"
+    shutil.copytree(bundle_482, forged)
+    res_path = forged / "residue/residuals.jsonl"
+    lines = [line for line in res_path.read_text(encoding="utf-8").splitlines() if line]
+    rows = [json.loads(line) for line in lines]
+    target = next(
+        i for i, r in enumerate(rows) if r["profile_effect"].get(PROFILE_ID) == "blocks"
+    )
+    rows[target]["profile_effect"][PROFILE_ID] = "permits"
+    res_path.write_text(
+        "\n".join(canonical_json_bytes(r).decode("ascii") for r in rows) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(BundleSelfCheckError) as exc:
+        verify_bundle(forged)
+    assert "BOOT-01" in str(exc.value)

@@ -176,7 +176,7 @@ def _project_compile_rejections(
     modification, unclassified frontier) remain — the analogue of Finland's typed
     ``SourcePathology`` / excluded-from-lineage harvest.
     """
-    from lawvm.core.compile_records import is_blocking_compile_record
+    from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 
     rows: List[Dict[str, Any]] = []
 
@@ -221,7 +221,7 @@ def _project_compile_rejections(
         source_acquisition_rejections,
     ):
         for rec in lane:
-            if is_blocking_compile_record(rec):
+            if is_blocking_compile_record(CompileRecord.from_mapping(rec)):
                 rule = str(rec.get("rule_id") or "unknown")
                 rows.append(_row(
                     rec,
@@ -248,7 +248,7 @@ def _project_compile_rejections(
             ),
         ))
     for rec in source_parse_rejections:
-        if is_blocking_compile_record(rec):
+        if is_blocking_compile_record(CompileRecord.from_mapping(rec)):
             rule = str(rec.get("rule_id") or "unknown")
             rows.append(_row(
                 rec,

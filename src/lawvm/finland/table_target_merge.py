@@ -63,6 +63,7 @@ def _has_table_descendant(node: IRNode) -> bool:
 def _mentioned_table_labels(node: IRNode) -> frozenset[str]:
     labels: set[str] = set()
     text = " ".join(irnode_to_text(node).split())
+    # lawvm-regex: owning_parser own-subtree (irnode_to_text) numbered-table-label enumeration over the payload subtree the merge operator owns, not source-plane mint
     for match in _TABLE_MARKER_RE.finditer(text):
         label = _norm_num_token(match.group("label"))
         if label:

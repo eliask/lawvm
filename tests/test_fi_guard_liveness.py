@@ -209,42 +209,135 @@ def drill_tree_invariant_violation_verdict_barrier() -> None:
     assert "APPLY.TREE_INVARIANT_VIOLATION" in barrier_codes
 
 
-def drill_failed_operation_verdict_barrier() -> None:
-    """APPLY.FAILED_OPERATION reaches the strict verdict barrier codes.
+def _drill_strict_rebound_apply(
+    *,
+    failed_ops_out: "list[Any] | None" = None,
+    source_pathologies_out: "list[Any] | None" = None,
+) -> Any:
+    """Drive the production strict ``apply_op`` into a continuation-fragment reject.
 
-    Production lane: a real ``CompileFailure`` (the frontend-agnostic failed-op
-    record) drives ``strict_fail_reasons_from_finding_ledger``, which trips the
-    ``APPLY.FAILED_OPERATION`` barrier, then ``compute_verdict_from_registry``
-    surfaces it in ``CompileVerdict.barrier_codes``.
+    Builds a live section 73 whose third subsection is a stale continuation
+    fragment, then replays a ``REPLACE 73 § 3 mom`` under the strict Finland
+    profile. The production apply lane (the deciding guard) genuinely refuses the
+    deterministic rebound: it leaves the tree unmutated and records a real
+    ``FailedOp`` (``failed_ops_out``) and a real ``SourcePathology``
+    (``source_pathologies_out``). These are the deciding inputs the
+    APPLY.FAILED_OPERATION / APPLY.SOURCE_PATHOLOGY_DETECTED barriers consume;
+    nothing is hand-built. (Mirrors test_fi_apply.py strict-rebound fixture.)
     """
-    failure = CompileFailure.from_scope(
-        source_statute="1991/1",
-        description="resolved op could not be applied to the live tree",
-        reason="target_not_found",
-        target_section="5",
-        target_unit_kind="section",
+    from lawvm.finland.apply import apply_op as _apply_op
+    from lawvm.finland.ops import AmendmentOp as _AmendmentOp
+    from lawvm.finland.strict_profile import default_finland_strict_profile
+
+    def _content(text: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.CONTENT, text=text)
+
+    def _sub(label: str, *children: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.SUBSECTION, label=label, children=tuple(children))
+
+    def _para(label: str, text: str = "") -> IRNode:
+        return IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label=label,
+            children=(_content(text),) if text else (),
+        )
+
+    def _intro(text: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.INTRO, text=text)
+
+    def _sec(label: str, *children: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, children=tuple(children))
+
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                _sec(
+                    "73",
+                    _sub("1", _content("First moment.")),
+                    _sub("2", _intro("List:"), _para("1", "item a;"), _para("2", "4) hallussapidetty aine.")),
+                    _sub("3", _content("tuomita kokonaan tai osaksi valtiolle menetetyksi.")),
+                    _sub("4", _content("Old real third moment.")),
+                ),
+            ),
+        )
     )
-    barrier_codes = _verdict_barrier_codes_from_findings(failures=[failure])
+    amend_sub = _sub("3", _content("Lisäksi on soveltuvin osin noudatettava, mitä rikoslain 10 luvussa säädetään."))
+    op = _AmendmentOp(
+        op_id="guard_liveness_strict_rebound",
+        op_type="REPLACE",
+        target_section="73",
+        target_unit_kind="section",
+        target_paragraph=3,
+        source_statute="2001/880",
+    )
+    ctx = StatuteContext(id="0/0", title="", base_ir=state.ir, base_xml_bytes=b"<body/>")
+    result = _apply_op(
+        state,
+        op,
+        ctx,
+        _sec("73", amend_sub),
+        amend_sub_ir=amend_sub,
+        replay_mode="legal_pit",
+        failed_ops_out=failed_ops_out,
+        source_pathologies_out=source_pathologies_out,
+        strict_profile=default_finland_strict_profile(),
+    )
+    # The strict guard refused the rebound: the live tree is left unmutated.
+    assert result is state
+    return result
+
+
+def drill_failed_operation_apply_lane() -> None:
+    """APPLY.FAILED_OPERATION reaches the strict verdict barrier from the apply lane.
+
+    Production lane: the strict ``apply_op`` deciding guard refuses a stale
+    continuation-fragment rebound and records a real ``FailedOp`` in
+    ``failed_ops_out``. That FailedOp is converted by the production
+    ``_failed_op_to_compile_failure`` into the ``CompileFailure`` the verdict
+    ledger consumes; ``strict_fail_reasons_from_finding_ledger`` then trips the
+    APPLY.FAILED_OPERATION barrier and ``compute_verdict_from_registry`` surfaces
+    it in ``CompileVerdict.barrier_codes``. The deciding input (the failed op) is
+    produced by the real apply lane, not hand-built.
+    """
+    from lawvm.finland._compile import _failed_op_to_compile_failure
+    from lawvm.finland.ops import FailedOp
+
+    failed_ops: list[FailedOp] = []
+    _drill_strict_rebound_apply(failed_ops_out=failed_ops)
+    assert failed_ops, "strict apply lane did not record a FailedOp for the refused rebound"
+    failures = [_failed_op_to_compile_failure(f) for f in failed_ops]
+    barrier_codes = _verdict_barrier_codes_from_findings(failures=failures)
     assert "APPLY.FAILED_OPERATION" in barrier_codes
 
 
-def drill_source_pathology_detected_verdict_barrier() -> None:
-    """APPLY.SOURCE_PATHOLOGY_DETECTED reaches the strict verdict barrier codes.
+def drill_source_pathology_detected_apply_lane() -> None:
+    """APPLY.SOURCE_PATHOLOGY_DETECTED reaches the strict verdict barrier from apply.
 
-    Production lane: the runtime obligation ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY
-    is mapped by ``strict_fail_reasons_from_finding_ledger`` onto the
-    APPLY.SOURCE_PATHOLOGY_DETECTED strict barrier, which
-    ``compute_verdict_from_registry`` surfaces in ``CompileVerdict.barrier_codes``.
-    This exercises the runtime-finding -> strict-code mapping guard.
+    Production lane: the strict ``apply_op`` deciding guard records a real
+    ``SourcePathology`` in ``source_pathologies_out`` when it refuses the rebound.
+    That pathology is projected to the blocking APPLY.SOURCE_PATHOLOGY_DETECTED
+    finding by the LIVE production guard
+    ``_strict_rejected_source_pathology_finding`` (replay_findings.py) — the same
+    guard production wires from replay_evidence_projection / group elaboration. The
+    finding then flows through the real verdict ledger to
+    ``CompileVerdict.barrier_codes``. (The ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY
+    runtime alias the old verdict-only drill mapped has no production Finding
+    emitter; this drill targets the live guard instead.)
     """
-    finding = Finding(
-        kind="ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
-        role="obligation",
-        stage="strict",
-        detail={"reason": "non-literal source path rejected"},
-        source_statute="1991/1",
-        blocking=True,
+    from lawvm.core.compile_result import SourcePathology
+    from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
+
+    pathologies: list[SourcePathology] = []
+    _drill_strict_rebound_apply(source_pathologies_out=pathologies)
+    assert pathologies, "strict apply lane did not record a SourcePathology for the refused rebound"
+    finding = _strict_rejected_source_pathology_finding(
+        pathologies[0],
+        stage="replay_apply",
+        fallback_source_statute="2001/880",
     )
+    assert finding.kind == "APPLY.SOURCE_PATHOLOGY_DETECTED"
+    assert finding.blocking is True
     barrier_codes = _verdict_barrier_codes_from_findings(findings=[finding])
     assert "APPLY.SOURCE_PATHOLOGY_DETECTED" in barrier_codes
 
@@ -323,6 +416,297 @@ def drill_leading_subsection_heading_payload_elaboration() -> None:
         and (observation.detail or {})["shifted_subsection_count"] == 1
         for observation in observations
     )
+
+
+def drill_fold_single_insert_subsection_list_tail_payload_elaboration() -> None:
+    """ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL reaches payload elaboration output.
+
+    Production lane: ``elaborate_payload_against_live`` normalizes a single
+    explicitly-inserted ``lisätään uusi N momentti`` payload that historical
+    Finlex XML serialized as two post-omission subsections — an intro/list prefix
+    plus a content-only sibling tail. The preamble claims exactly one new moment,
+    so the production guard ``_fold_single_insert_subsection_list_tail`` folds the
+    tail into that one inserted list-shaped subsection and emits the blocking
+    ``strict_fail`` elaboration observation.
+
+    The trailing subsections are left source-unlabelled (the historical serializer
+    does not number an inserted moment). That matters: the earlier production
+    ``_align_sparse_omission_subsections_to_live`` pass only relabels *digit*
+    labelled sparse subsections, so unlabelled rows survive to the fold guard
+    intact. Labelled trailing rows are instead relabelled to live-slot order
+    (``[N, N+1]``), which the fold guard rejects — that relabel-vs-fold ordering
+    is exactly why this code could not be cleanly drilled with labelled fixtures.
+    """
+    sub1 = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Ensimmäinen momentti."),),
+    )
+    sub2 = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="2",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Toinen momentti."),),
+    )
+    live_node = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=(IRNode(kind=IRNodeKind.NUM, text="12 §"), sub1, sub2),
+    )
+    ctx = PayloadElaborationContext(
+        target_unit_kind="section",
+        target_norm="12",
+        target_chapter=None,
+        target_part=None,
+        live_node=live_node,
+        parent_node=None,
+        subsection_slots=(),
+        live_subsections=(sub1, sub2),
+        subsection_by_label={"1": sub1, "2": sub2},
+        item_index={},
+        row_anchor_index={},
+        container_member_labels=None,
+        lookups=ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset(),
+        ),
+    )
+    # Single "lisätään uusi 3 momentti": target == len(live_subsections) + 1.
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="12",
+        target_paragraph=3,
+        source_statute="2099/1",
+    )
+    # Post-omission intro/list prefix + content-only sibling tail, both unlabelled.
+    prefix = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="Sen estämättä mitä edellä säädetään, sovelletaan seuraavia:"),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="ensimmäinen luettelokohta;"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="toinen luettelokohta."),),
+            ),
+        ),
+    )
+    tail = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="Edellä tarkoitettu päätös tehdään viivytyksettä.",
+            ),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="12 §"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            prefix,
+            tail,
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    observations = got.elaboration_observations
+    assert observations is not None
+    hits = [
+        observation
+        for observation in observations
+        if observation.kind == "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL"
+    ]
+    assert hits, (
+        "single inserted list-shaped subsection with a content-only sibling tail "
+        "did not surface ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL on the "
+        "payload elaboration ledger"
+    )
+    detail = hits[0].detail or {}
+    assert detail["target_paragraph"] == 3
+    assert detail["tail_text_chars"] > 0
+
+    # The guard genuinely folded: the two trailing subsections collapse into one
+    # inserted moment slot (labelled to the insert target) carrying a wrap-up tail.
+    normalized = got.muutos_ir
+    assert normalized is not None
+    folded_subs = [c for c in normalized.children if c.kind is IRNodeKind.SUBSECTION]
+    assert len(folded_subs) == 1, "tail sibling was not folded into the inserted moment"
+    assert folded_subs[0].label == "3"
+    assert any(c.kind is IRNodeKind.WRAP_UP for c in folded_subs[0].children), (
+        "fold fired but the content-only tail was not carried as a wrap-up"
+    )
+
+    # Bite check: a near-miss where the sibling tail is itself a list-item row
+    # (``3. ...``) is NOT a content-only non-item tail, so the fold must not fire.
+    near_miss_tail = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3. kolmas luettelokohta."),),
+    )
+    near_miss_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="12 §"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            prefix,
+            near_miss_tail,
+        ),
+    )
+    near_miss_ctx = PayloadElaborationContext(
+        target_unit_kind="section",
+        target_norm="12",
+        target_chapter=None,
+        target_part=None,
+        live_node=live_node,
+        parent_node=None,
+        subsection_slots=(),
+        live_subsections=(sub1, sub2),
+        subsection_by_label={"1": sub1, "2": sub2},
+        item_index={},
+        row_anchor_index={},
+        container_member_labels=None,
+        lookups=ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset(),
+        ),
+    )
+    near_miss = elaborate_payload_against_live(near_miss_ctx, [op], near_miss_ir, set())
+    assert not any(
+        observation.kind == "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL"
+        for observation in (near_miss.elaboration_observations or [])
+    ), "fold fired on a list-item sibling tail that it must leave as a distinct moment"
+
+
+def drill_restore_heading_for_explicit_facet_group_elaboration() -> None:
+    """ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET reaches the group elaboration ledger.
+
+    Production lane: ``elaborate_group`` runs the production payload-prepare lane
+    (``prepare_payload_surface``) over a sparse prepared section payload that has
+    been projected down to its targeted subsection — the section heading is no
+    longer in the payload — and then runs the production guard
+    ``_restore_source_heading_for_explicit_heading_facet``. When the group also
+    carries an explicit same-section heading-facet op (``target_special ==
+    "otsikko"``) and the typed source-model payload still owns the heading, the
+    guard copies that source heading back onto the payload and records the typed
+    ``ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET`` observation, which
+    ``elaborate_group`` projects onto its ``PhaseResult`` finding ledger.
+
+    The heading-less prepared payload is the post-sparse-prepare shape an
+    omission-projected section payload leaves behind; the source-model retains
+    the full source payload (heading included). The guard, the heading copy, and
+    the finding projection are all production code.
+    """
+    from lawvm.core.payload_surface import GroupSurface
+    from lawvm.core.elaboration_context import (
+        snapshot_replay_lookups,
+        snapshot_target_context,
+    )
+    from lawvm.finland.ops import get_replay_profile
+    from lawvm.finland.compile_group_elaboration import (
+        ElaborateGroupRequest,
+        elaborate_group,
+    )
+
+    source_xml = (
+        '<body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<section>"
+        "<num>5 §</num>"
+        "<heading>Otsikko viisi</heading>"
+        "<subsection><num>2</num><content><p>Toinen momentti uusittuna.</p></content></subsection>"
+        "</section>"
+        "</body>"
+    )
+    source_model = AmendmentSourceModel.from_tree(etree.fromstring(source_xml.encode()))
+
+    # Post-sparse-prepare payload shape: the section payload has been projected
+    # down to its single targeted subsection and the heading is gone. The
+    # source-model (above) still owns the section heading.
+    prepared_body_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="5 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Toinen momentti uusittuna."),),
+            ),
+        ),
+    )
+    group_surface = GroupSurface(
+        body_ir=prepared_body_ir,
+        cross_heading_ir=None,
+        source_statute="2099/1",
+        target_unit_kind="section",
+        target_norm="5",
+        target_chapter=None,
+    )
+
+    body_op = AmendmentOp(
+        op_id="replace_5_2",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="5",
+        target_paragraph=2,
+        source_statute="2099/1",
+    )
+    heading_facet_op = AmendmentOp(
+        op_id="replace_5_otsikko",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="5",
+        target_special="otsikko",
+        source_statute="2099/1",
+    )
+    group_ops = [body_op, heading_facet_op]
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    lookups = snapshot_replay_lookups(state)
+    result = elaborate_group(
+        ElaborateGroupRequest(
+            target_ctx=snapshot_target_context(state, "section", "5", None, lookups),
+            lookups=lookups,
+            group_surface=group_surface,
+            group_ops=group_ops,
+            standalone_section_targets=set(),
+            foreign_scoped_standalone_section_targets=set(),
+            foreign_scoped_replace_section_targets=set(),
+            effective_target_part=None,
+            source_model=source_model,
+            johto="muutetaan 5 §:n 2 momentti ja pykälän otsikko",
+            profile=get_replay_profile("legal_pit"),
+            strict_profile=None,
+        )
+    )
+
+    hits = [
+        f for f in result.findings() if f.kind == "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET"
+    ]
+    assert hits, (
+        "explicit heading-facet op over a heading-less sparse payload did not "
+        "surface ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET on the group elaboration "
+        "finding ledger"
+    )
+    # The guard genuinely copied the source heading back onto the payload.
+    elaborated = result.output
+    assert elaborated.muutos_ir is not None
+    assert any(
+        child.kind is IRNodeKind.HEADING for child in elaborated.muutos_ir.children
+    ), "guard fired but did not restore the source heading onto the payload"
 
 
 def drill_sparse_omission_tail_claim_group_surface() -> None:
@@ -439,27 +823,58 @@ def drill_sparse_omission_tail_pruned_from_carrier_compile_surface() -> None:
     assert SPARSE_OMISSION_TAIL_PRUNE_RULE in finding_kinds
 
 
-def drill_effect_lifecycle_target_unresolved_verdict_barrier() -> None:
-    """APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED reaches strict barrier codes.
+def drill_effect_lifecycle_target_unresolved_apply_lane() -> None:
+    """APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED reaches strict barrier from the builder.
 
-    Production lane: unresolved effect-lifecycle target findings flow through
-    ``strict_fail_reasons_from_finding_ledger`` -> ``compute_verdict_from_registry``
-    and surface in ``CompileVerdict.barrier_codes``. This exercises the strict
-    verdict mapping for lifecycle-target composition failures.
+    Production lane: ``build_finland_effect_lifecycle`` (the deciding builder) is
+    driven with a commencement/expiry lifecycle override whose target effect is
+    absent, so the builder genuinely produces an ``unresolved_effect_target``
+    lifecycle event carrying NO ``source_finding``. The production verdict ledger
+    ``strict_fail_reasons_from_finding_ledger`` then derives
+    APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED from that event (compile_result.py
+    effect-lifecycle branch) and ``compute_verdict_from_registry`` surfaces it in
+    ``CompileVerdict.barrier_codes``. The deciding input (the unresolved event) is
+    produced by the real builder, not hand-built.
     """
-    finding = Finding(
-        kind="APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED",
-        role="obligation",
-        stage="apply",
-        detail={
-            "target_statute": "2010/100",
-            "target_title": "Target amendment",
-        },
-        source_statute="2011/200",
-        blocking=True,
+    from lawvm.finland.effect_lifecycle_signals import (
+        EffectLifecycleOverride,
+        EffectLifecycleOverrideScope,
     )
-    barrier_codes = _verdict_barrier_codes_from_findings(findings=[finding])
-    assert "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED" in barrier_codes
+    from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
+
+    _source_effects, _relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(),
+        temporal_events=(),
+        lifecycle_overrides=(
+            EffectLifecycleOverride(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                scope=EffectLifecycleOverrideScope.sections(("4 a",)),
+                expiry="2022-12-31",
+                context="accepted_amendment",
+            ),
+        ),
+    )
+    assert any(e.kind == "unresolved_effect_target" for e in lifecycle_events), (
+        "the lifecycle builder did not produce an unresolved-effect-target event"
+    )
+    assert all(
+        not str(e.detail.get("source_finding") or "").strip()
+        for e in lifecycle_events
+        if e.kind == "unresolved_effect_target"
+    ), "the unresolved event already carries a source_finding; the generic barrier won't fire"
+
+    reasons = strict_fail_reasons_from_finding_ledger(
+        _DRILL_STRICT_PROFILE,
+        compiled_ops=[],
+        canonical_ops=[],
+        failures=[],
+        findings=[],
+        effect_lifecycle_events=lifecycle_events,
+    )
+    verdict = compute_verdict_from_registry(_DRILL_STRICT_PROFILE, reasons)
+    assert "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED" in verdict.barrier_codes
 
 
 def _route_rejection_findings(
@@ -1309,6 +1724,1410 @@ def drill_frontend_internal_error_finland_ingress() -> None:
     assert result.has_blocking
 
 
+def drill_lineage_cycle_replay_products_build() -> None:
+    """LINEAGE.CYCLE fires loud from the production migration-ledger build (LS-11).
+
+    Production lane: ``ReplayProducts.__post_init__`` is the central seal for the
+    finished migration ledger — every replay product passes through it, and it
+    already type-checks and effect-graph-validates ``migration_events`` before the
+    bundle is published. The drill builds a real ``ReplayProducts`` with a
+    synthetic 2-node migration cycle (section 1 → section 2 → section 1) and
+    asserts the production ``assert_acyclic`` guard raises ``LineageCycleError``
+    carrying the ``LINEAGE.CYCLE`` code. Without the guard the address resolvers
+    silently truncate the walk at their ``visited`` set, so the non-terminating
+    lineage would otherwise reach materialization as repeated-PIT hash drift.
+    """
+    from lawvm.core.ir import LegalAddress
+    from lawvm.core.provenance import MigrationEvent
+    from lawvm.core.timeline_lineage import LineageCycleError
+    from lawvm.finland.replay_products import ReplayProducts
+    from lawvm.finland.statute import ReplayState
+
+    def _section(label: str) -> LegalAddress:
+        return LegalAddress(path=(("section", label),))
+
+    def _renumber(from_label: str, to_label: str) -> MigrationEvent:
+        return MigrationEvent(
+            event_id=f"mig:2024/1:{from_label}->{to_label}",
+            kind="renumber",
+            from_address=_section(from_label),
+            to_address=_section(to_label),
+            effective="2024-01-01",
+            source_statute="2024/1",
+        )
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    cyclic_events = (_renumber("1", "2"), _renumber("2", "1"))
+
+    with pytest.raises(LineageCycleError, match="LINEAGE.CYCLE") as excinfo:
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            migration_events=cyclic_events,
+        )
+
+    # The raise is self-evidencing: it carries the address cycle witness.
+    assert excinfo.value.cycle, "LineageCycleError must carry the cycle witness"
+    assert excinfo.value.cycle[0] == excinfo.value.cycle[-1]
+
+    # A DAG ledger over the same addresses builds without raising (no false fire).
+    ReplayProducts(
+        replay_fold_state=state,
+        materialized_state=state,
+        timelines=None,
+        migration_events=(_renumber("1", "2"),),
+    )
+
+
+# ---------------------------------------------------------------------------
+# SURF-04 / SURF-05 surface-totality observation drills
+# ---------------------------------------------------------------------------
+
+
+def drill_definition_duplicate_definition_surface_totality() -> None:
+    """Drive the production SURF-04 sweep into a DUPLICATE_DEFINITION firing.
+
+    Exercises the real ``sweep_definition_totality_from_bindings`` over two
+    bindings of the same (term, scope); the finding must reach the sweep's typed
+    output. The drill exercises the production sweep, not a hand-built Finding.
+    """
+    from lawvm.core.reference_mention import SourceSpan
+    from lawvm.finland.references.defined_terms import (
+        BINDING_TARKOITETAAN,
+        DefinedTermBinding,
+    )
+    from lawvm.finland.references.surface_totality import (
+        DEFINITION_DUPLICATE_DEFINITION,
+        sweep_definition_totality_from_bindings,
+    )
+
+    def _b(off: int) -> DefinedTermBinding:
+        return DefinedTermBinding(
+            term="sivutuote",
+            target_ref=None,
+            expansion="x",
+            scope="statute",
+            source_span=SourceSpan(source_file="drill", byte_offset=off, byte_len=8),
+            binding_kind=BINDING_TARKOITETAAN,
+        )
+
+    findings = sweep_definition_totality_from_bindings(
+        [_b(10), _b(99)], [], statute_id="drill/1"
+    )
+    assert any(f.code == DEFINITION_DUPLICATE_DEFINITION for f in findings), (
+        "DUPLICATE_DEFINITION sweep did not fire on a duplicate (term, scope) binding"
+    )
+
+
+def drill_definition_orphan_reference_surface_totality() -> None:
+    """Drive the production SURF-04 sweep into an ORPHAN_DEFINITION_REFERENCE firing."""
+    from lawvm.core.reference_mention import SourceSpan
+    from lawvm.finland.references.surface_totality import (
+        DEFINITION_ORPHAN_DEFINITION_REFERENCE,
+        sweep_definition_totality_from_bindings,
+    )
+    from lawvm.finland.references.term_use import (
+        RULE_BEFORE_BINDING,
+        STATUS_OPEN,
+        TermUse,
+    )
+
+    open_use = TermUse(
+        term_surface="sivutuotteisiin",
+        lemma="sivutuote",
+        binding=None,
+        source_span=SourceSpan(source_file="drill", byte_offset=5, byte_len=15),
+        status=STATUS_OPEN,
+        rule_id=RULE_BEFORE_BINDING,
+    )
+    findings = sweep_definition_totality_from_bindings(
+        [], [open_use], statute_id="drill/2"
+    )
+    assert any(
+        f.code == DEFINITION_ORPHAN_DEFINITION_REFERENCE for f in findings
+    ), "ORPHAN_DEFINITION_REFERENCE sweep did not fire on an open (unresolvable) use"
+
+
+def drill_reference_unclassified_reference_surface_totality() -> None:
+    """Drive the production SURF-05 sweep into an UNCLASSIFIED_REFERENCE firing."""
+    from lawvm.core.reference_mention import (
+        CiteConfidence,
+        CiteKind,
+        ProvisionRef,
+        ReferenceMention,
+        SourceSpan,
+    )
+    from lawvm.finland.references.ref_mention_extractor import ExtractionResult
+    from lawvm.finland.references.surface_totality import (
+        REFERENCE_UNCLASSIFIED_REFERENCE,
+        sweep_citation_totality,
+    )
+
+    mention = ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="1/2020", section_label="3"),
+        target_provision_ref=ProvisionRef(statute_id="2/2020", section_label="5"),
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.EXACT,
+        phrase_lemma="ref_element",
+        source_span=SourceSpan(source_file="1/2020", byte_offset=7, byte_len=4),
+        valid_at_interval=(None, None),
+        edge_subtype="CITES",
+    )
+    # Simulate a silently-widened classification set (out-of-closed-set value).
+    object.__setattr__(
+        mention, "cite_confidence", SimpleNamespace(value="FORGED_STATE")
+    )
+    findings = sweep_citation_totality(
+        ExtractionResult(mentions=[mention]), statute_id="1/2020"
+    )
+    assert any(f.code == REFERENCE_UNCLASSIFIED_REFERENCE for f in findings), (
+        "UNCLASSIFIED_REFERENCE sweep did not fire on an out-of-closed-set confidence"
+    )
+
+
+# ---------------------------------------------------------------------------
+# SURF-01 / SURF-02 / SURF-07 surface-totality observation drills
+# ---------------------------------------------------------------------------
+
+
+def _drill_token_partition_cert(*, total: int, owned: int):
+    """A real TokenPartitionCoverage whose buckets sum to ``owned`` (≤ total).
+
+    Built via the PRODUCTION projection ``build_token_partition_coverage`` over a
+    synthetic forest with a deliberately-undersummed census, so a non-zero
+    realization gap is driven through the real sweep — not a hand-built finding.
+    """
+    from lawvm.finland.legal_surface.source_syntax_graph import (
+        SourceSyntaxGraph,
+        SurfaceGraphSubject,
+        SyntaxCoverage,
+    )
+    from lawvm.finland.legal_surface.token_partition_coverage import (
+        build_token_partition_coverage,
+    )
+
+    cov = SyntaxCoverage(
+        total_tokens=total,
+        owned_tokens=owned,
+        benign_tokens=0,
+        residual_tokens=0,
+        silent_tokens=0,
+    )
+    forest = SourceSyntaxGraph(
+        graph_id="drill-forest",
+        subject=SurfaceGraphSubject(
+            jurisdiction="fi",
+            work_id="drill/1",
+            scope={},
+            surface_time=None,
+            source_bundle_hash="deadbeef",
+            language="fi",
+        ),
+        source_units=(),
+        text_hash="h",
+        text_len=100,
+        syntax_nodes={},
+        syntax_edges=(),
+        parse_status="parsed",
+        residuals=(),
+        coverage=cov,
+    )
+    return build_token_partition_coverage(forest, statute_id="drill/1")
+
+
+def drill_surface_token_realization_gap_surface_totality() -> None:
+    """Drive the production SURF-01 sweep into a TOKEN_REALIZATION_GAP firing."""
+    from lawvm.finland.legal_surface.surface_token_totality import (
+        SURFACE_TOKEN_REALIZATION_GAP,
+        sweep_token_realization,
+    )
+
+    # total=10 but only 6 owned and the other buckets empty -> 4-token gap.
+    cert = _drill_token_partition_cert(total=10, owned=6)
+    findings = sweep_token_realization(cert)
+    assert any(f.code == SURFACE_TOKEN_REALIZATION_GAP for f in findings), (
+        "TOKEN_REALIZATION_GAP sweep did not fire on an under-summed partition"
+    )
+    # and STAYS SILENT on a balanced partition (clean input)
+    clean = _drill_token_partition_cert(total=10, owned=10)
+    assert not sweep_token_realization(clean), (
+        "TOKEN_REALIZATION_GAP sweep fired on a balanced partition"
+    )
+
+
+def drill_waist_handoff_parity_source_to_token_surface_totality() -> None:
+    """Drive the production SURF-02 sweep into a HANDOFF_PARITY firing."""
+    from lawvm.finland.legal_surface.surface_token_totality import (
+        WAIST_HANDOFF_PARITY_SOURCE_TO_TOKEN,
+        assert_handoff_parity,
+    )
+
+    cert = _drill_token_partition_cert(total=12, owned=5)
+    findings = assert_handoff_parity(cert)
+    assert any(
+        f.code == WAIST_HANDOFF_PARITY_SOURCE_TO_TOKEN for f in findings
+    ), "HANDOFF_PARITY sweep did not fire on a source->token parity break"
+    clean = _drill_token_partition_cert(total=12, owned=12)
+    assert not assert_handoff_parity(clean), (
+        "HANDOFF_PARITY sweep fired on a balanced handoff"
+    )
+
+
+def drill_surface_orphan_entity_node_surface_totality() -> None:
+    """Drive the production SURF-07 sweep into an ORPHAN_ENTITY_NODE firing."""
+    from lawvm.core.legal_surface_graph import (
+        LegalSurfaceGraph,
+        SurfaceEdge,
+        SurfaceGraphSubject,
+        SurfaceNode,
+    )
+    from lawvm.finland.legal_surface.surface_token_totality import (
+        SURFACE_ORPHAN_ENTITY_NODE,
+        sweep_orphan_entity_nodes,
+    )
+
+    subject = SurfaceGraphSubject(
+        jurisdiction="fi",
+        work_id="drill/1",
+        scope={},
+        surface_time=None,
+        source_bundle_hash="deadbeef",
+        language="fi",
+    )
+
+    def _entity(node_id: str, term: str) -> SurfaceNode:
+        return SurfaceNode(
+            node_id=node_id,
+            node_kind="term_symbol_entity",
+            authority_role="entity_handle",
+            jurisdiction="fi",
+            source_ref=None,
+            lens_id="lens.def",
+            rule_id="r",
+            status="asserted",
+            payload_hash="p",
+            payload={"term": term},
+        )
+
+    covered = _entity("covered", "sivutuote")
+    orphan = _entity("orphan", "jäte")
+    binding = SurfaceNode(
+        node_id="binding",
+        node_kind="definition_binding",
+        authority_role="surface_fact",
+        jurisdiction="fi",
+        source_ref=None,
+        lens_id="lens.def",
+        rule_id="r",
+        status="resolved",
+        payload_hash="p",
+        payload={},
+    )
+    edge = SurfaceEdge(
+        edge_id="e1",
+        edge_kind="defines_term",
+        src="binding",
+        dst="covered",  # only `covered` is an edge endpoint; `orphan` is not
+        rule_id="r",
+        status="asserted",
+        payload_hash="p",
+        payload={},
+    )
+    graph = LegalSurfaceGraph(
+        schema="lawvm.legal_surface_graph.v0",
+        graph_id="g-drill",
+        subject=subject,
+        source_units=(),
+        lens_runs=(),
+        nodes={n.node_id: n for n in (binding, covered, orphan)},
+        edges=(edge,),
+        build_diagnostics=(),
+    )
+    findings = sweep_orphan_entity_nodes(graph)
+    assert [f.node_id for f in findings] == ["orphan"], (
+        "ORPHAN_ENTITY_NODE sweep did not isolate the uncovered entity handle"
+    )
+    assert findings[0].code == SURFACE_ORPHAN_ENTITY_NODE
+    # and STAYS SILENT when every entity is covered (drop the orphan)
+    clean = LegalSurfaceGraph(
+        schema="lawvm.legal_surface_graph.v0",
+        graph_id="g-clean",
+        subject=subject,
+        source_units=(),
+        lens_runs=(),
+        nodes={n.node_id: n for n in (binding, covered)},
+        edges=(edge,),
+        build_diagnostics=(),
+    )
+    assert not sweep_orphan_entity_nodes(clean), (
+        "ORPHAN_ENTITY_NODE sweep fired when every entity handle was covered"
+    )
+
+
+def drill_sched_window_unmaterialized_schedule_window_totality() -> None:
+    """Drive the production SCHED-01/02/03 sweep into a WINDOW_UNMATERIALIZED firing.
+
+    Builds a synthetic replay output (``ReplayProducts``) carrying a temporary
+    legal-effect window on the temporal-event plane (a commence + expire pair
+    sharing a ``group_id``, the expire event scoped to a target address) whose
+    ``[effective, expires)`` interval is NOT present in the materialized timeline
+    — the timeline instead holds a later-effective fold occupant (the disjoint-
+    window case). The real ``sweep_disjoint_window_materialization`` must surface
+    that window. Then a CLEAN variant materializes the same interval as a version
+    row and the sweep STAYS SILENT. The drill exercises the production sweep, not
+    a hand-built finding.
+    """
+    from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
+    from lawvm.core.temporal import (
+        FIXED_DATE_KIND,
+        ActivationRule,
+        TemporalEvent,
+        TemporalScope,
+    )
+    from lawvm.finland.legal_surface.schedule_window_totality import (
+        SCHED_WINDOW_UNMATERIALIZED,
+        sweep_disjoint_window_materialization,
+    )
+    from lawvm.finland.replay_products import ReplayProducts
+    from lawvm.finland.statute import ReplayState
+
+    address = LegalAddress(path=(("section", "5"),))
+    scope = TemporalScope(target_statute="0001/2024")
+    expire_scope = TemporalScope(
+        target_statute="0001/2024", exact_addresses=(address,)
+    )
+    commence = TemporalEvent(
+        event_id="fi-temporal:grp-w:commence",
+        kind="commence",
+        scope=scope,
+        effective="2024-01-01",
+        activation_rule=ActivationRule(
+            kind=FIXED_DATE_KIND, effective_date="2024-01-01"
+        ),
+        group_id="grp-w",
+    )
+    expire = TemporalEvent(
+        event_id="fi-temporal:grp-w:expire:section/5",
+        kind="expire",
+        scope=expire_scope,
+        expires="2024-07-01",
+        group_id="grp-w",
+    )
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+
+    # Disjoint case: the timeline holds ONLY a later-effective permanent occupant
+    # (effective 2025, i.e. fold-order placed a later occupant in the slot); the
+    # temporary [2024-01-01, 2024-07-01) window is NOT a version interval.
+    disjoint_timeline = ProvisionTimeline(
+        address=address,
+        versions=[ProvisionVersion(effective="2025-01-01", variant_kind="permanent")],
+    )
+    disjoint = ReplayProducts(
+        replay_fold_state=state,
+        materialized_state=state,
+        timelines={address: disjoint_timeline},
+        temporal_events=(commence, expire),
+    )
+    findings = sweep_disjoint_window_materialization(disjoint)
+    assert any(f.code == SCHED_WINDOW_UNMATERIALIZED for f in findings), (
+        "SCHED window sweep did not fire on a disjoint, unmaterialized window"
+    )
+    fired = next(f for f in findings if f.code == SCHED_WINDOW_UNMATERIALIZED)
+    assert fired.window_effective == "2024-01-01"
+    assert fired.window_expires == "2024-07-01"
+    assert fired.fold_occupant_effective == "2025-01-01"
+
+    # Clean case: the SAME window IS materialized as a version interval -> silent.
+    clean_timeline = ProvisionTimeline(
+        address=address,
+        versions=[
+            ProvisionVersion(
+                effective="2024-01-01",
+                expires="2024-07-01",
+                variant_kind="temporary",
+            ),
+            ProvisionVersion(effective="2025-01-01", variant_kind="permanent"),
+        ],
+    )
+    clean = ReplayProducts(
+        replay_fold_state=state,
+        materialized_state=state,
+        timelines={address: clean_timeline},
+        temporal_events=(commence, expire),
+    )
+    assert not sweep_disjoint_window_materialization(clean), (
+        "SCHED window sweep fired when the window was materialized as a version interval"
+    )
+
+
+def drill_scope_overlap_without_disjoint_scope_scope_lattice_totality() -> None:
+    """Drive the production SCOPE-01/02 sweep into an OVERLAP firing.
+
+    Builds a synthetic replay output (``ReplayProducts``) whose timeline holds two
+    co-effective versions at the SAME address sharing the precedence-rail rank key
+    (same variant/effective/enacted/source) with DISTINCT legal content and NO
+    scope predicate to admit the overlap — the equal-rank collision the precedence
+    rail cannot resolve. The real ``sweep_scope_lattice`` must surface it. Then a
+    DISJOINT-SCOPE variant gives the two rows distinct ``territory`` predicates
+    (non-overlapping includes) so the overlap is admitted by scope, and the sweep
+    STAYS SILENT. The drill exercises the production sweep, not a hand-built
+    finding.
+    """
+    from lawvm.core.ir import (
+        LegalAddress,
+        ProvisionTimeline,
+        ProvisionVersion,
+        ScopePredicate,
+    )
+    from lawvm.core.provenance import OperationSource
+    from lawvm.finland.legal_surface.scope_lattice_totality import (
+        SCOPE_OVERLAP_WITHOUT_DISJOINT_SCOPE,
+        sweep_scope_lattice,
+    )
+    from lawvm.finland.replay_products import ReplayProducts
+    from lawvm.finland.statute import ReplayState
+
+    address = LegalAddress(path=(("section", "9"),))
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    source = OperationSource(statute_id="0001/2024", effective="2024-01-01")
+
+    def _content(text: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label="9", text=text)
+
+    # Collision case: two permanent versions at the SAME (effective, enacted,
+    # source) rank key with DISTINCT content and no scope predicate -> the
+    # precedence rail cannot separate them; list order would decide.
+    collision_timeline = ProvisionTimeline(
+        address=address,
+        versions=[
+            ProvisionVersion(
+                effective="2024-01-01",
+                enacted="2024-01-01",
+                variant_kind="permanent",
+                content=_content("variant A"),
+                source=source,
+            ),
+            ProvisionVersion(
+                effective="2024-01-01",
+                enacted="2024-01-01",
+                variant_kind="permanent",
+                content=_content("variant B (distinct)"),
+                source=source,
+            ),
+        ],
+    )
+    collision = ReplayProducts(
+        replay_fold_state=state,
+        materialized_state=state,
+        timelines={address: collision_timeline},
+    )
+    findings = sweep_scope_lattice(collision)
+    assert any(f.code == SCOPE_OVERLAP_WITHOUT_DISJOINT_SCOPE for f in findings), (
+        "SCOPE lattice sweep did not fire on a co-effective equal-rank collision "
+        "with no disjoint scope predicate"
+    )
+    fired = next(f for f in findings if f.code == SCOPE_OVERLAP_WITHOUT_DISJOINT_SCOPE)
+    assert fired.address == str(address)
+    assert fired.effective == "2024-01-01"
+    assert fired.candidate_count == 2
+    assert fired.left_content_hash != fired.right_content_hash
+    assert not fired.scope_disjoint
+
+    # Disjoint-scope case: the SAME co-effective rows carry distinct, disjoint
+    # territory predicates -> the query's scope chooses, not list order -> silent.
+    disjoint_timeline = ProvisionTimeline(
+        address=address,
+        versions=[
+            ProvisionVersion(
+                effective="2024-01-01",
+                enacted="2024-01-01",
+                variant_kind="permanent",
+                content=_content("variant A"),
+                source=source,
+                applicability=[
+                    ScopePredicate(dimension="territory", includes=frozenset({"mainland"}))
+                ],
+            ),
+            ProvisionVersion(
+                effective="2024-01-01",
+                enacted="2024-01-01",
+                variant_kind="permanent",
+                content=_content("variant B (distinct)"),
+                source=source,
+                applicability=[
+                    ScopePredicate(dimension="territory", includes=frozenset({"aland"}))
+                ],
+            ),
+        ],
+    )
+    disjoint = ReplayProducts(
+        replay_fold_state=state,
+        materialized_state=state,
+        timelines={address: disjoint_timeline},
+    )
+    assert not sweep_scope_lattice(disjoint), (
+        "SCOPE lattice sweep fired when disjoint territory predicates admit the "
+        "co-effective overlap"
+    )
+
+
+def drill_residual_ledger_nonmonotone_stage_account_totality() -> None:
+    """Drive the production EV-03 sweep into a RESIDUAL_LEDGER_NONMONOTONE firing.
+
+    Exercises the real ``sweep_stage_residual_ledger`` over committed-shaped stage
+    account rows: a stage whose coverage counts a ``violation`` but whose residual
+    ledger holds no blocking residual record (a residual counted then dropped). The
+    finding must reach the sweep's typed output; the sweep STAYS SILENT on a balanced
+    account. The drill exercises the production sweep, not a hand-built Finding.
+    """
+    from lawvm.core.stage_residual_monotonicity import (
+        RESIDUAL_LEDGER_NONMONOTONE,
+        sweep_stage_residual_ledger,
+    )
+
+    # violation=1 counted, but the residual ledger is empty -> counted-not-recorded.
+    counted_not_recorded = {
+        "stage": "drill.stage",
+        "coverage_row": {"violation": 1, "owned": 0, "residual": 0, "benign": 0},
+        "residual_rows": [],
+    }
+    findings = sweep_stage_residual_ledger([counted_not_recorded])
+    assert any(f.code == RESIDUAL_LEDGER_NONMONOTONE for f in findings), (
+        "RESIDUAL_LEDGER_NONMONOTONE sweep did not fire on a counted-but-unrecorded "
+        "stage residual"
+    )
+    assert findings[0].direction == "counted_not_recorded"
+
+    # the dual: a blocking residual record present while coverage counts 0.
+    recorded_not_counted = {
+        "stage": "drill.stage2",
+        "coverage_row": {"violation": 0, "owned": 1, "residual": 0, "benign": 0},
+        "residual_rows": [{"kind": "unowned_violation", "blocking": True}],
+    }
+    dual = sweep_stage_residual_ledger([recorded_not_counted])
+    assert dual and dual[0].direction == "recorded_not_counted", (
+        "RESIDUAL_LEDGER_NONMONOTONE sweep did not fire on a recorded-but-uncounted "
+        "stage residual"
+    )
+
+    # and STAYS SILENT on a balanced account (violation discharged by a blocking record).
+    balanced = {
+        "stage": "drill.clean",
+        "coverage_row": {"violation": 1, "owned": 0, "residual": 0, "benign": 0},
+        "residual_rows": [{"kind": "unowned_violation", "blocking": True}],
+    }
+    assert not sweep_stage_residual_ledger([balanced]), (
+        "RESIDUAL_LEDGER_NONMONOTONE sweep fired on a balanced (counted+recorded) account"
+    )
+
+
+def drill_diagnostic_not_self_evidencing_residual_totality() -> None:
+    """Drive the production EV-07 sweep into a DIAGNOSTIC_NOT_SELF_EVIDENCING firing.
+
+    Exercises the real ``sweep_source_text_failure_self_evidencing`` over core
+    ``Residual`` records: a source-text-failure residual (``unowned_violation`` /
+    ``typed_residual``) with an empty ``text`` snippet must fire; a snippet-carrying
+    residual and an out-of-family residual STAY SILENT. The drill exercises the
+    production sweep, not a hand-built Finding.
+    """
+    from lawvm.core.diagnostic_self_evidencing import (
+        DIAGNOSTIC_NOT_SELF_EVIDENCING,
+        sweep_source_text_failure_self_evidencing,
+    )
+    from lawvm.core.stage_result import Residual
+
+    snippetless = Residual(
+        kind="unowned_violation",
+        reason="forest_silent_unowned_cheap_signal:drill",
+        scope="drill/1",
+        source_unit_id="drill/1",
+        char_start=0,
+        char_end=5,
+        text="",  # the opaque-diagnostic defect: no verbatim offending snippet
+        blocking=True,
+    )
+    findings = sweep_source_text_failure_self_evidencing([snippetless])
+    assert any(f.code == DIAGNOSTIC_NOT_SELF_EVIDENCING for f in findings), (
+        "DIAGNOSTIC_NOT_SELF_EVIDENCING sweep did not fire on a snippet-less "
+        "source-text-failure residual"
+    )
+    assert findings[0].kind == "unowned_violation"
+
+    # STAYS SILENT on a self-evidencing residual (verbatim text present)...
+    self_evidencing = Residual(
+        kind="unowned_violation",
+        reason="forest_silent_unowned_cheap_signal:drill",
+        scope="drill/1",
+        source_unit_id="drill/1",
+        char_start=0,
+        char_end=5,
+        text="3 §:n 2 momentti",
+        blocking=True,
+    )
+    assert not sweep_source_text_failure_self_evidencing([self_evidencing]), (
+        "DIAGNOSTIC_NOT_SELF_EVIDENCING sweep fired on a residual carrying its snippet"
+    )
+    # ...and on an OUT-OF-FAMILY residual (out_of_scope carries no source text by design).
+    out_of_family = Residual(
+        kind="out_of_scope",
+        reason="amendment_cutoff_excluded",
+        scope="drill/1",
+        text="",
+        blocking=False,
+    )
+    assert not sweep_source_text_failure_self_evidencing([out_of_family]), (
+        "DIAGNOSTIC_NOT_SELF_EVIDENCING sweep fired on an out-of-family residual"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-op apply-authority gate drills (audit lane L1: LS-01, LS-03, EV-05/FW-01)
+# ---------------------------------------------------------------------------
+
+
+def _drive_per_op_apply_gate(
+    *,
+    rop: Any,
+    new_ir: IRNode,
+    state: ReplayState,
+    strict: bool,
+) -> list[Finding]:
+    """Drive the PRODUCTION apply_resolved_op_with_audit and return its findings.
+
+    The per-op gate (``_enforce_per_op_apply_authority``) runs from inside the
+    production ``apply_resolved_op_with_audit`` after a landed write; ``apply_op``
+    is stubbed only to land ``new_ir`` (the same pattern the boundary drills use),
+    so the GUARD being tested is production code, not a hand-built finding.
+    """
+    from unittest.mock import patch as _patch
+
+    import lawvm.finland.apply_resolved_op as apply_resolved_op
+    from lawvm.finland.apply_resolved_op import (
+        ApplyResolvedOpRequest,
+        ApplyResolvedOpSinks,
+        apply_resolved_op_with_audit,
+    )
+
+    def _fake_apply_op(current_state: ReplayState, *_a: Any, **_k: Any) -> ReplayState:
+        return current_state.with_ir(new_ir)
+
+    findings: list[Finding] = []
+    sinks = ApplyResolvedOpSinks(findings_out=findings, mutation_events_out=[])
+    request = ApplyResolvedOpRequest(
+        state=state,
+        ctx=StatuteContext(
+            id="100/2010", title="Guard Liveness", base_ir=state.ir, base_xml_bytes=b"<akn/>"
+        ),
+        rop=rop,
+        amendment_id="12/2015",
+        replay_mode="official_consolidation",
+        strict_profile=_DRILL_STRICT_PROFILE if strict else None,
+    )
+    with _patch.object(apply_resolved_op, "apply_op", _fake_apply_op):
+        apply_resolved_op_with_audit(request, sinks)
+    return findings
+
+
+def _per_op_gate_rop(*, op_id: str = "replace_1", with_lo: bool = False) -> Any:
+    from typing import Any as _Any, cast as _cast
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+    from lawvm.core.semantic_types import StructuralAction
+    from lawvm.finland.ops import AmendmentOp, ResolvedOp
+    from lawvm.finland.target_kind import TargetKind
+
+    lo = None
+    if with_lo:
+        lo = LegalOperation(
+            op_id=op_id or "replace_1",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            source=OperationSource(statute_id="12/2015"),
+        )
+    op = AmendmentOp(
+        op_id=op_id,
+        op_type=_cast(_Any, "REPLACE"),
+        target_kind=TargetKind.SECTION,
+        target_section="1",
+        lo=lo,
+    )
+    return ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1"),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="1",
+        target_chapter=None,
+    )
+
+
+def drill_mutation_boundary_violation_at_op_apply_lane() -> None:
+    """APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP fires from the production apply lane.
+
+    Production lane: a strict apply whose declared op targets section 1 but whose
+    landed write changes section 2 (a sibling). The production per-op
+    mutation-boundary gate (``verify_per_op``) must surface the out-of-boundary
+    write as a blocking finding (LS-01).
+    """
+    sec1 = IRNode(kind=IRNodeKind.SECTION, label="1", text="old one")
+    sec2 = IRNode(kind=IRNodeKind.SECTION, label="2", text="old two")
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=(sec1, sec2)))
+    rop = _per_op_gate_rop(op_id="replace_1", with_lo=True)
+    sibling_landed = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(sec1, IRNode(kind=IRNodeKind.SECTION, label="2", text="changed")),
+    )
+    findings = _drive_per_op_apply_gate(
+        rop=rop, new_ir=sibling_landed, state=state, strict=True
+    )
+    hits = [
+        f
+        for f in findings
+        if f.kind == "APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP" and f.blocking
+    ]
+    assert hits, (
+        "a sibling-path edit did not surface APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP "
+        "from the production per-op apply boundary gate"
+    )
+    assert hits[0].detail["out_of_boundary_paths"]
+
+
+def drill_occupancy_transition_blocked_apply_lane() -> None:
+    """APPLY.OCCUPANCY_TRANSITION_BLOCKED fires from the production apply lane.
+
+    Production lane: a strict REPLACE on an ABSENT section slot (no valid
+    occupancy transition) that lands a write. The production occupancy gate must
+    BLOCK the invalid (replace, absent) transition (LS-03).
+    """
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    rop = _per_op_gate_rop(op_id="replace_1", with_lo=False)
+    landed = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
+    )
+    findings = _drive_per_op_apply_gate(rop=rop, new_ir=landed, state=state, strict=True)
+    hits = [
+        f for f in findings if f.kind == "APPLY.OCCUPANCY_TRANSITION_BLOCKED" and f.blocking
+    ]
+    assert hits, (
+        "REPLACE-on-absent did not surface APPLY.OCCUPANCY_TRANSITION_BLOCKED from "
+        "the production strict occupancy gate"
+    )
+    assert hits[0].detail["current_occupancy"] == "absent"
+
+
+def drill_replay_authorization_proof_required_apply_lane() -> None:
+    """EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED fires from the production apply lane.
+
+    Production lane: a strict state-mutating op carrying NO stable op_id, so no
+    ExecutionAuthorization rule can be resolved for the landed write. The
+    production execution-authorization closure must BLOCK (EV-05/FW-01).
+    """
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    rop = _per_op_gate_rop(op_id="", with_lo=False)
+    landed = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
+    )
+    findings = _drive_per_op_apply_gate(rop=rop, new_ir=landed, state=state, strict=True)
+    hits = [
+        f
+        for f in findings
+        if f.kind == "EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED" and f.blocking
+    ]
+    assert hits, (
+        "an op with no resolvable authorization rule did not surface "
+        "EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED from the production closure gate"
+    )
+    assert hits[0].detail["required_proofs"]
+
+
+def drill_mutation_boundary_finding_at_op_quirks_apply_lane() -> None:
+    """APPLY.MUTATION_BOUNDARY_FINDING_AT_OP (observation) records under quirks.
+
+    Production lane: the same sibling-path escape as the strict drill, but with a
+    permissive (None) strict profile. The production gate records the non-blocking
+    accounting observation instead of blocking.
+    """
+    sec1 = IRNode(kind=IRNodeKind.SECTION, label="1", text="old one")
+    sec2 = IRNode(kind=IRNodeKind.SECTION, label="2", text="old two")
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=(sec1, sec2)))
+    rop = _per_op_gate_rop(op_id="replace_1", with_lo=True)
+    sibling_landed = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(sec1, IRNode(kind=IRNodeKind.SECTION, label="2", text="changed")),
+    )
+    findings = _drive_per_op_apply_gate(
+        rop=rop, new_ir=sibling_landed, state=state, strict=False
+    )
+    hits = [
+        f
+        for f in findings
+        if f.kind == "APPLY.MUTATION_BOUNDARY_FINDING_AT_OP" and not f.blocking
+    ]
+    assert hits, (
+        "quirks-mode per-op boundary escape did not record "
+        "APPLY.MUTATION_BOUNDARY_FINDING_AT_OP (non-blocking accounting)"
+    )
+    assert not [f for f in findings if f.kind == "APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP"]
+
+
+# ---------------------------------------------------------------------------
+# Wave-2 apply-authority closure drills (LS-05/06/07/09/10, EV-06, FW-01, OV-01/02)
+# ---------------------------------------------------------------------------
+
+
+def _closure_rop(
+    *,
+    op_id: str = "op_closure_1",
+    op_type: str = "REPLACE",
+    target_paragraph: Any = None,
+    target_item: Any = None,
+    target_special: Any = None,
+    target_address: Any = None,
+    scope_provenance_tags: tuple[str, ...] = (),
+    extraction_provenance_tags: tuple[str, ...] = (),
+    with_lo: bool = False,
+    lo_action: Any = None,
+    lo_target: Any = None,
+) -> Any:
+    """Build a ResolvedOp for the per-op closure sweeps with explicit target bind.
+
+    ``target_address`` is bound verbatim as the resolved address; the declared
+    AmendmentOp descendant fields (paragraph/item/special) and provenance tags are
+    set independently so the sweeps' declared-vs-resolved comparisons are driven.
+    """
+    from typing import Any as _Any, cast as _cast
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+    from lawvm.finland.ops import AmendmentOp, ResolvedOp
+    from lawvm.finland.target_kind import TargetKind
+
+    lo = None
+    if with_lo:
+        lo = LegalOperation(
+            op_id=op_id or "op_closure_1",
+            sequence=1,
+            action=lo_action,
+            target=lo_target if lo_target is not None else LegalAddress(path=(("section", "1"),)),
+            source=OperationSource(statute_id="12/2015"),
+        )
+    op = AmendmentOp(
+        op_id=op_id,
+        op_type=_cast(_Any, op_type),
+        target_kind=TargetKind.SECTION,
+        target_section="1",
+        target_paragraph=target_paragraph,
+        target_item=target_item,
+        target_special=target_special,
+        scope_provenance_tags=scope_provenance_tags,
+        extraction_provenance_tags=extraction_provenance_tags,
+        lo=lo,
+    )
+    # Direct construction with an explicit ``_target_address_override`` so the
+    # resolved address is bound VERBATIM (bypassing
+    # ``_augment_replay_address_with_op_descendant_scope``, which would otherwise
+    # re-add the descendant step the LS-07/LS-09 escalation cases need absent).
+    # The escalation gate is the backstop for ANY producer that hands a descendant
+    # op resolved to a bare host; this drills exactly that input.
+    return ResolvedOp(
+        op=op,
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1"),
+        cross_ir=None,
+        amend_sub_ir=None,
+        target_norm="1",
+        target_unit_kind="section",
+        op_id=op_id,
+        _op_type_seed=op_type,
+        scope_provenance_tags=scope_provenance_tags,
+        extraction_provenance_tags=extraction_provenance_tags,
+        _target_address_override=target_address,
+    )
+
+
+def drill_scope_confidence_totality_gap_at_op_apply_lane() -> None:
+    """APPLY.SCOPE_CONFIDENCE_TOTALITY_GAP_AT_OP records from the production apply lane (LS-05)."""
+    from lawvm.core.ir import LegalAddress
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    rop = _closure_rop(
+        op_id="op_ls05",
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    landed = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1"),))
+    findings = _drive_per_op_apply_gate(rop=rop, new_ir=landed, state=state, strict=False)
+    hits = [
+        f
+        for f in findings
+        if f.kind == "APPLY.SCOPE_CONFIDENCE_TOTALITY_GAP_AT_OP" and not f.blocking
+    ]
+    assert hits, (
+        "an op with no scope-confidence witness did not record "
+        "APPLY.SCOPE_CONFIDENCE_TOTALITY_GAP_AT_OP from the production sweep"
+    )
+
+
+def drill_verb_conversion_unwitnessed_at_op_apply_lane() -> None:
+    """LOWER.VERB_CONVERSION_UNWITNESSED_AT_OP records from the production apply lane (LS-06)."""
+    from lawvm.core.ir import LegalAddress
+    from lawvm.core.semantic_types import StructuralAction
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    # Parsed action REPEAL (via lo) but resolved op_type REPLACE, no witness tag.
+    rop = _closure_rop(
+        op_id="op_ls06",
+        op_type="REPLACE",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        with_lo=True,
+        lo_action=StructuralAction.REPEAL,
+        lo_target=LegalAddress(path=(("section", "1"),)),
+    )
+    landed = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1"),))
+    findings = _drive_per_op_apply_gate(rop=rop, new_ir=landed, state=state, strict=False)
+    hits = [
+        f
+        for f in findings
+        if f.kind == "LOWER.VERB_CONVERSION_UNWITNESSED_AT_OP" and not f.blocking
+    ]
+    assert hits, (
+        "an unwitnessed verb conversion (REPEAL parsed -> REPLACE resolved) did not "
+        "record LOWER.VERB_CONVERSION_UNWITNESSED_AT_OP from the production sweep"
+    )
+    # Negative (clean) case: the same conversion WITH a named witness tag does not fire.
+    witnessed = _closure_rop(
+        op_id="op_ls06_clean",
+        op_type="REPLACE",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        extraction_provenance_tags=("semantic_collapse_move_renumber",),
+        with_lo=True,
+        lo_action=StructuralAction.REPEAL,
+        lo_target=LegalAddress(path=(("section", "1"),)),
+    )
+    clean_findings = _drive_per_op_apply_gate(
+        rop=witnessed, new_ir=landed, state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)), strict=False
+    )
+    assert not [
+        f for f in clean_findings if f.kind == "LOWER.VERB_CONVERSION_UNWITNESSED_AT_OP"
+    ], "verb-conversion sweep fired despite a named conversion witness tag"
+
+
+def drill_granularity_escalation_at_op_apply_lane() -> None:
+    """APPLY.GRANULARITY_ESCALATION_AT_OP fires from the production apply lane (LS-07)."""
+    from lawvm.core.ir import LegalAddress
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    # Declared at paragraph granularity, but the resolved address is a bare section
+    # (no subsection step) — escalation to overwrite the host whole-unit.
+    rop = _closure_rop(
+        op_id="op_ls07",
+        target_paragraph=2,
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    landed = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1"),))
+    findings = _drive_per_op_apply_gate(rop=rop, new_ir=landed, state=state, strict=True)
+    hits = [
+        f for f in findings if f.kind == "APPLY.GRANULARITY_ESCALATION_AT_OP" and f.blocking
+    ]
+    assert hits, (
+        "a descendant op resolved to its bare host unit did not surface "
+        "APPLY.GRANULARITY_ESCALATION_AT_OP from the strict production gate"
+    )
+    assert hits[0].detail["declared_paragraph"] == 2
+    # Negative (clean) case: a paragraph op resolving WITH its subsection step does not fire.
+    clean = _closure_rop(
+        op_id="op_ls07_clean",
+        target_paragraph=2,
+        target_address=LegalAddress(path=(("section", "1"), ("subsection", "2"))),
+    )
+    clean_findings = _drive_per_op_apply_gate(
+        rop=clean, new_ir=landed, state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)), strict=True
+    )
+    assert not [
+        f for f in clean_findings if f.kind == "APPLY.GRANULARITY_ESCALATION_AT_OP"
+    ], "granularity gate fired on a descendant op that kept its descendant slot"
+
+
+def drill_payload_smuggling_at_op_apply_lane() -> None:
+    """APPLY.PAYLOAD_SMUGGLING_AT_OP records from the production apply lane (LS-09)."""
+    from lawvm.core.ir import LegalAddress
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    rop = _closure_rop(
+        op_id="op_ls09",
+        target_paragraph=3,
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    landed = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1"),))
+    findings = _drive_per_op_apply_gate(rop=rop, new_ir=landed, state=state, strict=False)
+    hits = [
+        f for f in findings if f.kind == "APPLY.PAYLOAD_SMUGGLING_AT_OP" and not f.blocking
+    ]
+    assert hits, (
+        "a descendant-claiming op resolved to its bare host unit did not record "
+        "APPLY.PAYLOAD_SMUGGLING_AT_OP from the production sweep"
+    )
+
+
+def drill_unstated_migration_at_op_apply_lane() -> None:
+    """APPLY.UNSTATED_MIGRATION_AT_OP records from the production apply lane (LS-10)."""
+    from lawvm.core.ir import LegalAddress
+    from lawvm.core.semantic_types import StructuralAction
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    # Nominal address section 1; resolved address section 9 (an address-key delta)
+    # with no migration ledger, scope tag, or witness rule id to back it.
+    rop = _closure_rop(
+        op_id="op_ls10",
+        target_address=LegalAddress(path=(("section", "9"),)),
+        with_lo=True,
+        lo_action=StructuralAction.REPLACE,
+        lo_target=LegalAddress(path=(("section", "1"),)),
+    )
+    landed = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="9"),))
+    findings = _drive_per_op_apply_gate(rop=rop, new_ir=landed, state=state, strict=False)
+    hits = [
+        f for f in findings if f.kind == "APPLY.UNSTATED_MIGRATION_AT_OP" and not f.blocking
+    ]
+    assert hits, (
+        "an unbacked nominal->resolved address-key delta did not record "
+        "APPLY.UNSTATED_MIGRATION_AT_OP from the production sweep"
+    )
+    # Negative (clean) case: the same delta WITH a scope provenance tag does not fire.
+    backed = _closure_rop(
+        op_id="op_ls10_clean",
+        target_address=LegalAddress(path=(("section", "9"),)),
+        scope_provenance_tags=("chapter_scope_stripped_unique_section",),
+        with_lo=True,
+        lo_action=StructuralAction.REPLACE,
+        lo_target=LegalAddress(path=(("section", "1"),)),
+    )
+    clean_findings = _drive_per_op_apply_gate(
+        rop=backed, new_ir=landed, state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)), strict=False
+    )
+    assert not [
+        f for f in clean_findings if f.kind == "APPLY.UNSTATED_MIGRATION_AT_OP"
+    ], "unstated-migration sweep fired despite a typed scope/rekey witness"
+
+
+def drill_unknown_attestation_policy_at_op_apply_lane() -> None:
+    """EVID.UNKNOWN_ATTESTATION_POLICY fires from the production EV-06 gate.
+
+    Production lane: ``gate_unknown_attestation_policy`` (called from the
+    production ``_gate_execution_authorization_at_op``) validates an
+    ExecutionAuthorization's cited evidence-policy id against the known set. The
+    drill builds a real authorization that cites an unknown policy id and drives
+    the production gate; the apply-path authorizations cite no policy id (0-delta),
+    so the forged cited id is what exercises the gate.
+    """
+    from lawvm.core.execution_authorization import ExecutionAuthorization
+    from lawvm.finland.apply_op_closure_sweeps import gate_unknown_attestation_policy
+
+    forged = ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="apply_op_authorized",
+        authorization_rule_id="op_ev06",
+        owner_phase="apply",
+        strict_disposition="record",
+        safe_default="block_until_known_policy",
+        forbidden_shortcuts=("cited_policy_existence_as_known_policy",),
+        detail={"evidence_kernel": {"policy_id": "totally_unknown_policy_id"}},
+    )
+    findings: list[Finding] = []
+    gate_unknown_attestation_policy(
+        authorization=forged,
+        known_policy_ids=frozenset({"some_known_policy"}),
+        is_strict=True,
+        source_statute="12/2015",
+        op_id="op_ev06",
+        findings_out=findings,
+    )
+    hits = [f for f in findings if f.kind == "EVID.UNKNOWN_ATTESTATION_POLICY" and f.blocking]
+    assert hits, (
+        "an authorization citing an unknown policy id did not surface "
+        "EVID.UNKNOWN_ATTESTATION_POLICY from the production EV-06 gate"
+    )
+    assert hits[0].detail["cited_policy_id"] == "totally_unknown_policy_id"
+    # Negative (clean) case: a known cited policy id does not fire.
+    clean = ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="apply_op_authorized",
+        authorization_rule_id="op_ev06_clean",
+        owner_phase="apply",
+        strict_disposition="record",
+        safe_default="block_until_known_policy",
+        forbidden_shortcuts=("cited_policy_existence_as_known_policy",),
+        detail={"evidence_kernel": {"policy_id": "some_known_policy"}},
+    )
+    clean_findings: list[Finding] = []
+    gate_unknown_attestation_policy(
+        authorization=clean,
+        known_policy_ids=frozenset({"some_known_policy"}),
+        is_strict=True,
+        source_statute="12/2015",
+        op_id="op_ev06_clean",
+        findings_out=clean_findings,
+    )
+    assert not clean_findings, "EV-06 gate fired on a known cited policy id"
+
+
+def _closure_replay_products(*, surface_attrs: dict[str, str]) -> None:
+    """Build a real ReplayProducts whose materialized tree carries a marked node.
+
+    Drives the production ``ReplayProducts.__post_init__`` whole-tree closure
+    sweep over a tree with one node carrying the supplied surface/overlay attrs.
+    """
+    from lawvm.finland.replay_products import ReplayProducts
+
+    marked = IRNode(kind=IRNodeKind.SECTION, label="1", attrs=surface_attrs)
+    materialized = ReplayState(
+        ir=IRNode(kind=IRNodeKind.BODY, children=(marked,))
+    )
+    ReplayProducts(
+        replay_fold_state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        materialized_state=materialized,
+        timelines=None,
+    )
+
+
+def drill_surface_node_replay_authority_unwitnessed_tree_closure() -> None:
+    """FW.SURFACE_NODE_REPLAY_AUTHORITY_UNWITNESSED fires from the ReplayProducts build (FW-01)."""
+    from lawvm.finland.apply_tree_closure import SurfaceAuthorityClosureError
+
+    with pytest.raises(SurfaceAuthorityClosureError, match="FW.SURFACE_NODE_REPLAY_AUTHORITY_UNWITNESSED"):
+        _closure_replay_products(
+            surface_attrs={"lawvm_surface_only": "1", "lawvm_replay_authorized": "1"}
+        )
+    # Negative (clean) case: a surface_only node that is NOT replay-authorized builds clean.
+    _closure_replay_products(surface_attrs={"lawvm_surface_only": "1"})
+
+
+def drill_overlay_replay_authorized_without_promotion_tree_closure() -> None:
+    """OVERLAY.REPLAY_AUTHORIZED_WITHOUT_PROMOTION fires from the ReplayProducts build (OV-01)."""
+    from lawvm.finland.apply_tree_closure import OverlayPromotionClosureError
+
+    with pytest.raises(OverlayPromotionClosureError, match="OVERLAY.REPLAY_AUTHORIZED_WITHOUT_PROMOTION") as exc:
+        _closure_replay_products(
+            surface_attrs={"lawvm_overlay_origin": "1", "lawvm_replay_authorized": "1"}
+        )
+    assert exc.value.code == "OVERLAY.REPLAY_AUTHORIZED_WITHOUT_PROMOTION"
+
+
+def drill_overlay_promotion_witness_incomplete_tree_closure() -> None:
+    """OVERLAY.PROMOTION_WITNESS_INCOMPLETE fires from the ReplayProducts build (OV-02)."""
+    from lawvm.finland.apply_tree_closure import OverlayPromotionClosureError
+
+    with pytest.raises(OverlayPromotionClosureError, match="OVERLAY.PROMOTION_WITNESS_INCOMPLETE") as exc:
+        _closure_replay_products(
+            surface_attrs={
+                "lawvm_overlay_origin": "1",
+                "lawvm_replay_authorized": "1",
+                "lawvm_overlay_promotion_event": "promote_1",
+                # Promotion event present but cites NEITHER provider+model NOR registry+entry.
+            }
+        )
+    assert exc.value.code == "OVERLAY.PROMOTION_WITNESS_INCOMPLETE"
+    # Negative (clean) case: a complete provider-cited promotion builds clean.
+    _closure_replay_products(
+        surface_attrs={
+            "lawvm_overlay_origin": "1",
+            "lawvm_replay_authorized": "1",
+            "lawvm_overlay_promotion_event": "promote_1",
+            "lawvm_overlay_provider_id": "prov_x",
+            "lawvm_overlay_model_version": "v1",
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Promotion-chain integrity drills (CHAIN-/PROMOTE- families, §0)
+#
+# These gates ride the EXISTING EV-05 execution-authorization graph as read-only
+# checks (they do NOT modify the production apply mutation path — sibling sessions
+# own it). The drills drive the real production-emit-site gate functions in
+# ``finland.apply_promotion_chain`` into their firing state, the same way the
+# EV-06 drill drives ``gate_unknown_attestation_policy`` directly. Each drill
+# exercises the genuine guard, so a silently-disconnected guard goes red, and each
+# pins the NAMED, bounded residual carried on the finding detail (the parts the
+# apply-path carriers do not materialize yet).
+# ---------------------------------------------------------------------------
+
+
+def drill_authorization_identity_mismatch_promotion_chain() -> None:
+    """PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH fires from the scope-match gate (PROMOTE-02).
+
+    Production-emit site: ``gate_authorization_scope_match``. The checkable
+    invariant today is rule_id<->op_id binding: an authorization minted for op A
+    reused to gate op B is smuggled authority. The apply-path authorization is
+    minted with ``rule_id = op_id`` for the SAME op (matches by construction,
+    0-delta); the drill forges a mismatched authorization to exercise the gate.
+    The deeper identity binding (input_node_ids/policy_id/candidate_set_hash) is
+    the named residual carried on the finding detail.
+    """
+    from lawvm.core.execution_authorization import ExecutionAuthorization
+    from lawvm.core.ir import LegalAddress
+    from lawvm.finland.apply_promotion_chain import gate_authorization_scope_match
+
+    rop = _closure_rop(
+        op_id="op_promote02_B",
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    smuggled = ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="apply_op_authorized",
+        authorization_rule_id="op_promote02_A",  # minted for a DIFFERENT op
+        owner_phase="apply",
+        strict_disposition="record",
+        safe_default="block_until_apply_op_authorization_rule_is_resolved",
+        forbidden_shortcuts=("landed_write_existence_as_execution_authorization",),
+    )
+    findings: list[Finding] = []
+    gate_authorization_scope_match(
+        authorization=smuggled,
+        rop=rop,
+        is_strict=True,
+        source_statute="12/2015",
+        findings_out=findings,
+    )
+    hits = [
+        f
+        for f in findings
+        if f.kind == "PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH" and f.blocking
+    ]
+    assert hits, (
+        "an authorization minted for a different op did not surface "
+        "PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH from the scope-match gate"
+    )
+    assert hits[0].detail["bound_rule_id"] == "op_promote02_A"
+    assert hits[0].detail["derived_rule_id"] == "op_promote02_B"
+    assert hits[0].detail["unbound_identity_components"]  # named residual present
+    # Negative (clean): a correctly-bound authorization does not fire.
+    aligned = ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="apply_op_authorized",
+        authorization_rule_id="op_promote02_B",
+        owner_phase="apply",
+        strict_disposition="record",
+        safe_default="block_until_apply_op_authorization_rule_is_resolved",
+        forbidden_shortcuts=("landed_write_existence_as_execution_authorization",),
+    )
+    clean: list[Finding] = []
+    gate_authorization_scope_match(
+        authorization=aligned, rop=rop, is_strict=True,
+        source_statute="12/2015", findings_out=clean,
+    )
+    assert not clean, "scope-match gate fired on a correctly-bound authorization"
+
+
+def drill_promotion_chain_incomplete_promotion_chain() -> None:
+    """CHAIN.PROMOTION_CHAIN_INCOMPLETE fires from the chain-links gate (CHAIN-01)."""
+    from lawvm.core.promotion_chain import PromotionChainLinks
+    from lawvm.finland.apply_promotion_chain import gate_promotion_chain_links
+
+    # A materialized execution-authorization link is absent → incomplete.
+    links = PromotionChainLinks(
+        source_witness=True,
+        candidate_claim=True,
+        execution_authorization=False,
+        dry_run_proof=True,
+        agreement_row=True,
+    )
+    findings: list[Finding] = []
+    gate_promotion_chain_links(
+        links=links, rop=None, is_strict=True,
+        source_statute="12/2015", findings_out=findings,
+    )
+    hits = [
+        f for f in findings if f.kind == "CHAIN.PROMOTION_CHAIN_INCOMPLETE" and f.blocking
+    ]
+    assert hits, "a missing materialized link did not block (CHAIN-01)"
+    assert "execution_authorization" in hits[0].detail["missing_links"]
+    # Negative (clean): a complete chain does not fire CHAIN-01.
+    complete = PromotionChainLinks(
+        source_witness=True, candidate_claim=True, execution_authorization=True,
+        dry_run_proof=True, agreement_row=True,
+    )
+    clean: list[Finding] = []
+    gate_promotion_chain_links(
+        links=complete, rop=None, is_strict=True,
+        source_statute="12/2015", findings_out=clean,
+    )
+    assert not [
+        f for f in clean if f.kind == "CHAIN.PROMOTION_CHAIN_INCOMPLETE"
+    ], "completeness gate fired on a complete chain"
+
+
+def drill_authority_by_accumulation_promotion_chain() -> None:
+    """CHAIN.AUTHORITY_BY_ACCUMULATION fires from the chain-links gate (CHAIN-02)."""
+    from lawvm.core.promotion_chain import PromotionChainLinks
+    from lawvm.finland.apply_promotion_chain import gate_promotion_chain_links
+
+    # execution-authorization present with an absent candidate-claim predecessor:
+    # authority reached by accumulation, not by climbing.
+    links = PromotionChainLinks(
+        source_witness=True,
+        candidate_claim=False,
+        execution_authorization=True,
+        dry_run_proof=True,
+        agreement_row=True,
+    )
+    findings: list[Finding] = []
+    gate_promotion_chain_links(
+        links=links, rop=None, is_strict=True,
+        source_statute="12/2015", findings_out=findings,
+    )
+    hits = [
+        f for f in findings if f.kind == "CHAIN.AUTHORITY_BY_ACCUMULATION" and f.blocking
+    ]
+    assert hits, "a link reached without its predecessor did not block (CHAIN-02)"
+    assert "execution_authorization" in hits[0].detail["accumulation_links"]
+
+
+def drill_stale_downstream_after_retraction_promotion_chain() -> None:
+    """PROMOTE.STALE_DOWNSTREAM_AFTER_RETRACTION fires from the down-chain gate (PROMOTE-01)."""
+    from lawvm.finland.apply_promotion_chain import gate_downchain_retraction
+
+    findings: list[Finding] = []
+    gate_downchain_retraction(
+        retracted_link="execution_authorization",
+        downstream_links=("dry_run_proof", "agreement_row"),
+        reopened_links=frozenset({"dry_run_proof"}),  # agreement_row left standing
+        is_strict=True,
+        source_statute="12/2015",
+        op_id="op_promote01",
+        findings_out=findings,
+    )
+    hits = [
+        f
+        for f in findings
+        if f.kind == "PROMOTE.STALE_DOWNSTREAM_AFTER_RETRACTION" and f.blocking
+    ]
+    assert hits, (
+        "a downstream link standing on a retracted predecessor did not block "
+        "(PROMOTE-01)"
+    )
+    assert "agreement_row" in hits[0].detail["stale_downstream"]
+    assert hits[0].detail["multi_hop_residual"]  # named sub-chain residual present
+    # Negative (clean): all downstream links reopened does not fire.
+    clean: list[Finding] = []
+    gate_downchain_retraction(
+        retracted_link="execution_authorization",
+        downstream_links=("dry_run_proof", "agreement_row"),
+        reopened_links=frozenset({"dry_run_proof", "agreement_row"}),
+        is_strict=True,
+        source_statute="12/2015",
+        op_id="op_promote01_clean",
+        findings_out=clean,
+    )
+    assert not clean, "retraction gate fired despite all downstream links reopened"
+
+
 # ---------------------------------------------------------------------------
 # Declarative fire-drill registry
 # ---------------------------------------------------------------------------
@@ -1316,13 +3135,16 @@ def drill_frontend_internal_error_finland_ingress() -> None:
 # code -> fire-drill callable that drives the production lane to the guarded
 # state and asserts the finding reaches its consumer-visible surface.
 FIRE_DRILLS: Dict[str, Callable[[], None]] = {
+    "LINEAGE.CYCLE": drill_lineage_cycle_replay_products_build,
     "APPLY.TREE_INVARIANT_VIOLATION": drill_tree_invariant_violation_duplicate_label,
-    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": drill_effect_lifecycle_target_unresolved_verdict_barrier,
-    "APPLY.FAILED_OPERATION": drill_failed_operation_verdict_barrier,
+    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": drill_effect_lifecycle_target_unresolved_apply_lane,
+    "APPLY.FAILED_OPERATION": drill_failed_operation_apply_lane,
     "APPLY.META_REPEAL_EFFECT_UNRESOLVED": drill_meta_repeal_effect_unresolved_route_rejection_barrier,
     "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED": drill_pending_amendment_effect_unresolved_route_rejection_barrier,
-    "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_verdict_barrier,
+    "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_apply_lane,
     "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD": drill_leading_subsection_heading_payload_elaboration,
+    "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL": drill_fold_single_insert_subsection_list_tail_payload_elaboration,
+    "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET": drill_restore_heading_for_explicit_facet_group_elaboration,
     "ELAB.SPARSE_OMISSION_TAIL_CLAIM": drill_sparse_omission_tail_claim_group_surface,
     "ELAB.SPARSE_OMISSION_TAIL_PRUNED_FROM_CARRIER": drill_sparse_omission_tail_pruned_from_carrier_compile_surface,
     "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_parse_surface,
@@ -1332,6 +3154,20 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION": drill_replay_missing_primary_target_consumption_apply_lane,
     "REPLAY_APPLY_BOUNDARY_UNRESOLVED": drill_replay_apply_boundary_unresolved_apply_lane,
     "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET": drill_replay_apply_boundary_touch_outside_target_apply_lane,
+    "APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP": drill_mutation_boundary_violation_at_op_apply_lane,
+    "APPLY.OCCUPANCY_TRANSITION_BLOCKED": drill_occupancy_transition_blocked_apply_lane,
+    "EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED": drill_replay_authorization_proof_required_apply_lane,
+    # Wave-2 apply-authority closure (blocking arms).
+    "APPLY.GRANULARITY_ESCALATION_AT_OP": drill_granularity_escalation_at_op_apply_lane,
+    "EVID.UNKNOWN_ATTESTATION_POLICY": drill_unknown_attestation_policy_at_op_apply_lane,
+    "FW.SURFACE_NODE_REPLAY_AUTHORITY_UNWITNESSED": drill_surface_node_replay_authority_unwitnessed_tree_closure,
+    "OVERLAY.REPLAY_AUTHORIZED_WITHOUT_PROMOTION": drill_overlay_replay_authorized_without_promotion_tree_closure,
+    "OVERLAY.PROMOTION_WITNESS_INCOMPLETE": drill_overlay_promotion_witness_incomplete_tree_closure,
+    # Promotion-chain integrity wave (CHAIN-/PROMOTE- families, §0).
+    "PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH": drill_authorization_identity_mismatch_promotion_chain,
+    "CHAIN.PROMOTION_CHAIN_INCOMPLETE": drill_promotion_chain_incomplete_promotion_chain,
+    "CHAIN.AUTHORITY_BY_ACCUMULATION": drill_authority_by_accumulation_promotion_chain,
+    "PROMOTE.STALE_DOWNSTREAM_AFTER_RETRACTION": drill_stale_downstream_after_retraction_promotion_chain,
 }
 
 # A second, distinct surface for an already-covered code. Tracked separately so
@@ -1358,9 +3194,26 @@ EXTRA_SURFACE_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
 # they are tracked separately from FIRE_DRILLS because the blocking-code
 # inventory tests only police blocking codes.
 OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
+    "DEFINITION.DUPLICATE_DEFINITION": drill_definition_duplicate_definition_surface_totality,
+    "DEFINITION.ORPHAN_DEFINITION_REFERENCE": drill_definition_orphan_reference_surface_totality,
+    "REFERENCE.UNCLASSIFIED_REFERENCE": drill_reference_unclassified_reference_surface_totality,
+    "SURFACE.TOKEN_REALIZATION_GAP": drill_surface_token_realization_gap_surface_totality,
+    "WAIST.HANDOFF_PARITY_SOURCE_TO_TOKEN": drill_waist_handoff_parity_source_to_token_surface_totality,
+    "SURFACE.ORPHAN_ENTITY_NODE": drill_surface_orphan_entity_node_surface_totality,
+    "SCHED.WINDOW_UNMATERIALIZED": drill_sched_window_unmaterialized_schedule_window_totality,
+    "SCOPE.OVERLAP_WITHOUT_DISJOINT_SCOPE": drill_scope_overlap_without_disjoint_scope_scope_lattice_totality,
     "APPLY.OCCUPANCY_POLICY_VIOLATION": drill_occupancy_policy_violation_finland_production,
     "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT": drill_occupancy_temporally_disjoint_insert_finland_production,
     "APPLY.REPLAY_UNDECLARED_TREE_TOUCH": drill_replay_undeclared_tree_touch_apply_lane,
+    "APPLY.MUTATION_BOUNDARY_FINDING_AT_OP": drill_mutation_boundary_finding_at_op_quirks_apply_lane,
+    # Wave-2 apply-authority closure (non-blocking observation arms).
+    "APPLY.SCOPE_CONFIDENCE_TOTALITY_GAP_AT_OP": drill_scope_confidence_totality_gap_at_op_apply_lane,
+    "LOWER.VERB_CONVERSION_UNWITNESSED_AT_OP": drill_verb_conversion_unwitnessed_at_op_apply_lane,
+    "APPLY.PAYLOAD_SMUGGLING_AT_OP": drill_payload_smuggling_at_op_apply_lane,
+    "APPLY.UNSTATED_MIGRATION_AT_OP": drill_unstated_migration_at_op_apply_lane,
+    # EVIDENCE-LEDGER wave (EV-03, EV-07) totality sweeps.
+    "EVID.RESIDUAL_LEDGER_NONMONOTONE": drill_residual_ledger_nonmonotone_stage_account_totality,
+    "EVID.DIAGNOSTIC_NOT_SELF_EVIDENCING": drill_diagnostic_not_self_evidencing_residual_totality,
 }
 
 # code -> (reason, xfail-drill). These guards are verified structurally
@@ -1431,6 +3284,7 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     # Payload-normalization strict barrier; add a dedicated production-lane
     # drill when flattened insert-subsection tail splitting gets a small
     # stable fixture in this harness.
+    "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE": ("sparse descendant merge barrier; needs stable fixture", "2026-06-22"),
     "ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL": ("payload-normalize barrier; needs stable fixture", "2026-06-20"),
     "APPLY.WORD_SUBSTITUTION": ("word-substitution barrier; needs fixture", "2026-06-20"),
     "COMPARE.UNADJUDICATED_ORACLE_DIVERGENCE.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
@@ -1445,11 +3299,16 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.DROP_ITEM_REPLACES_MISSING": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.DROP_REDUNDANT_ITEM_OPS_IN_SPARSE_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.DUPLICATE_TABLE_NOTE_BLOCK_PRUNED": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    # New blocking code from sibling payload-normalize structure-op work
+    # (multi-target subsection list wrap-up folding in payload_normalize.py).
+    # Same payload-normalize-barrier shape as the ELAB.SPLIT_* siblings above;
+    # needs a stable wrap-up-fold fixture before it can be drilled. Debt: this
+    # raised the derived NO_FIRE_DRILL_CEILING by one.
+    "ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS": ("payload-normalize wrap-up-fold recovery; needs fixture", "2026-06-23"),
     "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE": ("merge recovery; needs fixture", "2026-06-20"),
     "ELAB.LOCAL_DENSE_SUBSECTION_NUMBERING": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
-    "ELAB.MISSING_PAYLOAD_SURFACE": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.MIXED_SPARSE_SLOT_CROSS_PARAGRAPH": ("payload-normalize ambiguity; needs fixture", "2026-06-20"),
     "ELAB.NORMALIZE_ITEM_LIKE_TARGET": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.NUMBERED_TABLE_TARGET_MERGE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
@@ -1458,11 +3317,13 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.REBASE_ITEM_TARGET_TO_SPARSE_SLOT_LABEL": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.REBASE_SPARSE_STALE_PREDECESSOR": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
-    "ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.RENUMBER_DESTINATION_PAYLOAD_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.SPARSE_PAYLOAD_LEFTOVER": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
+    "ELAB.SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION": ("payload-normalize source-shape recovery; covered by payload unit fixture", "2026-06-23"),
+    "ELAB.SPLIT_MIXED_SPARSE_SLOT_CROSS_PARAGRAPH_PAYLOAD": ("payload-normalize recovery; needs fixture", "2026-06-23"),
+    "ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL": ("payload-normalize recovery; covered by sparse payload fixture", "2026-06-22"),
     "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.STRICT_REJECTED_OPERATION": ("strict-mode barrier; needs fixture", "2026-06-20"),
@@ -1480,6 +3341,12 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.UNRESOLVED_POOL_ADDRESS.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
     "ELAB.WRAPPER_ORPHAN_SUBSECTION_CONTINUATION": ("payload-lookup recovery; needs fixture", "2026-06-20"),
     "LINEAGE.UNCLASSIFIED_PROVISION_MIGRATION.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
+    # New blocking code from sibling scope-recovery work
+    # (body chapter-descendant scope correction in compile_group_scope_recovery.py).
+    # Same scope-recovery-barrier shape as the LOWER.* siblings below; needs a
+    # stable chapter-descendant scope fixture before it can be drilled. Debt:
+    # this raised the derived NO_FIRE_DRILL_CEILING by one.
+    "LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION": ("scope-recovery (chapter-descendant) barrier; needs fixture", "2026-06-23"),
     "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE": ("scope recovery; needs fixture", "2026-06-20"),
     "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET": ("scope recovery; needs fixture", "2026-06-20"),
     "LOWER.CONTEXT_DEPENDENT_ANCHOR": ("scope recovery; needs fixture", "2026-06-20"),
@@ -1491,7 +3358,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "LOWER.SCOPE_CARRY_FORWARD": ("scope recovery; needs fixture", "2026-06-20"),
     "PARSE.EXTRACTION_FALLBACK": ("parse barrier; needs fixture", "2026-06-20"),
     "PARSE.FRONTEND_BLOCKING_DIAGNOSTIC": ("frontend phase barrier; needs fixture", "2026-06-20"),
-    "PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA": ("frontend recovery; needs fixture", "2026-06-20"),
     "PARSE.PREAMBLE_CLAUSE_FAILED.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
     "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER": ("frontend recovery; needs fixture", "2026-06-20"),
     "PARSE.STRICT_REJECTED_TARGET_GUESSING": ("strict-mode barrier; needs fixture", "2026-06-20"),
@@ -1719,11 +3585,30 @@ _PRODUCTION_BUILDER_CALLS = (
     "ProcessRouteRejectionContext",
     "normalize_and_compile_ops",
     "build_group_surface",
+    "build_finland_effect_lifecycle",
     "compile_amendment_ops",
+    "elaborate_group",
     "elaborate_payload_against_live",
     "api.parse_clause",
     "parse_clause(",
     "_check_occupancy_policy",
+    # ReplayProducts.__post_init__ is the central production seal for the finished
+    # replay product (migration ledger, effect graph): constructing it runs the
+    # production validation guards (type checks, effect-graph closure, lineage
+    # acyclicity) over the sealed ledger.
+    "ReplayProducts(",
+    # Wave-2 apply-authority closure: the EV-06 gate is the production
+    # attestation-policy validator called from _gate_execution_authorization_at_op.
+    "gate_unknown_attestation_policy",
+    # Promotion-chain integrity wave (CHAIN-/PROMOTE- families, §0): the
+    # production-emit-site gate functions in finland.apply_promotion_chain. They
+    # ride the existing EV-05 authorization graph as read-only checks (the
+    # production apply MUTATION path is owned by sibling sessions and is not
+    # modified); the drill drives each genuine gate, the same shape as the EV-06
+    # gate above.
+    "gate_authorization_scope_match",
+    "gate_promotion_chain_links",
+    "gate_downchain_retraction",
 )
 
 # Codes whose ONLY honest production surface is the strict verdict mapping (a
@@ -1732,11 +3617,14 @@ _PRODUCTION_BUILDER_CALLS = (
 # production verdict builder rather than a deeper apply/replay builder; they are
 # the verdict-surface primary lane. Every OTHER primary drill must drive a
 # builder from ``_PRODUCTION_BUILDER_CALLS``.
-_VERDICT_SURFACE_PRIMARY_DRILLS = frozenset({
-    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED",
-    "APPLY.FAILED_OPERATION",
-    "APPLY.SOURCE_PATHOLOGY_DETECTED",
-})
+#
+# Empty after the dead-gate reconciliation: the three former verdict-only drills
+# (APPLY.FAILED_OPERATION, APPLY.SOURCE_PATHOLOGY_DETECTED,
+# APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED) now drive their production-deciding
+# guard — the strict ``apply_op`` lane (real FailedOp / SourcePathology) and the
+# ``build_finland_effect_lifecycle`` builder (real unresolved-target event) — so
+# none remains a verdict-mapping-only drill.
+_VERDICT_SURFACE_PRIMARY_DRILLS: frozenset[str] = frozenset()
 
 
 def _drill_effective_source(drill: Callable[[], None]) -> str:

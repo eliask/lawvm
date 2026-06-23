@@ -24,7 +24,11 @@ from lawvm.core.effect_intent import (
     Expiry,
 )
 from lawvm.core.semantic_types import MetaClauseKind
-from lawvm.finland.fi_dates import parse_fi_day_month_year
+from lawvm.finland.fi_dates import (
+    FiDateForm,
+    match_fi_date,
+    parse_fi_day_month_year,
+)
 
 UNSUPPORTED_META_CLAUSE_RULE_ID = "PARSE.META_CLAUSE_UNSUPPORTED"
 
@@ -71,20 +75,15 @@ def _parse_fi_date(day: str, month_name: str, year: str) -> Optional[dt.date]:
 
 
 def _extract_fi_date(text: str) -> Optional[dt.date]:
-    m = re.search(
-        r"(\d{1,2})\s+päivän[aä]\s+([a-zäöå]+)\s+(\d{4})",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if m:
-        return _parse_fi_date(m.group(1), m.group(2), m.group(3))
-    m = re.search(
-        r"(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if m:
-        return _parse_fi_date(m.group(1), m.group(2), m.group(3))
+    # Essive (commencement) form takes priority over allative (expiry) wherever
+    # either occurs, mirroring the legacy two-pass search order; the shared
+    # recognizer owns the date-token lexing for both.
+    essive = match_fi_date(text, forms={FiDateForm.ESSIVE})
+    if essive is not None:
+        return essive.value
+    allative = match_fi_date(text, forms={FiDateForm.ALLATIVE})
+    if allative is not None:
+        return allative.value
     return None
 
 
@@ -97,6 +96,7 @@ _CONTINGENT_PATTERNS = re.compile(
 
 
 def _lower_voimaantulo(raw: str) -> Optional[EffectIntent]:
+    # lawvm-regex: owning_parser expiry-tail recognizer inside a COMMENCEMENT-classified MetaClause; produces a typed Expiry, no silent drop
     expiry_match = re.search(
         r"on\s+voimassa\s+.{0,60}?(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})",
         raw,
@@ -110,6 +110,7 @@ def _lower_voimaantulo(raw: str) -> Optional[EffectIntent]:
         )
         return Expiry(expiry_date=expiry_date, raw_text=raw)
 
+    # lawvm-regex: owning_parser commencement-vs-other discriminator over the already-classified MetaClause text
     is_commencement = bool(re.search(r"tulee\s+voimaan", raw, re.IGNORECASE))
     if not is_commencement:
         eff_date = _extract_fi_date(raw)

@@ -22,7 +22,7 @@ from lawvm.core.candidate_set_coverage import (
     CANDIDATE_SET_UNAVAILABLE,
     CandidateSetCoverage,
 )
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.uk_legislation.execution_authorization import (
@@ -1203,7 +1203,7 @@ def _saved_bench_diagnostic_rows_from_result(result: _BenchResultLike) -> tuple[
             or "blocking" in record
             or record.get("strict_disposition")
         ):
-            return is_blocking_compile_record(record)
+            return is_blocking_compile_record(CompileRecord.from_mapping(record))
         return False
 
     leading_lane_attrs: tuple[tuple[str, str], ...] = (
@@ -1655,7 +1655,7 @@ def _owner_phase_counts(rows: tuple[dict[str, Any], ...]) -> dict[str, int]:
 
 
 def _blocking_rows(rows: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
-    return tuple(row for row in rows if is_blocking_compile_record(row))
+    return tuple(row for row in rows if is_blocking_compile_record(CompileRecord.from_mapping(row)))
 
 
 def _effect_source_pathology_rows(

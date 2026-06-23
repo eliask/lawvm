@@ -33,8 +33,26 @@ from lawvm.core.coverage import (
     CoverageRejectedClaim,
     CoverageReport,
 )
+from lawvm.core.filter_result import FilterResult
+from lawvm.core.stage_result import PartitionResult, Residual
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
+
+
+@dataclass(frozen=True)
+class CoverageClaimPartition(PartitionResult[CoverageClaim]):
+    """Conserving carrier for coverage-claim collection (Audit C).
+
+    Composes the canonical :class:`PartitionResult` (accepted claims +
+    typed core ``residuals``) and ADDS ``rejected_claims`` — the rich
+    domain-specific :class:`CoverageRejectedClaim` records (target op + reason +
+    evidence) the production sink ``uncovered_recovery_prepare`` consumes. The
+    rejected lane is NOT placed in the wrapped ``FilterResult`` because its
+    payload is the rejected op, not a ``CoverageClaim``; ``rejected_claims`` is
+    the typed rejected channel and ``residuals`` is the core-contract mirror.
+    """
+
+    rejected_claims: tuple[CoverageRejectedClaim, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +125,7 @@ def _part_label_from_cross_heading(el: etree._Element) -> str:
     """Return a normalized part label when ``el`` is a direct part marker."""
     if _localname(el) != "crossHeading":
         return ""
+    # lawvm-regex: owning_parser part-marker shape over a crossHeading element's own direct XML text, structured element-text not prose
     match = _PART_CROSS_HEADING_RE.match(_direct_text(el))
     if match is None:
         return ""
@@ -453,32 +472,49 @@ def collect_coverage_claims(
 ) -> List[CoverageClaim]:
     """Build CoverageClaims from a list of compiled AmendmentOps.
 
-    Each op that targets a section, chapter, or part produces one claim.
-    The neutral ``target_unit_kind`` is the structural authority here.
-    The ``claim_kind`` is:
+    Back-compat shim over :func:`collect_coverage_claims_partition`. The
+    partition is the canonical conserving carrier; this shim drains its rejected
+    lane into the legacy ``rejected_claims_out`` production sink (read by
+    ``uncovered_recovery_prepare``) and returns the accepted claims. The drain is
+    the single emission path — the rich ``CoverageRejectedClaim`` records are
+    forwarded from the partition, never re-derived, so no double-emit occurs.
+    """
+    partition = collect_coverage_claims_partition(ops)
+    if rejected_claims_out is not None:
+        rejected_claims_out.extend(partition.rejected_claims)
+    return list(partition.accepted)
 
-    - ``'explicit'`` — op does not carry typed fallback provenance.
-    - ``'fallback'`` — op carries typed fallback provenance, indicating
-      heuristic origin.
 
-    The ``covered_unit_ids`` is computed lazily at claim creation as a
-    frozenset containing the canonical unit_id for the op's primary target.
-    The label derivation mirrors ``extract_body_coverage``'s unit_id scheme
-    without knowledge of whether the unit actually exists — matching is done
-    later by ``analyze_coverage``.
+def collect_coverage_claims_partition(
+    ops: List[AmendmentOp],
+) -> "CoverageClaimPartition":
+    """Build a conserving partition of CoverageClaims from compiled ops.
+
+    Conservation (Audit C): each op that targets a section, chapter, or part
+    produces one accepted claim. Ops with no usable target are NOT silently
+    skipped — they go to the rejected lane (with a typed reason) and the
+    ``rejected_claims`` accessor exposes the rich ``CoverageRejectedClaim``
+    records the production sink consumes. The accepted set is byte-identical to
+    the previous return value.
+
+    The neutral ``target_unit_kind`` is the structural authority here. The
+    ``claim_kind`` is ``'explicit'`` unless the op carries typed fallback
+    provenance, in which case it is ``'fallback'``. ``covered_unit_ids`` is the
+    canonical unit_id for the op's primary target; matching is done later by
+    ``analyze_coverage``.
     """
     claims: List[CoverageClaim] = []
+    rejected_claims: List[CoverageRejectedClaim] = []
 
     for op in ops:
         if not op.target_section:
-            if rejected_claims_out is not None:
-                rejected_claims_out.append(
-                    CoverageRejectedClaim(
-                        reason="missing_target_section",
-                        target=op,
-                        evidence=(f"op_id={op.op_id}", f"op_type={op.op_type}"),
-                    )
+            rejected_claims.append(
+                CoverageRejectedClaim(
+                    reason="missing_target_section",
+                    target=op,
+                    evidence=(f"op_id={op.op_id}", f"op_type={op.op_type}"),
                 )
+            )
             continue
 
         if op.target_unit_kind == "section":
@@ -491,18 +527,17 @@ def collect_coverage_claims(
             label = _norm_num_token(op.target_section)
             kind = "part"
         else:
-            if rejected_claims_out is not None:
-                rejected_claims_out.append(
-                    CoverageRejectedClaim(
-                        reason="unsupported_target_unit_kind",
-                        target=op,
-                        evidence=(
-                            f"op_id={op.op_id}",
-                            f"op_type={op.op_type}",
-                            f"target_unit_kind={op.target_unit_kind}",
-                        ),
-                    )
+            rejected_claims.append(
+                CoverageRejectedClaim(
+                    reason="unsupported_target_unit_kind",
+                    target=op,
+                    evidence=(
+                        f"op_id={op.op_id}",
+                        f"op_type={op.op_type}",
+                        f"target_unit_kind={op.target_unit_kind}",
+                    ),
                 )
+            )
             continue
 
         # Determine claim_kind from typed provenance; `resolution_hint` is
@@ -538,7 +573,23 @@ def collect_coverage_claims(
             )
         )
 
-    return claims
+    residuals = tuple(
+        Residual(
+            kind="out_of_scope",
+            reason=f"coverage claim rejected: {rejected.reason}",
+            scope=next(
+                (ev for ev in rejected.evidence if ev.startswith("op_id=")),
+                "op_id=",
+            ),
+            blocking=False,
+        )
+        for rejected in rejected_claims
+    )
+    return CoverageClaimPartition(
+        FilterResult(accepted_items=tuple(claims)),
+        residuals=residuals,
+        rejected_claims=tuple(rejected_claims),
+    )
 
 
 def analyze_coverage(

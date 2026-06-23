@@ -586,6 +586,36 @@ def _parse_address(address: str) -> List[Tuple[str, str]]:
     return parts
 
 
+def _same_parsed_relabel_address(
+    target_path: list[tuple[str, str]],
+    dest_path: list[tuple[str, str]],
+) -> bool:
+    """True when a relabel's source and destination name the same address."""
+    if not target_path or not dest_path:
+        return False
+    if len(dest_path) == 1 and target_path[-1][0] == dest_path[-1][0]:
+        kind, target_label = target_path[-1]
+        _dest_kind, dest_label = dest_path[-1]
+        if kind in {"part", "chapter", "section"}:
+            return _norm_num_token(target_label) == _norm_num_token(dest_label)
+        return target_label == dest_label
+    if len(target_path) != len(dest_path):
+        return False
+    return tuple(
+        (
+            kind,
+            _norm_num_token(label) if kind in {"part", "chapter", "section"} else label,
+        )
+        for kind, label in target_path
+    ) == tuple(
+        (
+            kind,
+            _norm_num_token(label) if kind in {"part", "chapter", "section"} else label,
+        )
+        for kind, label in dest_path
+    )
+
+
 def _find_paths_by_structural_label(
     tree: IRNode,
     kind: str,
@@ -1658,6 +1688,16 @@ def _execute_same_parent_relabel_group(
                 )
                 for o in ops
             ]
+        if _same_parsed_relabel_address(target_path, dest_path):
+            missing_executed.append(
+                ExecutedOp(
+                    op=op,
+                    success=False,
+                    note="RELABEL op source and destination are identical",
+                    reason_code="self_relabel_noop",
+                )
+            )
+            continue
         found_path = _resolve_relabel_lookup_path(
             tree,
             target_path,
@@ -2029,6 +2069,13 @@ def _execute_relabel(
             success=False,
             note=f"could not parse target={op.target!r} or destination={op.destination!r}",
             reason_code="parse_failed",
+        )
+    if _same_parsed_relabel_address(target_path, dest_path):
+        return tree, ExecutedOp(
+            op=op,
+            success=False,
+            note="RELABEL op source and destination are identical",
+            reason_code="self_relabel_noop",
         )
 
     new_label = dest_path[-1][1]  # leaf label of destination

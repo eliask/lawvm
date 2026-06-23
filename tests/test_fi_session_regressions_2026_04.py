@@ -53,7 +53,7 @@ from lawvm.finland.apply_runtime_support import (
     _stamp_exact_section_snapshot_payload,
 )
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
-from lawvm.finland.johtolause.compat import parse_clause
+from lawvm.finland.johtolause.api import parse_clause
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
@@ -2339,7 +2339,16 @@ def test_2011_948_2021_546_chapter_5a_boundary_and_later_inserts() -> None:
 
 
 def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() -> None:
-    """Real corpus anchor for uncovered chapter payload moving 32 § from chapter 5 to 4."""
+    """Real corpus anchor: §32 stays in chapter 5 per the Finlex oracle.
+
+    The original expectation (2002/716 moves §32 from chapter 5 to chapter 4)
+    was oracle-incorrect: the consolidated 1992/733 (through 2009/1706) keeps
+    §32 (Valtionavustuslain eräiden säännösten soveltaminen) under 5 luku
+    alongside §31 — chapter 4 holds §§20-30. The scope-recovery cluster
+    (cf036e58 "Fix FI stale body chapter scope wrappers" .. 410d9528 "Keep FI
+    descendant-scoped replacements ...") corrected the placement to chapter 5,
+    so this anchor now asserts the oracle-correct location.
+    """
     replay = call_replay_xml(
         replay_xml,
         request=ReplayXmlRequest(
@@ -2349,8 +2358,8 @@ def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() 
         ),
     )
 
-    assert replay.materialized_state.find_section("32", "4") is not None
-    assert replay.materialized_state.find_section("32", "5") is None
+    assert replay.materialized_state.find_section("32", "5") is not None
+    assert replay.materialized_state.find_section("32", "4") is None
 
 
 def test_1996_579_1998_518_new_chapter_does_not_reanimate_repealed_section_32() -> None:
@@ -2368,6 +2377,30 @@ def test_1996_579_1998_518_new_chapter_does_not_reanimate_repealed_section_32() 
     chapter_6_section_32 = replay.materialized_state.find_section("32", "6")
     assert chapter_6_section_32 is not None
     assert "Korvausrahaston jäsenyys" in irnode_to_text(chapter_6_section_32)
+
+
+def test_2008_878_2016_520_reinstated_section_keeps_prior_repeal_scope() -> None:
+    """A cited same-label reinstatement must not follow a stale source chapter wrapper."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2008/878",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=False,
+        ),
+    )
+
+    section_61a = replay.materialized_state.find_section("61a", "6")
+    assert section_61a is not None
+    assert "Johdon toiminnan rajoittaminen" in irnode_to_text(section_61a)
+    assert replay.materialized_state.find_section("61a", "3") is None
+    assert [
+        event
+        for event in getattr(replay, "migration_events", ())
+        if getattr(event, "source_statute", "") == "2016/520"
+        and "61a" in str(event)
+    ] == []
 
 
 @pytest.mark.slow
@@ -2459,6 +2492,437 @@ def test_letter_suffix_insert_uses_live_stem_host_over_stale_explicit_chunk_scop
     )
 
     assert got == "5"
+
+
+def test_letter_suffix_insert_inherits_same_amendment_stem_scope() -> None:
+    """Same-wave stem scope is stronger than stale pre-amendment stem lookup."""
+    from lxml import etree
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
+    from lawvm.finland.frontend_compile import (
+        _retarget_letter_suffix_inserts_from_same_amendment_stem_scope,
+    )
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>2 luku</num>
+              <section><num>10 §</num><content><p>stem</p></content></section>
+              <section><num>10 a §</num><content><p>suffix</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    stem = AmendmentOp(
+        op_id="replace_10",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="10",
+        target_chapter="3",
+        scope_confidence=ScopeConfidence(
+            tag="body_container_membership_rewrite",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
+            resolved_chapter="3",
+        ),
+        lo=LegalOperation(
+            op_id="replace_10",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"), ("section", "10"))),
+            payload=None,
+        ),
+    )
+    suffix = AmendmentOp(
+        op_id="insert_10a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="10a",
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="2",
+        ),
+        lo=LegalOperation(
+            op_id="insert_10a",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "2"), ("section", "10a"))),
+            payload=None,
+        ),
+    )
+
+    retargeted = _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
+        [stem, suffix],
+        source_model=AmendmentSourceModel.from_tree(source),
+    )
+
+    assert retargeted[1].target_chapter == "3"
+    assert retargeted[1].lo is not None
+    assert retargeted[1].lo.target.path == (("chapter", "3"), ("section", "10a"))
+    assert retargeted[1].scope_confidence is not None
+    assert retargeted[1].scope_confidence.tag == "chapter_scope_from_same_amendment_stem"
+
+
+def test_whole_section_replace_strips_stale_body_chapter_when_live_section_is_root() -> None:
+    """A stale source wrapper must not rehome an existing root section."""
+    from lxml import etree
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
+    from lawvm.finland.frontend_compile import (
+        _strip_impossible_chapter_scope_for_bare_body_section_op,
+    )
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>10 luku</num>
+              <section><num>106 §</num><content><p>replacement</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    master = _make_state(_body(_sec("106"), _chapter("10", _sec("81"))))
+    op = AmendmentOp(
+        op_id="replace_106",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="106",
+        target_chapter="10",
+        scope_confidence=ScopeConfidence(
+            tag="body_container_membership_rewrite",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
+            resolved_chapter="10",
+        ),
+        lo=LegalOperation(
+            op_id="replace_106",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "10"), ("section", "106"))),
+            payload=None,
+            provenance_tags=("chapter_scope_carry_forward",),
+        ),
+    )
+
+    stripped = _strip_impossible_chapter_scope_for_bare_body_section_op(
+        op=op,
+        muutos_tree=source,
+        master=master,
+        johto="muutetaan 106 §",
+        source_model=AmendmentSourceModel.from_tree(source),
+    )
+
+    assert stripped is not None
+    assert stripped.target_chapter is None
+    assert stripped.lo is not None
+    assert stripped.lo.target.path == (("section", "106"),)
+
+
+def test_body_scope_does_not_promote_suffix_from_same_stale_stem_wrapper() -> None:
+    """Body-scope inference must not re-add the stale wrapper just stripped."""
+    from lxml import etree
+
+    from lawvm.finland.frontend_compile import _body_chapter_scope_for_section_op
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>10 luku</num>
+              <section><num>106 §</num><content><p>stem replacement</p></content></section>
+              <section><num>106 a §</num><content><p>suffix</p></content></section>
+            </chapter>
+            <chapter>
+              <num>15 luku</num>
+              <section><num>106 b §</num><content><p>real chapter 15 suffix</p></content></section>
+              <section><num>107 §</num><content><p>neighbor</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    master = _make_state(_body(_sec("106"), _chapter("10", _sec("81")), _chapter("15", _sec("107"))))
+    source_model = AmendmentSourceModel.from_tree(source)
+
+    stale = AmendmentOp(
+        op_id="insert_106a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="106a",
+    )
+    owned = AmendmentOp(
+        op_id="insert_106b",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="106b",
+    )
+
+    assert (
+        _body_chapter_scope_for_section_op(
+            op=stale,
+            muutos_tree=source,
+            master=master,
+            johto="lisätään lakiin uusi 106 a ja 106 b §",
+            source_model=source_model,
+        )
+        is None
+    )
+    assert (
+        _body_chapter_scope_for_section_op(
+            op=owned,
+            muutos_tree=source,
+            master=master,
+            johto="lisätään lakiin uusi 106 a ja 106 b §",
+            source_model=source_model,
+        )
+        == "15"
+    )
+
+
+def test_compile_group_scope_recovery_does_not_promote_stale_stem_wrapper() -> None:
+    from lxml import etree
+
+    from lawvm.finland.compile_group_scope_recovery import (
+        CompileGroupScopeRecoveryRequest,
+        resolve_compile_group_scope_recovery,
+    )
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>10 luku</num>
+              <section><num>106 §</num><content><p>stem replacement</p></content></section>
+              <section><num>106 a §</num><content><p>stale suffix</p></content></section>
+            </chapter>
+            <chapter>
+              <num>15 luku</num>
+              <section><num>106 b §</num><content><p>owned suffix</p></content></section>
+              <section><num>107 §</num><content><p>neighbor</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    master = _make_state(_body(_sec("106"), _chapter("10", _sec("81")), _chapter("15", _sec("107"))))
+    source_model = AmendmentSourceModel.from_tree(source)
+
+    stale = AmendmentOp(
+        op_id="insert_106a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="106a",
+    )
+    owned = AmendmentOp(
+        op_id="insert_106b",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="106b",
+    )
+
+    stale_result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="106a",
+            target_chapter=None,
+            target_part=None,
+            group_ops=[stale],
+            inserted_chapter_labels=set(),
+            source_model=source_model,
+            johto="lisätään lakiin uusi 106 a ja 106 b §",
+            strict_profile=None,
+        )
+    ).output
+    owned_result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="106b",
+            target_chapter=None,
+            target_part=None,
+            group_ops=[owned],
+            inserted_chapter_labels=set(),
+            source_model=source_model,
+            johto="lisätään lakiin uusi 106 a ja 106 b §",
+            strict_profile=None,
+        )
+    ).output
+
+    assert stale_result.effective_target_chapter is None
+    assert owned_result.effective_target_chapter == "15"
+
+
+def test_letter_suffix_insert_does_not_inherit_chaptered_stem_scope_when_live_stem_is_root() -> None:
+    """Do not propagate a bad inferred chapter from root-level 106 § to 106 a §."""
+    from lxml import etree
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
+    from lawvm.finland.frontend_compile import (
+        _retarget_letter_suffix_inserts_from_same_amendment_stem_scope,
+    )
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <section><num>106 §</num><content><p>stem</p></content></section>
+            <section><num>106 a §</num><content><p>suffix</p></content></section>
+          </body>
+        </act>
+        """
+    )
+    master = _make_state(_body(_sec("106")))
+    stem = AmendmentOp(
+        op_id="replace_106",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="106",
+        target_part="5",
+        target_chapter="10",
+        scope_confidence=ScopeConfidence(
+            tag="body_container_membership_rewrite",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
+            resolved_chapter="10",
+        ),
+        lo=LegalOperation(
+            op_id="replace_106",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "10"), ("section", "106"))),
+            payload=None,
+        ),
+    )
+    suffix = AmendmentOp(
+        op_id="insert_106a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="106a",
+        target_part="5",
+        lo=LegalOperation(
+            op_id="insert_106a",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "106a"),)),
+            payload=None,
+        ),
+    )
+
+    retargeted = _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
+        [stem, suffix],
+        source_model=AmendmentSourceModel.from_tree(source),
+        master=master,
+    )
+
+    assert retargeted[1].target_chapter is None
+    assert retargeted[1].lo is not None
+    assert retargeted[1].lo.target.path == (("section", "106a"),)
+
+
+def test_letter_suffix_insert_same_amendment_stem_scope_preserves_explicit_suffix_scope() -> None:
+    """Same-wave stem recovery must not overwrite an explicit suffix chapter."""
+    from lxml import etree
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
+    from lawvm.finland.frontend_compile import (
+        _retarget_letter_suffix_inserts_from_same_amendment_stem_scope,
+    )
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>2 luku</num>
+              <section><num>10 §</num><content><p>stem</p></content></section>
+              <section><num>10 a §</num><content><p>suffix in chapter 2</p></content></section>
+            </chapter>
+            <chapter>
+              <num>9 luku</num>
+              <section><num>10 a §</num><content><p>suffix in chapter 9</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    stem = AmendmentOp(
+        op_id="replace_10",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="10",
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
+            resolved_chapter="2",
+        ),
+        lo=LegalOperation(
+            op_id="replace_10",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "2"), ("section", "10"))),
+            payload=None,
+        ),
+    )
+    explicit_suffix = AmendmentOp(
+        op_id="insert_10a_ch9",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="10a",
+        target_chapter="9",
+        lo=LegalOperation(
+            op_id="insert_10a_ch9",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "9"), ("section", "10a"))),
+            payload=None,
+        ),
+    )
+
+    retargeted = _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
+        [stem, explicit_suffix],
+        source_model=AmendmentSourceModel.from_tree(source),
+    )
+
+    assert retargeted[1].target_chapter == "9"
+    assert retargeted[1].lo is not None
+    assert retargeted[1].lo.target.path == (("chapter", "9"), ("section", "10a"))
+    assert retargeted[1].scope_confidence is None
+
+
+def test_replay_xml_1997_689_1998_107_keeps_duplicate_1a_insert_in_chapter_9() -> None:
+    from lawvm.tools.inspect_amendment import build_amendment_bundle
+
+    try:
+        bundle = build_amendment_bundle("1997/689", "1998/107", "legal_pit")
+    except (OSError, RuntimeError) as exc:
+        pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
+
+    assert "INSERT 2 luku 1a §" in bundle["compiled_ops"]
+    assert "INSERT 9 luku 1a §" in bundle["compiled_ops"]
 
 
 def test_letter_suffix_insert_keeps_explicit_chapter_scope() -> None:
@@ -3048,7 +3512,14 @@ def test_1993_615_heading_amendments_applied() -> None:
     )
 
 
-def test_2017_93_bench_comparable_first_subsection_replace_drops_stale_flattened_tail() -> None:
+def test_2017_93_bench_comparable_first_subsection_replace_materializes_flattened_list() -> None:
+    # The bench-comparable oracle for 2017/93 is the 2020-12-30 consolidation,
+    # which has commenced (effective date <= today) and is therefore accepted as
+    # the in-force comparison artifact. That consolidation carries a genuine
+    # ten-item flattened intro list in section 1 / subsection 1 (item 9 =
+    # Poliisiammattikorkeakoulu (1164/2013) was added after the 2017 promulgation,
+    # pushing Pelastusopisto to item 10). The first-subsection replace must
+    # materialize all ten list items, matching the oracle.
     replay = call_replay_xml(
         replay_xml,
         request=ReplayXmlRequest(
@@ -3069,7 +3540,7 @@ def test_2017_93_bench_comparable_first_subsection_replace_drops_stale_flattened
     )
     paragraphs = [child for child in sub1.children if child.kind is IRNodeKind.PARAGRAPH]
 
-    assert [paragraph.label for paragraph in paragraphs] == [str(idx) for idx in range(1, 10)]
+    assert [paragraph.label for paragraph in paragraphs] == [str(idx) for idx in range(1, 11)]
     assert "Pelastusopistosta annettu laki (607/2006)." in irnode_to_text(paragraphs[-1])
 
 

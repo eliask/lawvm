@@ -111,6 +111,7 @@ def _parse_yaml_budget_lines(yaml_text: str, year: int) -> List[BudgetLine]:
         if "canonical_id" in current and "momentti_code" in current:
             cid = str(current["canonical_id"])
             mc = str(current["momentti_code"])
+            # lawvm-regex: owning_parser NN.NN.NN momentti-code parse from a registry YAML value, registry data-load not statute text
             m = _MOMENTTI_CODE_RE.match(mc)
             if m:
                 paaluokka = int(m.group(1))

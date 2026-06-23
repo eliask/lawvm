@@ -1,7 +1,8 @@
 """Unit tests for lawvm.finland.constraints — op constraint predicates."""
 
 import lxml.etree as etree
-from typing import Literal
+from types import SimpleNamespace
+from typing import Any, Literal, cast
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
@@ -59,6 +60,7 @@ def _ctx(
     slot_assignment: "SubsectionSlotAssignmentResult | None" = None,
     subsec_map: "SubsectionSlotMap | None" = None,
     tree: "etree._Element | None" = None,
+    source_model: object | None = None,
 ) -> _FilterCtx:
     return _FilterCtx(
         muutos_ir=muutos_ir,
@@ -66,6 +68,7 @@ def _ctx(
         johto=johto,
         slot_assignment=slot_assignment,
         subsec_map=subsec_map,
+        source_model=cast(Any, source_model),
     )
 
 
@@ -266,6 +269,37 @@ def test_c_no_heading_payload_keeps_otsikko_when_heading_child_exists() -> None:
     )
     ctx = _ctx(muutos_ir=ir)
     op = _op(op_type="REPLACE", target_kind=TargetKind.SECTION, target_special="otsikko")
+    keep, _ = _c_no_heading_payload(op, [op], ctx)
+    assert keep is True
+
+
+def test_c_no_heading_payload_keeps_otsikko_when_raw_source_heading_exists() -> None:
+    prepared_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1"),),
+    )
+    raw_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="12 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Äänestyslipun mitättömyysperusteet"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+        ),
+    )
+
+    class SourceModel:
+        def lookup_payload_ir(self, *args: object, **kwargs: object) -> object:
+            return SimpleNamespace(payload_ir=raw_ir)
+
+    ctx = _ctx(muutos_ir=prepared_ir, source_model=SourceModel())
+    op = _op(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="12",
+        target_special="otsikko",
+    )
     keep, _ = _c_no_heading_payload(op, [op], ctx)
     assert keep is True
 

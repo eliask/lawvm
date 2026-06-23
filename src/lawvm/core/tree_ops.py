@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from itertools import pairwise
 import re
-from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple, TypeAlias
+from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple, TYPE_CHECKING, TypeAlias
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str, structural_subtree_hash
@@ -42,7 +42,19 @@ from lawvm.core.mutation_boundary import (
 )
 from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.source_witness import DigestWitness, SourceWitness
+from lawvm.core.stage_result import (
+    EMPTY_EVIDENCE,
+    NEUTRAL_AUTHORITY,
+    CoverageCertificate,
+    EvidenceBundle,
+    Residual,
+    StageResult,
+)
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
+
+if TYPE_CHECKING:
+    from lawvm.core.provenance import SourceAnchor
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +150,118 @@ def default_label_sort_key(label: Optional[str]) -> Tuple[int, str, int]:
     Jurisdiction frontends may still pass their own sort key where needed.
     """
     return _default_sort_key(label)
+
+
+_ROMAN_GLYPHS: FrozenSet[str] = frozenset("ivxlcdm")
+_LOWER_ALPHA_LABEL_RE = re.compile(r"^[a-z]*$")
+
+
+def _split_roman_suffix(normalized: str) -> Optional[Tuple[str, str]]:
+    """Split a normalized label into (leading-roman-run, lowercase-letter-suffix).
+
+    Consumes the maximal leading run of Roman glyphs, then requires the
+    remainder to be lowercase letters.  Returns ``None`` when there is no leading
+    Roman glyph or the remainder is not all lowercase letters.  This is a linear
+    scan rather than an ``[ivxlcdm]+[a-z]*`` regex: those adjacent variable
+    repeats overlap (the roman glyphs are a subset of ``[a-z]``) and are a
+    catastrophic-backtracking hazard the regex perf gate rejects.
+    """
+    i = 0
+    n = len(normalized)
+    while i < n and normalized[i] in _ROMAN_GLYPHS:
+        i += 1
+    if i == 0:
+        return None
+    suffix = normalized[i:]
+    if not _LOWER_ALPHA_LABEL_RE.fullmatch(suffix):
+        return None
+    return (normalized[:i], suffix)
+
+
+def _roman_run_ordinals(labels: Sequence[Optional[str]]) -> Optional[Dict[str, Tuple[int, str]]]:
+    """Classify a sibling *run* of labels as a Roman-numeral sequence.
+
+    ``_default_sort_key`` only ever sees one label at a time, so it cannot tell a
+    single glyph such as ``i``/``v``/``x`` apart from an alphabetic item label,
+    NOR a multi-letter roman-matching token such as ``dc``/``dl`` apart from an
+    alphabetic continuation label (``da``/``db``/.../``dm``) in a list that ran
+    past ``z``.  Disambiguation is fundamentally impossible per-label and MUST
+    NOT be attempted there.
+
+    A *run*, however, is disambiguating: an alphabetic continuation list
+    (``a``..``f``, ``da``..``dm``) always contains members such as ``a``/``b``/
+    ``e``/``f`` (or ``da``/``db``) that are NOT valid Roman numerals, which
+    immediately disqualifies the run.  A genuine Roman list is the only shape in
+    which *every* member parses as a Roman numeral.  We additionally require at
+    least one multi-letter Roman token (``ii``/``iii``/``iv``/...) as the
+    unambiguous positive signal — a single-glyph-only run (``i`` alone, or a
+    bare ``a, b, c`` which is not roman anyway) is never promoted.  This mirrors
+    the multi-letter-only roman heuristic already used by ``_fs_label_family``
+    and ``_label_sequence_family_and_ordinal``, lifted to run scope so the
+    single-glyph members of a genuine Roman list also sort/compare numerically.
+
+    Letter-suffixed Roman labels (amendment inserts such as ``iia``/``iiia``)
+    are part of the same sequence and key by ``(roman_ordinal, suffix)`` so they
+    sort right after their base (``ii`` < ``iia`` < ``iib`` < ``iii``).
+
+    Returns a mapping ``normalized_label -> (roman_ordinal, letter_suffix)`` when
+    *every* non-empty label in the run is a (optionally suffixed) valid Roman
+    numeral AND at least one label is a multi-letter Roman token; returns
+    ``None`` otherwise — callers then fall back to ``_default_sort_key`` rather
+    than guessing.
+    """
+    present = [n for n in (_norm(label) for label in labels if label) if n]
+    if len(present) < 2:
+        return None
+    has_multichar_roman = False
+    mapping: Dict[str, Tuple[int, str]] = {}
+    for n in present:
+        split = _split_roman_suffix(n)
+        if split is None:
+            return None
+        roman_part, suffix = split
+        ordinal = _roman_ordinal(roman_part)
+        if ordinal <= 0:
+            return None
+        if len(roman_part) > 1:
+            has_multichar_roman = True
+        mapping[n] = (ordinal, suffix)
+    if not has_multichar_roman:
+        return None
+    return mapping
+
+
+def _run_aware_sort_key_fn(
+    labels: Sequence[Optional[str]],
+    base_sort_key_fn: Callable[[Optional[str]], Tuple[int, str, int]],
+) -> Callable[[Optional[str]], Tuple[int, str, int]]:
+    """Return a sort key fn specialised for a sibling run.
+
+    When the run is a genuine Roman-numeral sequence (see ``_roman_run_ordinals``)
+    every member — including ambiguous single glyphs — is keyed by its Roman
+    ordinal so the run sorts numerically (``ix`` after ``viii``).  Otherwise the
+    supplied ``base_sort_key_fn`` is returned unchanged.
+
+    Run-aware Roman promotion only applies to the shared default sort key.
+    Jurisdiction frontends that inject their own key (e.g. Norway's litra-vs-
+    roman ``_no_sort_key`` with its own witnessed single-glyph disambiguation)
+    own that decision and are left untouched.
+    """
+    if base_sort_key_fn is not _default_sort_key:
+        return base_sort_key_fn
+    roman = _roman_run_ordinals(labels)
+    if roman is None:
+        return base_sort_key_fn
+
+    def _key(label: Optional[str]) -> Tuple[int, str, int]:
+        if label is not None:
+            entry = roman.get(_norm(label))
+            if entry is not None:
+                ordinal, suffix = entry
+                return (ordinal, suffix, 0)
+        return base_sort_key_fn(label)
+
+    return _key
 
 
 def _insert_child_sorted(
@@ -773,6 +897,7 @@ def receipt_from_diff(
     recovery_rule_ids: tuple[str, ...] = (),
     migration_rule_ids: tuple[str, ...] = (),
     fallback_rule_ids: tuple[str, ...] = (),
+    source_anchor: "SourceAnchor | None" = None,
 ) -> WriteReceipt:
     """Build a WriteReceipt from the ACTUAL before/after diff (landed reality).
 
@@ -821,6 +946,7 @@ def receipt_from_diff(
         fallback_rule_ids=fallback_rule_ids,
         pre_hashes=pre_hashes,
         post_hashes=post_hashes,
+        source_anchor=source_anchor,
     )
 
 
@@ -912,6 +1038,139 @@ def insert_sorted_witnessed(
         bound_target_path=created,
         footprint_kind="create",
     )
+
+
+# ---------------------------------------------------------------------------
+# Staged structural ops — the WriteReceipt footprint account, RETURNED.
+# ---------------------------------------------------------------------------
+#
+# The ``_witnessed`` variants already build a WriteReceipt by construction, but
+# that account is only reachable by a caller that opts into a receipt list. The
+# ``_staged`` wrappers below SURFACE the same account as the canonical
+# ``StageResult[IRNode]`` (Pro §2 stage contract) so the structural-mutation
+# surface returns its footprint coverage + mutation-boundary residual type-
+# carried, not as a side channel.
+#
+# Authority firewall (Pro §8): the core tree-op surface carries value + coverage
+# + evidence ONLY. It never defaults ``replay_authorized`` on — the apply/
+# authority waist attaches an ``ExecutionAuthorization`` later. ``authority``
+# here is always the neutral surface.
+
+#: The structural-mutation stage result alias (the carrier these ops return).
+StructuralStageResult: TypeAlias = StageResult[IRNode]
+
+
+def structural_stage_result(tree: IRNode, receipt: WriteReceipt) -> StructuralStageResult:
+    """Project a landed ``WriteReceipt`` into the canonical ``StageResult[IRNode]``.
+
+    The single mapping the staged tree ops and any receipt-building apply
+    consumer share, so the footprint coverage + the mutation-boundary residual
+    are derived identically wherever a structural write lands:
+
+      * ``value``    = ``tree`` (the mutated IRNode).
+      * ``coverage`` = every declared footprint path is ``owned`` (the write
+        claimed it); ``unit="paths"``, ``residual``/``violation`` 0. The point
+        is making the footprint a RETURNED account.
+      * ``residuals`` = if ``receipt.divergence_explained is False`` exactly one
+        blocking ``unowned_violation`` residual (the §4-contract "unexplained
+        divergence becomes a blocking residual", now type-carried instead of
+        strict-mode-only); otherwise empty.
+      * ``evidence`` = a ``SourceWitness`` projecting the receipt's
+        ``source_anchor`` quote-hash into a ``DigestWitness`` when present, else
+        empty footing.
+      * ``findings``  = ``()`` (the FI apply layer owns source-pathology
+        findings; the core op surface emits none).
+      * ``authority`` = neutral (the firewall; authorization is attached later).
+    """
+    footprint = receipt.declared_footprint
+    declared = len(footprint)
+    coverage = CoverageCertificate(
+        unit="paths",
+        total=declared,
+        owned=declared,
+        residual=0,
+        violation=0,
+    )
+
+    residuals: tuple[Residual, ...] = ()
+    if not receipt.divergence_explained:
+        residuals = (
+            Residual(
+                kind="unowned_violation",
+                reason="unexplained_mutation_boundary_divergence",
+                scope=(
+                    receipt_address_string(receipt.bound_target_path)
+                    if receipt.bound_target_path is not None
+                    else ""
+                ),
+                text="",
+                blocking=True,
+            ),
+        )
+
+    evidence = EMPTY_EVIDENCE
+    anchor = receipt.source_anchor
+    if anchor is not None:
+        algorithm, _, digest = anchor.quote_hash.partition(":")
+        evidence = EvidenceBundle(
+            (
+                SourceWitness(
+                    source_role="amendment_source_clause",
+                    artifact_id=anchor.source_artifact_id,
+                    digest=DigestWitness(digest_algorithm=algorithm, digest=digest),
+                ),
+            )
+        )
+
+    return StageResult(
+        value=tree,
+        evidence=evidence,
+        residuals=residuals,
+        findings=(),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def replace_at_staged(
+    tree: IRNode,
+    path: Sequence[PathStep],
+    content: IRNode,
+    *,
+    op_id: str = "",
+    helper: str = "tree_ops.replace_at_staged",
+) -> StructuralStageResult:
+    """``replace_at`` returning the footprint account as ``StageResult[IRNode]``."""
+    outcome = replace_at_witnessed(tree, path, content, op_id=op_id, helper=helper)
+    return structural_stage_result(outcome.tree, outcome.receipt)
+
+
+def remove_at_staged(
+    tree: IRNode,
+    path: Sequence[PathStep],
+    *,
+    op_id: str = "",
+    helper: str = "tree_ops.remove_at_staged",
+) -> StructuralStageResult:
+    """``remove_at`` returning the footprint account as ``StageResult[IRNode]``."""
+    outcome = remove_at_witnessed(tree, path, op_id=op_id, helper=helper)
+    return structural_stage_result(outcome.tree, outcome.receipt)
+
+
+def insert_sorted_staged(
+    tree: IRNode,
+    parent_path: Sequence[PathStep],
+    content: IRNode,
+    sort_key_fn: Callable[[Optional[str]], Tuple[int, str, int]] = _default_sort_key,
+    *,
+    op_id: str = "",
+    helper: str = "tree_ops.insert_sorted_staged",
+) -> StructuralStageResult:
+    """``insert_sorted`` returning the footprint account as ``StageResult[IRNode]``."""
+    outcome = insert_sorted_witnessed(
+        tree, parent_path, content, sort_key_fn, op_id=op_id, helper=helper
+    )
+    return structural_stage_result(outcome.tree, outcome.receipt)
 
 
 def insert_after(
@@ -1193,7 +1452,11 @@ def resort_children(
         for ck, entries in by_kind.items():
             indices = [idx for idx, _ in entries]
             nodes = [n for _, n in entries]
-            sorted_nodes = sorted(nodes, key=lambda n: sort_key_fn(n.label))
+            labels = [str(n.label or "") for n in nodes]
+            if _preserve_source_order_for_mixed_labels(ck, labels):
+                continue
+            run_key_fn = _run_aware_sort_key_fn(labels, sort_key_fn)
+            sorted_nodes = sorted(nodes, key=lambda n, _k=run_key_fn: _k(n.label))
             if any(orig is not repl for orig, repl in zip(nodes, sorted_nodes, strict=True)):
                 any_changed = True
                 for idx, repl_node in zip(indices, sorted_nodes, strict=True):
@@ -1367,6 +1630,23 @@ _ORDERED_INVARIANT_KINDS = frozenset(
         "sentence",
     }
 )
+_SOURCE_ORDER_MIXED_LABEL_KINDS = frozenset({"paragraph", "subparagraph", "item", "sentence"})
+
+
+def _label_order_family(label: str) -> str:
+    normalized = _norm(label)
+    if _COMPOUND_NUMERIC_SORT_LABEL_RE.match(normalized) or _LETTER_SUFFIX_SORT_LABEL_RE.match(normalized):
+        return "numbered"
+    if _PURE_ALPHA_LABEL_RE.match(normalized):
+        return "alpha"
+    return "other"
+
+
+def _preserve_source_order_for_mixed_labels(kind: str, labels: Sequence[str]) -> bool:
+    if kind not in _SOURCE_ORDER_MIXED_LABEL_KINDS:
+        return False
+    families = {_label_order_family(label) for label in labels if label}
+    return "numbered" in families and "alpha" in families
 
 
 def format_invariant_path(path: InvariantPath) -> str:
@@ -1467,7 +1747,10 @@ def _iter_duplicate_order_tree_invariant_violations(
                 )
         for kind, labels in by_kind.items():
             if kind in _ORDERED_INVARIANT_KINDS:
-                keys = [sort_key(label) for label in labels]
+                if _preserve_source_order_for_mixed_labels(kind, labels):
+                    continue
+                run_key = _run_aware_sort_key_fn(labels, sort_key)
+                keys = [run_key(label) for label in labels]
                 for i, (left_key, right_key) in enumerate(pairwise(keys)):
                     if left_key > right_key:
                         yield TreeInvariantViolation(
@@ -1552,7 +1835,10 @@ def iter_tree_invariant_violations(
                     by_kind.setdefault(_kind_str(child.kind), []).append(child.label)
             for kind, labels in by_kind.items():
                 if kind in _ORDERED_INVARIANT_KINDS:
-                    keys = [_sort_key(label) for label in labels]
+                    if _preserve_source_order_for_mixed_labels(kind, labels):
+                        continue
+                    run_key = _run_aware_sort_key_fn(labels, _sort_key)
+                    keys = [run_key(label) for label in labels]
                     for i, (left_key, right_key) in enumerate(pairwise(keys)):
                         if left_key > right_key:
                             yield TreeInvariantViolation(
@@ -2068,6 +2354,36 @@ def _label_sequence_family_and_ordinal(label: str) -> tuple[str, int] | None:
     return None
 
 
+_ROMAN_RENDER_TABLE: tuple[tuple[int, str], ...] = (
+    (1000, "m"),
+    (900, "cm"),
+    (500, "d"),
+    (400, "cd"),
+    (100, "c"),
+    (90, "xc"),
+    (50, "l"),
+    (40, "xl"),
+    (10, "x"),
+    (9, "ix"),
+    (5, "v"),
+    (4, "iv"),
+    (1, "i"),
+)
+
+
+def _render_roman(ordinal: int) -> str:
+    """Render a positive ordinal as a lowercase Roman numeral (inverse of ``_roman_ordinal``)."""
+    if ordinal <= 0:
+        return str(ordinal)
+    chars: list[str] = []
+    remaining = ordinal
+    for value, glyphs in _ROMAN_RENDER_TABLE:
+        while remaining >= value:
+            chars.append(glyphs)
+            remaining -= value
+    return "".join(chars)
+
+
 def _render_sequence_label(family: str, ordinal: int) -> str:
     if family == "digit":
         return str(ordinal)
@@ -2079,6 +2395,8 @@ def _render_sequence_label(family: str, ordinal: int) -> str:
             chars.append(chr(ord("a") + (n % 26)))
             n //= 26
         return "".join(reversed(chars))
+    if family == "roman":
+        return _render_roman(ordinal)
     return str(ordinal)
 
 

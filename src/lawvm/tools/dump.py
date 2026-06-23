@@ -28,7 +28,7 @@ from lawvm.finland.metadata import _normalize_johtolause_verbs, get_johtolause
 from lawvm.finland.normalize import parse_ops_fallback_heuristic
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.scope import assign_chapter_scope_from_johtolause as _assign_chapter_scope_from_johtolause
-from lawvm.finland.xml_statute import XMLStatute
+from lawvm.finland.xml_statute import XMLStatute, serialize_text as _serialize_ir_text
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.citation_routing import OP_KEYWORDS
@@ -36,6 +36,7 @@ from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.johtolause.diagnostics import extract_ops_diagnostic
 from lawvm.finland.ops import classify_legal_operation_conversion_skip
+from lawvm.tools.pit_projection import comparison_ir_for_pit
 from lawvm.finland.statute import ReplayState
 from lawvm.core.clause_ast import (
     ClauseAST, VerbGroup, ScopedBlock, RefAmend, TextAmend, LabelAmend, MetaClause,
@@ -325,18 +326,26 @@ def dump_extract(sid: str, source_mid: str, after_normalize: bool = False,
 # Stage: APPLY — final replayed text (or a single provision)
 # ---------------------------------------------------------------------------
 
-def _dump_apply(sid: str, address: Optional[str],
-                            stop_before: str = "") -> None:
+def _comparison_ir(master):
+    return comparison_ir_for_pit(master, query_type="in_force")
+
+
+def _dump_apply(
+    sid: str,
+    address: Optional[str],
+    stop_before: str = "",
+    as_of: str = "",
+) -> None:
     master = call_replay_xml(
         replay_xml,
-        request=ReplayXmlRequest(parent_id=sid, stop_before=stop_before, quiet=True),
+        request=ReplayXmlRequest(parent_id=sid, stop_before=stop_before, quiet=True, as_of=as_of),
     )
 
     if not address:
         print(f"Statute: {sid}")
         print("Stage  : APPLY (full replay)")
         print()
-        print(master.serialize_text())
+        print(_serialize_ir_text(_comparison_ir(master)) if as_of else master.serialize_text())
         return
 
     # Filter to address
@@ -351,11 +360,12 @@ def _dump_apply(sid: str, address: Optional[str],
         return
 
     kind, num = addr_filter
-    # Search master.ir by label
+    # Search the materialized PIT tree by label when --as-of is supplied.
     from lawvm.core.ir_helpers import irnode_to_text
     from lawvm.core import tree_ops as _tops
-    found_path = _tops.find(master.ir, kind, num)
-    found = _tops.resolve(master.ir, found_path) if found_path else None
+    replay_ir = _comparison_ir(master) if as_of else master.ir
+    found_path = _tops.find(replay_ir, kind, num)
+    found = _tops.resolve(replay_ir, found_path) if found_path else None
 
     if found is not None:
         print(irnode_to_text(found))
@@ -382,8 +392,13 @@ def _dump_apply(sid: str, address: Optional[str],
     print(text)
 
 
-def dump_apply(sid: str, address: Optional[str] = None, stop_before: str = "") -> None:
-    _dump_apply(sid, address, stop_before=stop_before)
+def dump_apply(
+    sid: str,
+    address: Optional[str] = None,
+    stop_before: str = "",
+    as_of: str = "",
+) -> None:
+    _dump_apply(sid, address, stop_before=stop_before, as_of=as_of)
 
 
 # Open-ended materialization horizon used by replay; selecting the governing
@@ -537,4 +552,4 @@ def main(args) -> None:
             sys.exit(2)
         # Default ("apply" or no --after): full replay
         stop_before = getattr(args, "before", "") or ""
-        dump_apply(sid, address, stop_before=stop_before)
+        dump_apply(sid, address, stop_before=stop_before, as_of=as_of)

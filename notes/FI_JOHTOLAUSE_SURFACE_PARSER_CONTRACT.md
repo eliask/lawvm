@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current-with-noted-drift. Kind: Normative (the frozen observable contract of `surface_parse.parse(...)`). One stale consumer ref: line 95 "peg3.py (facade)" no longer exists — the canonical parser/facade is `johtolause/surface_parse.py` (consumed via `api.py`); update the consumer list. Everything else verified against `surface_model.py`/`scan.py`.
+
 # FI Johtolause Surface Parser — Compatibility Contract (v0)
 
 Status: normative. The exact observable contract of `surface_parse.parse(...)`, frozen so a rewrite
