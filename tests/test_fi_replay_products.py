@@ -1247,6 +1247,18 @@ def test_replay_xml_1966_722_expires_temporary_current_tax_year_section() -> Non
     assert select_active_version(timeline, "2001-01-01") is None
 
 
+@pytest.mark.slow
+def test_replay_xml_1998_806_preserves_split_section_8_item_payload() -> None:
+    replay = pinned_replay("1998/806", mode="official_consolidation", quiet=True)
+    section = replay.materialized_state.find_node("section", "8", "chapter", "1")
+    assert section is not None
+
+    text = " ".join(irnode_to_text(section).split())
+    assert "musiikkialan perustutkintoon johtavassa koulutuksessa 35 prosenttia" in text
+    assert "elintarvikealan perustutkintoon johtavassa meijerialan koulutusohjelmassa" in text
+    assert "kaikilla aloilla erityisopetuksessa 47 prosenttia" in text
+
+
 def test_replay_xml_1987_322_repeals_sections_10a_to_10f_after_2023_741() -> None:
     replay = pinned_replay("1987/322", mode="official_consolidation", quiet=True)
     for label in ("10a", "10b", "10c", "10d", "10e", "10f"):
