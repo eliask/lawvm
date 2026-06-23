@@ -557,6 +557,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_frame_affordances.py",
         "test_fi_frame_id_collisions.py",
         "test_fi_frame_relations.py",
+        "test_fi_derivation_edges.py",
         "test_fi_graph_build.py",
         "test_fi_graph_parity.py",
         "test_fi_interlink_targets.py",
