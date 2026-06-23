@@ -712,6 +712,44 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "/legal_address_entity/actor_entity) appears in no edge endpoint — "
                 "an entity node with no covering edge, surfaced not left uncovered",
                 ("parse_witness", "preservation"), role="observation"),
+    # Disjoint-window scheduling totality sweep (audit-registry rows
+    # SCHED-01/02/03). Read-only per-window totality over the finished replay
+    # output (ReplayProducts.temporal_events + timelines): every temporary
+    # legal-effect window is materialized as a version interval, carried as a
+    # typed residual, or surfaced here — never silently dropped. Same
+    # observation-role, non-blocking disposition as the SURF-* sweeps: over a
+    # real corpus a disjoint window the document-order fold did not materialize
+    # is a REAL legal fact (a temporary gap-filler whose slot a deferred-
+    # commencement twin holds), surfaced — not a pipeline fault — so blocking
+    # would contradict tag-don't-guess. The synthetic unit-level bite is the
+    # guard-liveness fire-drill. The apply-time discovery twin
+    # (APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT -> TEMPORAL.WINDOW_UNMATERIALIZED)
+    # is the fold-time repair lane; this is the complementary read-only audit
+    # over the FINAL output.
+    FindingSpec("SCHED.WINDOW_UNMATERIALIZED", "schedule_window_totality",
+                "source_pathology", "warn", "fi_schedule_window_totality",
+                "a temporary legal-effect window (effective..expires) on the "
+                "replay output is NOT materialized as a version interval and is "
+                "NOT carried as a typed residual: a disjoint window the document-"
+                "order fold left unmaterialized, surfaced not silently dropped",
+                ("temporal_selection", "preservation"), role="observation"),
+    # SCOPE-01/02 scope-lattice totality (read-only sweep over the FINAL
+    # timelines). The full disjointness lattice is PART (missing carrier: no
+    # populated structured scope predicate on FI selection rows); the CHECKABLE
+    # part is the precedence-rail residual — two co-effective distinct-content
+    # rows that share the precedence rank key (lex posterior does NOT separate
+    # them) and carry no disjoint scope predicate, so the winner depends on list
+    # order. Non-blocking (a real co-effective tie is a source fact to surface,
+    # not a crash); the apply/selection engine's own ambiguous_missing_scope arm
+    # is the complementary live-query lane. Over the FI corpus it stands at 0.
+    FindingSpec("SCOPE.OVERLAP_WITHOUT_DISJOINT_SCOPE", "scope_lattice_totality",
+                "source_pathology", "warn", "fi_scope_lattice_totality",
+                "two co-effective versions at one address share the precedence-rail "
+                "rank key (effective/enacted/source) with distinct content and NO "
+                "disjoint scope predicate admits the overlap: the selection winner "
+                "would depend on list order, not a proved legal precedence or a "
+                "scope distinction, surfaced not silently order-resolved",
+                ("temporal_selection", "ambiguity_resolution"), role="observation"),
     # Rank-17 silent-drop closure (canonical_op plane). The clause_ast ingress
     # seam (fi extract_legal_ops_from_parse_result) and the legacy lower_surface
     # bridge previously dropped unsupported clause/surface nodes
@@ -1114,6 +1152,39 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "unstated-migration closure: a target address-key delta (nominal -> resolved) "
                 "with no migration/lineage event or typed rekey witness",
                 ("migration", "lineage"), role="observation"),
+    # --- Promotion-chain integrity wave (CHAIN-/PROMOTE- families, §0) ---
+    # PROMOTE-02 (strict-blocking): an ExecutionAuthorization gating an op whose
+    # derived identity does not equal the authorization's bound rule_id.
+    FindingSpec("PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "authorization scope-match: an ExecutionAuthorization gating a state-mutating "
+                "op is bound to a different op's derived identity (rule_id mismatch); authority "
+                "minted for one op may not gate another (smuggled authority, §1.5 analogue)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # CHAIN-01 (strict-blocking): a mutating op's promotion chain is missing a
+    # materialized link (incomplete over the links that exist as typed carriers).
+    FindingSpec("CHAIN.PROMOTION_CHAIN_INCOMPLETE", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "promotion-chain completeness: a state-mutating op's promotion chain is missing "
+                "a materialized link (every materialized source-witness -> ... -> agreement-row "
+                "link must be present)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # CHAIN-02 (strict-blocking): a link reached with an absent materialized
+    # predecessor — authority by accumulation rather than by climbing.
+    FindingSpec("CHAIN.AUTHORITY_BY_ACCUMULATION", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "promotion-chain monotonicity: a chain link was reached with an absent "
+                "materialized predecessor — authority acquired by accumulation, not by climbing "
+                "the boundary (never by accumulation)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # PROMOTE-01 (strict-blocking): a downstream link standing on a retracted
+    # predecessor without reopen/taint (immediate one-hop arm).
+    FindingSpec("PROMOTE.STALE_DOWNSTREAM_AFTER_RETRACTION", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "retraction down-chain propagation: a retracted promotion-chain link has a "
+                "downstream link left standing without reopen/taint (the whole sub-chain below "
+                "a retracted link must be re-opened, not just the immediate consumer)",
+                ("safety_invariant", "provenance"), role="violation"),
     FindingSpec("REPLAY_UNKNOWN_MUTATION_OUTCOME", "apply",
                 "violation", "hard_fail", "grafter",
                 "replay mutation event carried an outcome label outside the registered outcome sets",
