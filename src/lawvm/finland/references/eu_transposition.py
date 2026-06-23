@@ -250,6 +250,7 @@ def recognize_transposition_claims(
     prose = _prose(text)
     out: list[TranspositionClaim] = []
     seen: set[tuple[Optional[str], str, str]] = set()
+    # lawvm-regex: owning_parser canonical EU directive-transposition claim recognizer (the owner of TranspositionClaim emission); CELEX binding delegated to _find_nickname, status set explicitly, never guessed
     for m in _TRANSPOSE_CLAIM_RE.finditer(prose):
         fwd_end = min(len(prose), m.end() + _CLAIM_FORWARD_WINDOW)
         back_start = max(0, m.start() - _CLAIM_BACKWARD_WINDOW)
