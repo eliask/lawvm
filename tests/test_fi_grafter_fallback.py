@@ -156,7 +156,10 @@ from lawvm.finland.compile_group_elaboration import (
     _drop_payloadless_source_replace_shadowed_by_same_group_relabel,
     elaborate_group as _elaborate_group,
 )
-from lawvm.finland.compile_amendment import _split_numbered_table_child_group_ops
+from lawvm.finland.compile_amendment import (
+    _split_numbered_table_child_group_ops,
+    compile_amendment_ops,
+)
 from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
 from lawvm.finland.compile_group_scope_recovery import (
     CompileGroupScopeRecoveryRequest,
@@ -6456,6 +6459,82 @@ def test_build_amendment_bundle_salvages_malformed_chapter_insert_surface() -> N
     assert "INSERT 37 luku 301a §" in final_ops
     assert "INSERT 38 luku 304 § 1 mom 14 kohta" in final_ops
     assert "INSERT 38 luku 304 § 1 mom 17 kohta" in final_ops
+
+
+def test_compile_2020_1207_keeps_explicit_insert_scope_over_body_wrappers() -> None:
+    try:
+        before_master = inspect_amendment.call_replay_xml(
+            inspect_amendment.replay_xml,
+            request=ReplayXmlRequest(
+                parent_id="2014/917",
+                mode="legal_pit",
+                stop_before="2020/1207",
+                build_full_products=False,
+                quiet=True,
+            ),
+        )
+        xml_bytes = get_corpus().read_source("2020/1207")
+    except (OSError, RuntimeError) as exc:
+        pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
+    if xml_bytes is None:
+        pytest.skip("Finlex archive missing amendment 2020/1207")
+
+    _, xml_bytes = inspect_amendment.extract_inline_corrections(xml_bytes, "2020/1207")
+    xml_bytes, _ = inspect_amendment.get_patch_table().patch_source_xml(xml_bytes, "2020/1207")
+    xml_bytes, _ = inspect_amendment.get_patch_table().patch_source_body_xml(xml_bytes, "2020/1207")
+
+    muutos_tree = etree.fromstring(xml_bytes)
+    source_title = inspect_amendment._tree_title(muutos_tree)
+    muutos_tree, johto, used_preamble_body_fallback, should_apply, _route_reason = (
+        inspect_amendment._working_johtolause(
+            "2014/917",
+            before_master.title,
+            "2020/1207",
+            xml_bytes,
+            source_title,
+        )
+    )
+    assert should_apply
+
+    source_model = AmendmentSourceModel.from_tree(muutos_tree, source_ref="2020/1207")
+    normalized = normalize_and_compile_ops(
+        johto,
+        muutos_tree,
+        before_master.replay_fold_state,
+        "2020/1207",
+        source_title=source_title,
+        used_preamble_body_fallback=used_preamble_body_fallback,
+        parent_id="2014/917",
+        strict_profile=None,
+        source_model=source_model,
+    )
+    compiled = compile_amendment_ops(
+        before_master.replay_fold_state,
+        normalized.output,
+        source_model,
+        johto,
+        "legal_pit",
+        strict_profile=None,
+        source_ref="2020/1207",
+        source_title=source_title,
+        target_statute="2014/917",
+    )
+    descendant_inserts = {
+        (op.target_section, str(op.target_paragraph or "")): (
+            rop.resolved_target_scope_part_label,
+            rop.resolved_target_scope_chapter_label,
+        )
+        for rop in compiled.output
+        if (op := rop.op).op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_section in {"60", "99", "100", "102"}
+        and op.target_paragraph is not None
+    }
+
+    assert descendant_inserts[("60", "3")] == ("3", "9")
+    assert descendant_inserts[("99", "4")] == ("4", "14")
+    assert descendant_inserts[("100", "6")] == ("4", "14")
+    assert descendant_inserts[("102", "2")] == ("4", "14")
 
 
 def test_build_amendment_bundle_expands_letter_suffix_range_with_hyphen_dash() -> None:

@@ -143,7 +143,11 @@ def _group_has_scope_that_overrides_body_wrapper(
         if (
             witness is not None
             and witness.resolved_chapter == target_chapter
-            and witness.source in {"live_stem_host", "explicit_scope_rewrite"}
+            and witness.source
+            in {
+                ScopeResolutionSource.LIVE_STEM_HOST,
+                ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            }
         ):
             return True
     return False
@@ -783,7 +787,6 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and request.target_chapter is not None
         and body_chapter != request.target_chapter
-        and body_chapter_is_single_mixed_wrapper
         and _group_has_live_scoped_target_path(
             request.master,
             request.group_ops,
