@@ -849,13 +849,20 @@ def _slot_ir_has_paragraph_row(node: IRNode) -> bool:
 def _slot_ir_carries_item_row_marker(node: IRNode, target_item: str) -> bool:
     """Return whether ``node``'s flat content carries the item's own row marker.
 
-    A content-only fee-table subsection can hold a row like ``H. Poronlihan ...``
-    that is the source-owned text for item ``h`` (lettered table row addressed as
-    ``N kohta h``). When the candidate slot literally carries that row marker, the
-    item op is NOT being mis-bound to an unrelated intro/body fragment — the slot
-    IS the item's content — so the sparse-fallback guard must not drop it.
-    Restricted to the row's letter/number marker (``LABEL.``) to avoid matching
-    incidental occurrences of the letter inside prose.
+    A content-only subsection can hold the source-owned text for an item under
+    its own row marker:
+
+    * a lettered fee-table row ``H. Poronlihan ...`` for item ``h`` (addressed
+      ``N kohta h``); or
+    * a flat ``8 a) meriliikenteen ...`` item-prefix row for item ``8a``
+      (addressed ``N momentin 8 a kohta``), where the digit/letter compound may
+      carry an internal space in the source text.
+
+    When the candidate slot literally carries the item's own marker, the item op
+    is NOT being mis-bound to an unrelated intro/body fragment — the slot IS the
+    item's content — so the sparse-fallback guard must not drop it. Matching is
+    restricted to a leading/standalone ``LABEL.`` or ``LABEL)`` marker so an
+    incidental letter inside prose does not falsely exempt the op.
     """
     item_key = leaf_label_identity_key(str(target_item or ""))
     if not item_key:
@@ -863,11 +870,13 @@ def _slot_ir_carries_item_row_marker(node: IRNode, target_item: str) -> bool:
     text = irnode_to_text(node).strip()
     if not text:
         return False
-    # lawvm-regex: owning_parser P-table-row-marker lettered/numbered ``LABEL.``
-    # row prefix predicate over flat content; lexer-shaped, drives slot
+    # lawvm-regex: owning_parser P-item-row-marker lettered/numbered
+    # ``LABEL.``/``LABEL)`` row-prefix predicate over flat content (compound
+    # ``N a`` markers may carry an internal space); lexer-shaped, drives slot
     # assignment exemption only, no op.
-    for match in re.finditer(r"(?:^|\s)([0-9]+[a-zA-Z]*|[a-zA-Z])\.\s", text):
-        if leaf_label_identity_key(match.group(1)) == item_key:
+    for match in re.finditer(r"(?:^|\s)([0-9]+\s*[a-zA-Z]*|[a-zA-Z])[.)]\s", text):
+        marker = re.sub(r"\s+", "", match.group(1))
+        if leaf_label_identity_key(marker) == item_key:
             return True
     return False
 
@@ -1728,15 +1737,21 @@ def _assign_item_prefix_slot_ops(
     state: SubsectionSlotAssignmentState,
 ) -> None:
     for op in slot_inputs.payload_subsec_ops:
-        if not op.target_item:
+        if op in state.subsec_map or not op.target_item:
             continue
         item_norm = leaf_label_identity_key(str(op.target_item))
-        for sub in slot_inputs.amend_subs:
+        for idx, sub in enumerate(slot_inputs.amend_subs):
+            if idx in state.used_subs:
+                continue
             sub_text = (sub.text or " ".join(child.text or "" for child in sub.children)).strip()
-            # lawvm-regex: owning_parser P-item-prefix flat ``N)`` item-label predicate over IR sub text; lexer-shaped
-            m = re.match(r"^(\d+[a-zA-Z]*)\)", sub_text)
-            if m and leaf_label_identity_key(m.group(1)) == item_norm:
+            # lawvm-regex: owning_parser P-item-prefix flat ``N)`` item-label
+            # predicate over IR sub text; lexer-shaped. The digit/letter compound
+            # may carry an internal space in the source (``8 a)``) — normalize it
+            # away before comparing to the addressed item label.
+            m = re.match(r"^(\d+\s*[a-zA-Z]*)\)", sub_text)
+            if m and leaf_label_identity_key(re.sub(r"\s+", "", m.group(1))) == item_norm:
                 state.subsec_map.assign(op, sub)
+                state.used_subs.add(idx)
                 break
 
 
