@@ -6360,6 +6360,114 @@ def test_normalize_group_payload_emits_source_pathology_for_suspicious_partial_w
     assert pathologies[0].source_statute == "2010/1399"
 
 
+def test_normalize_group_payload_keeps_multi_subsection_whole_section_replace() -> None:
+    """Do not treat a legitimate multi-moment replacement as an empty tiny fragment."""
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="4 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Määritelmiä"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Tässä asetuksessa tarkoitetaan:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 1"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 2"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="3",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 3"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="4",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 4"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="5",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 5"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="6",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 6"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="7",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 7"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="8",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 8"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "4", target_chapter="1", live_node=live_sec)
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="4",
+        target_chapter="1",
+        source_statute="2005/484",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="4 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Määritelmiä"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Tässä asetuksessa noudatetaan kemikaaliturvallisuuslain mukaisia määritelmiä.",
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Lisäksi tässä asetuksessa tarkoitetaan:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="jakeluasemalla uutta määritelmää"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="tarkastuslaitoksella uutta määritelmää"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    assert tuple(got.group_ops) == (op,)
+    assert got.rejected_ops == ()
+    assert _pathologies(got) == ()
+
+
 def test_normalize_group_payload_drops_stale_whole_section_shell_for_subsection_target() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

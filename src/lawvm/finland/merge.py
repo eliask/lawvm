@@ -2463,6 +2463,7 @@ def _partial_section_replace_diagnostics_ir(
         heading = next((c for c in node.children if c.kind is IRNodeKind.HEADING), None)
         return " ".join(irnode_to_text(heading).split()) if heading is not None else ""
 
+    amend_subsections = [c for c in amend_sec.children if c.kind is IRNodeKind.SUBSECTION]
     master_set = set(master_paras)
     diag: dict[str, object] = {}
     if amend_paras and len(amend_paras) < len(master_paras) and all(sig in master_set for sig in amend_paras):
@@ -2498,7 +2499,13 @@ def _partial_section_replace_diagnostics_ir(
             return diag
     master_heading = _heading_text(master_sec)
     amend_heading = _heading_text(amend_sec)
-    if not amend_paras and master_heading and master_heading == amend_heading and text_ratio <= 0.2:
+    if (
+        not amend_paras
+        and len(amend_subsections) <= 1
+        and master_heading
+        and master_heading == amend_heading
+        and text_ratio <= 0.2
+    ):
         return {
             "suspicious": True,
             "reason": "shared_heading_tiny_payload",
