@@ -26,6 +26,7 @@ prove the "effective Finnish law in one set" payoff on GDPR end to end.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -236,7 +237,9 @@ def test_edge_rewritten_to_resolved_node() -> None:
     assert er.edge["verification_level"] == VerificationLevel.REGISTRY_RESOLVED.value
     assert er.edge["authority_plane"] == AuthorityPlane.SURFACE.value
     # The opaque CELEX string is GONE from the resolved target_set.
-    assert not any(str(t).startswith("celex:") for t in er.edge["target_set"])
+    assert not any(
+        str(t).startswith("celex:") for t in cast("list[str]", er.edge["target_set"])
+    )
 
 
 def test_resolved_edge_is_matrix_legal() -> None:
@@ -280,7 +283,9 @@ def test_coordination_edge_all_targets_resolved() -> None:
     )
     er = resolve_fi_eu_edge(edge, work, corpus_version="fi:corpus:test")
     assert er.rewritten
-    assert sorted(er.edge["target_set"]) == sorted([_entity("006"), _entity("089")])
+    assert sorted(cast("list[str]", er.edge["target_set"])) == sorted(
+        [_entity("006"), _entity("089")]
+    )
     assert er.edge["target_set_semantics"] == TargetSetSemantics.ALL_VALID.value
 
 
@@ -348,9 +353,14 @@ def test_ingest_address_nodes_carry_entity_id(tmp_path: Path) -> None:
 
 
 def test_ingest_pack_is_deterministic(tmp_path: Path) -> None:
-    kw = dict(celex=_CELEX, nodes=_synthetic_nodes(), created_at="2026-06-22T00:00:00+00:00")
-    r1, _ = export_eu_regulation_pack("", out_dir=tmp_path / "p1", **kw)  # type: ignore[arg-type]
-    r2, _ = export_eu_regulation_pack("", out_dir=tmp_path / "p2", **kw)  # type: ignore[arg-type]
+    nodes = _synthetic_nodes()
+    created_at = "2026-06-22T00:00:00+00:00"
+    r1, _ = export_eu_regulation_pack(
+        "", celex=_CELEX, nodes=nodes, created_at=created_at, out_dir=tmp_path / "p1"
+    )
+    r2, _ = export_eu_regulation_pack(
+        "", celex=_CELEX, nodes=nodes, created_at=created_at, out_dir=tmp_path / "p2"
+    )
     assert r1.pack_id == r2.pack_id
 
 
@@ -410,7 +420,11 @@ def test_e2e_tietosuojalaki_eu_refs_resolve(tmp_path: Path) -> None:
     # tietosuojalaki 1050/2018 lives at engine id 2018/1050.
     cv = "fi:corpus:test"
     edges = _build_fi_relation_edges(engine_id="2018/1050", corpus_version=cv)
-    eu_edges = [e for e in edges if any(str(t).startswith("celex:") for t in e.get("target_set", []))]
+    eu_edges = [
+        e
+        for e in edges
+        if any(str(t).startswith("celex:") for t in cast("list[str]", e.get("target_set", [])))
+    ]
     assert eu_edges, "tietosuojalaki should carry FI→GDPR article cites"
 
     n_resolved = 0
