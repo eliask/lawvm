@@ -2065,6 +2065,103 @@ def drill_surface_orphan_entity_node_surface_totality() -> None:
     )
 
 
+def drill_sched_window_unmaterialized_schedule_window_totality() -> None:
+    """Drive the production SCHED-01/02/03 sweep into a WINDOW_UNMATERIALIZED firing.
+
+    Builds a synthetic replay output (``ReplayProducts``) carrying a temporary
+    legal-effect window on the temporal-event plane (a commence + expire pair
+    sharing a ``group_id``, the expire event scoped to a target address) whose
+    ``[effective, expires)`` interval is NOT present in the materialized timeline
+    — the timeline instead holds a later-effective fold occupant (the disjoint-
+    window case). The real ``sweep_disjoint_window_materialization`` must surface
+    that window. Then a CLEAN variant materializes the same interval as a version
+    row and the sweep STAYS SILENT. The drill exercises the production sweep, not
+    a hand-built finding.
+    """
+    from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
+    from lawvm.core.temporal import (
+        FIXED_DATE_KIND,
+        ActivationRule,
+        TemporalEvent,
+        TemporalScope,
+    )
+    from lawvm.finland.legal_surface.schedule_window_totality import (
+        SCHED_WINDOW_UNMATERIALIZED,
+        sweep_disjoint_window_materialization,
+    )
+    from lawvm.finland.replay_products import ReplayProducts
+    from lawvm.finland.statute import ReplayState
+
+    address = LegalAddress(path=(("section", "5"),))
+    scope = TemporalScope(target_statute="0001/2024")
+    expire_scope = TemporalScope(
+        target_statute="0001/2024", exact_addresses=(address,)
+    )
+    commence = TemporalEvent(
+        event_id="fi-temporal:grp-w:commence",
+        kind="commence",
+        scope=scope,
+        effective="2024-01-01",
+        activation_rule=ActivationRule(
+            kind=FIXED_DATE_KIND, effective_date="2024-01-01"
+        ),
+        group_id="grp-w",
+    )
+    expire = TemporalEvent(
+        event_id="fi-temporal:grp-w:expire:section/5",
+        kind="expire",
+        scope=expire_scope,
+        expires="2024-07-01",
+        group_id="grp-w",
+    )
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+
+    # Disjoint case: the timeline holds ONLY a later-effective permanent occupant
+    # (effective 2025, i.e. fold-order placed a later occupant in the slot); the
+    # temporary [2024-01-01, 2024-07-01) window is NOT a version interval.
+    disjoint_timeline = ProvisionTimeline(
+        address=address,
+        versions=[ProvisionVersion(effective="2025-01-01", variant_kind="permanent")],
+    )
+    disjoint = ReplayProducts(
+        replay_fold_state=state,
+        materialized_state=state,
+        timelines={address: disjoint_timeline},
+        temporal_events=(commence, expire),
+    )
+    findings = sweep_disjoint_window_materialization(disjoint)
+    assert any(f.code == SCHED_WINDOW_UNMATERIALIZED for f in findings), (
+        "SCHED window sweep did not fire on a disjoint, unmaterialized window"
+    )
+    fired = next(f for f in findings if f.code == SCHED_WINDOW_UNMATERIALIZED)
+    assert fired.window_effective == "2024-01-01"
+    assert fired.window_expires == "2024-07-01"
+    assert fired.fold_occupant_effective == "2025-01-01"
+
+    # Clean case: the SAME window IS materialized as a version interval -> silent.
+    clean_timeline = ProvisionTimeline(
+        address=address,
+        versions=[
+            ProvisionVersion(
+                effective="2024-01-01",
+                expires="2024-07-01",
+                variant_kind="temporary",
+            ),
+            ProvisionVersion(effective="2025-01-01", variant_kind="permanent"),
+        ],
+    )
+    clean = ReplayProducts(
+        replay_fold_state=state,
+        materialized_state=state,
+        timelines={address: clean_timeline},
+        temporal_events=(commence, expire),
+    )
+    assert not sweep_disjoint_window_materialization(clean), (
+        "SCHED window sweep fired when the window was materialized as a version interval"
+    )
+
+
 def drill_residual_ledger_nonmonotone_stage_account_totality() -> None:
     """Drive the production EV-03 sweep into a RESIDUAL_LEDGER_NONMONOTONE firing.
 
@@ -2992,6 +3089,7 @@ OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "SURFACE.TOKEN_REALIZATION_GAP": drill_surface_token_realization_gap_surface_totality,
     "WAIST.HANDOFF_PARITY_SOURCE_TO_TOKEN": drill_waist_handoff_parity_source_to_token_surface_totality,
     "SURFACE.ORPHAN_ENTITY_NODE": drill_surface_orphan_entity_node_surface_totality,
+    "SCHED.WINDOW_UNMATERIALIZED": drill_sched_window_unmaterialized_schedule_window_totality,
     "APPLY.OCCUPANCY_POLICY_VIOLATION": drill_occupancy_policy_violation_finland_production,
     "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT": drill_occupancy_temporally_disjoint_insert_finland_production,
     "APPLY.REPLAY_UNDECLARED_TREE_TOUCH": drill_replay_undeclared_tree_touch_apply_lane,

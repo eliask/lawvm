@@ -688,6 +688,27 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "/legal_address_entity/actor_entity) appears in no edge endpoint — "
                 "an entity node with no covering edge, surfaced not left uncovered",
                 ("parse_witness", "preservation"), role="observation"),
+    # Disjoint-window scheduling totality sweep (audit-registry rows
+    # SCHED-01/02/03). Read-only per-window totality over the finished replay
+    # output (ReplayProducts.temporal_events + timelines): every temporary
+    # legal-effect window is materialized as a version interval, carried as a
+    # typed residual, or surfaced here — never silently dropped. Same
+    # observation-role, non-blocking disposition as the SURF-* sweeps: over a
+    # real corpus a disjoint window the document-order fold did not materialize
+    # is a REAL legal fact (a temporary gap-filler whose slot a deferred-
+    # commencement twin holds), surfaced — not a pipeline fault — so blocking
+    # would contradict tag-don't-guess. The synthetic unit-level bite is the
+    # guard-liveness fire-drill. The apply-time discovery twin
+    # (APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT -> TEMPORAL.WINDOW_UNMATERIALIZED)
+    # is the fold-time repair lane; this is the complementary read-only audit
+    # over the FINAL output.
+    FindingSpec("SCHED.WINDOW_UNMATERIALIZED", "schedule_window_totality",
+                "source_pathology", "warn", "fi_schedule_window_totality",
+                "a temporary legal-effect window (effective..expires) on the "
+                "replay output is NOT materialized as a version interval and is "
+                "NOT carried as a typed residual: a disjoint window the document-"
+                "order fold left unmaterialized, surfaced not silently dropped",
+                ("temporal_selection", "preservation"), role="observation"),
     # Rank-17 silent-drop closure (canonical_op plane). The clause_ast ingress
     # seam (fi extract_legal_ops_from_parse_result) and the legacy lower_surface
     # bridge previously dropped unsupported clause/surface nodes
