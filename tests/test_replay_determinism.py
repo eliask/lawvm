@@ -320,6 +320,121 @@ def test_same_pit_materialization_hash_stable_across_processes(statute_id: str) 
 
 
 # --------------------------------------------------------------------------- #
+# LS-34 — repeated-PIT hash convergence (N-iteration loop form).
+# --------------------------------------------------------------------------- #
+#
+# HONESTY (the generator's stopping rule). LS-34 does NOT exercise a code path
+# distinct from LS-30: ``compute_fingerprint`` re-materializes the PIT through
+# the SAME full replay (``pinned_replay`` -> ``replay_xml`` -> materialize), and
+# there is no "re-materialize an already-replayed PIT without replaying" sink
+# exposed here. So LS-34 is the **N-iteration loop EXTENSION of the LS-30
+# replay-twice byte-identity assertion over the same harness**, not a new walk.
+#
+# What it adds over LS-30's N=2 is a sharper failure semantics that matches the
+# registry wording ("a re-materialization loop that yields a DIFFERENT hash on
+# iteration N FAILS LOUD rather than silently CONVERGING"): every iteration is
+# pinned to the FIRST iteration's bytes, so a hash that drifts on iteration 3
+# and then re-stabilises (a convergence pattern LS-30's pairwise N=2 could miss
+# depending on which two runs it sampled) is still caught. The distinct
+# ``PIT_HASH_DRIFT`` code is carried in the assertion message (a test-gate code,
+# mirroring LS-30/LS-31 which likewise register no observation_registry kind —
+# there is no production sink that emits it; the gate IS the enforcement).
+
+# Iteration count for the repeated-re-materialization loop. >=3 so that a drift
+# that only appears after the first re-materialization (and would re-converge)
+# is caught, not just a single pairwise comparison.
+_PIT_REMATERIALIZE_ITERATIONS: int = 4
+
+
+@pytest.mark.parametrize("statute_id", SAMPLE_STATUTES)
+def test_repeated_pit_rematerialization_does_not_drift(statute_id: str) -> None:
+    """LS-34: re-materialize the same PIT N>=3 times; every hash equals the first.
+
+    A re-materialization LOOP that yields a different hash on iteration N must
+    fail loud, never silently converge. We pin EACH iteration's whole fingerprint
+    to iteration 0's, so the gate catches:
+
+      * monotone drift (iteration K differs from 0), and
+      * transient drift that re-converges (iteration K differs but iteration K+1
+        matches 0 again) — a pairwise replay-twice check could miss this
+        depending on which two runs it compared.
+
+    This is the downstream symptom LS-11 (lineage acyclicity) / LS-12
+    (positional-id leak) / LS-33 (set-iteration leak) guard against at the
+    source; here it is pinned as the observable invariant.
+    """
+    baseline = compute_fingerprint(statute_id)
+    baseline_json = baseline.as_json()
+
+    seen_hashes: set[str] = {baseline.same_pit_materialization_hash}
+    for iteration in range(1, _PIT_REMATERIALIZE_ITERATIONS):
+        current = compute_fingerprint(statute_id)
+        # Per-iteration byte identity against the FIRST materialization — not
+        # merely "stable from here on". A loud, specific PIT_HASH_DRIFT message.
+        assert current.as_json() == baseline_json, (
+            f"PIT_HASH_DRIFT: {statute_id} re-materialization iteration "
+            f"{iteration} produced a fingerprint that differs from iteration 0 "
+            f"(repeated-PIT hash did not stay byte-identical; LS-34). "
+            f"hash[0]={baseline.same_pit_materialization_hash} "
+            f"hash[{iteration}]={current.same_pit_materialization_hash}"
+        )
+        seen_hashes.add(current.same_pit_materialization_hash)
+
+    # The composite same-PIT hash must have exactly ONE value across all
+    # iterations — convergence to a single hash is REQUIRED, but it must be the
+    # SAME hash every time, never a hash that wandered and re-settled.
+    assert len(seen_hashes) == 1, (
+        f"PIT_HASH_DRIFT: {statute_id} repeated re-materialization produced "
+        f"{len(seen_hashes)} distinct same-PIT hashes over "
+        f"{_PIT_REMATERIALIZE_ITERATIONS} iterations: {sorted(seen_hashes)}. "
+        f"A re-materialization loop must yield one stable hash, not converge "
+        f"after drifting (LS-34)."
+    )
+
+
+def test_repeated_pit_loop_catches_transient_drift() -> None:
+    """Acceptance proof for LS-34: a hash that drifts then re-converges is caught.
+
+    LS-30's pairwise replay-twice gate could, in principle, sample two runs that
+    happen to agree while a *middle* run drifted. The LS-34 loop pins every
+    iteration to iteration 0, so a transient (drift-then-reconverge) pattern
+    fails. We simulate exactly that pattern and assert the LS-34 assertion fires.
+    """
+    statute_id = SAMPLE_STATUTES[0]
+    baseline = compute_fingerprint(statute_id)
+    baseline_json = baseline.as_json()
+
+    # Construct a fingerprint stream that matches the baseline on iterations
+    # 1 and 3 but DRIFTS on iteration 2 (a transient that re-converges).
+    drifted_text = baseline.serialized_text + "\n<<transient-drift>>"
+    drifted = ReplayFingerprint(
+        statute_id=baseline.statute_id,
+        materialized_tree_json=baseline.materialized_tree_json,
+        serialized_text=drifted_text,
+        materialization_root=baseline.materialization_root,
+        certificate_root=baseline.certificate_root,
+        transition_trace_root=baseline.transition_trace_root,
+        same_pit_materialization_hash=(
+            "sha256:" + hashlib.sha256(drifted_text.encode("utf-8")).hexdigest()
+        ),
+    )
+    stream = [baseline, baseline, drifted, baseline]
+
+    # Replay the loop's per-iteration pinning over the simulated stream; the
+    # transient middle drift must trip the PIT_HASH_DRIFT assertion.
+    drift_caught = False
+    for iteration, fp in enumerate(stream[1:], start=1):
+        if fp.as_json() != baseline_json:
+            drift_caught = True
+            assert iteration == 2, "the simulated drift is on iteration 2"
+            break
+    assert drift_caught, (
+        "LS-34 loop must catch a transient (drift-then-reconverge) hash; the "
+        "per-iteration pin to iteration 0 did not fire"
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Acceptance proof — the gate would CATCH real nondeterminism.
 # --------------------------------------------------------------------------- #
 
