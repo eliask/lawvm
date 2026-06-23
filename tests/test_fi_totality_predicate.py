@@ -12,8 +12,10 @@ hidden drops). The pinned sids:
 
   * 2009/886 -- the historic 69j/k/l, 71 §, 138 § drops are now covered; the
     predicate must report ZERO flags over the whole (69-op) clause.
-  * 1967/484, 1970/16, 1983/223, 1987/618 -- annotation-hidden true-positive
+  * 1967/484, 1970/16, 1983/223 -- annotation-hidden true-positive
     drops the prototype found; each must stay FLAGGED (>= 1 uncovered_operative).
+  * 1987/618 -- was in that set; its `1 §:ään 3 momentti` insert is now produced,
+    so the predicate sees full coverage and reports ZERO flags (recovered).
   * 1978/588 -- a clean benign case (witness fidelity): 18 ops, ZERO flags.
   * 2009/749 -- a title-suffix DECLINE (n_ops == 0): the corpus harness excludes
     n_ops==0 clauses from candidate DROPs, so this is NOT a silent drop.
@@ -81,7 +83,6 @@ def test_2009_886_no_flags_full_op_set() -> None:
         ("1967/484", "4", "PYKALA"),
         ("1970/16", "5", "PYKALA"),
         ("1983/223", "115", "PYKALA"),
-        ("1987/618", "1", "PYKALA"),
     ],
 )
 def test_annotation_hidden_drops_flagged(
@@ -96,6 +97,17 @@ def test_annotation_hidden_drops_flagged(
     assert (expect_label, expect_struct) in pairs, pairs
     # Self-evidencing: the flag carries the exact unparsed source text.
     assert all(f.source_text for f in flagged)
+
+
+def test_1987_618_no_flags_recovered() -> None:
+    # Was an annotation-hidden drop (category b). The `1 §:ään 3 momentti` insert
+    # is now produced, so the predicate sees full coverage over both clause ops
+    # (insert moment into 1 §, replace 2 §) and reports zero flags.
+    flagged, n_ops = _run("1987/618")
+    assert flagged == [], [
+        (f.label.label, f.label.struct_cat, f.reason) for f in flagged
+    ]
+    assert n_ops == 2
 
 
 # --- (c) benign cases -> not a candidate silent drop ----------------------------
