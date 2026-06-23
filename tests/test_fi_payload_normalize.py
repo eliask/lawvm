@@ -1278,6 +1278,34 @@ def test_container_payload_prunes_dense_foreign_standalone_bridge_without_new_co
     ]
 
 
+def test_container_payload_prunes_foreign_scoped_standalone_inserts_from_new_container() -> None:
+    ctx = _mock_ctx("chapter", "3b", live_node=None)
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="3b",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="3 b luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="19f"),
+            IRNode(kind=IRNodeKind.SECTION, label="22a"),
+            IRNode(kind=IRNodeKind.SECTION, label="22b"),
+        ),
+    )
+
+    got, changed, pruned = _prune_container_payload_sections_shadowed_by_standalone_targets(
+        ctx,
+        "chapter",
+        "3b",
+        muutos_ir,
+        {"22a", "22b"},
+        foreign_scoped_standalone_section_targets={"22a", "22b"},
+    )
+
+    assert changed is True
+    assert isinstance(got, IRNode)
+    assert pruned == ["22a", "22b"]
+    assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == ["19f"]
+
+
 def test_payload_normalize_aligns_sparse_omission_subsections_to_live() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

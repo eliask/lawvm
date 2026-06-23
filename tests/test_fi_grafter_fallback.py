@@ -17332,6 +17332,28 @@ def test_inspect_amendment_1996_1266_2012_963_recovers_section_30_replace_from_s
     assert group30["ops_final"] == ["REPLACE 3 luku 30 §"]
 
 
+def test_inspect_amendment_2016_591_2022_296_prunes_foreign_scoped_sections_from_new_chapter() -> None:
+    bundle = build_amendment_bundle("2016/591", "2022/296", mode="official_consolidation")
+    group3b = next(
+        group
+        for group in bundle["groups"]
+        if group["target_unit_kind"] == "chapter" and group["target_norm"] == "3b"
+    )
+    group22a = next(group for group in bundle["groups"] if group["target_norm"] == "22a")
+    group22b = next(group for group in bundle["groups"] if group["target_norm"] == "22b")
+
+    assert group3b["ops_final"] == ["INSERT 3b luku"]
+    assert group22a["ops_final"] == ["INSERT 4 luku 22a §"]
+    assert group22b["ops_final"] == ["INSERT 4 luku 22b §"]
+    assert any(
+        observation["kind"] == "ELAB.CONTAINER_PRUNED_SHADOWED"
+        and observation.get("detail", {}).get("pruned_sections") == ["22a", "22b"]
+        for observation in group3b["elaboration_observations"]
+    )
+    assert "22 a §" not in group3b["normalized_payload"]["text"]
+    assert "22 b §" not in group3b["normalized_payload"]["text"]
+
+
 def test_replay_xml_1996_1266_updates_section_30_after_2012_963() -> None:
     replay = pinned_replay("1996/1266", mode="official_consolidation", quiet=True)
     sec = replay.materialized_state.find_section("30")

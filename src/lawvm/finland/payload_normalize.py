@@ -4071,9 +4071,6 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         for label in foreign_scoped_replace_section_targets
         if label in payload_section_labels and label.isdigit()
     }
-    foreign_replace_payload_overlap = (
-        payload_section_labels & foreign_scoped_replace_section_targets
-    )
     foreign_replace_base_scope_labels = {
         target.label
         for target in foreign_scoped_replace_section_target_scopes
@@ -4149,7 +4146,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
             pruned_witnesses.append(child_witness)
             continue
         if child_label in foreign_scoped_standalone_section_targets:
-            if foreign_replace_payload_overlap and not (
+            if not (
                 preserve_dense_new_container_payload
                 and has_dense_foreign_replace_bridge
             ):
