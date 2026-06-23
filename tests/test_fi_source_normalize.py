@@ -901,6 +901,41 @@ class TestTagReclassify:
             for fact in facts
         )
 
+    def test_real_2001_189_section_3_folds_chaptered_intro_item_wrapper(self) -> None:
+        """A chaptered section can still carry a transport-split moment item list.
+
+        Provenance: 2001/189 §3. The source XML encodes the second moment lead
+        sentence as one subsection and its 1..3 item list as the following
+        subsection. If left as peer moments, later replacements of the second
+        moment cannot retire the old item list.
+        """
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("2001/189")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        section = next(
+            candidate
+            for candidate in root.findall(".//{*}section")
+            if _norm_num_token("".join(candidate.findtext("{*}num") or "")) == "3"
+        )
+        raw = fi_xml_to_ir_node(section, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2001/189")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3", "4"]
+        paragraphs = [child for child in subsections[1].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3"]
+        assert "työmarkkinatukea vähintään 500 päivältä" in irnode_to_text(subsections[1])
+        assert "Tämän lain soveltamisesta" in irnode_to_text(subsections[2])
+        assert check_invariants(normalized) == []
+        assert any(
+            fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD
+            and "paragraph item wrapper subsection:3" in fact.before
+            for fact in facts
+        )
+
     def test_real_2005_1266_section_8_folds_duplicate_one_item_wrapper(self) -> None:
         from lawvm.corpus_store import get_corpus_store
 

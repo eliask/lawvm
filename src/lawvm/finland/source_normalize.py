@@ -1687,11 +1687,6 @@ def _subsection_is_intro_only_open_list_host(subsection: IRNode, parent_path: Tu
         return False
     if _node_has_descendant_kind(subsection, IRNodeKind.TABLE):
         return False
-    parent_has_container_numbering = any(
-        segment.startswith(("part:", "chapter:")) for segment in parent_path
-    )
-    if parent_has_container_numbering:
-        return False
     text = irnode_to_text(subsection).strip()
     return bool(text) and not text.endswith((".", "!", "?"))
 
