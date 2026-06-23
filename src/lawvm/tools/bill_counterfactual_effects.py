@@ -28,6 +28,16 @@ The three tiers (one builder each — never merged):
   ``broken`` citations CANNOT be traced to a provision and therefore flow to
   tier 3 as a declared limit, never guessed.
 
+  The *citation-cascade* sub-tier (provisions reached from a changed § through a
+  MULTI-HOP chain of internal back-references — a provision that cites a provision
+  that … cites a changed §) is COMPUTED to a DECLARED maximum depth
+  (:data:`_CASCADE_MAX_DEPTH`).  It reports ONLY reachers at hop depth ≥ 2 — the
+  depth-1 reachers are exactly ``citing_provisions`` and are not re-emitted, so the
+  two arms never double-count (BRANCH-06).  Each cascade reacher carries its FULL
+  HOP CHAIN (the path of sections from the changed root to the reacher) as
+  provenance; cycles are handled by a per-traversal visited-set; reachers beyond
+  the declared depth flow to tier 3 as a declared limit.
+
   The *definition-user* sub-tier (provisions whose meaning shifts because a
   tier-1 op changed a DEFINITION they use) is COMPUTED in v1 from the amended
   act's definition graph
@@ -45,9 +55,10 @@ The three tiers (one builder each — never merged):
 
 * **TIER 3 — uncomputed second-order.**  A DECLARED boundary: a statement plus an
   effect-class list, NOT a computation.  It names the effect classes this report
-  does NOT compute (semantic / teleological impact, multi-hop cascades — only the
-  1-hop back-reference is computed, temporal / contingency cascades, institutional
-  / capacity effects, transnational transposition cascades) and the resolution-
+  does NOT compute (semantic / teleological impact, multi-hop cascades BEYOND the
+  declared bounded depth — the cascade IS computed to depth N, only reachers past
+  the bound are uncomputed, temporal / contingency cascades, institutional /
+  capacity effects, transnational transposition cascades) and the resolution-
   status limit (untraceable citations).  The definition-user sub-tier is now
   COMPUTED (single-hop, within the amended act); the NARROWER residual that
   remains — transitive definition chains, cross-act imported definitions, and
@@ -75,6 +86,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from collections import deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -97,6 +109,19 @@ SOURCE_DEFINITION_GRAPH = "definition_graph"
 #: from (a real target_work_id pointing back into the amended act).  Every other
 #: state is untraceable and flows to the tier-3 declared limit, never guessed.
 _TRACEABLE_STATUSES = frozenset({"resolved", "unchanged"})
+
+#: The DECLARED maximum back-reference depth the multi-hop citation cascade
+#: follows from a tier-1-changed section.  Depth 1 (a provision that DIRECTLY
+#: cites a changed §) is ``citing_provisions``; the cascade arm reports reachers
+#: at hop depth 2..N.  N == 3 is a small, justified bound: a single act's internal
+#: citation graph rarely chains applicability dependencies past three hops, and the
+#: marginal signal of "a provision that cites a provision that cites … a changed §"
+#: degrades sharply with depth (it is an ever-weaker applicability dependency).  A
+#: bounded depth also makes the traversal cost a fixed multiple of the edge count —
+#: this is a projection over already-parsed refs, never an unbounded graph walk.
+#: Reachers BEYOND this depth are a DECLARED tier-3 residual, never silently
+#: dropped.
+_CASCADE_MAX_DEPTH = 3
 
 _VERB_LABELS = {
     "M": "AMEND",
@@ -159,6 +184,47 @@ class CitingProvisionEffect:
 
     citing_section: str
     cited_section: str
+    role: str
+    resolution_status: str
+    source: str
+    node_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class CitationCascadeEffect:
+    """One TIER-2 provision reached from a changed § through a MULTI-HOP chain.
+
+    A transitive back-reference in the AMENDED act: provision ``affected_section``
+    cites a provision that (transitively, through ``hop_chain``) cites a
+    tier-1-changed ``cited_section``.  This is the bounded multi-hop cascade arm of
+    tier 2 — it reports ONLY reachers at hop depth ≥ 2 (the depth-1 reachers are
+    exactly :class:`CitingProvisionEffect` and are NOT re-reported here, so the two
+    arms never double-count; BRANCH-06 discipline).
+
+    Attributes:
+        affected_section:  The provision (in the amended act) reached by the chain;
+                           its applicability now depends — transitively — on a
+                           changed section.
+        cited_section:     The tier-1-changed § the chain terminates at (its root).
+        depth:             The number of back-reference hops from ``cited_section``
+                           to ``affected_section`` (≥ 2; depth 1 stays in
+                           ``citing_provisions``).  Bounded by
+                           :data:`_CASCADE_MAX_DEPTH`.
+        hop_chain:         The full chain of section labels, from the changed root
+                           to the affected provision, e.g.
+                           ``("5", "12", "30")`` — §30 cites §12 cites changed §5.
+                           Length == ``depth + 1``.
+        role:              The interlink role of the FINAL (closest) hop edge.
+        resolution_status: The (traceable) resolution status of the final hop edge.
+        source:            Provenance machine — always ``interlink_graph``.
+        node_id:           Provenance id — a stable id of the cascade reacher
+                           (``cascade:<cited_section>-><...>-><affected_section>``).
+    """
+
+    affected_section: str
+    cited_section: str
+    depth: int
+    hop_chain: tuple[str, ...]
     role: str
     resolution_status: str
     source: str
@@ -231,12 +297,15 @@ class CounterfactualEffectsReport:
         amended_act_id:   The act the amendment modifies (tier-1/2 are about THIS
                           act's provisions), or "" when it could not be resolved.
         tier_1_direct:    Provisions the amendment's ops directly mutate.
-        tier_2_via_defs_and_refs: The tier-2 account; ``citing_provisions`` are the
-                          resolved back-references; ``definition_users`` are the
-                          provisions that USE a term DEFINED in a tier-1-changed
-                          section (computed from the amended act's definition
-                          graph).  The two sub-tiers are kept STRUCTURALLY DISTINCT
-                          and never merged (BRANCH-06).
+        tier_2_via_defs_and_refs: The tier-2 account, THREE structurally-distinct
+                          sub-tiers never merged (BRANCH-06): ``citing_provisions``
+                          are the resolved 1-hop back-references; ``citation_cascade``
+                          are the bounded MULTI-HOP (depth ≥ 2) reachers — provisions
+                          that cite a provision that … cites a changed §, each
+                          carrying its full hop chain, to a declared maximum depth;
+                          ``definition_users`` are the provisions that USE a term
+                          DEFINED in a tier-1-changed section (computed from the
+                          amended act's definition graph).
         tier_3_uncomputed_second_order: the declared boundary.
     """
 
@@ -354,6 +423,129 @@ def build_tier_2_citing_provisions(
             )
         )
     out.sort(key=lambda e: (e.cited_section, e.citing_section, e.node_id))
+    return tuple(out)
+
+
+# ---------------------------------------------------------------------------
+# TIER 2 — bounded multi-hop citation cascade (pure)
+# ---------------------------------------------------------------------------
+
+
+def _internal_backref_edges(
+    amended_act_interlinks: list["LawvmInterlinkRow"],
+    amended_act_id: str,
+) -> dict[str, list[tuple[str, str, str, str]]]:
+    """Reverse-citation adjacency: ``cited_section -> [(citing, role, status, id)]``.
+
+    Pure: collects the same traceable INTERNAL section back-references
+    :func:`build_tier_2_citing_provisions` consumes (resolved/unchanged status,
+    target work IS the amended act, both endpoints name a section), and indexes
+    them by their CITED section.  A BFS over this map walks the citation graph
+    BACKWARDS from a changed section to every provision that (transitively) cites
+    it.  Empty when the amended act is unknown (no scope).
+    """
+    amended = amended_act_id.strip()
+    adjacency: dict[str, list[tuple[str, str, str, str]]] = {}
+    if not amended:
+        return adjacency
+    for row in amended_act_interlinks:
+        if row.resolution_status not in _TRACEABLE_STATUSES:
+            continue
+        if not _interlink_targets_act(row, amended):
+            continue
+        cited = _section_of_locator(row.target_locator)
+        citing = _section_of_locator(row.source_locator)
+        if not cited or not citing:
+            continue
+        role = str(getattr(row, "role", "") or "")
+        node_id = str(getattr(row, "interlink_id", "") or "")
+        adjacency.setdefault(cited, []).append(
+            (citing, role, row.resolution_status, node_id)
+        )
+    # deterministic per-bucket ordering (citing, status, id) so the BFS expands
+    # edges in a stable order and the resulting cascade rows are reproducible.
+    for cited in adjacency:
+        adjacency[cited].sort(key=lambda e: (e[0], e[2], e[3]))
+    return adjacency
+
+
+def build_tier_2_citation_cascade(
+    direct: tuple[DirectEffect, ...],
+    amended_act_id: str,
+    amended_act_interlinks: list["LawvmInterlinkRow"],
+    *,
+    max_depth: int = _CASCADE_MAX_DEPTH,
+) -> tuple[CitationCascadeEffect, ...]:
+    """Tier-2 bounded MULTI-HOP cascade: provisions reached from a changed § via a
+    chain of internal back-references, to a DECLARED maximum depth.
+
+    Pure (no corpus access): takes the tier-1 result, the amended act id, and the
+    AMENDED act's interlink rows.  Starting from each tier-1-changed section, it
+    follows internal traceable back-references TRANSITIVELY (a provision that cites
+    a provision that cites … a changed §), recording each reacher with its FULL HOP
+    CHAIN (the path of section labels from the changed root to the reacher).
+
+    DISCIPLINE:
+
+      * Only reachers at hop depth ≥ 2 are reported — depth-1 reachers are exactly
+        :func:`build_tier_2_citing_provisions` and are NOT re-emitted here, so the
+        two arms never double-count (BRANCH-06: the cascade is STRUCTURALLY DISTINCT
+        from ``citing_provisions``).
+      * CYCLES are handled by a per-traversal visited-set keyed on (root, section):
+        a section already reached from a given changed root is never re-expanded, so
+        ``A cites B cites A`` terminates instead of looping forever.
+      * Bounded by ``max_depth`` (default :data:`_CASCADE_MAX_DEPTH`): the BFS never
+        expands a node whose depth would exceed the bound; reachers beyond it are a
+        DECLARED tier-3 residual, never silently dropped.
+      * The SAME (root, affected_section) pair is reported once, at its SHALLOWEST
+        depth (the BFS reaches a node at its minimal hop distance first), so a
+        provision reachable by several chains is not duplicated.
+
+    Each hit is a :class:`CitationCascadeEffect` tagged with provenance
+    ``interlink_graph``.  Results are sorted on
+    (cited_section, depth, affected_section, node_id) for a stable report.
+    """
+    changed = _changed_sections(direct)
+    if not changed or max_depth < 2:
+        return ()
+    adjacency = _internal_backref_edges(amended_act_interlinks, amended_act_id)
+    if not adjacency:
+        return ()
+
+    out: list[CitationCascadeEffect] = []
+    for root in sorted(changed):
+        # BFS backwards from the changed root.  Each frontier item is
+        # (current_section, chain_so_far) where chain_so_far[0] == root and the
+        # last element is current_section.  visited is per-root (cycle guard +
+        # shallowest-depth de-dup).
+        visited: set[str] = {root}
+        frontier: deque[tuple[str, tuple[str, ...]]] = deque([(root, (root,))])
+        while frontier:
+            current, chain = frontier.popleft()
+            depth = len(chain) - 1
+            if depth >= max_depth:
+                continue  # bounded: do not expand past the declared depth
+            for citing, role, status, node_id in adjacency.get(current, ()):
+                if citing in visited:
+                    continue  # cycle / already reached at a shallower depth
+                visited.add(citing)
+                new_chain = (*chain, citing)
+                new_depth = len(new_chain) - 1
+                if new_depth >= 2:
+                    out.append(
+                        CitationCascadeEffect(
+                            affected_section=citing,
+                            cited_section=root,
+                            depth=new_depth,
+                            hop_chain=new_chain,
+                            role=role,
+                            resolution_status=status,
+                            source=SOURCE_INTERLINK_GRAPH,
+                            node_id=f"cascade:{'->'.join(new_chain)}",
+                        )
+                    )
+                frontier.append((citing, new_chain))
+    out.sort(key=lambda e: (e.cited_section, e.depth, e.affected_section, e.node_id))
     return tuple(out)
 
 
@@ -518,9 +710,11 @@ _UNCOMPUTED_EFFECT_CLASSES = (
     "semantic/teleological impact — whether and how the changed provisions alter "
     "the law's purpose or meaning (this report reports WHAT moves, never what it "
     "means or how much it matters)",
-    "multi-hop cascades — only the 1-hop back-reference (a provision that directly "
-    "cites a changed §) is computed; a provision that cites a provision that cites "
-    "a changed § is NOT followed",
+    "multi-hop cascades BEYOND the bounded depth — the multi-hop citation cascade "
+    "(a provision that cites a provision that … cites a changed §) IS computed, but "
+    f"only to a declared maximum depth of {_CASCADE_MAX_DEPTH} hops; a reacher whose "
+    "shortest back-reference chain to a changed § is longer than that bound is NOT "
+    "reported (declared here, never silently dropped)",
     "temporal / contingency cascades — effects that depend on commencement dates, "
     "transitional provisions, or conditional triggers are not modelled",
     "institutional / capacity effects — downstream load on agencies, courts, or "
@@ -623,6 +817,9 @@ def build_counterfactual_report(
     citing = build_tier_2_citing_provisions(
         tier_1, amended_act_id, amended_act_interlinks
     )
+    cascade = build_tier_2_citation_cascade(
+        tier_1, amended_act_id, amended_act_interlinks
+    )
     if definition_graph is not None and section_crosswalk is not None:
         definition_users = build_tier_2_definition_users(
             tier_1, definition_graph, section_crosswalk
@@ -636,6 +833,7 @@ def build_counterfactual_report(
         tier_1_direct=tier_1,
         tier_2_via_defs_and_refs={
             "citing_provisions": citing,
+            "citation_cascade": cascade,
             "definition_users": definition_users,
         },
         tier_3_uncomputed_second_order=tier_3,
@@ -675,6 +873,18 @@ def report_to_dict(report: CounterfactualEffectsReport) -> dict[str, Any]:
                     "provenance": {"source": c.source, "node_id": c.node_id},
                 }
                 for c in report.tier_2_via_defs_and_refs["citing_provisions"]
+            ],
+            "citation_cascade": [
+                {
+                    "affected_section": c.affected_section,
+                    "cited_section": c.cited_section,
+                    "depth": c.depth,
+                    "hop_chain": list(c.hop_chain),
+                    "role": c.role,
+                    "resolution_status": c.resolution_status,
+                    "provenance": {"source": c.source, "node_id": c.node_id},
+                }
+                for c in report.tier_2_via_defs_and_refs["citation_cascade"]
             ],
             "definition_users": [
                 {
@@ -717,16 +927,24 @@ def render_report(report: CounterfactualEffectsReport) -> str:
         )
 
     citing = report.tier_2_via_defs_and_refs["citing_provisions"]
+    cascade = report.tier_2_via_defs_and_refs["citation_cascade"]
     deffers = report.tier_2_via_defs_and_refs["definition_users"]
     lines.append("")
     lines.append(
         f"TIER 2 — CHANGED VIA REFERENCES ({len(citing)} citing provision(s); "
+        f"{len(cascade)} multi-hop cascade reacher(s); "
         f"{len(deffers)} definition-user(s))"
     )
     for c in citing:
         lines.append(
             f"    └─ §{c.citing_section or '?'} cites changed §{c.cited_section} "
             f"({c.role}, {c.resolution_status})  [{c.source}:{c.node_id}]"
+        )
+    for cc in cascade:
+        chain = " → ".join(f"§{s}" for s in cc.hop_chain)
+        lines.append(
+            f"    └─ §{cc.affected_section} reaches changed §{cc.cited_section} "
+            f"at depth {cc.depth} ({chain})  [{cc.source}:{cc.node_id}]"
         )
     for u in deffers:
         lines.append(
@@ -967,8 +1185,10 @@ def main(args: argparse.Namespace) -> None:
 
 __all__ = [
     "SOURCE_DEFINITION_GRAPH",
+    "_CASCADE_MAX_DEPTH",
     "SOURCE_INTERLINK_GRAPH",
     "SOURCE_JOHTOLAUSE_PARSE",
+    "CitationCascadeEffect",
     "CitingProvisionEffect",
     "CounterfactualEffectsReport",
     "DefinitionUserEffect",
@@ -977,6 +1197,7 @@ __all__ = [
     "UncomputedBoundary",
     "build_counterfactual_report",
     "build_tier_1_direct",
+    "build_tier_2_citation_cascade",
     "build_tier_2_citing_provisions",
     "build_tier_2_definition_users",
     "build_tier_3_boundary",

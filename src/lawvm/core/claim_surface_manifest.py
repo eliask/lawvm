@@ -384,23 +384,27 @@ CLAIM_COUNTERFACTUAL_EFFECTS = ClaimSpec(
         "For a Finnish amending act, LawVM reports its effects in three "
         "structurally-distinct tiers kept separate: provisions its operations "
         "directly change (tier 1); provisions in the amended act that depend on a "
-        "changed section through a resolved 1-hop reference — kept as two distinct "
-        "sub-tiers, provisions that CITE a changed section and provisions that USE a "
-        "term DEFINED in a changed section (tier 2); and a DECLARED set of effect "
-        "classes it does not compute (tier 3). Every tier-1 and tier-2 item carries "
-        "provenance; the report states WHAT moves, never how much it matters."
+        "changed section through a resolved reference — kept as three distinct "
+        "sub-tiers, provisions that CITE a changed section (1-hop), provisions "
+        "reached through a bounded MULTI-HOP citation cascade (depth ≥ 2, to a "
+        "declared maximum depth, each carrying its full hop chain), and provisions "
+        "that USE a term DEFINED in a changed section (tier 2); and a DECLARED set "
+        "of effect classes it does not compute (tier 3). Every tier-1 and tier-2 "
+        "item carries provenance; the report states WHAT moves, never how much it "
+        "matters."
     ),
     required_objects=(
         "CounterfactualEffectsReport",
         "DirectEffect",
         "CitingProvisionEffect",
+        "CitationCascadeEffect",
         "DefinitionUserEffect",
         "UncomputedBoundary",
     ),
     required_roots=(),
     allowed_non_guarantees=(
         "counterfactual_definition_users_single_hop_only",
-        "counterfactual_multihop_and_semantic_uncomputed",
+        "counterfactual_cascade_bounded_depth_semantic_uncomputed",
         "counterfactual_bare_section_precision_bounded",
     ),
     checker_level="L1",

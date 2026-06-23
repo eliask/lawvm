@@ -562,11 +562,14 @@ _INV_COUNTERFACTUAL_TIERS = InvariantSpec(
     unit_kind="per-unit",
     predicate=(
         "every reported effect is partitioned into exactly one tier — direct "
-        "(tier 1), 1-hop resolved DEPENDENCY (tier 2, kept as two structurally "
-        "distinct sub-tiers: provisions that CITE a changed section and provisions "
-        "that USE a term DEFINED in a changed section), or the declared-uncomputed "
-        "boundary (tier 3) — never conflated; each tier-1/2 item carries provenance; "
-        "no score/magnitude is emitted (BRANCH-06)"
+        "(tier 1), resolved DEPENDENCY (tier 2, kept as THREE structurally distinct "
+        "sub-tiers: provisions that CITE a changed section 1-hop, provisions reached "
+        "through a bounded MULTI-HOP citation cascade at depth >= 2 each carrying "
+        "its full hop chain, and provisions that USE a term DEFINED in a changed "
+        "section), or the declared-uncomputed boundary (tier 3) — never conflated; "
+        "the 1-hop and cascade arms never double-count (cascade reports depth >= 2 "
+        "only); each tier-1/2 item carries provenance; no score/magnitude is emitted "
+        "(BRANCH-06)"
     ),
     owner="lawvm.tools.bill_counterfactual_effects",
     bucket="implemented_check",
@@ -585,9 +588,11 @@ _INV_COUNTERFACTUAL_UNCOMPUTED = InvariantSpec(
     predicate=(
         "tier-2 definition-users are SINGLE-HOP within the amended act (transitive "
         "definition chains, cross-act imported definitions, and open/ambiguous uses "
-        "are NOT covered), multi-hop/semantic/temporal/transposition cascades are "
-        "uncomputed, bare-section matching precision is bounded, and untraceable "
-        "cites are typed external_only — all DECLARED in tier 3, not silently omitted"
+        "are NOT covered), the multi-hop citation cascade is computed to a declared "
+        "maximum depth (reachers BEYOND that depth are uncomputed), "
+        "semantic/teleological/temporal/transposition cascades are uncomputed, "
+        "bare-section matching precision is bounded, and untraceable cites are typed "
+        "external_only — all DECLARED in tier 3, not silently omitted"
     ),
     owner="lawvm.tools.bill_counterfactual_effects",
     bucket="declared_residual",

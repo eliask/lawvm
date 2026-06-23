@@ -478,24 +478,30 @@ _B_CF_DEFINITION_USERS_SINGLE_HOP = _binding(
         "never silently treated as absent."
     ),
 )
-_B_CF_MULTIHOP_UNCOMPUTED = _binding(
-    "counterfactual_multihop_and_semantic_uncomputed",
+_B_CF_CASCADE_BOUNDED_SEMANTIC_UNCOMPUTED = _binding(
+    "counterfactual_cascade_bounded_depth_semantic_uncomputed",
     kind="doctrine_unresolved",
     scope=(
-        "Multi-hop citation cascades and semantic/temporal/transposition effects "
-        "are uncomputed and declared in tier 3 "
+        "The MULTI-HOP citation cascade IS computed to a declared maximum depth "
+        "(bounded back-reference traversal over the amended act's resolved internal "
+        "citations); reachers BEYOND that depth, and semantic/teleological/temporal/"
+        "transposition effects, remain uncomputed and declared in tier 3 "
         "(lawvm.tools.bill_counterfactual_effects)."
     ),
     effect="outside_claim",
     expires_when=(
-        "a bounded, oracle-grounded multi-hop / semantic cascade computation exists "
-        "that does not manufacture false precision; until then these classes are "
-        "declared uncomputed in tier 3."
+        "an oracle-grounded SEMANTIC/teleological cascade computation exists that "
+        "does not manufacture false precision, and the cascade depth bound is "
+        "lifted; until then beyond-depth cascades and semantic effects are declared "
+        "uncomputed in tier 3."
     ),
     public_message=(
-        "Counterfactual effects compute direct (tier 1) and 1-hop resolved-citation "
-        "(tier 2) effects only. Multi-hop cascades and semantic / temporal / "
-        "transposition effects are DECLARED uncomputed in tier 3, never silently "
+        "Counterfactual effects compute direct (tier 1) effects and, within tier 2, "
+        "1-hop resolved citations PLUS a bounded MULTI-HOP citation cascade (a "
+        "provision that cites a provision that … cites a changed section, to a "
+        "declared maximum depth, each reacher carrying its full hop chain). Reachers "
+        "BEYOND that bounded depth, and semantic / teleological / temporal / "
+        "transposition effects, are DECLARED uncomputed in tier 3, never silently "
         "treated as absent."
     ),
 )
@@ -597,7 +603,7 @@ V0_CLAIM_ASSUMPTION_BINDINGS: tuple[ClaimAssumptionBinding, ...] = (
     _B_DER_MODEL_CODE_UNKNOWN,
     _B_DER_CONFORMANCE_CLAIMED,
     _B_CF_DEFINITION_USERS_SINGLE_HOP,
-    _B_CF_MULTIHOP_UNCOMPUTED,
+    _B_CF_CASCADE_BOUNDED_SEMANTIC_UNCOMPUTED,
     _B_CF_BARE_SECTION_BOUNDED,
     _B_XJUR_NOT_BUG_PORTABILITY,
     _B_XJUR_NOT_RECON_PARITY,
