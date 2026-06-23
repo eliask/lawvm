@@ -783,6 +783,77 @@ _B_TIMELINE_DETECTION_NOT_CONCLUSION = _binding(
 )
 
 
+# --- Claim: corpus Legal Surface Graph ----------------------------------- #
+_B_LSG_REFERENCE_FAMILY_ONLY = _binding(
+    "legal_surface_graph_v1_reference_family_only_v2_extends",
+    kind="parser_incomplete",
+    scope=(
+        "The relation families merged into the corpus Legal Surface Graph: v1 "
+        "merges the reference + anaphora lens edge families (the cross-statute "
+        "refers_to / has_candidate backbone) only; the newer typed relation "
+        "families (derivation edges, EU transposition edges, definition-use edges, "
+        "dangling-reference status) are NOT merged in "
+        "(lawvm.finland.legal_surface.corpus_graph)."
+    ),
+    effect="qualifies",
+    expires_when=(
+        "the corpus-graph build merges the typed v2 relation families "
+        "(derivation / EU transposition / definition-use / dangling status) into "
+        "the same cross-statute graph the reference backbone produces."
+    ),
+    public_message=(
+        "The corpus Legal Surface Graph v1 carries the cross-statute reference "
+        "backbone (refers_to / has_candidate) and the intra-statute structural "
+        "edges of the reference + anaphora lenses. The newer typed relation "
+        "families — derivation, EU transposition, definition-use, dangling status "
+        "— are NOT yet merged into this graph; they are the DECLARED v2 extension."
+    ),
+)
+_B_LSG_RESOLUTION_RECALL_BOUNDED = _binding(
+    "legal_surface_graph_resolution_recall_bounded",
+    kind="parser_incomplete",
+    scope=(
+        "The recall of cross-statute reference resolution in the corpus graph: an "
+        "open / statute_only mention is left as-is (no promoted target), never an "
+        "invented edge (lawvm.finland.legal_surface.corpus_graph)."
+    ),
+    effect="qualifies",
+    expires_when=(
+        "resolver coverage is extended such that a mention currently left "
+        "open / statute_only becomes resolvable to a concrete provision target and "
+        "promoted to a refers_to edge."
+    ),
+    public_message=(
+        "Cross-statute reference resolution recall is BOUNDED. An open or "
+        "statute_only mention is an honest non-promotion (no edge into a shared "
+        "node), not a defect; an ambiguous resolution becomes a has_candidate, "
+        "never an invented target — the graph never guesses a citation target."
+    ),
+)
+_B_LSG_SURFACE_ONLY_AS_OF = _binding(
+    "legal_surface_graph_surface_only_declared_slice_as_of",
+    kind="doctrine_unresolved",
+    scope=(
+        "Whether the corpus Legal Surface Graph carries any legal-state or replay "
+        "authority, and the slice/time it ranges over: it is surface_only, an "
+        "as-of (surface_time) projection over a DECLARED corpus slice "
+        "(lawvm.tools.corpus_surface_graph)."
+    ),
+    effect="outside_claim",
+    expires_when=(
+        "never for v0 — the corpus graph is a SURFACE projection by construction; "
+        "every node/edge is minted surface_only through the assembler's "
+        "firewall-enforcing path, and a legal/executable reading must leave the "
+        "graph through a named authorization object (the authority firewall)."
+    ),
+    public_message=(
+        "The corpus Legal Surface Graph is a SURFACE projection, never legal "
+        "authority and never replay authorization. It is an as-of "
+        "(surface_time) view over a DECLARED corpus slice (an explicit id list or "
+        "a --limit prefix), not a whole-corpus or as-of-now guarantee."
+    ),
+)
+
 #: The v0 binding set — EVERY V0_CLAIMS handle bound to a registered assumption.
 V0_CLAIM_ASSUMPTION_BINDINGS: tuple[ClaimAssumptionBinding, ...] = (
     _B_BENCH_NOT_SOURCE_TRUTH,
@@ -814,6 +885,9 @@ V0_CLAIM_ASSUMPTION_BINDINGS: tuple[ClaimAssumptionBinding, ...] = (
     _B_FIXED_TERM_TEMPORARY_WARN,
     _B_TIMELINE_ROBUST_REPLAY_SEPARATE,
     _B_TIMELINE_DETECTION_NOT_CONCLUSION,
+    _B_LSG_REFERENCE_FAMILY_ONLY,
+    _B_LSG_RESOLUTION_RECALL_BOUNDED,
+    _B_LSG_SURFACE_ONLY_AS_OF,
 )
 
 

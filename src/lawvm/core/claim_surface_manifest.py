@@ -526,6 +526,52 @@ CLAIM_TIMELINE_INTEGRITY = ClaimSpec(
     checker_level="L1",
 )
 
+# The corpus Legal Surface Graph claim (tools/corpus_surface_graph.py +
+# finland/legal_surface/corpus_graph.py). The corpus graph is the FAIL-LOUD MERGE
+# of per-statute surface graphs into one cross-statute network where the same
+# cited target collapses to one shared entity node; every node/edge is a SURFACE
+# fact (surface_only, never legal authority); a cross-statute reference edge only
+# promotes a target the citing text already committed (ambiguous -> has_candidate;
+# open / statute_only left as-is — never an invented target).
+CLAIM_LEGAL_SURFACE_GRAPH = ClaimSpec(
+    claim_id="lawvm.fi.legal_surface_graph.v1",
+    public_sentence=(
+        "The corpus legal surface graph is the FAIL-LOUD MERGE of per-statute "
+        "Legal Surface Graphs into ONE cross-statute network in which the same "
+        "cited target collapses to one shared entity node — so 'what cites this "
+        "act/provision' is a graph query — where a same-node-id/divergent-payload "
+        "merge collision RAISES (never a silent overwrite); every node and edge is "
+        "a SURFACE fact (surface_only, minted through the assembler's "
+        "firewall-enforcing path, NEVER legal authority and never replay "
+        "authorization); and a cross-statute reference edge only PROMOTES a target "
+        "the citing text already committed — a single resolved provision target "
+        "becomes an asserted refers_to, an ambiguous resolution becomes a "
+        "has_candidate, and an open / statute_only resolution is left as-is — never "
+        "an invented target. It is an as-of surface projection over a DECLARED "
+        "corpus slice, never a legal conclusion."
+    ),
+    required_objects=(
+        "LegalSurfaceGraph",
+        "CorpusSurfaceGraphExport",
+        "CorpusNodeRow",
+        "CorpusEdgeRow",
+        "CorpusGraphCensus",
+    ),
+    required_roots=(),
+    # The corpus-graph claim's declared boundaries: v1 merges only the reference +
+    # anaphora lens edge families (the refers_to / has_candidate backbone), NOT the
+    # newer typed relation families (derivation / EU transposition / definition-use
+    # / dangling status — the declared v2 extension); resolution recall is bounded
+    # (an open / statute_only mention is an honest non-promotion); and the graph is
+    # an as-of surface projection over the declared slice, never replay authority.
+    allowed_non_guarantees=(
+        "legal_surface_graph_v1_reference_family_only_v2_extends",
+        "legal_surface_graph_resolution_recall_bounded",
+        "legal_surface_graph_surface_only_declared_slice_as_of",
+    ),
+    checker_level="L1",
+)
+
 #: The v0 declared claim surface (a DECLARED SUBSET, not all claims; Pro §12).
 V0_CLAIMS: tuple[ClaimSpec, ...] = (
     CLAIM_BENCH_AGREEMENT,
@@ -539,6 +585,7 @@ V0_CLAIMS: tuple[ClaimSpec, ...] = (
     CLAIM_DANGLING_REFERENCE,
     CLAIM_FIXED_TERM_EXPIRY,
     CLAIM_TIMELINE_INTEGRITY,
+    CLAIM_LEGAL_SURFACE_GRAPH,
 )
 
 
@@ -555,6 +602,7 @@ __all__ = [
     "CLAIM_DERIVATION_EDGE",
     "CLAIM_EU_TRANSPOSITION",
     "CLAIM_FIXED_TERM_EXPIRY",
+    "CLAIM_LEGAL_SURFACE_GRAPH",
     "CLAIM_TIMELINE_INTEGRITY",
     "CLAIM_MATERIALIZATION_GENERALITY",
     "CLAIM_MATERIALIZATION_SELECTED",
