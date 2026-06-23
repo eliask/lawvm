@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING, Sequence
 if TYPE_CHECKING:
     from lawvm.substrate.locus import LocusRow
 
+from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.substrate.canonical_json import JsonValue, nfc
 from lawvm.substrate.relation_edge import (
     AuthorityPlane,
@@ -412,6 +413,26 @@ def build_verified_derivation_edge(
     is checkable: a tampered delta changes the script hash / fails replay and can
     never re-earn this posture.
     """
+    authorization = ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="replay_authorized",
+        authorization_rule_id="model_code_verified_textual_derivation_delta_verified",
+        owner_phase="substrate.model_code_derivation",
+        strict_disposition="record",
+        safe_default="block_without_delta_verified_replay",
+        forbidden_shortcuts=(
+            "raw_similarity_as_replay_authority",
+            "source_asserted_orc_citation_as_textual_derivation",
+            "author_set_projection_replay_authority_without_execution_authorization",
+        ),
+        detail={
+            "edit_script_id": script.edit_script_id,
+            "baseline_text_hash": script.baseline_text_hash,
+            "sibling_text_hash": script.sibling_text_hash,
+            "copy_coverage": repr(script.copy_coverage),
+        },
+    )
     body = build_relation_edge(
         relation_kind=RelationKind.VERIFIED_TEXTUAL_DERIVATION,
         source_ref=_provision_ref(sibling_work_id, address),
@@ -419,7 +440,7 @@ def build_verified_derivation_edge(
         target_set_semantics=TargetSetSemantics.SINGLE,
         authority_plane=AuthorityPlane.LEGAL_STATE,
         verification_level=VerificationLevel.DELTA_VERIFIED,
-        replay_authorized=True,
+        replay_authorized=authorization.replay_authorized,
         status=EdgeStatus.RESOLVED,
         effective_scope={
             "branch_id": "actual",
