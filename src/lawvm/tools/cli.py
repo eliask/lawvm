@@ -10657,6 +10657,32 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit machine-readable JSON",
     )
 
+    # --- bill-counterfactual ---
+    bill_cf_p = sub.add_parser(
+        "bill-counterfactual",
+        help="three-tier counterfactual 'what does this amendment do' report",
+        description=(
+            "Report one Finnish amendment's effects in THREE structurally distinct "
+            "tiers, kept separate and never conflated (read-only projection): "
+            "TIER 1 directly-changed provisions (johtolause ops); TIER 2 provisions "
+            "in the amended act that CITE a tier-1-changed provision (1-hop internal "
+            "back-references, traced only through resolved/unchanged citations); and "
+            "TIER 3 a DECLARED boundary of uncomputed second-order effects (the "
+            "honesty boundary IS part of the result). No score, no magnitude. "
+            "Supports --json."
+        ),
+    )
+    bill_cf_p.add_argument(
+        "statute_id",
+        metavar="STATUTE_ID",
+        help="amending statute id, e.g. 2018/301",
+    )
+    bill_cf_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON",
+    )
+
     # --- fi-refs ---
     fi_refs_p = sub.add_parser(
         "fi-refs",
@@ -13710,6 +13736,13 @@ def _main_impl() -> None:
         from lawvm.tools.bill_analysis import main as analyze_bill_main
 
         analyze_bill_main(args)
+
+    elif args.command == "bill-counterfactual":
+        from lawvm.tools.bill_counterfactual_effects import (
+            main as bill_counterfactual_main,
+        )
+
+        bill_counterfactual_main(args)
 
     elif args.command == "parse-bench":
         from lawvm.tools.parse_bench import main as parse_bench_main
