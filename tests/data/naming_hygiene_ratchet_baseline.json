@@ -211,7 +211,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 142,
+  "public_schema_count": 143,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
