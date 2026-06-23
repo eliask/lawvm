@@ -19,7 +19,15 @@ from pathlib import Path
 
 import pytest
 
+from lawvm.core.reference_mention import SourceSpan
 from lawvm.finland.johtolause.types import ParsedOp
+from lawvm.finland.references.defined_terms import (
+    BINDING_TARKOITETAAN,
+    STATUS_OK,
+    DefinedTermBinding,
+)
+from lawvm.finland.references.definition_graph import DefinitionEdge, DefinitionGraph
+from lawvm.finland.references.term_use import STATUS_RESOLVED, RULE_MORPH, TermUse
 from lawvm.tools import bill_counterfactual_effects as cf
 from lawvm.tools.transition_graph_interlinks import LawvmInterlinkRow
 
@@ -87,6 +95,47 @@ def _row(
         valid_at_start=None,
         valid_at_end=None,
         detail_json="{}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Synthetic definition-graph fixtures (corpus-free) for the definition-user arm
+# ---------------------------------------------------------------------------
+
+
+def _binding(term: str, *, offset: int) -> DefinedTermBinding:
+    """A minimal synthetic ``tarkoitetaan`` binding at a byte offset."""
+    return DefinedTermBinding(
+        term=term,
+        target_ref=None,
+        expansion="x",
+        scope="statute",
+        source_span=SourceSpan("fi", offset, len(term)),
+        binding_kind=BINDING_TARKOITETAAN,
+        status=STATUS_OK,
+    )
+
+
+def _use(surface: str, lemma: str, binding: DefinedTermBinding, *, offset: int) -> TermUse:
+    """A minimal synthetic RESOLVED use of ``binding`` at a byte offset."""
+    return TermUse(
+        term_surface=surface,
+        lemma=lemma,
+        binding=binding,
+        source_span=SourceSpan("fi", offset, len(surface)),
+        status=STATUS_RESOLVED,
+        rule_id=RULE_MORPH,
+        bindings=(binding,),
+    )
+
+
+def _graph(edges: tuple[DefinitionEdge, ...]) -> DefinitionGraph:
+    return DefinitionGraph(
+        statute_id="2017/320",
+        body_text="x",
+        bindings=tuple(e.binding for e in edges),
+        uses=tuple(e.use for e in edges),
+        edges=edges,
     )
 
 
@@ -203,6 +252,82 @@ def test_tier_2_dedupes_identical_backrefs() -> None:
 
 
 # ---------------------------------------------------------------------------
+# TIER 2 — definition-users (a term defined in a changed § used elsewhere)
+# ---------------------------------------------------------------------------
+
+
+def test_definition_user_traced_when_defining_section_changed() -> None:
+    direct = cf.build_tier_1_direct([_op("M", "5")])
+    # term defined at offset 10 (in §5), used at offset 100 (in §12)
+    b = _binding("sivutuote", offset=10)
+    u = _use("sivutuotteen", "sivutuote", b, offset=100)
+    graph = _graph((DefinitionEdge(binding=b, use=u),))
+    # crosswalk: §5 spans [0,50), §12 spans [50,200)
+    crosswalk = [(0, 50, "5"), (50, 200, "12")]
+    out = cf.build_tier_2_definition_users(direct, graph, crosswalk)
+    assert len(out) == 1
+    e = out[0]
+    assert e.defining_section == "5"
+    assert e.using_section == "12"
+    assert e.term == "sivutuote"
+    assert e.use_surface == "sivutuotteen"
+    assert e.source == cf.SOURCE_DEFINITION_GRAPH
+    assert e.node_id == "def:5:sivutuote->use:12"
+
+
+def test_definition_user_excluded_when_defining_section_unchanged() -> None:
+    direct = cf.build_tier_1_direct([_op("M", "9")])  # §9 changed, def is in §5
+    b = _binding("sivutuote", offset=10)
+    u = _use("sivutuotteen", "sivutuote", b, offset=100)
+    graph = _graph((DefinitionEdge(binding=b, use=u),))
+    crosswalk = [(0, 50, "5"), (50, 200, "12")]
+    assert cf.build_tier_2_definition_users(direct, graph, crosswalk) == ()
+
+
+def test_definition_user_excluded_when_use_in_same_section_as_definition() -> None:
+    direct = cf.build_tier_1_direct([_op("M", "5")])
+    b = _binding("sivutuote", offset=10)
+    # use at offset 30 is STILL inside §5 (the changed/defining section itself)
+    u = _use("sivutuotteen", "sivutuote", b, offset=30)
+    graph = _graph((DefinitionEdge(binding=b, use=u),))
+    crosswalk = [(0, 50, "5"), (50, 200, "12")]
+    assert cf.build_tier_2_definition_users(direct, graph, crosswalk) == ()
+
+
+def test_definition_user_dedupes_and_sorts() -> None:
+    direct = cf.build_tier_1_direct([_op("M", "5")])
+    b = _binding("sivutuote", offset=10)
+    u1 = _use("sivutuotteen", "sivutuote", b, offset=100)
+    u2 = _use("sivutuotteen", "sivutuote", b, offset=110)  # same section, same surface
+    u3 = _use("sivutuotetta", "sivutuote", b, offset=160)  # distinct surface
+    graph = _graph(
+        (
+            DefinitionEdge(binding=b, use=u1),
+            DefinitionEdge(binding=b, use=u2),
+            DefinitionEdge(binding=b, use=u3),
+        )
+    )
+    crosswalk = [(0, 50, "5"), (50, 200, "12")]
+    out = cf.build_tier_2_definition_users(direct, graph, crosswalk)
+    # (5,12,sivutuote,sivutuotteen) deduped; distinct surface kept
+    assert len(out) == 2
+    assert [e.use_surface for e in out] == ["sivutuotetta", "sivutuotteen"]
+
+
+def test_definition_user_empty_when_no_graph_inputs() -> None:
+    direct = cf.build_tier_1_direct([_op("M", "5")])
+    assert cf.build_tier_2_definition_users(direct, _graph(()), [(0, 50, "5")]) == ()
+
+
+def test_section_label_at_returns_empty_outside_any_span() -> None:
+    crosswalk = [(0, 50, "5"), (50, 200, "12")]
+    assert cf._section_label_at(crosswalk, 25) == "5"
+    assert cf._section_label_at(crosswalk, 100) == "12"
+    assert cf._section_label_at(crosswalk, 500) == ""  # past the last span
+    assert cf._section_label_at([], 10) == ""
+
+
+# ---------------------------------------------------------------------------
 # TIER 3 — declared boundary
 # ---------------------------------------------------------------------------
 
@@ -241,8 +366,13 @@ def test_tier_3_declares_effect_classes_and_counts_untraceable() -> None:
         assert needle in joined
     assert boundary.resolution_limits["untraceable_by_status"] == {"external_only": 1}
     assert boundary.resolution_limits["total_untraceable"] == 1
-    # the deferred definition-user sub-tier is declared, not silent
-    assert any("definition-user" in d for d in boundary.deferred)
+    # the definition-user sub-tier is now COMPUTED; tier 3 declares only its
+    # NARROWER residual (transitive chains, cross-act, open/ambiguous), not a
+    # blanket "deferred".
+    joined_def = " ".join(boundary.deferred).lower()
+    assert "definition-user residual" in joined_def
+    assert "transitive" in joined_def
+    assert "cross-act" in joined_def
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +391,19 @@ def test_report_keeps_tiers_separate_and_carries_no_score() -> None:
             resolution_status="resolved",
         )
     ]
-    report = cf.build_counterfactual_report("2018/301", "2017/320", ops, rows)
+    # definition-user input: a term defined in changed §5, used in §12
+    b = _binding("sivutuote", offset=10)
+    u = _use("sivutuotteen", "sivutuote", b, offset=100)
+    graph = _graph((DefinitionEdge(binding=b, use=u),))
+    crosswalk = [(0, 50, "5"), (50, 200, "12")]
+    report = cf.build_counterfactual_report(
+        "2018/301",
+        "2017/320",
+        ops,
+        rows,
+        definition_graph=graph,
+        section_crosswalk=crosswalk,
+    )
     d = cf.report_to_dict(report)
     # three distinct tier fields, never merged
     assert set(d) == {
@@ -272,13 +414,21 @@ def test_report_keeps_tiers_separate_and_carries_no_score() -> None:
         "tier_3_uncomputed_second_order",
     }
     assert len(d["tier_1_direct"]) == 2
-    assert len(d["tier_2_via_defs_and_refs"]["citing_provisions"]) == 1
-    assert d["tier_2_via_defs_and_refs"]["definition_users"] == []  # deferred
+    # the two tier-2 sub-tiers are computed AND kept structurally distinct (BRANCH-06)
+    citing = d["tier_2_via_defs_and_refs"]["citing_provisions"]
+    defusers = d["tier_2_via_defs_and_refs"]["definition_users"]
+    assert len(citing) == 1
+    assert len(defusers) == 1
+    assert defusers[0]["defining_section"] == "5"
+    assert defusers[0]["using_section"] == "12"
+    assert defusers[0]["provenance"]["source"] == cf.SOURCE_DEFINITION_GRAPH
+    # the two sub-tiers carry DIFFERENT field shapes — never merged into one list
+    assert "citing_section" in citing[0] and "term" in defusers[0]
     # NO score / magnitude / severity DATA keys on any tier-1/tier-2 item (the
     # tier-3 prose legitimately disclaims "no score, no magnitude"; the discipline
     # is that items carry no scoring FIELD).
     forbidden = {"score", "magnitude", "severity", "rank", "weight"}
-    items = d["tier_1_direct"] + d["tier_2_via_defs_and_refs"]["citing_provisions"]
+    items = d["tier_1_direct"] + citing + defusers
     for item in items:
         assert forbidden.isdisjoint(item.keys())
         assert forbidden.isdisjoint(item["provenance"].keys())
@@ -287,6 +437,15 @@ def test_report_keeps_tiers_separate_and_carries_no_score() -> None:
     assert "TIER 1 — DIRECTLY CHANGED" in text
     assert "TIER 2 — CHANGED VIA REFERENCES" in text
     assert "TIER 3 — UNCOMPUTED SECOND-ORDER" in text
+    assert "uses term 'sivutuote'" in text
+
+
+def test_report_definition_users_empty_without_graph_inputs() -> None:
+    # backward-compatible call (no graph / crosswalk) -> empty definition-users,
+    # the declared-limit behaviour for an unresolvable amended act.
+    ops = [_op("M", "5")]
+    report = cf.build_counterfactual_report("2018/301", "2017/320", ops, [])
+    assert report.tier_2_via_defs_and_refs["definition_users"] == ()
 
 
 # ---------------------------------------------------------------------------
@@ -325,10 +484,40 @@ def test_witness_2018_301_has_nonempty_tier_1_and_tier_2() -> None:
         assert c.resolution_status in {"resolved", "unchanged"}
         assert c.cited_section in changed
 
-    # the deferred definition-user sub-tier is empty (declared in tier 3)
-    assert report.tier_2_via_defs_and_refs["definition_users"] == ()
-
     # tier 3 boundary present + self-evidencing about untraceable would-be effects
     boundary = report.tier_3_uncomputed_second_order
     assert boundary.statement
     assert "total_untraceable" in boundary.resolution_limits
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_witness_2021_1244_has_definition_users_with_provenance() -> None:
+    """Real witness for the definition-user arm: 2021/1244 amends 2017/320.
+
+    2021/1244 changes §127 and §130 of the Transport Services Act. §127 DEFINES
+    ``lentotoiminta-asetus`` (used in §266); §130 DEFINES ``lentomiehistöasetus``
+    (used in §135 / §195 / §207).  The definition-user sub-tier must therefore be
+    non-empty, with each effect provenance-tagged ``definition_graph`` and pointing
+    from a tier-1-changed defining section to a DIFFERENT using section.
+    """
+    report = cf._build_report_from_corpus("2021/1244")
+    assert report.amended_act_id == "2017/320"
+
+    changed = {d.section.strip() for d in report.tier_1_direct if d.section.strip()}
+    defusers = report.tier_2_via_defs_and_refs["definition_users"]
+    assert len(defusers) >= 1
+    defining_sections = set()
+    for u in defusers:
+        assert u.source == cf.SOURCE_DEFINITION_GRAPH
+        assert u.node_id
+        assert u.term
+        assert u.defining_section in changed
+        assert u.using_section and u.using_section != u.defining_section
+        defining_sections.add(u.defining_section)
+    # the §130 definer (lentomiehistöasetus) is among the witnessed effects
+    assert "130" in defining_sections
+    # citing and definition-user sub-tiers stay STRUCTURALLY DISTINCT (BRANCH-06)
+    citing = report.tier_2_via_defs_and_refs["citing_provisions"]
+    assert type(citing) is tuple and type(defusers) is tuple
+    assert all(isinstance(c, cf.CitingProvisionEffect) for c in citing)
+    assert all(isinstance(u, cf.DefinitionUserEffect) for u in defusers)

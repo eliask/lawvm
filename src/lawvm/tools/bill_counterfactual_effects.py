@@ -29,20 +29,30 @@ The three tiers (one builder each — never merged):
   tier 3 as a declared limit, never guessed.
 
   The *definition-user* sub-tier (provisions whose meaning shifts because a
-  tier-1 op changed a DEFINITION they use) is DEFERRED in v1 — see the tier-3
-  boundary.  The reason is structural and declared: the definition graph
-  (:func:`lawvm.finland.references.definition_graph.build_definition_graph`)
-  anchors bindings by BYTE OFFSET into an assembled body string, not by section
-  label, so "is this binding inside a tier-1-changed section?" needs an
-  offset→section crosswalk this module does not yet build.  Landing it requires
-  that crosswalk and is a near-term extension, NOT a silent gap.
+  tier-1 op changed a DEFINITION they use) is COMPUTED in v1 from the amended
+  act's definition graph
+  (:func:`lawvm.finland.references.definition_graph.build_definition_graph`).
+  The graph anchors bindings AND resolved uses by BYTE OFFSET into an assembled
+  body string; this module pairs the graph with an offset→section crosswalk
+  (built from the SAME ``<p>`` walk the graph runs over, so the two byte-offset
+  coordinate systems coincide exactly) to answer "which section DEFINES the
+  term, and which sections USE it?".  A resolved binding↔use edge whose DEFINING
+  section is tier-1-changed and whose USING section is a DIFFERENT section is a
+  definition-user effect: the using provision's meaning shifts because the
+  definition it relies on moved.  This sub-tier is kept STRUCTURALLY DISTINCT
+  from ``citing_provisions`` (BRANCH-06 — the two are never merged: a citation is
+  a structural cross-reference, a definition-use is a lexical dependency).
 
 * **TIER 3 — uncomputed second-order.**  A DECLARED boundary: a statement plus an
   effect-class list, NOT a computation.  It names the effect classes this report
   does NOT compute (semantic / teleological impact, multi-hop cascades — only the
   1-hop back-reference is computed, temporal / contingency cascades, institutional
   / capacity effects, transnational transposition cascades) and the resolution-
-  status limit (untraceable citations) and the deferred definition-user sub-tier.
+  status limit (untraceable citations).  The definition-user sub-tier is now
+  COMPUTED (single-hop, within the amended act); the NARROWER residual that
+  remains — transitive definition chains, cross-act imported definitions, and
+  uses the definition graph leaves ``open`` / ``ambiguous`` — is what tier 3 now
+  declares for that sub-tier.
 
 DISCIPLINE.  Like ``analyze-bill`` v0, this report carries NO score, NO
 magnitude, NO severity — it reports WHAT moves, never how much it matters.  Every
@@ -70,6 +80,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from lawvm.finland.johtolause.types import ParsedOp
+    from lawvm.finland.references.definition_graph import DefinitionGraph
     from lawvm.tools.transition_graph_interlinks import LawvmInterlinkRow
 
 
@@ -155,6 +166,38 @@ class CitingProvisionEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class DefinitionUserEffect:
+    """One TIER-2 provision that USES a term DEFINED in a tier-1-changed section.
+
+    A lexical dependency in the AMENDED act: a tier-1 op changed
+    ``defining_section``, which DEFINES ``term``; provision ``using_section`` USES
+    that term (an inflected occurrence the definition graph resolved back to the
+    binding), so its meaning shifts.  This is kept STRUCTURALLY DISTINCT from
+    :class:`CitingProvisionEffect` (BRANCH-06): a citation is a cross-reference,
+    a definition-use is a lexical dependency on a moved definition.
+
+    Attributes:
+        defining_section:  The tier-1-changed § that defines ``term``.
+        using_section:     The provision (in the amended act) that uses the term;
+                           a resolved section locator (bare § label, "" when the
+                           crosswalk could not place the use in a section).
+        term:              The defined term lemma (the binding's term surface).
+        use_surface:       The inflected surface of the use as it appears in body
+                           text (e.g. ``lentomiehistöasetuksessa``).
+        source:            Provenance machine — always ``definition_graph``.
+        node_id:           Provenance id — a stable id of the binding↔use edge
+                           (``def:<defining_section>:<term>->use:<using_section>``).
+    """
+
+    defining_section: str
+    using_section: str
+    term: str
+    use_surface: str
+    source: str
+    node_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class UncomputedBoundary:
     """The TIER-3 DECLARED boundary — a statement + effect-class list, NOT a
     computation.
@@ -189,9 +232,11 @@ class CounterfactualEffectsReport:
                           act's provisions), or "" when it could not be resolved.
         tier_1_direct:    Provisions the amendment's ops directly mutate.
         tier_2_via_defs_and_refs: The tier-2 account; ``citing_provisions`` are the
-                          resolved back-references; ``definition_users`` is the
-                          DEFERRED sub-tier (always empty in v1, declared in the
-                          boundary).
+                          resolved back-references; ``definition_users`` are the
+                          provisions that USE a term DEFINED in a tier-1-changed
+                          section (computed from the amended act's definition
+                          graph).  The two sub-tiers are kept STRUCTURALLY DISTINCT
+                          and never merged (BRANCH-06).
         tier_3_uncomputed_second_order: the declared boundary.
     """
 
@@ -312,6 +357,113 @@ def build_tier_2_citing_provisions(
     return tuple(out)
 
 
+# ---------------------------------------------------------------------------
+# TIER 2 — definition-users (pure)
+# ---------------------------------------------------------------------------
+#
+# A SECTION CROSSWALK maps a byte offset in the definition graph's assembled
+# body text to the § label of the enclosing section.  It is built (in the corpus
+# handler) from the SAME ``<p>`` walk the definition graph runs over, so the two
+# byte-offset coordinate systems coincide EXACTLY.  The pure builder takes the
+# crosswalk as an opaque list of ``(byte_start, byte_end, section_label)`` spans
+# in source order, so it is testable on synthetic fixtures with no corpus.
+
+#: One paragraph's byte span tagged with its enclosing section's bare § label
+#: ("" when the paragraph is outside any section, e.g. a preamble).
+SectionSpan = tuple[int, int, str]
+
+
+def _section_label_at(crosswalk: list[SectionSpan], offset: int) -> str:
+    """The bare § label of the section enclosing ``offset``, or "" when none.
+
+    The crosswalk is a list of ``(start, end, label)`` spans in source order.  A
+    binary search over the start offsets locates the span containing ``offset``.
+    Returns "" when ``offset`` falls in no paragraph span (between paragraphs or
+    outside any section) — the caller then cannot place the construct and the
+    edge is dropped from the definition-user set (declared, never guessed).
+    """
+    import bisect
+
+    if not crosswalk:
+        return ""
+    starts = [s[0] for s in crosswalk]
+    idx = bisect.bisect_right(starts, offset) - 1
+    if 0 <= idx < len(crosswalk):
+        start, end, label = crosswalk[idx]
+        if start <= offset < end:
+            return label
+    return ""
+
+
+def build_tier_2_definition_users(
+    direct: tuple[DirectEffect, ...],
+    definition_graph: "DefinitionGraph",
+    section_crosswalk: list[SectionSpan],
+) -> tuple[DefinitionUserEffect, ...]:
+    """Tier-2 definition-users: provisions that USE a term DEFINED in a changed §.
+
+    Pure (no corpus access): takes the tier-1 result, the amended act's already
+    built definition graph, and an offset→section crosswalk over the SAME body
+    text the graph was built from.  A resolved binding↔use edge is a
+    definition-user effect iff ALL of:
+
+      * its binding (the DEFINITION site) sits inside a section tier 1 changed;
+      * its use (the USING site) is placed by the crosswalk in a section; and
+      * the USING section is DIFFERENT from the DEFINING section — a provision
+        re-using the term in the very section that defines it is not a separate
+        affected provision (it IS the changed section, already tier 1).
+
+    Only RESOLVED edges are traced (the graph's ``edges`` are exactly the
+    resolved uses); ``open`` / ``ambiguous`` uses carry no single binding and are
+    NOT guessed (they flow to the tier-3 declared residual).  Each hit is a
+    :class:`DefinitionUserEffect` tagged with provenance ``definition_graph`` and
+    a stable edge id.  Results are sorted and de-duplicated on
+    (defining_section, using_section, term, use_surface) for a stable report.
+
+    This is kept STRUCTURALLY DISTINCT from :func:`build_tier_2_citing_provisions`
+    (BRANCH-06): the two sub-tiers are computed independently and never merged.
+    """
+    changed = _changed_sections(direct)
+    if not changed or not definition_graph.edges:
+        return ()
+    seen: set[tuple[str, str, str, str]] = set()
+    out: list[DefinitionUserEffect] = []
+    for edge in definition_graph.edges:
+        binding = edge.binding
+        use = edge.use
+        defining = _section_label_at(
+            section_crosswalk, binding.source_span.byte_offset
+        )
+        if not defining or defining not in changed:
+            continue
+        using = _section_label_at(section_crosswalk, use.source_span.byte_offset)
+        # A use placed in no section, or in the SAME section that defines the
+        # term, is not a separately-affected provision.
+        if not using or using == defining:
+            continue
+        term = binding.term.strip()
+        surface = use.term_surface.strip()
+        key = (defining, using, term, surface)
+        if key in seen:
+            continue
+        seen.add(key)
+        node_id = f"def:{defining}:{term}->use:{using}"
+        out.append(
+            DefinitionUserEffect(
+                defining_section=defining,
+                using_section=using,
+                term=term,
+                use_surface=surface,
+                source=SOURCE_DEFINITION_GRAPH,
+                node_id=node_id,
+            )
+        )
+    out.sort(
+        key=lambda e: (e.defining_section, e.using_section, e.term, e.use_surface)
+    )
+    return tuple(out)
+
+
 def _interlink_targets_act(row: "LawvmInterlinkRow", amended_act_id: str) -> bool:
     """True when the interlink's resolved target work IS the amended act.
 
@@ -386,12 +538,18 @@ _UNCOMPUTED_EFFECT_CLASSES = (
 )
 
 #: Declared near-term extensions that are OUT of v1 — not silent gaps.
+#: The definition-user sub-tier itself is now COMPUTED (single-hop, within the
+#: amended act); only the NARROWER residual below remains for it.
 _DEFERRED = (
-    "tier-2 definition-users — provisions whose meaning shifts because a tier-1 op "
-    "changed a DEFINITION they use.  Deferred because the definition graph anchors "
-    "bindings by byte offset into an assembled body string, not by section label, "
-    "so an offset→section crosswalk is required to know which bindings sit inside "
-    "a tier-1-changed section.  Near-term extension, not a silent omission.",
+    "definition-user RESIDUAL (the sub-tier itself is now computed, single-hop) — "
+    "three classes are NOT covered: (a) transitive definition CHAINS — a term whose "
+    "definition uses ANOTHER defined term that a tier-1 op changed is not followed "
+    "(only the direct binding↔use edge is traced); (b) CROSS-ACT imported "
+    "definitions — a term defined in ANOTHER act and used in the amended act is out "
+    "of scope (the definition graph is single-act); (c) uses the definition graph "
+    "leaves ``open`` / ``ambiguous`` — only RESOLVED binding↔use edges are traced, "
+    "so a use with no single in-scope binding is not minted into a definition-user "
+    "(declared, never guessed).",
     "cross-act back-references — provisions in OTHER acts that cite a changed § are "
     "not scanned; tier-2 is scoped to internal (within-amended-act) back-references "
     "only.  A corpus-wide reverse-citation scan is deferred (heavy).",
@@ -444,18 +602,33 @@ def build_counterfactual_report(
     amended_act_id: str,
     parsed_ops: list["ParsedOp"],
     amended_act_interlinks: list["LawvmInterlinkRow"],
+    definition_graph: "DefinitionGraph | None" = None,
+    section_crosswalk: list[SectionSpan] | None = None,
 ) -> CounterfactualEffectsReport:
     """Assemble the full three-tier report from already-built inputs (pure).
 
     Takes the amendment id, the resolved amended-act id, the lowered johtolause
-    ops, and the AMENDED act's interlink rows.  No corpus access — every tier is a
-    pure projection of these inputs, so the whole report is testable on synthetic
-    fixtures.
+    ops, the AMENDED act's interlink rows, and — for the definition-user
+    sub-tier — the amended act's definition graph plus an offset→section
+    crosswalk over the SAME body text the graph was built from.  No corpus
+    access — every tier is a pure projection of these inputs, so the whole report
+    is testable on synthetic fixtures.
+
+    The definition graph / crosswalk are OPTIONAL: when either is absent (e.g. the
+    amended act could not be resolved) the definition-user sub-tier is empty —
+    the same declared-limit behaviour as an unknown parent for ``citing_provisions``,
+    never a guess.
     """
     tier_1 = build_tier_1_direct(parsed_ops)
     citing = build_tier_2_citing_provisions(
         tier_1, amended_act_id, amended_act_interlinks
     )
+    if definition_graph is not None and section_crosswalk is not None:
+        definition_users = build_tier_2_definition_users(
+            tier_1, definition_graph, section_crosswalk
+        )
+    else:
+        definition_users = ()
     tier_3 = build_tier_3_boundary(amended_act_interlinks)
     return CounterfactualEffectsReport(
         amendment_id=amendment_id,
@@ -463,8 +636,7 @@ def build_counterfactual_report(
         tier_1_direct=tier_1,
         tier_2_via_defs_and_refs={
             "citing_provisions": citing,
-            # DEFERRED sub-tier — always empty in v1, declared in tier 3.
-            "definition_users": (),
+            "definition_users": definition_users,
         },
         tier_3_uncomputed_second_order=tier_3,
     )
@@ -504,9 +676,16 @@ def report_to_dict(report: CounterfactualEffectsReport) -> dict[str, Any]:
                 }
                 for c in report.tier_2_via_defs_and_refs["citing_provisions"]
             ],
-            "definition_users": list(
-                report.tier_2_via_defs_and_refs["definition_users"]
-            ),
+            "definition_users": [
+                {
+                    "defining_section": u.defining_section,
+                    "using_section": u.using_section,
+                    "term": u.term,
+                    "use_surface": u.use_surface,
+                    "provenance": {"source": u.source, "node_id": u.node_id},
+                }
+                for u in report.tier_2_via_defs_and_refs["definition_users"]
+            ],
         },
         "tier_3_uncomputed_second_order": {
             "statement": report.tier_3_uncomputed_second_order.statement,
@@ -542,12 +721,18 @@ def render_report(report: CounterfactualEffectsReport) -> str:
     lines.append("")
     lines.append(
         f"TIER 2 — CHANGED VIA REFERENCES ({len(citing)} citing provision(s); "
-        f"{len(deffers)} definition-user(s) [deferred — see tier 3])"
+        f"{len(deffers)} definition-user(s))"
     )
     for c in citing:
         lines.append(
             f"    └─ §{c.citing_section or '?'} cites changed §{c.cited_section} "
             f"({c.role}, {c.resolution_status})  [{c.source}:{c.node_id}]"
+        )
+    for u in deffers:
+        lines.append(
+            f"    └─ §{u.using_section or '?'} uses term {u.term!r} "
+            f"defined in changed §{u.defining_section} "
+            f"(as {u.use_surface!r})  [{u.source}:{u.node_id}]"
         )
 
     b = report.tier_3_uncomputed_second_order
@@ -650,6 +835,90 @@ def _amended_act_interlinks(
     return list(projection.rows)
 
 
+def _build_section_crosswalk(xml_bytes: bytes) -> list[SectionSpan]:
+    """Build the byte-offset→section crosswalk for an act's body text.
+
+    Reproduces the EXACT ``<p>`` walk
+    :func:`lawvm.finland.references.definition_graph._extract_body_text` uses
+    (tree walk over ``<p>`` local-name elements, ``itertext`` joined by '\\n'),
+    while additionally recording each emitted paragraph's byte span and the bare
+    § label of its enclosing ``<section>``.  Because the walk, the join, and the
+    skip-empty rule are identical, the resulting ``(start, end, label)`` spans
+    index into the SAME assembled body string the definition graph anchors its
+    bindings/uses on — so a binding/use byte offset maps to a section by binary
+    search, no re-derivation of the body text required.
+
+    A paragraph outside any section (preamble / signature block) gets label "".
+    Returns an empty list when the XML cannot be parsed or has no ``<p>`` text —
+    the definition-user sub-tier is then empty (declared, never a crash).
+    """
+    import xml.etree.ElementTree as ET
+
+    from lawvm.finland.references.definition_graph import _local_name
+    from lawvm.finland.section_text_extractor import _eid_to_section_key
+
+    if b"<p" not in xml_bytes and b":p" not in xml_bytes:
+        return []
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return []
+
+    parent: dict[ET.Element[str], ET.Element[str]] = {
+        child: el for el in root.iter() for child in el
+    }
+
+    def _enclosing_section_label(el: ET.Element[str]) -> str:
+        cur = el
+        while cur in parent:
+            cur = parent[cur]
+            if _local_name(cur.tag) == "section":
+                key = _eid_to_section_key(cur.get("eId", ""))
+                # ``chapter:N/section:M`` / ``section:M`` -> bare ``M`` label, the
+                # same orientation tier-1 ``DirectEffect.section`` carries.
+                return key.rsplit("section:", 1)[-1] if "section:" in key else ""
+        return ""
+
+    spans: list[SectionSpan] = []
+    offset = 0
+    first = True
+    for el in root.iter():
+        if _local_name(el.tag) != "p":
+            continue
+        text = "".join(el.itertext())
+        if not text.strip():
+            continue
+        if not first:
+            offset += 1  # the '\n' the definition-graph join inserts
+        first = False
+        start = offset
+        end = offset + len(text)
+        spans.append((start, end, _enclosing_section_label(el)))
+        offset = end
+    return spans
+
+
+def _amended_act_definition_inputs(
+    amended_act_id: str, store: Any
+) -> tuple["DefinitionGraph | None", list[SectionSpan] | None]:
+    """Build the amended act's definition graph + section crosswalk (read-only).
+
+    Both ``None`` when the amended act is unknown ("") or has no archived oracle
+    XML — the definition-user sub-tier is then empty (the same declared-limit
+    behaviour as an unknown parent), never guessed.
+    """
+    if not amended_act_id:
+        return None, None
+    from lawvm.finland.references.definition_graph import build_definition_graph
+
+    xml_bytes = store.read_oracle(amended_act_id)
+    if xml_bytes is None:
+        return None, None
+    graph = build_definition_graph(xml_bytes, amended_act_id)
+    crosswalk = _build_section_crosswalk(xml_bytes)
+    return graph, crosswalk
+
+
 def _build_report_from_corpus(statute_id: str) -> CounterfactualEffectsReport:
     """Load the amendment + amended-act interlinks from the corpus and assemble."""
     from farchive import Farchive
@@ -661,8 +930,16 @@ def _build_report_from_corpus(statute_id: str) -> CounterfactualEffectsReport:
     parsed_ops = _parse_amendment_ops(statute_id, store)
     amended_act_id = _resolve_amended_act_id(statute_id)
     interlinks = _amended_act_interlinks(amended_act_id, store)
+    definition_graph, section_crosswalk = _amended_act_definition_inputs(
+        amended_act_id, store
+    )
     return build_counterfactual_report(
-        statute_id, amended_act_id, parsed_ops, interlinks
+        statute_id,
+        amended_act_id,
+        parsed_ops,
+        interlinks,
+        definition_graph=definition_graph,
+        section_crosswalk=section_crosswalk,
     )
 
 
@@ -694,11 +971,14 @@ __all__ = [
     "SOURCE_JOHTOLAUSE_PARSE",
     "CitingProvisionEffect",
     "CounterfactualEffectsReport",
+    "DefinitionUserEffect",
     "DirectEffect",
+    "SectionSpan",
     "UncomputedBoundary",
     "build_counterfactual_report",
     "build_tier_1_direct",
     "build_tier_2_citing_provisions",
+    "build_tier_2_definition_users",
     "build_tier_3_boundary",
     "main",
     "render_report",

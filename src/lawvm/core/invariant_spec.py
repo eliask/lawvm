@@ -562,7 +562,9 @@ _INV_COUNTERFACTUAL_TIERS = InvariantSpec(
     unit_kind="per-unit",
     predicate=(
         "every reported effect is partitioned into exactly one tier — direct "
-        "(tier 1), 1-hop resolved citation (tier 2), or the declared-uncomputed "
+        "(tier 1), 1-hop resolved DEPENDENCY (tier 2, kept as two structurally "
+        "distinct sub-tiers: provisions that CITE a changed section and provisions "
+        "that USE a term DEFINED in a changed section), or the declared-uncomputed "
         "boundary (tier 3) — never conflated; each tier-1/2 item carries provenance; "
         "no score/magnitude is emitted (BRANCH-06)"
     ),
@@ -581,10 +583,11 @@ _INV_COUNTERFACTUAL_UNCOMPUTED = InvariantSpec(
     waist="claim_boundary",
     unit_kind="static",
     predicate=(
-        "tier-2 definitions are deferred, multi-hop/semantic/temporal/transposition "
-        "cascades are uncomputed, bare-section matching precision is bounded, and "
-        "untraceable cites are typed external_only — all DECLARED in tier 3, not "
-        "silently omitted"
+        "tier-2 definition-users are SINGLE-HOP within the amended act (transitive "
+        "definition chains, cross-act imported definitions, and open/ambiguous uses "
+        "are NOT covered), multi-hop/semantic/temporal/transposition cascades are "
+        "uncomputed, bare-section matching precision is bounded, and untraceable "
+        "cites are typed external_only — all DECLARED in tier 3, not silently omitted"
     ),
     owner="lawvm.tools.bill_counterfactual_effects",
     bucket="declared_residual",
