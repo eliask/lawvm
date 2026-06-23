@@ -255,12 +255,13 @@ def _source_complete_container_replacement_witness(
     ]
     if len(whole_replaces) != 1:
         return None
+    child_kind = IRNodeKind.SECTION if target_unit_kind == "chapter" else IRNodeKind.CHAPTER
     child_labels = tuple(
         sorted(
             {
                 _norm_num_token(child.label)
                 for child in raw_muutos_ir.children
-                if child.kind is IRNodeKind.SECTION and child.label
+                if child.kind is child_kind and child.label
             }
         )
     )
