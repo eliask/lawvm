@@ -1263,7 +1263,7 @@ def analyze_amendment_pairing(
     Returns None if the amendment has no body content or no parseable ops.
     """
     from lawvm.finland.acquisition import build_amendment_acquisition_result
-    from lawvm.finland.johtolause.compat import parse_clause
+    from lawvm.finland.johtolause.api import parse_clause
 
     muutos_tree = etree.fromstring(amendment_xml_bytes)
     acquisition = build_amendment_acquisition_result(

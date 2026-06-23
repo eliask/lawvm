@@ -31,7 +31,7 @@ from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.corpus_store import CorpusStore
 from lawvm.finland.helpers import _fi_label_postprocessor
-from lawvm.finland.johtolause.compat import parse_clause, derive_features
+from lawvm.finland.johtolause.api import parse_clause, derive_features
 from lawvm.finland.kumotaan import (
     _extract_kumotaan_container_refs,
     _extract_kumotaan_chapter_section_map,

@@ -266,7 +266,7 @@ class TestJolloiSectionRenumber:
 
     def test_parse_clause_emits_section_renumber_op(self):
         """parse_clause must prepend S P op for jolloin section renumber."""
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
         text = (
             "lisätään uusi 10 §, jolloin nykyinen 10 § siirtyy 10 a §:ksi, "
             "sekä muutetaan 14 §"
@@ -321,7 +321,7 @@ class TestJolloiSectionRenumber:
 
     def test_parse_clause_keeps_trailing_explicit_insert_after_jolloin_clause(self):
         """A trailing explicit insert after jolloin must keep its own chapter scope."""
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
 
         text = (
             "lisätään 15 luvun 2 §:ään, sellaisena kuin se on laissa 1278/2015, "
@@ -369,7 +369,7 @@ class TestJolloiSectionRenumber:
         ]
 
     def test_parse_clause_keeps_chapter_heading_after_jolloin_clause(self) -> None:
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
 
         text = (
             "muutetaan 5 luvun otsikko, 63 §, 69 §, jolloin 69 § siirtyy "
@@ -399,7 +399,7 @@ class TestJolloiSectionRenumber:
 
     def test_parse_clause_chapter_renumber_still_emits_kind_L(self):
         """parse_clause must still emit S L for jolloin chapter renumber."""
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
         text = "lisätään uusi 3 luku, jolloin nykyinen 8 ja 9 luku siirtyvät 10 ja 11 luvuksi"
         ops = parse_clause(text).parsed_ops
         renumber_ops = [op for op in ops if op.verb == "S" and op.kind == "L"]

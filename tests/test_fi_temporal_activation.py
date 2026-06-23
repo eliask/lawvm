@@ -215,7 +215,7 @@ class TestIntegrationParseClauseToActivationRules:
     def test_commencement_clause_produces_activation_rule(self) -> None:
         """A johtolause with commencement text should produce activation rules
         when its meta_clauses are fed through the temporal lowering."""
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
 
         # Realistic johtolause with commencement clause appended
         text = "muutetaan rikoslain 3 luvun 1 ja 2 §. Tämä laki tulee voimaan 1 päivänä tammikuuta 2027."
@@ -241,7 +241,7 @@ class TestIntegrationParseClauseToActivationRules:
 
     def test_contingent_commencement_via_parse_clause(self) -> None:
         """A johtolause with decree-set commencement should produce pending_decree."""
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
 
         text = "muutetaan lain 5 §. Tämä laki tulee voimaan valtioneuvoston asetuksella säädettävänä ajankohtana."
         result = parse_clause(text)
@@ -259,7 +259,7 @@ class TestIntegrationParseClauseToActivationRules:
     def test_default_rule_when_no_meta_clauses(self) -> None:
         """When parse_clause produces no commencement meta_clauses, the
         default_activation_rule provides the fallback."""
-        from lawvm.finland.johtolause.compat import parse_clause
+        from lawvm.finland.johtolause.api import parse_clause
 
         text = "muutetaan rikoslain 3 luvun 1 §"
         result = parse_clause(text)

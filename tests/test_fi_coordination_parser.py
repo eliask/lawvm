@@ -11,7 +11,7 @@ amendment preambles.
 from __future__ import annotations
 
 from lawvm.core.semantic_types import FacetKind
-from lawvm.finland.johtolause.compat import parse_clause
+from lawvm.finland.johtolause.api import parse_clause
 
 
 # ---------------------------------------------------------------------------
@@ -199,3 +199,50 @@ class TestAlakohta:
         """
         codes = _ops("muutetaan 70 §:n 1 momentin 2 kohdan a alakohta")
         assert codes == ["M P 70 1 2 a"]
+
+
+# ---------------------------------------------------------------------------
+# Production parser behaviour preserved from the retired surface-migration
+# shadow-test: these pin parse_clause op output directly (independent of any
+# lift/round-trip adapter).
+# ---------------------------------------------------------------------------
+
+
+class TestDualMomenttiSharedQualifier:
+    """parse_clause emits one op per momentti when a qualifier is shared."""
+
+    def test_dual_momentti_johd_two_ops(self):
+        """'2 ja 3 momentin johdantokappale' -> two INTRO ops."""
+        codes = _ops("muutetaan 20 §:n 2 ja 3 momentin johdantokappale")
+        assert "M P 20 2 j" in codes
+        assert "M P 20 3 j" in codes
+        assert len(codes) == 2
+
+    def test_dual_momentti_plain_two_ops(self):
+        """'1 ja 2 momentti' -> two whole-momentti ops."""
+        codes = _ops("muutetaan 5 §:n 1 ja 2 momentti")
+        assert "M P 5 1" in codes
+        assert "M P 5 2" in codes
+        assert len(codes) == 2
+
+    def test_dual_momentti_shared_kohta(self):
+        """'2 ja 3 momentin 1 kohta' -> two ops, different momentti, same item."""
+        codes = sorted(_ops("muutetaan 5 §:n 2 ja 3 momentin 1 kohta"))
+        assert codes == ["M P 5 2 1", "M P 5 3 1"]
+
+    def test_triple_momentti_shared_johd(self):
+        """'1 ja 2 ja 3 momentin johdantokappale' -> three INTRO ops."""
+        codes = sorted(_ops("muutetaan 5 §:n 1 ja 2 ja 3 momentin johdantokappale"))
+        assert codes == ["M P 5 1 j", "M P 5 2 j", "M P 5 3 j"]
+
+    def test_dual_momentti_shared_otsikko(self):
+        """'2 ja 3 momentin otsikko' -> two HEADING ops."""
+        codes = sorted(_ops("muutetaan 5 §:n 2 ja 3 momentin otsikko"))
+        assert codes == ["M P 5 2 o", "M P 5 3 o"]
+
+    def test_mixed_depth_cross_momentti(self):
+        """'2 momentin 1 ja 3 kohdan sekä 4 momentin 1 kohdan' -> 3 ops."""
+        codes = sorted(
+            _ops("muutetaan 70 §:n 2 momentin 1 ja 3 kohdan sekä 4 momentin 1 kohdan")
+        )
+        assert codes == ["M P 70 2 1", "M P 70 2 3", "M P 70 4 1"]
