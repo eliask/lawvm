@@ -1256,7 +1256,7 @@ def _skip_anaphoric_heading_residue(scan: _Scan) -> bool:
 
 def _try_current_section_renumber_tail(
     scan: _Scan,
-    verb: SourceVerb,
+    verb: SourceVerb | None,
     chapter: str,
     part: str,
 ) -> list[SurfaceNode] | None:
