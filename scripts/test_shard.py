@@ -670,6 +670,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_bill_analysis.py",
         "test_bill_counterfactual_effects.py",
         "test_dangling_references.py",
+        "test_cross_reference_integrity_report.py",
         "test_provision_state_window_unmaterialized.py",
         "test_read_provision.py",
         "test_reconcile.py",
