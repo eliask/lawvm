@@ -52,7 +52,9 @@ from lawvm.substrate.relation_edge import (
 )
 
 _CELEX = "32016R0679"
-_REAL_FORMEX = Path("<DATA_ROOT>/.tmp/eulex/gdpr_fi_formex_plain.xml")
+_REAL_FORMEX = (
+    Path(__file__).resolve().parents[2] / ".tmp" / "eulex" / "gdpr_fi_formex_plain.xml"
+)
 
 
 # --------------------------------------------------------------------------- #

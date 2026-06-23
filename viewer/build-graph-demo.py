@@ -71,11 +71,6 @@ FI_TIME_WORK_ENGINE_ID = "2004/301"
 FI_TIME_PACK = DATA / "fi-301-2004"
 GDPR_CELEX = "32016R0679"
 GDPR_FORMEX = REPO / ".tmp" / "eulex" / "gdpr_fi_formex_plain.xml"
-# The acquired Formex lives in the AUTH checkout's .tmp (not symlinked into a
-# fresh worktree); fall back to the canonical path when the local one is absent.
-GDPR_FORMEX_FALLBACK = Path(
-    "<DATA_ROOT>/.tmp/eulex/gdpr_fi_formex_plain.xml"
-)
 
 
 def _log(msg: str) -> None:
@@ -91,10 +86,8 @@ def _run_lawvm(args: list[str]) -> None:
 def _formex_path() -> Path:
     if GDPR_FORMEX.exists():
         return GDPR_FORMEX
-    if GDPR_FORMEX_FALLBACK.exists():
-        return GDPR_FORMEX_FALLBACK
     raise SystemExit(
-        f"GDPR Formex not found at {GDPR_FORMEX} or {GDPR_FORMEX_FALLBACK}; "
+        f"GDPR Formex not found at {GDPR_FORMEX}; "
         "acquire it first (eu_ingest e2e prerequisite)."
     )
 
@@ -219,7 +212,7 @@ def build_sidecar(work: object) -> dict[str, int]:
     targets against the ingested work, and write the viewer sidecar files.
     """
     from lawvm.finland.corpus import get_corpus_store
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
     from lawvm.finland.references.reference_sets import fold_reference_set
     from lawvm.substrate.canonical_json import wrap_row
     from lawvm.substrate.eu_ingest import resolve_fi_eu_edge
