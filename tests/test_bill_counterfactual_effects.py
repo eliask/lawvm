@@ -252,6 +252,129 @@ def test_tier_2_dedupes_identical_backrefs() -> None:
 
 
 # ---------------------------------------------------------------------------
+# TIER 2 — bounded multi-hop citation cascade
+# ---------------------------------------------------------------------------
+
+
+def test_cascade_reports_only_hop_ge_2_distinct_from_1hop() -> None:
+    # §5 changed; §12 cites §5 (depth 1 -> stays in citing_provisions); §30 cites
+    # §12 (depth 2 -> a cascade reacher); §40 cites §30 (depth 3 -> a cascade
+    # reacher).  The depth-1 reacher (§12) is NOT in the cascade arm.
+    direct = cf.build_tier_1_direct([_op("M", "5")])
+    rows = [
+        _row(interlink_id="e1", source_locator="section:12", target_locator="section:5",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+        _row(interlink_id="e2", source_locator="section:30", target_locator="section:12",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+        _row(interlink_id="e3", source_locator="section:40", target_locator="section:30",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+    ]
+    cascade = cf.build_tier_2_citation_cascade(direct, "2017/320", rows)
+    affected = {c.affected_section for c in cascade}
+    # §12 is the 1-hop reacher -> NOT in the cascade arm (no double-count)
+    assert "12" not in affected
+    assert affected == {"30", "40"}
+    by_sec = {c.affected_section: c for c in cascade}
+    assert by_sec["30"].depth == 2
+    assert by_sec["30"].hop_chain == ("5", "12", "30")
+    assert by_sec["30"].cited_section == "5"
+    assert by_sec["40"].depth == 3
+    assert by_sec["40"].hop_chain == ("5", "12", "30", "40")
+    for c in cascade:
+        assert c.source == cf.SOURCE_INTERLINK_GRAPH
+        assert c.node_id == f"cascade:{'->'.join(c.hop_chain)}"
+        assert c.resolution_status == "resolved"
+        # the 1-hop reacher is exactly build_tier_2_citing_provisions, so cascade
+        # is structurally distinct (BRANCH-06): always depth >= 2
+        assert c.depth >= 2
+
+
+def test_cascade_bounded_by_declared_max_depth() -> None:
+    # a chain longer than the bound: §5 <- §10 <- §11 <- §12 <- §13.  With the
+    # declared max depth, the depth-4 reacher (§13) must NOT be reported.
+    direct = cf.build_tier_1_direct([_op("M", "5")])
+    chain = [("10", "5"), ("11", "10"), ("12", "11"), ("13", "12")]
+    rows = [
+        _row(interlink_id=f"e{i}", source_locator=f"section:{src}",
+             target_locator=f"section:{dst}",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved")
+        for i, (src, dst) in enumerate(chain)
+    ]
+    cascade = cf.build_tier_2_citation_cascade(direct, "2017/320", rows)
+    max_depth_seen = max(c.depth for c in cascade)
+    assert max_depth_seen == cf._CASCADE_MAX_DEPTH
+    affected = {c.affected_section for c in cascade}
+    # depth-1 §10 stays in citing_provisions; depths 2,3 reported; depth-4 §13 not
+    assert affected == {"11", "12"}  # depth 2 and 3 only (max depth 3)
+    assert "13" not in affected
+    # an explicit small bound proves the parameter is honoured
+    shallow = cf.build_tier_2_citation_cascade(direct, "2017/320", rows, max_depth=2)
+    assert {c.affected_section for c in shallow} == {"11"}
+
+
+def test_cascade_terminates_on_cycle() -> None:
+    # A cites B cites A (a cycle), with §5 changed and §A,§B citing into it.
+    # The visited-set per traversal must prevent an infinite loop.
+    direct = cf.build_tier_1_direct([_op("M", "5")])
+    rows = [
+        # §A cites changed §5 (depth 1)
+        _row(interlink_id="e1", source_locator="section:A", target_locator="section:5",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+        # §B cites §A (depth 2)
+        _row(interlink_id="e2", source_locator="section:B", target_locator="section:A",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+        # §A cites §B -> cycle back to §A (already visited) : must not loop
+        _row(interlink_id="e3", source_locator="section:A", target_locator="section:B",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+    ]
+    cascade = cf.build_tier_2_citation_cascade(direct, "2017/320", rows)
+    # only §B is a depth-2 reacher; §A is the depth-1 citer (stays in citing arm),
+    # and the cycle back to §A is suppressed by the visited-set.
+    assert {c.affected_section for c in cascade} == {"B"}
+    assert cascade[0].hop_chain == ("5", "A", "B")
+
+
+def test_cascade_empty_when_amended_act_unknown_or_no_change() -> None:
+    direct = cf.build_tier_1_direct([_op("M", "5")])
+    rows = [
+        _row(interlink_id="e1", source_locator="section:30", target_locator="section:12",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+    ]
+    # unknown parent -> no scope -> nothing (declared, not guessed)
+    assert cf.build_tier_2_citation_cascade(direct, "", rows) == ()
+    # no tier-1 change -> nothing
+    assert cf.build_tier_2_citation_cascade((), "2017/320", rows) == ()
+
+
+def test_cascade_shallowest_depth_and_deterministic_order() -> None:
+    # §50 reachable from changed §5 by TWO chains: §5<-§12<-§50 (depth 2) and
+    # §5<-§12<-§20<-§50 (depth 3).  It must be reported ONCE at its shallowest
+    # depth (2), and results are deterministically ordered.
+    direct = cf.build_tier_1_direct([_op("M", "5")])
+    rows = [
+        _row(interlink_id="e1", source_locator="section:12", target_locator="section:5",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+        _row(interlink_id="e2", source_locator="section:50", target_locator="section:12",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+        _row(interlink_id="e3", source_locator="section:20", target_locator="section:12",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+        _row(interlink_id="e4", source_locator="section:50", target_locator="section:20",
+             target_work_id="fi:normative_act:2017/320", resolution_status="resolved"),
+    ]
+    cascade = cf.build_tier_2_citation_cascade(direct, "2017/320", rows)
+    by_sec = [c for c in cascade if c.affected_section == "50"]
+    assert len(by_sec) == 1  # reported once, shallowest depth
+    assert by_sec[0].depth == 2
+    assert by_sec[0].hop_chain == ("5", "12", "50")
+    # deterministic: re-running yields the identical tuple
+    again = cf.build_tier_2_citation_cascade(direct, "2017/320", rows)
+    assert cascade == again
+    assert list(cascade) == sorted(
+        cascade, key=lambda e: (e.cited_section, e.depth, e.affected_section, e.node_id)
+    )
+
+
+# ---------------------------------------------------------------------------
 # TIER 2 — definition-users (a term defined in a changed § used elsewhere)
 # ---------------------------------------------------------------------------
 
@@ -364,6 +487,10 @@ def test_tier_3_declares_effect_classes_and_counts_untraceable() -> None:
         "granularity",
     ):
         assert needle in joined
+    # the multi-hop class now declares that the cascade IS computed to a bounded
+    # depth and only reachers BEYOND it remain uncomputed (narrowed, not blanket).
+    assert "beyond" in joined and "depth" in joined
+    assert str(cf._CASCADE_MAX_DEPTH) in joined
     assert boundary.resolution_limits["untraceable_by_status"] == {"external_only": 1}
     assert boundary.resolution_limits["total_untraceable"] == 1
     # the definition-user sub-tier is now COMPUTED; tier 3 declares only its
@@ -414,21 +541,26 @@ def test_report_keeps_tiers_separate_and_carries_no_score() -> None:
         "tier_3_uncomputed_second_order",
     }
     assert len(d["tier_1_direct"]) == 2
-    # the two tier-2 sub-tiers are computed AND kept structurally distinct (BRANCH-06)
-    citing = d["tier_2_via_defs_and_refs"]["citing_provisions"]
-    defusers = d["tier_2_via_defs_and_refs"]["definition_users"]
+    # the THREE tier-2 sub-tiers are computed AND kept structurally distinct
+    # (BRANCH-06)
+    t2 = d["tier_2_via_defs_and_refs"]
+    assert set(t2) == {"citing_provisions", "citation_cascade", "definition_users"}
+    citing = t2["citing_provisions"]
+    cascade = t2["citation_cascade"]
+    defusers = t2["definition_users"]
     assert len(citing) == 1
     assert len(defusers) == 1
     assert defusers[0]["defining_section"] == "5"
     assert defusers[0]["using_section"] == "12"
     assert defusers[0]["provenance"]["source"] == cf.SOURCE_DEFINITION_GRAPH
-    # the two sub-tiers carry DIFFERENT field shapes — never merged into one list
+    # the sub-tiers carry DIFFERENT field shapes — never merged into one list
     assert "citing_section" in citing[0] and "term" in defusers[0]
+    assert "hop_chain" in (cascade[0] if cascade else {"hop_chain": None})
     # NO score / magnitude / severity DATA keys on any tier-1/tier-2 item (the
     # tier-3 prose legitimately disclaims "no score, no magnitude"; the discipline
     # is that items carry no scoring FIELD).
     forbidden = {"score", "magnitude", "severity", "rank", "weight"}
-    items = d["tier_1_direct"] + citing + defusers
+    items = d["tier_1_direct"] + citing + cascade + defusers
     for item in items:
         assert forbidden.isdisjoint(item.keys())
         assert forbidden.isdisjoint(item["provenance"].keys())
@@ -521,3 +653,53 @@ def test_witness_2021_1244_has_definition_users_with_provenance() -> None:
     assert type(citing) is tuple and type(defusers) is tuple
     assert all(isinstance(c, cf.CitingProvisionEffect) for c in citing)
     assert all(isinstance(u, cf.DefinitionUserEffect) for u in defusers)
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_witness_2018_301_has_multihop_citation_cascade() -> None:
+    """Real witness for the multi-hop cascade arm: 2018/301 amends 2017/320.
+
+    The Transport Services Act has a deep internal citation graph, so a change to
+    its early provisions reaches further provisions through multi-hop chains.  An
+    example clean depth-2 chain: changed §1 <- §25 (a 1-hop citer, in
+    ``citing_provisions``) <- §199 (a depth-2 cascade reacher).  This asserts the
+    cascade arm is non-empty, every reacher is at hop depth >= 2 with a valid hop
+    chain rooted at a tier-1-changed section, the chain is bounded by the declared
+    depth, and the arm is kept STRUCTURALLY DISTINCT from ``citing_provisions``
+    (depth-1 reachers are not re-emitted; BRANCH-06).
+    """
+    report = cf._build_report_from_corpus("2018/301")
+    assert report.amended_act_id == "2017/320"
+
+    changed = {d.section.strip() for d in report.tier_1_direct if d.section.strip()}
+    citing_sections = {
+        c.citing_section for c in report.tier_2_via_defs_and_refs["citing_provisions"]
+    }
+    cascade = report.tier_2_via_defs_and_refs["citation_cascade"]
+    assert isinstance(cascade, tuple)
+    assert all(isinstance(c, cf.CitationCascadeEffect) for c in cascade)
+    assert len(cascade) >= 1
+
+    seen_depths: set[int] = set()
+    for c in cascade:
+        assert c.source == cf.SOURCE_INTERLINK_GRAPH
+        assert c.node_id == f"cascade:{'->'.join(c.hop_chain)}"
+        assert c.resolution_status in {"resolved", "unchanged"}
+        # hop chain is rooted at a CHANGED section and ends at the affected one
+        assert c.hop_chain[0] in changed
+        assert c.cited_section == c.hop_chain[0]
+        assert c.hop_chain[-1] == c.affected_section
+        # depth >= 2 (1-hop reachers stay in citing_provisions) and within bound
+        assert c.depth == len(c.hop_chain) - 1
+        assert 2 <= c.depth <= cf._CASCADE_MAX_DEPTH
+        # every intermediate (non-root, non-affected) hop is a real section label
+        assert all(s for s in c.hop_chain)
+        seen_depths.add(c.depth)
+
+    # the witnessed graph exhibits genuine multi-hop reach (a depth-2 reacher
+    # exists), and at least one cascade reacher is NOT itself a 1-hop citer of any
+    # changed § (a real second-order effect, not a relabelled 1-hop).
+    assert 2 in seen_depths
+    assert any(c.affected_section not in citing_sections for c in cascade)
+    # the witnessed clean example chain is present
+    assert any(c.hop_chain == ("1", "25", "199") for c in cascade)
