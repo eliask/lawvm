@@ -6059,7 +6059,23 @@ def _split_mixed_sparse_slot_cross_paragraph_payloads(
                 kept_children.append(child)
             if not removed_labels:
                 continue
-            patched_map.assign(plain_op, _tops._with_children(mapped, kept_children))
+            pruned_slot = _tops._with_children(mapped, kept_children)
+            # Record that this plain-moment slot was carved out of a slot whose
+            # remaining (cross-paragraph) item bodies belong to ANOTHER moment.
+            # A language-variant ("ruotsinkielinen sanamuoto") plain replace that
+            # only rides the shared item payload owns no genuine content of its
+            # own; the downstream language-variant shadow constraint matches the
+            # plain op against the item op's slot, which the split would otherwise
+            # sever by re-binding to this pruned copy. The marker lets the
+            # constraint still recognize the shadowing relationship.
+            pruned_slot = IRNode(
+                kind=pruned_slot.kind,
+                label=pruned_slot.label,
+                text=pruned_slot.text,
+                attrs={**pruned_slot.attrs, "lawvm_split_from_shared_item_slot": "1"},
+                children=pruned_slot.children,
+            )
+            patched_map.assign(plain_op, pruned_slot)
             changed = True
             observations.append(
                 _obs(
