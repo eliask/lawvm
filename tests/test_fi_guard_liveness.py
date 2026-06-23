@@ -2736,6 +2736,191 @@ def drill_overlay_promotion_witness_incomplete_tree_closure() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Promotion-chain integrity drills (CHAIN-/PROMOTE- families, §0)
+#
+# These gates ride the EXISTING EV-05 execution-authorization graph as read-only
+# checks (they do NOT modify the production apply mutation path — sibling sessions
+# own it). The drills drive the real production-emit-site gate functions in
+# ``finland.apply_promotion_chain`` into their firing state, the same way the
+# EV-06 drill drives ``gate_unknown_attestation_policy`` directly. Each drill
+# exercises the genuine guard, so a silently-disconnected guard goes red, and each
+# pins the NAMED, bounded residual carried on the finding detail (the parts the
+# apply-path carriers do not materialize yet).
+# ---------------------------------------------------------------------------
+
+
+def drill_authorization_identity_mismatch_promotion_chain() -> None:
+    """PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH fires from the scope-match gate (PROMOTE-02).
+
+    Production-emit site: ``gate_authorization_scope_match``. The checkable
+    invariant today is rule_id<->op_id binding: an authorization minted for op A
+    reused to gate op B is smuggled authority. The apply-path authorization is
+    minted with ``rule_id = op_id`` for the SAME op (matches by construction,
+    0-delta); the drill forges a mismatched authorization to exercise the gate.
+    The deeper identity binding (input_node_ids/policy_id/candidate_set_hash) is
+    the named residual carried on the finding detail.
+    """
+    from lawvm.core.execution_authorization import ExecutionAuthorization
+    from lawvm.core.ir import LegalAddress
+    from lawvm.finland.apply_promotion_chain import gate_authorization_scope_match
+
+    rop = _closure_rop(
+        op_id="op_promote02_B",
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    smuggled = ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="apply_op_authorized",
+        authorization_rule_id="op_promote02_A",  # minted for a DIFFERENT op
+        owner_phase="apply",
+        strict_disposition="record",
+        safe_default="block_until_apply_op_authorization_rule_is_resolved",
+        forbidden_shortcuts=("landed_write_existence_as_execution_authorization",),
+    )
+    findings: list[Finding] = []
+    gate_authorization_scope_match(
+        authorization=smuggled,
+        rop=rop,
+        is_strict=True,
+        source_statute="12/2015",
+        findings_out=findings,
+    )
+    hits = [
+        f
+        for f in findings
+        if f.kind == "PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH" and f.blocking
+    ]
+    assert hits, (
+        "an authorization minted for a different op did not surface "
+        "PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH from the scope-match gate"
+    )
+    assert hits[0].detail["bound_rule_id"] == "op_promote02_A"
+    assert hits[0].detail["derived_rule_id"] == "op_promote02_B"
+    assert hits[0].detail["unbound_identity_components"]  # named residual present
+    # Negative (clean): a correctly-bound authorization does not fire.
+    aligned = ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="apply_op_authorized",
+        authorization_rule_id="op_promote02_B",
+        owner_phase="apply",
+        strict_disposition="record",
+        safe_default="block_until_apply_op_authorization_rule_is_resolved",
+        forbidden_shortcuts=("landed_write_existence_as_execution_authorization",),
+    )
+    clean: list[Finding] = []
+    gate_authorization_scope_match(
+        authorization=aligned, rop=rop, is_strict=True,
+        source_statute="12/2015", findings_out=clean,
+    )
+    assert not clean, "scope-match gate fired on a correctly-bound authorization"
+
+
+def drill_promotion_chain_incomplete_promotion_chain() -> None:
+    """CHAIN.PROMOTION_CHAIN_INCOMPLETE fires from the chain-links gate (CHAIN-01)."""
+    from lawvm.core.promotion_chain import PromotionChainLinks
+    from lawvm.finland.apply_promotion_chain import gate_promotion_chain_links
+
+    # A materialized execution-authorization link is absent → incomplete.
+    links = PromotionChainLinks(
+        source_witness=True,
+        candidate_claim=True,
+        execution_authorization=False,
+        dry_run_proof=True,
+        agreement_row=True,
+    )
+    findings: list[Finding] = []
+    gate_promotion_chain_links(
+        links=links, rop=None, is_strict=True,
+        source_statute="12/2015", findings_out=findings,
+    )
+    hits = [
+        f for f in findings if f.kind == "CHAIN.PROMOTION_CHAIN_INCOMPLETE" and f.blocking
+    ]
+    assert hits, "a missing materialized link did not block (CHAIN-01)"
+    assert "execution_authorization" in hits[0].detail["missing_links"]
+    # Negative (clean): a complete chain does not fire CHAIN-01.
+    complete = PromotionChainLinks(
+        source_witness=True, candidate_claim=True, execution_authorization=True,
+        dry_run_proof=True, agreement_row=True,
+    )
+    clean: list[Finding] = []
+    gate_promotion_chain_links(
+        links=complete, rop=None, is_strict=True,
+        source_statute="12/2015", findings_out=clean,
+    )
+    assert not [
+        f for f in clean if f.kind == "CHAIN.PROMOTION_CHAIN_INCOMPLETE"
+    ], "completeness gate fired on a complete chain"
+
+
+def drill_authority_by_accumulation_promotion_chain() -> None:
+    """CHAIN.AUTHORITY_BY_ACCUMULATION fires from the chain-links gate (CHAIN-02)."""
+    from lawvm.core.promotion_chain import PromotionChainLinks
+    from lawvm.finland.apply_promotion_chain import gate_promotion_chain_links
+
+    # execution-authorization present with an absent candidate-claim predecessor:
+    # authority reached by accumulation, not by climbing.
+    links = PromotionChainLinks(
+        source_witness=True,
+        candidate_claim=False,
+        execution_authorization=True,
+        dry_run_proof=True,
+        agreement_row=True,
+    )
+    findings: list[Finding] = []
+    gate_promotion_chain_links(
+        links=links, rop=None, is_strict=True,
+        source_statute="12/2015", findings_out=findings,
+    )
+    hits = [
+        f for f in findings if f.kind == "CHAIN.AUTHORITY_BY_ACCUMULATION" and f.blocking
+    ]
+    assert hits, "a link reached without its predecessor did not block (CHAIN-02)"
+    assert "execution_authorization" in hits[0].detail["accumulation_links"]
+
+
+def drill_stale_downstream_after_retraction_promotion_chain() -> None:
+    """PROMOTE.STALE_DOWNSTREAM_AFTER_RETRACTION fires from the down-chain gate (PROMOTE-01)."""
+    from lawvm.finland.apply_promotion_chain import gate_downchain_retraction
+
+    findings: list[Finding] = []
+    gate_downchain_retraction(
+        retracted_link="execution_authorization",
+        downstream_links=("dry_run_proof", "agreement_row"),
+        reopened_links=frozenset({"dry_run_proof"}),  # agreement_row left standing
+        is_strict=True,
+        source_statute="12/2015",
+        op_id="op_promote01",
+        findings_out=findings,
+    )
+    hits = [
+        f
+        for f in findings
+        if f.kind == "PROMOTE.STALE_DOWNSTREAM_AFTER_RETRACTION" and f.blocking
+    ]
+    assert hits, (
+        "a downstream link standing on a retracted predecessor did not block "
+        "(PROMOTE-01)"
+    )
+    assert "agreement_row" in hits[0].detail["stale_downstream"]
+    assert hits[0].detail["multi_hop_residual"]  # named sub-chain residual present
+    # Negative (clean): all downstream links reopened does not fire.
+    clean: list[Finding] = []
+    gate_downchain_retraction(
+        retracted_link="execution_authorization",
+        downstream_links=("dry_run_proof", "agreement_row"),
+        reopened_links=frozenset({"dry_run_proof", "agreement_row"}),
+        is_strict=True,
+        source_statute="12/2015",
+        op_id="op_promote01_clean",
+        findings_out=clean,
+    )
+    assert not clean, "retraction gate fired despite all downstream links reopened"
+
+
+# ---------------------------------------------------------------------------
 # Declarative fire-drill registry
 # ---------------------------------------------------------------------------
 
@@ -2770,6 +2955,11 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "FW.SURFACE_NODE_REPLAY_AUTHORITY_UNWITNESSED": drill_surface_node_replay_authority_unwitnessed_tree_closure,
     "OVERLAY.REPLAY_AUTHORIZED_WITHOUT_PROMOTION": drill_overlay_replay_authorized_without_promotion_tree_closure,
     "OVERLAY.PROMOTION_WITNESS_INCOMPLETE": drill_overlay_promotion_witness_incomplete_tree_closure,
+    # Promotion-chain integrity wave (CHAIN-/PROMOTE- families, §0).
+    "PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH": drill_authorization_identity_mismatch_promotion_chain,
+    "CHAIN.PROMOTION_CHAIN_INCOMPLETE": drill_promotion_chain_incomplete_promotion_chain,
+    "CHAIN.AUTHORITY_BY_ACCUMULATION": drill_authority_by_accumulation_promotion_chain,
+    "PROMOTE.STALE_DOWNSTREAM_AFTER_RETRACTION": drill_stale_downstream_after_retraction_promotion_chain,
 }
 
 # A second, distinct surface for an already-covered code. Tracked separately so
@@ -3186,6 +3376,15 @@ _PRODUCTION_BUILDER_CALLS = (
     # Wave-2 apply-authority closure: the EV-06 gate is the production
     # attestation-policy validator called from _gate_execution_authorization_at_op.
     "gate_unknown_attestation_policy",
+    # Promotion-chain integrity wave (CHAIN-/PROMOTE- families, §0): the
+    # production-emit-site gate functions in finland.apply_promotion_chain. They
+    # ride the existing EV-05 authorization graph as read-only checks (the
+    # production apply MUTATION path is owned by sibling sessions and is not
+    # modified); the drill drives each genuine gate, the same shape as the EV-06
+    # gate above.
+    "gate_authorization_scope_match",
+    "gate_promotion_chain_links",
+    "gate_downchain_retraction",
 )
 
 # Codes whose ONLY honest production surface is the strict verdict mapping (a

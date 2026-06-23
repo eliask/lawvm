@@ -401,6 +401,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # XJUR-02 — no hidden replay kernel in a frontend (static boundary audit;
         # monotone ratchet over a discovered-debt baseline).
         "test_hidden_replay_kernel_ratchet.py",
+        # Audit-invariant registry program (PROMOTION-CHAIN integrity, §0):
+        # rows PROMOTE-02 (authorization scope-match), CHAIN-01/02 (completeness +
+        # monotonicity), PROMOTE-01 (retraction down-chain propagation).
+        "test_promotion_chain_integrity.py",
     ),
     "core_ir_contracts": (
         "test_fi_address_parse.py",

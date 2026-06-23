@@ -1090,6 +1090,39 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "unstated-migration closure: a target address-key delta (nominal -> resolved) "
                 "with no migration/lineage event or typed rekey witness",
                 ("migration", "lineage"), role="observation"),
+    # --- Promotion-chain integrity wave (CHAIN-/PROMOTE- families, §0) ---
+    # PROMOTE-02 (strict-blocking): an ExecutionAuthorization gating an op whose
+    # derived identity does not equal the authorization's bound rule_id.
+    FindingSpec("PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "authorization scope-match: an ExecutionAuthorization gating a state-mutating "
+                "op is bound to a different op's derived identity (rule_id mismatch); authority "
+                "minted for one op may not gate another (smuggled authority, §1.5 analogue)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # CHAIN-01 (strict-blocking): a mutating op's promotion chain is missing a
+    # materialized link (incomplete over the links that exist as typed carriers).
+    FindingSpec("CHAIN.PROMOTION_CHAIN_INCOMPLETE", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "promotion-chain completeness: a state-mutating op's promotion chain is missing "
+                "a materialized link (every materialized source-witness -> ... -> agreement-row "
+                "link must be present)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # CHAIN-02 (strict-blocking): a link reached with an absent materialized
+    # predecessor — authority by accumulation rather than by climbing.
+    FindingSpec("CHAIN.AUTHORITY_BY_ACCUMULATION", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "promotion-chain monotonicity: a chain link was reached with an absent "
+                "materialized predecessor — authority acquired by accumulation, not by climbing "
+                "the boundary (never by accumulation)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # PROMOTE-01 (strict-blocking): a downstream link standing on a retracted
+    # predecessor without reopen/taint (immediate one-hop arm).
+    FindingSpec("PROMOTE.STALE_DOWNSTREAM_AFTER_RETRACTION", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "retraction down-chain propagation: a retracted promotion-chain link has a "
+                "downstream link left standing without reopen/taint (the whole sub-chain below "
+                "a retracted link must be re-opened, not just the immediate consumer)",
+                ("safety_invariant", "provenance"), role="violation"),
     FindingSpec("REPLAY_UNKNOWN_MUTATION_OUTCOME", "apply",
                 "violation", "hard_fail", "grafter",
                 "replay mutation event carried an outcome label outside the registered outcome sets",
