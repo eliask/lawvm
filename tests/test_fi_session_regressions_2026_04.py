@@ -2562,6 +2562,92 @@ def test_letter_suffix_insert_inherits_same_amendment_stem_scope() -> None:
     assert retargeted[1].scope_confidence.tag == "chapter_scope_from_same_amendment_stem"
 
 
+def test_letter_suffix_insert_same_amendment_stem_scope_preserves_explicit_suffix_scope() -> None:
+    """Same-wave stem recovery must not overwrite an explicit suffix chapter."""
+    from lxml import etree
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
+    from lawvm.finland.frontend_compile import (
+        _retarget_letter_suffix_inserts_from_same_amendment_stem_scope,
+    )
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>2 luku</num>
+              <section><num>10 §</num><content><p>stem</p></content></section>
+              <section><num>10 a §</num><content><p>suffix in chapter 2</p></content></section>
+            </chapter>
+            <chapter>
+              <num>9 luku</num>
+              <section><num>10 a §</num><content><p>suffix in chapter 9</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    stem = AmendmentOp(
+        op_id="replace_10",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="10",
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source=ScopeResolutionSource.EXPLICIT_CHUNK,
+            confidence=ScopeResolutionConfidence.EXPLICIT,
+            resolved_chapter="2",
+        ),
+        lo=LegalOperation(
+            op_id="replace_10",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "2"), ("section", "10"))),
+            payload=None,
+        ),
+    )
+    explicit_suffix = AmendmentOp(
+        op_id="insert_10a_ch9",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="10a",
+        target_chapter="9",
+        lo=LegalOperation(
+            op_id="insert_10a_ch9",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "9"), ("section", "10a"))),
+            payload=None,
+        ),
+    )
+
+    retargeted = _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
+        [stem, explicit_suffix],
+        source_model=AmendmentSourceModel.from_tree(source),
+    )
+
+    assert retargeted[1].target_chapter == "9"
+    assert retargeted[1].lo is not None
+    assert retargeted[1].lo.target.path == (("chapter", "9"), ("section", "10a"))
+    assert retargeted[1].scope_confidence is None
+
+
+def test_replay_xml_1997_689_1998_107_keeps_duplicate_1a_insert_in_chapter_9() -> None:
+    from lawvm.tools.inspect_amendment import build_amendment_bundle
+
+    try:
+        bundle = build_amendment_bundle("1997/689", "1998/107", "legal_pit")
+    except (OSError, RuntimeError) as exc:
+        pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
+
+    assert "INSERT 2 luku 1a §" in bundle["compiled_ops"]
+    assert "INSERT 9 luku 1a §" in bundle["compiled_ops"]
+
+
 def test_letter_suffix_insert_keeps_explicit_chapter_scope() -> None:
     """Explicit source chapter scope must not be rewritten by stem-host inference."""
     from lxml import etree

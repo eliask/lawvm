@@ -2098,6 +2098,15 @@ def _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
             scope_provenance_tags=op.scope_provenance_tags,
             resolved_chapter=op.target_chapter,
         )
+        if current_witness is None and op.target_chapter is not None:
+            retargeted.append(op)
+            continue
+        if current_witness is not None and current_witness.source not in {
+            ScopeResolutionSource.LIVE_STEM_HOST,
+            ScopeResolutionSource.CARRY_FORWARD,
+        }:
+            retargeted.append(op)
+            continue
         if (
             op.target_part == stem_part
             and op.target_chapter == stem_chapter
