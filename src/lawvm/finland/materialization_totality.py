@@ -8,6 +8,14 @@ materialization** itself: a declared UNIVERSE of expected provision units for a
 work at a PIT (derived from the base/source tree) checked against the
 materialized PIT tree.
 
+As of the cross-jurisdiction generality work, the partition logic lives in the
+jurisdiction-neutral core :mod:`lawvm.core.materialization_universe`; this module
+is the thin FINLAND-bound facade over it (FI universe domain + the section unit
+kind). The SAME core runs unmodified over a real Estonian RT replay tree — see
+``tests/test_crossjur_materialization_universe.py`` and
+``notes/CROSS_JURISDICTION_GENERALITY.md`` — which is the evidence the invariant
+is not FI-overfitting. Existing FI imports of the names below are unchanged.
+
 Why this is a distinct, load-bearing check (the witness)
 --------------------------------------------------------
 Statute ``1929/234`` (rikoslaki) silently lost sections 110-113 in a part-level
@@ -81,217 +89,43 @@ It does NOT yet compute, and MUST NOT be read as asserting:
 
 from __future__ import annotations
 
-import enum
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Sequence
 
 from lawvm.core.ir import IRNode
-from lawvm.core import tree_ops as _tops
-from lawvm.substrate.roots import map_root
+from lawvm.core.materialization_universe import (
+    MaterializationTotalityCode,
+    MaterializationTotalityError,
+    MaterializationTotalityResult,
+    MaterializationTotalityShortfall,
+    MaterializationTotalityVerdict,
+    TypedAbsenceReason,
+    UniverseSpec,
+    UnitDisposition,
+)
+from lawvm.core.materialization_universe import (
+    check_materialization_totality as _check_materialization_totality,
+)
+from lawvm.core.materialization_universe import (
+    universe_from_tree as _universe_from_tree,
+)
 
-# The repealed-section tombstone marker (the model's existing typed "repealed"
-# reason). A section present in the materialized tree carrying this attr is
-# BENIGN_ABSENT (owned by a typed reason), never a silent drop.
-_REPEAL_PLACEHOLDER_ATTR = "lawvm_repeal_placeholder"
+__all__ = [
+    "MaterializationTotalityCode",
+    "MaterializationTotalityError",
+    "MaterializationTotalityResult",
+    "MaterializationTotalityShortfall",
+    "MaterializationTotalityVerdict",
+    "TypedAbsenceReason",
+    "UniverseSpec",
+    "UnitDisposition",
+    "check_materialization_totality",
+    "universe_from_tree",
+]
 
-# The leaf-hash domain for the universe MapRoot (one per object kind).
-_UNIVERSE_DOMAIN = "fi.materialization_universe.section.v0"
-
-
-class MaterializationTotalityError(ValueError):
-    """A materialization-totality object violates a v0 invariant."""
-
-
-# --------------------------------------------------------------------------- #
-# The partition classes + the verdict (substrate §23 COVERAGE_CLASSES mirror). #
-# --------------------------------------------------------------------------- #
-
-
-class UnitDisposition(enum.Enum):
-    """The class each declared universe unit is partitioned into (exactly one).
-
-    Mirrors the substrate four coverage classes (owned / benign / residual /
-    violation) specialized to the materialization-membership question.
-    """
-
-    PRESENT = "PRESENT"
-    BENIGN_ABSENT = "BENIGN_ABSENT"
-    TYPED_RESIDUAL = "TYPED_RESIDUAL"
-    VIOLATION = "VIOLATION"
-
-
-class MaterializationTotalityVerdict(enum.Enum):
-    """The lens verdict, orthogonal to integrity x certification (substrate §23).
-
-    ``TOTAL`` — every expected unit is PRESENT (no absences at all);
-    ``TOTAL_WITH_RESIDUALS`` — every expected unit is owned (PRESENT, BENIGN_ABSENT,
-    or TYPED_RESIDUAL) but at least one is absent-with-a-typed-reason (a qualified,
-    never-silent totality);
-    ``INCOMPLETE`` — at least one unit is a SILENT DROP (a VIOLATION);
-    ``NOT_COMPUTED`` — the declared universe is empty (no section units to range
-    over).
-    """
-
-    TOTAL = "TOTAL"
-    TOTAL_WITH_RESIDUALS = "TOTAL_WITH_RESIDUALS"
-    INCOMPLETE = "INCOMPLETE"
-    NOT_COMPUTED = "NOT_COMPUTED"
-
-
-class MaterializationTotalityCode(enum.Enum):
-    """The closed set of materialization-totality shortfalls (self-evidencing ``code``).
-
-    v0 carries the single silent-drop code the 1929/234 witness exercises; the
-    enum is the extension point for future kinds (surplus, content-drift) but
-    those are out of scope (see module honesty boundary).
-    """
-
-    # A unit in the declared universe with no live node, no tombstone, and no
-    # caller-supplied typed reason — the 1929/234 masked-section class.
-    SILENTLY_DROPPED_UNIT = "SILENTLY_DROPPED_UNIT"
-
-
-@dataclass(frozen=True, slots=True)
-class MaterializationTotalityShortfall:
-    """One self-evidencing silent-drop finding (memory ``diagnostics_self_evidencing``).
-
-    ``address_key`` names the offending unit (e.g. ``"sec_110"``); ``detail``
-    embeds the human-readable address text so the finding is readable without
-    re-deriving the universe. Mirrors :class:`lawvm.substrate.totality.TotalityShortfall`.
-    """
-
-    code: MaterializationTotalityCode
-    address_key: str
-    detail: str
-
-
-@dataclass(frozen=True, slots=True)
-class TypedAbsenceReason:
-    """A caller-declared typed reason a universe unit is legitimately absent.
-
-    ``kind`` is a free typed token (e.g. ``"repealed"``, ``"migrated"``,
-    ``"out_of_scope"``) and ``detail`` carries the owning evidence text. The
-    presence of a reason for an absent unit makes that unit ``BENIGN_ABSENT`` —
-    owned, never silent. (This is the seam the broader replay layer wires its
-    repeal/migration events into; this lens consumes, it does not derive.)
-    """
-
-    address_key: str
-    kind: str
-    detail: str = ""
-
-    def __post_init__(self) -> None:
-        if not self.address_key:
-            raise MaterializationTotalityError(
-                "TypedAbsenceReason.address_key must be non-empty"
-            )
-        if not self.kind:
-            raise MaterializationTotalityError(
-                f"TypedAbsenceReason for {self.address_key!r} must carry a non-empty "
-                f"kind so the absence is OWNED, never a silent omission"
-            )
-
-
-# --------------------------------------------------------------------------- #
-# UniverseSpec — the declared universe of expected units (root-committed).     #
-# --------------------------------------------------------------------------- #
-
-
-@dataclass(frozen=True, slots=True)
-class UniverseSpec:
-    """The declared UNIVERSE of expected provision units for a work at a PIT.
-
-    ``expected_units`` maps a stable per-unit ``address_key`` (e.g. ``"sec_110"``)
-    to a human-readable ``address_text`` (e.g. ``"110 §"``). The keystone is
-    :attr:`universe_root`, a :func:`lawvm.substrate.roots.map_root` over
-    ``{address_key: address_text}`` so that adding, dropping, or renaming a member
-    changes the root — the claim ranges over a checkable, committed set, exactly
-    as the substrate ``SelectionUniverse.selection_key_root`` makes omission
-    detectable.
-
-    The v0 universe enumerates SECTION units only (see module honesty boundary).
-    """
-
-    work_id: str
-    pit_date: str
-    expected_units: Mapping[str, str]
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.expected_units, Mapping):
-            raise MaterializationTotalityError(
-                "UniverseSpec.expected_units must be a mapping {address_key: address_text}"
-            )
-        for key, text in self.expected_units.items():
-            if not key or not isinstance(key, str):
-                raise MaterializationTotalityError(
-                    f"UniverseSpec.expected_units has a non-string/empty key {key!r}"
-                )
-            if not isinstance(text, str):
-                raise MaterializationTotalityError(
-                    f"UniverseSpec.expected_units[{key!r}] address_text must be a string, "
-                    f"got {text!r}"
-                )
-        # Freeze to a plain dict so the root is deterministic regardless of
-        # insertion order.
-        object.__setattr__(self, "expected_units", dict(self.expected_units))
-
-    @property
-    def universe_root(self) -> str:
-        """``MapRoot`` over ``{address_key: address_text}`` — the keystone.
-
-        Empty universe is a valid deterministic root. Adding/dropping/renaming a
-        unit changes the root, so the SET the totality claim ranges over is itself
-        committed and checkable.
-        """
-        return map_root(_UNIVERSE_DOMAIN, dict(self.expected_units))
-
-    def __len__(self) -> int:
-        return len(self.expected_units)
-
-
-@dataclass(frozen=True, slots=True)
-class MaterializationTotalityResult:
-    """The materialization-totality lens output.
-
-    Carries the verdict + the typed shortfalls + the per-disposition counts +
-    the keystone ``universe_root`` so a consumer can show WHY a materialization
-    is not ``TOTAL`` (which units, by which class), not merely that it is not.
-    """
-
-    verdict: MaterializationTotalityVerdict
-    universe_root: str
-    shortfalls: tuple[MaterializationTotalityShortfall, ...] = ()
-    dispositions: Mapping[str, str] = field(default_factory=dict)
-
-    @property
-    def present_count(self) -> int:
-        return sum(1 for d in self.dispositions.values() if d == UnitDisposition.PRESENT.value)
-
-    @property
-    def benign_absent_count(self) -> int:
-        return sum(
-            1 for d in self.dispositions.values() if d == UnitDisposition.BENIGN_ABSENT.value
-        )
-
-    @property
-    def typed_residual_count(self) -> int:
-        return sum(
-            1 for d in self.dispositions.values() if d == UnitDisposition.TYPED_RESIDUAL.value
-        )
-
-    @property
-    def violation_count(self) -> int:
-        return sum(1 for d in self.dispositions.values() if d == UnitDisposition.VIOLATION.value)
-
-
-# --------------------------------------------------------------------------- #
-# Universe derivation + the check.                                             #
-# --------------------------------------------------------------------------- #
-
-
-def _section_address_key(label: str) -> str:
-    """Stable, non-positional address key for a section unit (``"sec_110"``)."""
-    return f"sec_{_tops.normalized_label_key(label)}"
+# The FINLAND section-universe MapRoot domain (one per object kind). Bound here
+# so FI universe roots are jurisdiction-self-describing and never collide with
+# another jurisdiction's section universe.
+_FI_UNIVERSE_DOMAIN = "fi.materialization_universe.section.v0"
 
 
 def universe_from_tree(
@@ -300,53 +134,19 @@ def universe_from_tree(
     work_id: str,
     pit_date: str,
 ) -> UniverseSpec:
-    """Derive a section :class:`UniverseSpec` from a base/source IR tree.
+    """Derive a FINLAND section :class:`UniverseSpec` from a base/source IR tree.
 
-    Enumerates every SECTION label in the tree (via the shared provision label
-    index) and declares it an expected unit. This is the "universe of expected
-    provision units derived from the source/base tree" the §0 per-unit-totality
-    principle ranges over. Live (non-tombstone) base sections only: an
-    already-tombstoned base section is not an EXPECTED-present unit.
+    Thin facade over :func:`lawvm.core.materialization_universe.universe_from_tree`
+    bound to the FI universe domain + the ``section`` unit kind. Behaviour is
+    unchanged from the original FI-local implementation.
     """
-    index = _tops.build_provision_label_index(base_tree)
-    expected: dict[str, str] = {}
-    for (kind, _norm_label), paths in index.items():
-        if kind != "section":
-            continue
-        for path in paths:
-            node = _tops.resolve(base_tree, path)
-            if node is None:
-                continue
-            if node.attrs.get(_REPEAL_PLACEHOLDER_ATTR) == "1":
-                continue
-            label = node.label or ""
-            if not label:
-                continue
-            key = _section_address_key(label)
-            expected.setdefault(key, f"{label} §")
-    return UniverseSpec(work_id=work_id, pit_date=pit_date, expected_units=expected)
-
-
-def _live_and_tombstone_section_keys(
-    materialized_tree: IRNode,
-) -> tuple[set[str], set[str]]:
-    """Partition materialized section addresses into (live keys, tombstone keys)."""
-    index = _tops.build_provision_label_index(materialized_tree)
-    live: set[str] = set()
-    tombstone: set[str] = set()
-    for (kind, _norm_label), paths in index.items():
-        if kind != "section":
-            continue
-        for path in paths:
-            node = _tops.resolve(materialized_tree, path)
-            if node is None or not node.label:
-                continue
-            key = _section_address_key(node.label)
-            if node.attrs.get(_REPEAL_PLACEHOLDER_ATTR) == "1":
-                tombstone.add(key)
-            else:
-                live.add(key)
-    return live, tombstone
+    return _universe_from_tree(
+        base_tree,
+        work_id=work_id,
+        pit_date=pit_date,
+        unit_kind="section",
+        domain=_FI_UNIVERSE_DOMAIN,
+    )
 
 
 def check_materialization_totality(
@@ -356,69 +156,16 @@ def check_materialization_totality(
     typed_absences: Sequence[TypedAbsenceReason] = (),
     typed_residual_keys: Sequence[str] = (),
 ) -> MaterializationTotalityResult:
-    """Partition every declared universe unit against the materialized tree.
+    """Partition every declared FI section universe unit against the materialized tree.
 
-    Each expected unit (see :class:`UniverseSpec`) is placed in exactly one
-    :class:`UnitDisposition`:
-
-    * **PRESENT** — a live (non-tombstone) section node exists at its address;
-    * **BENIGN_ABSENT** — not live, but owned by a typed reason: an in-tree
-      ``lawvm_repeal_placeholder`` tombstone, or a caller-supplied
-      :class:`TypedAbsenceReason`;
-    * **TYPED_RESIDUAL** — not live / no absence reason, but covered by a
-      caller-supplied ``typed_residual_key`` (the gap is named + typed + owned);
-    * **VIOLATION** — none of the above: a SILENT DROP. Emits a
-      ``SILENTLY_DROPPED_UNIT`` shortfall NAMING the address (the 1929/234 class).
-
-    Precedence (a unit can match more than one owning condition; we record the
-    strongest *positive* ownership): PRESENT > BENIGN_ABSENT > TYPED_RESIDUAL >
-    VIOLATION. A unit absent from materialization but carrying both a tombstone
-    and a residual is BENIGN_ABSENT (the tombstone is the stronger, in-tree
-    ownership).
+    Thin facade over
+    :func:`lawvm.core.materialization_universe.check_materialization_totality`
+    bound to the ``section`` unit kind. Behaviour is unchanged.
     """
-    live_keys, tombstone_keys = _live_and_tombstone_section_keys(materialized_tree)
-    absence_keys = {reason.address_key for reason in typed_absences}
-    residual_keys = set(typed_residual_keys)
-
-    dispositions: dict[str, str] = {}
-    shortfalls: list[MaterializationTotalityShortfall] = []
-
-    for key, address_text in universe.expected_units.items():
-        if key in live_keys:
-            dispositions[key] = UnitDisposition.PRESENT.value
-        elif key in tombstone_keys or key in absence_keys:
-            dispositions[key] = UnitDisposition.BENIGN_ABSENT.value
-        elif key in residual_keys:
-            dispositions[key] = UnitDisposition.TYPED_RESIDUAL.value
-        else:
-            dispositions[key] = UnitDisposition.VIOLATION.value
-            shortfalls.append(
-                MaterializationTotalityShortfall(
-                    code=MaterializationTotalityCode.SILENTLY_DROPPED_UNIT,
-                    address_key=key,
-                    detail=(
-                        f"expected provision unit {address_text!r} ({key}) is in the "
-                        f"declared universe of work {universe.work_id!r} at PIT "
-                        f"{universe.pit_date!r} but is ABSENT from the materialized tree "
-                        f"with no live node, no repeal tombstone, and no typed absence "
-                        f"reason — a SILENT DROP (per-unit materialization totality "
-                        f"violation; aggregate-sum totality would not see it)"
-                    ),
-                )
-            )
-
-    if not universe.expected_units:
-        verdict = MaterializationTotalityVerdict.NOT_COMPUTED
-    elif shortfalls:
-        verdict = MaterializationTotalityVerdict.INCOMPLETE
-    elif any(d != UnitDisposition.PRESENT.value for d in dispositions.values()):
-        verdict = MaterializationTotalityVerdict.TOTAL_WITH_RESIDUALS
-    else:
-        verdict = MaterializationTotalityVerdict.TOTAL
-
-    return MaterializationTotalityResult(
-        verdict=verdict,
-        universe_root=universe.universe_root,
-        shortfalls=tuple(shortfalls),
-        dispositions=dispositions,
+    return _check_materialization_totality(
+        universe,
+        materialized_tree,
+        typed_absences=typed_absences,
+        typed_residual_keys=typed_residual_keys,
+        unit_kind="section",
     )
