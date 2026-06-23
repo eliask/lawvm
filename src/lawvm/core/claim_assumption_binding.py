@@ -454,22 +454,28 @@ _B_DER_CONFORMANCE_CLAIMED = _binding(
 )
 
 # --- Claim: counterfactual bill effects ----------------------------------- #
-_B_CF_TIER2_DEFERRED = _binding(
-    "counterfactual_tier2_definitions_deferred",
+_B_CF_DEFINITION_USERS_SINGLE_HOP = _binding(
+    "counterfactual_definition_users_single_hop_only",
     kind="parser_incomplete",
     scope=(
-        "Tier-2 (citing-provision) effects for definition references are deferred "
-        "in v0 (lawvm.tools.bill_counterfactual_effects)."
+        "Tier-2 definition-users (provisions that USE a term defined in a "
+        "tier-1-changed section) are computed SINGLE-HOP, within the amended act "
+        "only, from RESOLVED binding↔use edges of its definition graph "
+        "(lawvm.tools.bill_counterfactual_effects)."
     ),
     effect="qualifies",
     expires_when=(
-        "tier-2 definition-reference resolution is implemented and definition "
-        "citations to a changed section are included in the tier-2 effect set."
+        "transitive definition CHAINS, CROSS-ACT imported definitions, and "
+        "open/ambiguous uses are all resolved into the definition-user set; until "
+        "then they are declared uncomputed in tier 3."
     ),
     public_message=(
-        "Counterfactual tier-2 effects DEFER definition references in v0. A "
-        "provision that cites a changed section only through a definition may be "
-        "absent from the tier-2 set — a declared, not silent, omission."
+        "Counterfactual definition-users are SINGLE-HOP and within the amended act "
+        "only: a provision using a term whose definition was changed is included "
+        "ONLY via a resolved binding↔use edge of the amended act's own definition "
+        "graph. Transitive definition chains, cross-act imported definitions, and "
+        "uses the graph leaves open/ambiguous are DECLARED uncomputed in tier 3, "
+        "never silently treated as absent."
     ),
 )
 _B_CF_MULTIHOP_UNCOMPUTED = _binding(
@@ -590,7 +596,7 @@ V0_CLAIM_ASSUMPTION_BINDINGS: tuple[ClaimAssumptionBinding, ...] = (
     _B_DER_TEXTUAL_NOT_LINEAGE,
     _B_DER_MODEL_CODE_UNKNOWN,
     _B_DER_CONFORMANCE_CLAIMED,
-    _B_CF_TIER2_DEFERRED,
+    _B_CF_DEFINITION_USERS_SINGLE_HOP,
     _B_CF_MULTIHOP_UNCOMPUTED,
     _B_CF_BARE_SECTION_BOUNDED,
     _B_XJUR_NOT_BUG_PORTABILITY,
