@@ -7277,6 +7277,31 @@ def test_replay_xml_1999_1352_places_inserted_section_headings_after_num() -> No
         assert irnode_to_text(heading).strip() == heading_text
 
 
+def test_replay_xml_1994_1575_subsection_insert_preserves_shifted_live_siblings() -> None:
+    """A new inserted momentti must shift later live momentit in timeline export.
+
+    1998/492 inserts a new 4 § 2 mom and says the old 2 and 3 mom become 3 and 4.
+    The live replay fold already performs that shift; the section-snapshot export
+    must mirror it instead of merging the new payload over old label 2 and leaving
+    old label 3 at 3.
+    """
+    replay = replay_xml_for_test("1994/1575", mode="legal_pit", quiet=True)
+
+    section = replay.materialized_state.find_section("4")
+    assert section is not None
+    subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
+    texts_by_label = {
+        str(subsection.label): " ".join(irnode_to_text(subsection).split())
+        for subsection in subsections
+        if subsection.label
+    }
+
+    assert "3" in texts_by_label
+    assert "4" in texts_by_label
+    assert "kirjaimet FIN" in texts_by_label["3"]
+    assert "kirjaimet KAL" in texts_by_label["4"]
+
+
 @pytest.mark.slow
 def test_replay_xml_1999_132_2024_899_cited_section_replace_rebirths_chapter_parent() -> None:
     """2024/899 replaces 131 § by citing 2014/41 after chapter 19 was repealed.

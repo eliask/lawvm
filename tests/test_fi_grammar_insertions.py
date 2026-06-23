@@ -227,6 +227,27 @@ def test_anaphoric_heading_before_jolloin_renumber_keeps_tail() -> None:
     assert insertions[1].sub_target.momentti == 2
 
 
+def test_jolloin_momentti_muuttuvat_renumber_keeps_typed_pairs() -> None:
+    text = (
+        "lisätään 4 §:ään uuden 2 momentin, jolloin entinen 2 ja 3 momentti "
+        "muuttuvat 3 ja 4 momenteiksi"
+    )
+    model = parse_text_with(text, new_parser.parse)
+
+    assert [vg.verb for vg in model.verb_groups] == [VerbKind.SIIRTAA, VerbKind.LISATA]
+    renumber_nodes = model.verb_groups[0].nodes
+    assert len(renumber_nodes) == 4
+    target_refs = [node for node in renumber_nodes if isinstance(node, SurfaceTargetRef)]
+    assert [node.label for node in target_refs] == ["4", "4"]
+    assert [node.sub_refs[0].momentti for node in target_refs] == [2, 3]
+    assert [
+        node.new_label
+        for node in renumber_nodes
+        if isinstance(node, SurfaceRenumberTail)
+    ] == ["3", "4"]
+    assert all(node.kind is TargetKind.SECTION for node in target_refs)
+
+
 def test_anaphoric_heading_between_doc_level_inserts_keeps_later_insert() -> None:
     text = (
         "lisätään asetukseen uusi 9 b § ja sen edelle uusi 2 a luvun otsikko "
