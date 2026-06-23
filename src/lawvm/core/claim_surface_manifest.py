@@ -331,12 +331,110 @@ CLAIM_SOURCE_MONOTONICITY = ClaimSpec(
     checker_level="L1",
 )
 
+# The EU directive transposition + timeliness claim (Wave-2 #73,
+# finland/references/eu_transposition_edges.py).
+CLAIM_EU_TRANSPOSITION = ClaimSpec(
+    claim_id="lawvm.fi.eu.transposition_edge.v1",
+    public_sentence=(
+        "Where a Finnish act declares in its own text that it transposes a named EU "
+        "directive, LawVM emits a typed transposition edge to that directive's CELEX "
+        "(when the nickname registry binds it) and a timeliness verdict that is a "
+        "pure comparison of the act's enactment date against the directive's "
+        "transposition deadline — computed ONLY when both dates are known, else a "
+        "typed UNKNOWN, never guessed. It is the DECLARED relation + timing, NOT a "
+        "claim of substantive conformance."
+    ),
+    required_objects=("TranspositionClaim", "TranspositionEdge"),
+    required_roots=(),
+    allowed_non_guarantees=(
+        "transposition_edge_not_substantive_conformance",
+        "transposition_deadline_seed_not_complete",
+        "transposition_fi_enactment_date_caller_supplied",
+    ),
+    checker_level="L1",
+)
+
+# The transclusion typed-derivation-edge claim (Wave-2 #74,
+# finland/references/derivation_edges.py). TRANS family: dedup is not authority.
+CLAIM_DERIVATION_EDGE = ClaimSpec(
+    claim_id="lawvm.fi.derivation_edge.v1",
+    public_sentence=(
+        "LawVM classifies a relation between two pieces of Finnish (or FI->EU) legal "
+        "text into exactly one of four DISTINCT derivation kinds — textual "
+        "derivation, model-code kinship, EU conformance, citation — never conflating "
+        "them: textual derivation (shared bytes) does NOT imply lineage, conformance, "
+        "or citation; model-code lineage is typed-UNKNOWN, never guessed; and the "
+        "authority matrix forbids forging a resemblance onto the legal-state plane."
+    ),
+    required_objects=("DerivationEdge",),
+    required_roots=(),
+    allowed_non_guarantees=(
+        "derivation_textual_is_bytes_not_lineage",
+        "derivation_model_code_lineage_not_byte_decidable",
+        "derivation_conformance_claimed_not_assessed",
+    ),
+    checker_level="L1",
+)
+
+# The counterfactual 3-tier bill-effects claim (Wave-2 #72,
+# tools/bill_counterfactual_effects.py). BRANCH-06: tiers kept distinct.
+CLAIM_COUNTERFACTUAL_EFFECTS = ClaimSpec(
+    claim_id="lawvm.fi.bill.counterfactual_effects.v1",
+    public_sentence=(
+        "For a Finnish amending act, LawVM reports its effects in three "
+        "structurally-distinct tiers kept separate: provisions its operations "
+        "directly change (tier 1); provisions in the amended act that cite a changed "
+        "section through a resolved 1-hop reference (tier 2); and a DECLARED set of "
+        "effect classes it does not compute (tier 3). Every tier-1 and tier-2 item "
+        "carries provenance; the report states WHAT moves, never how much it matters."
+    ),
+    required_objects=(
+        "CounterfactualEffectsReport",
+        "DirectEffect",
+        "CitingProvisionEffect",
+        "UncomputedBoundary",
+    ),
+    required_roots=(),
+    allowed_non_guarantees=(
+        "counterfactual_tier2_definitions_deferred",
+        "counterfactual_multihop_and_semantic_uncomputed",
+        "counterfactual_bare_section_precision_bounded",
+    ),
+    checker_level="L1",
+)
+
+# The cross-jurisdiction generality claim (Wave-2 #75,
+# core/materialization_universe.py). Anti-FI-overfitting evidence.
+CLAIM_MATERIALIZATION_GENERALITY = ClaimSpec(
+    claim_id="lawvm.xjur.materialization_totality_generality.v1",
+    public_sentence=(
+        "The per-unit materialization-totality invariant is a SINGLE "
+        "jurisdiction-neutral implementation that runs unmodified over any "
+        "jurisdiction whose provision units are IR nodes of one unit kind, and "
+        "discriminates correctly (TOTAL when complete, a named SILENTLY_DROPPED_UNIT "
+        "when a unit vanishes) on a REAL Estonian replay tree as well as the Finnish "
+        "1929/234 witness — evidence the method is not FI-specific."
+    ),
+    required_objects=("UniverseSpec", "MaterializationTotalityResult"),
+    required_roots=("universe_root",),
+    allowed_non_guarantees=(
+        "xjur_not_bug_class_portability",
+        "xjur_not_reconstruction_parity",
+        "xjur_section_units_only",
+    ),
+    checker_level="L1",
+)
+
 #: The v0 declared claim surface (a DECLARED SUBSET, not all claims; Pro §12).
 V0_CLAIMS: tuple[ClaimSpec, ...] = (
     CLAIM_BENCH_AGREEMENT,
     CLAIM_MATERIALIZATION_SELECTED,
     CLAIM_REFERENCE_CLASSIFICATION,
     CLAIM_SOURCE_MONOTONICITY,
+    CLAIM_EU_TRANSPOSITION,
+    CLAIM_DERIVATION_EDGE,
+    CLAIM_COUNTERFACTUAL_EFFECTS,
+    CLAIM_MATERIALIZATION_GENERALITY,
 )
 
 
@@ -348,6 +446,10 @@ def v0_claim_surface_manifest() -> ClaimSurfaceManifest:
 __all__ = [
     "CHECKER_LEVELS",
     "CLAIM_BENCH_AGREEMENT",
+    "CLAIM_COUNTERFACTUAL_EFFECTS",
+    "CLAIM_DERIVATION_EDGE",
+    "CLAIM_EU_TRANSPOSITION",
+    "CLAIM_MATERIALIZATION_GENERALITY",
     "CLAIM_MATERIALIZATION_SELECTED",
     "CLAIM_REFERENCE_CLASSIFICATION",
     "CLAIM_SOURCE_MONOTONICITY",

@@ -451,6 +451,170 @@ _INV_KNOW_DEFERRED = InvariantSpec(
     audit_registry_ref="",
 )
 
+# --- Claim: EU directive transposition + timeliness (Wave-2 #73) --------- #
+_INV_EU_TRANSPOSITION_TIMELINESS = InvariantSpec(
+    id="REF-EU-01",
+    claim_id="lawvm.fi.eu.transposition_edge.v1",
+    plane="evidence",
+    waist="reference",
+    unit_kind="per-unit",
+    predicate=(
+        "each transposition edge binds the directive CELEX from the nickname "
+        "registry (or carries the unbound surface) and a timeliness verdict that is "
+        "a pure date comparison computed ONLY when both enactment + deadline are "
+        "known, else a typed UNKNOWN_* — never a fabricated date"
+    ),
+    owner="lawvm.finland.references.eu_transposition_edges",
+    bucket="implemented_check",
+    checker_ref="lawvm.finland.references.eu_transposition_edges:build_transposition_edges",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+_INV_EU_TRANSPOSITION_NOT_CONFORMANCE = InvariantSpec(
+    id="REF-EU-02",
+    claim_id="lawvm.fi.eu.transposition_edge.v1",
+    plane="declaration",
+    waist="claim_boundary",
+    unit_kind="static",
+    predicate=(
+        "the edge asserts the DECLARED transposition relation + timing only; it does "
+        "NOT assess substantive conformance, the deadline seed is not exhaustive, and "
+        "the FI enactment date is caller-supplied — declared boundaries"
+    ),
+    owner="lawvm.core.assumption_register",
+    bucket="declared_non_guarantee",
+    checker_ref="lawvm.finland.references.eu_transposition_edges:TranspositionEdge",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+
+# --- Claim: transclusion typed-derivation edges (Wave-2 #74) ------------- #
+_INV_DERIVATION_KINDS_DISTINCT = InvariantSpec(
+    id="REF-DER-01",
+    claim_id="lawvm.fi.derivation_edge.v1",
+    plane="evidence",
+    waist="reference",
+    unit_kind="per-unit",
+    predicate=(
+        "each derivation edge is typed into exactly one of {textual, model_code, "
+        "conformance, citation} and asserted matrix-legal (edge_authority_violation) "
+        "before emission; a textual legal-state grant is carried by an explicit "
+        "ExecutionAuthorization — forging a resemblance onto legal_state raises"
+    ),
+    owner="lawvm.finland.references.derivation_edges",
+    bucket="implemented_check",
+    checker_ref="lawvm.finland.references.derivation_edges:build_textual_edge",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+_INV_DERIVATION_DEDUP_NOT_AUTHORITY = InvariantSpec(
+    id="REF-DER-02",
+    claim_id="lawvm.fi.derivation_edge.v1",
+    plane="declaration",
+    waist="claim_boundary",
+    unit_kind="static",
+    predicate=(
+        "textual derivation (shared bytes) does_not_imply lineage/conformance/"
+        "citation; model-code lineage is typed-UNKNOWN (bytes_only_not_lineage), "
+        "never guessed; conformance is claimed, not assessed — dedup is not authority"
+    ),
+    owner="lawvm.core.assumption_register",
+    bucket="declared_non_guarantee",
+    checker_ref="lawvm.finland.references.derivation_edges:DerivationKind",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+
+# --- Claim: counterfactual 3-tier bill effects (Wave-2 #72) -------------- #
+_INV_COUNTERFACTUAL_TIERS = InvariantSpec(
+    id="BRANCH-CF-01",
+    claim_id="lawvm.fi.bill.counterfactual_effects.v1",
+    plane="projection",
+    waist="bill_effects",
+    unit_kind="per-unit",
+    predicate=(
+        "every reported effect is partitioned into exactly one tier — direct "
+        "(tier 1), 1-hop resolved citation (tier 2), or the declared-uncomputed "
+        "boundary (tier 3) — never conflated; each tier-1/2 item carries provenance; "
+        "no score/magnitude is emitted (BRANCH-06)"
+    ),
+    owner="lawvm.tools.bill_counterfactual_effects",
+    bucket="implemented_check",
+    checker_ref="lawvm.tools.bill_counterfactual_effects:build_counterfactual_report",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+_INV_COUNTERFACTUAL_UNCOMPUTED = InvariantSpec(
+    id="BRANCH-CF-02",
+    claim_id="lawvm.fi.bill.counterfactual_effects.v1",
+    plane="declaration",
+    waist="claim_boundary",
+    unit_kind="static",
+    predicate=(
+        "tier-2 definitions are deferred, multi-hop/semantic/temporal/transposition "
+        "cascades are uncomputed, bare-section matching precision is bounded, and "
+        "untraceable cites are typed external_only — all DECLARED in tier 3, not "
+        "silently omitted"
+    ),
+    owner="lawvm.tools.bill_counterfactual_effects",
+    bucket="declared_residual",
+    checker_ref="lawvm.tools.bill_counterfactual_effects:build_tier_3_boundary",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+
+# --- Claim: cross-jurisdiction materialization generality (Wave-2 #75) --- #
+_INV_XJUR_GENERALITY = InvariantSpec(
+    id="LS-MAT-XJ-01",
+    claim_id="lawvm.xjur.materialization_totality_generality.v1",
+    plane="legal_state",
+    waist="materialization",
+    unit_kind="per-unit",
+    predicate=(
+        "the jurisdiction-neutral materialization-totality core runs unmodified on a "
+        "real Estonian replay tree (act 119062012020: 39 sections TOTAL; drop one -> "
+        "INCOMPLETE + named SILENTLY_DROPPED_UNIT) as well as the FI 1929/234 witness"
+    ),
+    owner="lawvm.core.materialization_universe",
+    bucket="implemented_check",
+    checker_ref="lawvm.core.materialization_universe:check_materialization_totality",
+    finding_code="SILENTLY_DROPPED_UNIT",
+    root_membership="universe_root",
+    status="IMPL",
+    audit_registry_ref="LS-04",
+)
+_INV_XJUR_BOUNDARY = InvariantSpec(
+    id="LS-MAT-XJ-02",
+    claim_id="lawvm.xjur.materialization_totality_generality.v1",
+    plane="declaration",
+    waist="claim_boundary",
+    unit_kind="static",
+    predicate=(
+        "generality is of ONE invariant implementation across jurisdictions; it is "
+        "NOT bug-class portability, NOT reconstruction parity, and ranges over "
+        "section units only — declared boundaries"
+    ),
+    owner="lawvm.core.assumption_register",
+    bucket="declared_non_guarantee",
+    checker_ref="lawvm.core.materialization_universe:UniverseSpec",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="LS-04",
+)
+
 #: The v0 invariant rows (one live accounting path + declared boundary per claim).
 V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_BENCH_PROJECTION_FIREWALL,
@@ -461,6 +625,14 @@ V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_REFERENCE_SURFACE_NOT_AUTHORITY,
     _INV_KNOW_MONOTONICITY,
     _INV_KNOW_DEFERRED,
+    _INV_EU_TRANSPOSITION_TIMELINESS,
+    _INV_EU_TRANSPOSITION_NOT_CONFORMANCE,
+    _INV_DERIVATION_KINDS_DISTINCT,
+    _INV_DERIVATION_DEDUP_NOT_AUTHORITY,
+    _INV_COUNTERFACTUAL_TIERS,
+    _INV_COUNTERFACTUAL_UNCOMPUTED,
+    _INV_XJUR_GENERALITY,
+    _INV_XJUR_BOUNDARY,
 )
 
 
