@@ -1235,6 +1235,78 @@ def test_strip_whole_section_insert_with_chapter_carryforward_preserves_scope() 
     assert pd.get("section") == "1a"
 
 
+def test_strip_whole_section_insert_drops_stale_letter_suffix_stem_wrapper_scope() -> None:
+    from lxml import etree
+
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    master = SimpleNamespace(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="106"),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="10",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="81"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="15",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="107"),),
+                ),
+            ),
+        ),
+        find_section_path=lambda section, chapter=None, part=None: (
+            (("section", "106"),)
+            if section == "106" and chapter is None and part is None
+            else None
+        ),
+        duplicate_section_labels=set(),
+    )
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>10 luku</num>
+              <section><num>106 §</num><content><p>stem</p></content></section>
+              <section><num>106 a §</num><content><p>stale suffix wrapper</p></content></section>
+            </chapter>
+            <chapter>
+              <num>15 luku</num>
+              <section><num>106 b §</num><content><p>owned suffix wrapper</p></content></section>
+              <section><num>107 §</num><content><p>neighbor</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    stale = LegalOperation(
+        op_id="insert_106a",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("part", "3"), ("chapter", "10"), ("section", "106a"))),
+    )
+    owned = LegalOperation(
+        op_id="insert_106b",
+        sequence=2,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "15"), ("section", "106b"))),
+    )
+
+    got = strip_unjustified_chapter_scope_from_unique_sections(
+        [stale, owned],
+        "lisätään lakiin uusi 106 a ja 106 b §",
+        cast(Any, master),
+        source_model=AmendmentSourceModel.from_tree(source),
+    )
+
+    assert got[0].target.path == (("section", "106a"),)
+    assert "chapter_scope_stripped_stale_stem_body_wrapper" in got[0].provenance_tags
+    assert got[1].target.path == (("chapter", "15"), ("section", "106b"))
+
+
 def test_strip_unjustified_chapter_scope_requires_same_batch_chapter_anchor() -> None:
     master = SimpleNamespace(
         ir=IRNode(
@@ -1374,6 +1446,46 @@ def test_assign_chapter_scope_from_johtolause_scopes_letter_suffix_replace_from_
 
     assert got[0].target.path == (("chapter", "5"), ("section", "86b"))
     assert "chapter_scope_from_letter_suffix_stem_host" in got[0].provenance_tags
+
+
+def test_assign_chapter_scope_from_johtolause_does_not_steal_root_stem_suffix_into_later_chapter() -> None:
+    master = SimpleNamespace(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="106"),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="16",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="133"),),
+                ),
+            ),
+        ),
+        find_section_path=lambda section, chapter=None, part=None: (
+            (("section", "106"),)
+            if section == "106" and chapter is None and part is None
+            else None
+        ),
+        duplicate_section_labels=set(),
+    )
+    lo = LegalOperation(
+        op_id="insert_106a",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "106a"),)),
+    )
+
+    got = assign_chapter_scope_from_johtolause(
+        [lo],
+        (
+            "lisätään lakiin uusi 106 a, 106 b, 108 a ja 110 a §, "
+            "lakiin uusi 134 a § sekä muutetaan 16 luvun otsikko"
+        ),
+        cast(Any, master),
+    )
+
+    assert got[0].target.path == (("section", "106a"),)
+    assert "chapter_scope_from_explicit_chunk" not in got[0].provenance_tags
 
 
 def test_assign_chapter_scope_from_johtolause_scopes_unique_replace_without_chapter_chunk() -> None:

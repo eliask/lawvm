@@ -657,6 +657,44 @@ def _maybe_rewrite_item_targets_as_subsections(
     )
 
 
+def _body_chapter_is_stale_wrapper_for_unchaptered_letter_stem(
+    request: CompileGroupScopeRecoveryRequest,
+    *,
+    body_chapter: str | None,
+) -> bool:
+    if (
+        body_chapter is None
+        or request.target_unit_kind != "section"
+        or request.target_chapter is not None
+        or not any(
+            op.op_type == "INSERT"
+            and op.target_unit_kind == "section"
+            and _norm_num_token(op.target_section or "") == request.target_norm
+            and op.target_chapter is None
+            and op.target_part == request.target_part
+            and not op.target_paragraph
+            and not op.target_item
+            and not op.target_special
+            for op in request.group_ops
+        )
+    ):
+        return False
+    suffix_match = re.fullmatch(r"(?P<stem>\d+)[a-z]+", request.target_norm, re.I)
+    if suffix_match is None:
+        return False
+    stem_norm = suffix_match.group("stem")
+    stem_live_path = request.master.find_section_path(stem_norm, None, request.target_part)
+    if stem_live_path is None and request.target_part is not None:
+        stem_live_path = request.master.find_section_path(stem_norm, None, None)
+    if stem_live_path is None or any(kind == "chapter" for kind, _label in stem_live_path):
+        return False
+    stem_body_scope = request.source_model.body_section_scope(stem_norm)
+    if stem_body_scope is None:
+        return False
+    _stem_body_part, stem_body_chapter = stem_body_scope
+    return stem_body_chapter == body_chapter
+
+
 def _maybe_apply_body_chapter_insert_correction(
     request: CompileGroupScopeRecoveryRequest,
     result: CompileGroupScopeRecoveryResult,
@@ -878,6 +916,11 @@ def _maybe_apply_body_chapter_insert_correction(
     if (
         _group_has_whole_section_replace(request.group_ops)
         and not source_body_letter_run_scope_corroborated
+    ):
+        return PhaseResult(output=result)
+    if _body_chapter_is_stale_wrapper_for_unchaptered_letter_stem(
+        request,
+        body_chapter=body_chapter,
     ):
         return PhaseResult(output=result)
     source_owned_existing_letter_run_scope = (

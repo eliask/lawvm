@@ -2562,6 +2562,274 @@ def test_letter_suffix_insert_inherits_same_amendment_stem_scope() -> None:
     assert retargeted[1].scope_confidence.tag == "chapter_scope_from_same_amendment_stem"
 
 
+def test_whole_section_replace_strips_stale_body_chapter_when_live_section_is_root() -> None:
+    """A stale source wrapper must not rehome an existing root section."""
+    from lxml import etree
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
+    from lawvm.finland.frontend_compile import (
+        _strip_impossible_chapter_scope_for_bare_body_section_op,
+    )
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>10 luku</num>
+              <section><num>106 §</num><content><p>replacement</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    master = _make_state(_body(_sec("106"), _chapter("10", _sec("81"))))
+    op = AmendmentOp(
+        op_id="replace_106",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="106",
+        target_chapter="10",
+        scope_confidence=ScopeConfidence(
+            tag="body_container_membership_rewrite",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
+            resolved_chapter="10",
+        ),
+        lo=LegalOperation(
+            op_id="replace_106",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "10"), ("section", "106"))),
+            payload=None,
+            provenance_tags=("chapter_scope_carry_forward",),
+        ),
+    )
+
+    stripped = _strip_impossible_chapter_scope_for_bare_body_section_op(
+        op=op,
+        muutos_tree=source,
+        master=master,
+        johto="muutetaan 106 §",
+        source_model=AmendmentSourceModel.from_tree(source),
+    )
+
+    assert stripped is not None
+    assert stripped.target_chapter is None
+    assert stripped.lo is not None
+    assert stripped.lo.target.path == (("section", "106"),)
+
+
+def test_body_scope_does_not_promote_suffix_from_same_stale_stem_wrapper() -> None:
+    """Body-scope inference must not re-add the stale wrapper just stripped."""
+    from lxml import etree
+
+    from lawvm.finland.frontend_compile import _body_chapter_scope_for_section_op
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>10 luku</num>
+              <section><num>106 §</num><content><p>stem replacement</p></content></section>
+              <section><num>106 a §</num><content><p>suffix</p></content></section>
+            </chapter>
+            <chapter>
+              <num>15 luku</num>
+              <section><num>106 b §</num><content><p>real chapter 15 suffix</p></content></section>
+              <section><num>107 §</num><content><p>neighbor</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    master = _make_state(_body(_sec("106"), _chapter("10", _sec("81")), _chapter("15", _sec("107"))))
+    source_model = AmendmentSourceModel.from_tree(source)
+
+    stale = AmendmentOp(
+        op_id="insert_106a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="106a",
+    )
+    owned = AmendmentOp(
+        op_id="insert_106b",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="106b",
+    )
+
+    assert (
+        _body_chapter_scope_for_section_op(
+            op=stale,
+            muutos_tree=source,
+            master=master,
+            johto="lisätään lakiin uusi 106 a ja 106 b §",
+            source_model=source_model,
+        )
+        is None
+    )
+    assert (
+        _body_chapter_scope_for_section_op(
+            op=owned,
+            muutos_tree=source,
+            master=master,
+            johto="lisätään lakiin uusi 106 a ja 106 b §",
+            source_model=source_model,
+        )
+        == "15"
+    )
+
+
+def test_compile_group_scope_recovery_does_not_promote_stale_stem_wrapper() -> None:
+    from lxml import etree
+
+    from lawvm.finland.compile_group_scope_recovery import (
+        CompileGroupScopeRecoveryRequest,
+        resolve_compile_group_scope_recovery,
+    )
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>10 luku</num>
+              <section><num>106 §</num><content><p>stem replacement</p></content></section>
+              <section><num>106 a §</num><content><p>stale suffix</p></content></section>
+            </chapter>
+            <chapter>
+              <num>15 luku</num>
+              <section><num>106 b §</num><content><p>owned suffix</p></content></section>
+              <section><num>107 §</num><content><p>neighbor</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    master = _make_state(_body(_sec("106"), _chapter("10", _sec("81")), _chapter("15", _sec("107"))))
+    source_model = AmendmentSourceModel.from_tree(source)
+
+    stale = AmendmentOp(
+        op_id="insert_106a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="106a",
+    )
+    owned = AmendmentOp(
+        op_id="insert_106b",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="106b",
+    )
+
+    stale_result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="106a",
+            target_chapter=None,
+            target_part=None,
+            group_ops=[stale],
+            inserted_chapter_labels=set(),
+            source_model=source_model,
+            johto="lisätään lakiin uusi 106 a ja 106 b §",
+            strict_profile=None,
+        )
+    ).output
+    owned_result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="106b",
+            target_chapter=None,
+            target_part=None,
+            group_ops=[owned],
+            inserted_chapter_labels=set(),
+            source_model=source_model,
+            johto="lisätään lakiin uusi 106 a ja 106 b §",
+            strict_profile=None,
+        )
+    ).output
+
+    assert stale_result.effective_target_chapter is None
+    assert owned_result.effective_target_chapter == "15"
+
+
+def test_letter_suffix_insert_does_not_inherit_chaptered_stem_scope_when_live_stem_is_root() -> None:
+    """Do not propagate a bad inferred chapter from root-level 106 § to 106 a §."""
+    from lxml import etree
+
+    from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
+    from lawvm.finland.frontend_compile import (
+        _retarget_letter_suffix_inserts_from_same_amendment_stem_scope,
+    )
+    from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    source = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <section><num>106 §</num><content><p>stem</p></content></section>
+            <section><num>106 a §</num><content><p>suffix</p></content></section>
+          </body>
+        </act>
+        """
+    )
+    master = _make_state(_body(_sec("106")))
+    stem = AmendmentOp(
+        op_id="replace_106",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="106",
+        target_part="5",
+        target_chapter="10",
+        scope_confidence=ScopeConfidence(
+            tag="body_container_membership_rewrite",
+            source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+            confidence=ScopeResolutionConfidence.REWRITTEN,
+            resolved_chapter="10",
+        ),
+        lo=LegalOperation(
+            op_id="replace_106",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "10"), ("section", "106"))),
+            payload=None,
+        ),
+    )
+    suffix = AmendmentOp(
+        op_id="insert_106a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="106a",
+        target_part="5",
+        lo=LegalOperation(
+            op_id="insert_106a",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "106a"),)),
+            payload=None,
+        ),
+    )
+
+    retargeted = _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
+        [stem, suffix],
+        source_model=AmendmentSourceModel.from_tree(source),
+        master=master,
+    )
+
+    assert retargeted[1].target_chapter is None
+    assert retargeted[1].lo is not None
+    assert retargeted[1].lo.target.path == (("section", "106a"),)
+
+
 def test_letter_suffix_insert_same_amendment_stem_scope_preserves_explicit_suffix_scope() -> None:
     """Same-wave stem recovery must not overwrite an explicit suffix chapter."""
     from lxml import etree

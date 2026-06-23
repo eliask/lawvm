@@ -733,6 +733,56 @@ def infer_letter_suffix_section_chapter_from_stem_host(
     return stem_chapter
 
 
+def _letter_suffix_insert_has_unchaptered_live_stem(
+    master: "ReplayState",
+    section_label: str,
+    *,
+    part_label: str | None = None,
+) -> bool:
+    section_norm = _norm_num_token(section_label)
+    stem_match = re.fullmatch(r"(\d+)([a-z])", section_norm, flags=re.I)
+    if stem_match is None:
+        return False
+    find_section_path = getattr(master, "find_section_path", None)
+    if not callable(find_section_path):
+        return False
+    live_path = find_section_path(stem_match.group(1), None, part_label)
+    if live_path is None:
+        return False
+    return not any(kind == "chapter" for kind, _label in live_path)
+
+
+def _source_body_places_letter_suffix_with_unchaptered_stem_wrapper(
+    source_model: object | None,
+    *,
+    section_label: str,
+    chapter_label: str,
+    part_label: str | None,
+) -> bool:
+    if source_model is None:
+        return False
+    section_norm = _norm_num_token(section_label)
+    match = re.fullmatch(r"(?P<stem>\d+)[a-z]", section_norm, flags=re.I)
+    if match is None:
+        return False
+    body_section_scope = getattr(source_model, "body_section_scope", None)
+    if not callable(body_section_scope):
+        return False
+    section_scope = body_section_scope(section_norm)
+    stem_scope = body_section_scope(match.group("stem"))
+    if section_scope is None or stem_scope is None:
+        return False
+    _section_part, section_chapter = section_scope
+    _stem_part, stem_chapter = stem_scope
+    chapter_norm = _norm_num_token(chapter_label)
+    return (
+        section_chapter is not None
+        and _norm_num_token(section_chapter) == chapter_norm
+        and stem_chapter is not None
+        and _norm_num_token(stem_chapter) == chapter_norm
+    )
+
+
 def _unique_base_section_chapter(
     master: "ReplayState",
     section_label: str,
@@ -1103,6 +1153,7 @@ def strip_unjustified_chapter_scope_from_unique_sections(
     los: List[_LegalOperation],
     johto: str,
     master: "ReplayState",
+    source_model: object | None = None,
 ) -> List[_LegalOperation]:
     explicit_scope_notes = {
         "renumber_clause",
@@ -1254,6 +1305,33 @@ def strip_unjustified_chapter_scope_from_unique_sections(
             result.append(lo)
             continue
         if lo.action is StructuralAction.INSERT:
+            if (
+                not (
+                    pd.get("subsection")
+                    or pd.get("item")
+                    or pd.get("paragraph")
+                    or facet in {"intro", "heading"}
+                )
+                and _letter_suffix_insert_has_unchaptered_live_stem(
+                    master,
+                    str(section),
+                    part_label=str(part) if part else None,
+                )
+                and not _johtolause_explicitly_mentions_chaptered_section_target(
+                    johto,
+                    str(chapter),
+                    str(section),
+                )
+                and _source_body_places_letter_suffix_with_unchaptered_stem_wrapper(
+                    source_model,
+                    section_label=str(section),
+                    chapter_label=str(chapter),
+                    part_label=str(part) if part else None,
+                )
+            ):
+                lo_new = _lo_with_path_update(lo, chapter=None)
+                result.append(lo_with_added_scope_tag(lo_new, "chapter_scope_stripped_stale_stem_body_wrapper"))
+                continue
             # If the section doesn't yet exist in the op's stated chapter, this
             # INSERT is genuinely creating a new section there. A section that
             # happens to live in a *different* chapter (e.g. a VÄLIAIKAINEN
@@ -1409,6 +1487,26 @@ def assign_chapter_scope_from_johtolause(
                             )
                         ):
                             continue
+                    if (
+                        lo.action is StructuralAction.INSERT
+                        and not (
+                            pd.get("subsection")
+                            or pd.get("item")
+                            or pd.get("paragraph")
+                            or facet in {"intro", "heading"}
+                        )
+                        and _letter_suffix_insert_has_unchaptered_live_stem(
+                            master,
+                            section_label,
+                            part_label=part_label,
+                        )
+                        and not _johtolause_explicitly_mentions_chaptered_section_target(
+                            johto,
+                            chapter_label,
+                            section_label,
+                        )
+                    ):
+                        continue
                     if (
                         lo.action is not StructuralAction.INSERT
                         and not _master_has_section_in_chapter(
