@@ -721,6 +721,136 @@ _INV_DANGLING_BOUNDARY = InvariantSpec(
     audit_registry_ref="",
 )
 
+# --- Claim: fixed-term / temporary whole-law expiry safety --------------- #
+# TOTALITY: each version of the entry-into-force provision carrying a recognised
+# whole-law fixed-term clause is resolved to a typed StatuteValidityBound, or, on
+# an unparseable / conflicting / anaphoric-ambiguous clause, emits a strict_fail
+# diagnostic — never a silent live "still in force" answer.
+_INV_FIXED_TERM_RESOLVED_OR_STRICT = InvariantSpec(
+    id="TEMPORAL-FIXED-TERM-01",
+    claim_id="lawvm.fi.expiry.fixed_term.v1",
+    plane="legal_state",
+    waist="fixed_term_expiry",
+    unit_kind="per-unit",
+    predicate=(
+        "each version of the entry-into-force provision carrying a recognised "
+        "whole-law fixed-term/temporary expiry clause is either resolved to a "
+        "typed StatuteValidityBound or emits a strict_fail diagnostic "
+        "(TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE / _AMBIGUOUS / "
+        "_ANAPHORA_AMBIGUOUS); a recognised clause is never silently degraded "
+        "into a live 'still in force' answer"
+    ),
+    owner="lawvm.finland.fixed_term_expiry",
+    bucket="implemented_check",
+    checker_ref="lawvm.finland.fixed_term_expiry:extract_fixed_term_bounds",
+    finding_code="TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+# CLOSURE/REFUSAL: the bound carrier itself refuses a malformed bound — the
+# inclusive/exclusive off-by-one discipline (expires_on > valid_until, i.e.
+# expires_on = valid_until + 1 day via expires_on_from_valid_until) and the
+# bound-kind/epistemic/provenance well-formedness are enforced by
+# StatuteValidityBound.__post_init__ (raises ValueError), so a bound that would
+# answer expiry wrongly cannot be constructed.
+_INV_FIXED_TERM_BOUND_REFUSAL = InvariantSpec(
+    id="TEMPORAL-FIXED-TERM-02",
+    claim_id="lawvm.fi.expiry.fixed_term.v1",
+    plane="legal_state",
+    waist="fixed_term_expiry",
+    unit_kind="per-unit",
+    predicate=(
+        "a StatuteValidityBound with expires_on <= valid_until (a broken "
+        "inclusive/exclusive cutoff), a non-whole_statute scope, an upper_cap "
+        "without earlier_termination_possible, or a duration-computed bound "
+        "missing its arithmetic provenance / masquerading as a grammar_fact is "
+        "REFUSED by StatuteValidityBound.__post_init__ (raises ValueError) — a "
+        "bound that would answer expiry wrongly cannot be constructed"
+    ),
+    owner="lawvm.core.statute_validity",
+    bucket="writer_refusal",
+    checker_ref="lawvm.core.statute_validity:StatuteValidityBound",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+# NON_GUARANTEE_COVERAGE: the declared boundaries of the fixed-term claim.
+_INV_FIXED_TERM_BOUNDARY = InvariantSpec(
+    id="TEMPORAL-FIXED-TERM-03",
+    claim_id="lawvm.fi.expiry.fixed_term.v1",
+    plane="declaration",
+    waist="claim_boundary",
+    unit_kind="static",
+    predicate=(
+        "the inclusive valid_until vs exclusive expires_on convention is a "
+        "STORED fact (expired at D iff D >= expires_on iff D > valid_until); an "
+        "ambiguous/anaphoric expiry is a strict finding, never a guessed bound; "
+        "and the VÄLIAIKAINEN temporary-amendment unresolved-expiry case is a "
+        "WARN (TIME.UNRESOLVED_TEMPORARY_EXPIRY), a weaker separately-declared "
+        "enforcement than the whole-law strict block — declared boundaries"
+    ),
+    owner="lawvm.core.assumption_register",
+    bucket="declared_non_guarantee",
+    checker_ref="lawvm.core.claim_surface_manifest:CLAIM_FIXED_TERM_EXPIRY",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+
+# --- Claim: version-timeline integrity ----------------------------------- #
+# TOTALITY: every provision timeline is swept for the three robust structural
+# integrity properties (no ambiguous overlapping permanent versions, well-formed
+# temporary overlay intervals, monotone expiry chains); each breach is a typed
+# TimelineInvariantViolation carrying section attribution, never silent.
+_INV_TIMELINE_INTEGRITY_TYPED = InvariantSpec(
+    id="TIMELINE-INTEGRITY-01",
+    claim_id="lawvm.fi.timeline.integrity.v1",
+    plane="legal_state",
+    waist="timeline",
+    unit_kind="per-unit",
+    predicate=(
+        "every provision timeline is swept for the three robust structural "
+        "integrity properties — overlapping/ambiguous permanent versions, "
+        "temporary-overlay well-formedness (expiry present, non-inverted, "
+        "non-overlapping), and expiry-chain monotonicity — and each breach is "
+        "emitted as a typed TimelineInvariantViolation with its kind + section "
+        "attribution; a breach is never silently tolerated"
+    ),
+    owner="lawvm.core.timeline_invariants",
+    bucket="implemented_check",
+    checker_ref="lawvm.core.timeline_invariants:check_all_timeline_invariants_typed",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+# NON_GUARANTEE_COVERAGE: the declared boundaries of the timeline-integrity claim.
+_INV_TIMELINE_INTEGRITY_BOUNDARY = InvariantSpec(
+    id="TIMELINE-INTEGRITY-02",
+    claim_id="lawvm.fi.timeline.integrity.v1",
+    plane="declaration",
+    waist="claim_boundary",
+    unit_kind="static",
+    predicate=(
+        "the claim covers the three ROBUST structural families "
+        "(temporal_overlap / temporary_overlay / expiry_chain) only; the heavier "
+        "replay/materialization-drift check (IR-vs-timeline consistency) is a "
+        "SEPARATE materialization-variant-tier check, not one of the three "
+        "structural properties; and a TimelineInvariantViolation is a DETECTION, "
+        "never a legal conclusion or an automatic repair — declared boundaries"
+    ),
+    owner="lawvm.core.assumption_register",
+    bucket="declared_non_guarantee",
+    checker_ref="lawvm.core.claim_surface_manifest:CLAIM_TIMELINE_INTEGRITY",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+
 #: The v0 invariant rows (one live accounting path + declared boundary per claim).
 V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_BENCH_PROJECTION_FIREWALL,
@@ -743,6 +873,11 @@ V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_DANGLING_TOTALITY,
     _INV_DANGLING_CLOSURE,
     _INV_DANGLING_BOUNDARY,
+    _INV_FIXED_TERM_RESOLVED_OR_STRICT,
+    _INV_FIXED_TERM_BOUND_REFUSAL,
+    _INV_FIXED_TERM_BOUNDARY,
+    _INV_TIMELINE_INTEGRITY_TYPED,
+    _INV_TIMELINE_INTEGRITY_BOUNDARY,
 )
 
 
