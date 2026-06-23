@@ -821,6 +821,115 @@ def test_existing_descendant_replace_stays_durable_after_exact_target_temporary_
     assert select_active_version(tl, "2020-09-01") is not None
 
 
+def test_expired_temporary_child_snapshot_does_not_tombstone_selected_permanent_parent_child() -> None:
+    """Expired temporary child overlays must not erase parent-embedded permanent text.
+
+    A temporary subsection insert is often exported both as a temporary section
+    snapshot and as temporary descendant snapshots.  After expiry, those
+    descendant timelines are inactive.  They are not repeal tombstones for the
+    permanent section snapshot selected underneath the temporary overlay.
+    """
+    section_addr = LegalAddress(path=(("section", "15"),))
+    subsection_1_addr = LegalAddress(path=(("section", "15"), ("subsection", "1")))
+    subsection_2_addr = LegalAddress(path=(("section", "15"), ("subsection", "2")))
+    permanent_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="15",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="15 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Amount"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="permanent child 1"),
+        ),
+    )
+    temporary_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="15",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="15 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Amount"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="permanent child 1"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="temporary child 2"),
+        ),
+    )
+    base = IRStatute(
+        statute_id="test/temporary-child-tombstone",
+        title="Temporary child tombstone",
+        body=IRNode(kind=IRNodeKind.BODY, children=(permanent_section,)),
+    )
+    permanent_source = OperationSource(
+        statute_id="2019/535",
+        enacted="2019-04-26",
+        effective="2020-01-01",
+    )
+    temporary_source = OperationSource(
+        statute_id="2022/139",
+        enacted="2022-02-18",
+        effective="2022-02-28",
+        expires="2022-07-01",
+    )
+    timelines = {
+        section_addr: ProvisionTimeline(
+            address=section_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2019-04-26",
+                    content=permanent_section,
+                    source=permanent_source,
+                ),
+                ProvisionVersion(
+                    effective="2022-02-28",
+                    enacted="2022-02-18",
+                    expires="2022-07-01",
+                    variant_kind="temporary",
+                    content=temporary_section,
+                    source=temporary_source,
+                ),
+            ],
+        ),
+        subsection_1_addr: ProvisionTimeline(
+            address=subsection_1_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2022-02-28",
+                    enacted="2022-02-18",
+                    expires="2022-07-01",
+                    variant_kind="temporary",
+                    content=IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        text="permanent child 1",
+                    ),
+                    source=temporary_source,
+                )
+            ],
+        ),
+        subsection_2_addr: ProvisionTimeline(
+            address=subsection_2_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2022-02-28",
+                    enacted="2022-02-18",
+                    expires="2022-07-01",
+                    variant_kind="temporary",
+                    content=IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="2",
+                        text="temporary child 2",
+                    ),
+                    source=temporary_source,
+                )
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2026-01-01", base=base)
+    text = irnode_to_text(pit.body)
+
+    assert "permanent child 1" in text
+    assert "temporary child 2" not in text
+
+
 def test_same_day_timeline_ties_use_later_apply_order() -> None:
     """When effective/enacted dates tie, the later-applied version must win."""
     base = IRStatute(
