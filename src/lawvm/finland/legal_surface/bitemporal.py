@@ -446,7 +446,7 @@ def scan_one_statute(
     injected materialization adapters. Always returns a ``StatuteScanResult`` —
     a body/extraction failure is recorded in ``error``, never raised away.
     """
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
 
     try:
         xb = _resolved_body(store, sid)
@@ -1143,7 +1143,7 @@ def scan_one_statute_current_state(
     ``has_consolidated_text_state`` over the store; tests inject a fake.
     """
     from lawvm.finland.legal_surface.corpus_lints import _parse_target_sections
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
 
     if body_for is None:
         body_for = _default_body_for(store)

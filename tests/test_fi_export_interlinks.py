@@ -45,7 +45,7 @@ def test_get_statute_xml_accepts_canonical_viewer_id() -> None:
 def test_project_interlinks_for_statute_adapts_existing_fi_citation_families(
     monkeypatch,
 ) -> None:
-    ref_module = types.ModuleType("lawvm.finland.ref_mention_extractor")
+    ref_module = types.ModuleType("lawvm.finland.references.ref_mention_extractor")
     prep_module = types.ModuleType("lawvm.finland.references.preparatory_reference_extractor")
     inline_module = types.ModuleType("lawvm.finland.references.inline_citation_extractor")
 
@@ -124,7 +124,7 @@ def test_project_interlinks_for_statute_adapts_existing_fi_citation_families(
         ),
         raising=False,
     )
-    monkeypatch.setitem(sys.modules, "lawvm.finland.ref_mention_extractor", ref_module)
+    monkeypatch.setitem(sys.modules, "lawvm.finland.references.ref_mention_extractor", ref_module)
     monkeypatch.setitem(sys.modules, "lawvm.finland.references.preparatory_reference_extractor", prep_module)
     monkeypatch.setitem(sys.modules, "lawvm.finland.references.inline_citation_extractor", inline_module)
 

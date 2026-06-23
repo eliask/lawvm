@@ -1296,7 +1296,7 @@ def _build_fi_relation_edges(
     construction (the extractor is Finland's); the caller guards on jurisdiction.
     """
     from lawvm.finland.corpus import get_corpus_store
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
     from lawvm.finland.references.reference_sets import fold_reference_set
     from lawvm.substrate.relation_edge_bridge import reference_set_to_relation_edge
 

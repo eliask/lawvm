@@ -16,7 +16,7 @@ Design principles (AGENTS.md §1.9, STRINGLY_TYPED_SURFACE_AUDIT.md):
     (AGENTS.md §1.1).
 
 This module has no Finland-specific imports. Finland extraction lives in
-``lawvm.finland.cross_refs`` and ``lawvm.finland.ref_mention_extractor``.
+``lawvm.finland.cross_refs`` and ``lawvm.finland.references.ref_mention_extractor``.
 This module only holds the shared typed primitive and observation types.
 """
 from __future__ import annotations

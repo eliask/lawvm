@@ -361,7 +361,7 @@ def _covered(intervals: list[tuple[int, int]], lo: int, hi: int) -> bool:
 def _scan_one_recall(sid: str) -> _RecallResult | None:
     from farchive import Farchive
     from lawvm.finland.transparent_store import TransparentCorpusStore
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
 
     store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     xb = _read_body(store, sid)
@@ -461,7 +461,7 @@ def _read_body(store, sid: str) -> bytes | None:
 def _scan_one(sid: str) -> _RefsResult | None:
     from farchive import Farchive
     from lawvm.finland.transparent_store import TransparentCorpusStore
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
 
     store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     xb = _read_body(store, sid)
