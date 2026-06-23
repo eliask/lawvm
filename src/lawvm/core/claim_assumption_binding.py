@@ -788,25 +788,31 @@ _B_LSG_REFERENCE_FAMILY_ONLY = _binding(
     "legal_surface_graph_v1_reference_family_only_v2_extends",
     kind="parser_incomplete",
     scope=(
-        "The relation families merged into the corpus Legal Surface Graph: v1 "
-        "merges the reference + anaphora lens edge families (the cross-statute "
-        "refers_to / has_candidate backbone) only; the newer typed relation "
-        "families (derivation edges, EU transposition edges, definition-use edges, "
-        "dangling-reference status) are NOT merged in "
+        "The relation families merged into the corpus Legal Surface Graph: the "
+        "graph merges the reference + anaphora backbone (refers_to / has_candidate) "
+        "AND three of the four typed v2 families — definition-use (defines_term / "
+        "uses_term), EU transposition (transposes), and dangling-reference status "
+        "(the three-way existence verdict on each provision-target node). The "
+        "DERIVATION edge family alone is NOT merged in "
         "(lawvm.finland.legal_surface.corpus_graph)."
     ),
     effect="qualifies",
     expires_when=(
-        "the corpus-graph build merges the typed v2 relation families "
-        "(derivation / EU transposition / definition-use / dangling status) into "
-        "the same cross-statute graph the reference backbone produces."
+        "the corpus-graph build merges the DERIVATION edge family (textual / "
+        "model-code / conformance / citation) into the same cross-statute graph "
+        "the reference backbone produces — which needs a provision-pair candidate "
+        "source the reference-only build does not yet generate."
     ),
     public_message=(
-        "The corpus Legal Surface Graph v1 carries the cross-statute reference "
-        "backbone (refers_to / has_candidate) and the intra-statute structural "
-        "edges of the reference + anaphora lenses. The newer typed relation "
-        "families — derivation, EU transposition, definition-use, dangling status "
-        "— are NOT yet merged into this graph; they are the DECLARED v2 extension."
+        "The corpus Legal Surface Graph carries the cross-statute reference "
+        "backbone (refers_to / has_candidate), the intra-statute structural edges "
+        "of the reference + anaphora lenses, AND three typed relation families — "
+        "definition-use (defines_term / uses_term), EU transposition (transposes; "
+        "the DECLARED relation, never a conformance conclusion), and the three-way "
+        "DANGLING-reference existence status on each provision target. The "
+        "DERIVATION edge family is NOT yet merged into this graph; it is the "
+        "remaining DECLARED extension (it needs a provision-pair candidate source "
+        "a reference-only build does not produce)."
     ),
 )
 _B_LSG_RESOLUTION_RECALL_BOUNDED = _binding(

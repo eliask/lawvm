@@ -23,13 +23,21 @@ artifact is deterministic (nodes/edges sorted by id; counts sorted).
 
 Backed by ``CLAIM_LEGAL_SURFACE_GRAPH`` (``lawvm.fi.legal_surface_graph.v1``).
 
-HONESTY BOUNDARY (v1). The corpus graph merges the edge families the per-statute
-reference + anaphora lenses produce (the cross-statute ``refers_to`` /
-``has_candidate`` backbone, plus the intra-statute structural edges those lenses
-emit). The NEWER typed relation families — derivation edges, EU transposition
-edges, definition-use edges, dangling-reference status — are NOT yet merged into
-this graph; they are the DECLARED v2 extension. Resolution is recall-bounded (an
-open / statute_only mention stays as-is, never promoted); the graph is an AS-OF
+HONESTY BOUNDARY (v1 + v2 increment). The corpus graph merges the reference +
+anaphora backbone (the cross-statute ``refers_to`` / ``has_candidate`` edges, plus
+the intra-statute structural edges those lenses emit) AND three of the four typed
+v2 relation families: DEFINITION-USE (``defines_term`` / ``uses_term`` via the
+DefinitionLens; a shared defined term collapses to one ``term_symbol_entity``), EU
+TRANSPOSITION (``transposes`` edges into shared EU-directive work entities — the
+DECLARED transposition relation, CELEX-bound → asserted / unbound → candidate,
+NEVER a conformance conclusion), and DANGLING-REFERENCE STATUS (each provision-
+target address node carries a three-way PRESENT / DANGLING / EXISTENCE_UNKNOWN
+verdict, surfaced on each incoming reference edge's ``target_existence_status``).
+DERIVATION edges are the ONE family still DEFERRED to a later increment (their
+textual / model-code kinds need provision-pair candidates a reference-only corpus
+build does not produce; conformance overlaps the EU-transposition family; citation
+overlaps the reference backbone). Resolution is recall-bounded (an open /
+statute_only mention stays as-is, never promoted); the graph is an AS-OF
 (``surface_time``) surface projection over the DECLARED slice, never a legal
 conclusion. Reuses the store / registry / body-loading helpers from
 ``surface_lints`` so all the surface tools agree on data sourcing. Archive-only
@@ -55,6 +63,13 @@ EXPORT_SCHEMA = "lawvm.corpus_surface_graph_export.v1"
 # ``resolution_of`` joins a resolution to its expr WITHIN a statute, so it is
 # intra-statute and excluded.
 _INTERLINK_EDGE_KINDS = frozenset({"refers_to", "has_candidate"})
+
+# The v2 DEFINITION-USE edge family (folded into the corpus graph by adding the
+# DefinitionLens to the per-statute lens set).
+_DEFINITION_USE_EDGE_KINDS = frozenset({"defines_term", "uses_term"})
+
+# The v2 EU-TRANSPOSITION edge family.
+_TRANSPOSITION_EDGE_KIND = "transposes"
 
 
 # ── typed export rows ────────────────────────────────────────────────────────
@@ -104,6 +119,12 @@ class CorpusEdgeRow:
     cross_statute: bool
     payload_hash: str
     surface_only: bool
+    # The v2 DANGLING-reference status of this edge's TARGET, when the target is a
+    # provision-level ``legal_address_entity`` the corpus build annotated:
+    # PRESENT / DANGLING / EXISTENCE_UNKNOWN (or ``None`` for an edge whose target
+    # is not an existence-annotated address). So a ``refers_to`` into a BROKEN
+    # target is legible on the edge row itself.
+    target_existence_status: str | None = None
 
     def to_canonical_dict(self) -> dict[str, object]:
         return {
@@ -118,6 +139,7 @@ class CorpusEdgeRow:
             "cross_statute": self.cross_statute,
             "payload_hash": self.payload_hash,
             "surface_only": self.surface_only,
+            "target_existence_status": self.target_existence_status,
         }
 
 
@@ -134,6 +156,14 @@ class CorpusGraphCensus:
     cross_statute_reference_edges: int
     resolution_status: dict[str, int]
     firewall_holds: bool
+    # ── v2 typed relation families (arc B increment 2) ────────────────────────
+    # ``transposes`` (EU transposition) + ``defines_term`` / ``uses_term``
+    # (definition-use) edge counts, and the three-way DANGLING-reference status
+    # breakdown over the cross-statute reference edges (how many refers_to /
+    # has_candidate land on a PRESENT / DANGLING / EXISTENCE_UNKNOWN target).
+    transposition_edges: int
+    definition_use_edges: dict[str, int]
+    reference_target_existence: dict[str, int]
 
     def to_canonical_dict(self) -> dict[str, object]:
         return {
@@ -146,6 +176,9 @@ class CorpusGraphCensus:
             "cross_statute_reference_edges": self.cross_statute_reference_edges,
             "resolution_status": dict(self.resolution_status),
             "firewall_holds": self.firewall_holds,
+            "transposition_edges": self.transposition_edges,
+            "definition_use_edges": dict(self.definition_use_edges),
+            "reference_target_existence": dict(self.reference_target_existence),
         }
 
 
@@ -204,6 +237,24 @@ def _node_work_id(node) -> str | None:
     return work if isinstance(work, str) else None
 
 
+def _target_existence_status(edge, dst) -> str | None:
+    """The v2 DANGLING existence verdict of an interlink edge's target, or ``None``.
+
+    Returns the ``existence_status`` (PRESENT / DANGLING / EXISTENCE_UNKNOWN) the
+    corpus build annotated on a provision-level ``legal_address_entity`` target,
+    but ONLY for a reference/candidate edge into such a node — so a ``transposes``
+    or ``defines_term`` edge (different target kind) carries ``None``, never a
+    spurious status. The verdict lives on the shared target node, so every incoming
+    citation reads the same broken/present verdict.
+    """
+    if edge.edge_kind not in _INTERLINK_EDGE_KINDS:
+        return None
+    if dst is None or dst.node_kind != "legal_address_entity":
+        return None
+    status = dst.payload.get("existence_status")
+    return status if isinstance(status, str) else None
+
+
 def _resolution_status_census(graph: LegalSurfaceGraph) -> dict[str, int]:
     c: Counter[str] = Counter()
     for node in graph.nodes.values():
@@ -234,6 +285,7 @@ def build_export(graph: LegalSurfaceGraph) -> CorpusSurfaceGraphExport:
 
     edge_rows: list[CorpusEdgeRow] = []
     cross_statute_reference_edges = 0
+    reference_target_existence: Counter[str] = Counter()
     for edge in sorted(graph.edges, key=lambda e: e.edge_id):
         src = graph.nodes.get(edge.src)
         dst = graph.nodes.get(edge.dst)
@@ -247,6 +299,12 @@ def build_export(graph: LegalSurfaceGraph) -> CorpusSurfaceGraphExport:
         )
         if cross:
             cross_statute_reference_edges += 1
+        # v2 DANGLING status: when this is a reference/candidate edge into a
+        # provision-level address node the corpus build annotated, lift the target's
+        # three-way existence verdict onto the edge row + into the census.
+        target_existence = _target_existence_status(edge, dst)
+        if target_existence is not None:
+            reference_target_existence[target_existence] += 1
         edge_rows.append(
             CorpusEdgeRow(
                 edge_id=edge.edge_id,
@@ -260,12 +318,16 @@ def build_export(graph: LegalSurfaceGraph) -> CorpusSurfaceGraphExport:
                 cross_statute=cross,
                 payload_hash=edge.payload_hash,
                 surface_only=edge.surface_only,
+                target_existence_status=target_existence,
             )
         )
 
     node_kinds = Counter(n.node_kind for n in graph.nodes.values())
     edge_kinds = Counter(e.edge_kind for e in graph.edges)
     interlink = {k: v for k, v in edge_kinds.items() if k in _INTERLINK_EDGE_KINDS}
+    definition_use = {
+        k: v for k, v in edge_kinds.items() if k in _DEFINITION_USE_EDGE_KINDS
+    }
 
     census = CorpusGraphCensus(
         nodes_total=len(graph.nodes),
@@ -277,6 +339,9 @@ def build_export(graph: LegalSurfaceGraph) -> CorpusSurfaceGraphExport:
         cross_statute_reference_edges=cross_statute_reference_edges,
         resolution_status=_resolution_status_census(graph),
         firewall_holds=_firewall_holds(graph),
+        transposition_edges=edge_kinds.get(_TRANSPOSITION_EDGE_KIND, 0),
+        definition_use_edges=dict(sorted(definition_use.items())),
+        reference_target_existence=dict(sorted(reference_target_existence.items())),
     )
 
     raw_slice = graph.subject.scope.get("statute_ids", ())
@@ -344,6 +409,16 @@ def _print_census(export: CorpusSurfaceGraphExport) -> None:
     if c.resolution_status:
         out("  reference resolution:\n")
         for k, v in c.resolution_status.items():
+            out(f"    {v:>8}  {k}\n")
+    out(f"  transposition edges     {c.transposition_edges} "
+        f"(EU directive; declared, not conformance)\n")
+    if c.definition_use_edges:
+        out("  definition-use edges:\n")
+        for k, v in c.definition_use_edges.items():
+            out(f"    {v:>8}  {k}\n")
+    if c.reference_target_existence:
+        out("  reference target existence (DANGLING status):\n")
+        for k, v in c.reference_target_existence.items():
             out(f"    {v:>8}  {k}\n")
 
 
