@@ -8,7 +8,6 @@
     "src/lawvm/core/semantic_types.py": 1,
     "src/lawvm/finland/body_coverage_findings.py": 2,
     "src/lawvm/finland/conformance_corpus/preparatory/fixtures.py": 11,
-    "src/lawvm/finland/johtolause/amendment_ast.py": 1,
     "src/lawvm/finland/legal_surface/lenses/references.py": 1,
     "src/lawvm/finland/ops.py": 1,
     "src/lawvm/finland/references/anaphora.py": 1,
@@ -31,5 +30,5 @@
     "src/lawvm/tools/refs_query.py": 2,
     "src/lawvm/tools/transition_graph_interlinks.py": 1
   },
-  "total_bare_confidence": 52
+  "total_bare_confidence": 51
 }
