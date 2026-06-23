@@ -11575,6 +11575,326 @@ def test_enrich_ops_prefers_letter_suffix_stem_host_before_unborn_body_wrapper_f
     assert got[0].scope_confidence.resolved_chapter == "5"
 
 
+def test_enrich_ops_overrides_live_stem_host_with_corroborated_source_body_chapter() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="16",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="130"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="17",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="131"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>17 luku</num>
+              <section><num>130 a §</num><content><p>new source section</p></content></section>
+              <section><num>131 §</num><content><p>existing section replacement</p></content></section>
+              <section><num>136 §</num><content><p>Edellä 130 a ja 135 c §:ssä tarkoitetut ilmoitukset toimitetaan vuosittain.</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_130a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="130a",
+        target_chapter="16",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="16",
+        ),
+        scope_provenance_tags=("chapter_scope_from_letter_suffix_stem_host",),
+        lo=LegalOperation(
+            op_id="insert_130a",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "16"), ("section", "130a"))),
+        ),
+    )
+    replace_op = AmendmentOp(
+        op_id="replace_131",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="131",
+        target_chapter="17",
+        lo=LegalOperation(
+            op_id="replace_131",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "17"), ("section", "131"))),
+        ),
+    )
+    insert_subsection_op = AmendmentOp(
+        op_id="insert_136_5",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="136",
+        target_chapter="17",
+        target_paragraph=5,
+        lo=LegalOperation(
+            op_id="insert_136_5",
+            sequence=3,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "17"), ("section", "136"), ("subsection", "5"))),
+            payload=IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        text="Edellä 130 a ja 135 c §:ssä tarkoitetut ilmoitukset toimitetaan vuosittain.",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = _enrich_ops_from_amendment_tree(
+        [insert_op, replace_op, insert_subsection_op],
+        "2024/1",
+        muutos_tree,
+        master=master,
+        source_model=AmendmentSourceModel.from_tree(muutos_tree),
+    )
+
+    assert got[0].target_chapter == "17"
+    assert got[0].witness_rule_id == "fi_live_stem_scope_overridden_by_corroborated_source_body"
+    assert got[0].lo is not None
+    assert got[0].lo.target.path == (("chapter", "17"), ("section", "130a"))
+
+
+def test_enrich_ops_keeps_live_stem_host_without_existing_section_corroboration() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="16",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="130"),),
+                ),
+                IRNode(kind=IRNodeKind.CHAPTER, label="17", children=()),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>17 luku</num>
+              <section><num>130 a §</num><content><p>new source section</p></content></section>
+              <section><num>135 b §</num><content><p>another new source section</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_130a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="130a",
+        target_chapter="16",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="16",
+        ),
+        scope_provenance_tags=("chapter_scope_from_letter_suffix_stem_host",),
+        lo=LegalOperation(
+            op_id="insert_130a",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "16"), ("section", "130a"))),
+        ),
+    )
+    sibling_insert_op = AmendmentOp(
+        op_id="insert_135b",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="135b",
+        target_chapter="17",
+    )
+
+    got = _enrich_ops_from_amendment_tree(
+        [insert_op, sibling_insert_op],
+        "2024/1",
+        muutos_tree,
+        master=master,
+        source_model=AmendmentSourceModel.from_tree(muutos_tree),
+    )
+
+    assert got[0].target_chapter == "16"
+    assert got[0].witness_rule_id != "fi_live_stem_scope_overridden_by_corroborated_source_body"
+
+
+def test_enrich_ops_keeps_live_stem_host_without_internal_reference_witness() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="6"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="7"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>3 luku</num>
+              <section><num>6 a §</num><content><p>new source section</p></content></section>
+              <section><num>7 §</num><content><p>existing adjacent section replacement</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_6a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="6a",
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="2",
+        ),
+        scope_provenance_tags=("chapter_scope_from_letter_suffix_stem_host",),
+        lo=LegalOperation(
+            op_id="insert_6a",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "2"), ("section", "6a"))),
+        ),
+    )
+    replace_op = AmendmentOp(
+        op_id="replace_7",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="7",
+        target_chapter="3",
+        lo=LegalOperation(
+            op_id="replace_7",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"), ("section", "7"))),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="7", text="No reference to the new suffix section."),
+        ),
+    )
+
+    got = _enrich_ops_from_amendment_tree(
+        [insert_op, replace_op],
+        "2024/1",
+        muutos_tree,
+        master=master,
+        source_model=AmendmentSourceModel.from_tree(muutos_tree),
+    )
+
+    assert got[0].target_chapter == "2"
+    assert got[0].witness_rule_id != "fi_live_stem_scope_overridden_by_corroborated_source_body"
+
+
+def test_enrich_ops_keeps_live_stem_host_when_source_body_corroborator_is_distant() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="10"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="18"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>3 luku</num>
+              <section><num>10 c §</num><content><p>new source section</p></content></section>
+              <section><num>18 §</num><content><p>distant existing section replacement</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_10c",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="10c",
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source=ScopeResolutionSource.LIVE_STEM_HOST,
+            confidence=ScopeResolutionConfidence.INFERRED,
+            resolved_chapter="2",
+        ),
+        scope_provenance_tags=("chapter_scope_from_letter_suffix_stem_host",),
+        lo=LegalOperation(
+            op_id="insert_10c",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "2"), ("section", "10c"))),
+        ),
+    )
+    replace_op = AmendmentOp(
+        op_id="replace_18",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="18",
+        target_chapter="3",
+    )
+
+    got = _enrich_ops_from_amendment_tree(
+        [insert_op, replace_op],
+        "2024/1",
+        muutos_tree,
+        master=master,
+        source_model=AmendmentSourceModel.from_tree(muutos_tree),
+    )
+
+    assert got[0].target_chapter == "2"
+    assert got[0].witness_rule_id != "fi_live_stem_scope_overridden_by_corroborated_source_body"
+
+
 def test_enrich_ops_uses_vacated_live_scope_for_recodification_insert_under_mixed_wrapper() -> None:
     master = ReplayState(
         ir=IRNode(

@@ -2007,6 +2007,137 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
     return inferred_chapter
 
 
+def _infer_corroborated_body_scope_for_live_stem_insert(
+    *,
+    op: AmendmentOp,
+    ops: List[AmendmentOp],
+    master: "ReplayState",
+    source_model: "AmendmentSourceModel | None",
+) -> tuple[str | None, str] | None:
+    """Prefer a witnessed source-body chapter over a live-stem guess.
+
+    A bare ``130 a §`` insert can be initially scoped to the live host of
+    ``130 §``.  When the amendment body itself places the new section under an
+    existing chapter and the same amendment also edits existing sections in
+    that chapter, the source-body chapter is stronger evidence than the stem.
+    """
+    if source_model is None or not _is_whole_section_insert(op):
+        return None
+    scope_witness = projection_scope_confidence(
+        scope_confidence=op.scope_confidence,
+        scope_provenance_tags=op.scope_provenance_tags,
+        resolved_chapter=op.target_chapter,
+    )
+    if scope_witness is None or scope_witness.source is not ScopeResolutionSource.LIVE_STEM_HOST:
+        return None
+    section_label = _norm_num_token(op.target_section or "")
+    body_scope = source_model.body_section_scope(section_label)
+    if body_scope is None:
+        return None
+    body_part, body_chapter = body_scope
+    if not body_chapter or (body_part == op.target_part and body_chapter == op.target_chapter):
+        return None
+    if not source_model.body_has_section(
+        section_label,
+        target_chapter=body_chapter,
+        target_part=body_part,
+    ):
+        return None
+    if not _container_path_exists_in_master(
+        master=master,
+        part=body_part,
+        chapter=body_chapter,
+    ):
+        return None
+
+    def _section_stem(label: str) -> int | None:
+        match = _SECTION_LABEL_ORDER_RE.fullmatch(_norm_num_token(label))
+        if match is None:
+            return None
+        return int(match.group(1))
+
+    def _payload_text_mentions_section(text: str, label: str) -> bool:
+        if "§" not in text and "pykäl" not in text.lower():
+            return False
+        from lawvm.finland.references.freetext_addresses import scan_legal_addresses
+
+        label_norm = _norm_num_token(label)
+        return any(_norm_num_token(address.section) == label_norm for address in scan_legal_addresses(text))
+
+    target_stem = _section_stem(section_label)
+    if target_stem is None:
+        return None
+
+    corroborating_labels: set[str] = set()
+    for other in ops:
+        if other is op or other.target_unit_kind != "section" or not other.target_section:
+            continue
+        if other.op_type == "INSERT" and _is_whole_section_insert(other):
+            continue
+        other_chapter = _norm_num_token(other.target_chapter or "")
+        if other_chapter != _norm_num_token(body_chapter):
+            continue
+        other_part = _norm_num_token(other.target_part or "") if other.target_part else None
+        body_part_norm = _norm_num_token(body_part or "") if body_part else None
+        if other_part != body_part_norm:
+            continue
+        other_label = _norm_num_token(other.target_section)
+        if other_label == section_label:
+            continue
+        if source_model.body_has_section(
+            other_label,
+            target_chapter=body_chapter,
+            target_part=body_part,
+        ):
+            other_stem = _section_stem(other_label)
+            if other_stem is not None and abs(other_stem - target_stem) <= 1:
+                corroborating_labels.add(other_label)
+
+    if not corroborating_labels:
+        return None
+
+    has_internal_reference_witness = False
+    for other in ops:
+        if other is op or other.target_unit_kind != "section" or not other.target_section:
+            continue
+        other_label = _norm_num_token(other.target_section)
+        if other_label == section_label:
+            continue
+        if not source_model.body_has_section(
+            other_label,
+            target_chapter=body_chapter,
+            target_part=body_part,
+        ):
+            continue
+        payload_text = source_model.lookup_section_payload_text(
+            other_label,
+            target_chapter=body_chapter,
+            target_part=body_part,
+        ).text
+        if payload_text and _payload_text_mentions_section(payload_text, section_label):
+            has_internal_reference_witness = True
+            break
+    if not has_internal_reference_witness:
+        return None
+
+    source_labels = [
+        _norm_num_token(label)
+        for label in source_model.body_real_chapter_section_labels(body_chapter)
+    ]
+    try:
+        idx = source_labels.index(section_label)
+    except ValueError:
+        return None
+    adjacent = {
+        source_labels[pos]
+        for pos in (idx - 1, idx + 1)
+        if 0 <= pos < len(source_labels)
+    }
+    if adjacent & corroborating_labels:
+        return body_part, body_chapter
+    return None
+
+
 def _add_inferred_section_chapter_scope(
     op: AmendmentOp,
     *,
@@ -2603,7 +2734,11 @@ def _enrich_ops_from_amendment_tree(
                 and scoped_op.target_special is None
                 and scope_witness is not None
                 and scope_witness.source
-                in {ScopeResolutionSource.CARRY_FORWARD, ScopeResolutionSource.EXPLICIT_CHUNK}
+                in {
+                    ScopeResolutionSource.CARRY_FORWARD,
+                    ScopeResolutionSource.EXPLICIT_CHUNK,
+                    ScopeResolutionSource.LIVE_STEM_HOST,
+                }
             ):
                 reinstated_scope = _infer_flat_reinstated_section_scope_from_base(
                     op=scoped_op,
@@ -2618,6 +2753,16 @@ def _enrich_ops_from_amendment_tree(
                 if reinstated_scope is not None:
                     inferred_part, inferred_chapter = reinstated_scope
                     inferred_rule_id = "fi_reinstated_section_scope_from_prior_repeal_address"
+                if inferred_chapter is None:
+                    corroborated_body_scope = _infer_corroborated_body_scope_for_live_stem_insert(
+                        op=scoped_op,
+                        ops=ops,
+                        master=master,
+                        source_model=source_model,
+                    )
+                    if corroborated_body_scope is not None:
+                        inferred_part, inferred_chapter = corroborated_body_scope
+                        inferred_rule_id = "fi_live_stem_scope_overridden_by_corroborated_source_body"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
                         op=scoped_op,
