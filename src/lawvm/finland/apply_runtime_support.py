@@ -1559,6 +1559,18 @@ def _emit_section_snapshot(
         direct_child_kind = _container_direct_child_kind()
         if direct_child_kind is None:
             return set()
+        # PART-level orphan retirement requires an authoritative child-label set
+        # (a genuine single complete part REPLACE, tail_policy
+        # replace_if_target_scope_requires). Finnish part payloads interpose
+        # crossHeading/heading wrappers, so the payload_labels fallback below would
+        # treat live chapters (not *direct* children of the wrapped payload) as
+        # merge-pollution orphans and spuriously repeal them — the content=None
+        # chapter snapshot then masks its own same-wave child sections (regression:
+        # 1929/234 part_5 dropped live chapters 1/2, masking sections 110-113).
+        # Without an authoritative set, preserve the live part chapters; chapter-
+        # level retirement (which has no wrapper interposition) keeps its fallback.
+        if target_unit_kind == "part" and authoritative_child_labels is None:
+            return set()
         payload_labels = {
             _norm_num_token(child.label)
             for child in payload.children
@@ -4323,6 +4335,17 @@ def _emit_section_snapshot(
                     )
                 )
         if action is StructuralAction.REPLACE:
+            # PART-level missing-child repeal requires an authoritative child-label
+            # set (a genuine single complete part REPLACE). Without one, the
+            # payload_child_labels fallback below misclassifies live chapters that
+            # Finnish part payloads wrap in crossHeading/heading nodes as "missing"
+            # and spuriously repeals them; the resulting content=None chapter
+            # snapshot then masks its own same-wave child sections (regression:
+            # 1929/234 part_5 repealed live chapters 1/2, dropping sections
+            # 110-113). The chapter-target path keeps its payload fallback (no
+            # wrapper interposition) and is additionally sparse-guarded below.
+            if target_unit_kind == "part" and authoritative_child_labels is None:
+                return
             prior_child_paths = _container_replace_prior_child_paths(
                 container_path=container_path,
                 base_container_payload=base_container_payload,
