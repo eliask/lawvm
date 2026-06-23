@@ -513,6 +513,26 @@ _INV_DERIVATION_KINDS_DISTINCT = InvariantSpec(
     status="IMPL",
     audit_registry_ref="",
 )
+_INV_DERIVATION_CLOSED_KIND_SET = InvariantSpec(
+    id="REF-DER-03",
+    claim_id="lawvm.fi.derivation_edge.v1",
+    plane="evidence",
+    waist="reference",
+    unit_kind="per-unit",
+    predicate=(
+        "the derivation-kind set {textual, model_code, conformance, citation} is "
+        "CLOSED by construction (DerivationKind is an enum); an emitted edge that "
+        "matches no kind is REFUSED by DerivationEdgeSet.kind_of (raises), never "
+        "silently bucketed — the closed set cannot be widened at runtime"
+    ),
+    owner="lawvm.finland.references.derivation_edges",
+    bucket="writer_refusal",
+    checker_ref="lawvm.finland.references.derivation_edges:DerivationEdgeSet.kind_of",
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
 _INV_DERIVATION_DEDUP_NOT_AUTHORITY = InvariantSpec(
     id="REF-DER-02",
     claim_id="lawvm.fi.derivation_edge.v1",
@@ -628,6 +648,7 @@ V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_EU_TRANSPOSITION_TIMELINESS,
     _INV_EU_TRANSPOSITION_NOT_CONFORMANCE,
     _INV_DERIVATION_KINDS_DISTINCT,
+    _INV_DERIVATION_CLOSED_KIND_SET,
     _INV_DERIVATION_DEDUP_NOT_AUTHORITY,
     _INV_COUNTERFACTUAL_TIERS,
     _INV_COUNTERFACTUAL_UNCOMPUTED,

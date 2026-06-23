@@ -212,7 +212,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 147,
+  "public_schema_count": 148,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -272,6 +272,7 @@
     "lawvm.frontier_work_item_claim_closure_report.v1",
     "lawvm.frontier_work_item_claim_template.v1",
     "lawvm.frontier_work_item_report.v1",
+    "lawvm.generated_obligation.v0",
     "lawvm.initial_state_event.v1",
     "lawvm.interpretation_policy.v0",
     "lawvm.invariant_set.v0",
