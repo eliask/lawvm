@@ -36,7 +36,14 @@ questions that are *structurally* decidable from the declared ClaimSpec shape
       * CLOSURE             — closed-set language ⇒ a membership check/refusal
       * AUTHORITY_FIREWALL  — authority/conformance/replay language ⇒ a firewall
       * ROOT_COMMITMENT     — a named required_root ⇒ an invariant committing it
-      * NON_GUARANTEE_COVERAGE — declared non-guarantees ⇒ a boundary invariant
+      * NON_GUARANTEE_COVERAGE — declared non-guarantees ⇒ a boundary invariant.
+        This question fires at the CLAIM level (≥1 boundary invariant exists). The
+        sharper PER-HANDLE resolution — does each declared non-guarantee HANDLE
+        bind to a registered :class:`~lawvm.core.assumption_register.AssumptionRegister`?
+        — is no longer deferred: it is checked by
+        :mod:`lawvm.core.claim_assumption_binding` (handle → assumption) and gated
+        by :mod:`tests.test_claim_assumption_binding`. A NEW handle with no binding
+        FAILS that gate.
 
     DEFERRED (declared, not silently skipped — Pro §12 versioned completeness):
       * CONSERVATION / DETERMINISM / IDENTITY — substrate-global properties

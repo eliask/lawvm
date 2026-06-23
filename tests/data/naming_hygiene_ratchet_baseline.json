@@ -212,7 +212,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 148,
+  "public_schema_count": 149,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -232,6 +232,7 @@
     "lawvm.change_dates.v0",
     "lawvm.checker.v0",
     "lawvm.checker_contract.v0",
+    "lawvm.claim_assumption_binding.v0",
     "lawvm.claim_spec.v0",
     "lawvm.claim_surface_manifest.v0",
     "lawvm.consumed_by_build.v0",
