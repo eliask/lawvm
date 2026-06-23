@@ -948,6 +948,25 @@ def test_replay_xml_2016_258_section_3_matches_oracle_version_anchor() -> None:
     assert text.count("Valtion maksuperustelain 6 §:n 1 momentissa") == 1
 
 
+def test_replay_xml_2016_769_keeps_replacements_after_same_wave_chapter_migration() -> None:
+    replay = pinned_replay(
+        "2016/769",
+        oracle_version="20180012",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    section_14 = " ".join(irnode_to_text(sections["chapter:2a/section:14"]).split())
+    section_16 = " ".join(irnode_to_text(sections["chapter:2a/section:16"]).split())
+
+    assert "seuraavat tiedot 4 §:ssä tarkoitetuista veroista" in section_14
+    assert "7 §:ssä tarkoitettuja veroja koskevat tiedot" not in section_14
+    assert "eikä 34 §:stä muuta johdu" in section_16
+    assert "4 §:ssä tarkoitettuja veroja" in section_16
+
+
 def test_replay_xml_2022_213_keeps_future_repeal_at_oracle_cutoff() -> None:
     replay = pinned_replay("2022/213", mode="official_consolidation", quiet=True)
 
