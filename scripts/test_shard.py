@@ -390,6 +390,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_identity_intrinsic_audit.py",
         "test_synthetic_label_leak.py",
         "test_replay_determinism.py",
+        # Audit-invariant registry program (PROJECTION plane): row PROJ-01
+        # (projection re-derivability from committed matter) + row PROJ-02
+        # (tree-wide no-author-set-replay_authorized-at-projection sweep).
+        "test_projection_rederivability.py",
+        "test_projection_author_set_authority.py",
         "test_explicit_address_level.py",
         "test_guard_liveness_totality.py",
     ),
