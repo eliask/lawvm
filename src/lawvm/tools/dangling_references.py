@@ -75,7 +75,7 @@ import json
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, Protocol
 
 from lawvm.core.locator import HierarchicalLocator, LocatorSegment
 from lawvm.substrate.canonical_json import JsonValue, nfc
@@ -301,6 +301,20 @@ def _body_is_content_absent(root: Any) -> bool:
     return has_absent and not has_section
 
 
+class ExistenceOracle(Protocol):
+    """Structural interface ``build_dangling_report`` needs from an oracle.
+
+    Any object with a ``classify(target_statute_id, target_provision_ref_str) ->
+    (status, reason)`` method conforms — the production
+    :class:`CurrentStateExistenceOracle` and test doubles alike. Parameters are
+    positional-only so an implementer is free to name them differently.
+    """
+
+    def classify(
+        self, target_statute_id: str, target_provision_ref_str: str, /
+    ) -> tuple[str, str]: ...
+
+
 class CurrentStateExistenceOracle:
     """As-of-NOW provision-existence oracle over the current consolidated oracle XML.
 
@@ -421,7 +435,7 @@ def _iter_fi_refs_rows(path: str) -> Any:
 
 def build_dangling_report(
     fi_refs_path: str,
-    oracle: CurrentStateExistenceOracle,
+    oracle: ExistenceOracle,
 ) -> DanglingReferenceReport:
     """Classify every RESOLVED reference in ``fi_refs_path`` into the three-way status.
 
