@@ -846,6 +846,32 @@ def _slot_ir_has_paragraph_row(node: IRNode) -> bool:
     return any(child.kind is IRNodeKind.PARAGRAPH for child in node.children)
 
 
+def _slot_ir_carries_item_row_marker(node: IRNode, target_item: str) -> bool:
+    """Return whether ``node``'s flat content carries the item's own row marker.
+
+    A content-only fee-table subsection can hold a row like ``H. Poronlihan ...``
+    that is the source-owned text for item ``h`` (lettered table row addressed as
+    ``N kohta h``). When the candidate slot literally carries that row marker, the
+    item op is NOT being mis-bound to an unrelated intro/body fragment — the slot
+    IS the item's content — so the sparse-fallback guard must not drop it.
+    Restricted to the row's letter/number marker (``LABEL.``) to avoid matching
+    incidental occurrences of the letter inside prose.
+    """
+    item_key = leaf_label_identity_key(str(target_item or ""))
+    if not item_key:
+        return False
+    text = irnode_to_text(node).strip()
+    if not text:
+        return False
+    # lawvm-regex: owning_parser P-table-row-marker lettered/numbered ``LABEL.``
+    # row prefix predicate over flat content; lexer-shaped, drives slot
+    # assignment exemption only, no op.
+    for match in re.finditer(r"(?:^|\s)([0-9]+[a-zA-Z]*|[a-zA-Z])\.\s", text):
+        if leaf_label_identity_key(match.group(1)) == item_key:
+            return True
+    return False
+
+
 def _assign_duplicate_target_slot_ops(
     slot_inputs: SubsectionSlotInputs,
     state: SubsectionSlotAssignmentState,
@@ -1662,7 +1688,13 @@ def _assign_fallback_plain_slot_ops(
             and not candidate.target_special
             for candidate in slot_inputs.payload_subsec_ops
         )
-        if op.target_item and (
+        candidate_carries_item_row = (
+            candidate_sub_idx < len(slot_inputs.amend_subs)
+            and _slot_ir_carries_item_row_marker(
+                slot_inputs.amend_subs[candidate_sub_idx], str(op.target_item or "")
+            )
+        )
+        if op.target_item and not candidate_carries_item_row and (
             slot_inputs.has_omission_slots
             or candidate_is_intro_only
             or (candidate_has_no_paragraph_rows and not has_plain_payload_owner)
