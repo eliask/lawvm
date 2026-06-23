@@ -870,12 +870,12 @@ def _slot_ir_carries_item_row_marker(node: IRNode, target_item: str) -> bool:
     text = irnode_to_text(node).strip()
     if not text:
         return False
-    # lawvm-regex: owning_parser P-item-row-marker lettered/numbered
     # ``LABEL.``/``LABEL)`` row-prefix predicate over flat content (compound
     # ``N a`` markers may carry an internal space); lexer-shaped, drives slot
     # assignment exemption only, no op.
+    # lawvm-regex: owning_parser P-item-row-marker lettered/numbered
     for match in re.finditer(r"(?:^|\s)([0-9]+\s*[a-zA-Z]*|[a-zA-Z])[.)]\s", text):
-        marker = re.sub(r"\s+", "", match.group(1))
+        marker = "".join(match.group(1).split())
         if leaf_label_identity_key(marker) == item_key:
             return True
     return False
@@ -1744,12 +1744,13 @@ def _assign_item_prefix_slot_ops(
             if idx in state.used_subs:
                 continue
             sub_text = (sub.text or " ".join(child.text or "" for child in sub.children)).strip()
+            # P-item-prefix flat ``N)`` item-label predicate over IR sub text;
+            # lexer-shaped. The digit/letter compound may carry an internal space
+            # in the source (``8 a)``) — normalize it away before comparing to the
+            # addressed item label.
             # lawvm-regex: owning_parser P-item-prefix flat ``N)`` item-label
-            # predicate over IR sub text; lexer-shaped. The digit/letter compound
-            # may carry an internal space in the source (``8 a)``) — normalize it
-            # away before comparing to the addressed item label.
             m = re.match(r"^(\d+\s*[a-zA-Z]*)\)", sub_text)
-            if m and leaf_label_identity_key(re.sub(r"\s+", "", m.group(1))) == item_norm:
+            if m and leaf_label_identity_key("".join(m.group(1).split())) == item_norm:
                 state.subsec_map.assign(op, sub)
                 state.used_subs.add(idx)
                 break
