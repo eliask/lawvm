@@ -1545,6 +1545,31 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "coverage account is not a partition (owned + violation != total); "
                 "detail carries the owned/violation/total counts witnessing the gap",
                 ("parse_witness", "preservation"), role="observation"),
+    # KNOW-01 (source-monotonicity): a single source locator was observed
+    # carrying two DISTINCT content digests — i.e. the external witness behind
+    # one stable locator changed in place. The source plane must be append-only:
+    # a re-publish is a NEW manifestation under a new locator/digest, never an
+    # in-place byte swap behind the same locator. Detail carries the locator and
+    # the conflicting digests so the violation is self-evidencing.
+    FindingSpec("EVID.SOURCE_LOCATOR_DIGEST_CONFLICT", "know_invariants",
+                "external_drift", "warn", "source_witness",
+                "one source locator carries two distinct content digests across "
+                "observations: an in-place byte mutation of an external witness "
+                "(source plane must be append-only — a re-publish is a new "
+                "manifestation, never a silent overwrite behind the same locator)",
+                ("provenance",), role="observation"),
+    # KNOW-03 (lost source -> UNCHECKABLE, never INVALID): a source record names
+    # an artifact whose bytes/digest are NOT resolvable (referenced-only, lost,
+    # digest-unknown). Such a record is UNCHECKABLE for monotonicity, NOT a
+    # violation — the honest verdict for absent bytes is "cannot check", never
+    # "invalid". Detail carries the locator and the availability classification.
+    FindingSpec("EVID.SOURCE_WITNESS_UNCHECKABLE_MISSING_DIGEST", "know_invariants",
+                "audit", "info", "source_witness",
+                "a source record names an artifact with no resolvable content "
+                "digest (referenced-only/lost/digest-unknown): UNCHECKABLE for "
+                "source-monotonicity, never INVALID (absent bytes => cannot "
+                "check, not a violation)",
+                ("provenance", "negative"), role="observation"),
 )}
 
 
