@@ -898,7 +898,7 @@ def _assign_insert_before_moved_same_target_slot_ops(
     occupied_targets = {
         int(op.target_paragraph)
         for op in slot_inputs.payload_subsec_ops
-        if op.target_paragraph is not None and not op.target_item and not op.target_special
+        if op.target_paragraph is not None
     }
     renumber_destinations = {
         int(op.target_paragraph): int(destination)
@@ -932,6 +932,8 @@ def _assign_insert_before_moved_same_target_slot_ops(
             None,
         )
         if exact_idx is None:
+            continue
+        if _slot_ir_is_in_place_merge(slot_inputs.amend_subs[exact_idx]):
             continue
         prior_idx = exact_idx - 1
         if prior_idx < 0 or prior_idx in state.used_subs:
@@ -1000,11 +1002,17 @@ def _assign_insert_before_moved_same_target_slot_ops(
         )
         if exact_idx is None:
             continue
+        if _slot_ir_is_in_place_merge(slot_inputs.amend_subs[exact_idx]):
+            continue
         prior_idx = exact_idx - 1
         if prior_idx < 0 or prior_idx in state.used_subs:
             continue
         prior_label = _norm_num_token(slot_inputs.amend_subs[prior_idx].label or "")
-        if not prior_label.isdigit() or int(prior_label) != target - 1:
+        if (
+            not prior_label.isdigit()
+            or int(prior_label) in occupied_targets
+            or int(prior_label) != target - 1
+        ):
             continue
         state.subsec_map.assign(insert_ops[0], slot_inputs.amend_subs[prior_idx])
         state.used_subs.add(prior_idx)

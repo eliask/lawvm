@@ -38,6 +38,7 @@ _STAGE = "_compile_group"
 _BODY_CHAPTER_INSERT_SCOPE_RULE_ID = "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
 _BODY_CHAPTER_MOVE_RULE_ID = "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE"
 _BODY_CHAPTER_DECLARED_MOVE_RULE_ID = "LOWER.BODY_CHAPTER_DECLARED_MOVE_REPLACE"
+_BODY_CHAPTER_DESCENDANT_SCOPE_RULE_ID = "LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION"
 _ITEM_AS_SUBSECTION_TARGET_REWRITE_RULE_ID = "LOWER.ITEM_AS_SUBSECTION_TARGET_REWRITE"
 _LIVE_SECTION_RETARGET_RULE_ID = "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET"
 _FI_LABEL_TOKEN = r"\d{1,4}\s{0,3}[a-z]?"
@@ -1264,6 +1265,143 @@ def _maybe_apply_replace_to_insert_move(
     return PhaseResult(output=recovered, findings=(finding,))
 
 
+def _maybe_apply_descendant_body_chapter_scope(
+    request: CompileGroupScopeRecoveryRequest,
+    result: CompileGroupScopeRecoveryResult,
+) -> PhaseResult[CompileGroupScopeRecoveryResult]:
+    if (
+        request.target_unit_kind != "section"
+        or not request.target_chapter
+        or not any(op.op_type == "REPLACE" for op in result.group_ops)
+    ):
+        return PhaseResult(output=result)
+    descendant_replace_ops = [
+        op
+        for op in result.group_ops
+        if (
+            op.op_type == "REPLACE"
+            and op.target_unit_kind == "section"
+            and _norm_num_token(op.target_section or "") == request.target_norm
+            and op.target_chapter == request.target_chapter
+            and (op.target_paragraph or op.target_item or op.target_special)
+        )
+    ]
+    if not descendant_replace_ops:
+        return PhaseResult(output=result)
+    body_scope = request.source_model.source_body_scope_for_section_target(request.target_norm)
+    if body_scope is None:
+        return PhaseResult(output=result)
+    body_part, body_chapter = body_scope
+    johto_mentions = collect_johto_chapter_scope_mentions(request.johto)
+    inserted_chapter_labels = {
+        _norm_num_token(label) for label in request.inserted_chapter_labels
+    }
+    inserted_chapter_labels.update(
+        _norm_num_token(label) for label in johto_mentions.new_chapter_labels
+    )
+    body_chapter_is_declared_insert = (
+        body_chapter is not None and _norm_num_token(body_chapter) in inserted_chapter_labels
+    )
+    trigger_evidence = tuple(
+        evidence
+        for evidence, present in (
+            (
+                "inserted_chapter_op",
+                body_chapter_is_declared_insert,
+            ),
+        )
+        if present
+    )
+    if not (
+        body_chapter is not None
+        and body_chapter != request.target_chapter
+        and body_part == request.target_part
+        and re.fullmatch(rf"{re.escape(request.target_chapter)}[a-z]+", body_chapter, re.I)
+        is not None
+        and request.source_model.body_has_real_chapter_container(body_chapter)
+        and body_chapter_is_declared_insert
+        and request.source_model.body_has_section(
+            request.target_norm,
+            target_chapter=body_chapter,
+            target_part=body_part,
+        )
+        and not request.source_model.body_has_section(
+            request.target_norm,
+            target_chapter=request.target_chapter,
+            target_part=request.target_part,
+        )
+        and trigger_evidence
+    ):
+        return PhaseResult(output=result)
+    finding = Finding(
+        kind=_BODY_CHAPTER_DESCENDANT_SCOPE_RULE_ID,
+        role="observation",
+        stage=_STAGE,
+        detail={
+            "rule_id": _BODY_CHAPTER_DESCENDANT_SCOPE_RULE_ID,
+            "phase": "lowering",
+            "family": "target_resolution_recovery",
+            "reason": "amendment_body_chapter_corrects_descendant_target_scope",
+            "target_unit_kind": request.target_unit_kind,
+            "target_norm": request.target_norm,
+            "target_chapter": request.target_chapter,
+            "target_part": request.target_part or "",
+            "body_chapter": body_chapter,
+            "body_part": body_part or "",
+            "trigger_evidence": trigger_evidence,
+            "op_ids": tuple(str(op.op_id or "") for op in descendant_replace_ops),
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        },
+        source_statute=_source_statute(descendant_replace_ops),
+        blocking=False,
+    )
+    if (
+        request.strict_profile is not None
+        and not request.strict_profile.allows_context_dependent_anchor_resolution
+    ):
+        failed_ops = [
+            FailedOp.from_scope(
+                amendment_id=str(op.source_statute or ""),
+                description=op.description(),
+                reason=(
+                    "descendant section target rebounded to the source body "
+                    "chapter container"
+                ),
+                reason_code=_BODY_CHAPTER_DESCENDANT_SCOPE_RULE_ID,
+                target_section=op.target_section or request.target_norm,
+                target_unit_kind=op.target_unit_kind,
+                target_chapter=request.target_chapter,
+                target_part=request.target_part,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
+            )
+            for op in descendant_replace_ops
+        ]
+        return PhaseResult(
+            output=dc_replace(result, blocked=True),
+            findings=(finding, *_rejected_operation_findings(failed_ops)),
+        )
+    recovered = dc_replace(
+        result,
+        effective_target_chapter=body_chapter,
+        effective_target_part=body_part,
+        surface_target_chapter=body_chapter,
+        surface_target_part=body_part,
+        group_ops=_retargeted_live_section_ops(
+            result.group_ops,
+            target_norm=request.target_norm,
+            target_chapter=request.target_chapter,
+            live_chapter=body_chapter,
+            live_part=body_part,
+            stale_part=request.target_part,
+            retarget_scope_source="source_body_suffix_chapter",
+        ),
+    )
+    return PhaseResult(output=recovered, findings=(finding,))
+
+
 def _maybe_retarget_live_section(
     request: CompileGroupScopeRecoveryRequest,
     result: CompileGroupScopeRecoveryResult,
@@ -1496,6 +1634,11 @@ def resolve_compile_group_scope_recovery(
     replace_result = _maybe_apply_replace_to_insert_move(request, result)
     result = replace_result.output
     findings += replace_result.findings()
+    if result.blocked:
+        return PhaseResult(output=result, findings=findings)
+    descendant_scope_result = _maybe_apply_descendant_body_chapter_scope(request, result)
+    result = descendant_scope_result.output
+    findings += descendant_scope_result.findings()
     if result.blocked:
         return PhaseResult(output=result, findings=findings)
     retarget_result = _maybe_retarget_live_section(request, result)

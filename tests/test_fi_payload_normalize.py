@@ -8260,3 +8260,108 @@ def test_assign_subsection_slots_binds_same_target_insert_before_moved_renumber(
         and obs.detail["renumber_destination"] == 4
         for obs in assignment.binding_observations
     )
+
+
+def test_assign_subsection_slots_does_not_bind_renumber_insert_before_replaced_target() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="1 §"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Replacement second moment."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="New inserted third moment."),
+            IRNode(kind=IRNodeKind.OMISSION),
+        ),
+    )
+    renumber3 = AmendmentOp(
+        op_id="renumber_3_to_4",
+        op_type="RENUMBER",
+        target_kind=TargetKind.SECTION,
+        target_section="1",
+        target_paragraph=3,
+        lo=LegalOperation(
+            op_id="renumber_3_to_4",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "1"), ("subsection", "3"))),
+            destination=LegalAddress(path=(("section", "1"), ("subsection", "4"))),
+        ),
+    )
+    replace2 = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="1",
+        target_paragraph=2,
+    )
+    insert3 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="1",
+        target_paragraph=3,
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(muutos_ir, [renumber3, replace2, insert3])
+    assert slot_inputs is not None
+
+    assignment = _assign_subsection_slots(slot_inputs)
+
+    replace2_slot = assignment.for_op(replace2)
+    insert3_slot = assignment.for_op(insert3)
+    assert replace2_slot is not None
+    assert insert3_slot is not None
+    assert replace2_slot.label == "2"
+    assert "Replacement second moment" in irnode_to_text(replace2_slot)
+    assert insert3_slot.label == "3"
+    assert "New inserted third moment" in irnode_to_text(insert3_slot)
+
+
+def test_assign_subsection_slots_does_not_move_insert_off_in_place_merge_slot() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="23",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="23 §"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Carried live first moment."),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                attrs={"lawvm_in_place_merge": "1"},
+                text="New inserted second moment.",
+            ),
+        ),
+    )
+    insert2 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="23",
+        target_paragraph=2,
+    )
+    renumber2 = AmendmentOp(
+        op_id="renumber_2_to_3",
+        op_type="RENUMBER",
+        target_kind=TargetKind.SECTION,
+        target_section="23",
+        target_paragraph=2,
+        lo=LegalOperation(
+            op_id="renumber_2_to_3",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "23"), ("subsection", "2"))),
+            destination=LegalAddress(path=(("section", "23"), ("subsection", "3"))),
+        ),
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(muutos_ir, [renumber2, insert2])
+    assert slot_inputs is not None
+
+    assignment = _assign_subsection_slots(slot_inputs)
+    insert2_slot = assignment.for_op(insert2)
+
+    assert insert2_slot is not None
+    assert insert2_slot.label == "2"
+    assert "New inserted second moment" in irnode_to_text(insert2_slot)
+    assert not any(
+        obs.kind == "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT"
+        for obs in assignment.binding_observations
+    )

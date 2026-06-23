@@ -922,6 +922,100 @@ def test_mixed_body_chapter_wrapper_does_not_override_whole_section_replace_live
     ]
 
 
+def test_descendant_replace_retargets_to_body_owned_suffix_chapter() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2a",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="10b",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="1",
+                                    children=(IRNode(kind=IRNodeKind.INTRO, text="old intro"),),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>2 a luku</num>
+              <section>
+                <num>10 b §</num>
+                <subsection>
+                  <content><p>new intro:</p></content>
+                  <paragraph><num>1)</num><content><p>carried item</p></content></paragraph>
+                </subsection>
+              </section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    replace_intro_op = AmendmentOp(
+        op_id="replace_10b_intro",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="10b",
+        target_chapter="2",
+        target_paragraph=1,
+        target_special="johd",
+        source_statute="2008/732",
+        lo=LegalOperation(
+            op_id="replace_10b_intro",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(
+                path=(("chapter", "2"), ("section", "10b"), ("subsection", "1")),
+                special=FacetKind.INTRO,
+            ),
+            payload=None,
+        ),
+    )
+
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="10b",
+            target_chapter="2",
+            target_part=None,
+            group_ops=[replace_intro_op],
+            inserted_chapter_labels=set(),
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            johto="lisätään asetukseen uusi 9 b § ja sen edelle uusi 2 a luvun otsikko",
+            strict_profile=None,
+        )
+    )
+
+    assert result.output.effective_target_chapter == "2a"
+    assert result.output.surface_target_chapter == "2a"
+    assert result.output.group_ops[0].target_chapter == "2a"
+    assert result.output.group_ops[0].lo is not None
+    assert result.output.group_ops[0].lo.target.path == (
+        ("chapter", "2a"),
+        ("section", "10b"),
+        ("subsection", "1"),
+    )
+    assert [finding.kind for finding in result.findings()] == [
+        "LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION"
+    ]
+    assert result.findings()[0].detail["body_chapter"] == "2a"
+
+
 def test_existing_letter_run_body_chapter_needs_live_same_stem_sibling() -> None:
     master = ReplayState(
         ir=IRNode(
