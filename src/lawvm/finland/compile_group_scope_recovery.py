@@ -966,15 +966,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and request.source_model.body_has_real_chapter_container(body_chapter)
         and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
         and not body_wrapper_overridden_by_scope
-        # NOTE: deliberately NOT gated on ``body_wrapper_overridden_by_live_target``.
-        # A prior-repeal reinstatement carries a carry-forward scope pointing at the
-        # OLD chapter where the section lived before repeal, so a live-target path
-        # in that old chapter is the EXPECTED relocation signal, not a reason to keep
-        # the stale address. The reinstating amendment's source body owns the new
-        # chapter. (Sibling 6d831571 broadened body_wrapper_overridden_by_live_target
-        # to all live-scoped targets, which targets paragraph-scoped descendant
-        # inserts; it must not pin a whole-section reinstatement to the
-        # repealed-from chapter.)
+        and not body_wrapper_overridden_by_live_target
     )
     if body_chapter is not None and (
         not source_owned_inserted_subchapter_scope
