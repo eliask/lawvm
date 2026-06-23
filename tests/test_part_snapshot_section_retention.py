@@ -16,6 +16,15 @@ Observed live on Maakaari (1995/540): part 2 / chapter 6 sections 1,4,5,6,8,9,
 
 This test reproduces the structural shape with a minimal synthetic timeline so
 it stays deterministic and corpus-independent.
+
+The masking-vs-preservation decision is gated on snapshot OWNERSHIP: only a
+container snapshot stamped as a complete owner (``lawvm_tail_policy`` /
+``lawvm_payload_completeness_kind``, as a real whole-part re-emission is — see
+``_stamp_complete_snapshot_owner``) is authorized to mask its older active
+section children. An UNowned (attr-less) container snapshot must instead
+preserve live descendants (test_timeline_properties.
+``test_materialize_pit_unowned_chapter_snapshot_does_not_mask_live_section_child``).
+This synthetic timeline therefore stamps the re-emitted part as a complete owner.
 """
 from __future__ import annotations
 
@@ -95,9 +104,31 @@ def test_part_snapshot_retains_unamended_sections() -> None:
     )
 
     # The restructure amendment re-emits the whole part as one snapshot carrying
-    # every section with full body text.
-    snapshot_part = _part(
-        "2", [_chapter("6", [_section(s, f"snapshot body {s}") for s in section_labels])]
+    # every section with full body text. A real whole-part re-emission is stamped
+    # as a complete snapshot owner (lawvm_tail_policy / payload_completeness_kind);
+    # only an owned container snapshot is authorized to mask its older active
+    # section children during overlay. An UNowned (attr-less) container snapshot
+    # must instead preserve live descendants — see
+    # test_timeline_properties.test_materialize_pit_unowned_chapter_snapshot_does_not_mask_live_section_child.
+    _COMPLETE_OWNER_ATTRS = {
+        "lawvm_tail_policy": "replace_if_target_scope_requires",
+        "lawvm_payload_completeness_kind": "complete",
+    }
+
+    def _own(node: IRNode) -> IRNode:
+        return IRNode(
+            kind=node.kind,
+            label=node.label,
+            text=node.text,
+            attrs={**node.attrs, **_COMPLETE_OWNER_ATTRS},
+            children=node.children,
+        )
+
+    snapshot_part = _own(
+        _part(
+            "2",
+            [_chapter("6", [_section(s, f"snapshot body {s}") for s in section_labels])],
+        )
     )
 
     timelines: dict[LegalAddress, ProvisionTimeline] = {}
