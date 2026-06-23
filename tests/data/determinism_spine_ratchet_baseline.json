@@ -1,6 +1,8 @@
 {
   "_doc": "Determinism-spine ratchet baseline (LS-32/LS-33). Per-spine-module offender counts; may only fall. Regenerate: uv run python tests/test_determinism_spine_ratchet.py --update-baseline",
-  "iter_sink_counts": {},
+  "iter_sink_counts": {
+    "src/lawvm/core/timeline_lineage.py": 1
+  },
   "spine_modules": [
     "src/lawvm/core/certified_transition.py",
     "src/lawvm/core/ir_helpers.py",

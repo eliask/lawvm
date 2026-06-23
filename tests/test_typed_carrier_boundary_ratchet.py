@@ -65,6 +65,64 @@ _XP01_LIMITATION = (
     "soundly; this is the defensible static core, not the complete audit."
 )
 
+# XP-01 construction-site arm — RESIDUAL (named gap, deliberately NOT a ratchet).
+# A construction-site sweep ("a SURFACE carrier built with replay_authorized=True /
+# surface_only=False at a call site") is NOT soundly static: distinguishing a
+# surface-carrier construction that collapses the plane from a LEGITIMATE
+# legal-state authorization (an ExecutionAuthorization whose whole job is to set
+# replay_authorized=True) requires resolving the constructed type's PLANE, which
+# needs cross-module type resolution a bounded AST cannot do. The single live
+# ``replay_authorized=True`` keyword construction in core/finland is exactly that
+# legitimate authorization (the apply_receipt waist conferring execution
+# authority), NOT a surface collapse. ``test_xp01_construction_arm_is_residual``
+# pins this honestly: the default-direction core is the defensible ceiling; the
+# construction-site dataflow sweep stays a marked residual.
+_XP01_CONSTRUCTION_RESIDUAL = (
+    "XP-01 construction-site arm is RESIDUAL: a sound 'surface carrier constructed "
+    "with the plane collapsed' check needs cross-module type-plane resolution. The "
+    "only live replay_authorized=True keyword construction is the legitimate apply "
+    "authorization, so a naive construction-site ban would false-positive. The "
+    "field-default core (TestPlaneNonCollapse) is the static ceiling."
+)
+
+
+def _replay_true_construction_sites(repo_root: Path) -> list[dict[str, object]]:
+    """Every call-site passing ``replay_authorized=True`` / ``surface_only=False``
+    as a keyword over core/finland (the construction-arm candidate set). Used ONLY
+    to PIN the residual (assert the candidate set is the small, known-legitimate
+    one) — NOT wired as a ratchet, because soundness needs type-plane resolution."""
+    sites: list[dict[str, object]] = []
+    for rel in _SCAN_ROOTS:
+        for path in sorted((repo_root / rel).rglob("*.py")):
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:  # pragma: no cover - defensive
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                for kw in node.keywords:
+                    val = kw.value
+                    if not isinstance(val, ast.Constant):
+                        continue
+                    if kw.arg == "replay_authorized" and val.value is True:
+                        sites.append(
+                            {
+                                "file": str(path.relative_to(repo_root)),
+                                "line": node.lineno,
+                                "kw": "replay_authorized=True",
+                            }
+                        )
+                    if kw.arg == "surface_only" and val.value is False:
+                        sites.append(
+                            {
+                                "file": str(path.relative_to(repo_root)),
+                                "line": node.lineno,
+                                "kw": "surface_only=False",
+                            }
+                        )
+    return sites
+
 
 # ---------------------------------------------------------------------------
 # FW-09 — untyped-carrier phase-boundary AST scan
@@ -413,6 +471,32 @@ class TestPlaneNonCollapse:
         """Liveness: there must be real replay_authorized/surface_only fields, else
         the check is vacuous."""
         assert _count_plane_fields(_REPO_ROOT) > 0
+
+    def test_xp01_construction_arm_is_residual(self) -> None:
+        """XP-01 completer: the construction-site sweep is a NAMED RESIDUAL, pinned
+        here rather than wired as a ratchet. The candidate set (call-sites passing
+        ``replay_authorized=True``/``surface_only=False``) is small and consists of
+        the LEGITIMATE legal-state authorization site(s), not surface collapses — a
+        sound ban would need cross-module type-plane resolution. We assert the
+        candidate set stays small + that every member is in core/finland (so a NEW
+        construction-site collapse becomes visible to a reviewer even though it is
+        not auto-blocked). The default-direction core above is the static ceiling.
+        """
+        sites = _replay_true_construction_sites(_REPO_ROOT)
+        # All candidates are real core/finland constructions (the scan is live).
+        for s in sites:
+            assert isinstance(s["file"], str) and (
+                s["file"].startswith("src/lawvm/core/")
+                or s["file"].startswith("src/lawvm/finland/")
+            )
+        # The candidate set is the small known-legitimate authorization surface,
+        # not a sprawling collapse population; a jump here is a review signal.
+        rendered = [f"{s['file']}:{s['line']}" for s in sites]
+        assert len(sites) <= 8, (
+            f"XP-01 construction-site candidate set grew to {len(sites)} "
+            f"({rendered}); review whether any is a surface-carrier plane collapse "
+            f"rather than a legitimate authorization. {_XP01_CONSTRUCTION_RESIDUAL}"
+        )
 
 
 # ---------------------------------------------------------------------------

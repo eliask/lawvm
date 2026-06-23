@@ -387,6 +387,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_determinism_spine_ratchet.py",
         "test_typed_carrier_boundary_ratchet.py",
         "test_waist_contract_ratchet.py",
+        # Static-ratchet completers wave (CONTRACT-01/02, VOCAB-02, FW-07/FW-08):
+        # waist field/type contract, namespaced-status/confidence, classifier-WRAP
+        # mandate, frozen-residue structural sensors.
+        "test_waist_field_contract_ratchet.py",
+        "test_vocab_namespaced_status_ratchet.py",
+        "test_classifier_wrap_ratchet.py",
+        "test_frozen_residue_sensors_ratchet.py",
         "test_identity_intrinsic_audit.py",
         "test_synthetic_label_leak.py",
         "test_replay_determinism.py",
