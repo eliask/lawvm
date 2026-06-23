@@ -16,7 +16,7 @@ import pytest
 from lawvm.core.clause_ast import ClauseAST
 from lawvm.core.semantic_types import FacetKind, MetaClauseKind, StructuralAction
 from lawvm.finland.johtolause import extract_legal_ops
-from lawvm.finland.johtolause.compat import ClauseParseResult, parse_clause
+from lawvm.finland.johtolause.api import ClauseParseResult, parse_clause
 from lawvm.finland.ops import lo_scope_confidence
 from lawvm.finland.johtolause.surface_model import (
     ScopeKind,

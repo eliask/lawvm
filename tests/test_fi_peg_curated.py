@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from lawvm.finland.johtolause.compat import parse_clause
+from lawvm.finland.johtolause.api import parse_clause
 from tests.fixtures.fi_curated_cases import CURATED_CASES
 
 

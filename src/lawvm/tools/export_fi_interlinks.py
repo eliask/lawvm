@@ -153,7 +153,7 @@ def _project_interlinks_for_statute(
     from lawvm.finland.references.preparatory_reference_extractor import (
         extract_preparatory_refs,
     )
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
 
     xml_bytes = _get_statute_xml(statute_id, store)
     if xml_bytes is None:

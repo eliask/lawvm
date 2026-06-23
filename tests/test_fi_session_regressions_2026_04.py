@@ -53,7 +53,7 @@ from lawvm.finland.apply_runtime_support import (
     _stamp_exact_section_snapshot_payload,
 )
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
-from lawvm.finland.johtolause.compat import parse_clause
+from lawvm.finland.johtolause.api import parse_clause
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
