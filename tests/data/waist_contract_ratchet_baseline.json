@@ -1,0 +1,16 @@
+{
+  "_doc": "Waist-contract ratchet baseline (XP-02). bare_value_waists is the backlog of pipeline waists whose canonical production function still returns a bare value (not a StageResult/PartitionResult or its sanctioned documented carrier); it may ONLY fall. The StageResult endgame is complete, so it is []. Regenerate: uv run python tests/test_waist_contract_ratchet.py --update-baseline",
+  "bare_value_waists": [],
+  "waist_return_carriers": {
+    "apply_receipt": "StageResult",
+    "canonical_op": "StageResult",
+    "certificate": "BundleWriteResult",
+    "overlay": "StageResult",
+    "projection": "FiProjectionResult",
+    "source_identity": "StageResult",
+    "surface_families": "StageResult",
+    "surface_syntax": "StageResult",
+    "timeline_materialization": "StageResult",
+    "token_structure": "StageResult"
+  }
+}
