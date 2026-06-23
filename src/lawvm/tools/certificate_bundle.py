@@ -67,6 +67,10 @@ PROFILE_ID = "fi.strict.current"
 POLICY_ID = "lawvm.fi.default.v1"
 HASH_PROFILE = "lawvm.hash.canonical_json.v1"
 CHECKER_VERSION = "lawvm.checker.v0"
+# BOOT-01 (Pro §3): honest name for the root set certificate_root commits — the
+# FULL per-work temporal dossier root (all §3 subroots + policy-bindings trust
+# root), NOT a sparse minimal-state pack.
+CERTIFICATE_ROOT_PROFILE = "lawvm.certificate.full_work_dossier.v0"
 
 D_CERT_ROOT = "lawvm.certificate.v0.root"
 D_TRACE = "lawvm.certified_tree_transition_trace.v0"
@@ -91,6 +95,19 @@ D_INTERPRETATION_POLICY = "lawvm.interpretation_policy.v0"
 D_PROJECTION_SPECS = "lawvm.projection_specs.v0"
 D_DIAGNOSTIC_REGISTRY = "lawvm.diagnostic_registry.v0"
 D_CHECKER_CONTRACT = "lawvm.checker_contract.v0"
+# BOOT-01 (audit-invariant registry; Pro §2/§8): the (code × profile →
+# blocks/qualifies/permits) disposition matrix, rooted INDEPENDENTLY of the
+# diagnostic-registry rows so the certification fold's defining policy input is
+# content-bound on its own. The matrix is re-derived from the engine
+# (FINDING_REGISTRY + the pinned strict-profile fields), never trusted from a
+# row's asserted profile_disposition.
+D_DISPOSITION_MATRIX = "lawvm.disposition_matrix.v0"
+# BOOT-01: the policy-bindings object — aggregates the content-addressed roots
+# of EVERY policy input the certification fold depends on into one object whose
+# root is committed in the certificate root set. A forged registry/profile/
+# disposition matrix changes a bound root → changes policy_bindings_root →
+# changes certificate_root (detectable). See `build_policy_bindings`.
+D_POLICY_BINDINGS = "lawvm.policy_bindings.v0"
 # Certificate spec §2.1: change_dates_root is a VALUE SET — raw ISO date
 # strings under this domain, the one named exception to the digest-member
 # rule of §3.1.1.
@@ -197,6 +214,17 @@ _PROFILE_GATED_CODES: Dict[str, str] = {
     "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION": "allows_context_dependent_anchor_resolution",
     "APPLY.WORD_SUBSTITUTION": "allows_word_substitution",
     "APPLY.SOURCE_CORRECTED_BY_PATCH": "allows_source_correction_rules",
+}
+
+# BOOT-01: bundle-local diagnostic codes (outside FINDING_REGISTRY) carry their
+# canonical role here so the disposition matrix can derive their disposition by
+# the SAME _profile_disposition rule the engine codes use — the disposition is
+# never a row-authored literal. SOURCE_ANCHOR_UNAVAILABLE is special-cased in
+# _profile_disposition (qualifies); RECEIPT_TRANSITION_DIVERGENCE is an
+# observation (permits).
+_BUNDLE_LOCAL_CODE_ROLES: Dict[str, str] = {
+    SOURCE_ANCHOR_UNAVAILABLE_CODE: "obligation",
+    RECEIPT_TRANSITION_DIVERGENCE_CODE: "observation",
 }
 
 _RESIDUAL_KINDS = (
@@ -908,6 +936,10 @@ def _profile_disposition(code: str, spec: Optional[FindingSpec], profile_fields:
         # Diff-derived experimental transitions carry no byte anchors; the
         # gap qualifies the asserted state — it never reads as clean.
         return "qualifies"
+    if code == RECEIPT_TRANSITION_DIVERGENCE_CODE:
+        # Bundle-local non-blocking observation (role=observation -> permits);
+        # derived here so its disposition is never a row-authored literal.
+        return "permits"
     if spec is None:
         raise BundleSpecError(f"unregistered diagnostic code {code!r} has no derivable disposition")
     gate = _PROFILE_GATED_CODES.get(code)
@@ -923,13 +955,98 @@ def _profile_disposition(code: str, spec: Optional[FindingSpec], profile_fields:
     return "permits"
 
 
+def build_disposition_matrix(profile_fields: Mapping[str, Any]) -> Dict[str, Dict[str, str]]:
+    """The canonical (code -> {profile_id: disposition}) matrix (BOOT-01).
+
+    Derived from the engine ONLY — ``FINDING_REGISTRY`` plus the two bundle-local
+    codes — evaluated through ``_profile_disposition`` under the pinned
+    strict-profile fields. This is the SINGLE authority for a code's
+    blocks/qualifies/permits disposition; the diagnostic-registry rows and the
+    residual ``profile_effect`` copies both derive from it (Pro §8 item B: a row
+    never author-controls its own disposition). The matrix is content-bound via
+    :func:`disposition_matrix_root` into the policy-bindings object so a forged
+    registry that flips a disposition cannot recompute clean (Pro §2 forge).
+    """
+    matrix: Dict[str, Dict[str, str]] = {}
+    for code in sorted(FINDING_REGISTRY):
+        spec = FINDING_REGISTRY[code]
+        if spec.role == "barrier":
+            # §3.5: barrier roles can never produce a runtime finding -> excluded
+            # from the registry, so excluded from the matrix.
+            continue
+        matrix[code] = {PROFILE_ID: _profile_disposition(code, spec, profile_fields)}
+    for code in _BUNDLE_LOCAL_CODE_ROLES:
+        matrix[code] = {PROFILE_ID: _profile_disposition(code, None, profile_fields)}
+    return matrix
+
+
+def disposition_matrix_root(matrix: Mapping[str, Mapping[str, str]]) -> str:
+    """Content-addressed root over the canonical disposition matrix (BOOT-01).
+
+    A single leaf over the full matrix object: every (code, profile) cell is
+    committed, so flipping any disposition (e.g. kind X from ``blocks`` to
+    ``permits``) changes the root.
+    """
+    canonical = {code: dict(cells) for code, cells in matrix.items()}
+    return leaf_hash(D_DISPOSITION_MATRIX, {"schema": D_DISPOSITION_MATRIX, "matrix": canonical})
+
+
+def build_policy_bindings(
+    *,
+    diagnostic_registry_root: str,
+    profile_manifest_root: str,
+    disposition_matrix_root: str,
+    source_policy_root: Optional[str],
+    selection_profile_root: Optional[str],
+) -> Dict[str, Any]:
+    """Aggregate the certification fold's policy-input roots (BOOT-01, Pro §2).
+
+    Every policy input the certification fold depends on is bound here by its
+    content-addressed root. HONESTY (DUAL-01): a policy input with no real
+    committed source object is bound as ``None`` (explicit absent marker), NOT a
+    fabricated hash. The object's own root (:func:`leaf_hash` under
+    ``D_POLICY_BINDINGS``) is committed into the certificate root set so a forged
+    policy input flows through to ``certificate_root``.
+
+    Bound (real committed objects): ``diagnostic_registry_root`` (the §3.5
+    registry manifest), ``profile_manifest_root`` (the strict-profile manifest),
+    ``disposition_matrix_root`` (the engine-derived disposition matrix),
+    ``source_policy_root`` (the interpretation-policy manifest — the operative
+    source/selection policy parameters this bundle was emitted under).
+
+    Absent-with-reason: ``selection_profile_root`` — the engine has no reified
+    selection-profile object DISTINCT from the interpretation policy (selection
+    parameters live inside the interpretation-policy manifest already bound as
+    ``source_policy_root``); binding a separate fabricated root would violate
+    DUAL-01, so it is an explicit ``None``.
+    """
+    return {
+        "schema": D_POLICY_BINDINGS,
+        "diagnostic_registry_root": diagnostic_registry_root,
+        "profile_manifest_root": profile_manifest_root,
+        "disposition_matrix_root": disposition_matrix_root,
+        "source_policy_root": source_policy_root,
+        "selection_profile_root": selection_profile_root,
+    }
+
+
+def policy_bindings_root(bindings: Mapping[str, Any]) -> str:
+    """Content-addressed root over the policy-bindings object (BOOT-01)."""
+    return leaf_hash(D_POLICY_BINDINGS, bindings)
+
+
 def build_diagnostic_registry_rows(profile_fields: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Emit §3.5 registry rows from the live engine observation registry.
 
     Registry "barrier" roles are strictness taxonomy metadata that can never
     appear on a runtime Finding; certificate spec §3.5 forbids registering
     codes whose role cannot produce a runtime finding, so they are excluded.
+
+    BOOT-01 (item B): each row's ``profile_disposition`` is READ FROM the
+    canonical engine-derived disposition matrix, never authored independently —
+    a row cannot soften its own disposition out of step with the matrix.
     """
+    matrix = build_disposition_matrix(profile_fields)
     rows: List[Dict[str, Any]] = []
     for code in sorted(FINDING_REGISTRY):
         spec = FINDING_REGISTRY[code]
@@ -953,7 +1070,7 @@ def build_diagnostic_registry_rows(profile_fields: Mapping[str, Any]) -> List[Di
                 "deprecated_in": None,
                 "role": spec.role,
                 "allowed_residual_kinds": allowed_kinds,
-                "profile_disposition": {PROFILE_ID: _profile_disposition(code, spec, profile_fields)},
+                "profile_disposition": dict(matrix[code]),
                 "jurisdiction_scope": jurisdiction_scope,
                 "doctrine_scope": ["fi.fixed_term_expiry.v1"] if is_fixed_term else [],
                 "surface_language": "fi" if is_fixed_term else None,
@@ -972,7 +1089,7 @@ def build_diagnostic_registry_rows(profile_fields: Mapping[str, Any]) -> List[Di
             "deprecated_in": None,
             "role": "obligation",
             "allowed_residual_kinds": ["source_anchor_unavailable"],
-            "profile_disposition": {PROFILE_ID: "qualifies"},
+            "profile_disposition": dict(matrix[SOURCE_ANCHOR_UNAVAILABLE_CODE]),
             "jurisdiction_scope": [],
             "doctrine_scope": [],
             "surface_language": None,
@@ -993,7 +1110,7 @@ def build_diagnostic_registry_rows(profile_fields: Mapping[str, Any]) -> List[Di
             "deprecated_in": None,
             "role": "observation",
             "allowed_residual_kinds": [],
-            "profile_disposition": {PROFILE_ID: "permits"},
+            "profile_disposition": dict(matrix[RECEIPT_TRANSITION_DIVERGENCE_CODE]),
             "jurisdiction_scope": [],
             "doctrine_scope": [],
             "surface_language": None,
@@ -1889,11 +2006,34 @@ def build_certificate_bundle(
     }
     projection_specs_hash = leaf_hash(D_PROJECTION_SPECS, projection_specs_manifest)
 
+    # BOOT-01: the canonical engine-derived disposition matrix is the single
+    # authority for blocks/qualifies/permits. The registry rows AND the residual
+    # profile_effect copies both derive from it (item B); the residual stamp uses
+    # `disposition_by_code` which reads the MATRIX, not the registry rows.
+    disposition_matrix = build_disposition_matrix(profile_fields)
+    disposition_matrix_hash = disposition_matrix_root(disposition_matrix)
     registry_rows = build_diagnostic_registry_rows(profile_fields)
     diagnostic_registry_manifest = {"schema": D_DIAGNOSTIC_REGISTRY, "rows": registry_rows}
     diagnostic_registry_hash = leaf_hash(D_DIAGNOSTIC_REGISTRY, diagnostic_registry_manifest)
     registered_codes = frozenset(r["code"] for r in registry_rows)
-    disposition_by_code = {r["code"]: r["profile_disposition"][PROFILE_ID] for r in registry_rows}
+    disposition_by_code = {code: cells[PROFILE_ID] for code, cells in disposition_matrix.items()}
+
+    # BOOT-01 (Pro §2/§8 item A): bind every policy input the certification fold
+    # depends on by content root into one policy-bindings object, whose root is
+    # committed in the certificate root set. A forged registry/profile/disposition
+    # matrix changes a bound root -> policy_bindings_root -> certificate_root.
+    policy_bindings_manifest = build_policy_bindings(
+        diagnostic_registry_root=diagnostic_registry_hash,
+        profile_manifest_root=profile_hash,
+        disposition_matrix_root=disposition_matrix_hash,
+        # The interpretation-policy manifest is the operative source/selection
+        # policy this bundle was emitted under (real committed object).
+        source_policy_root=policy_hash,
+        # Absent-with-reason (DUAL-01): no reified selection-profile object
+        # distinct from the interpretation policy — see build_policy_bindings.
+        selection_profile_root=None,
+    )
+    policy_bindings_hash = policy_bindings_root(policy_bindings_manifest)
 
     checker_contract = {"checker_version": CHECKER_VERSION, "hash_profile": HASH_PROFILE}
     checker_contract_manifest = {"schema": D_CHECKER_CONTRACT, **checker_contract}
@@ -2277,6 +2417,18 @@ def build_certificate_bundle(
             "root": diagnostic_registry_hash,
             "locator": "policy/diagnostic_registry.json",
         },
+        # BOOT-01: the engine-derived disposition matrix manifest and the
+        # policy-bindings object that aggregates the fold's policy-input roots.
+        "disposition_matrix_manifest": {
+            "schema": D_DISPOSITION_MATRIX,
+            "root": disposition_matrix_hash,
+            "locator": "policy/disposition_matrix.json",
+        },
+        "policy_bindings_manifest": {
+            "schema": D_POLICY_BINDINGS,
+            "root": policy_bindings_hash,
+            "locator": "policy/policy_bindings.json",
+        },
         "checker_contract_manifest": {
             "schema": D_CHECKER_CONTRACT,
             "root": checker_contract_hash,
@@ -2357,6 +2509,11 @@ def build_certificate_bundle(
         # Additive apply/replay authority subroot (WAIST #7); value-stable for an
         # authorized replay, never folds into the flat roots (0-delta).
         "apply_authority_root": apply_authority_root_value,
+        # BOOT-01: the policy-bindings root — the trust root that content-binds
+        # the registry/profile/disposition-matrix the certification fold depends
+        # on. Committed in `roots` so it folds into certificate_root; a forged
+        # policy input changes this and therefore the cert root (Pro §2).
+        "policy_bindings_root": policy_bindings_hash,
     }
 
     envelope: Dict[str, Any] = {
@@ -2379,6 +2536,14 @@ def build_certificate_bundle(
             "max_date": boundary[-1],
         },
         "roots": roots,
+        # BOOT-01 (Pro §3 / item C-3): name the root set honestly so a reader
+        # cannot mistake WHICH members `certificate_root` commits. This is the
+        # full per-work dossier root (every §3 subroot + the policy-bindings
+        # trust root), NOT a sparse minimal-state pack. `root_members` is the
+        # authoritative member list; verify_bundle asserts it equals the actual
+        # `roots` keys.
+        "certificate_root_profile": CERTIFICATE_ROOT_PROFILE,
+        "root_members": sorted(roots),
         "certificate_status": certificate_status,
         "residual_summary": residual_summary,
         "projection_coverage": projection_coverage,
@@ -2404,6 +2569,11 @@ def build_certificate_bundle(
     _write_json(out_path / "policy" / "interpretation_policy.json", policy_manifest)
     _write_json(out_path / "policy" / "projection_specs.json", projection_specs_manifest)
     _write_json(out_path / "policy" / "diagnostic_registry.json", diagnostic_registry_manifest)
+    _write_json(
+        out_path / "policy" / "disposition_matrix.json",
+        {"schema": D_DISPOSITION_MATRIX, "matrix": disposition_matrix},
+    )
+    _write_json(out_path / "policy" / "policy_bindings.json", policy_bindings_manifest)
     _write_json(out_path / "policy" / "checker_contract.json", checker_contract_manifest)
     _write_jsonl(out_path / "trace" / "certified_tree_transitions.jsonl", transition_rows)
     (out_path / "trace" / "certified_tree_transitions.root").write_text(
@@ -2806,6 +2976,36 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
     registry_rows = registry["rows"]
     registered_codes = frozenset(row["code"] for row in registry_rows)
     registry_by_code = {row["code"]: row for row in registry_rows}
+
+    # ----- BOOT-01: re-derive the disposition matrix from the ENGINE -----
+    # The certification fold's defining policy input is the (code x profile ->
+    # disposition) matrix. The forge (Pro §2) is: rewrite the registry so a kind
+    # that BLOCKS instead permits, recompute every root, ship clean. We close it
+    # by RE-DERIVING the matrix from the engine (FINDING_REGISTRY under the
+    # PINNED profile fields) and refusing if the committed registry/matrix
+    # disagrees — a row's asserted disposition is NEVER trusted.
+    profile_manifest_committed = json.loads(
+        (bundle_path / artifacts["profile_manifest"]["locator"]).read_text(encoding="utf-8")
+    )
+    pinned_profile_fields = profile_manifest_committed["engine_profile"]
+    engine_matrix = build_disposition_matrix(pinned_profile_fields)
+    # NOTE: disposition_matrix_root is committed via the artifacts manifest and
+    # inside policy_bindings, NOT as a top-level `roots` member — keep it out of
+    # `recomputed` (which is cross-checked key-for-key against `roots`).
+    engine_disposition_matrix_root = disposition_matrix_root(engine_matrix)
+
+    committed_matrix_doc = json.loads(
+        (bundle_path / artifacts["disposition_matrix_manifest"]["locator"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    committed_matrix = committed_matrix_doc["matrix"]
+    _require(
+        committed_matrix == {code: dict(cells) for code, cells in engine_matrix.items()},
+        "committed disposition matrix disagrees with the engine re-derivation "
+        "(BOOT-01 forged-registry/matrix: a disposition was edited post-hoc)",
+    )
+
     for row in residual_rows:
         code = row["diagnostic_code"]
         _require(code in registered_codes, f"residual carries unregistered code {code!r}")
@@ -2813,12 +3013,21 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
             row["kind"] in registry_by_code[code]["allowed_residual_kinds"],
             f"residual kind {row['kind']!r} not allowed for code {code!r}",
         )
-        # §5.4: profile_effect is derived; the cached copy must equal the
-        # registry-derived disposition.
+        # §5.4 + BOOT-01: profile_effect is DERIVED. The cached copy must equal
+        # the ENGINE-re-derived disposition (not merely the committed registry
+        # row) — so a forged registry row cannot license a softened residual.
+        engine_disposition = engine_matrix[code][PROFILE_ID]
         _require(
-            row["profile_effect"].get(PROFILE_ID)
-            == registry_by_code[code]["profile_disposition"][PROFILE_ID],
-            f"residual profile_effect for {code!r} disagrees with the pinned registry",
+            row["profile_effect"].get(PROFILE_ID) == engine_disposition,
+            f"residual profile_effect for {code!r} disagrees with the engine-derived "
+            "disposition (BOOT-01)",
+        )
+        # BOOT-01 (item B): the registry row may not author a disposition out of
+        # step with the engine matrix either.
+        _require(
+            registry_by_code[code]["profile_disposition"][PROFILE_ID] == engine_disposition,
+            f"registry profile_disposition for {code!r} disagrees with the engine "
+            "matrix (BOOT-01 forged registry)",
         )
     # §5.6: every blocking finding has a residual recording its disposition.
     residual_finding_refs = {ref for row in residual_rows for ref in row["finding_refs"]}
@@ -2882,6 +3091,8 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         ),
         ("projection_spec_manifest", D_PROJECTION_SPECS, None),
         ("diagnostic_registry_manifest", D_DIAGNOSTIC_REGISTRY, None),
+        ("disposition_matrix_manifest", D_DISPOSITION_MATRIX, None),
+        ("policy_bindings_manifest", D_POLICY_BINDINGS, None),
         ("checker_contract_manifest", D_CHECKER_CONTRACT, None),
     ):
         manifest = json.loads(
@@ -2891,6 +3102,91 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
         _require(manifest_hash == artifacts[key]["root"], f"{key} root mismatch")
         if envelope_hash is not None:
             _require(manifest_hash == envelope_hash, f"{key} hash != envelope commitment")
+
+    # ----- BOOT-01: policy-bindings binds the REAL committed policy roots -----
+    # The policy-bindings object's root is the trust root committed in `roots`.
+    # Re-assert that (a) every bound root names the ACTUAL committed manifest
+    # root, (b) the disposition_matrix_root it binds is the engine re-derivation,
+    # and (c) policy_bindings_root recomputes. A forged policy input that did not
+    # also rewrite policy_bindings is caught here; one that did rewrite it changes
+    # policy_bindings_root -> certificate_root (caught by the cert-root recompute).
+    policy_bindings = json.loads(
+        (bundle_path / artifacts["policy_bindings_manifest"]["locator"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    _require(
+        policy_bindings["diagnostic_registry_root"]
+        == artifacts["diagnostic_registry_manifest"]["root"],
+        "policy_bindings.diagnostic_registry_root != committed registry root (BOOT-01)",
+    )
+    _require(
+        policy_bindings["profile_manifest_root"] == artifacts["profile_manifest"]["root"],
+        "policy_bindings.profile_manifest_root != committed profile root (BOOT-01)",
+    )
+    _require(
+        policy_bindings["disposition_matrix_root"] == engine_disposition_matrix_root,
+        "policy_bindings.disposition_matrix_root != engine-derived matrix root (BOOT-01)",
+    )
+    _require(
+        policy_bindings["disposition_matrix_root"]
+        == artifacts["disposition_matrix_manifest"]["root"],
+        "policy_bindings.disposition_matrix_root != committed matrix manifest root (BOOT-01)",
+    )
+    _require(
+        policy_bindings["source_policy_root"]
+        == artifacts["interpretation_policy_manifest"]["root"],
+        "policy_bindings.source_policy_root != committed interpretation-policy root (BOOT-01)",
+    )
+    # DUAL-01 honesty: selection_profile_root is bound absent (no reified
+    # selection-profile object) — it must be the explicit null, never a hash.
+    _require(
+        policy_bindings["selection_profile_root"] is None,
+        "policy_bindings.selection_profile_root must be null (no reified object; DUAL-01)",
+    )
+    recomputed["policy_bindings_root"] = policy_bindings_root(policy_bindings)
+
+    # BOOT-01 (item C-3): certificate_root_profile must name this root set
+    # honestly and root_members must equal the ACTUAL committed roots keys, so a
+    # reader can never mistake which members certificate_root commits.
+    _require(
+        envelope.get("certificate_root_profile") == CERTIFICATE_ROOT_PROFILE,
+        f"certificate_root_profile {envelope.get('certificate_root_profile')!r} != "
+        f"{CERTIFICATE_ROOT_PROFILE!r} (BOOT-01 item C-3)",
+    )
+    _require(
+        envelope.get("root_members") == sorted(roots),
+        "root_members does not match the actual committed roots keys (BOOT-01 item C-3)",
+    )
+
+    # ----- BOOT-01 (Pro §8 item C) writer-refusal gate -----
+    # A clean certificate is FORBIDDEN if any residual blocks under the engine
+    # re-derived disposition. We do NOT trust a row's asserted profile_effect:
+    # the disposition comes from `engine_matrix`. This re-derives the §5.2 fold's
+    # blocking arm from the pinned policy inputs, so a forged registry that
+    # softened a real blocker to clean is refused here even before the status
+    # recompute.
+    if envelope["certificate_status"] == "clean":
+        for row in residual_rows:
+            code = row["diagnostic_code"]
+            if engine_matrix.get(code, {}).get(PROFILE_ID) == "blocks":
+                raise BundleSelfCheckError(
+                    f"clean certificate carries residual {code!r} that BLOCKS under the "
+                    "engine-derived disposition (BOOT-01 writer-refusal)"
+                )
+    # A blocked certificate must cite at least one blocking residual KIND
+    # (item C-2). Reachable on the blocked FI corpus; honors the additive
+    # stage-contributed blockers that do not fold into the flat ledger.
+    if envelope["certificate_status"] == "blocked":
+        cites_blocking = any(
+            engine_matrix.get(row["diagnostic_code"], {}).get(PROFILE_ID) == "blocks"
+            or row["diagnostic_code"] not in registered_codes
+            for row in residual_rows
+        )
+        _require(
+            cites_blocking or verify_extra_blocking > 0,
+            "blocked certificate cites no blocking residual kind (BOOT-01 item C-2)",
+        )
 
     # envelope root members vs recomputed
     for name, value in recomputed.items():

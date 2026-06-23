@@ -209,42 +209,135 @@ def drill_tree_invariant_violation_verdict_barrier() -> None:
     assert "APPLY.TREE_INVARIANT_VIOLATION" in barrier_codes
 
 
-def drill_failed_operation_verdict_barrier() -> None:
-    """APPLY.FAILED_OPERATION reaches the strict verdict barrier codes.
+def _drill_strict_rebound_apply(
+    *,
+    failed_ops_out: "list[Any] | None" = None,
+    source_pathologies_out: "list[Any] | None" = None,
+) -> Any:
+    """Drive the production strict ``apply_op`` into a continuation-fragment reject.
 
-    Production lane: a real ``CompileFailure`` (the frontend-agnostic failed-op
-    record) drives ``strict_fail_reasons_from_finding_ledger``, which trips the
-    ``APPLY.FAILED_OPERATION`` barrier, then ``compute_verdict_from_registry``
-    surfaces it in ``CompileVerdict.barrier_codes``.
+    Builds a live section 73 whose third subsection is a stale continuation
+    fragment, then replays a ``REPLACE 73 § 3 mom`` under the strict Finland
+    profile. The production apply lane (the deciding guard) genuinely refuses the
+    deterministic rebound: it leaves the tree unmutated and records a real
+    ``FailedOp`` (``failed_ops_out``) and a real ``SourcePathology``
+    (``source_pathologies_out``). These are the deciding inputs the
+    APPLY.FAILED_OPERATION / APPLY.SOURCE_PATHOLOGY_DETECTED barriers consume;
+    nothing is hand-built. (Mirrors test_fi_apply.py strict-rebound fixture.)
     """
-    failure = CompileFailure.from_scope(
-        source_statute="1991/1",
-        description="resolved op could not be applied to the live tree",
-        reason="target_not_found",
-        target_section="5",
-        target_unit_kind="section",
+    from lawvm.finland.apply import apply_op as _apply_op
+    from lawvm.finland.ops import AmendmentOp as _AmendmentOp
+    from lawvm.finland.strict_profile import default_finland_strict_profile
+
+    def _content(text: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.CONTENT, text=text)
+
+    def _sub(label: str, *children: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.SUBSECTION, label=label, children=tuple(children))
+
+    def _para(label: str, text: str = "") -> IRNode:
+        return IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label=label,
+            children=(_content(text),) if text else (),
+        )
+
+    def _intro(text: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.INTRO, text=text)
+
+    def _sec(label: str, *children: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, children=tuple(children))
+
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                _sec(
+                    "73",
+                    _sub("1", _content("First moment.")),
+                    _sub("2", _intro("List:"), _para("1", "item a;"), _para("2", "4) hallussapidetty aine.")),
+                    _sub("3", _content("tuomita kokonaan tai osaksi valtiolle menetetyksi.")),
+                    _sub("4", _content("Old real third moment.")),
+                ),
+            ),
+        )
     )
-    barrier_codes = _verdict_barrier_codes_from_findings(failures=[failure])
+    amend_sub = _sub("3", _content("Lisäksi on soveltuvin osin noudatettava, mitä rikoslain 10 luvussa säädetään."))
+    op = _AmendmentOp(
+        op_id="guard_liveness_strict_rebound",
+        op_type="REPLACE",
+        target_section="73",
+        target_unit_kind="section",
+        target_paragraph=3,
+        source_statute="2001/880",
+    )
+    ctx = StatuteContext(id="0/0", title="", base_ir=state.ir, base_xml_bytes=b"<body/>")
+    result = _apply_op(
+        state,
+        op,
+        ctx,
+        _sec("73", amend_sub),
+        amend_sub_ir=amend_sub,
+        replay_mode="legal_pit",
+        failed_ops_out=failed_ops_out,
+        source_pathologies_out=source_pathologies_out,
+        strict_profile=default_finland_strict_profile(),
+    )
+    # The strict guard refused the rebound: the live tree is left unmutated.
+    assert result is state
+    return result
+
+
+def drill_failed_operation_apply_lane() -> None:
+    """APPLY.FAILED_OPERATION reaches the strict verdict barrier from the apply lane.
+
+    Production lane: the strict ``apply_op`` deciding guard refuses a stale
+    continuation-fragment rebound and records a real ``FailedOp`` in
+    ``failed_ops_out``. That FailedOp is converted by the production
+    ``_failed_op_to_compile_failure`` into the ``CompileFailure`` the verdict
+    ledger consumes; ``strict_fail_reasons_from_finding_ledger`` then trips the
+    APPLY.FAILED_OPERATION barrier and ``compute_verdict_from_registry`` surfaces
+    it in ``CompileVerdict.barrier_codes``. The deciding input (the failed op) is
+    produced by the real apply lane, not hand-built.
+    """
+    from lawvm.finland._compile import _failed_op_to_compile_failure
+    from lawvm.finland.ops import FailedOp
+
+    failed_ops: list[FailedOp] = []
+    _drill_strict_rebound_apply(failed_ops_out=failed_ops)
+    assert failed_ops, "strict apply lane did not record a FailedOp for the refused rebound"
+    failures = [_failed_op_to_compile_failure(f) for f in failed_ops]
+    barrier_codes = _verdict_barrier_codes_from_findings(failures=failures)
     assert "APPLY.FAILED_OPERATION" in barrier_codes
 
 
-def drill_source_pathology_detected_verdict_barrier() -> None:
-    """APPLY.SOURCE_PATHOLOGY_DETECTED reaches the strict verdict barrier codes.
+def drill_source_pathology_detected_apply_lane() -> None:
+    """APPLY.SOURCE_PATHOLOGY_DETECTED reaches the strict verdict barrier from apply.
 
-    Production lane: the runtime obligation ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY
-    is mapped by ``strict_fail_reasons_from_finding_ledger`` onto the
-    APPLY.SOURCE_PATHOLOGY_DETECTED strict barrier, which
-    ``compute_verdict_from_registry`` surfaces in ``CompileVerdict.barrier_codes``.
-    This exercises the runtime-finding -> strict-code mapping guard.
+    Production lane: the strict ``apply_op`` deciding guard records a real
+    ``SourcePathology`` in ``source_pathologies_out`` when it refuses the rebound.
+    That pathology is projected to the blocking APPLY.SOURCE_PATHOLOGY_DETECTED
+    finding by the LIVE production guard
+    ``_strict_rejected_source_pathology_finding`` (replay_findings.py) — the same
+    guard production wires from replay_evidence_projection / group elaboration. The
+    finding then flows through the real verdict ledger to
+    ``CompileVerdict.barrier_codes``. (The ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY
+    runtime alias the old verdict-only drill mapped has no production Finding
+    emitter; this drill targets the live guard instead.)
     """
-    finding = Finding(
-        kind="ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
-        role="obligation",
-        stage="strict",
-        detail={"reason": "non-literal source path rejected"},
-        source_statute="1991/1",
-        blocking=True,
+    from lawvm.core.compile_result import SourcePathology
+    from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
+
+    pathologies: list[SourcePathology] = []
+    _drill_strict_rebound_apply(source_pathologies_out=pathologies)
+    assert pathologies, "strict apply lane did not record a SourcePathology for the refused rebound"
+    finding = _strict_rejected_source_pathology_finding(
+        pathologies[0],
+        stage="replay_apply",
+        fallback_source_statute="2001/880",
     )
+    assert finding.kind == "APPLY.SOURCE_PATHOLOGY_DETECTED"
+    assert finding.blocking is True
     barrier_codes = _verdict_barrier_codes_from_findings(findings=[finding])
     assert "APPLY.SOURCE_PATHOLOGY_DETECTED" in barrier_codes
 
@@ -730,27 +823,58 @@ def drill_sparse_omission_tail_pruned_from_carrier_compile_surface() -> None:
     assert SPARSE_OMISSION_TAIL_PRUNE_RULE in finding_kinds
 
 
-def drill_effect_lifecycle_target_unresolved_verdict_barrier() -> None:
-    """APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED reaches strict barrier codes.
+def drill_effect_lifecycle_target_unresolved_apply_lane() -> None:
+    """APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED reaches strict barrier from the builder.
 
-    Production lane: unresolved effect-lifecycle target findings flow through
-    ``strict_fail_reasons_from_finding_ledger`` -> ``compute_verdict_from_registry``
-    and surface in ``CompileVerdict.barrier_codes``. This exercises the strict
-    verdict mapping for lifecycle-target composition failures.
+    Production lane: ``build_finland_effect_lifecycle`` (the deciding builder) is
+    driven with a commencement/expiry lifecycle override whose target effect is
+    absent, so the builder genuinely produces an ``unresolved_effect_target``
+    lifecycle event carrying NO ``source_finding``. The production verdict ledger
+    ``strict_fail_reasons_from_finding_ledger`` then derives
+    APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED from that event (compile_result.py
+    effect-lifecycle branch) and ``compute_verdict_from_registry`` surfaces it in
+    ``CompileVerdict.barrier_codes``. The deciding input (the unresolved event) is
+    produced by the real builder, not hand-built.
     """
-    finding = Finding(
-        kind="APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED",
-        role="obligation",
-        stage="apply",
-        detail={
-            "target_statute": "2010/100",
-            "target_title": "Target amendment",
-        },
-        source_statute="2011/200",
-        blocking=True,
+    from lawvm.finland.effect_lifecycle_signals import (
+        EffectLifecycleOverride,
+        EffectLifecycleOverrideScope,
     )
-    barrier_codes = _verdict_barrier_codes_from_findings(findings=[finding])
-    assert "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED" in barrier_codes
+    from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
+
+    _source_effects, _relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(),
+        temporal_events=(),
+        lifecycle_overrides=(
+            EffectLifecycleOverride(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                scope=EffectLifecycleOverrideScope.sections(("4 a",)),
+                expiry="2022-12-31",
+                context="accepted_amendment",
+            ),
+        ),
+    )
+    assert any(e.kind == "unresolved_effect_target" for e in lifecycle_events), (
+        "the lifecycle builder did not produce an unresolved-effect-target event"
+    )
+    assert all(
+        not str(e.detail.get("source_finding") or "").strip()
+        for e in lifecycle_events
+        if e.kind == "unresolved_effect_target"
+    ), "the unresolved event already carries a source_finding; the generic barrier won't fire"
+
+    reasons = strict_fail_reasons_from_finding_ledger(
+        _DRILL_STRICT_PROFILE,
+        compiled_ops=[],
+        canonical_ops=[],
+        failures=[],
+        findings=[],
+        effect_lifecycle_events=lifecycle_events,
+    )
+    verdict = compute_verdict_from_registry(_DRILL_STRICT_PROFILE, reasons)
+    assert "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED" in verdict.barrier_codes
 
 
 def _route_rejection_findings(
@@ -1763,6 +1887,185 @@ def drill_reference_unclassified_reference_surface_totality() -> None:
 
 
 # ---------------------------------------------------------------------------
+# SURF-01 / SURF-02 / SURF-07 surface-totality observation drills
+# ---------------------------------------------------------------------------
+
+
+def _drill_token_partition_cert(*, total: int, owned: int):
+    """A real TokenPartitionCoverage whose buckets sum to ``owned`` (≤ total).
+
+    Built via the PRODUCTION projection ``build_token_partition_coverage`` over a
+    synthetic forest with a deliberately-undersummed census, so a non-zero
+    realization gap is driven through the real sweep — not a hand-built finding.
+    """
+    from lawvm.finland.legal_surface.source_syntax_graph import (
+        SourceSyntaxGraph,
+        SurfaceGraphSubject,
+        SyntaxCoverage,
+    )
+    from lawvm.finland.legal_surface.token_partition_coverage import (
+        build_token_partition_coverage,
+    )
+
+    cov = SyntaxCoverage(
+        total_tokens=total,
+        owned_tokens=owned,
+        benign_tokens=0,
+        residual_tokens=0,
+        silent_tokens=0,
+    )
+    forest = SourceSyntaxGraph(
+        graph_id="drill-forest",
+        subject=SurfaceGraphSubject(
+            jurisdiction="fi",
+            work_id="drill/1",
+            scope={},
+            surface_time=None,
+            source_bundle_hash="deadbeef",
+            language="fi",
+        ),
+        source_units=(),
+        text_hash="h",
+        text_len=100,
+        syntax_nodes={},
+        syntax_edges=(),
+        parse_status="parsed",
+        residuals=(),
+        coverage=cov,
+    )
+    return build_token_partition_coverage(forest, statute_id="drill/1")
+
+
+def drill_surface_token_realization_gap_surface_totality() -> None:
+    """Drive the production SURF-01 sweep into a TOKEN_REALIZATION_GAP firing."""
+    from lawvm.finland.legal_surface.surface_token_totality import (
+        SURFACE_TOKEN_REALIZATION_GAP,
+        sweep_token_realization,
+    )
+
+    # total=10 but only 6 owned and the other buckets empty -> 4-token gap.
+    cert = _drill_token_partition_cert(total=10, owned=6)
+    findings = sweep_token_realization(cert)
+    assert any(f.code == SURFACE_TOKEN_REALIZATION_GAP for f in findings), (
+        "TOKEN_REALIZATION_GAP sweep did not fire on an under-summed partition"
+    )
+    # and STAYS SILENT on a balanced partition (clean input)
+    clean = _drill_token_partition_cert(total=10, owned=10)
+    assert not sweep_token_realization(clean), (
+        "TOKEN_REALIZATION_GAP sweep fired on a balanced partition"
+    )
+
+
+def drill_waist_handoff_parity_source_to_token_surface_totality() -> None:
+    """Drive the production SURF-02 sweep into a HANDOFF_PARITY firing."""
+    from lawvm.finland.legal_surface.surface_token_totality import (
+        WAIST_HANDOFF_PARITY_SOURCE_TO_TOKEN,
+        assert_handoff_parity,
+    )
+
+    cert = _drill_token_partition_cert(total=12, owned=5)
+    findings = assert_handoff_parity(cert)
+    assert any(
+        f.code == WAIST_HANDOFF_PARITY_SOURCE_TO_TOKEN for f in findings
+    ), "HANDOFF_PARITY sweep did not fire on a source->token parity break"
+    clean = _drill_token_partition_cert(total=12, owned=12)
+    assert not assert_handoff_parity(clean), (
+        "HANDOFF_PARITY sweep fired on a balanced handoff"
+    )
+
+
+def drill_surface_orphan_entity_node_surface_totality() -> None:
+    """Drive the production SURF-07 sweep into an ORPHAN_ENTITY_NODE firing."""
+    from lawvm.core.legal_surface_graph import (
+        LegalSurfaceGraph,
+        SurfaceEdge,
+        SurfaceGraphSubject,
+        SurfaceNode,
+    )
+    from lawvm.finland.legal_surface.surface_token_totality import (
+        SURFACE_ORPHAN_ENTITY_NODE,
+        sweep_orphan_entity_nodes,
+    )
+
+    subject = SurfaceGraphSubject(
+        jurisdiction="fi",
+        work_id="drill/1",
+        scope={},
+        surface_time=None,
+        source_bundle_hash="deadbeef",
+        language="fi",
+    )
+
+    def _entity(node_id: str, term: str) -> SurfaceNode:
+        return SurfaceNode(
+            node_id=node_id,
+            node_kind="term_symbol_entity",
+            authority_role="entity_handle",
+            jurisdiction="fi",
+            source_ref=None,
+            lens_id="lens.def",
+            rule_id="r",
+            status="asserted",
+            payload_hash="p",
+            payload={"term": term},
+        )
+
+    covered = _entity("covered", "sivutuote")
+    orphan = _entity("orphan", "jäte")
+    binding = SurfaceNode(
+        node_id="binding",
+        node_kind="definition_binding",
+        authority_role="surface_fact",
+        jurisdiction="fi",
+        source_ref=None,
+        lens_id="lens.def",
+        rule_id="r",
+        status="resolved",
+        payload_hash="p",
+        payload={},
+    )
+    edge = SurfaceEdge(
+        edge_id="e1",
+        edge_kind="defines_term",
+        src="binding",
+        dst="covered",  # only `covered` is an edge endpoint; `orphan` is not
+        rule_id="r",
+        status="asserted",
+        payload_hash="p",
+        payload={},
+    )
+    graph = LegalSurfaceGraph(
+        schema="lawvm.legal_surface_graph.v0",
+        graph_id="g-drill",
+        subject=subject,
+        source_units=(),
+        lens_runs=(),
+        nodes={n.node_id: n for n in (binding, covered, orphan)},
+        edges=(edge,),
+        build_diagnostics=(),
+    )
+    findings = sweep_orphan_entity_nodes(graph)
+    assert [f.node_id for f in findings] == ["orphan"], (
+        "ORPHAN_ENTITY_NODE sweep did not isolate the uncovered entity handle"
+    )
+    assert findings[0].code == SURFACE_ORPHAN_ENTITY_NODE
+    # and STAYS SILENT when every entity is covered (drop the orphan)
+    clean = LegalSurfaceGraph(
+        schema="lawvm.legal_surface_graph.v0",
+        graph_id="g-clean",
+        subject=subject,
+        source_units=(),
+        lens_runs=(),
+        nodes={n.node_id: n for n in (binding, covered)},
+        edges=(edge,),
+        build_diagnostics=(),
+    )
+    assert not sweep_orphan_entity_nodes(clean), (
+        "ORPHAN_ENTITY_NODE sweep fired when every entity handle was covered"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Per-op apply-authority gate drills (audit lane L1: LS-01, LS-03, EV-05/FW-01)
 # ---------------------------------------------------------------------------
 
@@ -2332,11 +2635,11 @@ def drill_overlay_promotion_witness_incomplete_tree_closure() -> None:
 FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "LINEAGE.CYCLE": drill_lineage_cycle_replay_products_build,
     "APPLY.TREE_INVARIANT_VIOLATION": drill_tree_invariant_violation_duplicate_label,
-    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": drill_effect_lifecycle_target_unresolved_verdict_barrier,
-    "APPLY.FAILED_OPERATION": drill_failed_operation_verdict_barrier,
+    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": drill_effect_lifecycle_target_unresolved_apply_lane,
+    "APPLY.FAILED_OPERATION": drill_failed_operation_apply_lane,
     "APPLY.META_REPEAL_EFFECT_UNRESOLVED": drill_meta_repeal_effect_unresolved_route_rejection_barrier,
     "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED": drill_pending_amendment_effect_unresolved_route_rejection_barrier,
-    "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_verdict_barrier,
+    "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_apply_lane,
     "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD": drill_leading_subsection_heading_payload_elaboration,
     "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL": drill_fold_single_insert_subsection_list_tail_payload_elaboration,
     "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET": drill_restore_heading_for_explicit_facet_group_elaboration,
@@ -2387,6 +2690,9 @@ OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "DEFINITION.DUPLICATE_DEFINITION": drill_definition_duplicate_definition_surface_totality,
     "DEFINITION.ORPHAN_DEFINITION_REFERENCE": drill_definition_orphan_reference_surface_totality,
     "REFERENCE.UNCLASSIFIED_REFERENCE": drill_reference_unclassified_reference_surface_totality,
+    "SURFACE.TOKEN_REALIZATION_GAP": drill_surface_token_realization_gap_surface_totality,
+    "WAIST.HANDOFF_PARITY_SOURCE_TO_TOKEN": drill_waist_handoff_parity_source_to_token_surface_totality,
+    "SURFACE.ORPHAN_ENTITY_NODE": drill_surface_orphan_entity_node_surface_totality,
     "APPLY.OCCUPANCY_POLICY_VIOLATION": drill_occupancy_policy_violation_finland_production,
     "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT": drill_occupancy_temporally_disjoint_insert_finland_production,
     "APPLY.REPLAY_UNDECLARED_TREE_TOUCH": drill_replay_undeclared_tree_touch_apply_lane,
@@ -2485,7 +2791,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE": ("merge recovery; needs fixture", "2026-06-20"),
     "ELAB.LOCAL_DENSE_SUBSECTION_NUMBERING": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
-    "ELAB.MISSING_PAYLOAD_SURFACE": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.MIXED_SPARSE_SLOT_CROSS_PARAGRAPH": ("payload-normalize ambiguity; needs fixture", "2026-06-20"),
     "ELAB.NORMALIZE_ITEM_LIKE_TARGET": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.NUMBERED_TABLE_TARGET_MERGE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
@@ -2494,7 +2799,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.REBASE_ITEM_TARGET_TO_SPARSE_SLOT_LABEL": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.REBASE_SPARSE_STALE_PREDECESSOR": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
-    "ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.RENUMBER_DESTINATION_PAYLOAD_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.SPARSE_PAYLOAD_LEFTOVER": ("grafter recovery; needs fixture", "2026-06-20"),
@@ -2530,7 +2834,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "LOWER.SCOPE_CARRY_FORWARD": ("scope recovery; needs fixture", "2026-06-20"),
     "PARSE.EXTRACTION_FALLBACK": ("parse barrier; needs fixture", "2026-06-20"),
     "PARSE.FRONTEND_BLOCKING_DIAGNOSTIC": ("frontend phase barrier; needs fixture", "2026-06-20"),
-    "PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA": ("frontend recovery; needs fixture", "2026-06-20"),
     "PARSE.PREAMBLE_CLAUSE_FAILED.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
     "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER": ("frontend recovery; needs fixture", "2026-06-20"),
     "PARSE.STRICT_REJECTED_TARGET_GUESSING": ("strict-mode barrier; needs fixture", "2026-06-20"),
@@ -2758,6 +3061,7 @@ _PRODUCTION_BUILDER_CALLS = (
     "ProcessRouteRejectionContext",
     "normalize_and_compile_ops",
     "build_group_surface",
+    "build_finland_effect_lifecycle",
     "compile_amendment_ops",
     "elaborate_group",
     "elaborate_payload_against_live",
@@ -2780,11 +3084,14 @@ _PRODUCTION_BUILDER_CALLS = (
 # production verdict builder rather than a deeper apply/replay builder; they are
 # the verdict-surface primary lane. Every OTHER primary drill must drive a
 # builder from ``_PRODUCTION_BUILDER_CALLS``.
-_VERDICT_SURFACE_PRIMARY_DRILLS = frozenset({
-    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED",
-    "APPLY.FAILED_OPERATION",
-    "APPLY.SOURCE_PATHOLOGY_DETECTED",
-})
+#
+# Empty after the dead-gate reconciliation: the three former verdict-only drills
+# (APPLY.FAILED_OPERATION, APPLY.SOURCE_PATHOLOGY_DETECTED,
+# APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED) now drive their production-deciding
+# guard — the strict ``apply_op`` lane (real FailedOp / SourcePathology) and the
+# ``build_finland_effect_lifecycle`` builder (real unresolved-target event) — so
+# none remains a verdict-mapping-only drill.
+_VERDICT_SURFACE_PRIMARY_DRILLS: frozenset[str] = frozenset()
 
 
 def _drill_effective_source(drill: Callable[[], None]) -> str:

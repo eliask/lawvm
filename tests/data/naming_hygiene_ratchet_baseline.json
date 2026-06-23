@@ -138,8 +138,9 @@
     "src/lawvm/us_federal/dry_run.py": 2,
     "src/lawvm/us_federal/nonpositive.py": 3
   },
-  "certified_symbol_count": 66,
+  "certified_symbol_count": 67,
   "certified_symbols": [
+    "CERTIFICATE_ROOT_PROFILE",
     "CERTIFICATE_SCHEMA",
     "CERTIFICATE_SPEC_VERSION",
     "CertificateProductionResult",
@@ -207,7 +208,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 135,
+  "public_schema_count": 137,
   "public_schemas": [
     "lawvm.address_node.v1",
     "lawvm.agreement_surface_report.v1",
@@ -234,6 +235,7 @@
     "lawvm.coverage.v0",
     "lawvm.coverage_row.v1",
     "lawvm.diagnostic_registry.v0",
+    "lawvm.disposition_matrix.v0",
     "lawvm.dsse.v1",
     "lawvm.dump.v1",
     "lawvm.execution_authorization_report.v1",
@@ -278,6 +280,7 @@
     "lawvm.payload_elaboration_report.v1",
     "lawvm.phase_local_replay_gate.v1",
     "lawvm.phase_witness.v1",
+    "lawvm.policy_bindings.v0",
     "lawvm.potential_operation_coverage.v0",
     "lawvm.potential_operation_coverage.v1",
     "lawvm.projection_payload.v0",

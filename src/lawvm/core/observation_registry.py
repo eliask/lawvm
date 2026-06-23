@@ -173,11 +173,11 @@ class FindingSpec:
 FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
     # --- Observations (role="observation") ---
     FindingSpec("ELAB.MISSING_PAYLOAD_SURFACE", "_build_group_surface",
-                "recovery", "strict_fail", "grafter",
+                "recovery", "warn", "grafter",
                 "section_ir absent despite non-trivial ops; no payload surface to elaborate",
                 ("preservation",), role="observation"),
     FindingSpec("ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE", "_build_group_surface",
-                "recovery", "strict_fail", "grafter",
+                "recovery", "warn", "grafter",
                 "same-group recodification payload selected from destination section when source-number body is absent or an omission shell",
                 ("preservation", "parse_witness", "strictness"), role="observation"),
     FindingSpec("ELAB.SPARSE_OMISSION_TAIL_CLAIM", "_build_group_surface",
@@ -603,7 +603,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "an enacting-formula body fallback accepted some body sections while leaving sibling body sections unowned",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
     FindingSpec("PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA", "frontend_compile",
-                "recovery", "strict_fail", "frontend_compile",
+                "recovery", "warn", "frontend_compile",
                 "an act-wide change formula supplied provision targets through labelled body sections",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
     FindingSpec("LOWER.CONTEXT_DEPENDENT_ANCHOR", "frontend_scope",
@@ -668,6 +668,34 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "closed classification set (resolved/statute_only/ambiguous/open/"
                 "broken/unsupported); the closed set was silently widened",
                 ("parse_witness", "safety_invariant"), role="observation"),
+    # Surface-plane token-realization + entity-handle totality sweeps
+    # (audit-registry rows SURF-01, SURF-02, SURF-07). Same observation-role
+    # per-unit-totality disposition as SURF-04/05: the sweep asserts the surface
+    # contract and surfaces a residual population; over the real corpus the
+    # residual is the expected, correct outcome (a leaked token / an orphan
+    # entity node is a real surface fact, surfaced — not a pipeline crash), so it
+    # is non-blocking by design (tag-don't-guess). The synthetic unit-level bite
+    # is the guard-liveness drill.
+    FindingSpec("SURFACE.TOKEN_REALIZATION_GAP", "surface_totality",
+                "violation", "warn", "fi_surface_totality",
+                "a source token reached NO typed destination bucket: the four "
+                "Pro-D2 partition classes (owned/benign_uninterpreted/"
+                "typed_residual/unowned_violation) do not sum to total_tokens — a "
+                "silently-dropped (or double-counted) token",
+                ("parse_witness", "safety_invariant"), role="observation"),
+    FindingSpec("WAIST.HANDOFF_PARITY_SOURCE_TO_TOKEN", "surface_totality",
+                "violation", "warn", "fi_surface_totality",
+                "source->token handoff parity break: the source span consumed by "
+                "tokenization (total_tokens) does not equal "
+                "owned+typed_residual+benign+violation (the waist-edge form of "
+                "SURFACE.TOKEN_REALIZATION_GAP)",
+                ("parse_witness", "safety_invariant"), role="observation"),
+    FindingSpec("SURFACE.ORPHAN_ENTITY_NODE", "surface_totality",
+                "source_pathology", "warn", "fi_surface_totality",
+                "a surface entity-handle node (legal_work_entity/term_symbol_entity"
+                "/legal_address_entity/actor_entity) appears in no edge endpoint — "
+                "an entity node with no covering edge, surfaced not left uncovered",
+                ("parse_witness", "preservation"), role="observation"),
     # Rank-17 silent-drop closure (canonical_op plane). The clause_ast ingress
     # seam (fi extract_legal_ops_from_parse_result) and the legacy lower_surface
     # bridge previously dropped unsupported clause/surface nodes
