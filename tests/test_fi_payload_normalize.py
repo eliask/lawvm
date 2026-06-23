@@ -5434,6 +5434,129 @@ def test_normalize_group_payload_folds_split_target_subsection_intro_list_tail()
     assert _completeness(got).kind == "sparse_certified"
 
 
+def test_normalize_group_payload_folds_multi_target_subsection_list_wrapups() -> None:
+    """Multiple changed moments may each carry a detached wrap-up slot.
+
+    Mirrors `1995/1557 <- 2001/1264` section 11: the source preamble replaces
+    moments 3 and 4 and repeals moment 5, while the XML serializes each changed
+    list moment as intro/items plus a content-only sibling wrap-up.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="11",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="Old 1."),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="Old 2."),)),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Old municipality intro:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="old a;"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="old b;"),)),
+                    IRNode(kind=IRNodeKind.WRAP_UP, text="old municipality wrap-up."),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="4",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Old parish intro:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="old c;"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="old d;"),)),
+                    IRNode(kind=IRNodeKind.WRAP_UP, text="old parish wrap-up."),
+                ),
+            ),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="5", children=(IRNode(kind=IRNodeKind.CONTENT, text="Old 5."),)),
+        ),
+    )
+    ctx = _mock_ctx("section", "11", target_chapter="4", live_node=live_sec)
+    op_repeal_5 = AmendmentOp(
+        op_type="REPEAL",
+        target_kind=TargetKind.SECTION,
+        target_chapter="4",
+        target_section="11",
+        target_paragraph=5,
+    )
+    op_replace_4 = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_chapter="4",
+        target_section="11",
+        target_paragraph=4,
+    )
+    op_replace_3 = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_chapter="4",
+        target_section="11",
+        target_paragraph=3,
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="11",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="11 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Veronsaajakustannukset"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="New municipality intro:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="new a;"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="new b"),)),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="sekä kerrotaan kunnan jako-osuudella."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="4",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="New parish intro:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="new c;"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="new d"),)),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="sekä kerrotaan seurakunnan jako-osuudella."),),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op_repeal_5, op_replace_4, op_replace_3], muutos_ir, set())
+
+    assignment = _slot_assignment_result(got)
+    mapped_3 = assignment.for_op(op_replace_3)
+    mapped_4 = assignment.for_op(op_replace_4)
+    assert mapped_3 is not None
+    assert mapped_4 is not None
+    assert mapped_3.label == "3"
+    assert mapped_4.label == "4"
+    assert assignment.unassigned_payload_slots == ()
+    assert "New municipality intro:" in irnode_to_text(mapped_3)
+    assert "sekä kerrotaan kunnan jako-osuudella." in irnode_to_text(mapped_3)
+    assert "New parish intro:" in irnode_to_text(mapped_4)
+    assert "sekä kerrotaan seurakunnan jako-osuudella." in irnode_to_text(mapped_4)
+    assert _slot_ir_has_item(mapped_3, "1")
+    assert _slot_ir_has_item(mapped_3, "2")
+    assert _slot_ir_has_item(mapped_4, "1")
+    assert _slot_ir_has_item(mapped_4, "2")
+    observations = _observations(got)
+    assert [obs.kind for obs in observations] == ["ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS"]
+    detail = observations[0].detail
+    assert detail is not None
+    assert detail["target_paragraphs"] == [3, 4]
+    assert detail["prefix_payload_slot_labels"] == ["2", "4"]
+    assert detail["tail_payload_slot_labels"] == ["3", "5"]
+    assert _completeness(got).kind == "sparse_certified"
+
+
 def test_normalize_group_payload_splits_final_list_item_detached_moment() -> None:
     """A whole-section payload may glue the next moment into the final list item.
 

@@ -645,6 +645,7 @@ def _classify_payload_completeness(
             "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
             _SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE,
             _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+            _FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS_RULE,
             _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
             "ELAB.CONTAINER_PRUNED_SHADOWED",
         }
@@ -661,6 +662,7 @@ def _classify_payload_completeness(
                 "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
                 _SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL_RULE,
                 _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+                _FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS_RULE,
                 _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE,
                 "ELAB.CONTAINER_PRUNED_SHADOWED",
             }
@@ -2532,6 +2534,7 @@ class LeadingSubsectionHeadingPayloadResult:
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
 _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE = "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL"
+_FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS_RULE = "ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS"
 _SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION_RULE = "ELAB.SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION"
 _FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL_RULE = "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL"
 _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
@@ -3182,6 +3185,119 @@ def _fold_split_target_subsection_intro_list_tail(
         "rule": _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
     }
     return _tops._with_children(muutos_ir, new_children), True, detail
+
+
+def _fold_multi_target_subsection_list_wrapups(
+    ctx: PayloadElaborationContext,
+    target_unit_kind: TargetUnitKind,
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> tuple[Optional[IRNode], dict[str, object] | None]:
+    """Fold content-only wrap-up slots into multiple explicit list moments.
+
+    Some section payloads serialize each changed legal moment as two adjacent
+    source subsections: intro/list body followed by a content-only wrap-up.
+    When the preamble explicitly replaces ``N ja M momentti``, those wrap-up
+    slots complete the targeted moments; binding them as separate moments loses
+    owned legal text.  This repair requires one intro/list + wrap-up pair for
+    every explicit replacement and live evidence that every target is already a
+    list-shaped moment.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return muutos_ir, None
+
+    plain_replace_ops = [
+        op
+        for op in group_ops
+        if (
+            op.op_type == "REPLACE"
+            and op.target_unit_kind == "section"
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+        )
+    ]
+    if len(plain_replace_ops) < 2:
+        return muutos_ir, None
+    if any(
+        op.op_type not in {"REPLACE", "REPEAL"}
+        or (
+            op.op_type == "REPLACE"
+            and (
+                op.target_unit_kind != "section"
+                or op.target_paragraph is None
+                or bool(op.target_item)
+                or bool(op.target_special)
+            )
+        )
+        for op in group_ops
+    ):
+        return muutos_ir, None
+
+    targets = sorted({int(op.target_paragraph or 0) for op in plain_replace_ops})
+    if len(targets) != len(plain_replace_ops):
+        return muutos_ir, None
+    if targets != list(range(targets[0], targets[-1] + 1)):
+        return muutos_ir, None
+    for target in targets:
+        live_target = ctx.subsection_by_label.get(str(target))
+        if live_target is None or not _has_numbered_paragraph_sequence(live_target):
+            return muutos_ir, None
+
+    subsection_pairs = [
+        (idx, child)
+        for idx, child in enumerate(muutos_ir.children)
+        if child.kind is IRNodeKind.SUBSECTION
+    ]
+    if len(subsection_pairs) != len(targets) * 2:
+        return muutos_ir, None
+
+    folded_by_index: dict[int, IRNode] = {}
+    remove_indexes: set[int] = set()
+    prefix_labels: list[str] = []
+    tail_labels: list[str] = []
+    tail_text_chars: list[int] = []
+    for target, ((prefix_idx, prefix_sub), (tail_idx, tail_sub)) in zip(
+        targets,
+        zip(subsection_pairs[0::2], subsection_pairs[1::2], strict=True),
+        strict=True,
+    ):
+        if tail_idx != prefix_idx + 1:
+            return muutos_ir, None
+        if not _is_intro_list_subsection_ir(prefix_sub):
+            return muutos_ir, None
+        tail_text = _content_only_non_item_subsection_text(tail_sub)
+        if tail_text is None:
+            return muutos_ir, None
+        folded_by_index[prefix_idx] = _with_payload_normalization_rule(
+            IRNode(
+                kind=prefix_sub.kind,
+                label=str(target),
+                text=prefix_sub.text,
+                attrs=dict(prefix_sub.attrs),
+                children=tuple(prefix_sub.children)
+                + (IRNode(kind=IRNodeKind.WRAP_UP, text=tail_text),),
+            ),
+            _FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS_RULE,
+        )
+        remove_indexes.add(tail_idx)
+        prefix_labels.append(str(prefix_sub.label or ""))
+        tail_labels.append(str(tail_sub.label or ""))
+        tail_text_chars.append(len(tail_text))
+
+    new_children = [
+        folded_by_index.get(idx, child)
+        for idx, child in enumerate(muutos_ir.children)
+        if idx not in remove_indexes
+    ]
+    detail: dict[str, object] = {
+        "target_paragraphs": targets,
+        "prefix_payload_slot_labels": prefix_labels,
+        "tail_payload_slot_labels": tail_labels,
+        "tail_text_chars": tail_text_chars,
+        "rule": _FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS_RULE,
+    }
+    return _tops._with_children(muutos_ir, new_children), detail
 
 
 def _split_detached_sentence_from_final_list_item(text: str) -> tuple[str, str] | None:
@@ -7367,6 +7483,22 @@ def elaborate_payload_against_live(
                 **split_target_intro_list_detail,
             )
         )
+    muutos_ir, multi_target_list_wrapup_detail = _fold_multi_target_subsection_list_wrapups(
+        ctx,
+        target_unit_kind,
+        muutos_ir,
+        group_ops,
+    )
+    if multi_target_list_wrapup_detail is not None:
+        observations.append(
+            _obs(
+                _FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                **multi_target_list_wrapup_detail,
+            )
+        )
     muutos_ir, final_list_tail_detail = _split_final_list_item_trailing_subsection(
         target_unit_kind,
         muutos_ir,
@@ -7492,7 +7624,11 @@ def elaborate_payload_against_live(
         tuple(
             obs
             for obs in observations
-            if obs.kind == _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE
+            if obs.kind
+            in {
+                _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+                _FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS_RULE,
+            }
         ),
     )
     muutos_ir = sparse_elab.muutos_ir
