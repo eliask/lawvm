@@ -34,7 +34,6 @@
     "src/lawvm/finland/kumotaan.py": 5,
     "src/lawvm/finland/legal_surface/condition_exception_census.py": 12,
     "src/lawvm/finland/legal_surface/definition_parse.py": 1,
-    "src/lawvm/finland/legal_surface/delegation_census.py": 1,
     "src/lawvm/finland/legal_surface/lenses/enclosing_anaphora.py": 4,
     "src/lawvm/finland/legal_surface/modal_census.py": 9,
     "src/lawvm/finland/legal_surface/norm_composition.py": 1,
@@ -59,5 +58,5 @@
     "src/lawvm/finland/timeline_version_dedupe.py": 1,
     "src/lawvm/finland/transition_graph_profile.py": 2
   },
-  "total_raw_re_compile": 358
+  "total_raw_re_compile": 357
 }
