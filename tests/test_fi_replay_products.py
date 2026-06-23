@@ -1176,6 +1176,59 @@ def test_pure_kumotaan_subsection_injection_skips_unscoped_duplicate_sections() 
     }
 
 
+def test_pure_kumotaan_subsection_injection_skips_label_reused_by_same_group_snapshot() -> None:
+    section_path = (("chapter", "5"), ("section", "32"))
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_section_32",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=IRNode(
+                kind=IRNodeKind.SECTION,
+                label="32",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="32 §"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="moved old 2 mom"),
+                ),
+            ),
+            source=OperationSource(statute_id="1991/1081"),
+        )
+    ]
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="32",
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="3"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    result = _inject_pure_kumotaan_subsection_repeal_ops(
+        lo_ops,
+        amendment_id="1991/1081",
+        source_title="",
+        kumotaan_subsection_map={"32": ["3"]},
+        amendment_effective_date=dt.date(1991, 9, 1),
+        state=ReplayState(ir=body),
+        source_raw_text=(
+            "kumotaan 32 §:n 3 momentti, lisätään 32 §:ään uusi 2 momentti, "
+            "jolloin nykyinen 2 momentti siirtyy 3 momentiksi"
+        ),
+    )
+
+    assert result.injected_count == 0
+    assert [op.op_id for op in lo_ops] == ["snapshot_section_32"]
+
+
 def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None:
     replay_meta: dict[str, object] = {}
     replay = replay_xml_for_test("1998/132", mode="legal_pit", quiet=True, replay_meta_out=replay_meta)

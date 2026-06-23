@@ -910,6 +910,11 @@ def _assign_insert_before_moved_same_target_slot_ops(
             and (destination := _destination_subsection_label_for_renumber(op)).isdigit()
         )
     }
+    intro_reserved_targets = {
+        int(op.target_paragraph)
+        for op in slot_inputs.intro_subsec_ops
+        if op.target_paragraph is not None and op.target_special == "johd"
+    }
     for target in slot_inputs.duplicate_targets:
         if renumber_destinations.get(target) != target + 1:
             continue
@@ -944,6 +949,7 @@ def _assign_insert_before_moved_same_target_slot_ops(
         if (
             not prior_label.isdigit()
             or int(prior_label) in occupied_targets
+            or int(prior_label) in intro_reserved_targets
             or int(prior_label) != target - 1
         ):
             continue
@@ -1013,6 +1019,7 @@ def _assign_insert_before_moved_same_target_slot_ops(
         if (
             not prior_label.isdigit()
             or int(prior_label) in occupied_targets
+            or int(prior_label) in intro_reserved_targets
             or int(prior_label) != target - 1
         ):
             continue

@@ -24,6 +24,7 @@ from lawvm.core.tree_ops import LabelIndex, Path, default_label_sort_key, normal
 
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.apply_ir_ops import _build_repeal_placeholder_from_label_ir
+from lawvm.finland.apply_ir_ops import _relabel_subsection_ir
 from lawvm.finland.apply_ir_ops import _shift_lettered_item_labels_after_repeal
 from lawvm.finland.apply_payload_ops import _find_amend_paragraph
 from lawvm.finland.helpers import _norm_num_token
@@ -1334,6 +1335,24 @@ def _emit_section_snapshot(
             return any(rop.is_repeal_action and rop.targets_whole_unit(target_unit_kind) for rop in group_rops)
         return False
 
+    def _whole_section_insert_replaces_explicit_child_repeal() -> bool:
+        if target_unit_kind != "section":
+            return False
+        has_whole_insert_payload = any(
+            rop.is_insert_action
+            and rop.targets_whole_unit("section")
+            and rop.muutos_ir is not None
+            and rop.muutos_ir.kind is IRNodeKind.SECTION
+            for rop in group_rops
+        )
+        if not has_whole_insert_payload:
+            return False
+        return any(
+            rop.is_repeal_action
+            and rop.targets_subsection_only()
+            for rop in group_rops
+        )
+
     def _complete_whole_section_source_payload() -> Optional[IRNode]:
         """Return the source-owned section payload for exact whole-section snapshots.
 
@@ -1375,6 +1394,8 @@ def _emit_section_snapshot(
         def _whole_section_insert_can_own_snapshot(rop: ResolvedOp) -> bool:
             if not rop.is_insert_action:
                 return False
+            if _whole_section_insert_replaces_explicit_child_repeal():
+                return True
             if temporary_signal_for_op(rop):
                 # First-time temporary section inserts often need post-apply
                 # normalization/rebasing.  If an exact prior section snapshot
@@ -2500,6 +2521,13 @@ def _emit_section_snapshot(
         repealed_item_labels_by_subsection: dict[str, set[str]] = {}
         item_target_labels_by_subsection: dict[str, set[str]] = {}
         renumber_destinations: dict[str, str] = {}
+        renumber_destination_labels = {
+            _norm_num_token(destination_path[-1][1])
+            for rop in section_group_rops
+            if (destination_path := _resolved_destination_path_for_rop(rop))
+            and destination_path[-1][0] == "subsection"
+        }
+        whole_repealed_source_labels: set[str] = set()
         whole_subsection_targets: set[str] = set()
         has_insert = False
         has_item_scoped_ops = any(
@@ -2549,6 +2577,13 @@ def _emit_section_snapshot(
                     # item-scoped sibling payloads fall back to the stale live
                     # fold for the whole section.
                     continue
+                if rop.targets_subsection_only():
+                    target_label = _norm_num_token(
+                        str(rop.resolved_target_subsection_label or "").strip()
+                    )
+                    if target_label and target_label in renumber_destination_labels:
+                        whole_repealed_source_labels.add(target_label)
+                        continue
                 else:
                     return None
             if not (rop.is_insert_action or rop.is_replace_action):
@@ -2721,6 +2756,8 @@ def _emit_section_snapshot(
             if child.kind is not IRNodeKind.SUBSECTION or not child.label:
                 continue
             source_label = _norm_num_token(child.label)
+            if source_label in whole_repealed_source_labels:
+                continue
             destination_label = renumber_destinations.get(source_label, source_label)
             base_by_label[destination_label] = _relabel_subsection_payload(child, destination_label)
         final_payloads: dict[str, IRNode] = {}
@@ -3679,6 +3716,190 @@ def _emit_section_snapshot(
         pruned_payload = _drop_shifted_expired_temporary_subsection_payload(tuple(resolved_path), payload)
         if pruned_payload is not None:
             payload = pruned_payload
+
+    def _source_repealed_subsection_labels_for_snapshot() -> set[str]:
+        return {
+            _norm_num_token(_snapshot_subsection_target_label(rop))
+            for rop in group_rops
+            if rop.is_repeal_action
+            and _snapshot_targets_subsection_only(rop)
+            and _snapshot_subsection_target_label(rop)
+        }
+
+    def _renumber_destination_subsection_labels_for_snapshot() -> set[str]:
+        return {
+            _norm_num_token(destination_path[-1][1])
+            for rop in group_rops
+            if (destination_path := _resolved_destination_path_for_rop(rop))
+            and destination_path[-1][0] == "subsection"
+        }
+
+    def _explicitly_repealed_subsection_labels_for_snapshot() -> set[str]:
+        if _whole_section_insert_replaces_explicit_child_repeal():
+            # A section-level insert can be the source's "in place of the
+            # repealed section/subsection" replacement. In that shape a same
+            # label in the new source payload is fresh text, not stale carried
+            # text to prune or tombstone after insertion.
+            return set()
+        source_repealed = _source_repealed_subsection_labels_for_snapshot()
+        renumber_destinations = _renumber_destination_subsection_labels_for_snapshot()
+        return source_repealed - renumber_destinations
+
+    def _shifted_repealed_subsection_labels_for_snapshot() -> set[str]:
+        source_repealed = _source_repealed_subsection_labels_for_snapshot()
+        if payload_from_muutos_ir:
+            return set()
+        explicitly_repealed = _explicitly_repealed_subsection_labels_for_snapshot()
+        inserted_subsection_labels = sorted(
+            {
+                int(insert_label)
+                for rop in group_rops
+                if rop.is_insert_action
+                and _snapshot_targets_subsection_only(rop)
+                and (insert_label := _norm_num_token(_snapshot_subsection_target_label(rop))).isdigit()
+            }
+        )
+        shifted_repealed: set[str] = set()
+        for repealed_label in source_repealed:
+            if not repealed_label.isdigit():
+                continue
+            repealed_num = int(repealed_label)
+            shift = sum(1 for insert_num in inserted_subsection_labels if insert_num <= repealed_num)
+            if shift:
+                shifted_repealed.add(str(repealed_num + shift))
+        return shifted_repealed - explicitly_repealed
+
+    def _carried_repealed_subsection_labels_for_snapshot() -> set[str]:
+        return (
+            _explicitly_repealed_subsection_labels_for_snapshot()
+            | _shifted_repealed_subsection_labels_for_snapshot()
+        )
+
+    def _payload_pruned_repealed_subsection_labels_for_snapshot() -> set[str]:
+        pruned = set(_shifted_repealed_subsection_labels_for_snapshot())
+        if payload_from_muutos_ir:
+            pruned.update(_explicitly_repealed_subsection_labels_for_snapshot())
+        return pruned
+
+    def _drop_carried_repealed_subsections_from_snapshot_payload(
+        section_payload: IRNode,
+    ) -> IRNode | None:
+        carried_repealed = _payload_pruned_repealed_subsection_labels_for_snapshot()
+        if not carried_repealed:
+            return None
+        children: list[IRNode] = []
+        changed = False
+        for child in section_payload.children:
+            if (
+                child.kind is IRNodeKind.SUBSECTION
+                and child.label
+                and _norm_num_token(child.label) in carried_repealed
+            ):
+                changed = True
+                continue
+            children.append(child)
+        if not changed:
+            return None
+        return IRNode(
+            kind=section_payload.kind,
+            label=section_payload.label,
+            text=section_payload.text,
+            attrs=dict(section_payload.attrs),
+            children=tuple(children),
+        )
+
+    if (
+        payload is not None
+        and target_unit_kind == "section"
+        and action != StructuralAction.REPEAL
+        and payload.kind is IRNodeKind.SECTION
+    ):
+        carried_pruned_payload = _drop_carried_repealed_subsections_from_snapshot_payload(payload)
+        if carried_pruned_payload is not None:
+            payload = carried_pruned_payload
+
+    def _restore_renumber_destination_subsections_in_snapshot_payload(
+        section_payload: IRNode,
+    ) -> IRNode | None:
+        if resolved_path is None or section_payload.kind is not IRNodeKind.SECTION:
+            return None
+        section_path = tuple(resolved_path)
+        latest = _latest_section_snapshot_payload(
+            section_path=section_path,
+            replay_history_ops=lo_ops_out,
+        )
+        source_section = (
+            latest.payload
+            if latest is not None and latest.payload is not None and latest.payload.kind is IRNodeKind.SECTION
+            else _section_node_from_base_ir(base_ir, section_path)
+        )
+        if source_section is None or source_section.kind is not IRNodeKind.SECTION:
+            return None
+        source_by_label = {
+            _norm_num_token(child.label): child
+            for child in source_section.children
+            if child.kind is IRNodeKind.SUBSECTION and child.label
+        }
+        renumber_pairs: dict[str, str] = {}
+        for rop in group_rops:
+            if not rop.is_renumber_action or not rop.targets_subsection_only():
+                continue
+            source_label = _norm_num_token(str(rop.resolved_target_subsection_label or "").strip())
+            destination_path = _resolved_destination_path_for_rop(rop)
+            if (
+                not source_label
+                or not destination_path
+                or destination_path[-1][0] != "subsection"
+            ):
+                continue
+            destination_label = _norm_num_token(destination_path[-1][1])
+            if destination_label:
+                renumber_pairs[destination_label] = source_label
+        if not renumber_pairs:
+            return None
+        children: list[IRNode] = []
+        changed = False
+        for child in section_payload.children:
+            if child.kind is not IRNodeKind.SUBSECTION or not child.label:
+                children.append(child)
+                continue
+            destination_label = _norm_num_token(child.label)
+            source_label = renumber_pairs.get(destination_label)
+            if not source_label:
+                children.append(child)
+                continue
+            child_is_empty_or_placeholder = (
+                not irnode_to_text(child).strip()
+                or child.attrs.get("lawvm_repeal_placeholder") == "1"
+            )
+            if not child_is_empty_or_placeholder:
+                children.append(child)
+                continue
+            source_child = source_by_label.get(source_label)
+            if source_child is None:
+                children.append(child)
+                continue
+            children.append(_relabel_subsection_ir(source_child, destination_label))
+            changed = True
+        if not changed:
+            return None
+        return IRNode(
+            kind=section_payload.kind,
+            label=section_payload.label,
+            text=section_payload.text,
+            attrs=dict(section_payload.attrs),
+            children=tuple(children),
+        )
+
+    if (
+        payload is not None
+        and target_unit_kind == "section"
+        and action != StructuralAction.REPEAL
+        and payload.kind is IRNodeKind.SECTION
+    ):
+        restored_payload = _restore_renumber_destination_subsections_in_snapshot_payload(payload)
+        if restored_payload is not None:
+            payload = restored_payload
     if (
         payload is not None
         and target_unit_kind == "section"
@@ -3783,13 +4004,7 @@ def _emit_section_snapshot(
         )
     ):
         section_path = tuple(resolved_path)
-        explicitly_repealed_subsection_labels = {
-            _norm_num_token(_snapshot_subsection_target_label(rop))
-            for rop in group_rops
-            if rop.is_repeal_action
-            and _snapshot_targets_subsection_only(rop)
-            and _snapshot_subsection_target_label(rop)
-        }
+        carried_repealed_subsection_labels = _carried_repealed_subsection_labels_for_snapshot()
         explicitly_repealed_paragraph_labels_by_subsection: dict[str, set[str]] = {}
         explicitly_targeted_paragraph_labels_by_subsection = (
             _explicitly_targeted_paragraph_labels_by_subsection()
@@ -3813,7 +4028,7 @@ def _emit_section_snapshot(
             _norm_num_token(child.label)
             for child in payload.children
             if child.kind is IRNodeKind.SUBSECTION and child.label
-            and _norm_num_token(child.label) not in explicitly_repealed_subsection_labels
+            and _norm_num_token(child.label) not in carried_repealed_subsection_labels
         }
 
         def _prior_paragraph_labels_for_subsection(child_path: Path) -> set[str]:
@@ -3858,7 +4073,7 @@ def _emit_section_snapshot(
             if child.kind is not IRNodeKind.SUBSECTION or not child.label:
                 continue
             child_norm_label = _norm_num_token(child.label)
-            if child_norm_label in explicitly_repealed_subsection_labels:
+            if child_norm_label in carried_repealed_subsection_labels:
                 continue
             child_path = section_path + (("subsection", child.label),)
             assert child.label is not None
@@ -3890,7 +4105,7 @@ def _emit_section_snapshot(
                 replay_history_ops=lo_ops_out,
                 base_ir=base_ir,
                 before_effective=op_source.effective,
-            )
+            ) or child_norm_label in _renumber_destination_subsection_labels_for_snapshot()
             lo_ops_out.append(
                 _LegalOperation(
                     op_id=_section_child_snapshot_op_id(
@@ -4001,7 +4216,7 @@ def _emit_section_snapshot(
             if target_label not in missing_repealed_subsections:
                 missing_repealed_subsections.append(target_label)
         for child_norm, child_label in complete_section_replacement_missing_subsections.items():
-            if child_norm in payload_subsection_labels or child_norm in explicitly_repealed_subsection_labels:
+            if child_norm in payload_subsection_labels or child_norm in carried_repealed_subsection_labels:
                 continue
             if child_label not in missing_repealed_subsections:
                 missing_repealed_subsections.append(child_label)

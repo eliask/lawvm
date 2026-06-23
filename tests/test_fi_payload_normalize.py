@@ -8279,6 +8279,75 @@ def test_assign_subsection_slots_binds_carried_renumber_destination_payload_slot
     ) == 2
 
 
+def test_assign_subsection_slots_keeps_intro_replacement_from_stealing_insert_body() -> None:
+    """Sparse intro+omission+insert payloads must not bind the intro fragment
+    as the inserted moment body.
+
+    Real shape: 1991/1081 / 1958/438 §32 changes 1 mom johdantokappale, adds
+    new 2 mom, moves old 2 mom to 3 mom, and repeals old 3 mom. The amendment
+    body carries the changed intro as the first sparse subsection and the new
+    inserted moment as the second sparse subsection.
+    """
+    intro_fragment = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="Changed 1 mom intro:",
+    )
+    inserted_body = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="2",
+        text="New inserted 2 mom body.",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="32",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="32 §"),
+            intro_fragment,
+            IRNode(kind=IRNodeKind.HCONTAINER, attrs={"name": "omission"}),
+            inserted_body,
+            IRNode(kind=IRNodeKind.HCONTAINER, attrs={"name": "omission"}),
+        ),
+    )
+    intro_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="32",
+        target_paragraph=1,
+        target_special="johd",
+    )
+    insert2 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="32",
+        target_paragraph=2,
+    )
+    renumber2 = AmendmentOp(
+        op_id="renumber_2_to_3",
+        op_type="RENUMBER",
+        target_kind=TargetKind.SECTION,
+        target_section="32",
+        target_paragraph=2,
+        lo=LegalOperation(
+            op_id="renumber_2_to_3",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "32"), ("subsection", "2"))),
+            destination=LegalAddress(path=(("section", "32"), ("subsection", "3"))),
+        ),
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(muutos_ir, [renumber2, intro_op, insert2])
+    assert slot_inputs is not None
+
+    assignment = _assign_subsection_slots(slot_inputs)
+
+    assert assignment.for_op(intro_op) is intro_fragment
+    assert assignment.for_op(insert2) is inserted_body
+    assert assignment.for_op(renumber2) is None
+    assert assignment.unassigned_payload_slots == ()
+
+
 def test_assign_subsection_slots_binds_same_target_insert_before_moved_replace() -> None:
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
