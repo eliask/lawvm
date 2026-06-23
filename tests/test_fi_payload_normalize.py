@@ -4248,6 +4248,56 @@ def test_assign_subsection_slots_reserves_johd_slot_for_intro_op() -> None:
     assert got.unassigned_payload_slots == ()
 
 
+def test_assign_subsection_slots_does_not_positional_fallback_item_to_intro_slot() -> None:
+    """Item targets need item-local evidence, not a positional subsection fallback.
+
+    Mirrors 1970/179 §103 / 1998/134: the source payload carries an intro-like
+    subsection, an omission marker, and a later body fragment for an item.  The
+    item op must not consume the intro slot merely because it is the first
+    unused subsection.
+    """
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="103",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Edellä 102 §:ssä mainituissa kokouksissa on käsiteltävä seuraavat asiat:",
+                    ),
+                ),
+            ),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="kolmannessa vahvistetaan talousarvio ja valitaan tilintarkastajat.",
+                    ),
+                ),
+            ),
+        ),
+    )
+    op_item = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="103",
+        target_paragraph=1,
+        target_item="3",
+    )
+
+    got = _build_subsection_slot_assignment(muutos_ir, [op_item])
+
+    assert got.for_op(op_item) is None
+    assert got.sparse_slot_bindings == ()
+    assert got.unassigned_payload_slots == ("1:1", "2:2")
+
+
 def test_assign_subsection_slots_keeps_insert_unbound_across_explicit_gap() -> None:
     """Do not force a plain subsection op across an explicit numeric gap.
 

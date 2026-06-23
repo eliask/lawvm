@@ -394,6 +394,7 @@ class SubsectionSlotInputs:
     """Typed sparse subsection-slot inputs collected from payload and ops."""
 
     amend_subs: tuple[IRNode, ...]
+    has_omission_slots: bool
     payload_subsec_ops: tuple[AmendmentOp, ...]
     intro_subsec_ops: tuple[AmendmentOp, ...]
     renumber_subsec_ops: tuple[AmendmentOp, ...]
@@ -830,6 +831,17 @@ def _slot_ir_has_omission(node: IRNode) -> bool:
 
 def _slot_ir_is_in_place_merge(node: IRNode) -> bool:
     return node.attrs.get("lawvm_in_place_merge") == "1"
+
+
+def _slot_ir_is_intro_only_fragment(node: IRNode) -> bool:
+    if any(child.kind is IRNodeKind.PARAGRAPH for child in node.children):
+        return False
+    text = irnode_to_text(node).strip()
+    return bool(text and text.endswith(":"))
+
+
+def _slot_ir_has_paragraph_row(node: IRNode) -> bool:
+    return any(child.kind is IRNodeKind.PARAGRAPH for child in node.children)
 
 
 def _assign_duplicate_target_slot_ops(
@@ -1546,6 +1558,38 @@ def _assign_fallback_plain_slot_ops(
         )
         if shared is not None:
             state.subsec_map.assign(op, shared)
+            state.prev_mom = op.target_paragraph
+            continue
+        candidate_sub_idx = state.sub_idx
+        while candidate_sub_idx < len(slot_inputs.amend_subs) and (
+            candidate_sub_idx in state.used_subs
+            or _norm_num_token(slot_inputs.amend_subs[candidate_sub_idx].label or "") in reserved_intro_labels
+        ):
+            candidate_sub_idx += 1
+        candidate_is_intro_only = (
+            candidate_sub_idx < len(slot_inputs.amend_subs)
+            and _slot_ir_is_intro_only_fragment(slot_inputs.amend_subs[candidate_sub_idx])
+        )
+        candidate_has_no_paragraph_rows = (
+            candidate_sub_idx < len(slot_inputs.amend_subs)
+            and not _slot_ir_has_paragraph_row(slot_inputs.amend_subs[candidate_sub_idx])
+        )
+        has_plain_payload_owner = any(
+            candidate.target_paragraph is not None
+            and not candidate.target_item
+            and not candidate.target_special
+            for candidate in slot_inputs.payload_subsec_ops
+        )
+        if op.target_item and (
+            slot_inputs.has_omission_slots
+            or candidate_is_intro_only
+            or (candidate_has_no_paragraph_rows and not has_plain_payload_owner)
+        ):
+            # Item-level targets need item-local evidence (_assign_item_matched_slot_ops,
+            # table-row binding, item-prefix binding, or same-slot sharing).  Positional
+            # subsection fallback is only admissible for dense same-moment payloads;
+            # in omission-sparse bodies or content-only subsection slots, an
+            # intro/body fragment can otherwise silently become an item row.
             state.prev_mom = op.target_paragraph
             continue
         mom = op.target_paragraph
@@ -5270,6 +5314,9 @@ def _collect_subsection_slot_inputs(
     )
     return SubsectionSlotInputs(
         amend_subs=tuple(amend_subs),
+        has_omission_slots=any(
+            child.kind is IRNodeKind.OMISSION for child in (muutos_ir.children if muutos_ir else ())
+        ),
         payload_subsec_ops=tuple(payload_subsec_ops),
         intro_subsec_ops=tuple(intro_subsec_ops),
         renumber_subsec_ops=tuple(renumber_subsec_ops),
