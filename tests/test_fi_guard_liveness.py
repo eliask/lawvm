@@ -209,42 +209,135 @@ def drill_tree_invariant_violation_verdict_barrier() -> None:
     assert "APPLY.TREE_INVARIANT_VIOLATION" in barrier_codes
 
 
-def drill_failed_operation_verdict_barrier() -> None:
-    """APPLY.FAILED_OPERATION reaches the strict verdict barrier codes.
+def _drill_strict_rebound_apply(
+    *,
+    failed_ops_out: "list[Any] | None" = None,
+    source_pathologies_out: "list[Any] | None" = None,
+) -> Any:
+    """Drive the production strict ``apply_op`` into a continuation-fragment reject.
 
-    Production lane: a real ``CompileFailure`` (the frontend-agnostic failed-op
-    record) drives ``strict_fail_reasons_from_finding_ledger``, which trips the
-    ``APPLY.FAILED_OPERATION`` barrier, then ``compute_verdict_from_registry``
-    surfaces it in ``CompileVerdict.barrier_codes``.
+    Builds a live section 73 whose third subsection is a stale continuation
+    fragment, then replays a ``REPLACE 73 § 3 mom`` under the strict Finland
+    profile. The production apply lane (the deciding guard) genuinely refuses the
+    deterministic rebound: it leaves the tree unmutated and records a real
+    ``FailedOp`` (``failed_ops_out``) and a real ``SourcePathology``
+    (``source_pathologies_out``). These are the deciding inputs the
+    APPLY.FAILED_OPERATION / APPLY.SOURCE_PATHOLOGY_DETECTED barriers consume;
+    nothing is hand-built. (Mirrors test_fi_apply.py strict-rebound fixture.)
     """
-    failure = CompileFailure.from_scope(
-        source_statute="1991/1",
-        description="resolved op could not be applied to the live tree",
-        reason="target_not_found",
-        target_section="5",
-        target_unit_kind="section",
+    from lawvm.finland.apply import apply_op as _apply_op
+    from lawvm.finland.ops import AmendmentOp as _AmendmentOp
+    from lawvm.finland.strict_profile import default_finland_strict_profile
+
+    def _content(text: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.CONTENT, text=text)
+
+    def _sub(label: str, *children: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.SUBSECTION, label=label, children=tuple(children))
+
+    def _para(label: str, text: str = "") -> IRNode:
+        return IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label=label,
+            children=(_content(text),) if text else (),
+        )
+
+    def _intro(text: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.INTRO, text=text)
+
+    def _sec(label: str, *children: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, children=tuple(children))
+
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                _sec(
+                    "73",
+                    _sub("1", _content("First moment.")),
+                    _sub("2", _intro("List:"), _para("1", "item a;"), _para("2", "4) hallussapidetty aine.")),
+                    _sub("3", _content("tuomita kokonaan tai osaksi valtiolle menetetyksi.")),
+                    _sub("4", _content("Old real third moment.")),
+                ),
+            ),
+        )
     )
-    barrier_codes = _verdict_barrier_codes_from_findings(failures=[failure])
+    amend_sub = _sub("3", _content("Lisäksi on soveltuvin osin noudatettava, mitä rikoslain 10 luvussa säädetään."))
+    op = _AmendmentOp(
+        op_id="guard_liveness_strict_rebound",
+        op_type="REPLACE",
+        target_section="73",
+        target_unit_kind="section",
+        target_paragraph=3,
+        source_statute="2001/880",
+    )
+    ctx = StatuteContext(id="0/0", title="", base_ir=state.ir, base_xml_bytes=b"<body/>")
+    result = _apply_op(
+        state,
+        op,
+        ctx,
+        _sec("73", amend_sub),
+        amend_sub_ir=amend_sub,
+        replay_mode="legal_pit",
+        failed_ops_out=failed_ops_out,
+        source_pathologies_out=source_pathologies_out,
+        strict_profile=default_finland_strict_profile(),
+    )
+    # The strict guard refused the rebound: the live tree is left unmutated.
+    assert result is state
+    return result
+
+
+def drill_failed_operation_apply_lane() -> None:
+    """APPLY.FAILED_OPERATION reaches the strict verdict barrier from the apply lane.
+
+    Production lane: the strict ``apply_op`` deciding guard refuses a stale
+    continuation-fragment rebound and records a real ``FailedOp`` in
+    ``failed_ops_out``. That FailedOp is converted by the production
+    ``_failed_op_to_compile_failure`` into the ``CompileFailure`` the verdict
+    ledger consumes; ``strict_fail_reasons_from_finding_ledger`` then trips the
+    APPLY.FAILED_OPERATION barrier and ``compute_verdict_from_registry`` surfaces
+    it in ``CompileVerdict.barrier_codes``. The deciding input (the failed op) is
+    produced by the real apply lane, not hand-built.
+    """
+    from lawvm.finland._compile import _failed_op_to_compile_failure
+    from lawvm.finland.ops import FailedOp
+
+    failed_ops: list[FailedOp] = []
+    _drill_strict_rebound_apply(failed_ops_out=failed_ops)
+    assert failed_ops, "strict apply lane did not record a FailedOp for the refused rebound"
+    failures = [_failed_op_to_compile_failure(f) for f in failed_ops]
+    barrier_codes = _verdict_barrier_codes_from_findings(failures=failures)
     assert "APPLY.FAILED_OPERATION" in barrier_codes
 
 
-def drill_source_pathology_detected_verdict_barrier() -> None:
-    """APPLY.SOURCE_PATHOLOGY_DETECTED reaches the strict verdict barrier codes.
+def drill_source_pathology_detected_apply_lane() -> None:
+    """APPLY.SOURCE_PATHOLOGY_DETECTED reaches the strict verdict barrier from apply.
 
-    Production lane: the runtime obligation ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY
-    is mapped by ``strict_fail_reasons_from_finding_ledger`` onto the
-    APPLY.SOURCE_PATHOLOGY_DETECTED strict barrier, which
-    ``compute_verdict_from_registry`` surfaces in ``CompileVerdict.barrier_codes``.
-    This exercises the runtime-finding -> strict-code mapping guard.
+    Production lane: the strict ``apply_op`` deciding guard records a real
+    ``SourcePathology`` in ``source_pathologies_out`` when it refuses the rebound.
+    That pathology is projected to the blocking APPLY.SOURCE_PATHOLOGY_DETECTED
+    finding by the LIVE production guard
+    ``_strict_rejected_source_pathology_finding`` (replay_findings.py) — the same
+    guard production wires from replay_evidence_projection / group elaboration. The
+    finding then flows through the real verdict ledger to
+    ``CompileVerdict.barrier_codes``. (The ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY
+    runtime alias the old verdict-only drill mapped has no production Finding
+    emitter; this drill targets the live guard instead.)
     """
-    finding = Finding(
-        kind="ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
-        role="obligation",
-        stage="strict",
-        detail={"reason": "non-literal source path rejected"},
-        source_statute="1991/1",
-        blocking=True,
+    from lawvm.core.compile_result import SourcePathology
+    from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
+
+    pathologies: list[SourcePathology] = []
+    _drill_strict_rebound_apply(source_pathologies_out=pathologies)
+    assert pathologies, "strict apply lane did not record a SourcePathology for the refused rebound"
+    finding = _strict_rejected_source_pathology_finding(
+        pathologies[0],
+        stage="replay_apply",
+        fallback_source_statute="2001/880",
     )
+    assert finding.kind == "APPLY.SOURCE_PATHOLOGY_DETECTED"
+    assert finding.blocking is True
     barrier_codes = _verdict_barrier_codes_from_findings(findings=[finding])
     assert "APPLY.SOURCE_PATHOLOGY_DETECTED" in barrier_codes
 
@@ -730,27 +823,58 @@ def drill_sparse_omission_tail_pruned_from_carrier_compile_surface() -> None:
     assert SPARSE_OMISSION_TAIL_PRUNE_RULE in finding_kinds
 
 
-def drill_effect_lifecycle_target_unresolved_verdict_barrier() -> None:
-    """APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED reaches strict barrier codes.
+def drill_effect_lifecycle_target_unresolved_apply_lane() -> None:
+    """APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED reaches strict barrier from the builder.
 
-    Production lane: unresolved effect-lifecycle target findings flow through
-    ``strict_fail_reasons_from_finding_ledger`` -> ``compute_verdict_from_registry``
-    and surface in ``CompileVerdict.barrier_codes``. This exercises the strict
-    verdict mapping for lifecycle-target composition failures.
+    Production lane: ``build_finland_effect_lifecycle`` (the deciding builder) is
+    driven with a commencement/expiry lifecycle override whose target effect is
+    absent, so the builder genuinely produces an ``unresolved_effect_target``
+    lifecycle event carrying NO ``source_finding``. The production verdict ledger
+    ``strict_fail_reasons_from_finding_ledger`` then derives
+    APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED from that event (compile_result.py
+    effect-lifecycle branch) and ``compute_verdict_from_registry`` surfaces it in
+    ``CompileVerdict.barrier_codes``. The deciding input (the unresolved event) is
+    produced by the real builder, not hand-built.
     """
-    finding = Finding(
-        kind="APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED",
-        role="obligation",
-        stage="apply",
-        detail={
-            "target_statute": "2010/100",
-            "target_title": "Target amendment",
-        },
-        source_statute="2011/200",
-        blocking=True,
+    from lawvm.finland.effect_lifecycle_signals import (
+        EffectLifecycleOverride,
+        EffectLifecycleOverrideScope,
     )
-    barrier_codes = _verdict_barrier_codes_from_findings(findings=[finding])
-    assert "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED" in barrier_codes
+    from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
+
+    _source_effects, _relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(),
+        temporal_events=(),
+        lifecycle_overrides=(
+            EffectLifecycleOverride(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                scope=EffectLifecycleOverrideScope.sections(("4 a",)),
+                expiry="2022-12-31",
+                context="accepted_amendment",
+            ),
+        ),
+    )
+    assert any(e.kind == "unresolved_effect_target" for e in lifecycle_events), (
+        "the lifecycle builder did not produce an unresolved-effect-target event"
+    )
+    assert all(
+        not str(e.detail.get("source_finding") or "").strip()
+        for e in lifecycle_events
+        if e.kind == "unresolved_effect_target"
+    ), "the unresolved event already carries a source_finding; the generic barrier won't fire"
+
+    reasons = strict_fail_reasons_from_finding_ledger(
+        _DRILL_STRICT_PROFILE,
+        compiled_ops=[],
+        canonical_ops=[],
+        failures=[],
+        findings=[],
+        effect_lifecycle_events=lifecycle_events,
+    )
+    verdict = compute_verdict_from_registry(_DRILL_STRICT_PROFILE, reasons)
+    assert "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED" in verdict.barrier_codes
 
 
 def _route_rejection_findings(
@@ -2511,11 +2635,11 @@ def drill_overlay_promotion_witness_incomplete_tree_closure() -> None:
 FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "LINEAGE.CYCLE": drill_lineage_cycle_replay_products_build,
     "APPLY.TREE_INVARIANT_VIOLATION": drill_tree_invariant_violation_duplicate_label,
-    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": drill_effect_lifecycle_target_unresolved_verdict_barrier,
-    "APPLY.FAILED_OPERATION": drill_failed_operation_verdict_barrier,
+    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": drill_effect_lifecycle_target_unresolved_apply_lane,
+    "APPLY.FAILED_OPERATION": drill_failed_operation_apply_lane,
     "APPLY.META_REPEAL_EFFECT_UNRESOLVED": drill_meta_repeal_effect_unresolved_route_rejection_barrier,
     "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED": drill_pending_amendment_effect_unresolved_route_rejection_barrier,
-    "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_verdict_barrier,
+    "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_apply_lane,
     "ELAB.LEADING_SUBSECTION_HEADING_PAYLOAD": drill_leading_subsection_heading_payload_elaboration,
     "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL": drill_fold_single_insert_subsection_list_tail_payload_elaboration,
     "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET": drill_restore_heading_for_explicit_facet_group_elaboration,
@@ -2667,7 +2791,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE": ("merge recovery; needs fixture", "2026-06-20"),
     "ELAB.LOCAL_DENSE_SUBSECTION_NUMBERING": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
-    "ELAB.MISSING_PAYLOAD_SURFACE": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.MIXED_SPARSE_SLOT_CROSS_PARAGRAPH": ("payload-normalize ambiguity; needs fixture", "2026-06-20"),
     "ELAB.NORMALIZE_ITEM_LIKE_TARGET": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.NUMBERED_TABLE_TARGET_MERGE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
@@ -2676,7 +2799,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.REBASE_ITEM_TARGET_TO_SPARSE_SLOT_LABEL": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.REBASE_SPARSE_STALE_PREDECESSOR": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
-    "ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.RENUMBER_DESTINATION_PAYLOAD_SLOT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "FI.PREAMBLE_BODY_PRE_ROUTING_FALLBACK": ("grafter recovery; needs fixture", "2026-06-20"),
     "ELAB.SPARSE_PAYLOAD_LEFTOVER": ("grafter recovery; needs fixture", "2026-06-20"),
@@ -2710,7 +2832,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "LOWER.SCOPE_CARRY_FORWARD": ("scope recovery; needs fixture", "2026-06-20"),
     "PARSE.EXTRACTION_FALLBACK": ("parse barrier; needs fixture", "2026-06-20"),
     "PARSE.FRONTEND_BLOCKING_DIAGNOSTIC": ("frontend phase barrier; needs fixture", "2026-06-20"),
-    "PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA": ("frontend recovery; needs fixture", "2026-06-20"),
     "PARSE.PREAMBLE_CLAUSE_FAILED.RESOLVED_BY_ATTESTATION": ("attestation-resolved; needs fixture", "2026-06-20"),
     "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER": ("frontend recovery; needs fixture", "2026-06-20"),
     "PARSE.STRICT_REJECTED_TARGET_GUESSING": ("strict-mode barrier; needs fixture", "2026-06-20"),
@@ -2938,6 +3059,7 @@ _PRODUCTION_BUILDER_CALLS = (
     "ProcessRouteRejectionContext",
     "normalize_and_compile_ops",
     "build_group_surface",
+    "build_finland_effect_lifecycle",
     "compile_amendment_ops",
     "elaborate_group",
     "elaborate_payload_against_live",
@@ -2960,11 +3082,14 @@ _PRODUCTION_BUILDER_CALLS = (
 # production verdict builder rather than a deeper apply/replay builder; they are
 # the verdict-surface primary lane. Every OTHER primary drill must drive a
 # builder from ``_PRODUCTION_BUILDER_CALLS``.
-_VERDICT_SURFACE_PRIMARY_DRILLS = frozenset({
-    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED",
-    "APPLY.FAILED_OPERATION",
-    "APPLY.SOURCE_PATHOLOGY_DETECTED",
-})
+#
+# Empty after the dead-gate reconciliation: the three former verdict-only drills
+# (APPLY.FAILED_OPERATION, APPLY.SOURCE_PATHOLOGY_DETECTED,
+# APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED) now drive their production-deciding
+# guard — the strict ``apply_op`` lane (real FailedOp / SourcePathology) and the
+# ``build_finland_effect_lifecycle`` builder (real unresolved-target event) — so
+# none remains a verdict-mapping-only drill.
+_VERDICT_SURFACE_PRIMARY_DRILLS: frozenset[str] = frozenset()
 
 
 def _drill_effective_source(drill: Callable[[], None]) -> str:

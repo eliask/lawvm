@@ -148,6 +148,70 @@ def _emit_polarity_windows(code: str) -> list[str]:
     return windows
 
 
+def _compile_result_force_add_codes() -> frozenset[str]:
+    """Codes the strict verdict-ledger lane force-adds regardless of blocking flag.
+
+    ``strict_fail_reasons_from_finding_ledger`` adds a small literal set of codes
+    to the ``triggered`` set unconditionally (``if spec.code in {...}: ...``),
+    *before* the ``finding.blocking and ...`` gate. A code in that set blocks even
+    when its only production emit window is non-blocking (the blocking decision is
+    made at the verdict-ledger, not the emit). We parse the literal set out of the
+    production function source so this stays honest if the set changes upstream.
+    """
+    import inspect
+    import re
+
+    from lawvm.core.compile_result import strict_fail_reasons_from_finding_ledger
+
+    src = inspect.getsource(strict_fail_reasons_from_finding_ledger)
+    match = re.search(r"if spec\.code in \{([^}]*)\}", src)
+    if match is None:
+        return frozenset()
+    return frozenset(re.findall(r"['\"]([^'\"]+)['\"]", match.group(1)))
+
+
+def _blocks_via_indirection(code: str) -> bool:
+    """True if *code* blocks through a path the emit-window grep cannot see.
+
+    The GUARD-03 emit-window matcher only reads polarity markers *at the emit
+    site*. Three production indirections decide blocking elsewhere, so a code can
+    emit ``blocking=False`` / ``role="observation"`` at its producer yet still be a
+    live (or dormant-but-armable) strict gate:
+
+    (a) **force-add set** — ``strict_fail_reasons_from_finding_ledger`` force-adds
+        the code to the triggered set regardless of the blocking flag
+        (``compile_result.py`` force-add block).
+    (b) **role-dispatch blocking** — ``_finding_from_compile_signal`` constructs an
+        obligation finding with ``blocking = default_enforcement in (strict_fail,
+        hard_fail)``, so an obligation/strict_fail code is dispatched blocking even
+        where the call site shows no literal ``blocking=True``.
+    (c) **profile-gated strict_fail** — the code is a strict_fail in a
+        ``_PROFILE_GATES`` row: it is suppressed only under a permissive profile
+        and armable (strict-fails) under a stricter one. A dormant-armable gate is
+        a real gate, not a dead one.
+
+    Any of these makes the GUARD-03 "non-blocking-only emit" classification a false
+    positive: the registry is correct and the gate is live/armable.
+    """
+    spec = FINDING_REGISTRY.get(code)
+    if spec is None:
+        return False
+    # (a) force-add set
+    if code in _compile_result_force_add_codes():
+        return True
+    is_strict = spec.default_enforcement in ("strict_fail", "hard_fail")
+    # (b) obligation role-dispatched blocking in _finding_from_compile_signal
+    if spec.role == "obligation" and is_strict:
+        return True
+    # (c) profile-gated strict_fail (dormant-armable under a stricter profile)
+    if is_strict:
+        from lawvm.core.compile_result import _PROFILE_GATES
+
+        if code in _PROFILE_GATES:
+            return True
+    return False
+
+
 def _emits_non_blocking_only(code: str) -> bool:
     """True if every production emit window for *code* is non-blocking polarity.
 
@@ -156,7 +220,25 @@ def _emits_non_blocking_only(code: str) -> bool:
     structurally a dead gate. Codes with no emit window at all (covered by the
     harness emit gate / ``_KNOWN_NO_PRODUCTION_EMIT``) are not polarity mismatches
     here.
+
+    A code that blocks through a production indirection the emit-window grep
+    cannot see (``_blocks_via_indirection``) is NOT a non-blocking-only emit: the
+    blocking decision is made downstream of the emit, so the registry is correct
+    and the gate is live (or dormant-but-armable).
+
+    A registry/producer *enforcement* mismatch only exists when the registry's
+    enforcement actually claims blocking (``strict_fail`` / ``hard_fail``). A
+    ``warn``-enforcement code makes no blocking claim at the strict gate
+    (``compile_result.py`` requires ``default_enforcement in (strict_fail,
+    hard_fail)``), so a non-blocking producer for it is consistent, not a
+    mismatch — even when the code is classified "blocking" only by its
+    obligation/violation role. Such codes are excluded here.
     """
+    spec = FINDING_REGISTRY.get(code)
+    if spec is None or spec.default_enforcement not in ("strict_fail", "hard_fail"):
+        return False
+    if _blocks_via_indirection(code):
+        return False
     windows = _emit_polarity_windows(code)
     if not windows:
         return False
@@ -180,21 +262,14 @@ def _emits_non_blocking_only(code: str) -> bool:
 # Each entry carries a one-line reason. This is a reason-carrying ratchet: a NEW
 # verdict-mapping-only blocking code must consciously land here (or get a real
 # deciding-guard drill); it cannot silently inherit the verdict-surface blessing.
-GUARD02_VERDICT_ONLY_DRILL_HOLES: Dict[str, str] = {
-    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": (
-        "only drill drives compute_verdict_from_registry over a hand-built Finding; "
-        "the apply-time lifecycle-target resolution guard that emits it is untested"
-    ),
-    "APPLY.FAILED_OPERATION": (
-        "only drill drives the verdict mapping over a hand-built CompileFailure; the "
-        "apply lane that records the failed-op is untested via this harness"
-    ),
-    "APPLY.SOURCE_PATHOLOGY_DETECTED": (
-        "only drill maps a hand-built ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY runtime "
-        "finding onto the strict barrier; the production guard that rejects the "
-        "source pathology is untested via this harness"
-    ),
-}
+# Empty after the dead-gate reconciliation. The three former verdict-only holes
+# (APPLY.FAILED_OPERATION, APPLY.SOURCE_PATHOLOGY_DETECTED,
+# APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED) now have real deciding-guard drills:
+# the strict ``apply_op`` lane drives a genuine FailedOp / SourcePathology, and
+# ``build_finland_effect_lifecycle`` produces a genuine unresolved-target event.
+# A NEW verdict-mapping-only blocking code must consciously land here (with a
+# reason) or get a real deciding-guard drill.
+GUARD02_VERDICT_ONLY_DRILL_HOLES: Dict[str, str] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -203,40 +278,20 @@ GUARD02_VERDICT_ONLY_DRILL_HOLES: Dict[str, str] = {
 
 # Blocking-registered codes whose only production emit polarity is non-blocking
 # (an Observation / blocking=False / role="observation" emit, never a raise /
-# Violation / Obligation / blocking=True). This is the LS-03 occupancy-gate class
-# generalized: the registry says "blocking" but the only producer emits a
-# non-blocking off-pipeline Finding, so the guard is structurally dead. Each is
-# also untested debt in NO_FIRE_DRILL_YET, which is why none has been reconciled.
+# Violation / Obligation / blocking=True) AND which do not block through a
+# production indirection the emit-window grep cannot see. This is the LS-03
+# occupancy-gate class: the registry says "blocking" but the only producer emits a
+# non-blocking off-pipeline Finding, so the guard is structurally dead.
 #
-# Reason-carrying ratchet: a NEW non-blocking-only-emit blocking code must
+# Reason-carrying ratchet: a NEW genuine non-blocking-only-emit blocking code must
 # consciously land here (or be reconciled in the registry / wire a blocking
-# producer). The current set is honest, surfaced debt — NOT a clean bill.
-GUARD03_NON_BLOCKING_ONLY_EMIT: Dict[str, str] = {
-    "APPLY.SOURCE_CORRECTED_BY_PATCH": (
-        "strict_fail/obligation; only emit windows are observation/blocking=False"
-    ),
-    "ELAB.MISSING_PAYLOAD_SURFACE": (
-        "strict_fail/observation grafter recovery; emit windows non-blocking only"
-    ),
-    "ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE": (
-        "strict_fail/observation grafter recovery; emit windows non-blocking only"
-    ),
-    "ELAB.SPARSE_PAYLOAD_LEFTOVER": (
-        "warn/obligation grafter; emit windows non-blocking only"
-    ),
-    "PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA": (
-        "strict_fail/observation frontend recovery; emit windows non-blocking only"
-    ),
-    "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER": (
-        "strict_fail/observation frontend recovery; emit windows non-blocking only"
-    ),
-    "PARSE.UNOWNED_BODY_SECTION": (
-        "strict_fail/observation frontend recovery; emit windows non-blocking only"
-    ),
-    "TIME.ESTIMATED_EFFECTIVE_DATE": (
-        "strict_fail/obligation timeline barrier; emit windows non-blocking only"
-    ),
-}
+# producer). The set is currently empty: the dead-gate reconciliation either
+# downgraded the genuine over-claims to ``warn`` (registry now matches the
+# non-blocking producer) or proved the remainder block via an indirection
+# (``_blocks_via_indirection``) the emit-window grep cannot see — force-add set,
+# obligation role-dispatch, or profile-gated strict_fail — so they are live or
+# dormant-but-armable gates with correct registry entries, not dead gates.
+GUARD03_NON_BLOCKING_ONLY_EMIT: Dict[str, str] = {}
 
 
 # ---------------------------------------------------------------------------

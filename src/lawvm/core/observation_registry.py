@@ -173,11 +173,11 @@ class FindingSpec:
 FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
     # --- Observations (role="observation") ---
     FindingSpec("ELAB.MISSING_PAYLOAD_SURFACE", "_build_group_surface",
-                "recovery", "strict_fail", "grafter",
+                "recovery", "warn", "grafter",
                 "section_ir absent despite non-trivial ops; no payload surface to elaborate",
                 ("preservation",), role="observation"),
     FindingSpec("ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE", "_build_group_surface",
-                "recovery", "strict_fail", "grafter",
+                "recovery", "warn", "grafter",
                 "same-group recodification payload selected from destination section when source-number body is absent or an omission shell",
                 ("preservation", "parse_witness", "strictness"), role="observation"),
     FindingSpec("ELAB.SPARSE_OMISSION_TAIL_CLAIM", "_build_group_surface",
@@ -595,7 +595,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "an enacting-formula body fallback accepted some body sections while leaving sibling body sections unowned",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
     FindingSpec("PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA", "frontend_compile",
-                "recovery", "strict_fail", "frontend_compile",
+                "recovery", "warn", "frontend_compile",
                 "an act-wide change formula supplied provision targets through labelled body sections",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
     FindingSpec("LOWER.CONTEXT_DEPENDENT_ANCHOR", "frontend_scope",
