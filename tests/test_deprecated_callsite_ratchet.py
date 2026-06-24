@@ -78,7 +78,6 @@ class TestCohortIntegrity:
             "strip_legacy_numbered_section_heading_prefix": (
                 "lawvm.finland.oracle_comparison"
             ),
-            "parse_leading_structural_address_path": "lawvm.finland.address_parse",
         }
         assert set(symbol_modules) == set(_INV.DEPRECATED_SYMBOLS), (
             "Test cohort drifted from scanner's DEPRECATED_SYMBOLS."

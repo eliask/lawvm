@@ -6,8 +6,7 @@
     "parse_ops_title_fallback": "src/lawvm/finland/normalize.py",
     "extract_plain_text_statute_mentions": "src/lawvm/finland/references/ref_mention_extractor.py",
     "strip_legacy_roman_division_heading_prefix": "src/lawvm/finland/oracle_comparison.py",
-    "strip_legacy_numbered_section_heading_prefix": "src/lawvm/finland/oracle_comparison.py",
-    "parse_leading_structural_address_path": "src/lawvm/finland/address_parse.py"
+    "strip_legacy_numbered_section_heading_prefix": "src/lawvm/finland/oracle_comparison.py"
   },
   "counts": {
     "parse_ops_fallback_heuristic": 17,
@@ -15,8 +14,7 @@
     "parse_ops_title_fallback": 2,
     "extract_plain_text_statute_mentions": 22,
     "strip_legacy_roman_division_heading_prefix": 1,
-    "strip_legacy_numbered_section_heading_prefix": 1,
-    "parse_leading_structural_address_path": 0
+    "strip_legacy_numbered_section_heading_prefix": 1
   },
   "sites": {
     "parse_ops_fallback_heuristic": [
@@ -79,8 +77,7 @@
     ],
     "strip_legacy_numbered_section_heading_prefix": [
       "src/lawvm/finland/oracle_comparison.py:421"
-    ],
-    "parse_leading_structural_address_path": []
+    ]
   },
   "total": 49
 }

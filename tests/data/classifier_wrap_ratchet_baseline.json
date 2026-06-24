@@ -3,7 +3,6 @@
   "raw_re_compile_counts": {
     "src/lawvm/finland/acquisition.py": 2,
     "src/lawvm/finland/actor_mention_extractor.py": 8,
-    "src/lawvm/finland/address_parse.py": 4,
     "src/lawvm/finland/amendment_chapter_precreate.py": 6,
     "src/lawvm/finland/apply_ir_ops.py": 2,
     "src/lawvm/finland/apply_item_ops.py": 4,
@@ -58,5 +57,5 @@
     "src/lawvm/finland/timeline_version_dedupe.py": 1,
     "src/lawvm/finland/transition_graph_profile.py": 2
   },
-  "total_raw_re_compile": 357
+  "total_raw_re_compile": 353
 }

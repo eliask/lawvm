@@ -9,7 +9,6 @@
       "src/lawvm/finland/payload_normalize.py": 1
     },
     "multi_finditer_same_src": {
-      "src/lawvm/finland/address_parse.py": 2,
       "src/lawvm/finland/amendment_chapter_precreate.py": 2,
       "src/lawvm/finland/johto_scope_mentions.py": 4,
       "src/lawvm/finland/metadata.py": 8,
@@ -39,10 +38,10 @@
       "src/lawvm/finland/references/eu_transposition.py": 1
     }
   },
-  "grand_total": 75,
+  "grand_total": 73,
   "totals": {
     "clause_boundary_dup": 7,
-    "multi_finditer_same_src": 21,
+    "multi_finditer_same_src": 19,
     "per_op_fstring_regex": 38,
     "span_overlap_dedup": 9
   }

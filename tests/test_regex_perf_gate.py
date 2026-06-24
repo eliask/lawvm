@@ -157,10 +157,6 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "quantifiers. Pre-existing baseline."
     ),
     # finland
-    "src/lawvm/finland/address_parse.py": (
-        "Pre-existing baseline: complex nested quantifiers in subsection address "
-        "parsing patterns. Pre-existing baseline."
-    ),
     "src/lawvm/finland/citation_routing.py": (
         "Pre-existing baseline: _FI_META_REPEAL_RE — bounded .{0,400}? with "
         "keyword guards; adjacent repeats at boundary positions flagged by AST "

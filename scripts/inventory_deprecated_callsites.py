@@ -49,7 +49,6 @@ DEPRECATED_SYMBOLS: dict[str, str] = {
     "strip_legacy_numbered_section_heading_prefix": (
         "src/lawvm/finland/oracle_comparison.py"
     ),
-    "parse_leading_structural_address_path": "src/lawvm/finland/address_parse.py",
 }
 
 # Roots scanned for call sites.
