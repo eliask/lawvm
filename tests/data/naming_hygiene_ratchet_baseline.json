@@ -215,7 +215,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 154,
+  "public_schema_count": 157,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -247,6 +247,8 @@
     "lawvm.cose_sign1.v1",
     "lawvm.coverage.v0",
     "lawvm.coverage_row.v1",
+    "lawvm.dangling_cause_report.v1",
+    "lawvm.dangling_cause_row.v1",
     "lawvm.dangling_reference_report.v1",
     "lawvm.dangling_reference_row.v1",
     "lawvm.diagnostic_registry.v0",
@@ -254,6 +256,7 @@
     "lawvm.dsse.v1",
     "lawvm.dump.v1",
     "lawvm.eu_enumeration_snapshot.v0",
+    "lawvm.eu_reference_report.v1",
     "lawvm.execution_authorization_report.v1",
     "lawvm.extraction_correction_assertion.v1",
     "lawvm.facade.v0",
