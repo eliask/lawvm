@@ -131,9 +131,19 @@ def main(args: Any) -> int:
             _record(sid, ok, status, idx)
     else:
         import multiprocessing as mp
+        import os
+
+        # When run under coverage with concurrency=multiprocessing, the worker
+        # processes must be started via 'spawn' so the coverage subprocess hook
+        # (COVERAGE_PROCESS_START) fires in each child; forked children inherit
+        # the parent without re-running the startup hook and go uninstrumented.
+        # Production (no coverage) keeps the faster default start method.
+        ctx: Any = mp
+        if os.environ.get("COVERAGE_PROCESS_START"):
+            ctx = mp.get_context("spawn")
 
         work = [(sid, mode) for sid in statute_ids]
-        with mp.Pool(processes=workers) as pool:
+        with ctx.Pool(processes=workers) as pool:
             for idx, (sid, ok, status) in enumerate(
                 pool.imap_unordered(_replay_worker, work, chunksize=8), start=1
             ):
