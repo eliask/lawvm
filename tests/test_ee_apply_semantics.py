@@ -11029,3 +11029,97 @@ def test_case_inflected_text_replace_uses_assistent_genitive_on_modifier_context
         case_inflected=True,
     )
     assert replaced == "Bürooassistendi erialappekava üldosa"
+
+
+def test_case_inflected_text_replace_uses_assistent_genitive_before_plain_noun_head() -> None:
+    """Plain noun-head modifier context — the corpus-motivated family.
+
+    ``bialppekava`` (ending in ``-va``) was already handled by the
+    earlier participle/``-va`` cue in ``_genitive_context``, but a plain
+    noun head like ``eriala`` does not match any earlier cue and used to
+    fall through to the conservative nominative default. Corpus witness:
+    ``120092023001`` §1 over ``130042020016`` (Sekretäri- ja
+    kontoritöö erialade riiklikppekava), where the source-backed rename
+    ``bürootöö -> bürooassistent vastavas käändes`` requires
+    ``bürooassistendi`` before every noun head (``bürooassistendi eriala``,
+    ``bürooassistendi erialappekava üldosa``, etc.). Pre-fix this pair
+    showed 14 open divergences at 44.4% sentence match; post-fix it
+    converges to 0 open divergences at 100% match.
+    """
+    # Sentence-medial, plain noun head, no earlier cue fires.
+    assert _ee_apply_text_replace_value(
+        "Riiklikuppekavaga kehtestatakse kohustuslikppesisu bürootöö eriala "
+        "(inglise keeles office assistant) näol.",
+        "bürootöö",
+        "bürooassistent",
+        case_inflected=True,
+    ) == (
+        "Riiklikuppekavaga kehtestatakse kohustuslikppesisu bürooassistendi "
+        "eriala (inglise keeles office assistant) näol."
+    )
+    # Heading-initial, plain noun head, capitalisation preserved.
+    assert _ee_apply_text_replace_value(
+        "Bürootöö erialappekava üldosa Bürooassistent eriala "
+        "kutsekeskharidusõppe eesmärk japiväljundid",
+        "bürootöö",
+        "bürooassistent",
+        case_inflected=True,
+    ) == (
+        "Bürooassistendi erialappekava üldosa Bürooassistendi eriala "
+        "kutsekeskharidusõppe eesmärk japiväljundid"
+    )
+
+
+def test_case_inflected_text_replace_keeps_nominative_before_genitive_chain_noun_head() -> None:
+    """Negative: matched surface stays nominative when the next word is itself
+    a genitive-form noun (``-se`` ending), signalling a genitive-chain /
+    apposition construction rather than a modifier slot.
+
+    Witness: ``Põllumajandus-ja Toiduamet asendustäitmise ja sunniraha
+    seaduses sätestatud korras`` keeps nominative before ``asendustäitmise``
+    (the subject of ``sätestatud``).  Pin against the
+    ``-se`` carve-out in ``_looks_like_noun_head`` so the genitive-modifier
+    rule cannot back-fire here and produce ``Põllumajandus-ja Toiduameti``.
+    """
+    assert _ee_apply_text_replace_value(
+        "Põllumajandusamet asendustäitmise ja sunniraha seaduses sätestatud korras.",
+        "Põllumajandusamet",
+        "Põllumajandus-ja Toiduamet",
+        case_inflected=True,
+    ) == "Põllumajandus-ja Toiduamet asendustäitmise ja sunniraha seaduses sätestatud korras."
+
+
+def test_case_inflected_text_replace_keeps_nominative_before_dash_compound_overlap() -> None:
+    """Negative: matched surface stays nominative when followed by a dash
+    separator (ASCII hyphen, en-dash, or em-dash) and another noun / name —
+    ``X – Y või selle struktuuriüksus`` is a coordinate compound where the
+    matched surface is the subject/term slot, not a modifier of Y.
+
+    Witness: ``117122025002`` §2 over ``112022019010`` (Väikelaeva ... reg)
+    item:19, where the same-target rename chain ``Veeteede Amet /
+    Maanteeamet -> Transpordiamet`` ultimately produces ``Transpordiamet –
+    Transpordiamet või selle struktuuriüksus``. Each rename op is a separate
+    ``_ee_apply_text_replace_value`` call; the genitive post-pass would
+    otherwise fire on just-replaced ``Transpordiamet`` before the dash
+    separator and lower it to ``Transpordiameti``. Pre-carve-out the pair
+    regressed to a 4-divergence MISMATCH at 93.75% sentence match;
+    post-carve-out it converges to 0 open divergences at 100%.
+
+    ``_ee_apply_text_replace_value`` runs one op per call, so each assertion
+    applies ONE rename and checks the genitive carve-out doesn't then fire
+    on the just-replaced noun before the dash separator.
+    """
+    # En-dash with spaces (the live pattern).
+    assert _ee_apply_text_replace_value(
+        "Veeteede Amet – Maanteeamet või selle struktuuriüksus;",
+        "Veeteede Amet",
+        "Transpordiamet",
+        case_inflected=True,
+    ) == "Transpordiamet – Maanteeamet või selle struktuuriüksus;"
+    # Em-dash, spaced (typographical variant).
+    assert _ee_apply_text_replace_value(
+        "Veeteede Amet — Maanteeamet või selle struktuuriüksus;",
+        "Veeteede Amet",
+        "Transpordiamet",
+        case_inflected=True,
+    ) == "Transpordiamet — Maanteeamet või selle struktuuriüksus;"
