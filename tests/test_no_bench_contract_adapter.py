@@ -26,7 +26,9 @@ from lawvm.tools.no_bench import (
     _load_run_accuracies,
     _most_recent_labels,
     _resolve_runs_dir,
+    _render_history,
     _render_regressions_from_runs,
+    _render_show_label,
     no_bench_unit_result,
 )
 
@@ -453,7 +455,11 @@ def _write_run_csv(path: _Path, rows: list[tuple[str, str, str]]) -> None:
 
     Each row is ``(unit_id, status, headline_accuracy)``; structural_err is
     derived as ``1 - accuracy`` so find_regressions' headline_accuracy column
-    reads sanely. Mirrors the schema persisted by ``_persist_per_statute_results``.
+    reads sanely. Mirrors the schema persisted by ``_persist_per_statute_results``:
+    the CSV's ``headline_error`` column is the *error* (1 - accuracy), and the
+    ``headline_accuracy`` column is the *accuracy* itself. A test fixture that
+    wrote accuracy into headline_error would invert the renderer's worst-first
+    sort (the renderer sorts by descending headline_error).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -461,16 +467,17 @@ def _write_run_csv(path: _Path, rows: list[tuple[str, str, str]]) -> None:
         for unit_id, status, acc in rows:
             try:
                 acc_f = float(acc)
-                struct_f = 1.0 - acc_f
+                err_f = 1.0 - acc_f
             except ValueError:
                 acc_f = None
-                struct_f = None
+                err_f = None
             f.write(
                 f"{unit_id},{status},"
-                f"{'' if struct_f is None else f'{struct_f:.6f}'},"
+                f"{'' if err_f is None else f'{err_f:.6f}'},"
                 f","
-                f"{'' if acc_f is None else f'{(1 - struct_f) if struct_f is not None else acc:.6f}'},"
-                f"{acc},0,,\n"
+                f"{'' if err_f is None else f'{err_f:.6f}'},"
+                f"{'' if acc_f is None else f'{acc_f:.6f}'},"
+                f"0,,\n"
             )
 
 
@@ -647,3 +654,152 @@ def test_resolve_runs_dir_uses_arg_override_when_directory(tmp_path) -> None:
     resolved = _resolve_runs_dir(args)
 
     assert resolved == runs_dir
+
+
+# ---------------------------------------------------------------------------
+# --show + --history renderers — focused tests with synthetic CSVs.
+# ---------------------------------------------------------------------------
+
+
+def test_render_show_label_orders_worst_performers_first(tmp_path) -> None:
+    # Three synthetic rows; the renderer must sort SCORED rows by
+    # headline_error descending so the worst performer appears first.
+    # Format mirrors the schema persisted by _persist_per_statute_results.
+    from types import SimpleNamespace
+
+    runs_dir = tmp_path / "norway_bench_runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    _write_run_csv(
+        runs_dir / "show-me.csv",
+        [
+            ("no/lov/A", "scored", "1.000000"),  # struct=0; worst-performer-3rd
+            ("no/lov/B", "scored", "0.800000"),  # struct=0.2; worst-performer-1st
+            ("no/lov/C", "scored", "0.950000"),  # struct=0.05; worst-performer-2nd
+        ],
+    )
+
+    args = SimpleNamespace(show="show-me", top=3, runs_path=runs_dir)
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    rc = 0
+    with redirect_stdout(buf):
+        rc = _render_show_label(args)
+
+    assert rc == 0
+    out = buf.getvalue()
+    assert "=== Norway bench show: show-me ===" in out
+    # Worst-first: B (struct=0.2), C (struct=0.05), A (struct=0).
+    assert out.index("no/lov/B") < out.index("no/lov/C")
+    assert out.index("no/lov/C") < out.index("no/lov/A")
+    # --top is honored: ask for 2 → only two top rows printed, A omitted.
+    args.top = 2
+    buf2 = io.StringIO()
+    with redirect_stdout(buf2):
+        _render_show_label(args)
+    out2 = buf2.getvalue()
+    assert "no/lov/B" in out2 and "no/lov/C" in out2 and "no/lov/A" not in out2
+
+
+def test_render_show_label_reports_non_scored_when_top_exceeds_scored(tmp_path) -> None:
+    # Two scored + one CRASH row. With --top 5 (more than scored=2), the
+    # CRASH row surfaces at the end so the user sees the failures too.
+    # With --top 2 (default), only scored surfaces; CRASH stays hidden
+    # to avoid drowning the worst-N report in non-regressed blockers.
+    from types import SimpleNamespace
+
+    runs_dir = tmp_path / "norway_bench_runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = runs_dir / "mixed.csv"
+    csv_content = (
+        "unit_id,status,structural_err,text_err,headline_error,headline_accuracy,"
+        "residue_total,residue_buckets,witnesses\n"
+        "no/lov/A,scored,0.000000,,0.000000,1.000000,0,,\n"
+        "no/lov/B,scored,0.200000,,0.200000,0.800000,1,structural:MISMATCH=1,\n"
+        "no/lov/C,crash,,,,,0,,boom-time-out\n"
+    )
+    csv_path.write_text(csv_content, encoding="utf-8")
+
+    args = SimpleNamespace(show="mixed", top=5, runs_path=runs_dir)
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        _render_show_label(args)
+    out = buf.getvalue()
+    assert "no/lov/C" in out  # CRASH only listed when top exceeded scored count
+    assert "boom-time-out" in out
+
+    args.top = 2
+    buf2 = io.StringIO()
+    with redirect_stdout(buf2):
+        _render_show_label(args)
+    out2 = buf2.getvalue()
+    assert "no/lov/C" not in out2  # CRASH stays hidden at default top
+
+
+def test_render_show_label_returns_2_when_label_missing(tmp_path) -> None:
+    # Reading-only --show references a never-persisted label: typed rc=2 +
+    # diagnostic naming the missing path. Never silently empty-output.
+    from types import SimpleNamespace
+
+    runs_dir = tmp_path / "norway_bench_runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    args = SimpleNamespace(show="never-saved", top=20, runs_path=runs_dir)
+
+    rc = _render_show_label(args)
+
+    assert rc == 2
+
+
+def test_render_history_lists_rows_in_csv_order(tmp_path) -> None:
+    # Three past runs persisted; the renderer writes them in chronological
+    # append order (the CSV is append-only, so reading order === write order).
+    # Distribution columns translate to ints; non-numeric cells surface as 0.
+    from types import SimpleNamespace
+
+    history_path = tmp_path / "norway_bench_history.csv"
+    history_path.write_text(
+        "timestamp,label,mean_score,n_statutes,n_perfect,n_above_99,n_above_95,n_below_90\n"
+        "2026-06-22T10:00:00Z,run-a,0.8282,18,9,10,11,4\n"
+        "2026-06-22T11:00:00Z,run-b,0.7012,18,5,7,9,9\n"
+        "2026-06-22T12:00:00Z,run-c,0.9115,18,11,13,15,2\n",
+        encoding="utf-8",
+    )
+
+    args = SimpleNamespace(history=True, history_path=history_path)
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    rc = 0
+    with redirect_stdout(buf):
+        rc = _render_history(args)
+
+    assert rc == 0
+    out = buf.getvalue()
+    assert "=== Norway bench history:" in out
+    assert "Runs: 3" in out
+    # Chronological by append order — run-a prints first, even with the
+    # best-of-worst mean_score sorting the rendering layer would have done.
+    assert out.index("run-a") < out.index("run-b")
+    assert out.index("run-b") < out.index("run-c")
+    # All distribution columns surface as ints, one row each.
+    assert "9    10    11     4" in out  # run-a
+    assert "5     7     9     9" in out  # run-b
+
+
+def test_render_history_returns_0_when_history_empty(tmp_path) -> None:
+    # First-ever run: history CSV doesn't exist yet. Surface a typed
+    # advisory rather than crashing; the renderer returns 0 (no regressions
+    # to compare, no history to show, but a successful command regardless).
+    from types import SimpleNamespace
+
+    history_path = tmp_path / "does-not-exist.csv"
+    args = SimpleNamespace(history=True, history_path=history_path)
+
+    rc = _render_history(args)
+
+    assert rc == 0

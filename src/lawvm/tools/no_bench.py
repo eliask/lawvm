@@ -416,6 +416,151 @@ def _render_regressions_from_runs(args: object) -> int:
     return 0
 
 
+def _render_history_or_show_or_regressions(args: object) -> int:
+    """Dispatch the read-only ``--show`` / ``--history`` / ``--regressions`` flags.
+
+    All three short-circuit the sweep; this helper picks the one the args
+    namespace asks for and routes to its renderer. ``--compare`` overrides
+    ``--regressions`` (the parser will not set both simultaneously, but the
+    explicit pair takes precedence if both somehow arrive).
+    """
+    if getattr(args, "show", None):
+        return _render_show_label(args)
+    if getattr(args, "history", False):
+        return _render_history(args)
+    return _render_regressions_from_runs(args)
+
+
+def _render_show_label(args: object) -> int:
+    """Render the worst performers from one labelled run.
+
+    Loads ``data/norway_bench_runs/<label>.csv`` (populated by
+    :func:`_persist_per_statute_results`) and prints the top-N statutes by
+    worst headline_error first. ``--top`` defaults to 20; ``--top 5``
+    shows five.
+
+    Mirrors EE's ``_show_run``: read-only, no re-run, no sweep.
+    """
+    import csv as _csv
+    import sys
+
+    label = getattr(args, "show", None)
+    if not label:
+        print("Norway bench --show requires a LABEL argument", file=sys.stderr)
+        return 2
+    runs_dir = _resolve_runs_dir(args)
+    csv_path = runs_dir / f"{label}.csv"
+    if not csv_path.exists():
+        print(
+            f"Norway bench run not found: {csv_path}. "
+            "Persist it first via `lawvm -j no bench --label <tag>`.",
+            file=sys.stderr,
+        )
+        return 2
+    top = getattr(args, "top", 20) or 20
+    try:
+        top = max(1, int(top))
+    except (TypeError, ValueError):
+        top = 20
+
+    rows: list[dict[str, str]] = []
+    with csv_path.open("r", encoding="utf-8", newline="") as f:
+        reader = _csv.DictReader(f)
+        for row in reader:
+            rows.append(dict(row))
+    # Sort only SCORED rows by headline_error descending — non-scored
+    # statuses (CRASH / SOURCE_UNAVAILABLE / NO_TRUTH) don't carry an error
+    # and would surface as zero / blank otherwise. Stick them at the end
+    # in their input order.
+    scored = [r for r in rows if r.get("status") == "scored"]
+    other = [r for r in rows if r.get("status") != "scored"]
+    scored.sort(key=lambda r: -(float(r.get("headline_error") or "0")))
+
+    print(f"=== Norway bench show: {label} ===")
+    print(f"  Total rows: {len(rows)} (scored: {len(scored)}; non-scored: {len(other)})")
+    print(f"  Top {min(top, len(scored))} worst by headline_error:")
+    print()
+    print(f"  {'unit_id':<33} {'struct_err':>10}  {'headline':>8}  {'residue':>7}  residue_breakdown")
+    for r in scored[:top]:
+        residue = int(r.get("residue_total") or 0)
+        print(
+            f"  {r['unit_id']:<33} "
+            f"{float(r.get('structural_err') or '0'):>10.4f}  "
+            f"{float(r.get('headline_error') or '0'):>8.4f}  "
+            f"{residue:>7}  {r.get('residue_buckets') or ''}"
+        )
+    if other and top > len(scored):
+        # Show non-scored statuses only when --top exceeds scored count,
+        # so a default run doesn't drown the worst-N report in non-regressed
+        # source-blockers.
+        print()
+        print(f"  Non-scored (next {min(top - len(scored), len(other))} of {len(other)}):")
+        for r in other[: top - len(scored)]:
+            print(
+                f"  {r['unit_id']:<33} status={r.get('status', '?'):<15} "
+                f"witnesses={r.get('witnesses') or ''}"
+            )
+    return 0
+
+
+def _render_history(args: object) -> int:
+    """Render the trajectory of past labelled runs.
+
+    Loads ``data/norway_bench_history.csv`` (populated by
+    :func:`_persist_history`) and prints one row per past run: timestamp,
+    label, mean_score, n_statutes, distribution buckets. Chronological by
+    append order (the CSV is append-only).
+
+    Mirrors the FI ``--history`` flag's intent: read-only trend across all
+    labelled runs, no re-run, no sweep.
+    """
+    import sys
+
+    from lawvm.core.bench_aggregate import load_history
+
+    history_path = getattr(args, "history_path", None)
+    if history_path is None:
+        repo_root = Path(__file__).resolve().parents[3]
+        history_path = repo_root / "data" / "norway_bench_history.csv"
+    else:
+        history_path = Path(history_path)
+
+    rows = load_history(Path(history_path))
+    if not rows:
+        print(
+            f"Norway bench history is empty at {history_path}. "
+            "Run `lawvm -j no bench --label <tag>` to persist the first row.",
+            file=sys.stderr,
+        )
+        return 0
+
+    print(f"=== Norway bench history: {history_path} ===")
+    print(f"  Runs: {len(rows)} (chronological by append order)")
+    print()
+    print(
+        f"  {'timestamp':<25} {'label':<25} {'mean':>6} {'n':>4} "
+        f"{'perfect':>7} {'≥99%':>5} {'≥95%':>5} {'<90%':>5}"
+    )
+    for r in rows:
+        try:
+            mean = float(r.get("mean_score") or "nan")
+        except ValueError:
+            mean = float("nan")
+        try:
+            n = int(r.get("n_statutes") or 0)
+        except ValueError:
+            n = 0
+
+        print(
+            f"  {r.get('timestamp', '?'):<25} "
+            f"{r.get('label', '?'):<25} "
+            f"{mean:>6.4f} {n:>4} "
+            f"{int(r.get('n_perfect') or 0):>7} {int(r.get('n_above_99') or 0):>5} "
+            f"{int(r.get('n_above_95') or 0):>5} {int(r.get('n_below_90') or 0):>5}"
+        )
+    return 0
+
+
 def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentionally loose
     """Entry point for ``lawvm -j no bench``.
 
@@ -439,12 +584,18 @@ def no_bench_main(args) -> int:  # noqa: ANN001 — argparse Namespace, intentio
     - No regression-guard comparison against a prior labelled run.
     """
 
-    # Regression-guard arbitration: --regressions and --compare short-circuit
-    # the sweep entirely. The bench parser registers both flags; without this
-    # short-circuit, the sweep would run + persist another labelled run before
-    # ever reading either flag — wasting minutes on an obvious-mode command.
-    if getattr(args, "regressions", False) or getattr(args, "compare", None):
-        return _render_regressions_from_runs(args)
+    # Regression-guard arbitration: --regressions, --compare, --show, and
+    # --history all short-circuit the sweep. The bench parser registers each
+    # flag; without this short-circuit, the sweep would run + persist another
+    # labelled run before ever reading either flag — wasting minutes on an
+    # obvious-mode command.
+    if (
+        getattr(args, "regressions", False)
+        or getattr(args, "compare", None)
+        or getattr(args, "show", None)
+        or getattr(args, "history", False)
+    ):
+        return _render_history_or_show_or_regressions(args)
 
     from lawvm.core.bench_aggregate import render_summary
     from lawvm.norway.sources import resolve_no_source_path
