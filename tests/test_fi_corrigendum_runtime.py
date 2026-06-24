@@ -1364,6 +1364,73 @@ def test_patch_source_xml_recovers_single_ellipsis_witness_against_visible_johto
     assert corr.get_misapplied_records() == []
 
 
+def test_patch_source_xml_strips_paired_context_ellipsis_witness() -> None:
+    corr.clear_misapplied_records()
+    table = corr.CorrigendumPatchTable()
+    table._amendment_to_statute["2017/821"] = "2014/1194"
+    table._patches["2017/821"] = [
+        corr._corrigendum_text_replace_op(
+            op_id="corr/821/2017/0",
+            sequence=0,
+            target=corr._location_to_address("Sivulla 1, johtolause", "johtolause"),
+            wrong_text="… 6 luvun otsikko, 1 § sekä 1 §:n otsikko …",
+            correct_text="… 6 luvun otsikko, 1 §:n otsikko …",
+            source=corr.OperationSource(
+                statute_id="corr/821/2017",
+                raw_text="Sivulla 1, johtolause",
+                corrected_by="821/2017",
+            ),
+        )
+    ]
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<akomaNtoso><act><preamble><formula name=\"enactingClause\">"
+        '<blockContainer><block name="substitutions">'
+        "muutetaan lain 6 luvun otsikko, 1 § sekä 1 §:n otsikko ja 2 § seuraavasti:"
+        "</block></blockContainer></formula></preamble><body/></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_xml(xml, "2017/821")
+
+    assert applied == ["corr/821/2017/0"]
+    patched_text = patched.decode("utf-8")
+    assert "6 luvun otsikko, 1 §:n otsikko ja 2 §" in patched_text
+    assert "1 § sekä 1 §:n otsikko" not in patched_text
+    assert "…" not in patched_text
+    assert "..." not in patched_text
+    assert corr.get_misapplied_records() == []
+
+
+def test_patch_source_xml_2021_669_preserves_full_johtolause_after_context_corrigenda() -> None:
+    from lawvm.corpus_store import get_corpus_store
+    from lawvm.finland.johtolause.api import parse_clause
+    from lawvm.finland.metadata import get_johtolause
+
+    corr.clear_misapplied_records()
+    xml = get_corpus_store().read_source("2021/669")
+    assert xml is not None
+    patched, applied = corr.get_patch_table().patch_source_xml(xml, "2021/669")
+    johtolause = get_johtolause(patched)
+
+    assert applied == [
+        "corr/669/2021/0",
+        "corr/669/2021/1",
+        "corr/669/2021/2",
+        "corr/669/2021/3",
+        "corr/669/2021/4",
+    ]
+    assert "..." not in johtolause
+    assert "…" not in johtolause
+    assert "11 a, 12, 13, 14 ja 15 §" in johtolause
+    assert "7 a luvun 1–5 §" in johtolause
+    assert "7 lukuun uusi 12 a §" in johtolause
+
+    parsed = parse_clause(johtolause, statute_id="2009/1672")
+    op_codes = {op.code() for op in parsed.parsed_ops}
+    assert "M L 9 o" in op_codes
+    assert {"M P L:9 1", "M P L:9 8", "M P L:10 1", "M P L:10 5"} <= op_codes
+
+
 def test_apply_visible_text_delta_multi_slot_recovers_two_slot_johtolause_corrigendum() -> None:
     fragment = b"""
 <p>Eduskunnan paatoksen mukaisesti</p>
