@@ -582,6 +582,54 @@ CLAIM_LEGAL_SURFACE_GRAPH = ClaimSpec(
     checker_level="L1",
 )
 
+# The Estonian consolidation-error candidate claim
+# (estonia/consolidation_error_candidates.py). The adoption wedge: a read-only
+# diagnostic that surfaces RANKED CANDIDATE consolidation errors for an EE
+# (base, oracle) act pair — divergences where the official Riigi Teataja
+# consolidated text (terviktekst) plausibly conflicts with the replayed
+# amendment chain. Each candidate lands in exactly one of the closed tier set
+# {strong, triage}: STRONG iff backed by an adjudicated consolidation-side
+# residual record (source_oracle_drift / oracle_correction_notice), TRIAGE iff
+# unadjudicated (flagged unadjudicated_needs_review, surfaced for human review).
+# A candidate is a FLAG FOR HUMAN REVIEW, never a confirmed error and never a
+# legal conclusion (constructive-invariant honesty boundary).
+CLAIM_EE_CONSOLIDATION_ERROR_CANDIDATE = ClaimSpec(
+    claim_id="lawvm.ee.consolidation_error_candidate.v1",
+    public_sentence=(
+        "For an Estonian (base, oracle) act pair, LawVM surfaces RANKED CANDIDATE "
+        "consolidation errors — divergences where the official consolidated text "
+        "(terviktekst) plausibly conflicts with the replayed amendment chain — "
+        "each placed in exactly one of the closed tier set {strong, triage}: "
+        "STRONG iff backed by an adjudicated consolidation-side residual record "
+        "(source_oracle_drift / oracle_correction_notice), TRIAGE iff "
+        "unadjudicated (flagged unadjudicated_needs_review); each candidate "
+        "carries text evidence (a bounded replay-vs-consolidated snippet plus the "
+        "full carrier text) and witness-rule / amending-act provenance, and the "
+        "candidates are emitted in a deterministic total order (strong tier "
+        "first). A candidate is a FLAG FOR HUMAN REVIEW, NOT a confirmed "
+        "consolidation error and NOT a legal conclusion."
+    ),
+    required_objects=(
+        "ConsolidationErrorCandidateReport",
+        "ConsolidationErrorCandidate",
+        "ConsolidationErrorEvidence",
+    ),
+    required_roots=(),
+    # The candidate claim's declared boundaries: a candidate is NOT a confirmed
+    # error (only a flag for human review); the surface depends on the upstream
+    # EE replay + residual adjudication it consumes (it never re-adjudicates);
+    # coverage/recall is bounded by that adjudication (an unadjudicated
+    # divergence is triage, never asserted strong); and it ranges over EE
+    # (base, oracle) act pairs only.
+    allowed_non_guarantees=(
+        "ee_consolidation_candidate_is_flag_not_confirmed_error",
+        "ee_consolidation_candidate_depends_on_replay_and_residual_adjudication",
+        "ee_consolidation_candidate_recall_bounded_unadjudicated_is_triage",
+        "ee_consolidation_candidate_ee_pair_scope",
+    ),
+    checker_level="L2",
+)
+
 #: The v0 declared claim surface (a DECLARED SUBSET, not all claims; Pro §12).
 V0_CLAIMS: tuple[ClaimSpec, ...] = (
     CLAIM_BENCH_AGREEMENT,
@@ -596,6 +644,7 @@ V0_CLAIMS: tuple[ClaimSpec, ...] = (
     CLAIM_FIXED_TERM_EXPIRY,
     CLAIM_TIMELINE_INTEGRITY,
     CLAIM_LEGAL_SURFACE_GRAPH,
+    CLAIM_EE_CONSOLIDATION_ERROR_CANDIDATE,
 )
 
 
@@ -610,6 +659,7 @@ __all__ = [
     "CLAIM_COUNTERFACTUAL_EFFECTS",
     "CLAIM_DANGLING_REFERENCE",
     "CLAIM_DERIVATION_EDGE",
+    "CLAIM_EE_CONSOLIDATION_ERROR_CANDIDATE",
     "CLAIM_EU_TRANSPOSITION",
     "CLAIM_FIXED_TERM_EXPIRY",
     "CLAIM_LEGAL_SURFACE_GRAPH",

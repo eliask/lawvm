@@ -974,6 +974,103 @@ _INV_LSG_TRANSPOSITION_NOT_CONFORMANCE = InvariantSpec(
     audit_registry_ref="",
 )
 
+# --- Claim: EE consolidation-error candidate (the adoption wedge) -------- #
+# TOTALITY: the candidate builder is the SOLE producer and routes EVERY replay
+# divergence to exactly one disposition — strong (adjudicated consolidation-side
+# residual), triage (no residual record), or deliberately EXCLUDED (an
+# adjudicated but non-consolidation-side residual, e.g. replay_bug /
+# source_pathology) — so no divergence is silently dropped INTO a surfaced tier
+# and none is silently asserted as a consolidation error. (build_..._candidates
+# walks the full divergence stream; the exclusion arm is tested.)
+_INV_EE_CONSERR_TOTALITY = InvariantSpec(
+    id="EE-CONSERR-01",
+    claim_id="lawvm.ee.consolidation_error_candidate.v1",
+    plane="projection",
+    waist="consolidation_error_candidate",
+    unit_kind="per-unit",
+    predicate=(
+        "the candidate builder is the SOLE producer and routes EVERY replay "
+        "divergence to exactly one disposition — STRONG (an adjudicated "
+        "consolidation-side residual bucket, source_oracle_drift / "
+        "oracle_correction_notice), TRIAGE (no residual record, flagged "
+        "unadjudicated_needs_review), or deliberately EXCLUDED (an adjudicated "
+        "non-consolidation-side residual, e.g. replay_bug / source_pathology) — "
+        "so no divergence is silently dropped into a surfaced tier and none is "
+        "silently asserted a consolidation error"
+    ),
+    owner="lawvm.estonia.consolidation_error_candidates",
+    bucket="implemented_check",
+    checker_ref=(
+        "lawvm.estonia.consolidation_error_candidates:consolidation_error_candidates"
+    ),
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+# CLOSURE: the tier set {strong, triage} is CLOSED by construction. The builder
+# only ever constructs a candidate with tier="strong" or tier="triage" (the two
+# literals it passes to _make_candidate) and partitions them into two
+# structurally-distinct report fields (strong_candidates / triage_candidates);
+# there is no third tier and no path that widens the set at runtime — the
+# builder is the verifying step that places each surfaced candidate into exactly
+# one closed-tier field, ranked strong-first.
+_INV_EE_CONSERR_CLOSURE = InvariantSpec(
+    id="EE-CONSERR-02",
+    claim_id="lawvm.ee.consolidation_error_candidate.v1",
+    plane="projection",
+    waist="consolidation_error_candidate",
+    unit_kind="per-unit",
+    predicate=(
+        "the tier set {strong, triage} is CLOSED by construction: the builder "
+        "constructs a candidate only with tier='strong' (when the adjudicated "
+        "residual bucket is consolidation-side) or tier='triage' (when there is "
+        "no residual record), and partitions them into the two "
+        "structurally-distinct ConsolidationErrorCandidateReport fields "
+        "(strong_candidates / triage_candidates) ranked strong-first; there is no "
+        "third tier and no runtime path that widens the set"
+    ),
+    owner="lawvm.estonia.consolidation_error_candidates",
+    bucket="checker_step",
+    checker_ref=(
+        "lawvm.estonia.consolidation_error_candidates:consolidation_error_candidates"
+    ),
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+# NON_GUARANTEE_COVERAGE: the declared boundaries of the candidate claim — a
+# candidate is a FLAG for human review, never a confirmed error or legal
+# conclusion; the surface DEPENDS on the upstream EE replay + residual
+# adjudication it consumes (it never re-adjudicates); recall is bounded by that
+# adjudication (an unadjudicated divergence is triage, never asserted strong);
+# and it ranges over EE (base, oracle) act pairs only.
+_INV_EE_CONSERR_BOUNDARY = InvariantSpec(
+    id="EE-CONSERR-03",
+    claim_id="lawvm.ee.consolidation_error_candidate.v1",
+    plane="declaration",
+    waist="claim_boundary",
+    unit_kind="static",
+    predicate=(
+        "a consolidation-error candidate is a FLAG for human review, never a "
+        "confirmed error or legal conclusion; the surface DEPENDS on the upstream "
+        "EE replay divergence stream + residual adjudication it consumes and "
+        "never re-adjudicates; recall is bounded by that adjudication (an "
+        "unadjudicated divergence is TRIAGE, never asserted STRONG); and it "
+        "ranges over EE (base, oracle) act pairs only — declared boundaries"
+    ),
+    owner="lawvm.core.assumption_register",
+    bucket="declared_non_guarantee",
+    checker_ref=(
+        "lawvm.core.claim_surface_manifest:CLAIM_EE_CONSOLIDATION_ERROR_CANDIDATE"
+    ),
+    finding_code="",
+    root_membership="",
+    status="IMPL",
+    audit_registry_ref="",
+)
+
 #: The v0 invariant rows (one live accounting path + declared boundary per claim).
 V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_BENCH_PROJECTION_FIREWALL,
@@ -1005,6 +1102,9 @@ V0_INVARIANTS: tuple[InvariantSpec, ...] = (
     _INV_LSG_AUTHORITY_FIREWALL,
     _INV_LSG_BOUNDARY,
     _INV_LSG_TRANSPOSITION_NOT_CONFORMANCE,
+    _INV_EE_CONSERR_TOTALITY,
+    _INV_EE_CONSERR_CLOSURE,
+    _INV_EE_CONSERR_BOUNDARY,
 )
 
 
