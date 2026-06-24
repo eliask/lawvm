@@ -1,9 +1,14 @@
-"""Finland apply intent facade: typed canonical dispatch + legacy strict-only branch.
+"""Finland apply intent facade: typed canonical dispatch (single live lane).
 
-Bench census (690 statutes): zero ``APPLY.LEGACY_DISPATCH_FALLBACK`` on the hot
-path. REPLACE/INSERT/REPEAL/RENUMBER require ``CanonicalIntent``; legacy field
-dispatch remains a named strict-only branch for MOVE-ish residuals and emits
-``APPLY.LEGACY_DISPATCH_FALLBACK`` mutation events when entered.
+Every op that reaches FI apply carries a typed ``CanonicalIntent`` and is routed
+through :func:`lawvm.finland.apply_typed_dispatch._apply_canonical_intent`. The
+legacy field-dispatch fallback (``apply_legacy_dispatch._apply_legacy_dispatch``)
+was removed after an instrumented replay over the full 59,574-statute corpus
+showed zero of its body statements ever executed — the typed path handles 100%
+of real corpus ops. ``dispatch_apply_intent`` now fails loud
+(``APPLY_INTENT_NONE_UNEXPECTED``) if an op ever reaches apply without a typed
+intent, making the "every op has a typed intent" invariant explicit rather than
+silently absorbing it into a dead legacy lane.
 
 Granularity slices (item / subsection / section / container / group-replay) live
 in dedicated ``apply_*`` modules catalogued by :data:`APPLY_INTENT_LANES`; this
@@ -13,7 +18,6 @@ facade owns lane *selection* only, not the slice implementations.
 from __future__ import annotations
 
 import logging
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Literal, Optional
 
@@ -23,12 +27,7 @@ from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.phase_result import Finding
 from lawvm.core.tree_ops import Path
-from lawvm.finland.apply_events import (
-    ApplyMutationEvent,
-    _emit_legacy_dispatch_fallback_event,
-)
-from lawvm.finland.apply_legacy_dispatch import _apply_legacy_dispatch
-from lawvm.finland.apply_runtime_support import _legacy_dispatch_shell_for_rop
+from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.apply_typed_dispatch import _apply_canonical_intent
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import (
@@ -101,13 +100,6 @@ APPLY_INTENT_LANES: tuple[ApplyIntentLane, ...] = (
         granularity="dispatch",
         symbol="_apply_canonical_intent",
         notes="CanonicalIntent router; action-family dispatch to intent helpers.",
-    ),
-    ApplyIntentLane(
-        lane_id="legacy_dispatch",
-        module="lawvm.finland.apply_legacy_dispatch",
-        granularity="legacy",
-        symbol="_apply_legacy_dispatch",
-        notes="Strict-only legacy field dispatch; emits LEGACY_DISPATCH_FALLBACK witness.",
     ),
     ApplyIntentLane(
         lane_id="mutation_events",
@@ -217,17 +209,6 @@ APPLY_INTENT_LANES: tuple[ApplyIntentLane, ...] = (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class PreparedLegacyApplyInputs:
-    """Legacy dispatch inputs projected from AmendmentOp and/or ResolvedOp."""
-
-    shell_op: AmendmentOp
-    muutos_ir: Optional[IRNode]
-    cross_ir: Optional[IRNode]
-    amend_sub_ir: Optional[IRNode]
-    slot_assignment: "SubsectionSlotAssignmentResult | None"
-
-
 def classify_apply_dispatch_lane(rop: ResolvedOp | None) -> ApplyDispatchLane | None:
     """Return the dispatch lane for *rop*, or None when inputs are insufficient."""
     if rop is None:
@@ -257,41 +238,6 @@ def apply_intent_lane_summary() -> dict[str, object]:
         "legacy_dispatch_fallback_kind": LEGACY_DISPATCH_FALLBACK_KIND,
         "lanes_by_granularity": by_granularity,
     }
-
-
-def prepare_legacy_apply_inputs(
-    *,
-    op: Optional[AmendmentOp],
-    muutos_ir: Optional[IRNode],
-    cross_ir: Optional[IRNode],
-    amend_sub_ir: Optional[IRNode],
-    slot_assignment: "SubsectionSlotAssignmentResult | None",
-    rop: Optional[ResolvedOp],
-) -> PreparedLegacyApplyInputs:
-    """Project legacy dispatch inputs from AmendmentOp and/or ResolvedOp."""
-    shell_op = op
-    prepared_muutos_ir = muutos_ir
-    prepared_cross_ir = cross_ir
-    prepared_amend_sub_ir = amend_sub_ir
-    prepared_slot_assignment = slot_assignment
-    if rop is not None:
-        shell_op = _legacy_dispatch_shell_for_rop(rop)
-        if prepared_muutos_ir is None:
-            prepared_muutos_ir = rop.muutos_ir
-        if prepared_cross_ir is None:
-            prepared_cross_ir = rop.cross_ir
-        if prepared_amend_sub_ir is None:
-            prepared_amend_sub_ir = rop.resolved_amend_sub_ir()
-        if prepared_slot_assignment is None:
-            prepared_slot_assignment = rop.slot_assignment
-    assert shell_op is not None
-    return PreparedLegacyApplyInputs(
-        shell_op=shell_op,
-        muutos_ir=prepared_muutos_ir,
-        cross_ir=prepared_cross_ir,
-        amend_sub_ir=prepared_amend_sub_ir,
-        slot_assignment=prepared_slot_assignment,
-    )
 
 
 def dispatch_apply_intent(
@@ -358,57 +304,33 @@ def dispatch_apply_intent(
             f"(op_id={rop.op_id or '<missing-op-id>'})"
         )
 
-    if rop is not None:
-        logger.debug(
-            "LEGACY_DISPATCH_FALLBACK: %s %s — intent is None, using legacy field dispatch",
-            rop.resolved_action_type,
-            rop.target_norm,
-        )
-        _emit_legacy_dispatch_fallback_event(
-            mutation_events_out,
-            rop=rop,
-            helper="apply_op",
-            reason_tag="missing_canonical_intent",
-            failure_reason="ResolvedOp reached apply without CanonicalIntent",
-            reason_code="missing_canonical_intent",
-            path_hint=path_hint,
-        )
-    legacy_inputs = prepare_legacy_apply_inputs(
-        op=op,
-        muutos_ir=muutos_ir,
-        cross_ir=cross_ir,
-        amend_sub_ir=amend_sub_ir,
-        slot_assignment=slot_assignment,
-        rop=rop,
+    # Fail loud: the legacy field-dispatch fallback was removed as corpus-cold.
+    # An instrumented replay over the full 59,574-statute corpus showed zero
+    # body statements of the legacy dispatcher ever executed — every real op is
+    # handled by the typed CanonicalIntent path above. Any op reaching here has
+    # no typed intent and is NOT one of the intent-required actions; that is the
+    # MOVE-ish residual the legacy path used to swallow. Surfacing it loudly is
+    # the invariant "every op that reaches apply has a typed intent" — a silent
+    # legacy fallback is exactly what this deletion forbids.
+    target_repr = (
+        rop.target_norm
+        if rop is not None
+        else (op.target_section if op is not None else "<unknown>")
     )
-    with warnings.catch_warnings():
-        # Legitimate internal fallback: the typed-intent waiver is handled here
-        # at the public apply boundary, then we route to the legacy field
-        # dispatcher. @deprecated lights up EXTERNAL/new callers, not this
-        # facade's own already-witnessed fallback (LEGACY_DISPATCH_FALLBACK).
-        warnings.simplefilter("ignore", DeprecationWarning)
-        return _apply_legacy_dispatch(
-            state,
-            legacy_inputs.shell_op,
-            rop_description,
-            ctx,
-            legacy_inputs.muutos_ir,
-            cross_ir=legacy_inputs.cross_ir,
-            amend_sub_ir=legacy_inputs.amend_sub_ir,
-            slot_assignment=legacy_inputs.slot_assignment,
-            replay_mode=replay_mode,
-            failed_ops_out=failed_ops_out,
-            source_pathologies_out=source_pathologies_out,
-            mutation_events_out=mutation_events_out,
-            findings_out=findings_out,
-            path_hint=path_hint,
-            replay_history_ops=replay_history_ops,
-            standalone_section_targets=standalone_section_targets,
-            rop=rop,
-            migration_ledger=migration_ledger,
-            inputs_prepared=True,
-            strict_profile=strict_profile,
-        )
+    action_repr = (
+        rop.resolved_action_type
+        if rop is not None
+        else (op.op_type if op is not None else "<unknown>")
+    )
+    raise AssertionError(
+        "APPLY_INTENT_NONE_UNEXPECTED: op reached FI apply with no "
+        f"CanonicalIntent ({action_repr} {target_repr}; "
+        f"{rop_description}) — legacy field-dispatch was removed as "
+        "corpus-cold (0/147 body statements executed over the full corpus); "
+        "this op should have produced a typed intent. If this fires, the "
+        "cold-ness claim is wrong for this op and the typed path must learn "
+        "to build its intent rather than re-introducing the legacy fallback."
+    )
 
 
 __all__ = [
@@ -417,10 +339,8 @@ __all__ = [
     "ApplyGranularity",
     "ApplyIntentLane",
     "LEGACY_DISPATCH_FALLBACK_KIND",
-    "PreparedLegacyApplyInputs",
     "TYPED_INTENT_HELPERS",
     "apply_intent_lane_summary",
     "classify_apply_dispatch_lane",
     "dispatch_apply_intent",
-    "prepare_legacy_apply_inputs",
 ]

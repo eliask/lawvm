@@ -52,18 +52,21 @@ def _rop(
     return rop
 
 
-def test_apply_intent_lanes_catalog_covers_seventeen_slices() -> None:
-    assert len(APPLY_INTENT_LANES) == 17
+def test_apply_intent_lanes_catalog_covers_sixteen_slices() -> None:
+    # The legacy_dispatch lane was removed: the legacy field dispatcher was
+    # corpus-cold (0/147 body statements executed) and deleted, so the typed
+    # canonical lane is the sole live apply dispatcher.
+    assert len(APPLY_INTENT_LANES) == 16
     lane_ids = {lane.lane_id for lane in APPLY_INTENT_LANES}
     assert "typed_dispatch" in lane_ids
-    assert "legacy_dispatch" in lane_ids
+    assert "legacy_dispatch" not in lane_ids
     assert "ops_executor" in lane_ids
 
 
 def test_apply_intent_lane_summary_machine_shape() -> None:
     summary = apply_intent_lane_summary()
     assert summary["catalog_kind"] == "finland_apply_intent_lanes"
-    assert summary["lane_count"] == 17
+    assert summary["lane_count"] == 16
     assert summary["legacy_dispatch_fallback_kind"] == LEGACY_DISPATCH_FALLBACK_KIND
     lanes_by_granularity = cast(dict[str, object], summary["lanes_by_granularity"])
     assert "dispatch" in lanes_by_granularity

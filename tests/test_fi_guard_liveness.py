@@ -236,6 +236,9 @@ def _drill_strict_rebound_apply(
     """
     from lawvm.finland.apply import apply_op as _apply_op
     from lawvm.finland.ops import AmendmentOp as _AmendmentOp
+    from lawvm.finland.ops import ResolvedOp as _ResolvedOp
+    from lawvm.finland.ops import _build_canonical_intent
+    from lawvm.core.ir import LegalAddress as _LegalAddress
     from lawvm.finland.strict_profile import default_finland_strict_profile
 
     def _content(text: str) -> IRNode:
@@ -281,16 +284,32 @@ def _drill_strict_rebound_apply(
         source_statute="2001/880",
     )
     ctx = StatuteContext(id="0/0", title="", base_ir=state.ir, base_xml_bytes=b"<body/>")
+    # Apply requires a typed CanonicalIntent (the legacy field-dispatch fallback
+    # was removed as corpus-cold). Drive the production typed lane by projecting
+    # the op onto a ResolvedOp and building its intent via the same production
+    # op->intent map the live pipeline uses.
+    muutos_ir = _sec("73", amend_sub)
+    rop = _ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=muutos_ir,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="73",
+        target_chapter=None,
+        target_address=_LegalAddress(path=(("section", "73"), ("subsection", "3"))),
+    )
+    rop.amend_sub_ir = amend_sub
+    rop.intent = _build_canonical_intent(rop)
     result = _apply_op(
         state,
-        op,
+        None,
         ctx,
-        _sec("73", amend_sub),
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
         failed_ops_out=failed_ops_out,
         source_pathologies_out=source_pathologies_out,
         strict_profile=default_finland_strict_profile(),
+        rop=rop,
     )
     # The strict guard refused the rebound: the live tree is left unmutated.
     assert result is state

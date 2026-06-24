@@ -69,7 +69,6 @@ class TestCohortIntegrity:
             "parse_ops_fallback_heuristic": "lawvm.finland.normalize",
             "parse_ops_fallback_heuristic_with_coverage": "lawvm.finland.normalize",
             "parse_ops_title_fallback": "lawvm.finland.normalize",
-            "_apply_legacy_dispatch": "lawvm.finland.apply_legacy_dispatch",
             "extract_plain_text_statute_mentions": (
                 "lawvm.finland.references.ref_mention_extractor"
             ),

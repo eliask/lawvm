@@ -53,7 +53,6 @@ from lawvm.finland.apply_events import (
     build_apply_mutation_invariant_reports,
     check_apply_mutation_accounting,
 )
-from lawvm.finland.apply_legacy_dispatch import _apply_legacy_dispatch
 from lawvm.finland.apply_structure_ops import (
     _apply_materialization,
     _apply_container_op,
@@ -1094,7 +1093,7 @@ def test_apply_materialization_prefers_rop_scope_over_legacy_op_scope() -> None:
         target_chapter="7",
     )
 
-    result = _apply_materialization(state, _legacy_dispatch_shell_for_rop(rop), payload, "test")
+    result = _apply_materialization(state, rop, payload, "test")
 
     assert result is not None
     result = _modified(state, result)
@@ -1185,7 +1184,7 @@ def test_apply_materialization_root_move_emits_pathology() -> None:
 
     result = _apply_materialization(
         state,
-        _legacy_dispatch_shell_for_rop(rop),
+        rop,
         rop.muutos_ir,
         "test",
         source_pathologies_out=source_pathologies,
@@ -1274,7 +1273,7 @@ def test_apply_materialization_keeps_chapter_scoped_section_inside_chapter_when_
 
     result = _apply_materialization(
         state,
-        _legacy_dispatch_shell_for_rop(rop),
+        rop,
         payload,
         "test",
         source_pathologies_out=source_pathologies,
@@ -5974,12 +5973,12 @@ class TestResolveSubsectionIndex:
         pathologies: list[SourcePathology] = []
         result = apply_op(
             state,
-            op,
+            None,
             _ctx(),
-            _sec("73", amend_sub),
-            amend_sub_ir=amend_sub,
+            None,
             replay_mode="legal_pit",
             source_pathologies_out=pathologies,
+            rop=_typed_rop_for_op(op, muutos_ir=_sec("73", amend_sub), amend_sub=amend_sub),
         )
 
         result = _modified(state, result)
@@ -6032,14 +6031,14 @@ class TestResolveSubsectionIndex:
         failed_ops: list[FailedOp] = []
         result = apply_op(
             state,
-            op,
+            None,
             _ctx(),
-            _sec("73", amend_sub),
-            amend_sub_ir=amend_sub,
+            None,
             replay_mode="legal_pit",
             failed_ops_out=failed_ops,
             source_pathologies_out=pathologies,
             strict_profile=default_finland_strict_profile(),
+            rop=_typed_rop_for_op(op, muutos_ir=_sec("73", amend_sub), amend_sub=amend_sub),
         )
 
         assert result is state
@@ -6984,11 +6983,11 @@ def test_replay_1977_53_section_6_keeps_bank_of_finland_tail() -> None:
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(),
-        _sec("6", amend_sub),
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("6", amend_sub), amend_sub=amend_sub),
     )
 
     result = _modified(state, result)
@@ -7815,10 +7814,11 @@ def test_apply_op_insert_new_section_declares_part_qualified_event_path() -> Non
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(_body()),
-        muutos_ir=_sec("69a", _sub("1", _content("new 69a"))),
+        None,
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("69a", _sub("1", _content("new 69a")))),
     )
 
     assert result.find_section("69a") is not None
@@ -7846,11 +7846,12 @@ def test_apply_op_section_repeal_removes_non_base_insert_even_in_finlex_oracle()
 
     result = apply_op(
         state,
-        op,
+        None,
         ctx,
-        muutos_ir=None,
+        None,
         replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op, muutos_ir=None),
     )
 
     replaced = result.find_section("2a")
@@ -7992,13 +7993,14 @@ def test_scoped_section_replace_consumes_stale_unscoped_root_duplicate() -> None
 
     result = apply_op(
         state,
-        op,
+        None,
         ctx,
-        muutos_ir=_sec("15", _content("new scoped text")),
+        None,
         replay_mode="legal_pit",
         replay_history_ops=replay_history,
         source_pathologies_out=pathologies,
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("15", _content("new scoped text"))),
     )
 
     result_wrapper = result.ir.children[0]
@@ -8083,13 +8085,14 @@ def test_scoped_section_replace_keeps_unscoped_duplicate_when_source_targets_sam
 
     result = apply_op(
         state,
-        op,
+        None,
         ctx,
-        muutos_ir=_sec("15", _content("new scoped text")),
+        None,
         replay_mode="legal_pit",
         replay_history_ops=replay_history,
         source_pathologies_out=pathologies,
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("15", _content("new scoped text"))),
     )
 
     result_wrapper = result.ir.children[0]
@@ -8154,13 +8157,14 @@ def test_scoped_section_replace_keeps_headed_unscoped_same_label_section() -> No
 
     result = apply_op(
         state,
-        op,
+        None,
         ctx,
-        muutos_ir=_sec("4", _content("new scoped text")),
+        None,
         replay_mode="legal_pit",
         replay_history_ops=replay_history,
         source_pathologies_out=pathologies,
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("4", _content("new scoped text"))),
     )
 
     result_wrapper = result.ir.children[0]
@@ -8207,11 +8211,12 @@ def test_apply_whole_section_replace_materializes_inside_existing_chapter_for_mi
 
     result = apply_op(
         state,
-        op,
+        None,
         ctx,
-        muutos_ir=_sec("33", _content("new chapter five text")),
+        None,
         replay_mode="legal_pit",
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("33", _content("new chapter five text"))),
     )
 
     assert result is not state
@@ -8305,11 +8310,12 @@ def test_apply_whole_section_replace_uses_unique_part_wrapped_chapter_scope_with
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(state.ir),
-        muutos_ir=_sec("7", _content("new part-wrapped chapter text")),
+        None,
         replay_mode="legal_pit",
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("7", _content("new part-wrapped chapter text"))),
     )
 
     replaced = result.find_section("7", "6")
@@ -8553,11 +8559,12 @@ def test_apply_whole_section_replace_does_not_synthesize_root_insert_for_missing
 
     result = apply_op(
         state,
-        op,
+        None,
         ctx,
-        muutos_ir=_sec("14", _content("new top-level text")),
+        None,
         replay_mode="legal_pit",
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("14", _content("new top-level text"))),
     )
 
     assert result is state
@@ -9314,10 +9321,11 @@ def test_apply_op_skips_unique_global_chapter_fallback_for_move_clause_target() 
 
     result = apply_op(
         state,
-        op,
+        None,
         ctx,
-        muutos_ir=_sec("33", _content("new chapter five text")),
+        None,
         replay_mode="legal_pit",
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("33", _content("new chapter five text"))),
     )
 
     moved = result.find_section("33", "5")
@@ -9325,45 +9333,6 @@ def test_apply_op_skips_unique_global_chapter_fallback_for_move_clause_target() 
     moved_text = " ".join(child.text or "" for child in moved.children)
     assert "new chapter five text" in moved_text
     assert result.find_section("33", "6") is None
-
-
-def test_apply_legacy_dispatch_does_not_reinterpret_section_suffix_target_as_item() -> None:
-    state = _make_state(
-        _body(
-            _sec(
-                "33",
-                _sub(
-                    "1",
-                    _para("a", "first item"),
-                    _para("b", "second item"),
-                ),
-            )
-        )
-    )
-    op = _op(op_type="REPEAL", target_section="33a")
-    ctx = _ctx(state.ir)
-
-    result = _apply_legacy_dispatch(
-        state,
-        op,
-        op.description(),
-        ctx,
-        muutos_ir=None,
-        replay_mode="legal_pit",
-        rop=ResolvedOp.from_amendment_op(
-            op,
-            muutos_ir=None,
-            cross_ir=None,
-            target_unit_kind="section",
-            target_norm="33a",
-            target_chapter=None,
-        ),
-    )
-
-    assert result is not None
-    new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION and c.label == "33")
-    sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION and c.label == "1")
-    assert [c.label for c in sub.children if c.kind == IRNodeKind.PARAGRAPH] == ["a", "b"]
 
 
 def test_resolve_section_path_with_fallbacks_does_not_rewrite_section_suffix_target_on_legacy_path() -> None:
@@ -10369,12 +10338,12 @@ def test_apply_op_emits_shape_loss_pathology_for_sparse_alakohta_replace_merge()
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(),
-        muutos_ir,
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
         source_pathologies_out=pathologies,
+        rop=_typed_rop_for_op(op, muutos_ir=muutos_ir, amend_sub=amend_sub),
     )
 
     result = _modified(state, result)
@@ -10435,13 +10404,13 @@ def test_apply_op_strict_blocks_sparse_alakohta_replace_merge() -> None:
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(),
-        muutos_ir,
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
         strict_profile=default_finland_strict_profile(),
         source_pathologies_out=pathologies,
+        rop=_typed_rop_for_op(op, muutos_ir=muutos_ir, amend_sub=amend_sub),
     )
 
     assert result is state
@@ -10472,12 +10441,11 @@ def test_apply_op_prefers_slot_assignment_when_amend_sub_ir_is_absent() -> None:
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(),
-        muutos_ir=None,
-        amend_sub_ir=None,
-        slot_assignment=assignment,
+        None,
         replay_mode="legal_pit",
+        rop=_typed_rop_for_op(op, slot_assignment=assignment),
     )
 
     result = _modified(state, result)
@@ -10771,12 +10739,11 @@ def test_apply_op_prefers_slot_assignment_over_stale_amend_sub_ir() -> None:
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(),
-        muutos_ir=None,
-        amend_sub_ir=stale_amend_sub,
-        slot_assignment=assignment,
+        None,
         replay_mode="legal_pit",
+        rop=_typed_rop_for_op(op, muutos_ir=None, slot_assignment=assignment),
     )
 
     result = _modified(state, result)
@@ -10826,13 +10793,12 @@ def test_apply_op_handles_sparse_omission_payload_via_slot_assignment_without_ap
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(state.ir),
-        muutos_ir=muutos_ir,
-        amend_sub_ir=None,
-        slot_assignment=assignment,
+        None,
         replay_mode="legal_pit",
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op, muutos_ir=muutos_ir, slot_assignment=assignment),
     )
 
     result = _modified(state, result)
@@ -10889,12 +10855,12 @@ def test_apply_op_emits_shape_loss_pathology_for_content_only_row_merge() -> Non
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(),
-        muutos_ir,
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
         source_pathologies_out=pathologies,
+        rop=_typed_rop_for_op(op, muutos_ir=muutos_ir, amend_sub=amend_sub),
     )
 
     result = _modified(state, result)
@@ -10954,13 +10920,13 @@ def test_apply_op_strict_blocks_content_only_row_merge() -> None:
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(),
-        muutos_ir,
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
         strict_profile=default_finland_strict_profile(),
         source_pathologies_out=pathologies,
+        rop=_typed_rop_for_op(op, muutos_ir=muutos_ir, amend_sub=amend_sub),
     )
 
     assert result is state
@@ -11006,12 +10972,12 @@ def test_apply_op_emits_item_target_absent_for_unmatched_content_only_row_merge(
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(),
-        muutos_ir,
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
         source_pathologies_out=pathologies,
+        rop=_typed_rop_for_op(op, muutos_ir=muutos_ir, amend_sub=amend_sub),
     )
 
     assert result is state
@@ -11090,12 +11056,12 @@ def test_apply_op_sanitizes_shared_tail_from_sparse_item_replace_payload() -> No
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(),
-        _sec("10", amend_sub),
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
         source_pathologies_out=pathologies,
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("10", amend_sub), amend_sub=amend_sub),
     )
 
     result = _modified(state, result)
@@ -11191,13 +11157,13 @@ def test_apply_op_strict_blocks_shared_tail_item_replace_sanitize() -> None:
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(),
-        _sec("10", amend_sub),
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
         strict_profile=default_finland_strict_profile(),
         source_pathologies_out=pathologies,
+        rop=_typed_rop_for_op(op, muutos_ir=_sec("10", amend_sub), amend_sub=amend_sub),
     )
 
     assert result is state
@@ -11212,11 +11178,12 @@ def test_apply_op_emits_failed_mutation_event_for_missing_section() -> None:
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(_body()),
         muutos_ir=None,
         replay_mode="legal_pit",
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op),
     )
 
     assert result is state
@@ -15493,6 +15460,64 @@ def _make_rop(
     return rop
 
 
+def _typed_rop_for_op(
+    op: AmendmentOp,
+    *,
+    muutos_ir: Optional[IRNode] = None,
+    cross_ir: Optional[IRNode] = None,
+    slot_assignment: Optional[SubsectionSlotAssignmentResult] = None,
+    amend_sub: Optional[IRNode] = None,
+) -> ResolvedOp:
+    """Build a ResolvedOp whose CanonicalIntent is the production op→intent map.
+
+    The legacy field-dispatch apply fallback was removed as corpus-cold; apply
+    now requires a typed CanonicalIntent. This mirrors the production resolver:
+    project the AmendmentOp onto a ResolvedOp, then populate its intent via the
+    same :func:`lawvm.finland.ops._build_canonical_intent` mapping the live
+    pipeline uses. Tests that previously drove the legacy ``apply_op(op,
+    rop=None)`` entrypoint use this to drive the identical typed dispatch.
+
+    When ``amend_sub`` is supplied, synthesize the production-shaped subsection
+    slot binding for it (the live resolver binds the subsection payload via
+    :class:`SubsectionSlotAssignmentResult` before apply). This populates
+    ``rop.amend_sub_ir`` exactly as the live pipeline does, which the typed
+    item/subsection dispatch consumes via ``rop.resolved_amend_sub_ir()``.
+    """
+    from lawvm.finland.ops import _build_canonical_intent
+
+    if slot_assignment is None and amend_sub is not None:
+        slot_assignment = SubsectionSlotAssignmentResult(
+            subsec_map=SubsectionSlotMap({id(op): amend_sub}),
+            sparse_slot_bindings=(),
+            used_subs=(),
+            unassigned_payload_slots=(),
+        )
+
+    path_parts: tuple[tuple[str, str], ...] = ()
+    if op.target_chapter:
+        path_parts = path_parts + (("chapter", str(op.target_chapter)),)
+    if op.target_part:
+        path_parts = path_parts + (("part", str(op.target_part)),)
+    path_parts = path_parts + (("section", str(op.target_section or "")),)
+    if op.target_paragraph is not None:
+        path_parts = path_parts + (("subsection", str(op.target_paragraph)),)
+    if op.target_item is not None:
+        path_parts = path_parts + (("item", str(op.target_item)),)
+
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=muutos_ir,
+        cross_ir=cross_ir,
+        target_unit_kind=op.target_unit_kind,
+        target_norm=op.target_section or "",
+        target_chapter=op.target_chapter,
+        target_address=LegalAddress(path=tuple(path_parts)),
+        slot_assignment=slot_assignment,
+    )
+    rop.intent = _build_canonical_intent(rop)
+    return rop
+
+
 def test_typed_insert_subsection_with_carried_section_shell_uses_descendant_dispatch() -> None:
     from lawvm.core.canonical_intent import (
         ExecutionContract,
@@ -16435,12 +16460,12 @@ def test_legacy_subsection_replace_event_records_primary_target_touch() -> None:
 
     result = apply_op(
         state,
-        op,
+        None,
         _ctx(state.ir),
-        muutos_ir=None,
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
         mutation_events_out=mutation_events,
+        rop=_typed_rop_for_op(op, muutos_ir=None, amend_sub=amend_sub),
     )
 
     assert result is not state
@@ -16859,7 +16884,12 @@ def test_typed_move_stops_without_legacy_dispatch() -> None:
     assert result.find_section_path("1", target_chapter="2") == (("chapter", "2"), ("section", "1"))
 
 
-def test_legacy_dispatch_fallback_event_keeps_target_address() -> None:
+def test_apply_op_fails_loud_when_op_reaches_apply_without_canonical_intent() -> None:
+    # The legacy field-dispatch fallback was removed as corpus-cold (0/147
+    # body statements executed over the full corpus). An op that reaches apply
+    # with intent=None and a non-intent-required action (MOVE-ish residual) used
+    # to silently route to legacy dispatch; it must now fail loud so the
+    # invariant "every op that reaches apply has a typed intent" is explicit.
     state = _make_state(_body(_sec("1", _sub("1", _content("text")))))
     op = _op(op_type="REPLACE", target_section="1")
     rop = ResolvedOp.from_amendment_op(
@@ -16873,218 +16903,16 @@ def test_legacy_dispatch_fallback_event_keeps_target_address() -> None:
     )
     rop.intent = None
     rop._op_type_seed = "MOVE"
-    mutation_events: List[ApplyMutationEvent] = []
 
-    result = apply_op(
-        state,
-        op,
-        _ctx(state.ir),
-        None,
-        replay_mode="legal_pit",
-        mutation_events_out=mutation_events,
-        rop=rop,
-    )
-
-    assert result is state
-    event = next(
-        e
-        for e in mutation_events
-        if e.helper == "apply_op"
-        and e.used_fallback_tags == ("APPLY.LEGACY_DISPATCH_FALLBACK", "missing_canonical_intent")
-    )
-    assert event.helper == "apply_op"
-    assert event.outcome == "skipped"
-    assert event.used_fallback_tags == ("APPLY.LEGACY_DISPATCH_FALLBACK", "missing_canonical_intent")
-    assert event.resolved_target_path == (("section", "1"),)
-    assert event.reason_code == "missing_canonical_intent"
-    assert "ResolvedOp reached apply without CanonicalIntent" in event.failure_reason
-
-
-def test_legacy_dispatch_events_prefer_resolvedop_identity_when_present() -> None:
-    state = _make_state(_body())
-    op = AmendmentOp(
-        op_id="",
-        op_type="REPLACE",
-        target_section="missing",
-        target_unit_kind="section",
-        source_statute="",
-        source_issue_date=_DATE,
-    )
-    rop = ResolvedOp.from_amendment_op(
-        op,
-        muutos_ir=None,
-        cross_ir=None,
-        target_unit_kind="section",
-        target_norm="1",
-        target_chapter=None,
-        target_address=LegalAddress(path=(("section", "1"),)),
-    )
-    rop._source_statute_override = "2020/1"
-    rop.op_id = "rop_identity"
-    mutation_events: List[ApplyMutationEvent] = []
-
-    result = _apply_legacy_dispatch(
-        state,
-        op,
-        op.description(),
-        _ctx(state.ir),
-        muutos_ir=None,
-        replay_mode="legal_pit",
-        mutation_events_out=mutation_events,
-        rop=rop,
-    )
-
-    assert result is state
-    assert len(mutation_events) == 1
-    event = mutation_events[0]
-    assert event.helper == "_apply_whole_section_op"
-    assert event.outcome == "failed"
-    assert event.op_id == "rop_identity"
-    assert event.source_statute == "2020/1"
-    assert event.resolved_target_path == (("section", "1"),)
-
-
-def test_legacy_dispatch_prefers_resolvedop_slot_binding_when_shell_lacks_stable_id() -> None:
-    state = _make_state(_body(_sec("1", _sub("1", _content("original")))))
-    rop_shell = AmendmentOp(
-        op_id="stable_rop",
-        op_type="REPLACE",
-        target_section="1",
-        target_unit_kind="section",
-        target_paragraph=1,
-        source_statute="2020/1",
-        source_issue_date=_DATE,
-    )
-    shell_op = AmendmentOp(
-        op_id="",
-        op_type="REPLACE",
-        target_section="1",
-        target_unit_kind="section",
-        target_paragraph=1,
-        source_statute="2020/1",
-        source_issue_date=_DATE,
-    )
-    assigned_amend_sub = _sub("1", _content("resolved via rop stable id"))
-    assignment = SubsectionSlotAssignmentResult(
-        subsec_map=SubsectionSlotMap(
-            by_stable_op_id={"stable_rop": assigned_amend_sub},
-        ),
-        sparse_slot_bindings=(
-            SparsePayloadSlotBinding(
-                op_description=rop_shell.description(),
-                op_type=str(rop_shell.op_type or ""),
-                target_paragraph=rop_shell.target_paragraph,
-                target_item=None,
-                target_special=None,
-                payload_slot_index=1,
-                payload_slot_label="1",
-            )
-        ,),
-        used_subs=(0,),
-        unassigned_payload_slots=(),
-    )
-    rop = ResolvedOp.from_amendment_op(
-        rop_shell,
-        muutos_ir=None,
-        cross_ir=None,
-        slot_assignment=assignment,
-        target_unit_kind="section",
-        target_norm="1",
-        target_chapter=None,
-    )
-
-    result = _apply_legacy_dispatch(
-        state,
-        shell_op,
-        shell_op.description(),
-        _ctx(),
-        muutos_ir=None,
-        amend_sub_ir=None,
-        slot_assignment=assignment,
-        replay_mode="legal_pit",
-        rop=rop,
-    )
-
-    result = _modified(state, result)
-    new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
-    sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
-    text = " ".join(c.text or "" for c in sub.children)
-    assert "resolved via rop stable id" in text
-
-
-def test_legacy_dispatch_prefers_resolvedop_fields_when_shell_is_stale() -> None:
-    state = _make_state(_body(_sec("1", _content("original one")), _sec("2", _content("original two"))))
-    stale_shell = AmendmentOp(
-        op_id="",
-        op_type="REPLACE",
-        target_section="2",
-        target_unit_kind="section",
-        source_statute="2020/1",
-        source_issue_date=_DATE,
-    )
-    rop = ResolvedOp.from_amendment_op(
-        stale_shell,
-        muutos_ir=_sec("1", _content("replaced via rop fields")),
-        cross_ir=None,
-        target_unit_kind="section",
-        target_norm="1",
-        target_chapter=None,
-        target_address=LegalAddress(path=(("section", "1"),)),
-    )
-    rop.op_id = "stable_rop"
-
-    result = _apply_legacy_dispatch(
-        state,
-        stale_shell,
-        stale_shell.description(),
-        _ctx(state.ir),
-        muutos_ir=None,
-        replay_mode="legal_pit",
-        rop=rop,
-    )
-
-    result = _modified(state, result)
-    sec1 = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION and c.label == "1")
-    sec2 = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION and c.label == "2")
-    sec1_text = " ".join(c.text or "" for c in sec1.children)
-    sec2_text = " ".join(c.text or "" for c in sec2.children)
-    assert "replaced via rop fields" in sec1_text
-    assert "original two" in sec2_text
-
-
-def test_legacy_dispatch_does_not_cross_chapter_fallback_for_unique_section() -> None:
-    state = _make_state(
-        _body(
-            IRNode(
-                kind=IRNodeKind.CHAPTER,
-                label="5",
-                children=(_sec("23", _content("chapter five text")),),
-            ),
+    with pytest.raises(AssertionError, match="APPLY_INTENT_NONE_UNEXPECTED"):
+        apply_op(
+            state,
+            op,
+            _ctx(state.ir),
+            None,
+            replay_mode="legal_pit",
+            rop=rop,
         )
-    )
-    failed_ops: List[FailedOp] = []
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="3")
-
-    result = _apply_legacy_dispatch(
-        state,
-        op,
-        op.description(),
-        _ctx(state.ir),
-        muutos_ir=_sec("23", _content("wrong cross-chapter replacement")),
-        replay_mode="legal_pit",
-        failed_ops_out=failed_ops,
-    )
-
-    assert result is state
-    assert len(failed_ops) == 1
-    assert failed_ops[0].reason_code == "section_not_found"
-    sec = state.find_section("23", "5")
-    assert sec is not None
-    assert irnode_to_text(sec) == "chapter five text"
-    assert failed_ops
-    assert failed_ops[0].target_section == "23"
-    assert failed_ops[0].target_chapter == "3"
-    assert failed_ops[0].reason == "master §23 not found"
 
 
 def test_typed_relabel_unhandled_target_keeps_target_address() -> None:
@@ -17439,11 +17267,12 @@ def test_apply_sparse_item_replace_merge_keeps_hint_empty_and_emits_pathology() 
 
     result = apply_op(
         state,
-        op,
+        None,
         ctx,
-        muutos_ir,
+        None,
         replay_mode="legal_pit",
         source_pathologies_out=pathologies,
+        rop=_typed_rop_for_op(op, muutos_ir=muutos_ir),
     )
 
     assert result is not state
@@ -17560,10 +17389,11 @@ def test_apply_suspicious_partial_replace_drop_keeps_hint_empty() -> None:
 
     result = apply_op(
         state,
-        op,
+        None,
         ctx,
-        muutos_ir,
+        None,
         replay_mode="legal_pit",
+        rop=_typed_rop_for_op(op, muutos_ir=muutos_ir),
     )
 
     assert result is state

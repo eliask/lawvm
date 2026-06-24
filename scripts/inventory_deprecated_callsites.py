@@ -17,7 +17,7 @@ caller bound a strangled legacy lane without acknowledgment) — the ratchet may
 only ever fall as the legacy cohort is retired.
 
 It is deliberately textual (not import-based): tracked symbols include private
-(``_apply_legacy_dispatch``) and module-internal helpers, and we want to count
+and module-internal helpers, and we want to count
 call sites without importing the world.  A "call site" is a line containing
 ``<symbol>(`` that is not the ``def <symbol>(`` definition and not a pure
 comment line.
@@ -40,7 +40,6 @@ DEPRECATED_SYMBOLS: dict[str, str] = {
     "parse_ops_fallback_heuristic": "src/lawvm/finland/normalize.py",
     "parse_ops_fallback_heuristic_with_coverage": "src/lawvm/finland/normalize.py",
     "parse_ops_title_fallback": "src/lawvm/finland/normalize.py",
-    "_apply_legacy_dispatch": "src/lawvm/finland/apply_legacy_dispatch.py",
     "extract_plain_text_statute_mentions": (
         "src/lawvm/finland/references/ref_mention_extractor.py"
     ),

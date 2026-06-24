@@ -954,6 +954,9 @@ class TestReplayOccupancyModel:
         from lawvm.finland.statute import ReplayState
         import datetime as dt
 
+        from lawvm.finland.ops import ResolvedOp, _build_canonical_intent
+        from lawvm.core.ir import LegalAddress
+
         body = _body(_sec("5", _sub("1", _content("content"))))
         state = ReplayState(ir=body)
         op = AmendmentOp(
@@ -965,8 +968,21 @@ class TestReplayOccupancyModel:
             source_issue_date=dt.date(2020, 1, 1),
         )
         ctx = cast(StatuteContext, SimpleNamespace(base_ir=body))
+        # Apply requires a typed CanonicalIntent (legacy field-dispatch removed).
+        rop = ResolvedOp.from_amendment_op(
+            op,
+            muutos_ir=None,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="5",
+            target_chapter=None,
+            target_address=LegalAddress(path=(("section", "5"),)),
+        )
+        rop.intent = _build_canonical_intent(rop)
 
-        result = apply_op(state, op, ctx, muutos_ir=None, replay_mode="official_consolidation")
+        result = apply_op(
+            state, None, ctx, None, replay_mode="official_consolidation", rop=rop
+        )
 
         sec5 = result.find_section("5")
         assert sec5 is not None
@@ -978,6 +994,9 @@ class TestReplayOccupancyModel:
         from lawvm.finland.ops import AmendmentOp
         from lawvm.finland.statute import ReplayState
         import datetime as dt
+
+        from lawvm.finland.ops import ResolvedOp, _build_canonical_intent
+        from lawvm.core.ir import LegalAddress
 
         # Section 5a was inserted (not in base) — repeal should remove it
         body = _body(_sec("5", _content("five")), _sec("5a", _content("five a")))
@@ -992,8 +1011,19 @@ class TestReplayOccupancyModel:
             source_issue_date=dt.date(2021, 1, 1),
         )
         ctx = cast(StatuteContext, SimpleNamespace(base_ir=base_ir))
+        # Apply requires a typed CanonicalIntent (legacy field-dispatch removed).
+        rop = ResolvedOp.from_amendment_op(
+            op,
+            muutos_ir=None,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="5a",
+            target_chapter=None,
+            target_address=LegalAddress(path=(("section", "5a"),)),
+        )
+        rop.intent = _build_canonical_intent(rop)
 
-        result = apply_op(state, op, ctx, muutos_ir=None, replay_mode="legal_pit")
+        result = apply_op(state, None, ctx, None, replay_mode="legal_pit", rop=rop)
 
         # Non-base slot → removed, not tombstoned
         sec5a = result.find_section("5a")

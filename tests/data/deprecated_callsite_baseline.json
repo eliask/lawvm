@@ -4,7 +4,6 @@
     "parse_ops_fallback_heuristic": "src/lawvm/finland/normalize.py",
     "parse_ops_fallback_heuristic_with_coverage": "src/lawvm/finland/normalize.py",
     "parse_ops_title_fallback": "src/lawvm/finland/normalize.py",
-    "_apply_legacy_dispatch": "src/lawvm/finland/apply_legacy_dispatch.py",
     "extract_plain_text_statute_mentions": "src/lawvm/finland/references/ref_mention_extractor.py",
     "strip_legacy_roman_division_heading_prefix": "src/lawvm/finland/oracle_comparison.py",
     "strip_legacy_numbered_section_heading_prefix": "src/lawvm/finland/oracle_comparison.py",
@@ -14,7 +13,6 @@
     "parse_ops_fallback_heuristic": 17,
     "parse_ops_fallback_heuristic_with_coverage": 6,
     "parse_ops_title_fallback": 2,
-    "_apply_legacy_dispatch": 6,
     "extract_plain_text_statute_mentions": 22,
     "strip_legacy_roman_division_heading_prefix": 1,
     "strip_legacy_numbered_section_heading_prefix": 1,
@@ -52,14 +50,6 @@
       "src/lawvm/finland/frontend_compile.py:4875",
       "scripts/capture_gold.py:86"
     ],
-    "_apply_legacy_dispatch": [
-      "src/lawvm/finland/apply_intent_facade.py:390",
-      "tests/test_fi_apply.py:9346",
-      "tests/test_fi_apply.py:16926",
-      "tests/test_fi_apply.py:16996",
-      "tests/test_fi_apply.py:17036",
-      "tests/test_fi_apply.py:17068"
-    ],
     "extract_plain_text_statute_mentions": [
       "src/lawvm/finland/references/ref_mention_extractor.py:15",
       "src/lawvm/finland/references/ref_mention_extractor.py:2242",
@@ -92,5 +82,5 @@
     ],
     "parse_leading_structural_address_path": []
   },
-  "total": 55
+  "total": 49
 }
