@@ -9562,6 +9562,42 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="HE projection output directory (default: data/fi/v1)",
     )
 
+    # --- replay-all ---
+    ra_p = sub.add_parser(
+        "replay-all",
+        help="replay the full farchive corpus (every statute) through the FI pipeline",
+        description=(
+            "Enumerate EVERY statute id in the full farchive (the same corpus "
+            "source as 'export-projections --corpus all') and run the production "
+            "FI replay pipeline once per statute, including zero-amendment "
+            "statutes (no amendment filter). Robust to per-statute failures: "
+            "counts and continues. This is a measurement/ops command intended "
+            "for coverage instrumentation of src/lawvm/finland/; it does not "
+            "change replay semantics or write artifacts."
+        ),
+        parents=_P,
+    )
+    ra_p.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help="parallel worker processes (default: 1; use 1 for accurate coverage)",
+    )
+    ra_p.add_argument(
+        "--limit",
+        type=int,
+        metavar="N",
+        help="replay only the first N statutes (default: entire corpus)",
+    )
+    ra_p.add_argument(
+        "--mode",
+        default="official_consolidation",
+        type=replay_mode_argument,
+        choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation)",
+    )
+
     # --- fi-proposals ---
     fp_p = sub.add_parser(
         "fi-proposals",
@@ -13808,6 +13844,13 @@ def _main_impl() -> None:
         from lawvm.tools.export_parquet import main as export_proj_main
 
         export_proj_main(args)
+
+    elif args.command == "replay-all":
+        from lawvm.tools.replay_all import main as replay_all_main
+
+        rc = replay_all_main(args)
+        if rc:
+            sys.exit(rc)
 
     elif args.command == "open-law":
         from lawvm.tools.open_law import main as open_law_main
