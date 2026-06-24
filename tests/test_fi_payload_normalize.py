@@ -4754,6 +4754,167 @@ def test_payload_normalize_rebases_duplicate_target_shifted_replace_after_renumb
     assert any(obs.kind == "ELAB.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE" for obs in _observations(got))
 
 
+def test_payload_normalize_rebases_shifted_replace_to_explicit_renumber_destination() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=tuple(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=str(idx),
+                children=(IRNode(kind=IRNodeKind.CONTENT, text=f"old {idx}"),),
+            )
+            for idx in range(1, 13)
+        ),
+    )
+    ctx = _mock_ctx("section", "12", target_chapter="4", live_node=live_sec)
+
+    def _renumber(source: str, destination: str) -> AmendmentOp:
+        lo = LegalOperation(
+            op_id=f"renumber_{source}_to_{destination}",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("chapter", "4"), ("section", "12"), ("subsection", source))),
+            destination=LegalAddress(path=(("chapter", "4"), ("section", "12"), ("subsection", destination))),
+        )
+        return AmendmentOp(
+            op_id=lo.op_id,
+            op_type="RENUMBER",
+            target_kind=TargetKind.SECTION,
+            target_chapter="4",
+            target_section="12",
+            target_paragraph=int(source),
+            lo=lo,
+        )
+
+    renumber11 = _renumber("11", "13")
+    renumber12 = _renumber("12", "14")
+    replace12 = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="12",
+        target_chapter="4",
+        target_paragraph=12,
+    )
+    insert11 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="12",
+        target_chapter="4",
+        target_paragraph=11,
+    )
+    insert12 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="12",
+        target_chapter="4",
+        target_paragraph=12,
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="12 §"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="11", children=(IRNode(kind=IRNodeKind.CONTENT, text="new 11"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="12", children=(IRNode(kind=IRNodeKind.CONTENT, text="new 12"),)),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="13", children=(IRNode(kind=IRNodeKind.CONTENT, text="changed old 12"),)),
+        ),
+    )
+
+    got = elaborate_payload_against_live(
+        ctx,
+        [insert11, insert12, replace12, renumber12, renumber11],
+        muutos_ir,
+        set(),
+    )
+
+    descriptions = [op.description() for op in got.group_ops]
+    assert "REPLACE 4 luku 12 § 14 mom" in descriptions
+    assert "REPLACE 4 luku 12 § 13 mom" not in descriptions
+    rebased_replace = next(op for op in got.group_ops if op.op_type == "REPLACE" and op.target_paragraph == 14)
+    assignment = _slot_assignment_result(got)
+    mapped = assignment.for_op(rebased_replace)
+    assert mapped is not None
+    assert mapped.label == "13"
+    detail = next(obs.detail for obs in _observations(got) if obs.kind == "ELAB.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE")
+    assert detail is not None
+    assert detail["from_paragraph"] == 12
+    assert detail["to_paragraph"] == 14
+    assert detail["payload_slot_label"] == "13"
+
+
+def test_payload_normalize_rebases_changed_renumber_sources_to_destinations() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=tuple(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=str(idx),
+                children=(IRNode(kind=IRNodeKind.CONTENT, text=f"old {idx}"),),
+            )
+            for idx in range(1, 15)
+        ),
+    )
+    ctx = _mock_ctx("section", "12", target_chapter="4", live_node=live_sec)
+
+    def _renumber(source: str, destination: str) -> AmendmentOp:
+        return AmendmentOp(
+            op_id=f"renumber_{source}_to_{destination}",
+            op_type="RENUMBER",
+            target_kind=TargetKind.SECTION,
+            target_chapter="4",
+            target_section="12",
+            target_paragraph=int(source),
+            lo=LegalOperation(
+                op_id=f"renumber_{source}_to_{destination}",
+                sequence=0,
+                action=StructuralAction.RENUMBER,
+                target=LegalAddress(path=(("chapter", "4"), ("section", "12"), ("subsection", source))),
+                destination=LegalAddress(path=(("chapter", "4"), ("section", "12"), ("subsection", destination))),
+            ),
+        )
+
+    group_ops = [
+        _renumber("14", "16"),
+        _renumber("9", "11"),
+        _renumber("4", "6"),
+        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=3),
+        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=4),
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=4),
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=9),
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=14),
+    ]
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="12",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="12 §"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", children=(IRNode(kind=IRNodeKind.CONTENT, text="new 3"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="4", children=(IRNode(kind=IRNodeKind.CONTENT, text="new 4"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="6", children=(IRNode(kind=IRNodeKind.CONTENT, text="changed old 4"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="11", children=(IRNode(kind=IRNodeKind.CONTENT, text="changed old 9"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="16", children=(IRNode(kind=IRNodeKind.CONTENT, text="changed old 14"),)),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, group_ops, muutos_ir, set())
+
+    descriptions = [op.description() for op in got.group_ops]
+    assert "REPLACE 4 luku 12 § 6 mom" in descriptions
+    assert "REPLACE 4 luku 12 § 11 mom" in descriptions
+    assert "REPLACE 4 luku 12 § 16 mom" in descriptions
+    assert "REPLACE 4 luku 12 § 4 mom" not in descriptions
+    assert "REPLACE 4 luku 12 § 9 mom" not in descriptions
+    assert "REPLACE 4 luku 12 § 14 mom" not in descriptions
+    detail = next(obs.detail for obs in _observations(got) if obs.kind == "ELAB.REBASE_REPLACED_RENUMBER_SOURCE")
+    assert detail is not None
+    assert detail["rebase_count"] == 2
+    assert any(obs.kind == "ELAB.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE" for obs in _observations(got))
+
+
 def test_payload_normalize_does_not_rebase_duplicate_target_shifted_replace_without_renumber() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

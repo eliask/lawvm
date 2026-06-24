@@ -297,6 +297,12 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "A reinstated flat-body section inherits the chapter/part address recorded by "
         "the prior repeal when that address is unique and still legally available."
     ),
+    "fi_live_stem_scope_overridden_by_corroborated_source_body": (
+        "A flat-body letter-suffix/live-stem insert whose chapter scope is not fixed "
+        "by a prior-repeal address takes the chapter/part scope corroborated by the "
+        "amendment's own source body, overriding the live stem host's chapter when "
+        "the source body independently corroborates that placement."
+    ),
     "fi.act_wide_body_section_replace": (
         "An act-wide body section replacement is recognized as a source-body section "
         "operation rather than a free-floating payload fragment."

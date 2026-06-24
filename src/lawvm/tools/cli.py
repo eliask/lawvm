@@ -10657,6 +10657,32 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit machine-readable JSON",
     )
 
+    # --- bill-counterfactual ---
+    bill_cf_p = sub.add_parser(
+        "bill-counterfactual",
+        help="three-tier counterfactual 'what does this amendment do' report",
+        description=(
+            "Report one Finnish amendment's effects in THREE structurally distinct "
+            "tiers, kept separate and never conflated (read-only projection): "
+            "TIER 1 directly-changed provisions (johtolause ops); TIER 2 provisions "
+            "in the amended act that CITE a tier-1-changed provision (1-hop internal "
+            "back-references, traced only through resolved/unchanged citations); and "
+            "TIER 3 a DECLARED boundary of uncomputed second-order effects (the "
+            "honesty boundary IS part of the result). No score, no magnitude. "
+            "Supports --json."
+        ),
+    )
+    bill_cf_p.add_argument(
+        "statute_id",
+        metavar="STATUTE_ID",
+        help="amending statute id, e.g. 2018/301",
+    )
+    bill_cf_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON",
+    )
+
     # --- fi-refs ---
     fi_refs_p = sub.add_parser(
         "fi-refs",
@@ -10970,6 +10996,131 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         ),
     )
 
+    # --- dangling-refs ---
+    dangling_refs_p = sub.add_parser(
+        "dangling-refs",
+        help=(
+            "corpus DANGLING-reference report over the published fi_refs "
+            "projection (fi); three-way PRESENT/DANGLING/EXISTENCE_UNKNOWN"
+        ),
+        description=(
+            "Read-only projection over the published fi_refs artifact: classify "
+            "every RESOLVED cross-reference (cite_confidence exact/approximate — a "
+            "reference asserting a specific target provision) into a CLOSED "
+            "three-way existence status against the target act's CURRENT "
+            "consolidated text-state (as-of-NOW; no replay). PRESENT = the cited "
+            "provision resolves; DANGLING = the act is materialized but the cited "
+            "provision resolves to nothing; EXISTENCE_UNKNOWN = existence could "
+            "NOT be determined (target act absent from corpus, body not "
+            "materialized, or no statute identity). TAG-DON'T-GUESS: an "
+            "EXISTENCE_UNKNOWN is an honest non-determination, NEVER reported as "
+            "DANGLING. Non-resolved references (statute_only/ambiguous/open/...) "
+            "are out of scope and counted separately. The as-of-NOW vs as-of-"
+            "citing distinction is the declared residual (the heavier "
+            "broken-refs --provenance path does the as-of-citing replay). Surface "
+            "fact, not a legal conclusion."
+        ),
+    )
+    dangling_refs_p.add_argument(
+        "--fi-refs",
+        dest="fi_refs",
+        default=None,
+        metavar="PATH",
+        help=(
+            "path to the fi_refs projection (.jsonl or .parquet). Default: the "
+            "export's standard output location under .tmp/projections/ or "
+            "data/fi/v1/."
+        ),
+    )
+    dangling_refs_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="write the full typed report (counts + every DANGLING witness) to PATH as JSON",
+    )
+    dangling_refs_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="number of DANGLING witnesses shown in the text summary (default: 20)",
+    )
+    dangling_refs_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the full typed report as JSON to stdout",
+    )
+
+    # --- cross-ref-report ---
+    cross_ref_report_p = sub.add_parser(
+        "cross-ref-report",
+        help=(
+            "render the dangling cross-reference claim as a neutral, "
+            "independently-verifiable Markdown document (fi)"
+        ),
+        description=(
+            "PRESENTATION of the existing dangling-reference claim "
+            "(lawvm.fi.reference.dangling.v1) as a structured Markdown report a "
+            "legal scholar / Finlex maintainer / journalist can read and check. "
+            "Either runs the claim fresh over the fi_refs projection (--fi-refs) "
+            "or renders a saved `dangling-refs --out` JSON (--report-json). Adds "
+            "NO new computation and NO new authority: it reads the typed report's "
+            "counts and DANGLING witnesses verbatim and lays them out with a "
+            "prominent methodology/limits section, deterministic findings grouped "
+            "by target act (no silent truncation — a capped list states 'showing "
+            "top N of M'), and reproducible verification steps. EXISTENCE_UNKNOWN "
+            "rows are excluded from the findings (honest non-determination, never "
+            "reported as broken). A dangling reference is a textual/maintenance "
+            "fact, not a legal conclusion."
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--fi-refs",
+        dest="fi_refs",
+        default=None,
+        metavar="PATH",
+        help=(
+            "path to the fi_refs projection (.jsonl or .parquet) to run the claim "
+            "over. Default: the export's standard output location. Ignored when "
+            "--report-json is given."
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--report-json",
+        dest="report_json",
+        default=None,
+        metavar="PATH",
+        help=(
+            "render a previously saved `dangling-refs --out` JSON report instead "
+            "of recomputing (re-asserts the report's totality/closed-status guards "
+            "on read)"
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--scope-label",
+        dest="scope_label",
+        default=None,
+        metavar="TEXT",
+        help=(
+            "free-text declaration of the corpus slice this run covers, printed "
+            "prominently so a slice is never mistaken for the whole corpus"
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="write the Markdown report to PATH (default: stdout)",
+    )
+    cross_ref_report_p.add_argument(
+        "--top",
+        type=int,
+        default=None,
+        help=(
+            "max number of dangling witnesses rendered inline (the full count is "
+            "always stated; default: 200)"
+        ),
+    )
+
     # --- surface-graph ---
     surface_graph_p = sub.add_parser(
         "surface-graph",
@@ -10993,6 +11144,58 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "--json",
         action="store_true",
         help="emit the graph summary as JSON",
+    )
+
+    # --- corpus-graph ---
+    corpus_graph_p = sub.add_parser(
+        "corpus-graph",
+        help="export the cross-statute corpus Legal Surface Graph (fi)",
+        description=(
+            "Build the CROSS-STATUTE corpus Legal Surface Graph over a DECLARED "
+            "corpus slice (--ids or --limit; never a silent full-corpus "
+            "truncation) and export a typed artifact: the node set + edge set "
+            "(each edge carrying edge_kind, endpoints, provenance, resolution "
+            "status, and the surface_only firewall flag) plus a census (node-kind "
+            "/ edge-kind counts, the cross-statute interlink fabric, the "
+            "resolution-status breakdown, and the count of genuinely inter-statute "
+            "reference edges). The same cited target collapses to ONE shared "
+            "entity node, so 'what cites this act/provision' is a graph query. "
+            "READ-ONLY, surface-fact only — the authority firewall holds (every "
+            "node/edge is surface_only); a fail-loud merge (same node id + "
+            "divergent payload RAISES) and tag-don't-guess (ambiguous -> "
+            "has_candidate, never an invented target). Backed by the claim "
+            "lawvm.fi.legal_surface_graph.v1."
+        ),
+    )
+    corpus_graph_p.add_argument(
+        "--ids",
+        default=None,
+        help="explicit comma-separated statute ids to build the slice over "
+        "(takes precedence over --limit)",
+    )
+    corpus_graph_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="build over the first N statute ids of the corpus (required if "
+        "--ids is not given; the full build is heavy, so the scope must be "
+        "declared explicitly)",
+    )
+    corpus_graph_p.add_argument(
+        "--surface-time",
+        dest="surface_time",
+        default=None,
+        help="as-of surface time for resolution (optional)",
+    )
+    corpus_graph_p.add_argument(
+        "--out",
+        default=None,
+        help="write the full export artifact (JSON) to this path",
+    )
+    corpus_graph_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the full export artifact as JSON to stdout",
     )
 
     # --- parse-characterize ---
@@ -13711,6 +13914,13 @@ def _main_impl() -> None:
 
         analyze_bill_main(args)
 
+    elif args.command == "bill-counterfactual":
+        from lawvm.tools.bill_counterfactual_effects import (
+            main as bill_counterfactual_main,
+        )
+
+        bill_counterfactual_main(args)
+
     elif args.command == "parse-bench":
         from lawvm.tools.parse_bench import main as parse_bench_main
 
@@ -13731,10 +13941,27 @@ def _main_impl() -> None:
 
         broken_refs_main(args)
 
+    elif args.command == "dangling-refs":
+        from lawvm.tools.dangling_references import main as dangling_refs_main
+
+        dangling_refs_main(args)
+
+    elif args.command == "cross-ref-report":
+        from lawvm.tools.cross_reference_integrity_report import (
+            main as cross_ref_report_main,
+        )
+
+        cross_ref_report_main(args)
+
     elif args.command == "surface-graph":
         from lawvm.tools.surface_graph import main as surface_graph_main
 
         surface_graph_main(args)
+
+    elif args.command == "corpus-graph":
+        from lawvm.tools.corpus_surface_graph import main as corpus_graph_main
+
+        corpus_graph_main(args)
 
     elif args.command == "parse-characterize":
         from lawvm.tools.parse_characterize import main as parse_characterize_main

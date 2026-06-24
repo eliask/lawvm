@@ -4878,6 +4878,17 @@ def _rebase_duplicate_target_shifted_replace(
     contains a plain `RENUMBER N mom`, which makes the shifted-successor family
     explicit rather than guessed.
     """
+    renumber_destinations = {
+        int(op.target_paragraph): int(destination)
+        for op in group_ops
+        if (
+            op.op_type == "RENUMBER"
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+            and (destination := _destination_subsection_label_for_renumber(op)).isdigit()
+        )
+    }
     renumber_targets = {
         int(op.target_paragraph)
         for op in group_ops
@@ -4911,8 +4922,9 @@ def _rebase_duplicate_target_shifted_replace(
             rebased_ops.append(op)
             continue
 
+        target_paragraph = int(op.target_paragraph)
         mapped_paragraph = int(mapped_label)
-        if mapped_paragraph <= int(op.target_paragraph):
+        if mapped_paragraph <= target_paragraph:
             rebased_ops.append(op)
             continue
 
@@ -4935,10 +4947,15 @@ def _rebase_duplicate_target_shifted_replace(
             rebased_ops.append(op)
             continue
 
+        rebased_paragraph = renumber_destinations.get(target_paragraph, mapped_paragraph)
+        if rebased_paragraph <= target_paragraph:
+            rebased_ops.append(op)
+            continue
+
         rebased = dc_replace(
             op,
-            target_paragraph=mapped_paragraph,
-            lo=_lo_with_path_update(op.lo, subsection=str(mapped_paragraph)) if op.lo is not None else None,
+            target_paragraph=rebased_paragraph,
+            lo=_lo_with_path_update(op.lo, subsection=str(rebased_paragraph)) if op.lo is not None else None,
             target_guessing_provenance_tags=tuple(
                 dict.fromkeys((*op.target_guessing_provenance_tags, "rebase_duplicate_target_shifted_replace"))
             ),
@@ -4948,12 +4965,80 @@ def _rebase_duplicate_target_shifted_replace(
         if detail is None:
             detail = {
                 "from_paragraph": op.target_paragraph,
-                "to_paragraph": mapped_paragraph,
+                "to_paragraph": rebased_paragraph,
                 "payload_slot_label": mapped_label,
                 "op_description": op.description(),
             }
 
     return rebased_ops, changed, detail
+
+
+def _rebase_replaced_renumber_sources_to_destinations(
+    group_ops: List[AmendmentOp],
+) -> Tuple[List[AmendmentOp], bool, Dict[str, Any] | None]:
+    """Rebase changed same-wave renumber sources to typed destinations.
+
+    When the parser emits an explicit subsection ``RENUMBER N -> M`` for a
+    ``jolloin`` movement, a whole-subsection ``REPLACE N`` in the same group is
+    the changed source provision travelling to ``M``. Duplicate-target rebases
+    run first and are skipped here so an already-projected replacement is not
+    sent through an unrelated later source label.
+    """
+    renumber_destinations = {
+        int(op.target_paragraph): int(destination)
+        for op in group_ops
+        if (
+            op.op_type == "RENUMBER"
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+            and (destination := _destination_subsection_label_for_renumber(op)).isdigit()
+        )
+    }
+    if not renumber_destinations:
+        return group_ops, False, None
+
+    changed = False
+    details: list[dict[str, object]] = []
+    rebased_ops: List[AmendmentOp] = []
+    for op in group_ops:
+        if (
+            op.op_type != "REPLACE"
+            or op.target_paragraph is None
+            or op.target_item
+            or op.target_special
+            or "rebase_duplicate_target_shifted_replace" in op.target_guessing_provenance_tags
+        ):
+            rebased_ops.append(op)
+            continue
+
+        target_paragraph = int(op.target_paragraph)
+        destination_paragraph = renumber_destinations.get(target_paragraph)
+        if destination_paragraph is None or destination_paragraph == target_paragraph:
+            rebased_ops.append(op)
+            continue
+
+        rebased = dc_replace(
+            op,
+            target_paragraph=destination_paragraph,
+            lo=_lo_with_path_update(op.lo, subsection=str(destination_paragraph)) if op.lo is not None else None,
+            target_guessing_provenance_tags=tuple(
+                dict.fromkeys((*op.target_guessing_provenance_tags, "rebase_replaced_renumber_source"))
+            ),
+        )
+        rebased_ops.append(rebased)
+        changed = True
+        details.append(
+            {
+                "from_paragraph": target_paragraph,
+                "to_paragraph": destination_paragraph,
+                "op_description": op.description(),
+            }
+        )
+
+    if not changed:
+        return group_ops, False, None
+    return rebased_ops, True, {"rebase_count": len(details), "rebases": details}
 
 
 def _expand_post_omission_tail_insert_subsections(
@@ -6173,6 +6258,27 @@ def _elaborate_sparse_subsection_payload(
                 "ELAB.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE",
                 "sparse_subsection_elaboration",
                 **(duplicate_target_detail or {}),
+            )
+        )
+        assignment = _build_subsection_slot_assignment(muutos_ir, group_ops, surface)
+        muutos_ir, assignment = _attach_terminal_section_omission_to_tail_subsection(
+            ctx,
+            target_unit_kind,
+            target_norm,
+            target_chapter,
+            muutos_ir,
+            group_ops,
+            assignment,
+        )
+    group_ops, rebased_replaced_renumber_sources, replaced_renumber_detail = (
+        _rebase_replaced_renumber_sources_to_destinations(group_ops)
+    )
+    if rebased_replaced_renumber_sources:
+        observations.append(
+            _obs(
+                "ELAB.REBASE_REPLACED_RENUMBER_SOURCE",
+                "sparse_subsection_elaboration",
+                **(replaced_renumber_detail or {}),
             )
         )
         assignment = _build_subsection_slot_assignment(muutos_ir, group_ops, surface)
