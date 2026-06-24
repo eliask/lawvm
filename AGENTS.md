@@ -169,7 +169,10 @@ Before patching replay, the debug/evidence path must answer: which source artifa
 ### 3.3 Confirm the fix on the target repro FIRST
 After a fix, re-run the minimal reproduction *before* broad-testing or committing. If the target case is byte-identical, the diagnosis is wrong — re-diagnose, do not broad-test or commit. A metric delta is not proof: confirm at the node/eid level that the predicted thing moved. Only then gate, then broad-compare.
 
-### 3.4 Debug commands
+### 3.4 Divergence work is family discovery
+Treat each replay/oracle divergence as a probe for a reusable family, not as an invitation to one-off patching. Before changing semantics, name the phase, family, source witness, old behavior, new behavior, and emitted observation/finding; if the answer is "this case only", prefer journaling/source-oracle classification over code. If the fix interprets legal prose, extend the canonical typed parser/recognizer or emit a typed residual — do not add a parallel fallback that re-decides action, target scope, lifecycle, saved effect, routing, or mutation drop/widen from raw text. A semantic fix is incomplete until it has an invariant/observation for the family, a real corpus witness, a negative or strict-mode guard where applicable, and a saved-run comparison that investigates every regression above threshold, not only the intended row. True source/oracle/manual-frontier cases go into the relevant journal so they are not rediscovered as compiler bugs.
+
+### 3.5 Debug commands
 Discover current flags with `uv run lawvm <cmd> --help`; the full catalogue is in `notes/JURISDICTION_CLI_TOOLING_CONTRACT.md`.
 ```bash
 uv run lawvm explain <ID>
@@ -178,14 +181,14 @@ uv run lawvm diagnose-phase <ID> --source <AMENDMENT_ID> [--target chapter:4/sec
 uv run lawvm invariant-bisect <ID> --detector all_tree --target chapter:4/section:20   # detectors: duplicate_label, illegal_edge, all_tree, text_duplication, flattened_sublist_family; --certificate where available
 ```
 
-### 3.5 The canonical gate (definition of done)
+### 3.6 The canonical gate (definition of done)
 ```bash
 ./scripts/ci.sh --affected <touched paths>   # change-scoped: ruff + ty + shard-ownership + boundary guards + affected pytest shards (not network/slow) + release hygiene
 ./scripts/ci.sh                              # full bounded gate — required after a tree-wide signature/boundary change, whose blast radius exceeds its diff
 ```
 A green `--affected` run is required before you report a code change as **done** (reviews, status updates, architecture answers, and red-gate failure reports are still reportable without it). `ci.sh` is a shell script — run it directly, not under `uv run`; bound memory on heavy/corpus runs with `LAWVM_CI_MEMCAP=18G ./scripts/ci.sh <args>`. Invoke Python entry points through `uv run` (`uv run pytest`, `uv run lawvm`, `uv run ruff`, `uv run ty`) — bare `python`/`pytest` bypasses the locked env and the result will not reflect the gate. **Never gate with raw `pytest tests/`**: it pulls `@network` (live HTTP) and `@slow` (full gold corpus) marks that hang ~an hour headless and skip ruff/ty, so "tests pass" from it is both unreliable and incomplete (run `pytest -m network` / `-m slow` only to exercise those marks deliberately). `notes/IMPLEMENTATION_DIVERGENCE_LEDGER.md` lists clean-tree red shards that predate your change — check it before attributing a red shard to your work.
 
-### 3.6 Final response — the repair report
+### 3.7 Final response — the repair report
 After the gate is green, report (never just "tests pass"): the **gate result** (which `ci.sh`, green/red); **files changed**; the **invariant/problem** and its **phase** and **family**; the **source witness**; **old → new behavior**; the **finding/observation** emitted; **strict-mode behavior** (proceed/warn/block/fail); **tests added** (synthetic/corpus/negative); **corpus examples verified**; **known remaining risk**; and whether the fix is **family-level or statute-local**. If you cannot fill this out, the fix is too ad hoc.
 
 ---
