@@ -1813,12 +1813,29 @@ _FUTURE_EFFECTIVE_RE = re.compile(
     re.IGNORECASE,
 )
 # Terminal punctuation edits where the struck anchor is described positionally.
-# Pattern A: "striking the period [at the end] and inserting '<replacement>".
+# Pattern A: "striking the period [at the end [of paragraph (2)]] and inserting
+# '<replacement>'" — the anchor is positional, the replacement is the quoted
+# insertion. The optional "of (paragraph|subparagraph|...)(label)" clause names
+# the sub-unit whose trailing punctuation is edited; when captured, the lowerer
+# drills the target one level deeper (e.g. resolved `subsection (b)` +
+# `of paragraph (2)` → op target `paragraph:2`) so the op anchors on the named
+# child's terminal period, NOT the parent's. The nested chain form — `(1)(A)`,
+# `(3)(B)(ii)` — is captured too but left for the handler to refuse (multi-level
+# drilling cannot be safely resolved from prose alone). Quoted replacement is
+# bounded to 300 chars (the enacted literal is often a one-clause insert, but a
+# section reference like ", and (G) any assessments required under section 505B."
+# runs ~60 chars — the original 20-char cap silently blocked those).
 # Pattern B: "striking '<old>' at the end ... and inserting '<replacement>'".
 _END_PUNCT_STRIKE_INSERT_RE = re.compile(
-    r"striking\s+(?:the\s+)?(?P<struck_punct>period|semicolon|comma)(?:\s+at\s+the\s+end)?\s+and\s+inserting\s+"
-    r"(?:[\"“”'](?P<quoted_ins>[^\"“”']{0,20})[\"“”']|(?P<word_ins>a\s+(?:semicolon|comma|period)))"
-    r"|striking\s+[\"“”'](?P<quoted_old_end>[^\"“”']{0,20})[\"“”']\s+at\s+the\s+end[^\"“”']{0,40}?and\s+inserting\s+[\"“”'](?P<quoted_new_end>[^\"“”']{0,20})[\"“”']"
+    r"(?:"
+    r"striking\s+(?:the\s+)?(?P<struck_punct>period|semicolon|comma)"
+    r"(?:\s+at\s+the\s+end)?"
+    r"(?:\s+of\s+(?P<punct_subunit_kind>section|subsection|paragraph|subparagraph|clause|subclause)"
+    r"\s+\((?P<punct_subunit_label>[0-9A-Za-z]+)\)(?P<punct_subunit_extra>(?:\([0-9A-Za-z]+\))*))?"
+    r"\s+and\s+inserting\s+"
+    r"(?:[\"“”'](?P<quoted_ins>[^\"“”']{0,300})[\"“”']|(?P<word_ins>a\s+(?:semicolon|comma|period)))"
+    r"|striking\s+[\"“”'](?P<quoted_old_end>[^\"“”']{0,300})[\"“”']\s+at\s+the\s+end[^\"“”']{0,400}?and\s+inserting\s+[\"“”'](?P<quoted_new_end>[^\"“”']{0,300})[\"“”']"
+    r")"
     + _STRUCTURAL_ACTION_TRAIL,
     re.IGNORECASE,
 )
@@ -2457,6 +2474,34 @@ def _lower_instruction(
                 replacement = _punctuation_word_to_char(word_ins) or ""
             if old is None:
                 old = _end_punctuation_char(m.group("struck_punct")) or "."
+            # The optional "of (paragraph|subparagraph|...)(label)" clause names
+            # the sub-unit whose terminal punctuation is edited. When the resolved
+            # `address` is shallower than the named sub-unit (typical: prose names
+            # `of paragraph (2)` while the resolved target is `subsection (b)` —
+            # the parent of paragraph (2)), drilling the target one level deeper
+            # to the named child anchors the op on the child's terminal period
+            # rather than the parent's. Skip drilling when the resolved target's
+            # last segment is already at the SAME kind (e.g. prose header resolved
+            # to paragraph:2 and prose body says `of paragraph (2)` — drilling
+            # would duplicate the unit at a deeper level). Holding out the
+            # nested-chain form (`(1)(A)`, `(3)(B)(ii)`) — multi-level drilling
+            # from prose alone is ambiguous and risks the wrong-node invariant
+            # (§1.3).
+            strike_target = _text_strike_target
+            sub_kind = m.group("punct_subunit_kind")
+            sub_label = m.group("punct_subunit_label")
+            sub_extra = m.group("punct_subunit_extra")
+            if (
+                sub_kind is not None
+                and sub_label is not None
+                and (sub_extra is None or not sub_extra)
+                and _text_strike_target is None
+                and address.path
+                and address.path[-1][0] != sub_kind.lower()
+            ):
+                strike_target = LegalAddress(
+                    path=(*address.path, (sub_kind.lower(), sub_label))
+                )
             op = _make_op(
                 StructuralAction.TEXT_REPLACE,
                 rule_id=RULE_STRIKE_INSERT_END_PUNCT,
@@ -2465,7 +2510,7 @@ def _lower_instruction(
                     selector=TextSelector(match_text=old, occurrence=-1),
                     replacement=replacement or "",
                 ),
-                target=_text_strike_target,
+                target=strike_target,
             )
             witness_rule_id = RULE_STRIKE_INSERT_END_PUNCT
         else:

@@ -2307,6 +2307,84 @@ def test_strike_quoted_at_the_end_and_insert_new_end_punct():
     assert patch.replacement == ";"
 
 
+def test_strike_period_at_end_of_named_subunit_lowers_to_end_punct():
+    # The dominant un-lowered end-punct form: "striking the period at the end of
+    # paragraph (2) and inserting '; and'". The anchor names a sub-unit whose
+    # trailing period is edited; the regex needs an optional "of (paragraph|
+    # subparagraph|clause|subclause) (label)" clause. Source witness: PL 108-136
+    # §107 (the named-subunit form dominates the period-at-end family in the
+    # 2026-06 un-lowered scan).
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b)(2) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> the period at the end '
+        'of paragraph (2) and <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>; and</quotedText>".'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "strike_insert_end_punct"
+    assert instr.witness_rule_id == RULE_STRIKE_INSERT_END_PUNCT
+    patch = _patch(instr)
+    assert patch.selector.match_text == "."
+    assert patch.selector.occurrence == -1
+    assert patch.replacement == "; and"
+
+
+def test_strike_period_at_end_of_named_subunit_nested_label_lowers_to_end_punct():
+    # The same form with a NESTED target label: "of paragraph (3)(B)(ii)" — the
+    # outer sub-unit carries its own parenthesised address chain. Widening the
+    # label capture to accept `(N)(X)(Y)` chains keeps the form from mis-routing
+    # to the generic strike_insert fallback (which would then emit
+    # COMPOUND_STRIKE_INSERT / unlowered findings rather than the end-punct op).
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b)(2) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> the period at the end '
+        'of paragraph (3)(B)(ii) and <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>; and</quotedText>".'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "strike_insert_end_punct"
+    assert instr.witness_rule_id == RULE_STRIKE_INSERT_END_PUNCT
+
+
+def test_end_punct_regex_does_not_eat_compound_insert_after_block():
+    # NEGATIVE / guard-liveness: when the SAME text also carries an
+    # "inserting after paragraph (N) the following new paragraph" compound
+    # splice, the end-punct classifier MUST NOT match a sub-clause of it (the
+    # regex trail is anchored at end-of-instruction via _STRUCTURAL_ACTION_TRAIL,
+    # so the compound's trailing splice-block keeps the regex off). Source
+    # witness: PL 117-58 §80603(b)(3) (26:6050I). Without the anchor, the
+    # compound was mis-routed to strike_insert_end_punct and silently dropped
+    # its block-insert half.
+    body = (
+        '<section identifier="/us/pl/117/58/s80603"><num value="80603">SEC. 80603. </num>'
+        '<content><ref href="/us/usc/t11/s6050I">Section 6050I(d) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>and</quotedText>” at the end of paragraph (1), by '
+        '<amendingAction type="delete">striking</amendingAction> the period at the end '
+        'of paragraph (2) and <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>, and</quotedText>”, and by '
+        '<amendingAction type="insert">inserting</amendingAction> after paragraph (2) '
+        'the following new paragraph:<quotedContent><paragraph><num value="3">“(3) </num>'
+        "<content>any digital asset.”</content></paragraph></quotedContent>.</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    # The compound triggers COMPOUND_STRIKE_INSERT, never the end-punct family.
+    assert instr.action == "strike_insert"
+    assert instr.operation is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == COMPOUND_STRIKE_INSERT_FINDING_RULE_ID
+
+
 def test_insert_before_period_at_the_end_lowers_to_terminal_text_replace():
     body = (
         '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
