@@ -462,6 +462,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_provision_index.py",
         "test_apply_decline_ratchet.py",
         "test_deprecated_callsite_ratchet.py",
+        "test_module_role_consistency.py",
         "test_naming_hygiene_ratchet.py",
         "test_regex_perf_gate.py",
         "test_regex_prefilter.py",

@@ -1,0 +1,513 @@
+#!/usr/bin/env python3
+"""Inventory the ROLE of every ``src/lawvm`` module: live / test_only_live / dead.
+
+A monotone scan+baseline ratchet (mirrors ``scripts/inventory_deprecated_callsites.py``
+and ``scripts/inventory_parser_smells.py``) that makes "is this module dead / who
+consumes it" a committed, CI-enforced FACT instead of folklore.
+
+WHAT IT DERIVES
+---------------
+For every module under ``src/lawvm/`` it computes:
+
+  * ``reachable_from_entrypoint`` — is the module reachable, over the import graph,
+    by a BFS from the five real ``[project.scripts]`` entrypoints (read from
+    ``pyproject.toml`` at scan time, never hardcoded, so a removed entrypoint
+    cannot silently shrink the live set)?
+  * ``importer_kind`` — the strongest edge that reaches it:
+    ``production`` | ``registry`` | ``drill_only`` | ``optional_backend`` |
+    ``test_only`` | ``none``.
+  * ``classification`` — ``live`` | ``test_only_live`` | ``dead``.
+
+THE TWO STATIC-ANALYSIS TRAPS (encoded here so no future audit re-discovers them)
+---------------------------------------------------------------------------------
+A pure import-graph BFS produces two FALSE deads.  Both are fixed by augmenting
+the graph with NON-import edges before the BFS:
+
+  1. ``apply_promotion_chain`` has ZERO import call sites but IS production-live
+     via registry STRINGS: it is named as ``FindingSpec.owner`` in
+     ``core/observation_registry.py`` and as ``RECORDED_DEAD`` owner strings in
+     ``core/fire_drill_registry.py``.  We add a synthetic edge from each registry
+     module to the named owner module.  The ``FindingSpec.owner`` edge is a
+     PRODUCTION edge (the registry is itself production-reachable); the
+     ``RECORDED_DEAD`` edge is tagged ``drill_only`` (it keeps the module OUT of
+     the dead set without faking production-live — the deadness is OWNED in
+     ``fire_drill_registry.RECORDED_DEAD``).
+
+  2. ``qwen_local`` is reached only by a lazy function-body import from
+     ``tools.cmd_propose_claims`` and is tested only under
+     ``@pytest.mark.requires_local_llm`` — 0% coverage but NOT dead.  Modules in
+     the ``OPTIONAL_BACKEND_MODULES`` allowlist are tagged ``optional_backend``
+     and excluded from the dead set.
+
+Owner strings are short leaf tokens (e.g. ``"grafter"``) that are NOT always
+uniquely resolvable to a module.  Resolution is best-effort against a
+``{leaf_name -> module}`` map; an owner that resolves to exactly one real
+``lawvm.*`` module yields a synthetic edge, and any owner that does NOT uniquely
+resolve is reported as a typed residual (``unresolved_owner_residual``) — never
+silently dropped.
+
+CHEAP-CI MODE (no coverage run)
+-------------------------------
+The classification is import-reach + registry-edge only.  It does NOT require the
+~900s replay-coverage census; the gate works without any coverage artifact.  A
+module that is import-reachable but only from test/registry/optional edges (no
+production importer) is ``test_only_live`` — the ~33-module surprise the census
+found.  A module reachable from NO edge at all (and not an optional backend) is
+``dead``.
+
+The committed baseline (``tests/data/module_roles_baseline.json``) records the
+current ``dead`` set and ``test_only_live`` set.  The companion test
+(``tests/test_module_role_consistency.py``) FAILS if either set GROWS — both are
+one-way shrink-only populations (wire it or delete it; never grow the
+unconsumed-producer population).
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import sys
+import tomllib
+from collections import defaultdict, deque
+from pathlib import Path
+from typing import Any
+
+_DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+BASELINE_PATH = Path("tests/data/module_roles_baseline.json")
+
+_SRC_ROOT = Path("src")
+_PKG = "lawvm"
+
+# ---------------------------------------------------------------------------
+# Trap #2: optional env-gated backends — lazy-import-only, 0% coverage EXPECTED,
+# never dead.  Kept as a small explicit allowlist (the design's §4.1 step 2).
+# ---------------------------------------------------------------------------
+OPTIONAL_BACKEND_MODULES: frozenset[str] = frozenset(
+    {
+        "lawvm.finland.llm_backends.qwen_local",
+    }
+)
+
+# Registry modules whose string fields name owner modules (the non-import edges).
+_OBSERVATION_REGISTRY_MODULE = "lawvm.core.observation_registry"
+_FIRE_DRILL_REGISTRY_MODULE = "lawvm.core.fire_drill_registry"
+
+
+# ---------------------------------------------------------------------------
+# Import-graph construction (AST over src/lawvm/**/*.py).
+# Captures static imports, lazy function-body imports, and
+# importlib.import_module("...") string targets.  Ported from the census engine
+# (LawVM-census/.tmp/build_import_graph.py) and made deterministic + importable.
+# ---------------------------------------------------------------------------
+
+
+def _path_to_module(path: Path, src_root: Path) -> str:
+    rel = path.relative_to(src_root).with_suffix("")
+    parts = list(rel.parts)
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts)
+
+
+def _resolve_relative(
+    cur_mod: str, level: int, module: str | None, mod_to_path: dict[str, Path]
+) -> str:
+    base_parts = cur_mod.split(".")
+    is_pkg = mod_to_path.get(cur_mod, Path("")).name == "__init__.py"
+    pkg_parts = base_parts[:] if is_pkg else base_parts[:-1]
+    up = level - 1
+    if up > 0:
+        pkg_parts = pkg_parts[:-up] if up <= len(pkg_parts) else []
+    target = ".".join(pkg_parts)
+    if module:
+        target = target + "." + module if target else module
+    return target
+
+
+def build_import_graph(src_root: Path) -> dict[str, Any]:
+    """Return {modules, edges, dynamic_targets, leaf_index, parse_failures}.
+
+    ``edges`` maps importer-module -> sorted list of imported lawvm modules.
+    ``leaf_index`` maps a leaf name -> sorted list of modules whose dotted tail
+    is that leaf (used for best-effort owner-string resolution).
+    """
+    mod_to_path: dict[str, Path] = {}
+    for path in sorted(src_root.rglob("*.py")):
+        mod_to_path[_path_to_module(path, src_root)] = path
+
+    all_mods = set(mod_to_path)
+    edges: dict[str, set[str]] = {m: set() for m in all_mods}
+    dynamic_targets: dict[str, set[str]] = {}
+    parse_failures: list[str] = []
+
+    for mod, path in sorted(mod_to_path.items()):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:  # pragma: no cover
+            parse_failures.append(f"{path}: {exc}")
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    target = alias.name
+                    if target in all_mods:
+                        edges[mod].add(target)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level and node.level > 0:
+                    base = _resolve_relative(mod, node.level, node.module, mod_to_path)
+                else:
+                    base = node.module or ""
+                if node.level == 0 and not base.startswith(_PKG):
+                    continue
+                if base in all_mods:
+                    edges[mod].add(base)
+                for alias in node.names:
+                    sub = f"{base}.{alias.name}" if base else alias.name
+                    if sub in all_mods:
+                        edges[mod].add(sub)
+            elif isinstance(node, ast.Call):
+                fn = node.func
+                name = (
+                    fn.attr
+                    if isinstance(fn, ast.Attribute)
+                    else fn.id
+                    if isinstance(fn, ast.Name)
+                    else None
+                )
+                if name == "import_module" and node.args:
+                    arg0 = node.args[0]
+                    if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str):
+                        target = arg0.value
+                        dynamic_targets.setdefault(mod, set()).add(target)
+                        if target in all_mods:
+                            edges[mod].add(target)
+
+    # Ancestor-package edges: importing ``a.b.c`` executes the ``__init__`` of
+    # every ancestor package (``a.b``, ``a``).  Python reaches the parent package
+    # whenever a child module is imported, so a package ``__init__`` is live iff
+    # any descendant is reachable.  Model this as an edge child -> parent-package
+    # so the BFS propagates reachability UP to the package markers (otherwise a
+    # consumed subpackage's ``__init__`` is a false dead).
+    for mod in sorted(all_mods):
+        parts = mod.split(".")
+        for cut in range(1, len(parts)):
+            ancestor = ".".join(parts[:cut])
+            if ancestor in all_mods and ancestor != mod:
+                edges[mod].add(ancestor)
+
+    leaf_index: dict[str, list[str]] = defaultdict(list)
+    for mod in all_mods:
+        leaf_index[mod.split(".")[-1]].append(mod)
+
+    return {
+        "modules": sorted(all_mods),
+        "edges": {m: sorted(v) for m, v in edges.items()},
+        "dynamic_targets": {m: sorted(v) for m, v in dynamic_targets.items()},
+        "leaf_index": {leaf: sorted(mods) for leaf, mods in leaf_index.items()},
+        "parse_failures": parse_failures,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Entrypoint roots from pyproject.toml [project.scripts] (never hardcoded).
+# ---------------------------------------------------------------------------
+
+
+def entrypoint_roots(repo_root: Path, all_mods: set[str]) -> list[str]:
+    """Return the [project.scripts] target modules that resolve to real modules."""
+    pyproject = repo_root / "pyproject.toml"
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    scripts: dict[str, str] = data.get("project", {}).get("scripts", {})
+    roots: set[str] = set()
+    for target in scripts.values():
+        # target is "module.path:callable"
+        module = target.split(":", 1)[0]
+        if module in all_mods:
+            roots.add(module)
+    return sorted(roots)
+
+
+# ---------------------------------------------------------------------------
+# Non-import registry edges (the trap-fix).
+# ---------------------------------------------------------------------------
+
+
+def _resolve_owner(
+    owner: str, all_mods: set[str], leaf_index: dict[str, list[str]]
+) -> str | None:
+    """Best-effort resolve an owner string to a single real lawvm module.
+
+    Owners are short leaf tokens (``"grafter"``) or relative dotted paths
+    (``"finland.apply_promotion_chain"``).  Returns the unique resolved module,
+    or ``None`` if it does not uniquely resolve (caller records a residual).
+    """
+    # Fully-qualified already.
+    if owner in all_mods:
+        return owner
+    # Relative dotted form: prepend the package.
+    qualified = f"{_PKG}.{owner}"
+    if qualified in all_mods:
+        return qualified
+    # Bare leaf token: resolve only when exactly one module has that leaf.
+    candidates = leaf_index.get(owner, [])
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def registry_edges(
+    repo_root: Path, all_mods: set[str], leaf_index: dict[str, list[str]]
+) -> dict[str, Any]:
+    """Derive the non-import registry edges + the unresolved-owner residual.
+
+    Returns:
+      - ``production_edges``: {src_module: [owner_module, ...]} — FindingSpec.owner.
+      - ``drill_edges``: {src_module: [owner_module, ...]} — RECORDED_DEAD owners.
+      - ``unresolved_owner_residual``: sorted list of owner strings that did NOT
+        uniquely resolve (typed residual, never silently dropped).
+    """
+    # Import the registries from the repo's src so we read the LIVE data, not a
+    # stale copy.  The test drives this against the worktree's own src.
+    src_dir = str((repo_root / _SRC_ROOT).resolve())
+    added = src_dir not in sys.path
+    if added:
+        sys.path.insert(0, src_dir)
+    try:
+        from lawvm.core.fire_drill_registry import RECORDED_DEAD
+        from lawvm.core.observation_registry import FINDING_REGISTRY
+    finally:
+        if added and sys.path and sys.path[0] == src_dir:
+            sys.path.pop(0)
+
+    production_owner_strings = sorted({spec.owner for spec in FINDING_REGISTRY.values()})
+    drill_owner_strings = sorted({owner for owner, _reason in RECORDED_DEAD.values()})
+
+    unresolved: set[str] = set()
+
+    production_targets: set[str] = set()
+    for owner in production_owner_strings:
+        resolved = _resolve_owner(owner, all_mods, leaf_index)
+        if resolved is None:
+            unresolved.add(owner)
+        else:
+            production_targets.add(resolved)
+
+    drill_targets: set[str] = set()
+    for owner in drill_owner_strings:
+        resolved = _resolve_owner(owner, all_mods, leaf_index)
+        if resolved is None:
+            unresolved.add(owner)
+        else:
+            drill_targets.add(resolved)
+
+    prod_edges: dict[str, list[str]] = {}
+    if _OBSERVATION_REGISTRY_MODULE in all_mods and production_targets:
+        prod_edges[_OBSERVATION_REGISTRY_MODULE] = sorted(production_targets)
+
+    drill_edges: dict[str, list[str]] = {}
+    if _FIRE_DRILL_REGISTRY_MODULE in all_mods and drill_targets:
+        drill_edges[_FIRE_DRILL_REGISTRY_MODULE] = sorted(drill_targets)
+
+    return {
+        "production_edges": prod_edges,
+        "drill_edges": drill_edges,
+        "unresolved_owner_residual": sorted(unresolved),
+    }
+
+
+# ---------------------------------------------------------------------------
+# BFS reachability + classification.
+# ---------------------------------------------------------------------------
+
+
+def _bfs(roots: set[str], edges: dict[str, set[str]]) -> set[str]:
+    seen = set(roots)
+    queue = deque(roots)
+    while queue:
+        node = queue.popleft()
+        for target in edges.get(node, ()):
+            if target not in seen:
+                seen.add(target)
+                queue.append(target)
+    return seen
+
+
+def scan_module_roles(repo_root: Path | None = None) -> dict[str, Any]:
+    """Classify every ``src/lawvm`` module by role.  Import-reach only (no coverage).
+
+    Returns a dict with:
+      - ``modules``: {module: {reachable_from_entrypoint, importer_kind,
+        classification}}
+      - ``dead``: sorted list of modules classified ``dead``.
+      - ``test_only_live``: sorted list of modules classified ``test_only_live``.
+      - ``roots``: the entrypoint roots used.
+      - ``unresolved_owner_residual``: owner strings that did not uniquely resolve.
+      - ``parse_failures``: any AST parse failures (should be empty).
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    src_root = root / _SRC_ROOT
+
+    graph = build_import_graph(src_root)
+    all_mods = set(graph["modules"])
+    leaf_index = graph["leaf_index"]
+    edges: dict[str, set[str]] = {m: set(v) for m, v in graph["edges"].items()}
+    for m in all_mods:
+        edges.setdefault(m, set())
+
+    reg = registry_edges(root, all_mods, leaf_index)
+
+    # Production edge set: import edges + FindingSpec.owner registry edges.
+    prod_edges: dict[str, set[str]] = {m: set(v) for m, v in edges.items()}
+    for src_mod, targets in reg["production_edges"].items():
+        prod_edges.setdefault(src_mod, set()).update(targets)
+
+    # Full edge set adds the drill_only edges (so drill-reached modules are not
+    # "dead", but they reach via a drill-tagged edge, so they are not production).
+    full_edges: dict[str, set[str]] = {m: set(v) for m, v in prod_edges.items()}
+    for src_mod, targets in reg["drill_edges"].items():
+        full_edges.setdefault(src_mod, set()).update(targets)
+
+    roots = set(entrypoint_roots(root, all_mods))
+
+    production_reach = _bfs(roots, prod_edges)
+    full_reach = _bfs(roots, full_edges)
+
+    # Reverse import edges (pure imports, no registry edges) for importer_kind.
+    rev: dict[str, set[str]] = defaultdict(set)
+    for m, ts in edges.items():
+        for t in ts:
+            rev[t].add(m)
+
+    # Modules that gain a registry production edge from observation_registry.
+    registry_targets = set(reg["production_edges"].get(_OBSERVATION_REGISTRY_MODULE, []))
+    drill_targets = set(reg["drill_edges"].get(_FIRE_DRILL_REGISTRY_MODULE, []))
+
+    modules: dict[str, dict[str, Any]] = {}
+    for mod in sorted(all_mods):
+        is_optional = mod in OPTIONAL_BACKEND_MODULES
+        in_production = mod in production_reach
+        in_full = mod in full_reach
+        live_importers = {i for i in rev.get(mod, set()) if i in production_reach}
+
+        # importer_kind: the strongest edge reaching the module.
+        if mod in roots or (in_production and live_importers):
+            importer_kind = "production"
+        elif in_production and mod in registry_targets:
+            # Reached only via the FindingSpec.owner registry edge.
+            importer_kind = "registry"
+        elif is_optional:
+            importer_kind = "optional_backend"
+        elif in_full and mod in drill_targets and not in_production:
+            importer_kind = "drill_only"
+        elif rev.get(mod):
+            # Has importers but none production-reachable (test/other-phase only).
+            importer_kind = "test_only"
+        else:
+            importer_kind = "none"
+
+        # classification.
+        if is_optional:
+            classification = "live"  # optional backend is not dead
+        elif importer_kind in ("production", "registry"):
+            classification = "live"
+        elif importer_kind == "drill_only":
+            classification = "live"  # owned by RECORDED_DEAD; reachable, not dead
+        elif importer_kind == "test_only":
+            classification = "test_only_live"
+        else:
+            classification = "dead"
+
+        modules[mod] = {
+            "reachable_from_entrypoint": in_production,
+            "importer_kind": importer_kind,
+            "classification": classification,
+        }
+
+    dead = sorted(m for m, r in modules.items() if r["classification"] == "dead")
+    test_only_live = sorted(
+        m for m, r in modules.items() if r["classification"] == "test_only_live"
+    )
+
+    return {
+        "modules": modules,
+        "dead": dead,
+        "test_only_live": test_only_live,
+        "roots": sorted(roots),
+        "optional_backend_modules": sorted(OPTIONAL_BACKEND_MODULES),
+        "unresolved_owner_residual": reg["unresolved_owner_residual"],
+        "parse_failures": graph["parse_failures"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Baseline payload + ratchet helpers.
+# ---------------------------------------------------------------------------
+
+
+def _baseline_payload(repo_root: Path | None = None) -> dict[str, Any]:
+    state = scan_module_roles(repo_root)
+    counts: dict[str, int] = defaultdict(int)
+    for record in state["modules"].values():
+        counts[record["classification"]] += 1
+    return {
+        "_doc": (
+            "Monotone module-role baseline. The `dead` and `test_only_live` sets "
+            "may only SHRINK: a module born dead must be wired or deleted, never "
+            "added to the population. Regenerate with `uv run python "
+            "scripts/inventory_module_roles.py --update-baseline` after "
+            "legitimately retiring (deleting) a dead/test-only module or wiring it "
+            "to a production consumer."
+        ),
+        "counts": dict(sorted(counts.items())),
+        "dead": state["dead"],
+        "test_only_live": state["test_only_live"],
+        "roots": state["roots"],
+        "optional_backend_modules": state["optional_backend_modules"],
+        "unresolved_owner_residual": state["unresolved_owner_residual"],
+    }
+
+
+def update_baseline(repo_root: Path | None = None) -> Path:
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    out_path = root / BASELINE_PATH
+    payload = _baseline_payload(root)
+    out_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return out_path
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="Rewrite the committed module-role baseline JSON.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.update_baseline:
+        out_path = update_baseline()
+        print(f"Wrote module-role baseline: {out_path}")
+        return 0
+    state = scan_module_roles()
+    counts: dict[str, int] = defaultdict(int)
+    for record in state["modules"].values():
+        counts[record["classification"]] += 1
+    for klass in sorted(counts):
+        print(f"{counts[klass]:5d}  {klass}")
+    print(f"  dead: {len(state['dead'])}  test_only_live: {len(state['test_only_live'])}")
+    if state["unresolved_owner_residual"]:
+        print(
+            f"  unresolved owner residual: "
+            f"{len(state['unresolved_owner_residual'])}"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
