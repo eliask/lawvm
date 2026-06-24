@@ -389,6 +389,16 @@ _NO_RULE_SPECS: Dict[str, str] = {
         "paired as a chapter relocation, suppressed on the primary surface and "
         "recorded as a single relocation finding rather than two mismatches."
     ),
+    "no_verify.annex_prefixed_relocation_pair": (
+        "Two divergences whose text matches at non-container paths whose "
+        "only difference is a Lovdata Vedlegg-annex-token prefix on the "
+        "section label (e.g. chapter:v22c/section:v22c/a1 vs chapter:1/"
+        "section:a1) are paired as an annex-encoded relocation and "
+        "suppressed on the primary surface, recorded as a single filtered "
+        "relocation receipt rather than two mismatches. Distinct from "
+        "no_verify.chapter_relocation_pair, which pairs provisionally-"
+        "relocated provisions whose section labels match exactly."
+    ),
     "no_verify.prefix_descendant_suppressed": (
         "A Norway divergence whose address is a strict prefix of another raw "
         "divergence address is suppressed on the primary surface (the more "

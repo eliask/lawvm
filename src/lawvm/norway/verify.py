@@ -33,6 +33,9 @@ _NO_VERIFY_WS_RE = re.compile(r"\s+")
 _NO_VERIFY_PUNCT_RE = re.compile(r"\s+([,.;:])")
 _NO_VERIFY_PAREN_OPEN_RE = re.compile(r"\(\s+")
 _NO_VERIFY_REPEALED_RE = re.compile(r"^(?:§\s*[0-9A-Za-z-]+\.\s*)?\(Opphevet\)$", re.IGNORECASE)
+# Lovdata *Vedlegg* annex-token prefix on a section label (e.g. ``v22c`` for
+# EEA Agreement Annex XXII nr. 10c). Compiled module-scope per §2.4.
+_NO_ANNEX_TOKEN_RE = re.compile(r"v\d+[a-z]*", re.IGNORECASE)
 _NO_VERIFY_OTHER_LAWS_PLACEHOLDER_RE = re.compile(
     r"((?:gjøres følgende endringer(?: i andre lover)?|gjerast i andre lover|skal desse endringane gjerast i andre lover):)\s*(?:[-–—]\s*){2,}$",
     re.IGNORECASE,
@@ -843,6 +846,115 @@ def _is_chapter_relocation_pair(
     return left_path != right_path and _non_container_path(left_path) == _non_container_path(right_path)
 
 
+def _strip_annex_section_prefix(label: str) -> str:
+    """Strip a Lovdata *Vedlegg* annex-token prefix from a Norway section label.
+
+    Lovdata encodes EEA-agreement annexes as a top-level chapter whose
+    ``chapter`` step label is the annex token (e.g. ``v22c`` for *Vedlegg
+    22c*, EEA Agreement Annex XXII nr. 10c). Section labels inside that
+    annex-chapter carry the SAME token duplicated as a slash-prefix (e.g.
+    ``v22c/a1``), distinct from a normal section label (``a1``) that
+    addresses the same operative content in the canonical chapter body.
+
+    The strip is one-shot (only the leading ``<token>/`` is removed); ``a1``
+    has no slash and is returned unchanged. The label is also returned
+    unchanged when the prefix does not match the Lovdata annex-token shape
+    (``v\\d+[a-z]*``), so unrelated slash-bearing section labels are not
+    silently coerced into a false pairing.
+
+    §1.11 firewall: this is a comparison-plane *recognizer*, not a
+    legal-state authorization — it never mutates replay; it only routes
+    two divergences into a paired-partition receipt (§1.8 conservation).
+    """
+    if "/" not in label:
+        return label
+    prefix, _, rest = label.partition("/")
+    if not _NO_ANNEX_TOKEN_RE.fullmatch(prefix):
+        return label
+    return rest or label
+
+
+def _is_annex_prefixed_relocation_pair(
+    left: ConsistencyDivergence,
+    right: ConsistencyDivergence,
+) -> bool:
+    """Pair two byte-identical-text OPS_MISSING/CONSOLIDATED_MISSING divergences
+    whose non-container paths differ only by a Lovdata annex-token section-label prefix.
+
+    Distinct from :func:`_is_chapter_relocation_pair` because the chapter
+    labels are structurally paired by annex *encoding*, not by chapter-only
+    differences at the same address level: one side's chapter is the annex
+    token (e.g. ``v22c``), the other's is the canonical legislative body
+    (e.g. ``1``), and BOTH the chapter and the section label carry the token
+    (the section is ``v22c/a1`` versus ``a1``). The ``_non_container_path``
+    helper already strips the chapter step, so a plain chapter-only pairing
+    would not match the section-label prefix artifact and would leave both
+    divergences on the primary surface (counted as two separate mismatches).
+
+    §1.11 firewall: this predicate only *partitions* divergences on the
+    compare surface; it does not authorize legal state, mutation, lifecycle,
+    or target scope. Strict-mode behavior: ``proceed`` — partition is a
+    presentation receipt, not a mutation.
+
+    §1.8 conservation: every filtered pair emits two ``NOFilteredDivergence``
+    receipts (one per divergence) under the
+    ``no_verify.annex_prefixed_relocation_pair`` rule_id, so the suppression
+    is auditable.
+
+    Source witness: ``no/lov/2006-06-30-50`` (samvirkeforetaksloven — SCE-loven)
+    on the Norway compare surface — 215 paired OPS_MISSING/
+    CONSOLIDATED_MISSING entries across chapters I–IX whose text is
+    byte-identical modulo a single ``v22c/`` annex-token prefix on the
+    section label. The remaining ~104 entries carry Lovdata's
+    ``[ES]`` / ``[ES-stat]`` EEA-adaptation editorial annotations and do
+    NOT pair under this rule (text genuinely differs); they belong on the
+    cross-act-placement frontier as an owned claim, not a code fix.
+    """
+    kinds = {left.divergence_type, right.divergence_type}
+    if kinds != {"OPS_MISSING", "CONSOLIDATED_MISSING"}:
+        return False
+    left_text = normalize_no_comparison_text(left.ops_text or left.consolidated_text or "")
+    right_text = normalize_no_comparison_text(right.ops_text or right.consolidated_text or "")
+    if not left_text or left_text != right_text:
+        return False
+    left_path = tuple(left.address.path)
+    right_path = tuple(right.address.path)
+    if left_path == right_path:
+        return False
+    # Only fire when at least one paired section label carries an annex
+    # prefix that the stripping resolves to equality. This excludes pure
+    # chapter_relocation_pair cases (no section-label difference) so the
+    # two rules stay disjoint: the annex_prefix rule strictly owns the
+    # annex-encoded-relocation shape, and plain chapter relocations
+    # remain the chapter_relocation_pair's property.
+    def _has_annex_strip_candidate(path: TreePath) -> bool:
+        return any(
+            kind == "section" and _strip_annex_section_prefix(label) != label
+            for kind, label in path
+        )
+
+    if not (_has_annex_strip_candidate(left_path) or _has_annex_strip_candidate(right_path)):
+        return False
+
+    # The annex-normalized path drops the container steps (part/chapter —
+    # the same strip ``_non_container_path`` applies to ``chapter_
+    # relocation_pair``) AND additionally strips the annex-token prefix
+    # from any ``section`` step. Both transformations are required: the
+    # chapter strip resolves ``chapter:1`` vs ``chapter:v22c`` (Lovdata
+    # encodes the *Vedlegg* as a chapter), and the section strip resolves
+    # ``section:a1`` vs ``section:v22c/a1`` (Lovdata duplicates the same
+    # token on the section label inside that chapter). Subsection /
+    # item / sentence levels are kept untouched, so a true mismatch at a
+    # deeper level still surfaces as primary.
+    def _annex_normalized(path: TreePath) -> TreePath:
+        return tuple(
+            (kind, _strip_annex_section_prefix(label) if kind == "section" else label)
+            for kind, label in _non_container_path(path)
+        )
+
+    return _annex_normalized(left_path) == _annex_normalized(right_path)
+
+
 def _partition_primary_divergences(divergences: list[ConsistencyDivergence]) -> NOPrimaryDivergencePartition:
     primary_candidates: list[ConsistencyDivergence] = []
     filtered: list[NOFilteredDivergence] = []
@@ -862,8 +974,38 @@ def _partition_primary_divergences(divergences: list[ConsistencyDivergence]) -> 
 
     primary: list[ConsistencyDivergence] = []
     paired: set[int] = set()
+    # Pairing precedence: annex-prefixed relocation is tried first because the
+    # predicate is strict about an annex-token section-label prefix — every
+    # case it matches would NOT be matched by ``_is_chapter_relocation_pair``
+    # (which preserves section labels). Pure-chapter relocations fall through
+    # to the chapter_relocation_pair rule, so the two rules stay disjoint: a
+    # filtered divergence always carries the rule that actually explains its
+    # shape, never both.
     for idx, divergence in enumerate(primary_candidates):
         if idx in paired:
+            continue
+        partner_idx = next(
+            (
+                j
+                for j in range(idx + 1, len(primary_candidates))
+                if j not in paired and _is_annex_prefixed_relocation_pair(divergence, primary_candidates[j])
+            ),
+            None,
+        )
+        if partner_idx is not None:
+            paired.add(partner_idx)
+            for member in (divergence, primary_candidates[partner_idx]):
+                filtered.append(
+                    NOFilteredDivergence(
+                        divergence=member,
+                        rule_id="no_verify.annex_prefixed_relocation_pair",
+                        reason=(
+                            "Replay and current contain the same non-container provision text "
+                            "whose only path difference is a Lovdata annex-token prefix on the "
+                            "section label (e.g. chapter:v22c/section:v22c/a1 vs chapter:1/section:a1)."
+                        ),
+                    )
+                )
             continue
         partner_idx = next(
             (

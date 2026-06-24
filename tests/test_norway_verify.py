@@ -1395,6 +1395,171 @@ def test_primary_divergence_partition_does_not_pair_divergences_with_different_t
     )
 
 
+def test_primary_divergence_partition_pairs_annex_prefixed_section_labels() -> None:
+    # Synthetic positive for no_verify.annex_prefixed_relocation_pair: two
+    # byte-identical-text divergences whose non-container paths differ only
+    # by the Lovdata ``v22c/`` annex-token prefix on the section label pair
+    # under the new rule, NOT under the chapter_relocation_pair rule. Mirrors
+    # the SCE-loven shape on no/lov/2006-06-30-50 chapter I/a1.
+    missing_in_replay = ConsistencyDivergence(
+        address=LegalAddress(
+            path=(("chapter", "1"), ("chapter", "I"), ("section", "a1"), ("subsection", "1"))
+        ),
+        divergence_type="OPS_MISSING",
+        ops_text="Det kan stiftes samvirkeforetak på Fellesskapets territorium.",
+        consolidated_text="",
+    )
+    present_only_in_current = ConsistencyDivergence(
+        address=LegalAddress(
+            path=(
+                ("chapter", "v22c"),
+                ("chapter", "I"),
+                ("section", "v22c/a1"),
+                ("subsection", "1"),
+            )
+        ),
+        divergence_type="CONSOLIDATED_MISSING",
+        ops_text="",
+        consolidated_text="Det kan stiftes samvirkeforetak på Fellesskapets territorium.",
+    )
+
+    partition = _partition_primary_divergences([missing_in_replay, present_only_in_current])
+
+    # Both divergences leave the primary surface; both emit a filtered receipt
+    # under the new annex-prefix rule (§1.8 conservation: each suppressed
+    # divergence is owned by a typed receipt, never silently dropped).
+    assert partition.primary == ()
+    assert len(partition.filtered) == 2
+    assert all(
+        row.rule_id == "no_verify.annex_prefixed_relocation_pair" for row in partition.filtered
+    )
+    # Disjointness: the annex-prefix rule owns this case; the chapter-only
+    # relocation rule does NOT also fire on the same pair.
+    assert all(
+        row.rule_id != "no_verify.chapter_relocation_pair" for row in partition.filtered
+    )
+
+
+def test_primary_divergence_partition_does_not_pair_annex_prefix_when_text_differs() -> None:
+    # §2.9 paired negative for no_verify.annex_prefixed_relocation_pair: two
+    # divergences at the annex-prefixed path shape but with DIFFERENT text are
+    # not an annex-encoded relocation — they are two distinct mismatches and
+    # the residual pair (Lovdata ``[ES]`` annotation drift) belongs to the
+    # cross-act-placement frontier as an owned claim, not a code fix. A
+    # regression that paired on path shape alone (ignoring the
+    # equality-on-normalized-text requirement in _is_annex_prefixed_
+    # relocation_pair) would have silently suppressed both real divergences.
+    missing_in_replay = ConsistencyDivergence(
+        address=LegalAddress(
+            path=(("chapter", "1"), ("chapter", "I"), ("section", "a1"), ("subsection", "1"))
+        ),
+        divergence_type="OPS_MISSING",
+        ops_text="Det kan stiftes samvirkeforetak på Fellesskapets territorium.",
+        consolidated_text="",
+    )
+    present_only_in_current = ConsistencyDivergence(
+        address=LegalAddress(
+            path=(
+                ("chapter", "v22c"),
+                ("chapter", "I"),
+                ("section", "v22c/a1"),
+                ("subsection", "1"),
+            )
+        ),
+        divergence_type="CONSOLIDATED_MISSING",
+        ops_text="",
+        consolidated_text=(
+            "Det kan stiftes samvirkeforetak på Fellesskapets [ES] territorium "
+            "i form av eit heilt anna rules-in frasedrag."
+        ),
+    )
+
+    partition = _partition_primary_divergences([missing_in_replay, present_only_in_current])
+
+    assert len(partition.primary) == 2
+    assert len(partition.filtered) == 0
+    assert all(
+        row.rule_id != "no_verify.annex_prefixed_relocation_pair" for row in partition.filtered
+    )
+    assert all(
+        row.rule_id != "no_verify.chapter_relocation_pair" for row in partition.filtered
+    )
+
+
+def test_primary_divergence_partition_does_not_fire_annex_rule_on_pure_chapter_relocation() -> None:
+    # §2.9 paired negative for no_verify.annex_prefixed_relocation_pair: when
+    # the section labels are byte-identical (no annex-token slash prefix on
+    # either side), the pair falls through to no_verify.chapter_relocation_
+    # pair — the annex-prefix rule must NOT fire on a pure chapter-only
+    # relocation. A regression that conflated the two predicates would
+    # mislabel the existing chapter_relocation family's canonical shape.
+    missing_in_replay = ConsistencyDivergence(
+        address=LegalAddress(path=(("chapter", "1"), ("section", "5"))),
+        divergence_type="OPS_MISSING",
+        ops_text="Lovens formål er å sikre informative priser.",
+        consolidated_text="",
+    )
+    present_only_in_current = ConsistencyDivergence(
+        address=LegalAddress(path=(("chapter", "2"), ("section", "5"))),
+        divergence_type="CONSOLIDATED_MISSING",
+        ops_text="",
+        consolidated_text="Lovens formål er å sikre informative priser.",
+    )
+
+    partition = _partition_primary_divergences([missing_in_replay, present_only_in_current])
+
+    # The pair is filtered — but under the chapter_relocation_pair rule,
+    # NOT the annex-prefixed rule (no section-label prefix to strip).
+    assert partition.primary == ()
+    assert len(partition.filtered) == 2
+    assert all(
+        row.rule_id == "no_verify.chapter_relocation_pair" for row in partition.filtered
+    )
+    assert all(
+        row.rule_id != "no_verify.annex_prefixed_relocation_pair" for row in partition.filtered
+    )
+
+
+def test_primary_divergence_partition_does_not_pair_annex_prefix_when_paths_equal() -> None:
+    # §2.9 paired negative for no_verify.annex_prefixed_relocation_pair: two
+    # divergences at the SAME exact address (including the same annex-token
+    # section label) are NOT a relocation; they are a same-provision
+    # mismatch. The ``left_path != right_path`` guard in the predicate
+    # prevents a regression that would have suppressed them under the
+    # annex-prefix rule when the section label happens to carry a slash.
+    # Test earns its keep by using OPS_MISSING/CONSOLIDATED_MISSING types
+    # — the only kinds the preceeding membership guard permits — to
+    # specifically exercise the path-equality branch rather than the
+    # earlier kind guard.
+    same_path = (
+        ("chapter", "v22c"),
+        ("chapter", "I"),
+        ("section", "v22c/a1"),
+        ("subsection", "1"),
+    )
+    left = ConsistencyDivergence(
+        address=LegalAddress(path=same_path),
+        divergence_type="OPS_MISSING",
+        ops_text="Ein paragraf om samvirke.",
+        consolidated_text="",
+    )
+    right = ConsistencyDivergence(
+        address=LegalAddress(path=same_path),
+        divergence_type="CONSOLIDATED_MISSING",
+        ops_text="",
+        consolidated_text="Ein paragraf om samvirke.",
+    )
+
+    partition = _partition_primary_divergences([left, right])
+
+    # Same path → no pairing fires → both remain primary.
+    assert len(partition.primary) == 2
+    assert len(partition.filtered) == 0
+    assert all(
+        row.rule_id != "no_verify.annex_prefixed_relocation_pair" for row in partition.filtered
+    )
+
+
 def test_verify_no_against_current_ignores_section_heading_only_drift(tmp_path) -> None:
     base_xml = """<?xml version="1.0" encoding="utf-8"?>
 <html lang="nb">
