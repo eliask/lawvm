@@ -2601,6 +2601,16 @@ def plan_se_older_base_rebuild(
     if current_json is None:
         raise FileNotFoundError(f"no archived RK current JSON for base statute {resolved_base_sfs_id}")
 
+    # ``fetch_missing=True`` is a best-effort acquisition lane: a network or
+    # parser failure inside ``fetch_se_official_artifacts`` must NOT crash the
+    # replay, but it also must not vanish silently — §1.10 forbids swallowing
+    # an exception that would otherwise let replay proceed against an empty
+    # base_seed (``official_act_available=False`` with no diagnostic, masking
+    # an acquisition fault as "no archived act"). Surface each acquisition
+    # failure as a named diagnostic on ``base_seed`` so the replay outcome
+    # carries the sfs_id + exception type + message instead of an empty slot.
+    acquisition_failures: list[dict[str, str]] = []
+
     def _ensure_official_artifacts(sfs_id: str) -> None:
         if not fetch_missing:
             return
@@ -2608,8 +2618,15 @@ def plan_se_older_base_rebuild(
             return
         try:
             fetch_se_official_artifacts(sfs_id, archive)
-        except Exception:
-            return
+        except Exception as exc:  # noqa: BLE001 — acquisition boundary; surfaced as a typed residual below
+            acquisition_failures.append(
+                {
+                    "rule_id": "se_official_artifacts_fetch_failed",
+                    "sfs_id": sfs_id,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                }
+            )
 
     _ensure_official_artifacts(resolved_base_sfs_id)
     base_seed: dict[str, Any] = {
@@ -2619,6 +2636,12 @@ def plan_se_older_base_rebuild(
         "pdf_available": has_valid_se_official_pdf(archive, resolved_base_sfs_id),
         "doc_available": archive.get(se_official_doc_locator(resolved_base_sfs_id)) is not None,
     }
+    if acquisition_failures:
+        # §1.10 named diagnostic: an identifiable failure record (not a generic
+        # "missing act" 404). The caller bakes ``base_seed`` into the
+        # replay-outcome row, so the acquisition fault is observable downstream
+        # rather than disguised as "no archived act."
+        base_seed["official_act_acquisition_failures"] = list(acquisition_failures)
     if probe_sources and not (base_seed["official_act_available"] or base_seed["pdf_available"]):
         base_seed["public_source_probe"] = probe_se_public_source_status(resolved_base_sfs_id)
 

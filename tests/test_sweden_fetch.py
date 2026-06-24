@@ -6399,6 +6399,86 @@ def test_plan_se_older_base_rebuild_attaches_public_source_probe(monkeypatch) ->
     }
 
 
+def test_plan_se_older_base_rebuild_surfaces_fetch_missing_failure_as_typed_diagnostic(monkeypatch) -> None:
+    # Guard-liveness (§2.9): ``fetch_missing=True`` is a best-effort acquisition
+    # lane, but a fetch failure MUST NOT vanish silently — §1.10 forbids the
+    # ``except Exception: return`` shape that would let replay proceed against
+    # an empty base_seed with ``official_act_available=False`` and no diagnostic,
+    # disguising an acquisition fault as "no archived act." Drive a known-
+    # raising ``fetch_se_official_artifacts`` through the production path and
+    # assert the failure surfaces as a named diagnostic on ``base_seed``.
+    base_payload = {
+        "beteckning": "2015:284",
+        "rubrik": "Förordning (2015:284) om något",
+        "ikraftDateTime": "2015-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2015-01-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "16 § Test.\n17 § Test.\n",
+        },
+        "publiceradDateTime": "2015-01-01T00:00:00",
+        "andringsforfattningar": [
+            {
+                "beteckning": "2018:1381",
+                "rubrik": "Förordning om ändring i förordningen (2015:284) om något",
+                "anteckningar": "ny 17 §",
+                "ikraftDateTime": "2018-08-01T00:00:00",
+            },
+        ],
+    }
+    target_act = {
+        "sfs_id": "2018:1381",
+        "title": "Förordning om ändring i förordningen (2015:284) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2015:284",
+        "is_amending_act": True,
+        "published_date": "2018-07-31",
+        "issued_date": "2018-07-26",
+        "enacting_clause": (
+            "Regeringen föreskriver i fråga om förordningen (2015:284) om något "
+            "att den nya 17 § ska ha följande lydelse."
+        ),
+        "effective_clause": "",
+        "affected_section_labels": ["17"],
+        "provisions": [{"label": "17", "text": "Ny 17 §."}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2015:284/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2018:1381/official.act.json": json.dumps(target_act, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    def _raise_fetch_failure(sfs_id, archive_obj, force_reextract=False):
+        raise ConnectionError(f"simulated cloudflare block for sfs://{sfs_id}")
+
+    monkeypatch.setattr("lawvm.sweden.fetch.fetch_se_official_artifacts", _raise_fetch_failure)
+
+    result = plan_se_older_base_rebuild(archive, "2018:1381", fetch_missing=True)
+
+    # §1.10 named diagnostic: an identifiable failure record (not a generic
+    # "missing act" 404), carrying the sfs_id + exception type + message so
+    # the acquisition fault is observable downstream instead of disguised
+    # as "no archived act."
+    failures = result["base_seed"].get("official_act_acquisition_failures")
+    assert failures, "fetch_missing acquisition failure did not surface on base_seed (§1.10 silent swallow regression)"
+    assert any(
+        failure.get("rule_id") == "se_official_artifacts_fetch_failed"
+        and failure.get("sfs_id") == "2015:284"
+        and failure.get("error_type") == "ConnectionError"
+        and "simulated cloudflare block" in failure.get("error_message", "")
+        for failure in failures
+    ), f"acquisition failure diagnostic missing required fields: {failures}"
+    # And the surface lane still records the unavailability honestly.
+    assert result["base_seed"]["official_act_available"] is False
+
+
 def test_plan_se_older_base_rebuild_reports_base_seed_when_available() -> None:
     base_payload = {
         "beteckning": "2015:284",
