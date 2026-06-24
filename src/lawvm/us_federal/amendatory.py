@@ -2384,51 +2384,64 @@ def _lower_instruction(
             # the quoted anchor is only the start of the deletion; the materializer
             # must remove from the anchor EITHER to the end of the target node
             # (open-ended tail) OR THROUGH the second quoted anchor (bounded).
-            through_match = _THROUGH_TAIL_STRIKE_RE.search(raw_text)
-            if through_match is not None and len(quoted) >= 3:
-                # BOUNDED through-tail strike-insert: "striking OLD and all that
-                # follows through END and inserting NEW". Delete [OLD..END]
-                # inclusive, then insert NEW. The right-side text after END
-                # survives (the op is a bounded deletion, not a to-end cut).
-                old, end, new = quoted[0], quoted[1], quoted[2]
-                op = _make_op(
-                    StructuralAction.TEXT_REPLACE,
-                    rule_id=RULE_STRIKE_INSERT_THROUGH_TAIL,
-                    text_patch=TextPatchSpec(
-                        kind=TextPatchKindEnum.REPLACE,
-                        selector=TextSelector(
-                            match_text=old,
-                            occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                            end_match_text=end,
-                        ),
-                        replacement=new,
-                    ),
-                    target=_text_strike_target,
-                    extra_provenance_tags=(RULE_STRIKE_INSERT_THROUGH_TAIL,),
-                )
-                witness_rule_id = RULE_STRIKE_INSERT_THROUGH_TAIL
-            elif through_match is None and len(quoted) >= 2:
-                old, new = quoted[0], quoted[1]
-                op = _make_op(
-                    StructuralAction.TEXT_REPLACE,
-                    rule_id=RULE_STRIKE_INSERT_TAIL,
-                    text_patch=TextPatchSpec(
-                        kind=TextPatchKindEnum.REPLACE,
-                        selector=TextSelector(
-                            match_text=old,
-                            occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
-                        ),
-                        replacement=new,
-                    ),
-                    target=_text_strike_target,
-                    extra_provenance_tags=(RULE_STRIKE_INSERT_TAIL,),
-                )
-                witness_rule_id = RULE_STRIKE_INSERT_TAIL
-            else:
+            # FUTURE-EFFECTIVE tail/strike language (effective on a later date,
+            # sunset, etc.) is owned by the temporal layer — never lower as an
+            # immediate state-changing op (would delete an in-force node and
+            # corrupt the in-window after edition). The bounded and open-ended
+            # tail-strike-insert forms share this guard (the same one
+            # ``_strike_structural_unit`` applies to structural strikes).
+            if _FUTURE_EFFECTIVE_RE.search(raw_text) is not None:
                 finding = _finding(
                     UNLOWERED_FINDING_RULE_ID,
-                    "open-ended tail strike-insert not lowerable without matched old/new quotes",
+                    "tail/strike-through-tail instruction carries future-effective "
+                    "language; owned by the temporal layer, not lowered as immediate",
                 )
+            else:
+                through_match = _THROUGH_TAIL_STRIKE_RE.search(raw_text)
+                if through_match is not None and len(quoted) >= 3:
+                    # BOUNDED through-tail strike-insert: "striking OLD and all that
+                    # follows through END and inserting NEW". Delete [OLD..END]
+                    # inclusive, then insert NEW. The right-side text after END
+                    # survives (the op is a bounded deletion, not a to-end cut).
+                    old, end, new = quoted[0], quoted[1], quoted[2]
+                    op = _make_op(
+                        StructuralAction.TEXT_REPLACE,
+                        rule_id=RULE_STRIKE_INSERT_THROUGH_TAIL,
+                        text_patch=TextPatchSpec(
+                            kind=TextPatchKindEnum.REPLACE,
+                            selector=TextSelector(
+                                match_text=old,
+                                occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
+                                end_match_text=end,
+                            ),
+                            replacement=new,
+                        ),
+                        target=_text_strike_target,
+                        extra_provenance_tags=(RULE_STRIKE_INSERT_THROUGH_TAIL,),
+                    )
+                    witness_rule_id = RULE_STRIKE_INSERT_THROUGH_TAIL
+                elif through_match is None and len(quoted) >= 2:
+                    old, new = quoted[0], quoted[1]
+                    op = _make_op(
+                        StructuralAction.TEXT_REPLACE,
+                        rule_id=RULE_STRIKE_INSERT_TAIL,
+                        text_patch=TextPatchSpec(
+                            kind=TextPatchKindEnum.REPLACE,
+                            selector=TextSelector(
+                                match_text=old,
+                                occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
+                            ),
+                            replacement=new,
+                        ),
+                        target=_text_strike_target,
+                        extra_provenance_tags=(RULE_STRIKE_INSERT_TAIL,),
+                    )
+                    witness_rule_id = RULE_STRIKE_INSERT_TAIL
+                else:
+                    finding = _finding(
+                        UNLOWERED_FINDING_RULE_ID,
+                        "open-ended tail strike-insert not lowerable without matched old/new quotes",
+                    )
         elif len(quoted) >= 2:
             old, new = quoted[0], quoted[1]
             op = _make_op(
@@ -2610,7 +2623,17 @@ def _lower_instruction(
         # bounded deletion [OLD..END] with empty replacement; the open-ended
         # tail form ("... and all that follows") — which would delete to the END
         # of the host node — is still held out as not section-representable.
-        if _THROUGH_TAIL_STRIKE_RE.search(raw_text) and len(quoted) >= 2:
+        # FUTURE-EFFECTIVE language (effective on a later date, sunset, etc.) is
+        # owned by the temporal layer and never lowered as an immediate state
+        # deletion — guarding BEFORE the through-tail branches (mirror of
+        # ``_strike_structural_unit`` / ``_strike_insert_unit_target``).
+        if _FUTURE_EFFECTIVE_RE.search(raw_text) is not None:
+            finding = _finding(
+                UNLOWERED_FINDING_RULE_ID,
+                "through-tail / tail strike carries future-effective language; "
+                "owned by the temporal layer, not lowered as immediate",
+            )
+        elif _THROUGH_TAIL_STRIKE_RE.search(raw_text) and len(quoted) >= 2:
             old, end = quoted[0], quoted[1]
             op = _make_op(
                 StructuralAction.TEXT_REPEAL,
