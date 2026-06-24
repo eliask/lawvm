@@ -23,9 +23,10 @@ WHAT IS ASSERTED (and the honesty boundary):
 4. **No silently-empty row.** Every clause lands in exactly one mapping kind.
 
 This gate ranges over a DECLARED, VERSIONED SUBSET of spec files
-(:data:`lawvm.core.must_trace.MUST_TRACE_V1_IN_SCOPE_FILES` — at v1, TWO files:
-the pipeline contract and the provision-state seam contract), NOT all prose and
-NOT source docstrings. A ``deferred_with_owner`` mapping is an honest UNENFORCED
+(:data:`lawvm.core.must_trace.MUST_TRACE_IN_SCOPE_FILES` — at v2, THREE files:
+the pipeline contract, the provision-state seam contract, and the certified
+tree-transition trace spec), NOT all prose and NOT source docstrings. A
+``deferred_with_owner`` mapping is an honest UNENFORCED
 gap (a finding), NOT a satisfied requirement. The gate NEVER asserts "every MUST
 in the repo is enforced." Widening scope to a new spec file (a version bump)
 makes each of that file's MUSTs individually accountable — the compounding
@@ -46,10 +47,10 @@ from lawvm.core.invariant_spec import V0_INVARIANTS
 from lawvm.core.must_trace import (
     ENFORCED_MAPPING_KINDS,
     MAPPING_KINDS,
-    MUST_TRACE_V1_IN_SCOPE_FILES,
+    MUST_CLAUSES,
+    MUST_TRACE_IN_SCOPE_FILES,
     MustTraceLedger,
-    V1_MUST_CLAUSES,
-    v1_must_trace_ledger,
+    must_trace_ledger,
 )
 from lawvm.finland.fi_assumptions import build_fi_assumption_register
 
@@ -59,14 +60,23 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 # In-scope occurrences that are genuinely NOT normative requirements (e.g. a
 # literal mention of the word in non-requirement prose). Every MUST in
 # notes/LAWVM_PIPELINE_CONTRACT.md is a real requirement (so the pipeline file
-# has none); the seam contract carries ONE non-normative occurrence — the
-# RFC-2119 NOTATION sentence, which describes how the document USES the keyword
-# rather than imposing a system requirement. It is waived WITH A REASON rather
-# than smuggled into the ledger. Keys are (file, reason); the count of waivers
-# per file is subtracted from that file's scanned MUST total.
+# has none); the seam contract AND the certified tree-transition trace spec each
+# carry ONE non-normative occurrence — the RFC-2119 NOTATION sentence, which
+# describes how the document USES the keyword rather than imposing a system
+# requirement. Each is waived WITH A REASON rather than smuggled into the ledger.
+# Keys are (file, reason); the count of waivers per file is subtracted from that
+# file's scanned MUST total.
 _NON_NORMATIVE_WAIVERS: dict[tuple[str, str], str] = {
     (
         "notes/SEAM_SPEC_PROVISION_STATE.md",
+        "Normative keywords MUST/SHOULD/MAY follow RFC 2119.",
+    ): (
+        "RFC-2119 notation declaration: describes how the document USES the "
+        "keyword MUST, not a requirement the system enforces — meta-prose, not a "
+        "normative clause, so it has no ledger target."
+    ),
+    (
+        "notes/CERTIFIED_TREE_TRANSITION_TRACE_V0.md",
         "Normative keywords MUST/SHOULD/MAY follow RFC 2119.",
     ): (
         "RFC-2119 notation declaration: describes how the document USES the "
@@ -111,8 +121,8 @@ def test_every_in_scope_must_is_represented_in_the_ledger():
     The ledger must hold exactly one clause per normative MUST occurrence in each
     declared in-scope file (code fences + explicit waivers excluded).
     """
-    ledger = v1_must_trace_ledger()
-    for spec_path in MUST_TRACE_V1_IN_SCOPE_FILES:
+    ledger = must_trace_ledger()
+    for spec_path in MUST_TRACE_IN_SCOPE_FILES:
         scanned = _normative_must_count(spec_path)
         ledger_rows = sum(1 for c in ledger.clauses if c.spec_source == spec_path)
         assert ledger_rows == scanned, (
@@ -127,8 +137,8 @@ def test_every_in_scope_must_is_represented_in_the_ledger():
 
 def test_every_clause_spec_source_is_in_scope():
     """No ledger clause cites a file outside the declared in-scope set."""
-    in_scope = set(MUST_TRACE_V1_IN_SCOPE_FILES)
-    stray = [c.must_id for c in V1_MUST_CLAUSES if c.spec_source not in in_scope]
+    in_scope = set(MUST_TRACE_IN_SCOPE_FILES)
+    stray = [c.must_id for c in MUST_CLAUSES if c.spec_source not in in_scope]
     assert not stray, (
         f"clauses citing an out-of-scope spec file: {stray!r} "
         f"(in scope: {sorted(in_scope)!r})"
@@ -138,7 +148,7 @@ def test_every_clause_spec_source_is_in_scope():
 def test_every_clause_excerpt_is_a_real_substring_of_its_spec():
     """Self-evidencing: each excerpt's normative text actually appears in the spec."""
     cache: dict[str, str] = {}
-    for clause in V1_MUST_CLAUSES:
+    for clause in MUST_CLAUSES:
         if clause.spec_source not in cache:
             cache[clause.spec_source] = (
                 (_REPO_ROOT / clause.spec_source).read_text(encoding="utf-8")
@@ -193,7 +203,7 @@ def _assumption_handles() -> set[str]:
 
 def test_invariant_id_targets_exist_in_v0_invariants():
     invariant_ids = {inv.id for inv in V0_INVARIANTS}
-    for clause in V1_MUST_CLAUSES:
+    for clause in MUST_CLAUSES:
         if clause.mapping_kind == "invariant_id":
             assert clause.target_ref in invariant_ids, (
                 f"clause {clause.must_id!r} maps to invariant id "
@@ -202,7 +212,7 @@ def test_invariant_id_targets_exist_in_v0_invariants():
 
 
 def test_checker_and_refusal_targets_are_importable():
-    for clause in V1_MUST_CLAUSES:
+    for clause in MUST_CLAUSES:
         if clause.mapping_kind in ("checker_step", "writer_refusal"):
             try:
                 resolved = _resolve_dotted(clause.target_ref)
@@ -216,7 +226,7 @@ def test_checker_and_refusal_targets_are_importable():
 
 def test_declared_non_guarantee_targets_resolve_to_a_handle():
     handles = _assumption_handles()
-    for clause in V1_MUST_CLAUSES:
+    for clause in MUST_CLAUSES:
         if clause.mapping_kind == "declared_non_guarantee":
             assert clause.target_ref in handles, (
                 f"clause {clause.must_id!r} declared_non_guarantee handle "
@@ -226,7 +236,7 @@ def test_declared_non_guarantee_targets_resolve_to_a_handle():
 
 
 def test_deferred_with_owner_targets_name_an_owner_and_reason():
-    for clause in V1_MUST_CLAUSES:
+    for clause in MUST_CLAUSES:
         if clause.mapping_kind == "deferred_with_owner":
             assert "owner=" in clause.target_ref and "reason=" in clause.target_ref, (
                 f"clause {clause.must_id!r} is deferred_with_owner but its target_ref "
@@ -241,7 +251,7 @@ def test_deferred_with_owner_targets_name_an_owner_and_reason():
 
 
 def test_every_clause_lands_in_exactly_one_known_mapping_kind():
-    for clause in V1_MUST_CLAUSES:
+    for clause in MUST_CLAUSES:
         assert clause.mapping_kind in MAPPING_KINDS, (
             f"clause {clause.must_id!r} has unknown mapping_kind {clause.mapping_kind!r}"
         )
@@ -252,7 +262,7 @@ def test_every_clause_lands_in_exactly_one_known_mapping_kind():
 
 
 def test_clause_ids_are_unique():
-    ids = [c.must_id for c in V1_MUST_CLAUSES]
+    ids = [c.must_id for c in MUST_CLAUSES]
     assert len(ids) == len(set(ids)), f"duplicate must_id in ledger: {ids!r}"
 
 
@@ -263,7 +273,7 @@ def test_clause_ids_are_unique():
 
 def test_deferred_and_enforced_partition_the_ledger():
     """Every clause is either enforced (live path) or a deferred finding — no third state."""
-    ledger = v1_must_trace_ledger()
+    ledger = must_trace_ledger()
     assert len(ledger.enforced) + len(ledger.deferred) == len(ledger)
     # The deferred bucket is exactly the non-enforced kind.
     assert all(c.mapping_kind == "deferred_with_owner" for c in ledger.deferred)
@@ -271,18 +281,19 @@ def test_deferred_and_enforced_partition_the_ledger():
 
 
 def test_ledger_root_is_deterministic_and_membership_sensitive():
-    l1 = v1_must_trace_ledger()
-    l2 = v1_must_trace_ledger()
+    l1 = must_trace_ledger()
+    l2 = must_trace_ledger()
     assert l1.ledger_root == l2.ledger_root
-    dropped = MustTraceLedger(V1_MUST_CLAUSES[:-1])
+    dropped = MustTraceLedger(MUST_CLAUSES[:-1])
     assert dropped.ledger_root != l1.ledger_root
 
 
 def test_ledger_is_versioned_and_scope_is_declared():
     """Completeness is claim-relative + versioned (Pro §12) — never absolute."""
-    ledger = v1_must_trace_ledger()
-    assert ledger.must_trace_version == "v1"
-    assert ledger.in_scope_files == MUST_TRACE_V1_IN_SCOPE_FILES
-    # v1 widened scope from one file to two; both are declared.
-    assert len(ledger.in_scope_files) == 2
+    ledger = must_trace_ledger()
+    assert ledger.must_trace_version == "v2"
+    assert ledger.in_scope_files == MUST_TRACE_IN_SCOPE_FILES
+    # v2 widened scope from two files to three; all are declared.
+    assert len(ledger.in_scope_files) == 3
     assert "notes/SEAM_SPEC_PROVISION_STATE.md" in ledger.in_scope_files
+    assert "notes/CERTIFIED_TREE_TRANSITION_TRACE_V0.md" in ledger.in_scope_files
