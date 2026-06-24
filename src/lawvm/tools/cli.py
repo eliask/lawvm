@@ -9037,6 +9037,14 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="max allowed statutes regressing beyond threshold (default: 3)",
     )
     brg_p.add_argument(
+        "--score-column",
+        default=None,
+        help=(
+            "explicit numeric score column to guard, e.g. lev_similarity for "
+            "Finland text-similarity regressions; default uses the jurisdiction primary lane"
+        ),
+    )
+    brg_p.add_argument(
         "--duration-threshold-s",
         type=float,
         default=1.0,

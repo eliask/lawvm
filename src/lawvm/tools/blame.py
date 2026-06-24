@@ -165,6 +165,36 @@ def _op_is_later(candidate: dict[str, Any], existing: dict[str, Any]) -> bool:
     return _op_sequence_value(candidate) >= _op_sequence_value(existing)
 
 
+_CONTENT_TOUCH_ACTIONS = {"insert", "replace", "repeal"}
+_PURE_REKEY_ACTIONS = {"renumber", "relabel", "move"}
+
+
+def _action_family(op: Mapping[str, Any]) -> str:
+    action = str(op.get("action") or "").strip().lower()
+    if action in _CONTENT_TOUCH_ACTIONS:
+        return "content"
+    if action in _PURE_REKEY_ACTIONS:
+        return "rekey"
+    return "other"
+
+
+def _op_is_better_blame(candidate: dict[str, Any], existing: dict[str, Any]) -> bool:
+    """Return True when ``candidate`` is a better section-level blame witness.
+
+    Sequence remains the default. Within one source statute, however, an applied
+    content mutation is the more useful blame witness than a pure same-wave
+    relabel that only carries existing text to its new slot.
+    """
+    if str(candidate.get("source_statute") or "") == str(existing.get("source_statute") or ""):
+        candidate_family = _action_family(candidate)
+        existing_family = _action_family(existing)
+        if candidate_family == "rekey" and existing_family == "content":
+            return False
+        if candidate_family == "content" and existing_family == "rekey":
+            return True
+    return _op_is_later(candidate, existing)
+
+
 def _build_blame_map(
     compiled_ops: list[dict[str, Any]],
     apply_events: object = None,
@@ -191,7 +221,7 @@ def _build_blame_map(
         if not key:
             continue
         existing = blame.get(key)
-        if existing is None or _op_is_later(op, existing):
+        if existing is None or _op_is_better_blame(op, existing):
             blame[key] = op
 
     return blame

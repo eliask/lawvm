@@ -94,6 +94,8 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
             "old",
             "--current",
             "new",
+            "--score-column",
+            "lev_similarity",
             "--duration-threshold-s",
             "2.5",
             "--max-duration-regressions",
@@ -116,6 +118,7 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
     assert args.jurisdiction == "uk"
     assert args.baseline == "old"
     assert args.current == "new"
+    assert args.score_column == "lev_similarity"
     assert args.duration_threshold_s == 2.5
     assert args.max_duration_regressions == 1
     assert args.rss_threshold_mb == 128
@@ -1129,6 +1132,42 @@ def test_bench_regression_guard_run_guard_pass_and_fail(tmp_path, monkeypatch, c
     rc = bench_regression_guard.run_guard("old", "new", threshold=0.02, max_regressions=0)
     out = capsys.readouterr().out
     assert rc == 1
+    assert "RESULT: FAIL" in out
+
+
+def test_bench_regression_guard_can_use_explicit_score_column(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "20260329_old.csv"
+    current = tmp_path / "20260329_new.csv"
+    fieldnames = ["statute_id", "similarity", "lev_similarity"]
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"statute_id": "s1", "similarity": "0.80", "lev_similarity": "0.997"})
+        writer.writerow({"statute_id": "s2", "similarity": "0.80", "lev_similarity": "0.996"})
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"statute_id": "s1", "similarity": "0.80", "lev_similarity": "0.990"})
+        writer.writerow({"statute_id": "s2", "similarity": "0.80", "lev_similarity": "0.996"})
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.005,
+        max_regressions=0,
+        score_column="lev_similarity",
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "Score column         : lev_similarity" in out
+    assert "s1" in out
     assert "RESULT: FAIL" in out
 
 

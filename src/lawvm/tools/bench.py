@@ -652,6 +652,13 @@ class _BenchSemanticScore:
     # error and is the residue the unified-contract reconciliation checks
     # against (see lawvm.core.bench_contract.check_residue_reconciliation).
     penalized_event_counts: Counter[str] = field(default_factory=Counter)
+    # amb (nondeterministic oracle-match) witnesses: one per section whose
+    # penalty was forgiven because replay's text matched a genuine-but-not-chosen
+    # oracle version (the oracle's version SELECTION is unreliable). Opaque
+    # triage pointers, NOT reconciled against structural_err — they ride the
+    # ``witnesses`` channel, never ``residue_buckets`` (an amb-neutralized
+    # section has zero structural error, so a residue count would be phantom).
+    amb_alternate_witnesses: tuple[str, ...] = ()
 
 
 def _empty_bench_semantic_score(
@@ -686,7 +693,9 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
     )
     from lawvm.tools.section_keys import (
         extract_ir_sections,
+        extract_oracle_section_alternates,
         extract_oracle_sections,
+        oracle_amb_alternate_match,
         reconcile_unique_unscoped_aliases,
     )
     from lawvm.tools.structural_review import is_oracle_content_absent
@@ -702,6 +711,12 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
     replay_ir = _comparison_ir(master)
     replay_sections = extract_ir_sections(replay_ir)
     oracle_sections = extract_oracle_sections(oracle_root) if oracle_root is not None else {}
+    # amb candidate set: the oracle version renderings extract_oracle_sections
+    # discarded, keyed by the SAME (pre-reconcile) section key (aliased keys get
+    # no alternates -> fall through to status-quo penalize, safe).
+    oracle_alternates = (
+        extract_oracle_section_alternates(oracle_root) if oracle_root is not None else {}
+    )
     replay_sections, oracle_sections = reconcile_unique_unscoped_aliases(
         replay_sections,
         oracle_sections,
@@ -730,6 +745,7 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
     penalized_count = 0
     event_counts: Counter[str] = Counter()
     penalized_event_counts: Counter[str] = Counter()
+    amb_witnesses: list[str] = []
     replay_chunks: list[str] = []
     oracle_chunks: list[str] = []
 
@@ -756,6 +772,20 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
             or bool(sd.get("text", 0))
         )
         neutralized = has_diff and _section_diff_is_bench_neutralized(sd, events)
+        if has_diff and not neutralized and replay_node is not None:
+            # amb: replay matched a genuine-but-not-chosen oracle version of this
+            # exact slot -> source-attested, forgive the penalty + warn (the
+            # oracle's version selection, not replay, was the mismatch source).
+            amb_witness = oracle_amb_alternate_match(
+                key,
+                _clean(irnode_to_text(replay_node)),
+                oracle_alternates.get(key),
+                _clean_oracle_section_text,
+            )
+            if amb_witness is not None:
+                neutralized = True
+                amb_witnesses.append(amb_witness)
+                print(f"WARNING oracle suspect: version selection alternate match {amb_witness}")
         for event in events:
             if isinstance(event, dict):
                 event_counts[event.get("kind", "unknown")] += 1
@@ -809,6 +839,7 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
         adjusted_levenshtein_similarity=adjusted_lev,
         event_counts=event_counts,
         penalized_event_counts=penalized_event_counts,
+        amb_alternate_witnesses=tuple(amb_witnesses),
     )
 
 
@@ -851,6 +882,8 @@ def bench_penalized_section_keys(sid: str, master: Any) -> tuple[set[str], bool]
     for sec_key, sd, events in _sections_with_diffs({"sections": non_editorial}):
         if _section_diff_is_bench_neutralized(sd, events):
             continue
+        if non_editorial.get(sec_key, {}).get("amb_alternate_match"):
+            continue  # replay matched a non-chosen attested oracle version (amb)
         penalized.add(sec_key)
     return penalized, False
 
@@ -899,6 +932,8 @@ def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
             event_counts[event.get("kind", "unknown")] += 1
         if _section_diff_is_bench_neutralized(sd, events):
             continue
+        if non_editorial.get(_sec_key, {}).get("amb_alternate_match"):
+            continue  # replay matched a non-chosen attested oracle version (amb)
         penalised += 1
     return 1.0 - penalised / len(non_editorial), event_counts
 
@@ -1101,7 +1136,10 @@ def fi_bench_unit_result(
             structural_err=1.0 - sim,
             text_err=text_err,
             residue_buckets=residue,
-            witnesses=_bench_oracle_provenance_witnesses(sid),
+            witnesses=(
+                *_bench_oracle_provenance_witnesses(sid),
+                *score.amb_alternate_witnesses,
+            ),
         )
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud

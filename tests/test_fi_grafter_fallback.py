@@ -16337,13 +16337,25 @@ def test_inspect_amendment_2007_121_2010_1357_maps_new_45_3_before_moved_old_3()
     group = next(group for group in bundle["groups"] if group["target_norm"] == "45")
 
     assert "INSERT 5 luku 45 § 3 mom" in group["ops_final"]
+    assert "REPLACE 5 luku 45 § 3 mom" not in group["ops_after_normalization"]
+    assert any(
+        observation["kind"] == "ELAB.REBASE_REPLACED_RENUMBER_SOURCE"
+        and observation["detail"]["rebases"] == [
+            {
+                "from_paragraph": 3,
+                "to_paragraph": 4,
+                "op_description": "REPLACE 5 luku 45 § 3 mom",
+            }
+        ]
+        for observation in group["elaboration_observations"]
+    )
     assert [
         (row["op"], row["slot_label"], row["target_paragraph"])
         for row in group["sparse_slot_bindings"]
-        if row["op"] in {"INSERT 5 luku 45 § 3 mom", "REPLACE 5 luku 45 § 3 mom"}
+        if row["op"] in {"INSERT 5 luku 45 § 3 mom", "RENUMBER 5 luku 45 § 3 mom"}
     ] == [
         ("INSERT 5 luku 45 § 3 mom", "2", 3),
-        ("REPLACE 5 luku 45 § 3 mom", "3", 3),
+        ("RENUMBER 5 luku 45 § 3 mom", "3", 3),
     ]
     assert any(
         observation["kind"] == "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT"
