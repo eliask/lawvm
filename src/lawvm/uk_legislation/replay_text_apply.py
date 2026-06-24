@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace as dc_replace
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional
 
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.uk_legislation.definition_grammar import predicate_alternation
@@ -30,13 +30,13 @@ from lawvm.uk_legislation.text_selectors import (
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
-TextNodePath: TypeAlias = tuple[int, ...]
-DocumentTextNode: TypeAlias = tuple[TextNodePath, UKMutableNode]
-TextNodeRewriteCandidate: TypeAlias = tuple[TextNodePath, UKMutableNode, str]
-TextNodeRewriteMetadataCandidate: TypeAlias = tuple[TextNodePath, UKMutableNode, str, Any]
-TextNodeRegexMatch: TypeAlias = tuple[TextNodePath, UKMutableNode, re.Match[str]]
-TextNodeExactMatch: TypeAlias = tuple[TextNodePath, UKMutableNode, int]
-TextNodeRegexMatchesByPath: TypeAlias = dict[
+type TextNodePath = tuple[int, ...]
+type DocumentTextNode = tuple[TextNodePath, UKMutableNode]
+type TextNodeRewriteCandidate = tuple[TextNodePath, UKMutableNode, str]
+type TextNodeRewriteMetadataCandidate = tuple[TextNodePath, UKMutableNode, str, Any]
+type TextNodeRegexMatch = tuple[TextNodePath, UKMutableNode, re.Match[str]]
+type TextNodeExactMatch = tuple[TextNodePath, UKMutableNode, int]
+type TextNodeRegexMatchesByPath = dict[
     TextNodePath,
     tuple[UKMutableNode, list[re.Match[str]]],
 ]

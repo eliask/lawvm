@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, replace
-from typing import Any, Iterable, Mapping, Protocol, TypeGuard
+from typing import Any, Iterable, Mapping, Protocol, TypeIs
 
 from lawvm.core.ir import (
     IRNode,
@@ -134,7 +134,7 @@ _TIMELINE_BREAK_FIELDS = (
 )
 
 
-def _is_timeline_break_like(item: object) -> TypeGuard[_TimelineBreakLike]:
+def _is_timeline_break_like(item: object) -> TypeIs[_TimelineBreakLike]:
     return all(hasattr(item, field_name) for field_name in _TIMELINE_BREAK_FIELDS)
 
 

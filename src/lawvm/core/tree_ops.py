@@ -398,8 +398,8 @@ def normalize_text(tree: IRNode) -> IRNode:
 
 PathStep: TypeAlias = TreePathStep
 Path: TypeAlias = TreePath  # ((kind, label), ...)
-_NormalizedPathStep: TypeAlias = Tuple[str, str]
-_NormalizedPath: TypeAlias = Tuple[_NormalizedPathStep, ...]
+type _NormalizedPathStep = Tuple[str, str]
+type _NormalizedPath = Tuple[_NormalizedPathStep, ...]
 LabelIndex = Dict[PathStep, List[Path]]
 
 InvariantPathStep = Tuple[str, Optional[str]]
@@ -1057,7 +1057,7 @@ def insert_sorted_witnessed(
 # here is always the neutral surface.
 
 #: The structural-mutation stage result alias (the carrier these ops return).
-StructuralStageResult: TypeAlias = StageResult[IRNode]
+type StructuralStageResult = StageResult[IRNode]
 
 
 def structural_stage_result(tree: IRNode, receipt: WriteReceipt) -> StructuralStageResult:

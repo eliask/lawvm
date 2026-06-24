@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace as dc_replace
 from functools import lru_cache
-from typing import NamedTuple, Optional, Sequence, TypeAlias
+from typing import NamedTuple, Optional, Sequence
 
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.ir import LegalAddress, LegalOperation
@@ -43,14 +43,14 @@ class VersionedNodeLookup(NamedTuple):
     index: Optional[int]
 
 
-TargetLookupKey: TypeAlias = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
+type TargetLookupKey = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
 # Key: (id(root_node), kind, label) → (serial, tuple-of-matches capped at 2)
-_RecursiveMatchAllKey: TypeAlias = tuple[int, str, str]
-_NodeTreePathIndex: TypeAlias = dict[int, tuple[UKMutableNode, TreePath]]
-_NodeStructuralShape: TypeAlias = tuple[
+type _RecursiveMatchAllKey = tuple[int, str, str]
+type _NodeTreePathIndex = dict[int, tuple[UKMutableNode, TreePath]]
+type _NodeStructuralShape = tuple[
     object,
     Optional[str],
-    tuple["_NodeStructuralShape", ...],
+    tuple[_NodeStructuralShape, ...],
 ]
 _MISSING_NODE_LOOKUP = NodeLookupResult(node=None, parent=None, index=None)
 _ROOT_PARENT_INDEX = ParentIndexEntry(parent=None, index=None)

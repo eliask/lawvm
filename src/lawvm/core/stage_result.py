@@ -44,7 +44,6 @@ no authorization at all). This is the authority firewall in the type defaults
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
 
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.filter_result import FilterResult, RejectedItem
@@ -61,8 +60,6 @@ __all__ = [
     "PartitionResult",
     "RejectedItem",
 ]
-
-T = TypeVar("T")
 
 # A typed witness — the narrow evidence-footing waists (Pro §7). Kept as a union
 # of the existing witness types rather than a new base class, so witnesses keep
@@ -322,7 +319,7 @@ NEUTRAL_AUTHORITY: AuthoritySurface = AuthoritySurface()
 
 
 @dataclass(frozen=True, slots=True)
-class StageResult(Generic[T]):
+class StageResult[T]:
     """The canonical stage contract (Pro §2): value + the four accounts + authority.
 
     The shape every serious LawVM waist eventually converges to. A stage with
@@ -375,7 +372,7 @@ class StageResult(Generic[T]):
 
 
 @dataclass(frozen=True, slots=True)
-class PartitionResult(Generic[T]):
+class PartitionResult[T]:
     """The filter-shaped stage result (Pro §2): a ``FilterResult`` + the accounts.
 
     DECISION (PartitionResult vs FilterResult — for diff review): NOT an alias.

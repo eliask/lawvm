@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, TypeAlias
+from typing import Iterable
 
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.helpers import _norm_num_token
@@ -36,8 +36,8 @@ class StandaloneSectionTarget:
         object.__setattr__(self, "label", _norm_num_token(raw_label))
 
 
-StandaloneSectionTargetInput: TypeAlias = StandaloneSectionTarget
-StandaloneSectionTargetsInput: TypeAlias = Iterable[StandaloneSectionTarget] | None
+type StandaloneSectionTargetInput = StandaloneSectionTarget
+type StandaloneSectionTargetsInput = Iterable[StandaloneSectionTarget] | None
 
 
 def normalize_standalone_section_target(

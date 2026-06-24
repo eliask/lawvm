@@ -57,7 +57,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
-from typing import Any, Generic, Iterable, List, Mapping, Tuple, TypeVar, cast
+from typing import Any, Iterable, List, Mapping, Tuple, cast
 
 import icontract
 
@@ -85,9 +85,6 @@ from lawvm.core.event_summaries import (
     distinct_event_kinds,
 )
 
-T = TypeVar("T")
-_C = TypeVar("_C")
-
 OBSERVATION_ROLE: FindingRole = "observation"
 OBLIGATION_ROLE: FindingRole = "obligation"
 VIOLATION_ROLE: FindingRole = "violation"
@@ -99,7 +96,7 @@ def _freeze_phase_detail(subject: str, detail: Mapping[str, Any]) -> Mapping[str
     return freeze_mapping(detail)
 
 
-def _checked_tuple(subject: str, values: Iterable[object], item_type: type[_C]) -> tuple[_C, ...]:
+def _checked_tuple[_C](subject: str, values: Iterable[object], item_type: type[_C]) -> tuple[_C, ...]:
     resolved = tuple(values)
     for value in resolved:
         if not isinstance(value, item_type):
@@ -200,7 +197,7 @@ class Finding:
 
 
 @dataclass(frozen=True, init=False)
-class PhaseResult(Generic[T]):
+class PhaseResult[T]:
     """Typed output from a pipeline phase.
 
     Every pipeline stage can return ``PhaseResult`` where the primary output
@@ -395,7 +392,7 @@ class PhaseResult(Generic[T]):
 
 
 @dataclass
-class PhaseBuilder(Generic[T]):
+class PhaseBuilder[T]:
     """Mutable local builder for PhaseResult — use inside one stage only.
 
     Not a pipeline-wide accumulator. Each stage creates its own builder,
