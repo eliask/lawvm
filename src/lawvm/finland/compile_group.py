@@ -62,6 +62,7 @@ def compile_group_typed(
             source_model=source_model,
             johto=johto,
             strict_profile=strict_profile,
+            amendment_group_ops=request.amendment_group_ops,
         )
     )
     recovery = recovery_result.output

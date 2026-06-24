@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative (UK target/phase-ownership contract). All 6 companion specs and named CLI families (uk-effects/uk-candidates/uk-manual-frontier) exist; no stale path/§-ref/PEG3 drift.
+
 # UK Frontend / Elaboration Architecture
 
 Status: target architecture for the UK replay frontend.

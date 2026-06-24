@@ -564,6 +564,7 @@ def _strip_standalone_subsection_item_prefixes_ir(node: IRNode) -> IRNode:
     child = node.children[0]
     if child.kind not in {IRNodeKind.CONTENT, IRNodeKind.INTRO} or not child.text:
         return node
+    # lawvm-regex: owning_parser leading item-marker shape test on owned payload IRNode.text, not source text
     match = _STANDALONE_SUBSECTION_ITEM_PREFIX_RE.match(child.text)
     if match is None:
         return node
@@ -598,6 +599,7 @@ def _strip_redundant_label_prefix_from_text(text: str, label: str) -> str | None
     if not norm_label:
         return None
     compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", text.lstrip(), flags=re.I)
+    # lawvm-regex: owning_parser redundant leading-label-prefix test on owned payload text, not source text
     match = _REDUNDANT_PARAGRAPH_LABEL_PREFIX_RE.match(compact)
     if match is None:
         return None

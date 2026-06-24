@@ -1,0 +1,9 @@
+{
+  "_doc": "Monotone source-witness liveness ratchet (StageResult WAIST #1). Counts NON-TEST callers of read_source_witness / read_amendment_witness / read_oracle_witness on the corpus store. The two witnesses un-severed by WAIST #1 (read_source_witness, read_amendment_witness) MUST stay >= 1 (a production consumer reads them; severance cannot regress). read_oracle_witness is still severed (its consumer is an oracle-read path outside the source-identity locus, a deferred follow-up) so its floor is its committed count. ALL per-method counts are monotone: they may only rise or hold relative to the committed baseline; regenerate with `uv run python scripts/inventory_architecture_smells.py --ratchet witness --update-baseline`. See tests/test_source_witness_liveness_ratchet.py.",
+  "nontest_caller_counts": {
+    "read_amendment_witness": 1,
+    "read_oracle_witness": 0,
+    "read_source_witness": 2
+  },
+  "total_nontest_callers": 3
+}

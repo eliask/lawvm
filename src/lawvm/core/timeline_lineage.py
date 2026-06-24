@@ -157,6 +157,139 @@ class LineageSegment:
             raise ValueError("LineageSegment.event must be a MigrationEvent or None")
 
 
+# Blocking finding code this build-time guard raises under (registered in
+# ``core/observation_registry.py`` as a ``violation``/``hard_fail``). Referenced
+# here at the emit site so the registry/producer-consistency guard can find a
+# real producer, not just the registry declaration.
+LINEAGE_CYCLE_FINDING_CODE = "LINEAGE.CYCLE"
+
+
+class LineageCycleError(ValueError):
+    """A migration/lineage segment graph contains a cycle.
+
+    A cycle means an eId migrates (directly or transitively) back into its own
+    ancestry. Address resolution (``current_address_from_migration_events`` /
+    the prefix-wave resolvers) only terminates because of a ``visited`` guard
+    that silently truncates the walk at the first revisit; the underlying
+    relation is non-terminating. Materializing a PIT under such a ledger yields
+    order-dependent, repeated-PIT hash drift, so this must fail loud at ledger
+    build, not be silently swallowed by the resolver.
+    """
+
+    def __init__(self, cycle: tuple[LegalAddress, ...]) -> None:
+        self.cycle = cycle
+        self.finding_code = LINEAGE_CYCLE_FINDING_CODE
+        rendered = " → ".join(str(address) for address in cycle)
+        super().__init__(
+            f"{LINEAGE_CYCLE_FINDING_CODE}: migration/lineage segments form a cycle "
+            f"(an eId migrates into its own ancestry): {rendered}"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LineageAcyclicityResult:
+    """Typed verdict for the lineage/migration DAG acyclicity audit (LS-11)."""
+
+    acyclic: bool
+    cycle: tuple[LegalAddress, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.acyclic, bool):
+            raise ValueError("LineageAcyclicityResult.acyclic must be a bool")
+        if self.acyclic and self.cycle:
+            raise ValueError(
+                "LineageAcyclicityResult marked acyclic but carries a cycle witness"
+            )
+        if not self.acyclic and not self.cycle:
+            raise ValueError(
+                "LineageAcyclicityResult marked cyclic but carries no cycle witness"
+            )
+
+
+def _migration_edges(
+    migration_events: tuple[MigrationEvent, ...],
+) -> dict[LegalAddress, list[LegalAddress]]:
+    """Build the directed migration edge graph ``from_address -> to_address``.
+
+    Each migration event is one directed edge. Following these edges is exactly
+    what the address resolvers do (a section at ``from_address`` continues at
+    ``to_address``); a directed cycle here is a non-terminating lineage walk.
+    Self-edges (``from == to``) are not cycles — they are identity no-ops the
+    resolvers skip — so they are not recorded as edges.
+    """
+    edges: dict[LegalAddress, list[LegalAddress]] = {}
+    for event in migration_events:
+        if event.from_address == event.to_address:
+            continue
+        edges.setdefault(event.from_address, []).append(event.to_address)
+    return edges
+
+
+def check_lineage_acyclic(
+    migration_events: tuple[MigrationEvent, ...],
+) -> LineageAcyclicityResult:
+    """Return a typed acyclicity verdict over the migration edge graph (LS-11).
+
+    Detects a directed cycle in the ``from_address -> to_address`` migration
+    graph via iterative DFS three-colouring (white/grey/black). The first cycle
+    found is returned as an ordered address witness so the failure is
+    self-evidencing. Deterministic: nodes and successors are visited in sorted
+    address order, so the witnessed cycle is stable run-to-run.
+    """
+    edges = _migration_edges(migration_events)
+    if not edges:
+        return LineageAcyclicityResult(acyclic=True)
+
+    WHITE, GREY, BLACK = 0, 1, 2
+    colour: dict[LegalAddress, int] = {}
+
+    for root in sorted(edges, key=str):
+        if colour.get(root, WHITE) != WHITE:
+            continue
+        # Iterative DFS carrying the active path so a back-edge yields the cycle.
+        stack: list[tuple[LegalAddress, int]] = [(root, 0)]
+        path: list[LegalAddress] = []
+        colour[root] = GREY
+        path.append(root)
+        while stack:
+            node, index = stack[-1]
+            successors = sorted(edges.get(node, ()), key=str)
+            if index < len(successors):
+                stack[-1] = (node, index + 1)
+                succ = successors[index]
+                succ_colour = colour.get(succ, WHITE)
+                if succ_colour == GREY:
+                    # Back-edge into the active path: extract the cycle slice.
+                    start = path.index(succ)
+                    cycle = tuple(path[start:]) + (succ,)
+                    return LineageAcyclicityResult(acyclic=False, cycle=cycle)
+                if succ_colour == WHITE:
+                    colour[succ] = GREY
+                    path.append(succ)
+                    stack.append((succ, 0))
+                continue
+            colour[node] = BLACK
+            stack.pop()
+            if path and path[-1] == node:
+                path.pop()
+
+    return LineageAcyclicityResult(acyclic=True)
+
+
+def assert_acyclic(
+    migration_events: tuple[MigrationEvent, ...],
+) -> None:
+    """Fail loud (LINEAGE.CYCLE) if the migration/lineage segments are cyclic.
+
+    Build-time guard for LS-11. A cyclic migration ledger implies
+    non-terminating materialization / repeated-PIT hash drift, so a cycle is a
+    blocking contract break rather than a recoverable residual.
+    """
+    result = check_lineage_acyclic(migration_events)
+    if not result.acyclic:
+        raise LineageCycleError(result.cycle)
+
+
 @dataclass(frozen=True)
 class ScopeMigrationClassification:
     active_scope_changing: bool

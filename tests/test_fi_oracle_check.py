@@ -9,6 +9,8 @@ from lxml import etree
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalAddress
+from lawvm.core.ir import ProvisionTimeline
+from lawvm.core.ir import ProvisionVersion
 from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.tools.divergence_heuristics import (
@@ -42,6 +44,7 @@ from lawvm.tools.oracle_check import (
     _el_text,
     _extract_attachment_info_ir,
     _ir_node_has_repeal_placeholder,
+    _replay_has_active_tombstoned_ancestor,
     main,
     _print_corpus_summary,
     _print_statute_summary,
@@ -112,6 +115,25 @@ def test_diagnose_treats_unblamed_high_overlap_truncation_as_source_pathology() 
     assert _diagnose(replay, oracle, None) == "SOURCE_PATHOLOGY"
 
 
+def test_diagnose_treats_replay_only_section_heading_as_editorial_convention() -> None:
+    # Real shape: 1993/1501 §41. Replay carries a heading facet in section text;
+    # the Finlex comparison surface omits it while preserving the body.
+    replay = "41 § Rahoituspalvelut Veroa ei suoriteta rahoituspalvelun myynnistä."
+    oracle = "41 § Veroa ei suoriteta rahoituspalvelun myynnistä."
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_does_not_drop_leading_substantive_sentence_as_heading() -> None:
+    replay = (
+        "41 § Rahoituspalvelut ovat verottomia. "
+        "Veroa ei suoriteta rahoituspalvelun myynnistä."
+    )
+    oracle = "41 § Veroa ei suoriteta rahoituspalvelun myynnistä."
+
+    assert _diagnose(replay, oracle, None) != "EDITORIAL_CONVENTION"
+
+
 def test_diagnose_treats_unblamed_tiny_base_text_corruption_as_source_pathology() -> None:
     # Real shape: 1966/232 chapter 4 section 14. The base XML witness has two
     # tiny OCR/source corruptions ("12 a 13", "toiston") while the oracle has
@@ -168,6 +190,41 @@ def test_diagnose_treats_bare_oracle_stub_as_editorial_convention() -> None:
     oracle = "5 a §"
 
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_replay_tombstoned_ancestor_marks_oracle_descendant_stale() -> None:
+    chapter = LegalAddress(path=(("part", "2"), ("chapter", "14a")))
+    master = SimpleNamespace(
+        products=SimpleNamespace(
+            materialization_spec=SimpleNamespace(as_of="2026-01-01", query_type="governing"),
+            timelines={
+                chapter: ProvisionTimeline(
+                    address=chapter,
+                    versions=[
+                        ProvisionVersion(
+                            effective="2004-01-01",
+                            enacted="2003-12-30",
+                            content=IRNode(kind=IRNodeKind.CHAPTER, label="14a"),
+                        ),
+                        ProvisionVersion(
+                            effective="2025-01-01",
+                            enacted="2024-06-28",
+                            content=None,
+                        ),
+                    ],
+                )
+            },
+        )
+    )
+
+    assert _replay_has_active_tombstoned_ancestor(
+        master,
+        "part:2/chapter:14a/section:149c",
+    )
+    assert not _replay_has_active_tombstoned_ancestor(
+        master,
+        "part:2/chapter:14/section:149c",
+    )
 
 
 def test_diagnose_treats_legacy_roman_division_heading_as_editorial_convention() -> None:
@@ -551,6 +608,28 @@ def test_classify_statute_1992_1702_empty_operative_body_wave_is_source_incomple
     assert by_section["chapter:10/section:46b"]["diagnosis"] == "SOURCE_INCOMPLETE"
     assert by_section["chapter:8/section:39a"]["diagnosis"] == "ORACLE_STALE"
     assert by_section["chapter:8/section:42"]["diagnosis"] == "ORACLE_STALE"
+
+
+def test_classify_statute_2015_1480_pdf_only_amendment_is_source_incomplete() -> None:
+    result = _classify_statute("2015/1480", "official_consolidation")
+
+    assert result is not None
+    assert {
+        (row.get("source_statute"), row.get("code"))
+        for row in result.source_pathologies
+    } >= {("2021/1209", "EMPTY_OPERATIVE_BODY")}
+
+    by_section = {item["section"]: item for item in result.section_results}
+    for label in ("section:6", "section:8", "section:13", "section:20"):
+        assert by_section[label]["diagnosis"] == "SOURCE_INCOMPLETE"
+
+
+def test_classify_statute_2005_347_truncated_base_section_is_source_incomplete() -> None:
+    result = _classify_statute("2005/347", "official_consolidation")
+
+    assert result is not None
+    section_2 = next(item for item in result.section_results if item["section"] == "section:2")
+    assert section_2["diagnosis"] == "SOURCE_INCOMPLETE"
 
 
 def test_classify_statute_1987_322_repealed_stubs_are_editorial_convention() -> None:
@@ -2592,6 +2671,17 @@ def test_classify_statute_treats_repealed_section_with_duplicated_adjacent_oracl
 
     result = _classify_statute("2015/364", "legal_pit")
     assert result is not None
+    sec13 = next(sec for sec in result.section_results if sec["section"] == "section:13")
+    assert sec13["diagnosis"] == "ORACLE_STALE"
+
+
+def test_classify_statute_2015_364_keeps_item_repeal_from_expiring_whole_section() -> None:
+    """2017/1153 repeals 9 § 4 kohta, not all of 9 §."""
+    result = _classify_statute("2015/364", "official_consolidation")
+
+    assert result is not None
+    sec9 = next(sec for sec in result.section_results if sec["section"] == "section:9")
+    assert sec9["diagnosis"] != "REPLAY_MISSING"
     sec13 = next(sec for sec in result.section_results if sec["section"] == "section:13")
     assert sec13["diagnosis"] == "ORACLE_STALE"
 

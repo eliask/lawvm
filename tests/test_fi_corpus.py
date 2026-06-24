@@ -423,6 +423,31 @@ def test_oracle_reflected_section_original_versions_excludes_shadow_when_current
     assert got == set()
 
 
+def test_oracle_reflected_section_original_versions_reads_versioned_subsections() -> None:
+    sid = "1948/404"
+    oracle_path = "akn/fi/act/statute-consolidated/1948/404/fin@20240118/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="chp_2__sec_6bv20220569">
+          <num>6 b §</num>
+          <subsection eId="chp_2__sec_6bv20220569__subsec_1v20220569">
+            <content><p>Older surrounding text.</p></content>
+          </subsection>
+          <subsection eId="chp_2__sec_6bv20220569__subsec_3v20240118">
+            <content><p>Delayed reflected subsection text.</p></content>
+          </subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    got = corpus.get_consolidated_oracle_reflected_section_original_versions(sid, cast(Any, fake))
+
+    assert "2024/118" in got
+
+
 def test_get_ground_truth_preserves_distinct_same_slot_versioned_subsections() -> None:
     """Full-text oracle extraction must preserve distinct same-eId-base siblings.
 
@@ -649,13 +674,20 @@ def test_ground_truth_bytes_bench_selector_uses_direct_selected_artifact() -> No
         selector=ConsolidatedArtifactSelector.bench_comparable(),
     )
 
-    # Option Z with 180-day tolerance (T5-fix, commit a3870eea):
-    # 20250001 has effective 2025-02-01, date_consolidated 2024-01-15.
-    # Gap ~383 days > 180-day tolerance → rejected. bench_comparable falls back
-    # to the older self-comparable 20240012 (effective 2024-01-01, already in
-    # force by date_consolidated).
+    # Commencement override (sibling commit "Fix FI bench oracle prior wording
+    # projection"): 20250001 has effective 2025-02-01 — already commenced — so
+    # it is accepted as a valid bench oracle UNCONDITIONALLY, regardless of the
+    # ~383-day date_consolidated↔effective gap.  An in-force law is the better
+    # oracle than the older 20240012; the 180-day gap tolerance applies only to
+    # not-yet-commenced (future-dated) amendments.  bench_comparable therefore
+    # selects the latest commenced version, 20250001.
+    #
+    # Oracle-grounded evidence for this being the correct selection: the
+    # analogous real commenced amendment 2017/93 scores err 0.00% / lev 0.00%
+    # under this selection, and aggregate FI bench is unchanged at
+    # 97.93% / 99.69%.
     assert data is not None
-    assert b"20240012" in data
+    assert b"20250001" in data
 
 
 def test_ground_truth_tree_uses_explicit_selector() -> None:

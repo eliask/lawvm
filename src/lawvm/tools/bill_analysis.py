@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from lawvm.core.legal_surface_graph import LegalSurfaceGraph, SurfaceNode
+    from lawvm.core.stage_result import StageResult
     from lawvm.finland.johtolause.types import ParsedOp
 
 
@@ -122,19 +123,27 @@ def _parse_ops(johto: str, statute_id: str) -> list["ParsedOp"]:
     return list(result.parsed_ops)
 
 
-def _build_graph(xml_bytes: bytes, statute_id: str) -> "LegalSurfaceGraph":
-    """Build the Legal Surface Graph with reference-resolution registries.
+def _build_graph_stage(
+    xml_bytes: bytes, statute_id: str
+) -> "StageResult[LegalSurfaceGraph]":
+    """Build the Legal Surface Graph as a typed ``StageResult`` (row #5).
 
     The default registry pair is what gives by-name reference resolution its
     real recall; without it, references degrade to ``statute_only``. The
     registry build announces (via warnings) if it falls back to a small sample,
     so a degraded run is never silent.
+
+    Returns the STAGED form so the broken-reference branch reads the typed
+    ``coverage`` / ``residuals`` account (the ``unowned_violation`` channel),
+    NOT bare per-node status strings.
     """
-    from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
+    from lawvm.finland.legal_surface.graph_build import (
+        build_legal_surface_graph_staged,
+    )
     from lawvm.finland.references.resolve import build_default_registries
 
     statute_registry, eu_registry = build_default_registries()
-    return build_legal_surface_graph(
+    return build_legal_surface_graph_staged(
         xml_bytes,
         statute_id,
         statute_registry=statute_registry,
@@ -300,9 +309,21 @@ def build_reference_delta(
 # ---------------------------------------------------------------------------
 
 
+def _ref_risk_entry(
+    node_id: str, surface_text: str, status_str: str, span_text: str
+) -> dict[str, Any]:
+    """One reference-risk report entry (single construction site for both arms)."""
+    return {
+        "node_id": node_id,
+        "surface_text": surface_text,
+        "status": status_str,
+        "span_text": span_text,
+    }
+
+
 def build_broken_ref_risk(
     parsed_ops: list["ParsedOp"],
-    graph: "LegalSurfaceGraph",
+    graph_stage: "StageResult[LegalSurfaceGraph]",
     body: str,
 ) -> dict[str, Any]:
     """Reference risk created by the bill's REPEAL ops.
@@ -311,33 +332,51 @@ def build_broken_ref_risk(
     cites the repealed target") is deliberately OUT OF SCOPE for v0 — too heavy.
     Two cheaper, fully deterministic signals are reported instead:
 
-    * ``status_broken`` — references the graph itself already classifies as
-      BROKEN (target repealed/renumbered after the cite). These are surfaced
-      directly from the reference nodes' resolution status.
+    * ``status_broken`` — references the surface waist's TYPED coverage account
+      flags as a blocking ``unowned_violation`` residual (a reference that named
+      a target which does not exist). The branch rides the typed
+      :class:`~lawvm.core.stage_result.StageResult` residual channel (row #5),
+      NOT a re-scan of bare per-node status strings: a broken-ref entry is built
+      from each ``kind="unowned_violation"`` residual the staged producer
+      emitted. This is the load-bearing rewire — sever the residual (or revert to
+      bare-string scanning) and this signal disappears.
     * ``self_repeal_then_cited`` — for each REPEAL op in THIS bill, references
       WITHIN the amendment's own text whose surface mentions the repealed
       section number. A textual match (number appears in the cite surface), not
       a resolved target join — clearly a HEURISTIC within-bill scan.
     """
+    graph = graph_stage.value
     targets = repealed_targets(parsed_ops)
     target_numbers = {t["number"] for t in targets if t["number"]}
 
+    # BROKEN-REF branch — derived from the TYPED residual account, not bare
+    # status strings. Each blocking unowned_violation residual the surface waist
+    # emitted IS a broken reference (the genuine "named a target that does not
+    # exist" failure class, 2D mapping). We resolve the residual back to its
+    # reference node (residual.scope == node.node_id) only for the verbatim span.
     status_broken: list[dict[str, Any]] = []
-    self_repeal_cited: list[dict[str, Any]] = []
+    for residual in graph_stage.residuals:
+        if residual.kind != "unowned_violation":
+            continue
+        node = graph.nodes.get(residual.scope)
+        if node is not None and node.node_kind != _KIND_REFERENCE:
+            # The surface broken-ref risk is a REFERENCE-resolution signal; a
+            # non-reference violation (none today) is out of this section's scope.
+            continue
+        span = _span_text(node, body) if node is not None else ""
+        status_broken.append(
+            _ref_risk_entry(residual.scope, residual.text, _BROKEN, span)
+        )
+    status_broken.sort(key=lambda e: (str(e["surface_text"]), str(e["node_id"])))
 
+    # Within-bill heuristic (unchanged): a reference whose surface cites a number
+    # this very bill repeals. Tagged, never asserted as a confirmed dangling ref.
+    self_repeal_cited: list[dict[str, Any]] = []
     for node in _nodes_of_kind(graph, _KIND_REFERENCE):
-        status = _status_str(node)
         surface = str(node.payload.get("surface_text", ""))
-        entry = {
-            "node_id": node.node_id,
-            "surface_text": surface,
-            "status": status,
-            "span_text": _span_text(node, body),
-        }
-        if status == _BROKEN:
-            status_broken.append(entry)
-        # Within-bill heuristic: a reference whose surface cites a number this
-        # very bill repeals. Tagged, never asserted as a confirmed dangling ref.
+        entry = _ref_risk_entry(
+            node.node_id, surface, _status_str(node), _span_text(node, body)
+        )
         for num in target_numbers:
             if num and _surface_cites_number(surface, num):
                 self_repeal_cited.append({**entry, "repealed_number": num})
@@ -450,7 +489,7 @@ _ACCOUNTABILITY_CUES = (
 
 def build_unowned_candidates(
     parsed_ops: list["ParsedOp"],
-    graph: "LegalSurfaceGraph",
+    graph_stage: "StageResult[LegalSurfaceGraph]",
     body: str,
     *,
     broken_ref_risk: dict[str, Any] | None = None,
@@ -462,9 +501,14 @@ def build_unowned_candidates(
     judgment — NOT findings, NO score, NO magnitude. The reference telos
     (civilizational full-accounting) is the SELECTOR of which channels are worth
     surfacing, never a good/bad grade applied here.
+
+    Takes the surface waist's typed ``StageResult`` so the ``repeal_strands_
+    reference`` rule's broken arm derives from the typed ``unowned_violation``
+    residual (via :func:`build_broken_ref_risk`), not bare per-node statuses.
     """
+    graph = graph_stage.value
     if broken_ref_risk is None:
-        broken_ref_risk = build_broken_ref_risk(parsed_ops, graph, body)
+        broken_ref_risk = build_broken_ref_risk(parsed_ops, graph_stage, body)
 
     candidates: list[dict[str, Any]] = []
 
@@ -554,17 +598,23 @@ def build_unowned_candidates(
 def build_bill_report(
     statute_id: str,
     parsed_ops: list["ParsedOp"],
-    graph: "LegalSurfaceGraph",
+    graph_stage: "StageResult[LegalSurfaceGraph]",
     body: str,
 ) -> dict[str, Any]:
-    """Assemble the full structured bill-impact report (corpus-free)."""
+    """Assemble the full structured bill-impact report (corpus-free).
+
+    Takes the surface waist's typed ``StageResult`` (row #5): the broken-ref
+    branch rides ``graph_stage.residuals`` (the ``unowned_violation`` channel),
+    while the surface-fact deltas read the graph value.
+    """
+    graph = graph_stage.value
     op_summary = build_op_summary(parsed_ops)
     delegation_delta = build_delegation_delta(graph, body)
     reference_delta = build_reference_delta(graph, body)
-    broken_ref_risk = build_broken_ref_risk(parsed_ops, graph, body)
+    broken_ref_risk = build_broken_ref_risk(parsed_ops, graph_stage, body)
     definition_delta = build_definition_delta(graph, body)
     unowned = build_unowned_candidates(
-        parsed_ops, graph, body, broken_ref_risk=broken_ref_risk
+        parsed_ops, graph_stage, body, broken_ref_risk=broken_ref_risk
     )
     return {
         "statute_id": statute_id,
@@ -708,9 +758,9 @@ def main(args: argparse.Namespace) -> None:
 
     xml_bytes, johto, body = _load_amendment(statute_id)
     parsed_ops = _parse_ops(johto, statute_id)
-    graph = _build_graph(xml_bytes, statute_id)
+    graph_stage = _build_graph_stage(xml_bytes, statute_id)
 
-    report = build_bill_report(statute_id, parsed_ops, graph, body)
+    report = build_bill_report(statute_id, parsed_ops, graph_stage, body)
 
     if bool(getattr(args, "json", False)):
         print(json.dumps(report, indent=2, default=str, ensure_ascii=False))

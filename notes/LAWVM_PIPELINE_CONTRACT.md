@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative (the canonical vocabulary owner for pipeline terms). Backlog measured against it lives in ARCHITECTURE_LEAK_LEDGER.md. Cross-refs verified (AGENTS.md §3.1 = 11-step verbs). NB: the fi_refs replay_authorized leak called out in §2/§7 was addressed by a later witnessed-fix; treat those '(LEAK)/(current violation)' parentheticals as ledger-tracked, possibly closed.
+
 # LAWVM_PIPELINE_CONTRACT.md
 
 > Normative. This is the constitution of the LawVM pipeline. It is checkable, not aspirational.

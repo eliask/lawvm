@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline_addresses import STRUCTURAL_RENUMBER_SNAPSHOT_ATTR
 
 if TYPE_CHECKING:
@@ -21,6 +22,9 @@ FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID = (
 )
 FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID = (
     "fi.timeline.restructure_relabel_snapshot_shadow_collapse"
+)
+FI_TIMELINE_RESTRUCTURE_RELABEL_SHELL_SHADOW_COLLAPSE_RULE_ID = (
+    "fi.timeline.restructure_relabel_shell_shadow_collapse"
 )
 _RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_ATTR = "lawvm_restructure_relabel_section_snapshot"
 _TIMELINE_SECTION_MARK_SPACING_RE = re.compile(r"^(\d+[a-z]?)\s*§")
@@ -119,6 +123,29 @@ def _is_structural_renumber_snapshot(version: ProvisionVersion) -> bool:
     return isinstance(content, IRNode) and content.attrs.get(STRUCTURAL_RENUMBER_SNAPSHOT_ATTR) == "1"
 
 
+def _is_section_label_only_shell(version: ProvisionVersion) -> bool:
+    """Return True for section snapshots that carry no legal body payload.
+
+    A whole-container replacement may emit a direct section snapshot for each
+    child section. If the child is only a ``num``/``omission`` shell while a
+    same-source restructure relabel snapshot carries the moved body, the shell
+    is not payload authority and must not shadow the moved section text.
+    """
+    content = version.content
+    if not isinstance(content, IRNode) or content.kind is not IRNodeKind.SECTION:
+        return False
+    if content.attrs.get("lawvm_repeal_placeholder") == "1":
+        return False
+    if content.text.strip():
+        return False
+    for child in content.children:
+        if child.kind not in {IRNodeKind.NUM, IRNodeKind.HEADING, IRNodeKind.OMISSION}:
+            return False
+        if child.kind is IRNodeKind.OMISSION and child.text.strip():
+            return False
+    return True
+
+
 def _collapse_restructure_relabel_snapshot_shadow_rows(
     address: LegalAddress,
     versions: list[ProvisionVersion],
@@ -149,7 +176,34 @@ def _collapse_restructure_relabel_snapshot_shadow_rows(
         ]
         if not restructure_snapshots or not non_snapshot_payloads:
             continue
-        for version in restructure_snapshots:
+        substantive_payloads = [
+            version
+            for version in non_snapshot_payloads
+            if not _is_section_label_only_shell(version)
+        ]
+        if substantive_payloads:
+            for version in restructure_snapshots:
+                drop_ids.add(id(version))
+            records.append(
+                TimelineVersionDedupeRecord(
+                    address=str(address),
+                    source_statute=source_id,
+                    effective=effective,
+                    enacted=enacted,
+                    variant_kind=variant_kind,
+                    witness_rule_id=FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID,
+                    removed_count=len(restructure_snapshots),
+                )
+            )
+            continue
+        shell_payloads = [
+            version
+            for version in non_snapshot_payloads
+            if _is_section_label_only_shell(version)
+        ]
+        if not shell_payloads:
+            continue
+        for version in shell_payloads:
             drop_ids.add(id(version))
         records.append(
             TimelineVersionDedupeRecord(
@@ -158,8 +212,8 @@ def _collapse_restructure_relabel_snapshot_shadow_rows(
                 effective=effective,
                 enacted=enacted,
                 variant_kind=variant_kind,
-                witness_rule_id=FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID,
-                removed_count=len(restructure_snapshots),
+                witness_rule_id=FI_TIMELINE_RESTRUCTURE_RELABEL_SHELL_SHADOW_COLLAPSE_RULE_ID,
+                removed_count=len(shell_payloads),
             )
         )
 
@@ -244,6 +298,7 @@ def dedupe_finland_timelines(
 
 __all__ = [
     "FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID",
+    "FI_TIMELINE_RESTRUCTURE_RELABEL_SHELL_SHADOW_COLLAPSE_RULE_ID",
     "FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID",
     "FI_TIMELINE_SAME_SOURCE_SEMANTIC_DEDUPE_RULE_ID",
     "SemanticTextKeyCache",

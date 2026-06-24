@@ -352,7 +352,7 @@ class TestReuseVerification:
 
     def test_same_extractor_produces_same_output_for_same_xml(self) -> None:
         """extract_all_reference_mentions is deterministic: same XML → same output."""
-        from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+        from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
 
         xml = REF_CROSSLINKS_HE.xml_bytes
         he_source_id = f"he/{REF_CROSSLINKS_HE.he_year}/{REF_CROSSLINKS_HE.he_number}"

@@ -804,7 +804,9 @@ def compute_statute_section_diffs(
     )
     from lawvm.tools.section_keys import (
         extract_ir_sections,
+        extract_oracle_section_alternates,
         extract_oracle_sections,
+        oracle_amb_alternate_match,
         reconcile_unique_unscoped_aliases,
     )
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
@@ -839,9 +841,18 @@ def compute_statute_section_diffs(
         else {}
     )
     oracle_sections = extract_oracle_sections(oracle_root) if oracle_root is not None else {}
+    oracle_alternates = (
+        extract_oracle_section_alternates(oracle_root) if oracle_root is not None else {}
+    )
     replay_sections, oracle_sections = reconcile_unique_unscoped_aliases(
         replay_sections, oracle_sections,
     )
+
+    # amb cleaners: must match the bench's chosen-candidate comparison cleaners so
+    # "matches an alternate" means exactly "would have been a text match against
+    # that version". Lazy import avoids a module-load cycle (bench imports this).
+    from lawvm.core.ir_helpers import irnode_to_text
+    from lawvm.tools.bench import _clean, _clean_oracle_section_text
 
     sections: dict[str, dict[str, Any]] = {}
     for key in sorted(set(replay_sections) | set(oracle_sections)):
@@ -856,6 +867,23 @@ def compute_statute_section_diffs(
         else:
             raise ValueError(f"unsupported structural diff support mode: {support_mode}")
         if item:
+            # amb verdict: replay matched a genuine-but-not-chosen oracle version
+            # of this exact slot -> stash so _structural_sim /
+            # bench_penalized_section_keys forgive it IDENTICALLY to
+            # _semantic_section_score (the "exact set the bench scores" contract).
+            amb_witness = (
+                oracle_amb_alternate_match(
+                    key,
+                    _clean(irnode_to_text(replay_node)),
+                    oracle_alternates.get(key),
+                    _clean_oracle_section_text,
+                )
+                if replay_node is not None
+                else None
+            )
+            if amb_witness is not None:
+                item["amb_alternate_match"] = True
+                item["amb_witness"] = amb_witness
             sections[key] = item
 
     return sections, False

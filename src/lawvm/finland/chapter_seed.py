@@ -170,6 +170,7 @@ def _chapter_missing_span_notice(chapter: IRNode) -> Optional[Tuple[str, str]]:
     if not section_children:
         return None
     text = " ".join(irnode_to_text(section_children[-1]).split())
+    # lawvm-regex: owning_parser own-subtree (irnode_to_text) declared-missing-span sentinel witness over the chapter the function owns, not source-plane mint
     m = _MISSING_CHAPTER_SPAN_RE.search(text)
     if m is None:
         return None
@@ -247,6 +248,7 @@ def _strip_trailing_missing_span_notice(chapter: IRNode) -> IRNode:
         changed = True
     if new_sec_children:
         trailing_text = " ".join(irnode_to_text(new_sec_children[-1]).split())
+        # lawvm-regex: owning_parser own-subtree (irnode_to_text) missing-span placeholder sentinel over the chapter the function owns, not source-plane mint
         if _MISSING_CHAPTER_SPAN_RE.search(trailing_text):
             new_sec_children.pop()
             changed = True

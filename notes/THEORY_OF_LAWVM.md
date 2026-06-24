@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Explanatory (high-level theory/philosophy; self-labelled draft). Defers term-ownership to LAWVM_PIPELINE_CONTRACT.md (verified present); no stale src cites, no PEG3/§1.13. Aspirational object/proof model, not a status claim.
+
 # Theory of LawVM
 
 Status: draft.

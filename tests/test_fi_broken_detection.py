@@ -259,8 +259,13 @@ def test_unresolved_and_open_mentions_are_skipped() -> None:
     assert findings == []
 
 
-def test_no_citation_start_falls_back_to_current_tree() -> None:
-    """Open citation start: only the present-now check applies (no false NEVER_EXISTED)."""
+def test_no_citation_start_is_unavailable_not_broken() -> None:
+    """Open citation start: no temporal anchor for "existed-when-cited", so the
+    as-of-citation tree cannot be materialized -> BrokenCheckUnavailable, never a
+    finding. The detector must not reuse the current tree as the cited tree (doing
+    so would either fabricate a verdict or, when the target is absent now, fire a
+    false NEVER_EXISTED).
+    """
     target = ProvisionRef(statute_id="200/2000", section_label="5")
 
     calls: list[date] = []
@@ -275,9 +280,52 @@ def test_no_citation_start_falls_back_to_current_tree() -> None:
         provision_present=_present,
         current_as_of=NOW,
     )
-    # present at NOW, no cited-on anchor -> no finding, and only NOW materialized.
-    assert findings == []
+    assert len(findings) == 1
+    f = findings[0]
+    assert isinstance(f, BrokenCheckUnavailable)
+    assert not isinstance(f, BrokenReferenceFinding)
+    assert f.unavailable_for == "cited"
+    assert f.as_of is None
+    # Only the current tree is materialized; no as-of-citation replay attempted.
     assert calls == [NOW]
+
+
+def test_no_citation_start_with_target_absent_now_is_unavailable_not_never_existed() -> None:
+    """BITE: target absent from the current tree AND no citing-date anchor.
+
+    The old code aliased ``cited_tree = current_tree`` when ``cited_on is None``,
+    so ``existed_when_cited`` and ``present_now`` were computed against the SAME
+    tree. With the target absent now, both were False and the ``not
+    existed_when_cited`` arm fired a false ``NEVER_EXISTED`` BROKEN finding — a
+    verdict the detector had zero evidence for (the target could have existed when
+    cited and been repealed/renumbered since). The fix emits
+    ``BrokenCheckUnavailable`` instead.
+    """
+    target = ProvisionRef(statute_id="200/2000", section_label="9")
+
+    def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        # Current tree carries §5/§6 but NOT the cited §9.
+        return _tree_with_sections("5", "6")
+
+    findings = detect_broken(
+        [_mention(target, cited_start=None)],
+        tree_as_of=tree_as_of,
+        provision_present=_present,
+        current_as_of=NOW,
+    )
+    assert len(findings) == 1
+    f = findings[0]
+    # The fix: undetermined, NOT a (false) NEVER_EXISTED BROKEN finding.
+    assert isinstance(f, BrokenCheckUnavailable)
+    assert not isinstance(f, BrokenReferenceFinding)
+    assert f.unavailable_for == "cited"
+    assert f.as_of is None
+    # Guard against regression to the old aliasing verdict.
+    assert not any(
+        isinstance(x, BrokenReferenceFinding)
+        and x.reason is BrokenReason.NEVER_EXISTED
+        for x in findings
+    )
 
 
 def test_internal_target_without_statute_is_skipped() -> None:

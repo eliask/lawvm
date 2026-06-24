@@ -139,6 +139,7 @@ def test_single_candidate_slot_gets_single_admissibility() -> None:
         intro_subsec_ops=(),
         renumber_subsec_ops=(),
         duplicate_targets=(),
+        has_omission_slots=False,
     )
     result = _assign_subsection_slots(inputs)
     assert len(result.binding_certificates) == 1
@@ -158,6 +159,7 @@ def test_multiple_same_label_slots_gets_ambiguous() -> None:
         intro_subsec_ops=(),
         renumber_subsec_ops=(),
         duplicate_targets=(),
+        has_omission_slots=False,
     )
     result = _assign_subsection_slots(inputs)
     assert len(result.binding_certificates) >= 1
@@ -176,6 +178,7 @@ def test_fallback_binding_when_labels_dont_match() -> None:
         intro_subsec_ops=(),
         renumber_subsec_ops=(),
         duplicate_targets=(),
+        has_omission_slots=False,
     )
     result = _assign_subsection_slots(inputs)
     assert len(result.binding_certificates) >= 1
@@ -194,6 +197,7 @@ def test_mixed_single_and_fallback() -> None:
         intro_subsec_ops=(),
         renumber_subsec_ops=(),
         duplicate_targets=(),
+        has_omission_slots=False,
     )
     result = _assign_subsection_slots(inputs)
     assert len(result.binding_certificates) == 2
@@ -216,6 +220,7 @@ def test_no_ops_produces_empty_certificates() -> None:
         intro_subsec_ops=(),
         renumber_subsec_ops=(),
         duplicate_targets=(),
+        has_omission_slots=False,
     )
     result = _assign_subsection_slots(inputs)
     assert result.binding_certificates == ()

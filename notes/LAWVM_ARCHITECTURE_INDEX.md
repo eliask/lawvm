@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Explanatory/navigational crosswalk (defers term definitions to LAWVM_PIPELINE_CONTRACT §11). All cited contract sections (§2/§3/§11) and impl-center code paths verified present; no stale §1.13/PEG3 refs.
+
 # LawVM Architecture Index
 
 Status: current compact architecture map for the v0.1 release line.

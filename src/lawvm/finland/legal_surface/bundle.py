@@ -22,9 +22,22 @@ import xml.etree.ElementTree as ET
 
 from lawvm.core.legal_surface_graph import SourceSpanRef, SurfaceGraphSubject
 from lawvm.core.legal_surface_lens import SourceSurfaceBundle, SourceSurfaceUnit
+from lawvm.core.legal_surface_tokens import SegmentationGraph
+from lawvm.core.source_witness import DigestWitness, SourceWitness
+from lawvm.core.stage_result import (
+    NEUTRAL_AUTHORITY,
+    CoverageCertificate,
+    EvidenceBundle,
+    Residual,
+    StageResult,
+)
 from lawvm.finland.legal_surface.clause_segment import (
     build_clause_index,
     build_segmentation_graph,
+)
+from lawvm.finland.legal_surface.editorial_filter import (
+    iter_operative_paragraphs,
+    operative_itertext,
 )
 from lawvm.finland.legal_surface.provision_index import build_provision_index
 from lawvm.finland.legal_surface.tokenize import (
@@ -46,9 +59,14 @@ def _sha256_text(text: str) -> str:
 def decode_body_text(xml_bytes: bytes) -> str:
     """Decode the statute body into a single coordinate space.
 
-    Concatenates each ``<p>`` element's text (``itertext``) joined by newlines —
-    the same paragraph set the existing reference lanes scan, so a surface that a
-    recognizer matched in a ``<p>`` is locatable here. Returns "" on parse error.
+    Concatenates each OPERATIVE ``<p>`` element's text joined by newlines — the
+    same paragraph set the existing reference lanes scan, so a surface a
+    recognizer matched in a ``<p>`` is locatable here. Non-operative editorial
+    material (``<authorialNote>`` footnotes/corrigenda, ``noteAuthorial`` version
+    notes, ``signatures``/``conclusions``/``attachments`` boilerplate) is dropped
+    via the shared :mod:`editorial_filter` so it never pollutes the coordinate
+    space — see that module for why this loses no structural signal. Returns ""
+    on parse error.
     """
     if not xml_bytes:
         return ""
@@ -56,12 +74,71 @@ def decode_body_text(xml_bytes: bytes) -> str:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError:
         return ""
-    parts: list[str] = []
-    for el in root.iter():
-        local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
-        if local == "p":
-            parts.append("".join(el.itertext()))
+    parts = [
+        "".join(operative_itertext(p)) for p, _ in iter_operative_paragraphs(root)
+    ]
     return "\n".join(parts)
+
+
+def _segmentation_coverage(seg: SegmentationGraph) -> CoverageCertificate:
+    """Map the SegmentationGraph's exact ``[0, text_len)`` partition onto a typed
+    :class:`CoverageCertificate` (the token/source-unit waist's returned account).
+
+    The SegmentationGraph already partitions the whole body text EXACTLY (its
+    ``__post_init__`` enforces contiguous, gap-free, non-overlapping coverage —
+    see ``core/legal_surface_tokens.py``). This function does NOT recompute an
+    invariant; it READS OFF the existing partition: every non-``residual``
+    segment's chars are ``owned``; every ``residual`` (``benign_whitespace``)
+    segment's chars are ``residual``. ``benign``/``violation`` are 0 (whitespace
+    is the only residue today, and it is proven-benign typed residue, not a
+    signal-bearing violation). ``is_partition()`` holds because owned + residual
+    == text_len by construction.
+    """
+    owned = 0
+    residual = 0
+    for seg_span in seg.segments:
+        span = seg_span.char_end - seg_span.char_start
+        if seg_span.kind == "residual":
+            residual += span
+        else:
+            owned += span
+    return CoverageCertificate(
+        unit="chars",
+        total=seg.text_len,
+        owned=owned,
+        benign=0,
+        residual=residual,
+        violation=0,
+    )
+
+
+def _segmentation_residuals(
+    seg: SegmentationGraph,
+    raw_text: str,
+) -> tuple[Residual, ...]:
+    """One typed :class:`Residual` per benign-whitespace residual segment.
+
+    Each residual span is proven-benign (whitespace gaps the segmentation owns
+    explicitly), so ``blocking=False`` — it must NOT forbid a clean claim. The
+    span text is carried verbatim (self-evidencing) along with its char offsets.
+    """
+    residuals: list[Residual] = []
+    for seg_span in seg.segments:
+        if seg_span.kind != "residual":
+            continue
+        residuals.append(
+            Residual(
+                kind="benign_uninterpreted",
+                reason="segmentation_benign_whitespace",
+                scope=seg.source_unit_id,
+                source_unit_id=seg.source_unit_id,
+                char_start=seg_span.char_start,
+                char_end=seg_span.char_end,
+                text=raw_text[seg_span.char_start : seg_span.char_end],
+                blocking=False,
+            )
+        )
+    return tuple(residuals)
 
 
 def build_surface_bundle(
@@ -71,12 +148,53 @@ def build_surface_bundle(
     surface_time: str | None = None,
     language: str = "fi",
 ) -> SourceSurfaceBundle:
-    """Build a whole-body SourceSurfaceBundle for one Finnish statute (v0)."""
+    """Build a whole-body SourceSurfaceBundle for one Finnish statute (v0).
+
+    Thin value-only wrapper over :func:`build_surface_bundle_staged` so the tool
+    consumers (``fi_parse_view.py``, ``bill_analysis.py``) are untouched: they get
+    the same ``SourceSurfaceBundle``. Consumers that want the returned coverage /
+    residual / evidence account call the staged form directly.
+    """
+    return build_surface_bundle_staged(
+        xml_bytes,
+        statute_id,
+        surface_time=surface_time,
+        language=language,
+    ).value
+
+
+def build_surface_bundle_staged(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    surface_time: str | None = None,
+    language: str = "fi",
+) -> StageResult[SourceSurfaceBundle]:
+    """Build the whole-body bundle AND return its token/source-unit account.
+
+    The token/source-unit waist of the StageResult endgame (spine
+    ``notes_internal/STAGERESULT_ENDGAME.md`` row #2). The ``value`` is the
+    identical :class:`SourceSurfaceBundle` :func:`build_surface_bundle` always
+    produced; the four accounts SURFACE the partition the bundle already embeds:
+
+      * ``coverage`` — the SegmentationGraph's exact ``[0, text_len)`` char
+        partition projected onto a :class:`CoverageCertificate`
+        (``is_partition()`` holds);
+      * ``residuals`` — one benign-whitespace :class:`Residual` per residual
+        segment (``blocking=False``);
+      * ``evidence`` — the body source hash as a typed
+        :class:`SourceWitness`/:class:`DigestWitness` footing;
+      * ``findings`` / ``authority`` — identity defaults (segmentation emits no
+        findings; a source unit is evidence footing, not replay authority).
+
+    This is additive: nothing in the value path changes, so it is bench 0-delta.
+    """
     raw_text = decode_body_text(xml_bytes)
     source_hash = _sha256_bytes(xml_bytes)
     text_hash = _sha256_text(raw_text)
     source_unit_id = f"{statute_id}#body"
     token_tape = build_token_tape(source_unit_id, raw_text)
+    segmentation_graph = build_segmentation_graph(source_unit_id, raw_text)
     # Thread the explicit consolidated-as-of date (``surface_time``) onto the
     # unit's effective_interval START so a by-name citation resolves to the act
     # version in force WHILE this consolidated body held (static-as-of-citing);
@@ -131,9 +249,7 @@ def build_surface_bundle(
         # anaphora + span-scoped composition: a consumer queries
         # ``provision_index.provision_at(char_start, char_end)``.
         metadata={
-            "segmentation_graph": build_segmentation_graph(
-                source_unit_id, raw_text
-            ),
+            "segmentation_graph": segmentation_graph,
             "provision_index": build_provision_index(
                 xml_bytes,
                 source_unit_id,
@@ -173,7 +289,23 @@ def build_surface_bundle(
         source_bundle_hash=source_hash,
         language=language,
     )
-    return SourceSurfaceBundle(jurisdiction="fi", subject=subject, units=(unit,))
+    bundle = SourceSurfaceBundle(jurisdiction="fi", subject=subject, units=(unit,))
+    return StageResult(
+        value=bundle,
+        evidence=EvidenceBundle(
+            (
+                SourceWitness(
+                    source_role="statute_body_source",
+                    artifact_id=statute_id,
+                    source_unit_id=source_unit_id,
+                    digest=DigestWitness("sha256", source_hash),
+                ),
+            )
+        ),
+        residuals=_segmentation_residuals(segmentation_graph, raw_text),
+        coverage=_segmentation_coverage(segmentation_graph),
+        authority=NEUTRAL_AUTHORITY,
+    )
 
 
 def locate_span(

@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any, Literal, Optional, cast
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.effect_lowering import lower_effect_intents_to_temporal_events
 from lawvm.core.elaboration_context import TargetUnitKind, snapshot_replay_lookups
 from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.stage_result import (
+    EMPTY_EVIDENCE,
+    NEUTRAL_AUTHORITY,
+    CoverageCertificate,
+    Residual,
+    StageResult,
+)
 from lawvm.core.temporal import ActivationRule, TemporalEvent
 from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
 from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
@@ -40,6 +48,125 @@ from lawvm.finland.temporal_lowering import (
 )
 
 _NUMBERED_TABLE_CHILD_GROUP_SPLIT_RULE = "ELAB.NUMBERED_TABLE_CHILD_GROUP_SPLIT"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _CanonicalOpResidualCarrier:
+    """One blocking canonical-op residual paired with the Finding it carries.
+
+    WAIST #6 single-channel (ESCALATE-5D): the canonical-op decline must ride the
+    typed ``StageResult.residuals`` as its SOLE source, not a parallel
+    ``PhaseResult`` obligation. To make that true without losing the registered
+    Finding's identity/detail (0-delta), the typed residual CARRIES the exact
+    blocking Finding it represents. The returned decline is then reconstructed by
+    reading the carried Finding back OUT of the residual — so stripping the
+    residual list removes the decline (the fire-drill bite).
+    """
+
+    residual: Residual
+    finding: Finding
+
+
+def build_canonical_op_stage(
+    resolved: list[ResolvedOp],
+    findings: list[Finding],
+) -> tuple[StageResult[list[ResolvedOp]], tuple[_CanonicalOpResidualCarrier, ...]]:
+    """Assemble the canonical-op ``StageResult`` for ``compile_amendment_ops``.
+
+    The blocking findings (obligations/violations — the decline channel) are
+    projected onto typed blocking ``Residual`` records; the observation findings
+    stay as ``StageResult.findings``. ESCALATE-3D coverage denominator:
+    ``total = #emitted resolved ops + #rejected (blocking) candidate ops`` — the
+    rejected lane is the producer's own typed blocking findings, reusing the
+    existing typed partition rather than a synthetic source recount.
+
+    Returns the ``StageResult`` AND the residual<->finding carriers so the caller
+    can reconstruct the returned blocking decline FROM the typed residuals (the
+    single-channel guarantee).
+    """
+    observations: list[Finding] = []
+    carriers: list[_CanonicalOpResidualCarrier] = []
+    for finding in findings:
+        if finding.role == "observation":
+            observations.append(finding)
+            continue
+        detail = finding.detail
+        message = str(detail.get("message", "") or "")
+        carriers.append(
+            _CanonicalOpResidualCarrier(
+                residual=Residual(
+                    kind="unowned_violation",
+                    reason=(
+                        message
+                        or f"{finding.kind}: rejected canonical operation"
+                    ),
+                    scope=finding.kind,
+                    source_unit_id=finding.source_statute,
+                    text=str(detail.get("target_section", "") or ""),
+                    blocking=bool(finding.blocking),
+                ),
+                finding=finding,
+            )
+        )
+    emitted = len(resolved)
+    rejected = len(carriers)
+    coverage = CoverageCertificate(
+        unit="candidate_ops",
+        total=emitted + rejected,
+        owned=emitted,
+        violation=rejected,
+        totality_claimed=True,
+    )
+    residuals = [carrier.residual for carrier in carriers]
+    # XP-03 — op-coverage totality (runtime parity arm). Every candidate operation
+    # MUST lower to exactly one canonical op (``owned``) OR a typed candidate-effect
+    # residual (``violation``); none may be silently dropped. That is exactly
+    # ``coverage.is_partition()``. It holds BY CONSTRUCTION here (``total`` is
+    # computed as ``emitted + rejected``), so the guard below is a defensive
+    # runtime PIN: were a future producer to recompute the partition some other
+    # way and leave an op unaccounted, the gap surfaces as a typed (non-blocking)
+    # ``CANONICAL_OP.OP_COVERAGE_GAP`` residual rather than vanishing silently.
+    if not coverage.is_partition():
+        residuals.append(
+            _op_coverage_gap_residual(
+                owned=emitted, violation=rejected, total=coverage.total
+            )
+        )
+    stage = StageResult(
+        value=resolved,
+        evidence=EMPTY_EVIDENCE,
+        residuals=tuple(residuals),
+        findings=tuple(observations),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+    return stage, tuple(carriers)
+
+
+#: The XP-03 op-coverage-gap residual kind (also the registry code surfaced when
+#: the candidate-op partition fails — see observation_registry).
+OP_COVERAGE_GAP_RESIDUAL_KIND = "CANONICAL_OP.OP_COVERAGE_GAP"
+
+
+def _op_coverage_gap_residual(*, owned: int, violation: int, total: int) -> Residual:
+    """The XP-03 typed residual for a candidate op left unaccounted at lowering.
+
+    Self-evidencing per the diagnostics rule: the reason embeds the offending
+    partition counts so a reader sees WHY totality failed without re-deriving it.
+    Non-blocking (``blocking=False``): a real uncovered op should be SURFACED for
+    triage, never silently drop the whole amendment.
+    """
+    return Residual(
+        kind=OP_COVERAGE_GAP_RESIDUAL_KIND,
+        reason=(
+            "candidate-op coverage is not a partition at the canonical-op lowering "
+            f"waist: owned={owned} + violation={violation} != total={total} "
+            "(a candidate operation neither lowered to a canonical op nor "
+            "residualized)"
+        ),
+        scope="candidate_ops",
+        blocking=False,
+    )
 
 
 def _is_numbered_table_proxy_op(op: AmendmentOp) -> bool:
@@ -116,6 +243,7 @@ def _scope_recovered_ops_for_shadow_pruning(
     strict_profile: Optional[StrictProfile],
 ) -> list[AmendmentOp]:
     recovered_ops: list[AmendmentOp] = []
+    amendment_group_ops = tuple(op for group_ops in section_groups.values() for op in group_ops)
     for group_key, group_ops in section_groups.items():
         target_unit_kind_value = cast(TargetUnitKind, group_key.unit_kind.value)
         recovery_result = resolve_compile_group_scope_recovery(
@@ -130,6 +258,7 @@ def _scope_recovered_ops_for_shadow_pruning(
                 source_model=source_model,
                 johto=johto,
                 strict_profile=strict_profile,
+                amendment_group_ops=amendment_group_ops,
             )
         )
         recovery = recovery_result.output
@@ -149,8 +278,19 @@ def compile_amendment_ops(
     source_ref: str = "",
     source_title: str = "",
     target_statute: str = "",
+    canonical_op_stage_out: Optional[list[StageResult[list[ResolvedOp]]]] = None,
 ) -> PhaseResult[list[ResolvedOp]]:
-    """Compile grouped amendment ops into resolved ops ready for application."""
+    """Compile grouped amendment ops into resolved ops ready for application.
+
+    ``canonical_op_stage_out`` is the WAIST #6 carrier sink: when provided, the
+    per-amendment canonical-op ``StageResult`` (the same ``stage`` that backs the
+    typed-residual decline single-channel below) is APPENDED to it. This lets the
+    replay assembly aggregate the per-amendment canonical-op accounts into one
+    ``ReplayProducts.canonical_op_stage`` carrier WITHOUT re-deriving the partition
+    from union findings (which carry no stage tag). The sink only OBSERVES the
+    stage; the decline still rides ``reconstruct_findings_from_canonical_op_stage``
+    (the load-bearing single-channel) unchanged.
+    """
     profile = get_replay_profile(replay_mode)
     source_title = source_title or source_model.title()
     amendment_issue_date = source_model.issue_date()
@@ -166,6 +306,11 @@ def compile_amendment_ops(
         for op in ops
         if op.target_unit_kind == "chapter" and op.op_type == "INSERT" and op.target_section
     }
+    inserted_chapter_labels.update(
+        _norm_num_token(source_chapter.chapter_label)
+        for source_chapter in source_model.source_pseudo_chapters()
+        if source_chapter.chapter_label
+    )
     shadow_pruning_ops = _scope_recovered_ops_for_shadow_pruning(
         master,
         section_groups,
@@ -311,8 +456,60 @@ def compile_amendment_ops(
                     }
                     cop_dict["is_contingent"] = classify_contingent(rule)
 
+    # WAIST #6 single-channel (ESCALATE-5D): route the canonical-op decline
+    # THROUGH the typed StageResult.residuals. The blocking findings
+    # (obligations/violations) are projected onto blocking Residuals (each
+    # carrying its exact Finding); the returned decline is then RECONSTRUCTED by
+    # reading the carried Finding back out of every blocking residual. The typed
+    # residual is therefore the SOLE source of the returned decline — stripping
+    # the residual list removes the decline (the fire-drill bite). Observation
+    # findings are not part of the decline and flow through unchanged. On the
+    # green corpus the blocking-finding set is reconstructed verbatim from its own
+    # residuals → byte-identical findings → 0-delta.
+    stage, carriers = build_canonical_op_stage(resolved, all_findings)
+    if canonical_op_stage_out is not None:
+        # WAIST #6 carrier: observe the per-amendment canonical-op StageResult so
+        # the replay can aggregate it onto ReplayProducts.canonical_op_stage. This
+        # is the EXACT account that backs the decline single-channel below — a
+        # faithful capture, not a union-findings re-derivation.
+        canonical_op_stage_out.append(stage)
+    returned_findings = reconstruct_findings_from_canonical_op_stage(
+        all_findings, stage, carriers
+    )
     return PhaseResult(
         output=resolved,
-        findings=tuple(all_findings),
+        findings=returned_findings,
         temporal_events=lowered_temporal_events,
     )
+
+
+def reconstruct_findings_from_canonical_op_stage(
+    all_findings: list[Finding],
+    stage: StageResult[list[ResolvedOp]],
+    carriers: tuple[_CanonicalOpResidualCarrier, ...],
+) -> tuple[Finding, ...]:
+    """Rebuild the returned findings so the decline rides the typed residual.
+
+    Observation findings pass through in their original order. Every blocking
+    finding (the decline) is emitted ONLY when its corresponding typed blocking
+    residual is present in ``stage.residuals`` — so the residual list is the
+    single source of the returned decline. Insertion order is preserved
+    (byte-identical on the green corpus → 0-delta). A ``stage`` whose residuals
+    have been stripped (the fire-drill double) yields no blocking findings (the
+    decline disappears).
+    """
+    live_residual_ids = {id(residual) for residual in stage.residuals}
+    finding_to_residual_id = {
+        id(carrier.finding): id(carrier.residual) for carrier in carriers
+    }
+    out: list[Finding] = []
+    for finding in all_findings:
+        residual_id = finding_to_residual_id.get(id(finding))
+        if residual_id is None:
+            # observation / non-decline finding — passes through untouched.
+            out.append(finding)
+            continue
+        # blocking decline finding — emit ONLY if its typed residual is live.
+        if residual_id in live_residual_ids:
+            out.append(finding)
+    return tuple(out)

@@ -131,6 +131,20 @@ EDGE_KINDS: frozenset[str] = frozenset(
         "has_candidate",
         "defines_term",
         "uses_term",
+        # ── Corpus v2 typed relation family: EU transposition ──────────────────
+        # A FI act/work ENTITY -> the EU directive ENTITY it DECLARES it transposes
+        # (the act's own "pannaan täytäntöön … direktiivi" claim, minted by the
+        # corpus transposition edge pass from
+        # ``lawvm.finland.references.eu_transposition``). The edge payload carries
+        # the binding status (resolved/ambiguous/statute_only) verbatim — an
+        # unbound directive is still surfaced (tag-don't-guess), never invented.
+        # This is the DECLARED transposition relation, NEVER a conformance
+        # conclusion: it asserts the act SAYS it transposes the directive, not that
+        # the transposition is correct/complete (the substantive conformance
+        # assessment is outside the oracle). Surface-only (§D7), never legal
+        # authority — the reading that the act validly transposes the directive
+        # must leave the graph through a named authorization object.
+        "transposes",
         "term_use_resolves_to",
         "temporal_qualifies",
         "actor_modal_has_actor",
