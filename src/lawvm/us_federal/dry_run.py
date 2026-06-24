@@ -1351,7 +1351,14 @@ def _replace_token_through_in_text(
     end_start = text.find(end_text, after_start)
     if end_start == -1:
         return None
-    return text[:start_pos] + (replacement or "")
+    end_pos = end_start + len(end_text)
+    # Delete [start_text..end_text] inclusive, insert the replacement at the
+    # START anchor's position, and PRESERVE the right-side text after END. The
+    # earlier form dropped ``text[end_pos:]`` — silently destroying every byte
+    # after the END anchor (forbidden by AGENTS.md §0 over-repeal). The
+    # bounded deletion's whole point is that the inventoried text after END
+    # survives the op.
+    return text[:start_pos] + (replacement or "") + text[end_pos:]
 
 
 def _apply_text_patch_with_tail_dispatch(
