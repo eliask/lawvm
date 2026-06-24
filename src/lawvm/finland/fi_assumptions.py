@@ -25,11 +25,12 @@ def build_fi_assumption_register() -> tuple[AssumptionRegister, ...]:
     The concrete customer is the **B2 source-body-over-prior-repeal scope fork**
     (``tests/test_fi_compile_group_scope_recovery.py::
     test_source_body_scope_overrides_prior_repeal_reinstatement_address``), which
-    is ``xfail(strict=True)`` because the hypothesised override has no real-corpus
-    anchor and is contradicted by the pinned 1973/36 Finlex oracle, with no
-    compile-time discriminator separating the two. We do not "fail" here — we have
-    not asserted the override; we have declined to, and that decision is recorded
-    as a typed, root-committed assumption.
+    is ``xfail(strict=True)`` because the hypothesised override now has a
+    real-corpus pull from 1993/1501 via 2016/773, but is still contradicted by
+    the pinned 1973/36 Finlex oracle, and no bench-clean compile-time
+    discriminator has been landed. We do not "fail" here — we have not asserted
+    the override; we have declined to, and that decision is recorded as a typed,
+    root-committed assumption.
     """
     return (
         AssumptionRegister(
@@ -43,23 +44,21 @@ def build_fi_assumption_register() -> tuple[AssumptionRegister, ...]:
             ),
             effect="qualifies",
             expires_when=(
-                "a real-corpus anchor for the source-body override exists AND a "
-                "compile-time discriminator distinguishes it from the 1973/36 §27 "
+                "a compile-time discriminator distinguishes the 1993/1501 "
+                "source-body-wins anchor (2016/773 §148) from the 1973/36 §27 "
                 "carry-forward-wins oracle (pinned_replay "
-                "test_replay_xml_1973_36_materializes_live_missing_sections); both "
-                "are required because the two cases turn on the same predicate "
-                "(body_wrapper_overridden_by_live_target) with opposite "
-                "oracle-correct answers."
+                "test_replay_xml_1973_36_materializes_live_missing_sections), "
+                "and full-bench validation shows no broad Levenshtein regression."
             ),
             public_message=(
                 "LawVM does NOT guarantee that a recovered insert's source-body "
                 "chapter scope overrides the prior-repeal carry-forward address. "
                 "Production deliberately keeps the live/carry-forward chapter, "
-                "matching the official Finlex 1973/36 oracle. The synthetic "
-                "source-body-override case is a DECLARED non-guarantee: it has no "
-                "real-corpus anchor and no signal distinguishes it from the 1973/36 "
-                "case, so we decline to claim it rather than risk contradicting the "
-                "real oracle."
+                "matching the official Finlex 1973/36 oracle. The source-body "
+                "override remains a DECLARED non-guarantee even with the 1993/1501 "
+                "counter-anchor: no landed signal distinguishes it from the "
+                "1973/36 case without broad bench regressions, so we decline to "
+                "claim it rather than risk contradicting the real oracle."
             ),
             witness_rule_id="fi_reinstated_section_scope_from_prior_repeal_address",
             finding_refs=(
