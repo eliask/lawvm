@@ -19,8 +19,16 @@ Mapping (mirrors ``_synthesize_target_address`` *structure*, see ops.py ~1806):
       when those columns are present.
     - ``"chapter"``: focus = ``chapter:<target_section>``; scope = part when the
       ``target_part`` column is present.
-    - ``"part"``: focus = ``part:<target_section>``; scope is never populated (a
-      part has no enclosing part/chapter in this encoding).
+    - ``"part"``: focus = ``part:<target_section>``. A part has no *structural*
+      enclosing scope, but the legacy encoding carries a REDUNDANT ``target_part``
+      column that mirrors ``target_section`` for a part op (``_lo_target_fields``
+      sets both from ``pd["part"]``; ``_synthesize_target_address`` collapses them
+      via ``part_label = target_part or target_norm``). When that redundant column
+      is present we carry it as an EXPLICIT_SCOPE ``part`` segment equal to the
+      focus so the legacy round-trip is byte-identical; the resolved address
+      collapses the duplicate back to a single ``part:<x>``. This is the W2
+      corpus-scale FINDING (surfaced by 1929/234 part III/V/I); without it a part
+      op's ``target_part`` was silently dropped on round-trip.
 - ``target_chapter`` / ``target_part``: when present, become the EXPLICIT_SCOPE
   path. When absent (``None`` or ``""``), the legacy encoding *cannot* tell
   "explicitly at root" from "scope unspecified" — there is no column for that
@@ -84,7 +92,17 @@ class TargetSelectorCodecV1:
         relative_path: list[AddressSegment] = []
 
         if rec.target_unit_kind == "part":
-            # A part is the focus; nothing encloses it in this encoding.
+            # A part is the focus; nothing *structurally* encloses it. The legacy
+            # encoding nonetheless carries a redundant ``target_part`` column that
+            # mirrors ``target_section`` for a part op (see the W2 FINDING in the
+            # module docstring tail and ``_lo_target_fields`` / the
+            # ``_synthesize_target_address`` ``part_label = target_part or
+            # target_norm`` collapse). To keep the round-trip byte-identical we
+            # carry the presence of that redundant column as an EXPLICIT_SCOPE
+            # ``part`` segment equal to the focus; ``to_legal_address_if_complete``
+            # collapses the duplicate so the resolved address stays ``part:<x>``.
+            if rec.target_part:
+                scope_segments.append(AddressSegment("part", rec.target_part))
             relative_path.append(AddressSegment("part", rec.target_section))
         elif rec.target_unit_kind == "chapter":
             # Optional enclosing part scope; chapter is the focus.

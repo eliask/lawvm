@@ -138,6 +138,18 @@ class TargetSelector:
         if self.scope.status == ScopeStatus.EXPLICIT_ROOT:
             full_segments: tuple[AddressSegment, ...] = self.relative_path
         else:
-            full_segments = self.scope.path + self.relative_path
+            scope_path = self.scope.path
+            # A part-focus selector may carry a redundant enclosing ``part`` scope
+            # segment equal to the focus (the legacy ``target_part``-mirrors-
+            # ``target_section`` encoding round-tripped losslessly by the FI codec).
+            # Collapse that exact duplicate so the resolved address stays a single
+            # ``part:<x>`` and never produces ``part:<x>/part:<x>``.
+            if (
+                scope_path
+                and scope_path[-1] == self.relative_path[0]
+                and self.relative_path[0].kind == "part"
+            ):
+                scope_path = scope_path[:-1]
+            full_segments = scope_path + self.relative_path
         path = tuple((segment.kind, segment.label) for segment in full_segments)
         return LegalAddress(path=path, special=self.special)

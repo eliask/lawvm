@@ -40,6 +40,7 @@ from lawvm.finland.target_kind import TargetKind
 
 if TYPE_CHECKING:
     from lawvm.core.canonical_intent import CanonicalIntent
+    from lawvm.core.target_selector import TargetSelector
     from lawvm.core.temporal import ActivationRule
     from lawvm.finland.payload_normalize import PayloadCompletenessWitness, SubsectionSlotAssignmentResult
 
@@ -894,6 +895,37 @@ class AmendmentOp:
     def target_kind(self) -> TargetKind:
         """Return the Finland legacy target enum as a compatibility projection."""
         return legacy_target_kind_for_unit_kind(self.target_unit_kind)
+
+    @property
+    def target_selector(self) -> "TargetSelector":
+        """The cross-jurisdiction :class:`TargetSelector` view of this op's target.
+
+        Wave 2 (additive, read-only): this is a *lazy, codec-derived* projection
+        of the 8 legacy ``target_*`` fields — the legacy fields remain the source
+        of truth (no new stored field, no construction/serialization change). It
+        builds an :class:`AmendmentOpV1Record` from the live fields and decodes it
+        via :meth:`TargetSelectorCodecV1.from_legacy`. The codec is lossless
+        (TARGET-03), so ``TargetSelectorCodecV1.to_legacy(self.target_selector)``
+        reproduces the 8 fields exactly. Computed on every read (no cache): the
+        codec is cheap and a cache would have to interact with the frozen-equality
+        contract, which is not worth the risk at this wave.
+        """
+        from lawvm.finland.target_selector_codec import (
+            AmendmentOpV1Record,
+            TargetSelectorCodecV1,
+        )
+
+        record = AmendmentOpV1Record(
+            target_unit_kind=self.target_unit_kind,
+            target_section=self.target_section,
+            target_chapter=self.target_chapter,
+            target_part=self.target_part,
+            target_paragraph=self.target_paragraph,
+            target_item=self.target_item,
+            target_subitem=self.target_subitem,
+            target_special=self.target_special,
+        )
+        return TargetSelectorCodecV1.from_legacy(record)
 
     @classmethod
     def from_lo(cls, lo: _LegalOperation, idx: int) -> List[AmendmentOp]:

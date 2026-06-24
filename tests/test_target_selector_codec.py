@@ -83,6 +83,10 @@ REPRESENTATIVE_RECORDS: list[AmendmentOpV1Record] = [
     _rec(target_unit_kind="chapter", target_section="7"),
     _rec(target_unit_kind="chapter", target_section="5", target_part="2"),
     _rec(target_unit_kind="part", target_section="5"),
+    # part op carrying the redundant ``target_part`` column mirroring
+    # ``target_section`` — the W2 corpus FINDING (real shape from 1929/234:
+    # part III/V/I with target_part == target_section). Must round-trip exactly.
+    _rec(target_unit_kind="part", target_section="III", target_part="III"),
 ]
 
 
@@ -213,6 +217,35 @@ def test_descendant_segments_round_trip_in_order() -> None:
     kinds = [segment.kind for segment in selector.relative_path]
     assert kinds == ["section", "subsection", "item", "subitem"]
     assert TargetSelectorCodecV1.to_legacy(selector) == rec
+
+
+def test_part_with_redundant_target_part_round_trips() -> None:
+    """W2 corpus FINDING: a part op's ``target_part`` mirrors ``target_section``.
+
+    Real shape from 1929/234 (part III/V/I, ``target_part == target_section``).
+    The codec carries the redundant column as an EXPLICIT_SCOPE part segment so
+    the legacy round-trip is byte-identical, while the resolved address collapses
+    the duplicate to a single ``part:<x>``.
+    """
+    rec = _rec(target_unit_kind="part", target_section="III", target_part="III")
+    selector = TargetSelectorCodecV1.from_legacy(rec)
+    assert selector.major_kind == "part"
+    assert TargetSelectorCodecV1.to_legacy(selector) == rec
+    # The redundant scope must not duplicate in the resolved address.
+    address = selector.to_legal_address_if_complete()
+    assert address == LegalAddress(path=(("part", "III"),))
+
+
+def test_part_without_target_part_stays_unspecified_scope() -> None:
+    """A part op with no ``target_part`` column keeps an UNSPECIFIED scope."""
+    selector = TargetSelectorCodecV1.from_legacy(
+        _rec(target_unit_kind="part", target_section="5")
+    )
+    assert selector.scope.status == ScopeStatus.UNSPECIFIED
+    assert selector.to_legal_address_if_complete() is None
+    assert TargetSelectorCodecV1.to_legacy(selector) == _rec(
+        target_unit_kind="part", target_section="5"
+    )
 
 
 def test_scope_invariants_enforced() -> None:
