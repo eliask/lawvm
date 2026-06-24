@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from lawvm.core.canonical_intent import Relabel
 from lawvm.core.tree_ops import Path
-from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.ops import ResolvedOp
 
 
@@ -14,7 +13,7 @@ from lawvm.finland.ops import ResolvedOp
 class RelabelParentKey:
     """Identity of a relabel chain constrained to one parent path."""
 
-    unit_kind: TargetUnitKind
+    unit_kind: str
     parent_path: Path
 
 
@@ -38,8 +37,12 @@ def stabilize_same_parent_relabel_order(resolved: list[ResolvedOp]) -> list[Reso
             return None
         if intent.destination is None:
             return None
-        unit_kind = rop.target_unit_kind
-        if unit_kind not in {"chapter", "section"}:
+        if not intent.source.address.path or not intent.destination.address.path:
+            return None
+        unit_kind = intent.source.address.path[-1][0]
+        if unit_kind != intent.destination.address.path[-1][0]:
+            return None
+        if unit_kind not in {"chapter", "section", "subsection", "item", "subitem"}:
             return None
         source_parent = intent.source.address.path[:-1]
         dest_parent = intent.destination.address.path[:-1]
@@ -52,6 +55,12 @@ def stabilize_same_parent_relabel_order(resolved: list[ResolvedOp]) -> list[Reso
         if not isinstance(intent, Relabel) or intent.destination is None:
             return None
         return intent.destination.address.leaf_label()
+
+    def _relabel_source(rop: ResolvedOp) -> str | None:
+        intent = rop.intent
+        if not isinstance(intent, Relabel):
+            return None
+        return intent.source.address.leaf_label()
 
     keyed_positions: dict[RelabelParentKey, list[int]] = {}
     keyed_ops: dict[RelabelParentKey, list[ResolvedOp]] = {}
@@ -74,7 +83,9 @@ def stabilize_same_parent_relabel_order(resolved: list[ResolvedOp]) -> list[Reso
 
         source_to_rel_idx: dict[str, int] = {}
         for rel_idx, rop in enumerate(relabel_ops):
-            source_to_rel_idx[rop.target_norm] = rel_idx
+            source_label = _relabel_source(rop)
+            if source_label is not None:
+                source_to_rel_idx[source_label] = rel_idx
 
         n_rel = len(relabel_ops)
         before: list[set[int]] = [set() for _ in range(n_rel)]

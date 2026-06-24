@@ -200,6 +200,15 @@ def _load_scores_for_jurisdiction(path: Path, jurisdiction: str) -> tuple[str, d
     return _load_first_float_column(path, ("similarity", "score"))
 
 
+def _load_named_score_column(path: Path, column: str) -> tuple[str, dict[str, float]]:
+    if not column:
+        raise ValueError("score column name must be non-empty")
+    scores = _load_float_column(path, column)
+    if not scores:
+        raise ValueError(f"CSV {path} has score column {column!r} but no parseable values")
+    return column, scores
+
+
 def _load_uk_replay_regimes(path: Path) -> dict[str, str]:
     """Load per-row UK replay regimes when saved-run columns are present."""
     regimes: dict[str, str] = {}
@@ -326,6 +335,7 @@ def run_guard(
     threshold: float = 0.005,
     max_regressions: int = 3,
     jurisdiction: str = "fi",
+    score_column: str | None = None,
     duration_threshold_s: float = 1.0,
     max_duration_regressions: int | None = None,
     rss_threshold_mb: float = 64.0,
@@ -372,14 +382,24 @@ def run_guard(
     print()
 
     try:
-        baseline_score_column, baseline_scores = _load_scores_for_jurisdiction(
-            baseline_path,
-            jurisdiction,
-        )
-        current_score_column, current_scores = _load_scores_for_jurisdiction(
-            current_path,
-            jurisdiction,
-        )
+        if score_column is not None:
+            baseline_score_column, baseline_scores = _load_named_score_column(
+                baseline_path,
+                score_column,
+            )
+            current_score_column, current_scores = _load_named_score_column(
+                current_path,
+                score_column,
+            )
+        else:
+            baseline_score_column, baseline_scores = _load_scores_for_jurisdiction(
+                baseline_path,
+                jurisdiction,
+            )
+            current_score_column, current_scores = _load_scores_for_jurisdiction(
+                current_path,
+                jurisdiction,
+            )
     except (ValueError, OSError) as exc:
         print(f"ERROR loading CSV: {exc}")
         return 1
@@ -723,6 +743,7 @@ def main(args: "argparse.Namespace") -> None:
             threshold=args.threshold,
             max_regressions=args.max_regressions,
             jurisdiction=jurisdiction,
+            score_column=args.score_column,
             duration_threshold_s=args.duration_threshold_s,
             max_duration_regressions=args.max_duration_regressions,
             rss_threshold_mb=args.rss_threshold_mb,

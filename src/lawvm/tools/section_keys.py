@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import re
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple, cast
 
 from lxml import etree
@@ -372,13 +373,18 @@ def _is_valiaikaisesti_tombstone_section(sec: etree._Element) -> bool:
     return bool(_VALIAIKAISESTI_TOMBSTONE_RE.search(content_text))
 
 
-def extract_oracle_sections(
+def _group_oracle_section_candidates(
     root: etree._Element,
     *,
     exclude_kumottu_stubs: bool = True,
     exclude_valiaikaisesti_stubs: bool = True,
-) -> Dict[str, etree._Element]:
-    sections: Dict[str, etree._Element] = {}
+) -> Dict[str, list[etree._Element]]:
+    """Group oracle ``<section>`` elements by their container-path section key.
+
+    Shared by :func:`extract_oracle_sections` (which picks one candidate per key)
+    and :func:`extract_oracle_section_alternates` (which keeps the discarded
+    same-key siblings as ``amb`` candidates), so both see the IDENTICAL key space.
+    """
     candidates: Dict[str, list[etree._Element]] = {}
     for sec in cast(list[etree._Element], root.xpath(".//*[local-name()='section']")):
         parts = []
@@ -407,11 +413,133 @@ def extract_oracle_sections(
         if not key:
             continue
         candidates.setdefault(key, []).append(sec)
+    return candidates
 
+
+def extract_oracle_sections(
+    root: etree._Element,
+    *,
+    exclude_kumottu_stubs: bool = True,
+    exclude_valiaikaisesti_stubs: bool = True,
+) -> Dict[str, etree._Element]:
+    candidates = _group_oracle_section_candidates(
+        root,
+        exclude_kumottu_stubs=exclude_kumottu_stubs,
+        exclude_valiaikaisesti_stubs=exclude_valiaikaisesti_stubs,
+    )
+    sections: Dict[str, etree._Element] = {}
     for key, secs in candidates.items():
         chosen = _choose_oracle_section_candidate(secs)
         sections[key] = _normalize_oracle_section(chosen)
     return sections
+
+
+@dataclass(frozen=True)
+class OracleAmbAlternate:
+    """One non-chosen oracle version rendering of a section slot.
+
+    ``version`` is the eId version int (``sec_NvYYYYNNNN`` -> ``YYYYNNNN``), or
+    ``-1`` for an unversioned candidate. ``text`` is the normalized plain text of
+    that alternate section (same ``_normalize_oracle_section`` the chosen
+    candidate goes through), left UNCLEANED — the bench applies its own oracle
+    text cleaner so the comparison is identical to the chosen-candidate path.
+    """
+
+    version: int
+    text: str
+
+
+@dataclass(frozen=True)
+class OracleAmbCandidates:
+    """The chosen version label plus the discarded same-slot alternates."""
+
+    chosen_version: int
+    alternates: Tuple[OracleAmbAlternate, ...]
+
+
+# Bound on alternates retained per section key (fails safe to "penalized" beyond).
+_MAX_AMB_ALTERNATES_PER_SECTION = 8
+
+
+def extract_oracle_section_alternates(
+    root: etree._Element,
+    *,
+    exclude_kumottu_stubs: bool = True,
+    exclude_valiaikaisesti_stubs: bool = True,
+) -> Dict[str, OracleAmbCandidates]:
+    """Per section key, the oracle version renderings ``extract_oracle_sections``
+    DISCARDED — the ``amb`` (nondeterministic) candidate set.
+
+    v1 captures SECTION-level alternates: when a slot carries several
+    ``<section>`` versions (e.g. ``sec_6v20260143`` + ``sec_6v20250029``),
+    ``_choose_oracle_section_candidate`` keeps the highest and this returns the
+    rest. The bench uses them to forgive a replay whose text matches a
+    genuine-but-not-chosen oracle version (the oracle's version SELECTION is
+    unreliable) — neutralizing the penalty and emitting a warning, never masking
+    fabricated text (exact same-slot text equality only).
+
+    TODO(child-level): subsection/paragraph version shadows that
+    ``_dedup_versioned_children`` drops inside the chosen section are NOT yet
+    surfaced here; such cases fail safe to "penalized". See
+    ``tests/test_fi_oracle_amb_match.py`` xfail.
+    """
+    candidates = _group_oracle_section_candidates(
+        root,
+        exclude_kumottu_stubs=exclude_kumottu_stubs,
+        exclude_valiaikaisesti_stubs=exclude_valiaikaisesti_stubs,
+    )
+    out: Dict[str, OracleAmbCandidates] = {}
+    for key, secs in candidates.items():
+        if len(secs) < 2:
+            continue  # single candidate — no alternates to forgive against
+        chosen = _choose_oracle_section_candidate(secs)
+        seen_text: set[str] = set()
+        alts: list[OracleAmbAlternate] = []
+        for sec in secs:
+            if sec is chosen:
+                continue
+            text = _section_text(_normalize_oracle_section(sec))
+            if not text or text in seen_text:
+                continue
+            seen_text.add(text)
+            alts.append(OracleAmbAlternate(version=_oracle_section_eid_version(sec), text=text))
+            if len(alts) >= _MAX_AMB_ALTERNATES_PER_SECTION:
+                break
+        if alts:
+            out[key] = OracleAmbCandidates(
+                chosen_version=_oracle_section_eid_version(chosen),
+                alternates=tuple(alts),
+            )
+    return out
+
+
+def oracle_amb_alternate_match(
+    section_key: str,
+    replay_text_clean: str,
+    candidates: Optional[OracleAmbCandidates],
+    oracle_clean: Callable[[str], str],
+) -> Optional[str]:
+    """``amb`` match: a witness string iff replay's text equals a NON-chosen
+    oracle version of THIS EXACT slot, else None.
+
+    ``replay_text_clean`` is the replay section text already run through the
+    bench replay cleaner; ``oracle_clean`` is the bench oracle text cleaner,
+    applied here to each alternate so the comparison is byte-identical to the
+    chosen-candidate text comparison. Match is EXACT equality, never a similarity
+    ratio — so it forgives only the oracle's version SELECTION, never fabricated
+    or near-miss replay text. Same-slot by construction (``candidates`` were
+    grouped under ``section_key``); it can never neutralize a cross-provision
+    divergence.
+    """
+    if candidates is None or not replay_text_clean:
+        return None
+    for alt in candidates.alternates:
+        if oracle_clean(alt.text) == replay_text_clean:
+            return (
+                f"oracle_version_selection_alternate_match key={section_key} "
+                f"matched=@{alt.version} chosen=@{candidates.chosen_version}"
+            )
+    return None
 
 
 def _clean_section_text(text: str) -> str:

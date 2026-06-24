@@ -30,6 +30,10 @@ import re
 import xml.etree.ElementTree as ET
 
 from lawvm.core.legal_surface_tokens import ProvisionIndex, ProvisionSpan
+from lawvm.finland.legal_surface.editorial_filter import (
+    iter_operative_paragraphs,
+    operative_itertext,
+)
 
 # These container localnames carry provision identity. Mirrors the AKN hierarchy
 # Finlex emits (chapter ▸ section ▸ subsection ▸ paragraph). ``article`` is the
@@ -204,66 +208,51 @@ def build_provision_index(
             source_unit_id=source_unit_id, text_hash=text_hash, spans=()
         )
 
-    # Walk depth-first tracking the enclosing-container stack, collecting <p>
-    # elements in the SAME order ``decode_body_text`` does (ElementTree.iter is
-    # document order, and a recursive pre-order walk matches it). For each <p> we
-    # have its accumulated provision path from the stack.
+    # Consume the SHARED operative-<p> enumeration (editorial_filter) that
+    # ``decode_body_text`` also consumes: same paragraph set, same document
+    # order, same per-<p> operative text (non-operative editorial subtrees
+    # skipped identically). Sharing the enumeration keeps the reproduced join
+    # byte-identical to ``decode_body_text`` BY CONSTRUCTION; the drift guard
+    # below is then a redundant safety net. ``stack`` is the enclosing
+    # provision-container ancestry for each <p>.
     rebuilt: list[str] = []  # the reproduced per-<p> content, for the join guard
     cursor = 0
+    for p_el, stack in iter_operative_paragraphs(root):
+        content = "".join(operative_itertext(p_el))
+        # Reproduce the newline join: paragraphs after the first are preceded by
+        # a single '\n' in the decoded body.
+        if rebuilt:
+            cursor += 1  # the '\n' separator (a residual gap, not in the index)
+        start = cursor
+        end = start + len(content)
+        cursor = end
+        rebuilt.append(content)
 
-    def _walk(el: ET.Element, stack: tuple[ET.Element, ...]) -> None:
-        nonlocal cursor
-        local = _localname(el.tag)
-        if local == "p":
-            content = "".join(el.itertext())
-            # Reproduce the newline join: paragraphs after the first are preceded
-            # by a single '\n' in the decoded body.
-            if rebuilt:
-                cursor += 1  # the '\n' separator (a residual gap, not in the index)
-            start = cursor
-            end = start + len(content)
-            cursor = end
-            rebuilt.append(content)
-
-            state = _PathState()
-            for anc in stack:
-                _apply_container(state, anc, _localname(anc.tag))
-            if state.mapped:
-                spans.append(
-                    ProvisionSpan(
-                        char_start=start,
-                        char_end=end,
-                        eid=state.eid,
-                        chapter_label=state.chapter_label,
-                        section_label=state.section_label,
-                        subsection_num=state.subsection_num,
-                        item_label=state.item_label,
-                        mapped=True,
-                    )
+        state = _PathState()
+        for anc in stack:
+            _apply_container(state, anc, _localname(anc.tag))
+        if state.mapped:
+            spans.append(
+                ProvisionSpan(
+                    char_start=start,
+                    char_end=end,
+                    eid=state.eid,
+                    chapter_label=state.chapter_label,
+                    section_label=state.section_label,
+                    subsection_num=state.subsection_num,
+                    item_label=state.item_label,
+                    mapped=True,
                 )
-            else:
-                spans.append(
-                    ProvisionSpan(
-                        char_start=start,
-                        char_end=end,
-                        mapped=False,
-                        unmapped_reason="no_provision_ancestor_eid_or_num",
-                    )
+            )
+        else:
+            spans.append(
+                ProvisionSpan(
+                    char_start=start,
+                    char_end=end,
+                    mapped=False,
+                    unmapped_reason="no_provision_ancestor_eid_or_num",
                 )
-            # a <p> has no provision-container descendants to recurse into
-            return
-        new_stack = stack
-        if (
-            local in _CHAPTER_TAGS
-            or local in _SECTION_TAGS
-            or local in _SUBSECTION_TAGS
-            or local in _ITEM_TAGS
-        ):
-            new_stack = stack + (el,)
-        for child in el:
-            _walk(child, new_stack)
-
-    _walk(root, ())
+            )
 
     # Drift guard: the reproduced join MUST equal the bundle's body text, else the
     # index is anchored in the wrong coordinate space (fail-loud, never misalign).

@@ -583,6 +583,57 @@ def test_status_modified_by_op_ignores_later_skipped_apply_event(monkeypatch, ca
     assert row["last_op"]["action"] == "insert"
 
 
+def test_status_modified_by_op_prefers_same_source_content_touch_over_relabel(monkeypatch, capsys) -> None:
+    def fake_replay(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        if compiled_ops_out is not None:
+            compiled_ops_out.extend(
+                [
+                    {
+                        "sequence": 1,
+                        "op_id": "op_0",
+                        "action": "insert",
+                        "source_statute": "2026/376",
+                        "source_title": "Amending act",
+                        "target_unit_kind": "section",
+                        "target_norm": "30",
+                        "target_chapter": "6",
+                    },
+                    {
+                        "sequence": 2,
+                        "op_id": "op_1",
+                        "action": "renumber",
+                        "source_statute": "2026/376",
+                        "source_title": "Amending act",
+                        "target_unit_kind": "section",
+                        "target_norm": "30",
+                        "target_chapter": "6",
+                    },
+                ]
+            )
+        if replay_meta_out is not None:
+            replay_meta_out["apply_mutation_events"] = [
+                {
+                    "source_statute": "2026/376",
+                    "op_id": "op_0",
+                    "outcome": "applied",
+                },
+                {
+                    "source_statute": "2026/376",
+                    "op_id": "op_1",
+                    "outcome": "applied",
+                },
+            ]
+        return _fake_master_with_section()
+
+    payload = _blame_json(
+        monkeypatch, capsys, statute_id="2014/1429", address="section:30", fake_replay=fake_replay
+    )
+    [row] = payload["provisions"]
+    assert row["status"] == "modified_by_op"
+    assert row["last_op"]["op_id"] == "op_0"
+    assert row["last_op"]["action"] == "insert"
+
+
 def test_status_op_unapplied_address_scope_failed_op(monkeypatch, capsys) -> None:
     def fake_replay(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
         return _fake_master_with_section(findings=(_failed_op_finding(),))
