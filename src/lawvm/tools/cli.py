@@ -11106,6 +11106,20 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         action="store_true",
         help="emit the full typed report as JSON to stdout",
     )
+    dangling_refs_p.add_argument(
+        "--temporal-cause",
+        dest="temporal_cause",
+        action="store_true",
+        help=(
+            "additionally split the DANGLING set by temporal CAUSE: "
+            "DANGLING_REPEALED_TARGET (the cited provision is covered by an "
+            "in-place repeal note in the target act's consolidated text, citing "
+            "the amending act + date — evidenced) vs DANGLING_CAUSE_UNDETERMINED "
+            "(absent with no repeal note; the as-of-now oracle cannot distinguish "
+            "repealed-without-note / renumbered / never-existed — the honest "
+            "residual, NEVER claimed never-existed)"
+        ),
+    )
 
     # --- cross-ref-report ---
     cross_ref_report_p = sub.add_parser(
@@ -11176,6 +11190,98 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
             "max number of dangling witnesses rendered inline (the full count is "
             "always stated; default: 200)"
         ),
+    )
+
+    # --- eu-ref-report ---
+    eu_ref_report_p = sub.add_parser(
+        "eu-ref-report",
+        help=(
+            "corpus-wide SURFACE report of FI statutes referencing EU instruments "
+            "(directives/CELEX) + declared transposition relationships (fi)"
+        ),
+        description=(
+            "Read-only corpus scan that surfaces, as a category, the Finnish "
+            "statutes whose body text REFERENCES an EU instrument. Two surfaces, "
+            "both via the existing deterministic EU extractors (no new "
+            "recognition authority): (1) TRANSPOSITION declarations — the FI act's "
+            "own claim to transpose a named directive, bound to a CELEX via the "
+            "eu_nickname registry where determinable (an unbound named directive is "
+            "surfaced with an honest status, never a guessed CELEX); (2) general "
+            "EU-instrument CITATIONS — every recognised (EY/EU) N:o NNNN/YYYY / "
+            "year-first / bare-CELEX span in the body. A transposition edge means "
+            "the FI act SAYS it transposes the directive — NOT a verified "
+            "conformance. Surface fact, not a legal conclusion."
+        ),
+    )
+    eu_ref_report_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="write the full typed report (counts + witnesses) to PATH as JSON",
+    )
+    eu_ref_report_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the full typed report as JSON to stdout",
+    )
+    eu_ref_report_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="number of witnesses shown in the text summary (default: 20)",
+    )
+    eu_ref_report_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="scan only the first N statutes (for a fast representative slice)",
+    )
+
+    # --- reference-integrity-report ---
+    ref_integrity_p = sub.add_parser(
+        "reference-integrity-report",
+        help=(
+            "demo-grade FI reference-integrity Markdown: DANGLING three-way + "
+            "DANGLING-by-cause (repealed vs undetermined) + EU-directive category"
+        ),
+        description=(
+            "Compose the corpus DANGLING cross-reference claim, its split by "
+            "temporal CAUSE (references to already-repealed provisions — evidenced "
+            "by the repeal note naming the amending act/date — vs UNDETERMINED), "
+            "and the EU-directive/CELEX reference category into one neutral, "
+            "independently-verifiable Markdown report. Adds no new computation: it "
+            "reads the three typed claims and lays them out with their honesty "
+            "boundaries restated. Surface facts, not legal conclusions."
+        ),
+    )
+    ref_integrity_p.add_argument(
+        "--fi-refs",
+        dest="fi_refs",
+        default=None,
+        metavar="PATH",
+        help="path to the fi_refs projection (.jsonl/.parquet). Default: standard location.",
+    )
+    ref_integrity_p.add_argument(
+        "--scope-label",
+        dest="scope_label",
+        default=None,
+        metavar="TEXT",
+        help="free-text declaration of the corpus slice this run covers",
+    )
+    ref_integrity_p.add_argument(
+        "--eu-limit",
+        dest="eu_limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="scan only the first N statutes for EU references (default: whole corpus)",
+    )
+    ref_integrity_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="write the Markdown report to PATH (default: stdout)",
     )
 
     # --- surface-graph ---
@@ -14025,6 +14131,18 @@ def _main_impl() -> None:
         )
 
         cross_ref_report_main(args)
+
+    elif args.command == "eu-ref-report":
+        from lawvm.tools.eu_reference_report import main as eu_ref_report_main
+
+        eu_ref_report_main(args)
+
+    elif args.command == "reference-integrity-report":
+        from lawvm.tools.reference_integrity_demo_report import (
+            main as reference_integrity_report_main,
+        )
+
+        reference_integrity_report_main(args)
 
     elif args.command == "surface-graph":
         from lawvm.tools.surface_graph import main as surface_graph_main
