@@ -147,6 +147,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_corpus_archive_guard.py",
         "test_fi_corpus_graph.py",
         "test_fi_corpus_lints.py",
+        "test_fi_editorial_filter.py",
+        "test_corpus_surface_graph_export.py",
         "test_fi_finlex_*.py",
         "test_fi_name_registry_build.py",
         "test_fi_scan_absent_ajantasa.py",
@@ -350,6 +352,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_strict_payload_confidence.py",
         "test_fi_version_drift.py",
         "test_ev_residual_ledger_and_self_evidencing.py",
+        # Declared non-guarantees as root-committed evidence-plane objects.
+        "test_assumption_register.py",
     ),
     "evidence_reports": (
         "test_fi_explain_facade.py",
@@ -403,6 +407,19 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_projection_author_set_authority.py",
         "test_explicit_address_level.py",
         "test_guard_liveness_totality.py",
+        # Claim-surface backbone (Pro invariant-mining §13 step 1+3 + §4): the
+        # generated coverage gate — every declared public claim has a live
+        # accounting path; zero invariants in the forbidden implicit_convention
+        # bucket.
+        "test_claim_surface_coverage.py",
+        # Claim-surface backbone, continued: the finite-axis invariant GENERATOR
+        # (Pro §13 step 1 — invariants generated from claim shape; undischarged
+        # obligation = typed gap); the MUST-trace ledger + drift detector (step 5);
+        # and the per-handle non-guarantee binding gate (every declared
+        # allowed_non_guarantee handle resolves to a registered assumption).
+        "test_invariant_generator.py",
+        "test_must_trace.py",
+        "test_claim_assumption_binding.py",
         # Audit-invariant registry program (CROSS-JURISDICTION, §2.3): row
         # XJUR-02 — no hidden replay kernel in a frontend (static boundary audit;
         # monotone ratchet over a discovered-debt baseline).
@@ -516,6 +533,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "core_materialization_invariants": (
         "test_fi_materialization_invariants.py",
+        "test_fi_materialization_totality.py",
+        "test_crossjur_materialization_universe.py",
     ),
     "core_replay_timeline": (
         "test_part_snapshot_section_retention.py",
@@ -523,6 +542,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_replay_metamorphic.py",
         "test_replay_small_model.py",
         "test_fi_timeline.py",
+        "test_know_invariants.py",
         "test_timeline_invariants.py",
         "test_timeline_lineage_contracts.py",
         "test_timeline_materialization_stage.py",
@@ -553,6 +573,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_frame_affordances.py",
         "test_fi_frame_id_collisions.py",
         "test_fi_frame_relations.py",
+        "test_fi_derivation_edges.py",
         "test_fi_graph_build.py",
         "test_fi_graph_parity.py",
         "test_fi_interlink_targets.py",
@@ -648,6 +669,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_parse_view.py",
         "test_fi_refs_view.py",
         "test_bill_analysis.py",
+        "test_bill_counterfactual_effects.py",
+        "test_dangling_references.py",
+        "test_cross_reference_integrity_report.py",
         "test_provision_state_window_unmaterialized.py",
         "test_read_provision.py",
         "test_reconcile.py",
@@ -707,6 +731,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_bench_contract_adapters.py",
         "test_fi_bench_contract_adapter.py",
         "test_fi_bench_comparable.py",
+        "test_fi_oracle_amb_match.py",
         "test_bench_curate.py",
         "test_parse_bench.py",
         "test_parse_characterize.py",

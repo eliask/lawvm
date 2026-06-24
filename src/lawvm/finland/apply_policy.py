@@ -439,7 +439,16 @@ def same_wave_migration_follow_is_allowed(rop: ResolvedOp) -> bool:
     destination and overwrite/mislabel the moved old section. Descendant INSERTs
     may still follow the moved section because they amend the continuing
     provision rather than claim the vacated whole-section slot.
+
+    Replacement ops that have already been explicitly rebased from a same-wave
+    renumber source to its destination are another counterexample: following the
+    migration again targets the provision that moved away from that destination.
     """
+    if any(
+        tag in rop.target_guessing_provenance_tags
+        for tag in ("rebase_duplicate_target_shifted_replace", "rebase_replaced_renumber_source")
+    ):
+        return False
     if rop.resolved_action_type != "INSERT":
         return True
     target_address = rop.resolved_target_address

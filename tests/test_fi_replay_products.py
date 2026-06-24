@@ -7598,3 +7598,25 @@ def test_replay_xml_1973_935_folds_single_insert_list_tail_before_later_insert()
     assert section_text.index("mikäli selvityksen esittäminen") < section_text.index(
         "Valtiokonttorilla on salassapitosäännösten"
     )
+
+
+def test_replay_xml_1994_1344_applies_same_wave_subsection_renumber_chain_before_insertions() -> None:
+    replay = replay_xml_for_test(
+        "1994/1344",
+        mode="legal_pit",
+        quiet=True,
+        as_of="1995-04-01",
+    )
+    section_3 = extract_ir_sections(replay.materialized_state.ir)["chapter:1/section:3"]
+    subsections = [child for child in section_3.children if child.kind is IRNodeKind.SUBSECTION]
+    by_label = {
+        child.label: " ".join(irnode_to_text(child).split())
+        for child in subsections
+    }
+
+    assert sorted(by_label, key=int) == ["1", "2", "3", "4", "5", "6", "7"]
+    assert (
+        "Hedelmäviinin happoisuuden säätelyssä saa käyttää ainoastaan"
+        in by_label["7"]
+    )
+    assert "bentsoehappopitoisuus" not in by_label["7"]

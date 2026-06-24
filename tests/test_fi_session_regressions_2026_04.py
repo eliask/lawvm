@@ -3219,6 +3219,32 @@ def _make_chapter_insert_rop(label: str) -> "ResolvedOp":
     )
 
 
+def _make_subsection_relabel_rop(src_label: str, dst_label: str) -> "ResolvedOp":
+    """Build a subsection-level RELABEL ResolvedOp for relabel-chain tests."""
+    op = AmendmentOp(
+        op_id=f"test_subsection_relabel_{src_label}_{dst_label}",
+        op_type="RENUMBER",
+        target_section="3",
+        target_unit_kind="section",
+        target_chapter="1",
+        target_paragraph=int(src_label),
+        source_statute="1995/460",
+        source_issue_date=_DATE,
+    )
+    target_addr = LegalAddress(path=(("chapter", "1"), ("section", "3"), ("subsection", src_label)))
+    dest_addr = LegalAddress(path=(("chapter", "1"), ("section", "3"), ("subsection", dst_label)))
+    return ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="3",
+        target_chapter="1",
+        target_address=target_addr,
+        destination_address=dest_addr,
+    )
+
+
 def test_stabilize_chapter_relabel_order_reverses_forward_chain() -> None:
     """Forward chain [10→11, 11→12] must be reversed to [11→12, 10→11].
 
@@ -3311,6 +3337,26 @@ def test_stabilize_chapter_relabel_order_three_op_chain() -> None:
     assert reordered[0].target_norm == "5", "Tail of chain must apply first"
     assert reordered[1].target_norm == "4"
     assert reordered[2].target_norm == "3", "Head of chain must apply last"
+
+
+def test_stabilize_same_parent_relabel_order_reverses_subsection_forward_chain() -> None:
+    """Subsection chains need the same high-to-low execution as chapter chains.
+
+    Regression for 1994/1344 / 1995/460: "nykyinen 2, 3, 4 ja 5 momentti
+    siirtyvät 3, 4, 5 ja 7 momenteiksi" emits source-order renumbers. If apply
+    sees 2→3 before 5→7, every destination still exists and the relabels are
+    skipped, destroying the old 5→7 lineage.
+    """
+    from lawvm.finland.relabel_identity import stabilize_same_parent_relabel_order
+
+    r2 = _make_subsection_relabel_rop("2", "3")
+    r3 = _make_subsection_relabel_rop("3", "4")
+    r4 = _make_subsection_relabel_rop("4", "5")
+    r5 = _make_subsection_relabel_rop("5", "7")
+
+    reordered = stabilize_same_parent_relabel_order([r2, r3, r4, r5])
+
+    assert [rop.effective_target_paragraph for rop in reordered] == [5, 4, 3, 2]
 
 
 # ---------------------------------------------------------------------------

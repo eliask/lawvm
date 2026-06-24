@@ -52,7 +52,7 @@ _QT = "in_force"
 _PINS: list[tuple[str, str, str, str, str]] = [
     # --- TRACK2_GROUNDING_FACTPACK_2026-06-10.md ---
     ("2011/805", "chapter:3/section:1", _AS_OF, _QT,
-     "2b81edb5a80ac1d7d0da2c1a58989090760c416da8fdb36289c758b06dbe087d"),  # R1 esitutkintalaki 3 luku 1 §; re-pinned for corpus drift: amendment 805/2011 muutos 269/2026 (effective 2026-06-01, in force @2026-06-10) was added after mint, rewriting 3:1 momentti 1 and inserting a new momentti 2 (johtolause "3 luvun 1 §:ään ... uusi 2 momentti"). Prior pin captured the 222/2026 version (effective 2026-04-14).
+     "ff1cea4df3163a3edb8492e270949ebcd847f2521b53766037fa4e1195134a74"),  # R1 esitutkintalaki 3 luku 1 §; re-pinned after same-parent subsection relabel ordering stopped skipping the 2026/269 2→3, 3→4 chain before inserting new 2 mom. Text remains source-owned by 2026/269 and oracle-perfect; prior pin captured the unstable relabel fold.
     ("2009/273", "section:6", _AS_OF, _QT,
      "68b1110d5f48a2cf3ad40585fb220135ae697baec96fc3399c58acbd92765eed"),  # R3 vaalirahoituslaki 6 §
     ("2009/273", "section:6a", _AS_OF, _QT,
@@ -102,11 +102,11 @@ _PINS: list[tuple[str, str, str, str, str]] = [
     ("2016/1397", "section:154", _AS_OF, _QT,
      "4d9e2e72d0d318f6ad47991f94f871a0b67d117ded94dd16dcd510b67616df72"),  # base, enacted 2016-12-29
     ("2023/703", "section:17", _AS_OF, _QT,
-     "71b3f526a587befd8140925bcc132f0a3c20c476f4c86694f0391f7a6661074e"),  # base, enacted 2023-04-14
+     "37fbd0c9796bca479b4af9e0d2123a7c0750cce23dc3a6eac3a3ac51a4f49e03"),  # base, enacted 2023-04-14; re-pinned after provision-state resolution returned canonical container-scoped address part:1/chapter:4/section:17 for the section-only query.
     ("2024/482", "section:4", _AS_OF, _QT,
      "90c93604d37d7c989e53f0b6a7d74339fa503bbffe4d7e2f76eb110acab2d8f7"),  # base, enacted 2024-07-16
     ("2019/808", "section:7", _AS_OF, _QT,
-     "21847ec32e1f7d687756425b557aadc7342891c06c654ba373712c8b5688a13b"),  # base, enacted 2019-07-05
+     "090f887d35e156ab3537c20ab81d52643994f64be0e3ab108208e1f1e2503aef"),  # base, enacted 2019-07-05; re-pinned after provision-state resolution returned canonical container-scoped address chapter:2/section:7 for the section-only query.
 ]
 
 # KNOWN DIVERGENCES (xfail). Empty: the original-enactment-base date class has
