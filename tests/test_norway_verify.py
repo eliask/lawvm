@@ -331,6 +331,46 @@ def test_infer_no_source_signal_leaves_real_two_amendment_case_unclassified() ->
     )
 
 
+def test_infer_no_source_signal_flags_two_indexed_amendment_sparse_case() -> None:
+    # Mirrors post-§1-fix shape of no/lov/2001-01-05-1 (Vaktvirksomhetsloven)
+    # at as-of 2025-01-01: 2 indexed amendments, 2 applied, 3 replay ops,
+    # 83 primary divergences — and 2001 base year. This statute sat at
+    # SCORED saturated-1.0 before this widening because indexed_amendment_
+    # count=2 exceeded the prior ≤1 threshold while the divergence volume
+    # made the structural_err cap fire. Two corpus witnesses (this +
+    # SCE-loven) prompted widening the indexed bound from ≤1 → ≤2.
+    assert (
+        _infer_no_source_signal(
+            divergence_count=83,
+            indexed_amendment_count=2,
+            replay_op_count=3,
+            base_year=2001,
+        )
+        == "sparse_indexed_history"
+    )
+
+
+def test_infer_no_source_signal_leaves_three_indexed_case_unclassified() -> None:
+    # §2.9 paired negative for the widended ``<=2`` threshold: 3 indexed
+    # amendments + high divergence_count + few ops + old base year does
+    # NOT fire sparse_indexed_history. The threshold boundary is ``≤2``:
+    # three indexed amendments over multiple enactment-year retirement
+    # waves is more substantial coverage than ≤2 indexes across the same
+    # window, so the acquisition-ceiling hand-wave stops here. A
+    # regression widening to ``<=3`` would silently misclassify the
+    # ``reproducing through 3-amendment replay against a clearly real
+    # algorithm bug`` shape as a data ceiling.
+    assert (
+        _infer_no_source_signal(
+            divergence_count=50,
+            indexed_amendment_count=3,
+            replay_op_count=4,
+            base_year=2005,
+        )
+        is None
+    )
+
+
 # --- §1.10: _no_base_year converts silent try/except into a typed finding ---
 #
 # Before this fix, verify_no_against_current had:

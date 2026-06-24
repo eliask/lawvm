@@ -293,9 +293,20 @@ def _infer_no_source_signal(
     replay_op_count: int,
     base_year: int,
 ) -> str | None:
+    # §2.1 family witness: the ``sparse_indexed_history`` shape originally
+    # observed on no/lov/2006-06-30-50 (SCE-loven) — 1 indexed amendment,
+    # 3 replay ops, 212 primary divergences, 2006 base — extends to
+    # no/lov/2001-01-05-1 (Vaktvirksomhetsloven): 2 indexed amendments,
+    # 3 replay ops, 83 primary divergences, 2001 base. The acquisition
+    # ceiling is ``≤2`` indexing events for an EEA-implementing or
+    # guard-company regulation meant to track ~24 years of post-2000
+    # activity — not ``≤1``. The divergence_count gate (≥50 trigger-1,
+    # ≥15 trigger-2) AND ops_count AND base_year publish independently
+    # tuned shapes that bound the family; the ``indexed_amendment_count``
+    # bound is the only one widened in this revision.
     if (
         divergence_count >= 50
-        and indexed_amendment_count <= 1
+        and indexed_amendment_count <= 2
         and replay_op_count <= 5
         and base_year
         and base_year <= 2020
@@ -303,7 +314,7 @@ def _infer_no_source_signal(
         return "sparse_indexed_history"
     if (
         divergence_count >= 15
-        and indexed_amendment_count <= 1
+        and indexed_amendment_count <= 2
         and replay_op_count <= 2
         and base_year
         and base_year <= 2025
