@@ -479,6 +479,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_statute_facets.py",
         "test_target_resolution.py",
         "test_fi_target_scope.py",
+        "test_target_selector_codec.py",
         "test_unicode_folds.py",
         "test_fi_unit_registry.py",
     ),
