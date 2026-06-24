@@ -143,7 +143,7 @@
     "src/lawvm/us_federal/dry_run.py": 2,
     "src/lawvm/us_federal/nonpositive.py": 3
   },
-  "certified_symbol_count": 67,
+  "certified_symbol_count": 69,
   "certified_symbols": [
     "CERTIFICATE_ROOT_PROFILE",
     "CERTIFICATE_SCHEMA",
@@ -157,6 +157,8 @@
     "TEMPORAL_CERTIFIED_UNTRIGGERED",
     "UNTRIGGERED_CERTIFIED_STATUS",
     "_CERTIFICATION_TO_TOP",
+    "_MUST_TRACE_ANNOTATION_NOT_CERTIFIED",
+    "_MUST_TRACE_VIEWER_NO_CERTIFIED_ANNOTATION",
     "_SEAM_TO_CERTIFICATION",
     "_blocked_proof_certificate",
     "_build_certificate",
