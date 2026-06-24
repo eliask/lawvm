@@ -2421,6 +2421,97 @@ def test_insert_after_comma_at_the_end_lowers_to_terminal_text_replace():
     assert patch.replacement == ", including (i)"
 
 
+def test_insert_before_period_at_the_end_the_following_lowers_to_terminal_text_replace():
+    # Form B: "inserting before the period at the end the following: '<X>'" —
+    # the dominant Form B shape in the 2026-06-24 un-lowered insert_after family
+    # (~2,010 rows). The inserted text is quoted AFTER the "before/after the
+    # <punct>" connector. Source witness: PL 108-136#instr580 (vessel
+    # environmental-remediation insert), PL 108-136#instr695 (14-day period).
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> before the period '
+        'at the end the following: '
+        '“<quotedText> and section 507(d)</quotedText>”.'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "insert_end_punct"
+    assert instr.witness_rule_id == RULE_INSERT_END_PUNCT
+    patch = _patch(instr)
+    assert patch.selector.match_text == "."
+    assert patch.selector.occurrence == -1
+    assert patch.replacement == " and section 507(d)."
+
+
+def test_insert_before_period_the_following_no_at_the_end_lowers():
+    # Form B variant omitting "at the end" — the same drafting form but the
+    # writer drops the explicit "at the end" suffix. The terminal-punct anchor
+    # is still the named period at the end of the target node.
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> before the period '
+        'the following: '
+        '“<quotedText>, and that has a population of 50,000 or more individuals</quotedText>”.'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "insert_end_punct"
+    patch = _patch(instr)
+    assert patch.selector.match_text == "."
+    assert patch.replacement == ", and that has a population of 50,000 or more individuals."
+
+
+def test_insert_before_semicolon_quoted_no_at_the_end_lowers():
+    # Form C: "inserting before the semicolon '<X>'" — no "at the end", no "the
+    # following:" connector; the inserted text appears directly after the
+    # connector. Source witness: PL 108-136 (financial-repurchase nested-quote
+    # form). The inner straight quotes are nested inside the curly outer pair.
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> before the semicolon '
+        '“<quotedText>(whether or not such transaction is a ‘repurchase agreement’).</quotedText>".'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "insert_end_punct"
+    patch = _patch(instr)
+    assert patch.selector.match_text == ";"
+    assert patch.replacement == "(whether or not such transaction is a ‘repurchase agreement’).;"
+
+
+def test_insert_long_quoted_before_period_lowers_with_extended_cap():
+    # Form A with a longer inserted literal that the prior 20-char cap silently
+    # blocked. Quoted extension to 400 chars handles the VAWA-style references
+    # (", and (G) any assessments required under section 505B." — ~60 chars).
+    long_ins = (
+        ", and (G) any assessments required under section 505B of this title, "
+        "including any related investigative costs identified by the Commission."
+    )
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        f'“<quotedText>{long_ins}</quotedText>" before the period at the end.'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "insert_end_punct"
+    patch = _patch(instr)
+    assert patch.selector.match_text == "."
+    assert patch.replacement == long_ins + "."
+
+
 def test_strike_insert_punctuation_word_lowers_to_text_replace():
     body = (
         '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'

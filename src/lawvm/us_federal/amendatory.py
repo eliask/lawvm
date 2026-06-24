@@ -1847,9 +1847,25 @@ _END_PUNCT_STRIKE_INSERT_RE = re.compile(
     + _STRUCTURAL_ACTION_TRAIL,
     re.IGNORECASE,
 )
-# Terminal punctuation insert: "inserting '<X>' before/after the period at the end".
+# Terminal punctuation insert: covers the two drafting word orders.
+# Form A (existing): "inserting '<X>' before/after the period [at the end]".
+# Form B (new): "inserting before/after the period [at the end] [the following:]
+# '<X>'" — the inserted text is quoted AFTER the connector, not before. The
+# dominant un-lowered `insert-after` family in the 2026-06-24 scan (~2,010 rows)
+# carries Form B's "before the period at the end the following: ..." shape.
+# Form C: "inserting before/after the <punct> '<X>'" — no "at the end" and no
+# "the following:" connector (the bare connector + literal-quote form).
+# The inserted quote may be straight, curly, or single; nested single quotes
+# are preserved by the smarter balancing (the inner negation matches the
+# OUTER quote type only). Quoted text capped at 400 chars (the enacted literal
+# often exceeds the existing 20-char cap — e.g. clauses ~60-100 chars were
+# silently blocked from the `insert_end_punct` family).
 _END_PUNCT_INSERT_RE = re.compile(
-    r"inserting\s+[\"“”'](?P<ins>[^\"“”']{0,20})[\"“”']\s+(?P<where>before|after)\s+the\s+(?P<punct>period|semicolon|comma)\s+at\s+the\s+end"
+    r"inserting\s+"
+    r"(?:(?P<ins_pre>[\"“”'][^\"“”']{0,400}[\"“”'])\s+)?"
+    r"(?P<where>before|after)\s+the\s+(?P<punct>period|semicolon|comma)"
+    r"(?:\s+at\s+the\s+end)?"
+    r"(?:\s+(?:the\s+following:\s+)?(?P<ins_post>[\"“”'][^\"“”']{0,400}[\"“”']))?"
     + _STRUCTURAL_ACTION_TRAIL,
     re.IGNORECASE,
 )
@@ -2592,25 +2608,39 @@ def _lower_instruction(
                 "punctuation-word strike-insert matched classify but not regex",
             )
     elif family == "insert_end_punct":
-        # "inserting '<X>' before/after the period at the end" — the anchor is the
-        # described terminal punctuation of the target node.
+        # "inserting '<X>' before/after the period [at the end]" — the anchor is the
+        # described terminal punctuation of the target node. Two drafting word orders
+        # are recognized by _END_PUNCT_INSERT_RE: Form A (quote before the connector)
+        # captures ``ins_pre``; Form B/C (quote after the connector, possibly with
+        # "the following:" prefix) captures ``ins_post``. Either may be present; if
+        # both are (only possible in pathological synthetic input), prefer the
+        # post-connector quote (the canonical "the following: '<X>'" Form B shape).
         m = _END_PUNCT_INSERT_RE.search(raw_text)
         if m is not None:
-            ins = m.group("ins")
-            punct = _end_punctuation_char(m.group("punct")) or "."
-            where = m.group("where")
-            replacement = ins + punct if where == "before" else punct + ins
-            op = _make_op(
-                StructuralAction.TEXT_REPLACE,
-                rule_id=RULE_INSERT_END_PUNCT,
-                text_patch=TextPatchSpec(
-                    kind=TextPatchKindEnum.REPLACE,
-                    selector=TextSelector(match_text=punct, occurrence=-1),
-                    replacement=replacement,
-                ),
-                target=_text_strike_target,
-            )
-            witness_rule_id = RULE_INSERT_END_PUNCT
+            ins_pre = m.group("ins_pre")
+            ins_post = m.group("ins_post")
+            ins_quoted = ins_post or ins_pre
+            if ins_quoted is None:
+                finding = _finding(
+                    UNLOWERED_FINDING_RULE_ID,
+                    "end-punctuation insert matched classify but no quoted insertion captured",
+                )
+            else:
+                ins = ins_quoted[1:-1] if len(ins_quoted) >= 2 else ins_quoted
+                punct = _end_punctuation_char(m.group("punct")) or "."
+                where = m.group("where")
+                replacement = ins + punct if where == "before" else punct + ins
+                op = _make_op(
+                    StructuralAction.TEXT_REPLACE,
+                    rule_id=RULE_INSERT_END_PUNCT,
+                    text_patch=TextPatchSpec(
+                        kind=TextPatchKindEnum.REPLACE,
+                        selector=TextSelector(match_text=punct, occurrence=-1),
+                        replacement=replacement,
+                    ),
+                    target=_text_strike_target,
+                )
+                witness_rule_id = RULE_INSERT_END_PUNCT
         else:
             finding = _finding(
                 UNLOWERED_FINDING_RULE_ID,
