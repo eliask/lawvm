@@ -143,6 +143,29 @@ def no_bench_unit_result(result: "NOVerifyResult") -> BenchUnitResult:
     if status == "no_amendments":
         return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
 
+    # sparse_indexed_history: the replayed body diverges from the current
+    # consolidated law with so many primary divergences (≥50 or ≥15 set in
+    # _infer_no_source_signal) against ≤1 indexed amendment + ≤5 replay ops,
+    # that the primary divergences are functionally an acquisition ceiling
+    # — the law's full amendment history has not been indexed/acquired —
+    # not an algorithm surprise. A saturated-1.0 SCORED (structural_err =
+    # min(1.0, large_count / small_n_replay_sections)) misrepresents that
+    # ceiling as a replay bug. Surface as SOURCE_UNAVAILABLE (a documented
+    # data ceiling per notes/NORWAY_LAWVM_STATUS.md) with the source-signal
+    # name and the upstream-count triad as the witness, so a user can filter
+    # or inspect without re-running verify.
+    if result.source_signal == "sparse_indexed_history":
+        return BenchUnitResult(
+            unit_id=unit_id,
+            status=BenchStatus.SOURCE_UNAVAILABLE,
+            witnesses=(
+                "sparse_indexed_history "
+                f"(divergences={int(result.divergence_count or 0)}, "
+                f"indexed_amendments={int(result.indexed_amendment_count or 0)}, "
+                f"replay_ops={int(result.replay_op_count or 0)})",
+            ),
+        )
+
     # SCORED: the replayed body, with the primary divergences partition
     # already applied by verify_no_against_current.
     replay = result.replay

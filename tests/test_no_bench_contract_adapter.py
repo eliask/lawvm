@@ -73,11 +73,15 @@ def _verify_result(
     divergence_count: int = 0,
     divergence_counts: dict[str, int] | None = None,
     replayed_body: IRNode | None = None,
+    source_signal: str | None = None,
+    indexed_amendment_count: int = 0,
+    replay_op_count: int = 0,
 ) -> Any:
     """Build a minimal NOVerifyResult-shaped SimpleNamespace.
 
     The bench comparator reads: base_id, error, replay_status, divergence_count,
-    divergence_counts, replay.replayed.body.  That is the only contract.
+    divergence_counts, replay.replayed.body, source_signal,
+    indexed_amendment_count, replay_op_count.  That is the only contract.
     """
     return SimpleNamespace(
         base_id=base_id,
@@ -87,6 +91,9 @@ def _verify_result(
         divergence_count=divergence_count,
         divergence_counts=divergence_counts,
         replay=_replay_result(replayed_body, error=error),
+        source_signal=source_signal,
+        indexed_amendment_count=indexed_amendment_count,
+        replay_op_count=replay_op_count,
     )
 
 
@@ -137,6 +144,121 @@ def test_no_bench_source_unavailable_for_data_ceiling_statuses(blocked_status: s
     assert mapped.witnesses == (blocked_status,)
     assert mapped.structural_err is None
     assert mapped.text_err is None
+
+
+# ---------------------------------------------------------------------------
+# SOURCE_UNAVAILABLE — sparse_indexed_history source-signal (acquisition
+# ceiling, distinct from a blocked replay_status). _infer_no_source_signal
+# computes this on verify_no_against_current output but the bench comparator
+# previously ignored it; statutes with ≤1 indexed amendment and ≥50/≥15
+# primary divergences were saturating structural_err at 1.0 (cap), which
+# misread the acquisition ceiling as a replay bug.
+# ---------------------------------------------------------------------------
+
+
+def test_no_bench_source_unavailable_for_sparse_indexed_history_signal() -> None:
+    # Mirrors the post-§1-fix shape of no/lov/2006-06-30-50 (SCE-loven) at
+    # as-of 2025-01-01: status=replayed, divergence_count=212, indexed=1
+    # amendment, replay_ops=3 —- sparse_indexed_history signal fires from
+    # the ≥50/divergence_count gate (verify.py:296-303).
+    result = _verify_result(
+        replay_status="replayed",
+        divergence_count=212,
+        divergence_counts={"OPS_MISSING": 104, "CONSOLIDATED_MISSING": 108},
+        replayed_body=IRNode(kind=IRNodeKind.SECTION, label="a1", text="x"),
+        source_signal="sparse_indexed_history",
+        indexed_amendment_count=1,
+        replay_op_count=3,
+    )
+
+    mapped = no_bench_unit_result(result)
+
+    # Surface as a documented data ceiling — NOT a saturated-1.0 SCORED.
+    assert mapped.status is BenchStatus.SOURCE_UNAVAILABLE
+    assert mapped.is_failure is False
+    # Witness names the signal + upstream-count triad so the user can
+    # filter / inspect without re-running verify.
+    assert len(mapped.witnesses) == 1
+    assert mapped.witnesses[0].startswith("sparse_indexed_history ")
+    assert "divergences=212" in mapped.witnesses[0]
+    assert "indexed_amendments=1" in mapped.witnesses[0]
+    assert "replay_ops=3" in mapped.witnesses[0]
+    # §7 honesty invariant: non-SCORED carries no axis errors.
+    assert mapped.structural_err is None
+    assert mapped.text_err is None
+    assert dict(mapped.residue_buckets) == {}
+
+
+def test_no_bench_sparse_indexed_history_fires_even_when_replay_succeeded() -> None:
+    # The sparse_indexed_history branch is distinct from the
+    # blocked_* SOURCE_UNAVAILABLE branch: it fires when
+    # replay_status IS "replayed" but the divergence volume against the
+    # tiny indexed-amendment count collapses the structural_err cap and
+    # would misinterpret the acquisition ceiling as a replay bug.
+    # Without the explicit branch, this row would have decoded through
+    # to the SCORED path and saturated structural_err at 1.0.
+    result = _verify_result(
+        replay_status="replayed",
+        divergence_count=15,
+        divergence_counts={"MISMATCH": 15},
+        replayed_body=IRNode(kind=IRNodeKind.SECTION, label="a1", text="x"),
+        source_signal="sparse_indexed_history",
+        indexed_amendment_count=1,
+        replay_op_count=2,
+    )
+
+    mapped = no_bench_unit_result(result)
+
+    assert mapped.status is BenchStatus.SOURCE_UNAVAILABLE
+    assert mapped.is_failure is False
+
+
+def test_no_bench_scored_when_source_signal_absent() -> None:
+    # §2.9 paired negative for the sparse_indexed_history SOURCE_UNAVAILABLE
+    # branch: divergence_count ≥ 5 but source_signal NOT set means the
+    # upstream inference did not classify this statute as acquisition-level
+    # sparse. The bench comparator must NOT route to SOURCE_UNAVAILABLE
+    # based on divergence_count alone — that would hide a real replay bug
+    # behind an absent signal. SOURCE_UNAVAILABLE fires only when the
+    # typed signal is present, never as a heuristic on divergence_count.
+    result = _verify_result(
+        replay_status="replayed",
+        divergence_count=5,
+        divergence_counts={"MISMATCH": 5},
+        replayed_body=IRNode(kind=IRNodeKind.SECTION, label="a1", text="x"),
+        source_signal=None,
+        indexed_amendment_count=12,
+        replay_op_count=18,
+    )
+
+    mapped = no_bench_unit_result(result)
+
+    assert mapped.status is BenchStatus.SCORED
+    assert mapped.is_failure is False
+    assert mapped.witnesses == ()
+
+
+def test_no_bench_scored_when_unknown_source_signal_string() -> None:
+    # §2.9 paired negative: only the named "sparse_indexed_history" signal
+    # is honored as SOURCE_UNAVAILABLE. Other (possibly future) signal
+    # strings do NOT route to SOURCE_UNAVAILABLE silently — that would
+    # turn any string-typed addition into an invisible non-scored status
+    # change. A new signal name reaching bench-worthiness is itself the
+    # explicit branch addition, not data-driven via a string.
+    result = _verify_result(
+        replay_status="replayed",
+        divergence_count=5,
+        divergence_counts={"MISMATCH": 5},
+        replayed_body=IRNode(kind=IRNodeKind.SECTION, label="a1", text="x"),
+        source_signal="some_future_unrecognized_signal",
+        indexed_amendment_count=1,
+        replay_op_count=2,
+    )
+
+    mapped = no_bench_unit_result(result)
+
+    assert mapped.status is BenchStatus.SCORED
+    assert mapped.is_failure is False
 
 
 # ---------------------------------------------------------------------------
