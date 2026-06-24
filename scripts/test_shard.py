@@ -502,6 +502,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_tree_ops_ambiguity.py",
         "test_tree_ops_stage.py",
         "test_tree_ops_roman_labels.py",
+        "test_core_tree_invariant_scan_families.py",
     ),
     "core_compile_projection": (
         "test_fi_effect_lifecycle_projection.py",
