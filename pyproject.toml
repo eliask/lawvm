@@ -2,7 +2,7 @@
 name = "lawvm"
 version = "0.1.0"
 description = "Executable legal amendment replay and proof-carrying statute history tooling."
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
@@ -56,7 +56,7 @@ where = ["src"]
 # =============================================================================
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py314"
 line-length = 120
 
 [tool.ruff.lint]
@@ -93,7 +93,7 @@ unused-ignore-comment = "error"
 unused-type-ignore-comment = "error"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.14"
 warn_return_any = true
 warn_unused_configs = true
 # Strict on core/ — these types are the contract
