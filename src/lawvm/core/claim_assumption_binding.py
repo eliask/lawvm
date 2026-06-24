@@ -860,6 +860,101 @@ _B_LSG_SURFACE_ONLY_AS_OF = _binding(
     ),
 )
 
+# --- Claim: EE consolidation-error candidate (the adoption wedge) --------- #
+_B_EE_CONSERR_FLAG_NOT_CONFIRMED = _binding(
+    "ee_consolidation_candidate_is_flag_not_confirmed_error",
+    kind="doctrine_unresolved",
+    scope=(
+        "Whether a surfaced consolidation-error candidate is a CONFIRMED error / "
+        "legal conclusion, vs a ranked FLAG for human review "
+        "(lawvm.estonia.consolidation_error_candidates)."
+    ),
+    effect="outside_claim",
+    expires_when=(
+        "never for v0 — confirming that the official consolidation is in fact "
+        "wrong (vs LawVM's replay) is a legal/editorial adjudication a human (or "
+        "the issuing authority) makes; the candidate surfaces the divergence and "
+        "its evidence, it does not rule on it."
+    ),
+    public_message=(
+        "A consolidation-error candidate is a FLAG for human review, NOT a "
+        "confirmed error and NOT a legal conclusion. A STRONG-tier candidate is "
+        "backed by an adjudicated consolidation-side residual and is the "
+        "high-confidence finding, but even it asserts a divergence worth review, "
+        "not a ruling that the official terviktekst is legally wrong."
+    ),
+)
+_B_EE_CONSERR_DEPENDS_ON_REPLAY = _binding(
+    "ee_consolidation_candidate_depends_on_replay_and_residual_adjudication",
+    kind="projection_unverified",
+    scope=(
+        "The candidate surface is a read-only projection that CONSUMES the EE "
+        "replay divergence stream (replay_ee_to_pit) and the post-hoc residual "
+        "adjudication (build_ee_residual_summary); it never re-adjudicates and is "
+        "only as sound as those inputs "
+        "(lawvm.estonia.consolidation_error_candidates)."
+    ),
+    effect="qualifies",
+    expires_when=(
+        "never for v0 — the candidate surface is a projection over the replay + "
+        "residual layers by construction; it reuses their verdicts rather than "
+        "re-deriving them, so its soundness is inherited from those layers, not "
+        "independently established here."
+    ),
+    public_message=(
+        "The consolidation-error candidate surface DEPENDS on the upstream EE "
+        "replay and residual adjudication it consumes — it never re-adjudicates. "
+        "An error in the replayed amendment chain or the residual bucketing "
+        "propagates into the candidate tiers; the surface reuses those verdicts, "
+        "it does not independently verify them."
+    ),
+)
+_B_EE_CONSERR_RECALL_BOUNDED = _binding(
+    "ee_consolidation_candidate_recall_bounded_unadjudicated_is_triage",
+    kind="parser_incomplete",
+    scope=(
+        "Candidate recall/confidence is bounded by the residual adjudication: a "
+        "divergence with no residual record is TRIAGE (unadjudicated_needs_review), "
+        "never asserted STRONG; only an adjudicated consolidation-side residual "
+        "(source_oracle_drift / oracle_correction_notice) backs a strong candidate "
+        "(lawvm.estonia.consolidation_error_candidates)."
+    ),
+    effect="qualifies",
+    expires_when=(
+        "the residual adjudication is extended so that currently-unadjudicated "
+        "divergences are adjudicated into a consolidation-side (or other) bucket, "
+        "promoting genuine consolidation errors from TRIAGE into the STRONG tier."
+    ),
+    public_message=(
+        "Candidate confidence is BOUNDED by the residual adjudication. A "
+        "divergence with no adjudicated residual record is surfaced as TRIAGE "
+        "(unadjudicated_needs_review) — flagged for review, never asserted as a "
+        "consolidation error. STRONG candidates are limited to divergences an "
+        "adjudicated consolidation-side residual already backs; an unadjudicated "
+        "real error reads TRIAGE, not STRONG."
+    ),
+)
+_B_EE_CONSERR_EE_PAIR_SCOPE = _binding(
+    "ee_consolidation_candidate_ee_pair_scope",
+    kind="parser_incomplete",
+    scope=(
+        "The candidate report ranges over one Estonian (base, oracle) act pair; "
+        "it is EE-specific and per-pair, not a cross-jurisdiction or whole-corpus "
+        "surface (lawvm.estonia.consolidation_error_candidates)."
+    ),
+    effect="qualifies",
+    expires_when=(
+        "the candidate surface is generalised beyond a single EE (base, oracle) "
+        "pair — to a corpus sweep, or to another jurisdiction's "
+        "replay-vs-consolidation divergence stream."
+    ),
+    public_message=(
+        "The consolidation-error candidate report ranges over one Estonian "
+        "(base, oracle) act pair. It is EE-specific and per-pair — not a "
+        "cross-jurisdiction guarantee and not a whole-corpus sweep."
+    ),
+)
+
 #: The v0 binding set — EVERY V0_CLAIMS handle bound to a registered assumption.
 V0_CLAIM_ASSUMPTION_BINDINGS: tuple[ClaimAssumptionBinding, ...] = (
     _B_BENCH_NOT_SOURCE_TRUTH,
@@ -894,6 +989,10 @@ V0_CLAIM_ASSUMPTION_BINDINGS: tuple[ClaimAssumptionBinding, ...] = (
     _B_LSG_REFERENCE_FAMILY_ONLY,
     _B_LSG_RESOLUTION_RECALL_BOUNDED,
     _B_LSG_SURFACE_ONLY_AS_OF,
+    _B_EE_CONSERR_FLAG_NOT_CONFIRMED,
+    _B_EE_CONSERR_DEPENDS_ON_REPLAY,
+    _B_EE_CONSERR_RECALL_BOUNDED,
+    _B_EE_CONSERR_EE_PAIR_SCOPE,
 )
 
 
