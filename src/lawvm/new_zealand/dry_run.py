@@ -4586,6 +4586,40 @@ def _nodes_at_path(document: NZSourceDocument, path: tuple[str, ...]) -> tuple[N
 _NON_BODY_SOURCE_ZONES = frozenset({"end_skeleton", "front_history", "end_history"})
 
 
+def _is_leading_part_segment(path_segment: str) -> bool:
+    """A node-path first segment that represents an enclosing ``<part>`` wrapper.
+
+    Two shapes the source-tree parser emits for the enclosing ``<part>`` of a
+    provision-bearing body:
+
+    * ``part:N`` -- the labeled shape (``<part><label>N</label>...``).
+    * ``part@DLM_xml_id`` -- the unlabeled fallback shape emitted when a
+      ``<part>`` element lacks a parseable ``<label>`` (the parser falls back
+      to the part's ``xml_id`` to disambiguate the wrapper). The legacy
+      ``act_public_1981_23_en_2007-09-03`` snapshot has ~199 nodes whose path
+      carries such an ``@``-keyed leading segment.
+
+    Accepting both as the leading-1-extra tolerance is a strict-superset additive
+    widening that mirrors the historical ``part:N`` semantics (a ``<part>``
+    wrapper present in the parsed body's path but absent in the address-derived
+    source_path); it closes the deterministic gap on the
+    ``amendment_skipped_target_absent`` bucket where a chain-replay op resolves
+    the clean ``prov:N``-form path but the carried tree (built off the earliest
+    archived snapshot) has the unlabeled-``part`` wrapper. See
+    ``notes/IMPLEMENTATION_DIVERGENCE_LEDGER.md``'s
+    ``amendment_skipped_target_absent -- classified 2026-06-22`` section.
+    """
+    if not path_segment:
+        return False
+    # ``part:N`` (label-keyed) shape: split(':',1)[0] yields 'part'.
+    if path_segment.split(":", 1)[0] == "part":
+        return True
+    # ``part@DLM_xml_id`` (xml_id-keyed fallback) shape: starts with ``part@``.
+    # The unlabeled-fallback segment carries no ':' so the prior narrow predicate
+    # silently rejected it.
+    return path_segment.startswith("part@")
+
+
 def _resolve_target_nodes(
     document: NZSourceDocument,
     source_path: tuple[str, ...],
@@ -4596,10 +4630,13 @@ def _resolve_target_nodes(
     (e.g. "Section 2(1)"), while the parsed body nests provisions under their
     part (``part:1/prov:2/subprov:1``). We therefore accept a node whose path
     equals the address path exactly OR equals it with one extra leading
-    ``part:`` segment, but only in the live body — never an end-of-document
-    skeleton copy, which would resolve substantively for a node that is in fact
-    repealed in the body. The caller still requires exactly one match; an empty
-    or ambiguous result is a typed refusal, never a coarse-parent fallback.
+    ``part`` wrapper segment (either the labeled ``part:N`` form OR the
+    unlabeled ``part@DLM_xml_id`` fallback form emitted when the ``<part>``
+    element lacks a parseable ``<label>`` -- see :func:`_is_leading_part_segment`),
+    but only in the live body -- never an end-of-document skeleton copy, which
+    would resolve substantively for a node that is in fact repealed in the
+    body. The caller still requires exactly one match; an empty or ambiguous
+    result is a typed refusal, never a coarse-parent fallback.
     """
     matches: list[NZSourceNode] = []
     for node in document.nodes:
@@ -4609,7 +4646,7 @@ def _resolve_target_nodes(
             matches.append(node)
         elif (
             len(node.path) == len(source_path) + 1
-            and node.path[0].split(":", 1)[0] == "part"
+            and _is_leading_part_segment(node.path[0])
             and node.path[1:] == source_path
         ):
             matches.append(node)

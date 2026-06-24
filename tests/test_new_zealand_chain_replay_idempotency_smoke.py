@@ -261,17 +261,133 @@ def test_resolve_target_nodes_rejects_part_at_xml_id_leading_segment() -> None:
         f"XML here no longer triggers the fallback (update the XML fixture)."
     )
 
-    # The current gap: _resolve_target_nodes('part@DLM888', 'prov:21') with the op-resolved
-    # path ('prov:21',) FAILS because the leading-part tolerance predicate does not accept
-    # the `part@xml_id` form.
+    # Piece 2 of the part@xml_id widening lane (paired spec + test change, AGENTS
+    # §2.5): _resolve_target_nodes('part@DLM888', 'prov:21') with the op-resolved
+    # path ('prov:21',) now resolves via the widened _is_leading_part_segment
+    # predicate (accepts both the labeled `part:N` form and the unlabeled
+    # `part@xml_id` fallback shape). The synthetic fixture pins the parser-side
+    # invariant; this assertion pins the resolver-side widening.
     matches = _resolve_target_nodes(doc, ("prov:21",))
-    # The bug: assert EMPTY (current behavior). The strict-superset widening will
-    # flip this assertion to `assert len(matches) == 1` (the fix is acknowledged at
-    # that point by updating this test).
-    assert matches == (), (
-        f"_resolve_target_nodes unexpectedly accepted the `part@xml_id` leading segment "
-        f"for path ('prov:21',). The strict-superset widening described in the ledger's "
-        f"`amendment_skipped_target_absent — classified 2026-06-22` section must have "
-        f"landed; this synthetic regression should be updated to assert the new widened "
-        f"behavior (`len(matches) == 1`) as the paired change. matches={matches}"
+    assert len(matches) == 1, (
+        f"_resolve_target_nodes did not resolve the `part@xml_id` leading segment "
+        f"for path ('prov:21',). The strict-superset widening (helper "
+        f"_is_leading_part_segment in dry_run.py) must have regressed back to the "
+        f"prior narrow predicate (`path[0].split(':',1)[0] == 'part'`) that rejected "
+        f"the unlabeled-`<part>` fallback shape. matches={matches}"
+    )
+    assert matches[0].label == "21"
+    assert matches[0].path == ("part@DLM888", "prov:21")
+
+
+@pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.skipif(not _SMOKE_CORPUS.exists(), reason="NZ smoke corpus CSV not present")
+@pytest.mark.slow
+def test_chain_replay_target_absent_no_in_oracle_prov_level_after_part_at_xml_id_widening() -> None:
+    """After the strict-superset widening of `_resolve_target_nodes` (helper
+    `_is_leading_part_segment`) that accepts BOTH the labeled `part:N` form
+    AND the unlabeled `part@DLM_xml_id` fallback shape, the witness work
+    `act_public_1981_23` (199 node paths carrying `@`-segments in its
+    earliest archived snapshot — see the ledger's
+    `amendment_skipped_target_absent -- classified 2026-06-22` section)
+    MUST have ZERO chain-replay `amendment_skipped_target_absent` skips on
+    prov-level section paths whose source_path STILL resolves to a node in
+    the work's FINAL archived oracle.
+
+    Before the widening the resolved-path check `path[0].split(':', 1)[0] == 'part'`
+    silently rejected `part@DLM44667`-shaped segments (no colon → the split
+    returns the full string), framing a deterministic gap as honest
+    `target_absent` residue. After the widening those sections resolve
+    against the carried tree and proceed (closing ~50-60 of the 62
+    post-cutoff in-oracle-substantive target_absent skips this lane
+    estimated).
+
+    Witnesses the ledger's piecemeal step 3 ("cross-corpus @slow regression
+    pinning that structural invariant") in narrow form: scrubbed
+    corpus-wide to confirm the part@xml_id lane is **not** the cause of the
+    remaining 10 offenders (those cluster on the omnibus-reparent lane:
+    `act_public_1992_122`, `act_public_2022_77`, `act_public_2009_13`).
+    The witness-work assertion is the strict-equality regression surface:
+    any re-narrowing of `_is_leading_part_segment` (or any change that
+    re-introduces an in-oracle prov-level target_absent skip on
+    `act_public_1981_23`) fails this test precisely because the closing
+    condition stopped holding.
+
+    AGENTS §0 + §1.1: target hijacking via ambiguous search widening is
+    forbidden; this test verifies the conservative bounded widening (a
+    same-kind fallback shape emitted by the same parser path) didn't
+    regress into a coarse parent-coercion fallback — the assertion is that
+    the carried-tree prov-level target resolvers STILL operate per the
+    strict single-match rule, only now under both `part` shapes.
+    AGENTS §2.9: a structural invariant (zero, not a fragile count).
+    """
+    work_id = "act_public_1981_23"
+    archive = open_farchive(_REAL_DB)
+    try:
+        result = subprocess.run(
+            ["uv", "run", "lawvm", "nz-corpus", "replay-chain",
+             "--work-id", work_id, "--json"],
+            capture_output=True, text=True, cwd=str(_REPO_ROOT),
+        )
+        if result.returncode != 0:
+            pytest.fail(
+                f"chain-replay failed for {work_id}: stderr={result.stderr[:400]}"
+            )
+        report = json.loads(result.stdout)
+        versions = archived_xml_versions_for_work(archive, work_id)
+        assert versions, f"no archived versions for {work_id}"
+        oracle_doc = _parse_archived_version(archive, versions[0], {})
+        assert oracle_doc is not None, f"could not parse latest archived version of {work_id}"
+
+        in_oracle_section: list[tuple[str, tuple[str, ...]]] = []
+        saw_prov_level_absent = False
+        for skip in report.get("skips", ()):
+            if skip.get("bucket") != "amendment_skipped_target_absent":
+                continue
+            src_path = tuple(skip.get("source_path", ()))
+            if not src_path:
+                continue
+            head = src_path[0]
+            # Prov-level section path: topmost is `prov:N`, OR a single
+            # leading `part:N` / `part@xml_id` wrapper with `prov:N` next.
+            if head.split(":", 1)[0] == "prov" and not any(
+                p.split(":", 1)[0] in ("subprov", "para", "def-para", "item")
+                for p in src_path[1:]
+            ):
+                is_prov_level = True
+            elif (
+                (head.split(":", 1)[0] == "part" or head.startswith("part@"))
+                and len(src_path) >= 2
+                and src_path[1].split(":", 1)[0] == "prov"
+                and not any(
+                    p.split(":", 1)[0] in ("subprov", "para", "def-para", "item")
+                    for p in src_path[2:]
+                )
+            ):
+                is_prov_level = True
+            else:
+                is_prov_level = False
+            if not is_prov_level:
+                continue
+            saw_prov_level_absent = True
+            if _resolve_target_nodes(oracle_doc, src_path):
+                in_oracle_section.append(
+                    (skip.get("amendment_date_iso", ""), src_path)
+                )
+    finally:
+        archive.close()
+
+    # The widening paid in: there are prov-level target_absent skips
+    # (legacy pre-cutoff / genuine missing-target cases — saw_prov_level_absent
+    # may be True), but NONE of them point at a substantive node the FINAL
+    # oracle still carries live.
+    assert not in_oracle_section, (
+        f"act_public_1981_23 (199 part@xml_id paths in earliest snapshot): "
+        f"{len(in_oracle_section)} post-widening `amendment_skipped_target_absent` "
+        f"skip(s) on prov-level section paths whose source_path STILL resolves in "
+        f"the work's FINAL archived oracle. The `_is_leading_part_segment` widening "
+        f"(dry_run.py) has either regressed to the narrow `path[0].split(':',1)[0]=='part'` "
+        f"predicate, OR a new structural path shape is no longer covered by the strict-"
+        f"superset widening (audit `_resolve_target_nodes` and "
+        f"`_is_leading_part_segment`). amendment_date, source_path for the offenders: "
+        f"{in_oracle_section[:8]}"
     )
