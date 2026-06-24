@@ -49,6 +49,8 @@ data/**
 !data/nz/bench_corpus.csv
 !data/nz/bench_corpus_smoke.csv
 !data/nz/bench_corpus_notes.md
+!data/norway/
+!data/norway/bench_corpus.csv
 !data/bench_runs/
 !data/uk_bench_runs/
 !data/ee_bench_runs/

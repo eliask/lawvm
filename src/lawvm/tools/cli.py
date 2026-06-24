@@ -12769,6 +12769,15 @@ def _main_impl() -> None:
             from lawvm.tools.nz_bench import main as nz_bench_main
 
             nz_bench_main(args)
+        elif j == "no":
+            # ``no_bench`` imports trigger the comparator registration; the
+            # data-layer (curated corpus CSV + per-statute verify sweep) is
+            # multi-session work tracked in notes_internal/NO_AGENTS_MD_
+            # AUDIT.md. Until that lands, fail loud — never silently fall
+            # through to FI. The contract adapter test pins the mapping.
+            from lawvm.tools.no_bench import no_bench_main
+
+            no_bench_main(args)
         elif j == "us":
             # The US dry-run bench is fully implemented as a standalone entry
             # point (``python -m lawvm.us_federal.bench``). Reuse it verbatim by

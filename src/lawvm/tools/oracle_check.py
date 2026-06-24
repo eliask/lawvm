@@ -1801,6 +1801,13 @@ def _classify_statute(
                 "UNKNOWN",
                 "EDITORIAL_CONVENTION",
                 "ORACLE_STALE",
+                # A high-overlap text-corruption SOURCE_PATHOLOGY inside an
+                # abridged-unreconstructable chapter is also intrinsic to the
+                # omitted base, so it collapses to SOURCE_INCOMPLETE here. The
+                # high-overlap check fires after the more specific editorial
+                # verdicts (above), so a figure-legend / subsection-ordinal
+                # verdict remains the witness when it applies — only a bare
+                # high-overlap corruption inside the abridged span is overridden.
                 "SOURCE_PATHOLOGY",
             }
             for sec in section_results:

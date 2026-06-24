@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import subprocess
-from typing import Any
+from typing import Any, cast
+from urllib.error import URLError
 
 from lawvm.norway.statsrad import (
+    _archive_fetch,
+    _local_time_date,
     build_no_statsrad_commencement_candidate_scan,
     build_no_statsrad_index,
     extract_no_statsrad_articles,
@@ -451,3 +454,110 @@ def test_build_no_statsrad_commencement_candidate_scan_separates_evidence(monkey
     assert report["candidates"][0]["commencement_marker"] is True
     assert report["event_artifact_diagnostic_count"] == 1
     assert report["event_artifact_diagnostics"][0]["rule_id"] == "no_statsrad_event_artifact_invalid_json"
+
+
+# --- Guard-liveness for the §1.10 narrow-except catches in statsrad.py -----
+#
+# These three pins exercise the narrow catches added in 4e172268 and
+# ffa291a8 (was ``except Exception``. Without a test that drives a known-
+# violating input through the production lane, a future refactor that
+# re-broadens these catches to ``except Exception`` would silently swallow
+# the structural mistake — the §2.9 "worst failure class" hazard.
+
+
+def test_local_time_date_returns_none_for_non_lxml_container() -> None:
+    """The ``except AttributeError`` catch in ``_local_time_date`` is reachable.
+
+    Drives a non-lxml container with no ``.xpath`` attribute through the
+    function and asserts the narrow catch returns ``None`` (no time found)
+    rather than propagating an ``AttributeError`` to the caller. If a future
+    refactor re-broadens to ``except Exception:`` the test still passes —
+    that is *not* the regression we're guarding against. The regression we're
+    guarding against is removing the catch entirely (which would crash a
+    non-lxml container path) or moving it to the wrong scope.
+    """
+
+    class _NonLxmlContainer:
+        # No ``.xpath`` attribute at all → AttributeError on attribute access.
+        pass
+
+    assert _local_time_date(_NonLxmlContainer()) is None
+
+
+def test_archive_fetch_returns_none_on_urlerror_for_archive_without_fetch_method(
+    monkeypatch,
+) -> None:
+    """The urllib fallback's ``URLError``/``TimeoutError`` catch is reachable.
+
+    ``_archive_fetch`` falls through to ``urllib.request.urlopen`` only when
+    the archive has no ``.fetch`` method. Drive that path with a URLError and
+    assert the narrow catch returns ``None`` (no fetch attempts succeeded),
+    rather than the previous ``except Exception`` swallow on every error.
+    """
+
+    def _raise_url_error(*args: Any, **kwargs: Any) -> Any:
+        raise URLError("simulated network failure")
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_url_error)
+    monkeypatch.setattr("urllib.request.Request", lambda url, headers=None: url)
+
+    archive_without_fetch = _FakeArchiveWithoutFetch()
+    # Deliberately cast: _archive_fetch's _ArchiveLike protocol requires
+    # ``.fetch``, but this test exercises the urllib fallback path that only
+    # fires when the archive has *no* fetch method. ty treats the missing
+    # protocol member as a type error; we cast to Any to flag the intent.
+    result = _archive_fetch(cast(Any, archive_without_fetch), "https://example.invalid/", storage_class="html")
+
+    assert result is None
+
+
+class _FakeArchiveWithoutFetch:
+    """Archive stub that has getters but no ``.fetch`` method.
+
+    Mirrors the legacy / minimum archive contract: ``_archive_fetch`` only
+    falls through to urllib when there is no ``.fetch`` callable.
+    """
+
+    def __init__(self) -> None:
+        self.stored: dict[str, bytes] = {}
+
+    def get(self, locator: str) -> bytes | None:
+        return None
+
+    def has(self, locator: str, *, max_age_hours: float = 0.0) -> bool:
+        return False
+
+    def store(self, locator: str, data: bytes, *, storage_class: str | None = None, metadata: dict[str, object] | None = None) -> str:
+        self.stored[locator] = data
+        return locator
+
+
+def test_fetch_statsrad_url_raises_runtime_error_chaining_urlerror_when_curl_unavailable(
+    monkeypatch,
+) -> None:
+    """The article raw-bytes fetcher ``urllib`` fallback's RuntimeError chains the URLError.
+
+    When curl is unavailable (``FileNotFoundError`` on the first attempt), the
+    fetcher falls through to ``urllib.request.urlopen``, and a URLError must
+    surface as a typed ``RuntimeError`` carrying the URL — not a bare re-raise
+    and not a silent swallow (was ``except Exception: raise``, the meaningless
+    dead-code wrapper that ffa291a8 replaced).
+    """
+
+    def _fake_curl_missing(*args: Any, **kwargs: Any) -> Any:
+        raise FileNotFoundError("curl: command not found")
+
+    def _raise_url_error(*args: Any, **kwargs: Any) -> Any:
+        raise URLError("simulated network failure")
+
+    monkeypatch.setattr("lawvm.norway.statsrad.subprocess.run", _fake_curl_missing)
+    monkeypatch.setattr("lawvm.norway.statsrad.urlopen", _raise_url_error)
+
+    try:
+        fetch_statsrad_url("https://example.invalid/id1/")
+    except RuntimeError as exc:
+        assert "statsrad article raw bytes fetch failed" in str(exc)
+        assert "https://example.invalid/id1/" in str(exc)
+        assert isinstance(exc.__cause__, URLError)
+        return
+    raise AssertionError("fetch_statsrad_url should raise RuntimeError chaining URLError on curl-unavailable + URLError")

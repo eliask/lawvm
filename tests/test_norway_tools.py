@@ -34,7 +34,87 @@ from lawvm.norway.commencement import (
 )
 from lawvm.norway.index import load_no_amendment_index
 from lawvm.norway.verify import NOCompareProjection
-from lawvm.norway.sources import NOLocatedArtifact, load_no_current_law_ids, load_no_current_law_titles
+from lawvm.norway.sources import (
+    NOLocatedArtifact,
+    _has_operative_content,
+    load_no_current_law_ids,
+    load_no_current_law_titles,
+)
+
+from lawvm.core.ir import IRNode
+from lawvm.core.semantic_types import IRNodeKind
+
+
+def test_has_operative_content_detects_enum_kind_section_with_text() -> None:
+    # §1.10 regression test: the previous in-closure membership test
+    # ``getattr(node, "kind", "") in {"section", ...}`` always returned False
+    # because IRNodeKind enum members don't equal their string values.
+    # The predicate therefore lied about whether the IR carried operative
+    # content; this test pins the fix (kind_str coercion) so any future
+    # refactor that reverts to the in-set enum probe fails loudly.
+    section = IRNode(kind=IRNodeKind.SECTION, label="1", text="§ 1 Formål. Loven gjeld testlov.")
+
+    assert _has_operative_content(section) is True
+
+
+def test_has_operative_content_detects_plain_str_kind_section_with_text() -> None:
+    # §1.9 typed-carrier legacy support: some parse paths that did not migrate
+    # to IRNodeKind may still emit IRNodes whose ``kind`` is a plain str
+    # (defensively-checked via getattr + kind_str coercion). The predicate
+    # must not silently return False for the legacy str-typed kind shape.
+    #
+    # Using SimpleNamespace directly (not IRNode kind="section") because the
+    # IRNode constructor's typed signature rejects plain str kinds (an enum
+    # is enforced for production code); the predicate's defensive getattr
+    # supports both shapes and that's what we pin here.
+    from types import SimpleNamespace
+
+    section = SimpleNamespace(kind="section", label="1", text="§ 1 Formål. Loven gjeld testlov.", children=())
+
+    assert _has_operative_content(section) is True
+
+
+def test_has_operative_content_walks_container_into_section_with_text() -> None:
+    # The body's kind (BODY / CHAPTER) is not in the operative set; the
+    # predicate must recurse to children. A body whose only child is a
+    # SECTION with text returns True through the recursive walk.
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.HEADING, text="§ 1 Formål"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Loven gjeld testlov."),
+                ),
+            ),
+        ),
+    )
+
+    assert _has_operative_content(body) is True
+
+
+def test_has_operative_content_returns_false_for_empty_body() -> None:
+    # Negative case: a body with no children carries no operative content;
+    # the predicate must return False (no false positives).
+    body = IRNode(kind=IRNodeKind.BODY, children=())
+
+    assert _has_operative_content(body) is False
+
+
+def test_has_operative_content_returns_false_when_no_operative_kind_descendants() -> None:
+    # Negative case: a body whose only children are DESCENDANTS OUTSIDE the
+    # operative set (section / subsection / item / sentence). A chapter with
+    # only a heading child (no operative leaves beneath it) carries no
+    # operative text the IR-walk should detect. The fix must not over-fire
+    # on containers — only operative leaves count.
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.HEADING, text="Kapittel 1. Innledning"),),
+    )
+
+    assert _has_operative_content(body) is False
 
 
 def _write_archive(archive_path: Path, members: list[tuple[str, bytes]]) -> None:

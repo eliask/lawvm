@@ -1,0 +1,19 @@
+base_id,as_of,note
+no/lov/2024-01-12-1,2026-03-29,Suppleringsskatteloven — consistent replay (3 amendments applied)
+no/lov/2017-06-16-60,2026-03-29,Klimaloven — consistent replay (3 amendments applied)
+no/lov/2021-05-21-42,2026-03-29,Språklova — consistent replay
+no/lov/2004-05-14-25,2026-03-29,Voldgiftsloven — consistent replay
+no/lov/2022-05-12-28,2026-03-29,Advokatloven — consistent replay
+no/lov/2023-06-16-62,2026-03-29,Valgloven — consistent replay
+no/lov/2025-04-25-12,2026-03-29,Innkrevingsloven — consistent replay
+no/lov/2019-06-21-70,2026-03-29,Havne- og farvannsloven — consistent replay
+no/lov/2006-08-18-61,2026-03-29,Beredskapslagringsloven — consistent replay
+no/lov/2020-05-07-38,2024-06-01,Rekonstruksjonsloven — minor divergence (1 MISMATCH, covid-era statute)
+no/lov/2022-03-11-9,2026-03-29,Vareførselsloven — minor divergence
+no/lov/2020-12-18-156,2026-03-29,Tilskuddsordning august 2020 — divergent replay
+no/lov/2018-06-15-44,2026-03-29,Lov om elektroniske tillitstjenester — divergent replay
+no/lov/2022-06-17-49,2026-03-29,Lov om Riksrevisjonen informasjonstilgang — divergent replay
+no/lov/2015-05-12-27,2026-03-29,Lov om forsvunne personar — divergent replay
+no/lov/2023-11-24-85,2026-03-29,Militærpolitiloven — divergent replay
+no/lov/2001-01-05-1,2026-03-29,Vaktvirksomhetsloven — saturated divergence (pre-2001 sparse amendment history)
+no/lov/2006-06-30-50,2026-03-29,SCE-loven — saturated divergence (oracle-stale candidate)
