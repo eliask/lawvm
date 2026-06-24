@@ -1,35 +1,44 @@
 """Sweden frontend helpers for LawVM.
 
 This first Sweden slice is intentionally source-layered rather than replay-first.
-It consumes structured RK beta/RK-style JSON documents and exposes:
+It consumes structured RK beta/RK-style JSON documents, the official SFS PDF +
+PDF-derived text, and the consolidated sfst HTML current surface, and exposes:
 
 - `SESourceRecord`: source/provenance metadata for one SFS act
 - `SEAmendmentRegisterEntry`: structured amendment-register rows
 - `parse_se_statute()`: current-text IR parser for Swedish consolidated text
+- `parse_se_official_act_text()` / `compile_se_official_act_ops()`: SFS PDF/text
+  acquisition and amendment-op compilation (the canonical-ops waist)
+- `apply_se_ops()` / `materialize_se_statute_as_of()`: replay + point-in-time
+  materialization over the IR
 
-Original-SFS PDF acquisition and amendment-op compilation are separate later
-phases. The current code keeps those entry points explicit but unimplemented.
+Acquisition, op-compile, replay, and PIT materialization are all wired and
+corpus-exercised; SE is bounded by source-data availability (point-in-time
+oracle snapshots), not by engine gaps — see `notes/SWEDEN_LAWVM_STATUS.md`.
 
 Architectural observations
 --------------------------
-- Sweden is intentionally source-layered right now, which is coherent for the
-  current maturity level.
-- The main architectural gap is that the shared waists are not yet explicit
-  here: clause surface, payload surface, and direct core adjudication ownership
-  are still mostly future work rather than enforced seams.
-
-TODO
-----
-- Introduce an explicit clause/effect surface for Swedish enacting clauses
-  before replay-specific heuristics accumulate.
-- Converge replay findings toward shared/core adjudication vocab instead of
-  leaving them wrapper-only.
+- Sweden is intentionally source-layered: the SFST-derived current surface is the
+  oracle and replay runs as consistency-verification against it, not as the
+  authoritative forward consolidation. This is coherent for SE's data shape
+  (single-version oracle — no historical PIT snapshots exposed by the source).
+- Waists that are now typed in SE: clause surface (`SEClauseSurface`/parsed
+  clause records), payload surface (`SEPayloadSurface`/`SEAmendmentRegisterEntry`),
+  canonical ops (`core.LegalOperation` via `compile_se_official_act_ops`), and the
+  apply waist (`apply_se_ops` / `apply_se_ops_conserved` returning a typed
+  `SEApplyResult` with a `FilterResult[LegalOperation]` partition per §1.8).
+- The remaining architectural gap (per `notes_internal/SWEDEN_STATE_SURVEY.md`)
+  is that the replay-vs-oracle classification residual is emitted as a
+  dict-shaped ``classification`` string rather than the shared typed
+  ``agreement_residual`` object FI/UK/EE use; promotion is a documented
+  parity item, not an open question.
 
 Actionables
 -----------
 - Keep source acquisition/provenance concerns separate from semantic lowering.
-- When official-act op compilation deepens, establish the waist boundaries
-  early instead of letting `LegalOperation` become another long-lived catch-all.
+- When widening the replay residual classification, emit the shared typed
+  ``agreement_residual`` (closing the dict-shape gap above) rather than
+  extending the local ``classification`` string enumeration.
 """
 
 from __future__ import annotations
