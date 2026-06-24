@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative (versioned consumer contract, spec_version 0.3). All cited modules/tests verified: provision_state.py (`lawvm.provision_state.v1`), consumer-contract + fixed-term-expiry test suites, timeline_integrity tool, core/timeline_selection.py. Embedded code-vs-notes block is accurate.
+
 ---
 title: LawVM Provision-State Seam — Consumer Contract
 spec_version: 0.3

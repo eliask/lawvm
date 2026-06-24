@@ -9,7 +9,10 @@ projected as registered findings.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, List, Optional, Sequence
+
+if TYPE_CHECKING:
+    from lawvm.core.stage_result import StageResult
 
 from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
@@ -126,6 +129,14 @@ class ProcessAmendmentSinks:
     write_receipts_out: Optional[List[WriteReceipt]] = None
     migration_events_out: Optional[List[MigrationEvent]] = None
     restructure_plans_out: Optional[List[StructuralTransformPlan]] = None
+    # StageResult-endgame WAIST #6: the per-amendment canonical-op StageResult
+    # account sink. ``compile_amendment_ops`` APPENDS the stage it already builds
+    # (the same account that backs the typed-residual decline single-channel) so
+    # the replay can aggregate the per-amendment accounts onto
+    # ``ReplayProducts.canonical_op_stage`` faithfully — NOT re-derived from the
+    # stage-tagless union findings. The sink only OBSERVES; the decline channel is
+    # unchanged.
+    canonical_op_stages_out: Optional[List["StageResult[Any]"]] = None
 
 
 @dataclass(slots=True)
@@ -227,12 +238,25 @@ class ProcessResultBuilder:
         )
 
     def _append_effect_lifecycle_projection(self) -> None:
-        """Project process-level findings and override notes into effect evidence."""
+        """Project process-level relation notes that do not require canonical ops.
+
+        Effective-date commencement overrides are projected in
+        ``process_pipeline`` after canonical operations for the amendment exist.
+        Projecting those rows here would bind them to generic pre-canonical
+        source effects and can turn repeal effects into executable commencement
+        events. Expiry/repeal override rows remain safe here and preserve the
+        replay-time side channel even before canonical operation projection.
+        """
+        non_commencement_overrides = tuple(
+            row
+            for row in self.buffers.commencement_expiry_override_notes
+            if not row.effective
+        )
         _source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
             target_statute=self.target_statute,
             canonical_ops=(),
             temporal_events=(),
-            lifecycle_overrides=tuple(self.buffers.commencement_expiry_override_notes),
+            lifecycle_overrides=non_commencement_overrides,
             relation_signals=tuple(self.buffers.effect_relation_signals),
             known_source_effects=tuple(self.buffers.source_effects),
         )

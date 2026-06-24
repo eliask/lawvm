@@ -20,7 +20,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.http_identity import LAWVM_USER_AGENT
 from lawvm.uk_legislation.phase_discipline import (
@@ -110,11 +110,13 @@ class UKPrefetchReport:
         blocking_event_rule_counts = Counter(
             str(event.get("rule_id") or "unknown")
             for event in events
-            if is_blocking_compile_record(event)
+            if is_blocking_compile_record(CompileRecord.from_mapping(event))
         )
         event_owner_phase_counts = uk_phase_owner_counts_for_diagnostics(events)
         blocking_event_owner_phase_counts = uk_phase_owner_counts_for_diagnostics(
-            event for event in events if is_blocking_compile_record(event)
+            event
+            for event in events
+            if is_blocking_compile_record(CompileRecord.from_mapping(event))
         )
         return {
             "fetched_count": self.fetched_count,
@@ -285,7 +287,11 @@ def fetch_missing_for_statute(
         event = dict(rejection)
         event.setdefault("statute_id", sid)
         events.append(_prefetch_event_with_owner_phase(event))
-    source_error_count = sum(1 for event in events if is_blocking_compile_record(event))
+    source_error_count = sum(
+        1
+        for event in events
+        if is_blocking_compile_record(CompileRecord.from_mapping(event))
+    )
     source_required = [
         e
         for e in effects

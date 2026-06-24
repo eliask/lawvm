@@ -145,6 +145,7 @@ class UncoveredRopDraft:
     target_part: Optional[str]
     muutos_ir: IRNode
     op_id: str
+    cross_ir: IRNode | None = None
     move_clause_target_unit_kind: TargetUnitKind | None = None
 
 
@@ -155,6 +156,7 @@ class ExistingSectionCandidate:
     existing: IRNode
     existing_path: tuple[tuple[str, str], ...]
     sec_ir: IRNode
+    cross_ir: IRNode | None
     label: str
     amend_chapter_label: Optional[str]
     amend_part_label: Optional[str]
@@ -166,6 +168,7 @@ class NewSectionCandidate:
     """Uncovered-body section candidate with no resolvable live target."""
 
     sec_ir: IRNode
+    cross_ir: IRNode | None
     label: str
     amend_chapter_label: Optional[str]
     amend_part_label: Optional[str]
@@ -193,7 +196,7 @@ def build_uncovered_rop(
     return ResolvedOp.from_amendment_op(
         am_op,
         muutos_ir=draft.muutos_ir,
-        cross_ir=None,
+        cross_ir=draft.cross_ir,
         target_unit_kind="section",
         target_norm=draft.target_label,
         target_chapter=draft.target_chapter,

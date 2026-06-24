@@ -6,10 +6,11 @@ These pin the three guarantees the seam adds:
    WriteReceipt + ObservedWriteAudit by construction; in a small
    renumber/replace/insert scenario the receipt count equals the landed-write
    count and every audit is clean.
-2. Strict-mode blocking — a landed write whose conservation receipt does not
-   cover the observed mutation footprint (ObservedWriteAudit.status ==
-   "violation") trips a BLOCKING Finding under a strict profile, and does not
-   under a permissive profile.
+2. Boundary blocking — a landed write whose declared mutation events do not
+   explain its observed footprint (an undeclared tree touch) trips a BLOCKING
+   Finding REGARDLESS of the caller's StrictProfile (the firewall is not gated on
+   strict mode: a permissive or None profile cannot silently authorize a write
+   that landed outside its declared target).
 3. Non-optional sink — the apply sinks always carry a receipt accumulator; a
    caller cannot drive the apply path without one (the field is non-Optional and
    defaults to a fresh list).
@@ -235,30 +236,41 @@ def test_strict_mode_blocks_undeclared_tree_touch() -> None:
     assert blocking[0].detail["undeclared_touch_code"] == "REPLAY_UNDECLARED_TREE_TOUCH"
 
 
-def test_permissive_profile_does_not_block_undeclared_tree_touch() -> None:
-    """The same undeclared touch under a permissive profile does NOT block."""
-    prev_state, new_state = _states_with_change()
-    rop = _resolved_op("perm_op", "REPLACE")
-    findings: List[Finding] = []
-    sinks = ApplyResolvedOpSinks(findings_out=findings)
-    undeclared = observed_vs_declared_cross_check(
-        "perm_op",
-        "test_helper",
-        _tops.diff_ir_paths_identity_pruned(prev_state.ir, new_state.ir),
-        events=(),
-    )
-    assert undeclared is not None
-    _collect_op_write_receipt(
-        prev_state,
-        new_state,
-        rop=rop,
-        strict_profile=_permissive_profile(),
-        source_statute="2020/1",
-        sinks=sinks,
-        undeclared_touch=undeclared,
-    )
-    assert len(sinks.write_receipts_out) == 1
-    assert not any(f.blocking for f in findings)
+def test_undeclared_tree_touch_blocks_regardless_of_profile() -> None:
+    """The undeclared-touch boundary finding is DECOUPLED from strict mode (bug [6]).
+
+    Surfacing the blocking REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET finding no
+    longer depends on the caller's StrictProfile: an undeclared tree touch is a
+    genuine landed-reality boundary violation, so a permissive (or None) profile
+    must NOT silently authorize a write that landed outside its declared target.
+    Both a permissive profile and a None profile now emit the blocking finding —
+    the firewall bites for every caller.
+    """
+    for profile in (_permissive_profile(), None):
+        prev_state, new_state = _states_with_change()
+        rop = _resolved_op("perm_op", "REPLACE")
+        findings: List[Finding] = []
+        sinks = ApplyResolvedOpSinks(findings_out=findings)
+        undeclared = observed_vs_declared_cross_check(
+            "perm_op",
+            "test_helper",
+            _tops.diff_ir_paths_identity_pruned(prev_state.ir, new_state.ir),
+            events=(),
+        )
+        assert undeclared is not None
+        _collect_op_write_receipt(
+            prev_state,
+            new_state,
+            rop=rop,
+            strict_profile=profile,
+            source_statute="2020/1",
+            sinks=sinks,
+            undeclared_touch=undeclared,
+        )
+        assert len(sinks.write_receipts_out) == 1
+        blocking = [f for f in findings if f.blocking]
+        assert blocking, "undeclared touch must block regardless of profile"
+        assert blocking[0].kind == WRITE_RECEIPT_VIOLATION_FINDING_CODE
 
 
 def test_collect_op_write_receipt_strict_clean_write_no_finding() -> None:

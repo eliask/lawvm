@@ -16,11 +16,13 @@ Design principles (AGENTS.md §1.9, STRINGLY_TYPED_SURFACE_AUDIT.md):
     (AGENTS.md §1.1).
 
 This module has no Finland-specific imports. Finland extraction lives in
-``lawvm.finland.cross_refs`` and ``lawvm.finland.ref_mention_extractor``.
+``lawvm.finland.cross_refs`` and ``lawvm.finland.references.ref_mention_extractor``.
 This module only holds the shared typed primitive and observation types.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -408,6 +410,228 @@ class ApproximateReferenceFinding:
 # ---------------------------------------------------------------------------
 # Parquet row serialization helpers
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Reference SET model (one source expression → one target SET with semantics)
+# ---------------------------------------------------------------------------
+#
+# The flattened ``ReferenceMention`` relation emits one row per expanded target.
+# A written RANGE ("33—35 artiklassa") or coordination ("1 ja 2 kohdassa")
+# therefore lands as N rows that share only their ``surface_text`` — and at that
+# point a range is indistinguishable from a candidate ambiguity (alternatives,
+# pick-one) or an open vague reference. That is a type error: the source
+# expression denotes a *set* of targets, and the SET SEMANTICS (every member is
+# denoted, vs one-of-N is meant) is load-bearing and must be carried explicitly.
+#
+# These additive types restore that distinction WITHOUT changing the flattened
+# ``ReferenceMention`` projection (``fi_refs.parquet`` / ``lawvm refs`` / viewer
+# overlays keep working as a projection of the same facts):
+#   * ``ReferenceExpression``  — the immutable surface fact (one per source span).
+#   * ``ReferenceResolution``  — one expression → ONE resolution carrying the
+#     whole target SET plus its ``ReferenceTargetSetSemantics``.
+
+
+class ReferenceTargetSetSemantics(Enum):
+    """How the target SET denoted by one source expression is to be read.
+
+    A range/coordination is NOT an ambiguity: every listed target is denoted
+    simultaneously (``ALL_VALID``). An ambiguity is a disjunction: one of the
+    listed candidates is meant but the source does not say which
+    (``CANDIDATE_AMBIGUITY``). The two collapse to identical flattened rows, so
+    the distinction must live here, not be inferred from row count.
+    """
+
+    SINGLE = "single"
+    """Exactly one target. The set has one member."""
+
+    ALL_VALID = "all_valid"
+    """A range or coordination: every listed target is denoted (conjunction).
+    ``33—35 artiklassa`` denotes articles 33 AND 34 AND 35; ``1 ja 2 kohdassa``
+    denotes kohta 1 AND 2."""
+
+    CANDIDATE_AMBIGUITY = "candidate_ambiguity"
+    """Alternatives (disjunction): exactly one of the listed candidates is the
+    intended target, but the source does not disambiguate. Pick-one-unknown."""
+
+    OPEN = "open"
+    """Referent-bearing but not enumerable: the expression names a referent
+    (e.g. a vague ``muussa laissa``) without a closed target list. The set is
+    not enumerated, but the expression is NOT targetless garbage."""
+
+    NO_ENUMERABLE_EXTENSION = "no_enumerable_extension"
+    """The expression has no enumerable target extension at all (e.g. a broken
+    or unresolved reference whose target set is empty and cannot be widened).
+    Distinct from OPEN: OPEN has a (vague) referent, this has none to enumerate.
+    """
+
+
+class ReferenceResolutionStatus(Enum):
+    """Closed status for a :class:`ReferenceResolution`.
+
+    Mirrors the resolution outcome at the SET level (vs ``CiteConfidence`` which
+    is per flattened member). Kept small and closed — never a free string.
+    """
+
+    RESOLVED = "resolved"
+    """Every member of ``target_set`` resolved to a concrete target."""
+
+    PARTIAL = "partial"
+    """Some members resolved, some did not (mixed member confidences)."""
+
+    UNRESOLVED = "unresolved"
+    """No member resolved to a concrete target (but the expression is real)."""
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceExpression:
+    """The IMMUTABLE surface fact: one written citation expression.
+
+    A ``ReferenceExpression`` is the source-keyed identity of a single citation
+    surface — the thing a reader points a finger at. It carries no resolved
+    targets (those live in :class:`ReferenceResolution`); it is purely the
+    surface and its provenance. One expression maps to one resolution per
+    resolution scope.
+
+    Attributes:
+        surface_text:    The literal source text of the citation surface.
+        source_span:     Provenance back to the source text, or None when the
+                         expression is metadata-derived (no byte span).
+        expression_kind: Coarse syntactic class of the surface: ``"single"`` /
+                         ``"range"`` / ``"coordination"`` / ``"open"``. This is
+                         the SURFACE shape, independent of resolution.
+        surface_expr_id: Content-addressed stable identity of this expression
+                         (``sha256:`` + hex digest of the canonical source-keyed
+                         tuple). Stable across runs given the same source facts.
+    """
+
+    surface_text: str
+    source_span: Optional[SourceSpan]
+    expression_kind: str
+    surface_expr_id: str
+
+    def __post_init__(self) -> None:
+        if not self.surface_text:
+            raise ValueError("ReferenceExpression.surface_text must be non-empty")
+        if not self.expression_kind:
+            raise ValueError("ReferenceExpression.expression_kind must be non-empty")
+        expected = compute_surface_expr_id(
+            self.surface_text, self.source_span, self.expression_kind
+        )
+        if self.surface_expr_id != expected:
+            raise ValueError(
+                "ReferenceExpression.surface_expr_id is not the content address "
+                f"of its fields: got {self.surface_expr_id!r}, "
+                f"expected {expected!r}. Use ReferenceExpression.create()."
+            )
+
+    @classmethod
+    def create(
+        cls,
+        surface_text: str,
+        source_span: Optional[SourceSpan],
+        expression_kind: str,
+    ) -> "ReferenceExpression":
+        """Build a ``ReferenceExpression`` with the content-addressed id filled in."""
+        return cls(
+            surface_text=surface_text,
+            source_span=source_span,
+            expression_kind=expression_kind,
+            surface_expr_id=compute_surface_expr_id(
+                surface_text, source_span, expression_kind
+            ),
+        )
+
+
+def compute_surface_expr_id(
+    surface_text: str,
+    source_span: Optional[SourceSpan],
+    expression_kind: str,
+) -> str:
+    """Compute the content-addressed identity of a reference expression.
+
+    The identity is a ``sha256:``-prefixed hex digest (the codebase's
+    content-address convention, see ``core.compile_metadata``) over a canonical
+    JSON tuple of the source-keyed identity fields. Including the source span
+    keys the id to the exact source location, so two distinct occurrences of the
+    same literal text get distinct ids while a re-run over the same source is
+    stable.
+    """
+    span_key: Optional[list[object]]
+    if source_span is None:
+        span_key = None
+    else:
+        span_key = [
+            source_span.source_file,
+            source_span.byte_offset,
+            source_span.byte_len,
+        ]
+    payload = json.dumps(
+        [surface_text, expression_kind, span_key],
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceResolution:
+    """The resolution of ONE :class:`ReferenceExpression` to a target SET.
+
+    One expression → one resolution. The whole target set lives here as an
+    ordered tuple, and ``target_set_semantics`` says how to read it (every member
+    denoted vs one-of-N vs open). This is what the flattened ``ReferenceMention``
+    rows are a projection OF: re-flattening a ``ReferenceResolution`` reproduces
+    the per-target rows, but the set identity and semantics are no longer lost.
+
+    Attributes:
+        surface_expr_id:     Links back to the ``ReferenceExpression`` it resolves
+                             (its content-addressed id).
+        target_set:          Ordered tuple of resolved provision targets. May be
+                             empty for ``OPEN`` / ``NO_ENUMERABLE_EXTENSION`` (the
+                             referent is named but not enumerated).
+        target_set_semantics: How the set is read (range/coordination vs
+                             ambiguity vs open).
+        status:              Set-level resolution status.
+        corpus_version:      Resolution scope key — the corpus version the
+                             targets resolve under.
+        branch:              Resolution scope key — the branch/line the targets
+                             resolve under.
+    """
+
+    surface_expr_id: str
+    target_set: Tuple[ProvisionRef, ...]
+    target_set_semantics: ReferenceTargetSetSemantics
+    status: ReferenceResolutionStatus
+    corpus_version: str = ""
+    branch: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "target_set", tuple(self.target_set))
+        if not self.surface_expr_id:
+            raise ValueError("ReferenceResolution.surface_expr_id must be non-empty")
+        # An enumerable-semantics resolution must actually enumerate at least one
+        # target; a non-enumerable one (OPEN / NO_ENUMERABLE_EXTENSION) carries an
+        # empty set BY DESIGN. This keeps the set-vs-open distinction fail-loud.
+        enumerable = self.target_set_semantics in (
+            ReferenceTargetSetSemantics.SINGLE,
+            ReferenceTargetSetSemantics.ALL_VALID,
+            ReferenceTargetSetSemantics.CANDIDATE_AMBIGUITY,
+        )
+        if enumerable and not self.target_set:
+            raise ValueError(
+                "ReferenceResolution with enumerable semantics "
+                f"{self.target_set_semantics!r} must carry a non-empty target_set"
+            )
+        if (
+            self.target_set_semantics is ReferenceTargetSetSemantics.SINGLE
+            and len(self.target_set) != 1
+        ):
+            raise ValueError(
+                "ReferenceResolution.SINGLE semantics must carry exactly one "
+                f"target; got {len(self.target_set)}"
+            )
 
 
 def reference_mention_to_row(mention: ReferenceMention) -> dict[str, object]:

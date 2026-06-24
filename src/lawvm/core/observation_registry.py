@@ -173,13 +173,21 @@ class FindingSpec:
 FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
     # --- Observations (role="observation") ---
     FindingSpec("ELAB.MISSING_PAYLOAD_SURFACE", "_build_group_surface",
-                "recovery", "strict_fail", "grafter",
+                "recovery", "warn", "grafter",
                 "section_ir absent despite non-trivial ops; no payload surface to elaborate",
                 ("preservation",), role="observation"),
     FindingSpec("ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE", "_build_group_surface",
-                "recovery", "strict_fail", "grafter",
+                "recovery", "warn", "grafter",
                 "same-group recodification payload selected from destination section when source-number body is absent or an omission shell",
                 ("preservation", "parse_witness", "strictness"), role="observation"),
+    FindingSpec("ELAB.RENUMBER_DESTINATION_PAYLOAD_SURFACE", "_build_group_surface",
+                "recovery", "warn", "compile_group_surface",
+                "pure renumber payload selected from destination section rather than source label",
+                ("preservation", "parse_witness"), role="observation"),
+    FindingSpec("ELAB.RENUMBER_SOURCE_LABEL_PAYLOAD_NOT_CLAIMED", "_build_group_surface",
+                "recovery", "warn", "compile_group_surface",
+                "pure renumber left same-label source-body payload unclaimed because relabel payload belongs at destination label",
+                ("preservation", "parse_witness"), role="observation"),
     FindingSpec("ELAB.SPARSE_OMISSION_TAIL_CLAIM", "_build_group_surface",
                 "recovery", "strict_fail", "compile_group_surface",
                 "explicit descendant target claimed the unique post-omission subsection payload carried by another source section",
@@ -196,6 +204,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "ambiguity", "strict_fail", "payload_normalize",
                 "sparse slot contains both item-level and plain ops targeting different paragraphs",
                 ("ambiguity_resolution",), role="observation"),
+    FindingSpec("ELAB.SPLIT_MIXED_SPARSE_SLOT_CROSS_PARAGRAPH_PAYLOAD", "sparse_subsection_elaboration",
+                "recovery", "strict_fail", "payload_normalize",
+                "plain moment payload was pruned so cross-paragraph item bodies remain owned by their explicit item ops",
+                ("preservation", "ambiguity_resolution", "strictness"), role="observation"),
     FindingSpec("ELAB.PAYLOAD_COMPLETENESS", "_elaborate_group",
                 "audit", "warn", "payload_normalize",
                 "payload completeness witness emitted before apply to classify tail policy and completeness confidence",
@@ -216,6 +228,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "strict_fail", "payload_normalize",
                 "duplicate-target sparse replace was rebound from the shared visible target to the shifted successor slot",
                 ("ambiguity_resolution", "strictness"), role="observation"),
+    FindingSpec("ELAB.REBASE_REPLACED_RENUMBER_SOURCE", "sparse_subsection_elaboration",
+                "recovery", "strict_fail", "payload_normalize",
+                "same-wave replacement of a renumbered subsection source was rebound onto the typed destination",
+                ("ambiguity_resolution", "lineage", "strictness"), role="observation"),
     FindingSpec("ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT", "sparse_subsection_elaboration",
                 "recovery", "strict_fail", "payload_normalize",
                 "same-target sparse insert was bound to the slot before an explicitly moved replacement target",
@@ -235,6 +251,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
     FindingSpec("ELAB.SAME_TARGET_ITEM_SLOT_SHARING", "sparse_subsection_elaboration",
                 "audit", "info", "payload_normalize",
                 "item operations with the same subsection target shared an already-owned sparse payload slot",
+                ("parse_witness", "preservation"), role="observation"),
+    FindingSpec("ELAB.UNLABELED_TABLE_ITEM_ROW_SOURCE_ORDER", "sparse_subsection_elaboration",
+                "audit", "info", "payload_normalize",
+                "same-moment item operations were bound to unlabeled table-row payloads in source order",
                 ("parse_witness", "preservation"), role="observation"),
     FindingSpec("ELAB.TRAILING_SPARSE_INSERT_BINDING", "sparse_subsection_elaboration",
                 "recovery", "strict_fail", "payload_normalize",
@@ -272,6 +292,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "strict_fail", "payload_normalize",
                 "single sparse-omission subsection split across consecutive replace ops",
                 ("ambiguity_resolution",), role="observation"),
+    FindingSpec("ELAB.SPLIT_SINGLE_TARGET_SUBSECTION_CARRIED_LIVE_TAIL", "group_payload_normalization",
+                "recovery", "strict_fail", "payload_normalize",
+                "carried live sibling text trimmed from the explicitly targeted sparse subsection payload",
+                ("parse_witness", "preservation", "strictness"), role="observation"),
     FindingSpec("ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE", "group_payload_normalization",
                 "recovery", "strict_fail", "payload_normalize",
                 "fused restarted subsection split across consecutive replace ops",
@@ -279,6 +303,18 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
     FindingSpec("ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL", "group_payload_normalization",
                 "recovery", "strict_fail", "payload_normalize",
                 "source-split target subsection prefix and intro/list tail folded into one owned payload slot",
+                ("parse_witness", "preservation", "strictness"), role="observation"),
+    FindingSpec("ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS", "group_payload_normalization",
+                "recovery", "strict_fail", "payload_normalize",
+                "source-split wrap-up slots folded into explicitly replaced list-shaped subsection payloads",
+                ("parse_witness", "preservation", "strictness"), role="observation"),
+    FindingSpec("ELAB.SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION", "group_payload_normalization",
+                "recovery", "strict_fail", "payload_normalize",
+                "detached sentence glued to the final list item promoted to a following subsection",
+                ("parse_witness", "preservation", "strictness"), role="observation"),
+    FindingSpec("ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL", "group_payload_normalization",
+                "recovery", "strict_fail", "payload_normalize",
+                "source-split sibling tail folded into the one explicitly inserted list-shaped subsection payload",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
     FindingSpec("ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL", "group_payload_normalization",
                 "recovery", "strict_fail", "payload_normalize",
@@ -296,9 +332,17 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "strict_fail", "payload_normalize",
                 "whole-section payload leading subsection promoted to section heading and following subsection slots shifted",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
+    FindingSpec("ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET", "group_payload_normalization",
+                "recovery", "strict_fail", "compile_group_elaboration",
+                "typed source heading restored to a sparse prepared payload for an explicit same-section heading facet op",
+                ("parse_witness", "preservation", "strictness"), role="observation"),
     FindingSpec("ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE", "group_payload_normalization",
                 "recovery", "strict_fail", "merge",
                 "leading section omission preserved a live same-subsection prefix before an explicit payload anchor",
+                ("parse_witness", "preservation", "strictness"), role="observation"),
+    FindingSpec("ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE", "group_payload_normalization",
+                "recovery", "strict_fail", "merge",
+                "sparse omission payload row replaced a uniquely labelled live descendant while preserving live subsection shape",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
     FindingSpec("ELAB.TEXT_TABLE_ROW_CONTINUATION", "group_payload_normalization",
                 "recovery", "strict_fail", "payload_normalize",
@@ -401,6 +445,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "warn", "grafter",
                 "section-path resolution followed a same-wave migration event to the current address",
                 ("preservation", "lineage"), role="observation"),
+    FindingSpec("APPLY.SAME_WAVE_SHIFTED_SUBSECTION_REPEAL_TARGET", "replay_apply",
+                "recovery", "warn", "apply_ops_executor",
+                "subsection repeal target followed a same-amendment insert shift witnessed by a renumber destination",
+                ("preservation", "lineage"), role="observation"),
     FindingSpec("APPLY.RESOLVER_BINDING_CONTRACT_ERROR", "apply_op",
                 "violation", "warn", "grafter",
                 "apply-time target resolver binding instrumentation violated its contract",
@@ -419,7 +467,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 ("preservation", "safety_invariant"), role="observation"),
     FindingSpec("APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT", "apply_op",
                 "audit", "info", "grafter",
-                "temporary gap-filler insert whose in-force window ends before the fold-order occupant's deferred commencement begins",
+                "temporary insert whose bounded in-force window can be represented without a permanent occupancy violation",
                 ("preservation",), role="observation"),
     FindingSpec("APPLY.RELABEL_SKIP", "restructure_plan",
                 "recovery", "warn", "grafter",
@@ -575,7 +623,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "an enacting-formula body fallback accepted some body sections while leaving sibling body sections unowned",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
     FindingSpec("PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA", "frontend_compile",
-                "recovery", "strict_fail", "frontend_compile",
+                "recovery", "warn", "frontend_compile",
                 "an act-wide change formula supplied provision targets through labelled body sections",
                 ("parse_witness", "preservation", "strictness"), role="observation"),
     FindingSpec("LOWER.CONTEXT_DEPENDENT_ANCHOR", "frontend_scope",
@@ -598,6 +646,14 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "warn", "grafter",
                 "section REPLACE target was retargeted to the chapter destination declared by an explicit move rider",
                 ("parse_witness", "ambiguity_resolution"), role="observation"),
+    FindingSpec("LOWER.BODY_CHAPTER_DESCENDANT_SCOPE_CORRECTION", "_compile_group",
+                "recovery", "strict_fail", "grafter",
+                "descendant section REPLACE target chapter was corrected from amendment-body chapter placement",
+                ("parse_witness", "ambiguity_resolution", "strictness"), role="observation"),
+    FindingSpec("LOWER.ITEM_AS_SUBSECTION_TARGET_REWRITE", "_compile_group",
+                "recovery", "warn", "grafter",
+                "definition-section kohta target was rewritten to a subsection target when source and live structure encode the entry as a flat subsection",
+                ("parse_witness", "ambiguity_resolution"), role="observation"),
     FindingSpec("LOWER.EXPLICIT_CHUNK_SCOPE", "frontend_scope",
                 "recovery", "strict_fail", "frontend_observations",
                 "op target scope was carried from an explicit source chunk in the preamble (fi: johtolause)",
@@ -614,6 +670,94 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "info", "frontend_phase_surface",
                 "frontend phase diagnostic projected into the governed finding ledger",
                 ("parse_witness",), role="observation"),
+    # Surface-plane totality sweeps (audit-registry rows SURF-04, SURF-05).
+    # Observation-role per-unit totality: the sweep asserts the surface contract
+    # and surfaces a residual population; over the real corpus the residual is the
+    # expected, correct outcome (an orphan reference / unclassified mention is a
+    # real surface fact, not a pipeline fault), so it is non-blocking by design
+    # (tag-don't-guess). The synthetic unit-level bite is the guard-liveness drill.
+    FindingSpec("DEFINITION.DUPLICATE_DEFINITION", "surface_totality",
+                "ambiguity", "warn", "fi_surface_totality",
+                "a defined term is bound more than once per (PIT, scope); "
+                "exactly one definition site per scope is the totality contract",
+                ("parse_witness", "ambiguity_resolution"), role="observation"),
+    FindingSpec("DEFINITION.ORPHAN_DEFINITION_REFERENCE", "surface_totality",
+                "source_pathology", "warn", "fi_surface_totality",
+                "a reference to a defined term has no resolvable definition in "
+                "scope (used before / without an in-scope definition site)",
+                ("parse_witness", "preservation"), role="observation"),
+    FindingSpec("REFERENCE.UNCLASSIFIED_REFERENCE", "surface_totality",
+                "violation", "warn", "fi_surface_totality",
+                "an emitted ReferenceMention carries a cite_confidence outside the "
+                "closed classification set (resolved/statute_only/ambiguous/open/"
+                "broken/unsupported); the closed set was silently widened",
+                ("parse_witness", "safety_invariant"), role="observation"),
+    # Surface-plane token-realization + entity-handle totality sweeps
+    # (audit-registry rows SURF-01, SURF-02, SURF-07). Same observation-role
+    # per-unit-totality disposition as SURF-04/05: the sweep asserts the surface
+    # contract and surfaces a residual population; over the real corpus the
+    # residual is the expected, correct outcome (a leaked token / an orphan
+    # entity node is a real surface fact, surfaced — not a pipeline crash), so it
+    # is non-blocking by design (tag-don't-guess). The synthetic unit-level bite
+    # is the guard-liveness drill.
+    FindingSpec("SURFACE.TOKEN_REALIZATION_GAP", "surface_totality",
+                "violation", "warn", "fi_surface_totality",
+                "a source token reached NO typed destination bucket: the four "
+                "Pro-D2 partition classes (owned/benign_uninterpreted/"
+                "typed_residual/unowned_violation) do not sum to total_tokens — a "
+                "silently-dropped (or double-counted) token",
+                ("parse_witness", "safety_invariant"), role="observation"),
+    FindingSpec("WAIST.HANDOFF_PARITY_SOURCE_TO_TOKEN", "surface_totality",
+                "violation", "warn", "fi_surface_totality",
+                "source->token handoff parity break: the source span consumed by "
+                "tokenization (total_tokens) does not equal "
+                "owned+typed_residual+benign+violation (the waist-edge form of "
+                "SURFACE.TOKEN_REALIZATION_GAP)",
+                ("parse_witness", "safety_invariant"), role="observation"),
+    FindingSpec("SURFACE.ORPHAN_ENTITY_NODE", "surface_totality",
+                "source_pathology", "warn", "fi_surface_totality",
+                "a surface entity-handle node (legal_work_entity/term_symbol_entity"
+                "/legal_address_entity/actor_entity) appears in no edge endpoint — "
+                "an entity node with no covering edge, surfaced not left uncovered",
+                ("parse_witness", "preservation"), role="observation"),
+    # Disjoint-window scheduling totality sweep (audit-registry rows
+    # SCHED-01/02/03). Read-only per-window totality over the finished replay
+    # output (ReplayProducts.temporal_events + timelines): every temporary
+    # legal-effect window is materialized as a version interval, carried as a
+    # typed residual, or surfaced here — never silently dropped. Same
+    # observation-role, non-blocking disposition as the SURF-* sweeps: over a
+    # real corpus a disjoint window the document-order fold did not materialize
+    # is a REAL legal fact (a temporary gap-filler whose slot a deferred-
+    # commencement twin holds), surfaced — not a pipeline fault — so blocking
+    # would contradict tag-don't-guess. The synthetic unit-level bite is the
+    # guard-liveness fire-drill. The apply-time discovery twin
+    # (APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT -> TEMPORAL.WINDOW_UNMATERIALIZED)
+    # is the fold-time repair lane; this is the complementary read-only audit
+    # over the FINAL output.
+    FindingSpec("SCHED.WINDOW_UNMATERIALIZED", "schedule_window_totality",
+                "source_pathology", "warn", "fi_schedule_window_totality",
+                "a temporary legal-effect window (effective..expires) on the "
+                "replay output is NOT materialized as a version interval and is "
+                "NOT carried as a typed residual: a disjoint window the document-"
+                "order fold left unmaterialized, surfaced not silently dropped",
+                ("temporal_selection", "preservation"), role="observation"),
+    # SCOPE-01/02 scope-lattice totality (read-only sweep over the FINAL
+    # timelines). The full disjointness lattice is PART (missing carrier: no
+    # populated structured scope predicate on FI selection rows); the CHECKABLE
+    # part is the precedence-rail residual — two co-effective distinct-content
+    # rows that share the precedence rank key (lex posterior does NOT separate
+    # them) and carry no disjoint scope predicate, so the winner depends on list
+    # order. Non-blocking (a real co-effective tie is a source fact to surface,
+    # not a crash); the apply/selection engine's own ambiguous_missing_scope arm
+    # is the complementary live-query lane. Over the FI corpus it stands at 0.
+    FindingSpec("SCOPE.OVERLAP_WITHOUT_DISJOINT_SCOPE", "scope_lattice_totality",
+                "source_pathology", "warn", "fi_scope_lattice_totality",
+                "two co-effective versions at one address share the precedence-rail "
+                "rank key (effective/enacted/source) with distinct content and NO "
+                "disjoint scope predicate admits the overlap: the selection winner "
+                "would depend on list order, not a proved legal precedence or a "
+                "scope distinction, surfaced not silently order-resolved",
+                ("temporal_selection", "ambiguity_resolution"), role="observation"),
     # Rank-17 silent-drop closure (canonical_op plane). The clause_ast ingress
     # seam (fi extract_legal_ops_from_parse_result) and the legacy lower_surface
     # bridge previously dropped unsupported clause/surface nodes
@@ -859,6 +1003,26 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "ambiguity", "strict_fail", "grafter_uncovered",
                 "body coverage found an unresolved uncovered unit that could not be synthesized automatically",
                 ("preservation", "strictness"), role="obligation"),
+    FindingSpec("COVERAGE.PAYLOAD_REALIZATION_GAP", "post_apply_payload_realization",
+                "audit", "warn", "replay",
+                "source amendment payload text was not realized in the immediate post-amendment folded state",
+                ("comparative", "preservation"), role="observation"),
+    FindingSpec("COVERAGE.PAYLOAD_REALIZATION_SHADOWED_BY_SAME_AMENDMENT", "post_apply_payload_realization",
+                "audit", "info", "replay",
+                "post-amendment realization audit suppressed an earlier payload because a later same-amendment replace superseded its target",
+                ("comparative", "preservation"), role="observation"),
+    FindingSpec("COVERAGE.PAYLOAD_REALIZATION_SUPERSEDED_BY_LATER_AMENDMENT", "post_apply_payload_realization",
+                "audit", "info", "replay",
+                "post-amendment realization audit classified missing final-product payload text as superseded by a later applied amendment",
+                ("comparative", "preservation"), role="observation"),
+    FindingSpec("COVERAGE.PAYLOAD_REALIZATION_EXPIRED_SOURCE_WINDOW", "post_apply_payload_realization",
+                "audit", "info", "replay",
+                "post-amendment realization audit classified missing materialized payload text as an applied temporary source window that expired before the query horizon",
+                ("comparative", "preservation", "temporal_selection"), role="observation"),
+    FindingSpec("COVERAGE.PAYLOAD_REALIZATION_BLOCKED_BY_APPLY_FAILURE", "post_apply_payload_realization",
+                "audit", "info", "replay",
+                "post-amendment realization audit classified missing payload text as derivative of a failed apply operation",
+                ("comparative", "preservation"), role="observation"),
     FindingSpec("TIME.MISSING_EFFECTIVE_DATE", "timeline",
                 "ambiguity", "strict_fail", "compile_result",
                 "no explicit effective date available",
@@ -920,6 +1084,115 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "violation", "hard_fail", "grafter",
                 "applied replay op touched paths outside its declared target",
                 ("safety_invariant",), role="violation"),
+    FindingSpec("APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP", "apply",
+                "violation", "hard_fail", "apply_resolved_op",
+                "per-op mutation-boundary REJECT: an op's changed paths are not a subset of "
+                "its target plus declared migration/recovery/editorial-projection boundary",
+                ("safety_invariant",), role="violation"),
+    FindingSpec("APPLY.MUTATION_BOUNDARY_FINDING_AT_OP", "apply",
+                "violation", "warn", "apply_resolved_op",
+                "quirks-mode accounting for a per-op mutation-boundary escape "
+                "(same condition as APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP, recorded not blocked)",
+                ("safety_invariant",), role="observation"),
+    FindingSpec("APPLY.OCCUPANCY_TRANSITION_BLOCKED", "apply",
+                "violation", "hard_fail", "apply_resolved_op",
+                "strict-mode occupancy gate: a state-mutating op attempted an invalid "
+                "(action, from->to) occupancy transition",
+                ("safety_invariant",), role="violation"),
+    FindingSpec("EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED", "apply",
+                "violation", "hard_fail", "apply_resolved_op",
+                "a state-mutating op landed without resolving an ExecutionAuthorization "
+                "(rule_id + required proofs) under strict mode",
+                ("safety_invariant",), role="violation"),
+    # --- Wave-2 apply-authority closure: per-op + whole-tree sweeps ---
+    # LS-07 (strict-blocking): a descendant-granularity op whose resolved address
+    # carries no descendant slot would overwrite its host whole-unit.
+    FindingSpec("APPLY.GRANULARITY_ESCALATION_AT_OP", "apply",
+                "violation", "hard_fail", "apply_op_closure_sweeps",
+                "strict granularity gate: a descendant-granularity op resolved to its "
+                "host whole-unit with no descendant slot, escalating to overwrite the host",
+                ("safety_invariant",), role="violation"),
+    # EV-06 (strict-blocking): an ExecutionAuthorization citing an unknown policy id.
+    FindingSpec("EVID.UNKNOWN_ATTESTATION_POLICY", "apply",
+                "violation", "hard_fail", "apply_op_closure_sweeps",
+                "an ExecutionAuthorization reaching apply cites an evidence policy id "
+                "not present in the known/pinned policy set (attestation-policy gap)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # FW-01 (whole-tree closure): a surface-origin node minting replay authority.
+    FindingSpec("FW.SURFACE_NODE_REPLAY_AUTHORITY_UNWITNESSED", "apply",
+                "violation", "hard_fail", "apply_tree_closure",
+                "whole-tree closure: a surface-origin node in the materialized replay "
+                "tree minted replay authority with no typed ExecutionAuthorization promotion",
+                ("safety_invariant", "provenance"), role="violation"),
+    # OV-01 (whole-tree closure): a replay-authorized overlay node with no promotion.
+    FindingSpec("OVERLAY.REPLAY_AUTHORIZED_WITHOUT_PROMOTION", "apply",
+                "violation", "hard_fail", "apply_tree_closure",
+                "whole-tree closure: an overlay-origin node is replay-authorized with no "
+                "typed promotion event + witness",
+                ("safety_invariant", "provenance"), role="violation"),
+    # OV-02 (whole-tree closure): an overlay promotion that does not cite provenance.
+    FindingSpec("OVERLAY.PROMOTION_WITNESS_INCOMPLETE", "apply",
+                "violation", "hard_fail", "apply_tree_closure",
+                "whole-tree closure: an overlay-origin promotion does not cite "
+                "provider_id+model_version OR registry_version+entry_id",
+                ("safety_invariant", "provenance"), role="violation"),
+    # LS-05 (non-blocking observation): a landed op with no scope-resolution witness.
+    FindingSpec("APPLY.SCOPE_CONFIDENCE_TOTALITY_GAP_AT_OP", "apply",
+                "audit", "warn", "apply_op_closure_sweeps",
+                "scope-confidence totality: a state-mutating op landed with no typed "
+                "ScopeConfidence witness recording how its scope was obtained",
+                ("provenance", "safety_invariant"), role="observation"),
+    # LS-06 (non-blocking observation): an unwitnessed verb conversion.
+    FindingSpec("LOWER.VERB_CONVERSION_UNWITNESSED_AT_OP", "apply",
+                "recovery", "warn", "apply_op_closure_sweeps",
+                "action-family conversion totality: a landed op's resolved action family "
+                "differs from its parsed action with no named conversion witness",
+                ("parse_witness", "preservation"), role="observation"),
+    # LS-09 (non-blocking observation closure): a parent-container payload smuggle.
+    FindingSpec("APPLY.PAYLOAD_SMUGGLING_AT_OP", "apply",
+                "audit", "warn", "apply_op_closure_sweeps",
+                "payload-smuggling closure: a descendant-claiming op resolved to its bare "
+                "host unit with no descendant step (could touch the unclaimed parent container)",
+                ("safety_invariant", "preservation"), role="observation"),
+    # LS-10 (non-blocking observation closure): an unstated migration / address rekey.
+    FindingSpec("APPLY.UNSTATED_MIGRATION_AT_OP", "apply",
+                "audit", "warn", "apply_op_closure_sweeps",
+                "unstated-migration closure: a target address-key delta (nominal -> resolved) "
+                "with no migration/lineage event or typed rekey witness",
+                ("migration", "lineage"), role="observation"),
+    # --- Promotion-chain integrity wave (CHAIN-/PROMOTE- families, §0) ---
+    # PROMOTE-02 (strict-blocking): an ExecutionAuthorization gating an op whose
+    # derived identity does not equal the authorization's bound rule_id.
+    FindingSpec("PROMOTE.AUTHORIZATION_IDENTITY_MISMATCH", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "authorization scope-match: an ExecutionAuthorization gating a state-mutating "
+                "op is bound to a different op's derived identity (rule_id mismatch); authority "
+                "minted for one op may not gate another (smuggled authority, §1.5 analogue)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # CHAIN-01 (strict-blocking): a mutating op's promotion chain is missing a
+    # materialized link (incomplete over the links that exist as typed carriers).
+    FindingSpec("CHAIN.PROMOTION_CHAIN_INCOMPLETE", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "promotion-chain completeness: a state-mutating op's promotion chain is missing "
+                "a materialized link (every materialized source-witness -> ... -> agreement-row "
+                "link must be present)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # CHAIN-02 (strict-blocking): a link reached with an absent materialized
+    # predecessor — authority by accumulation rather than by climbing.
+    FindingSpec("CHAIN.AUTHORITY_BY_ACCUMULATION", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "promotion-chain monotonicity: a chain link was reached with an absent "
+                "materialized predecessor — authority acquired by accumulation, not by climbing "
+                "the boundary (never by accumulation)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # PROMOTE-01 (strict-blocking): a downstream link standing on a retracted
+    # predecessor without reopen/taint (immediate one-hop arm).
+    FindingSpec("PROMOTE.STALE_DOWNSTREAM_AFTER_RETRACTION", "apply",
+                "violation", "hard_fail", "apply_promotion_chain",
+                "retraction down-chain propagation: a retracted promotion-chain link has a "
+                "downstream link left standing without reopen/taint (the whole sub-chain below "
+                "a retracted link must be re-opened, not just the immediate consumer)",
+                ("safety_invariant", "provenance"), role="violation"),
     FindingSpec("REPLAY_UNKNOWN_MUTATION_OUTCOME", "apply",
                 "violation", "hard_fail", "grafter",
                 "replay mutation event carried an outcome label outside the registered outcome sets",
@@ -928,6 +1201,11 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "violation", "hard_fail", "phase_result",
                 "generic runtime contract violation projected through the finding ledger",
                 ("safety_invariant",), role="violation"),
+    FindingSpec("LINEAGE.CYCLE", "lineage_ledger_build",
+                "violation", "hard_fail", "timeline_lineage",
+                "migration/lineage segments form a cycle (an eId migrates into its own ancestry); "
+                "non-terminating materialization / repeated-PIT hash drift; detail.cycle carries the address witness",
+                ("lineage", "safety_invariant"), role="violation"),
     FindingSpec("APPLY.WORD_SUBSTITUTION", "apply",
                 "recovery", "strict_fail", "compile_result",
                 "word-level text substitution was needed",
@@ -1084,6 +1362,14 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "warn", "grafter_uncovered",
                 "uncovered-body recovery skipped a section because omission merge would lose live subsection structure",
                 ("preservation", "strictness"), role="observation"),
+    FindingSpec("APPLY.UNCOVERED_BODY_OMISSION_MERGE_MISSING_SCOPE", "grafter_uncovered",
+                "recovery", "warn", "grafter_uncovered",
+                "uncovered-body recovery skipped a section-level omission merge because no parsed scoped target owned the sparse payload",
+                ("preservation", "strictness"), role="observation"),
+    FindingSpec("APPLY.UNCOVERED_BODY_SPECIAL_SUBPROVISION_SCOPE", "grafter_uncovered",
+                "recovery", "warn", "grafter_uncovered",
+                "uncovered-body recovery skipped a section-level omission merge because the johtolause named only a descriptor-scoped sub-provision",
+                ("preservation", "strictness", "ambiguity_resolution"), role="observation"),
     FindingSpec("APPLY.UNCOVERED_BODY_PEG_LABEL_COLLISION", "grafter_uncovered",
                 "recovery", "warn", "grafter_uncovered",
                 "uncovered-body recovery skipped a section already owned by PEG under the same label in another chapter",
@@ -1091,6 +1377,14 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
     FindingSpec("APPLY.UNCOVERED_BODY_PEG_SAME_CHAPTER_OWNED", "grafter_uncovered",
                 "recovery", "warn", "grafter_uncovered",
                 "uncovered-body recovery skipped a section already owned by PEG under the same label in the same chapter",
+                ("preservation",), role="observation"),
+    FindingSpec("APPLY.UNCOVERED_BODY_PEG_DESCENDANT_LABEL_COLLISION", "grafter_uncovered",
+                "recovery", "warn", "grafter_uncovered",
+                "uncovered-body recovery skipped a section whose descendant is already owned by PEG under the same label in another chapter",
+                ("preservation", "ambiguity_resolution"), role="observation"),
+    FindingSpec("APPLY.UNCOVERED_BODY_PEG_DESCENDANT_SAME_CHAPTER_OWNED", "grafter_uncovered",
+                "recovery", "warn", "grafter_uncovered",
+                "uncovered-body recovery skipped a section whose descendant is already owned by PEG in the same chapter",
                 ("preservation",), role="observation"),
     FindingSpec("APPLY.UNCOVERED_BODY_FUTURE_REPEAL_SKIP", "grafter_uncovered",
                 "recovery", "warn", "grafter_uncovered",
@@ -1183,6 +1477,24 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "info", "evidence_kernel",
                 "bounded negative-evidence search completed without finding a counterexample",
                 ("negative",), role="observation"),
+    # EV-03 (totality, observation): a residual COUNTED in a stage's coverage
+    # violation class but absent from that stage's committed residual ledger (or the
+    # dual: a committed blocking residual the coverage account never counted) — an
+    # uncertainty recorded then silently dropped across the per-stage account fold.
+    FindingSpec("EVID.RESIDUAL_LEDGER_NONMONOTONE", "certificate_dossier",
+                "audit", "warn", "stage_residual_monotonicity",
+                "a residual counted in a stage's coverage violation class is absent "
+                "from that stage's committed residual ledger (or vice versa): a "
+                "non-monotone per-stage residual account (no silent loss)",
+                ("provenance", "preservation"), role="observation"),
+    # EV-07 (totality, observation): a source-text-failure residual
+    # (unowned_violation / typed_residual) carrying no verbatim offending snippet —
+    # an opaque diagnostic about unhandled source text, not self-evidencing.
+    FindingSpec("EVID.DIAGNOSTIC_NOT_SELF_EVIDENCING", "evidence_kernel",
+                "audit", "warn", "diagnostic_self_evidencing",
+                "a source-text-failure residual embeds no verbatim offending snippet "
+                "(empty text field): an opaque diagnostic, not self-evidencing",
+                ("provenance",), role="observation"),
     FindingSpec("PARSE.FRONTEND_INTERNAL_ERROR", "frontend_phase_surface",
                 "violation", "hard_fail", "frontend_phase_surface",
                 "frontend phase diagnostic reports an internal compiler error",
@@ -1218,6 +1530,50 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "an ingest structural-repair heuristic re-parented or merged tree "
                 "shape on a regex/letter-sequence guess; detail.repair names the rule",
                 ("preservation", "ambiguity_resolution"), role="observation"),
+    # XP-03 — op-coverage totality (runtime parity arm). At the canonical-op
+    # lowering waist (#6) every candidate operation MUST lower to exactly one
+    # canonical op (coverage.owned) OR a typed candidate-effect residual
+    # (coverage.violation), never silently dropped — i.e. the candidate-op
+    # CoverageCertificate must be a partition (owned + violation == total under
+    # totality_claimed). The partition holds BY CONSTRUCTION today (the lowering
+    # seam computes total = emitted + rejected; see compile_amendment.build_canonical_op_stage),
+    # so this code is a defensive RUNTIME pin: a candidate op that neither lowered
+    # nor residualized would break is_partition() and surface here as a typed
+    # residual. NON-BLOCKING (role=observation): a real uncovered op should be
+    # SURFACED for triage, not silently block the corpus; the population is the
+    # finding, not a hard fail.
+    FindingSpec("CANONICAL_OP.OP_COVERAGE_GAP", "build_canonical_op_stage",
+                "violation", "warn", "compile_amendment",
+                "a candidate operation neither lowered to a canonical op nor "
+                "residualized at the canonical-op lowering waist: the candidate-op "
+                "coverage account is not a partition (owned + violation != total); "
+                "detail carries the owned/violation/total counts witnessing the gap",
+                ("parse_witness", "preservation"), role="observation"),
+    # KNOW-01 (source-monotonicity): a single source locator was observed
+    # carrying two DISTINCT content digests — i.e. the external witness behind
+    # one stable locator changed in place. The source plane must be append-only:
+    # a re-publish is a NEW manifestation under a new locator/digest, never an
+    # in-place byte swap behind the same locator. Detail carries the locator and
+    # the conflicting digests so the violation is self-evidencing.
+    FindingSpec("EVID.SOURCE_LOCATOR_DIGEST_CONFLICT", "know_invariants",
+                "external_drift", "warn", "source_witness",
+                "one source locator carries two distinct content digests across "
+                "observations: an in-place byte mutation of an external witness "
+                "(source plane must be append-only — a re-publish is a new "
+                "manifestation, never a silent overwrite behind the same locator)",
+                ("provenance",), role="observation"),
+    # KNOW-03 (lost source -> UNCHECKABLE, never INVALID): a source record names
+    # an artifact whose bytes/digest are NOT resolvable (referenced-only, lost,
+    # digest-unknown). Such a record is UNCHECKABLE for monotonicity, NOT a
+    # violation — the honest verdict for absent bytes is "cannot check", never
+    # "invalid". Detail carries the locator and the availability classification.
+    FindingSpec("EVID.SOURCE_WITNESS_UNCHECKABLE_MISSING_DIGEST", "know_invariants",
+                "audit", "info", "source_witness",
+                "a source record names an artifact with no resolvable content "
+                "digest (referenced-only/lost/digest-unknown): UNCHECKABLE for "
+                "source-monotonicity, never INVALID (absent bytes => cannot "
+                "check, not a violation)",
+                ("provenance", "negative"), role="observation"),
 )}
 
 

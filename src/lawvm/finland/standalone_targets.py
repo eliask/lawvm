@@ -7,12 +7,12 @@ from typing import Iterable, TypeAlias
 
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.helpers import _norm_num_token
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, ScopeResolutionSource
 
 _SCOPE_CONFIDENCE_OVERRIDES_BODY_CHAPTER = frozenset(
     {
-        "explicit_scope_rewrite",
-        "live_stem_host",
+        ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+        ScopeResolutionSource.LIVE_STEM_HOST,
     }
 )
 
@@ -87,6 +87,8 @@ def build_standalone_section_targets(
         if op.target_unit_kind != "section" or not op.target_section:
             continue
         if op.target_paragraph is not None or op.target_item or op.target_special:
+            continue
+        if op.target_chapter in (None, "") and op.op_type != "INSERT":
             continue
         norm_label = _norm_num_token(op.target_section)
         standalone_targets.add(
@@ -170,7 +172,7 @@ def group_shadow_pruning_foreign_scoped_section_targets(
         # unreliable.
         if (
             op.scope_confidence is not None
-            and op.scope_confidence.source == "carry_forward"
+            and op.scope_confidence.source is ScopeResolutionSource.CARRY_FORWARD
         ):
             continue
         if section_label in duplicate_section_labels:
@@ -210,7 +212,7 @@ def group_shadow_pruning_foreign_scoped_descendant_section_targets(
             continue
         if (
             op.scope_confidence is not None
-            and op.scope_confidence.source == "carry_forward"
+            and op.scope_confidence.source is ScopeResolutionSource.CARRY_FORWARD
         ):
             continue
         if section_label in duplicate_section_labels:

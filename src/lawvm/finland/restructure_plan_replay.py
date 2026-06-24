@@ -224,6 +224,8 @@ def emit_restructure_plan_renumber_legal_operations(
     for index, event in enumerate(migration_events, start=1):
         if event.kind != "renumber":
             continue
+        if event.from_address.path == event.to_address.path:
+            continue
         source = OperationSource(
             statute_id=amendment_id,
             title=source_title,

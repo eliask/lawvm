@@ -49,6 +49,7 @@ from lawvm.finland.source_pathology import (
 )
 from lawvm.finland.apply_structure_ops import _normalize_subsection_target_hint_ir
 from lawvm.finland.migration_ledger import migration_lower_bound_for_op
+from lawvm.finland.apply_policy import same_wave_migration_follow_is_allowed
 
 if TYPE_CHECKING:
     from lawvm.finland.migration_ledger import MigrationLedger
@@ -236,9 +237,11 @@ def _follow_same_wave_subsection_migration(
     migration_ledger: "MigrationLedger | None",
 ) -> ResolvedOp:
     """Follow already-applied same-wave subsection renumbers for non-INSERT ops."""
-    if migration_ledger is None or rop.resolved_action_type == "INSERT":
-        return rop
-    if "rebase_duplicate_target_shifted_replace" in rop.target_guessing_provenance_tags:
+    if (
+        migration_ledger is None
+        or rop.resolved_action_type == "INSERT"
+        or not same_wave_migration_follow_is_allowed(rop)
+    ):
         return rop
     address = rop.resolved_target_address
     if address is None or not any(kind in {"subsection", "item"} for kind, _label in address.path):
@@ -588,6 +591,7 @@ def _apply_deterministic_subsection_op(
     _target_chapter = routing.target_chapter
     _target_part = routing.target_part
 
+    # lawvm-regex: owning_parser N-M range parse on the already-resolved routing target (_target_item), not source text
     if _target_item and (range_m := _ITEM_RANGE_TARGET_RE.match(_target_item)):
         start, end = int(range_m.group(1)), int(range_m.group(2))
         if start < end:

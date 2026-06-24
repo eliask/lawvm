@@ -311,6 +311,87 @@ def scan_bare_status(repo_root: Path | None = None) -> dict[str, Any]:
 
 
 # ===========================================================================
+# VOCAB-02: bare ``confidence`` schema-field surface ratchet
+# ===========================================================================
+#
+# §11.8 says ``confidence`` is diagnostic metadata only — never a control signal —
+# and a public/cross-phase schema must namespace its status fields. The bare-
+# ``status`` surface ratchet above (Lint 2) already locks the bare-``status`` arm
+# of VOCAB-02. VOCAB-02 ADDS the bare-``confidence`` schema-field arm: a
+# serialized ``"confidence":`` dict key or an annotated ``confidence`` field/param
+# is a bare confidence surface that §11.8 treats as diagnostic-only — it must not
+# become a cross-phase control field. This scan mirrors ``_bare_status_sites`` and
+# baselines the current per-file count (HEURISTIC: a surface proxy, over-includes
+# internal sites, so the lock is "no NEW bare confidence surface").
+
+
+def _bare_confidence_sites_in_module(
+    tree: ast.AST, rel_path: str
+) -> list[dict[str, Any]]:
+    sites: list[dict[str, Any]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            for key in node.keys:
+                if isinstance(key, ast.Constant) and key.value == "confidence":
+                    sites.append(
+                        {
+                            "file": rel_path,
+                            "line": getattr(key, "lineno", 0),
+                            "shape": "dict_key",
+                        }
+                    )
+        elif isinstance(node, ast.AnnAssign):
+            target = node.target
+            if isinstance(target, ast.Name) and target.id == "confidence":
+                sites.append(
+                    {
+                        "file": rel_path,
+                        "line": getattr(node, "lineno", 0),
+                        "shape": "ann_field",
+                    }
+                )
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = node.args
+            for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
+                if arg.arg == "confidence" and arg.annotation is not None:
+                    sites.append(
+                        {
+                            "file": rel_path,
+                            "line": getattr(arg, "lineno", 0),
+                            "shape": "ann_param",
+                        }
+                    )
+    return sites
+
+
+def scan_bare_confidence(repo_root: Path | None = None) -> dict[str, Any]:
+    """Bare-``confidence`` schema-field surface sites per file across src/lawvm.
+
+    Returns ``{"bare_confidence_counts": {rel: count}, "total_bare_confidence":
+    int, "sites": [...]}``. The monotone ratchet quantity is the per-file count.
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    sites: list[dict[str, Any]] = []
+    for pyfile in _iter_src_files(root):
+        try:
+            text = pyfile.read_text(encoding="utf-8")
+            tree = ast.parse(text)
+        except (OSError, SyntaxError):
+            continue
+        rel = _rel_posix(pyfile, root)
+        sites.extend(_bare_confidence_sites_in_module(tree, rel))
+
+    counts: dict[str, int] = {}
+    for site in sites:
+        counts[site["file"]] = counts.get(site["file"], 0) + 1
+    return {
+        "bare_confidence_counts": dict(sorted(counts.items())),
+        "total_bare_confidence": len(sites),
+        "sites": sites,
+    }
+
+
+# ===========================================================================
 # Lint 3 + 4: public-schema-id registry ratchet (tractable subset)
 # ===========================================================================
 #

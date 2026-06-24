@@ -5,9 +5,8 @@ from collections import Counter
 import re
 from dataclasses import dataclass, replace as dc_replace
 from functools import lru_cache
-from typing import TYPE_CHECKING, Callable, Literal, Optional, cast
+from typing import TYPE_CHECKING, Callable, Literal, Optional, Sequence, cast
 
-from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
     EffectRef,
@@ -32,6 +31,7 @@ from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import FIXED_DATE_KIND, ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline_lineage import (
     MaterializationLineageBridgeClassification,
+    assert_acyclic as _assert_lineage_acyclic,
     classify_materialization_lineage_bridge,
     choose_materialization_lineage_decision,
     rekey_timelines_with_migration_events as _core_rekey_timelines_with_migration_events,
@@ -57,17 +57,24 @@ from lawvm.core.tree_ops import (
     resort_children as _resort_children,
 )
 from lawvm.replay_adjudication import SourceAdjudication
+from lawvm.finland.apply_tree_closure import assert_tree_authority_closure
 from lawvm.finland.apply_ir_ops import (
     _strip_redundant_paragraph_label_prefixes_ir,
     _strip_standalone_subsection_item_prefixes_ir,
 )
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.references.cited_version import (
+    CitedVersionParseResidual,
+    recognize_item_cited_version_clause,
+)
 from lawvm.finland.post_process import _canonicalize_section_shell_order
 from lawvm.finland.tree_invariant_allowances import (
     is_terminal_fi_commencement_section_violation,
 )
 
 if TYPE_CHECKING:
+    from lawvm.core.stage_result import AuthoritySurface, StageResult
+    from lawvm.core.write_receipt import WriteReceipt
     from lawvm.finland.replay_fold_timeline_backfill import FoldTimelineBackfillRecord
     from lawvm.finland.timeline_version_dedupe import TimelineVersionDedupeRecord
     from lawvm.finland.statute import ReplayState, StatuteContext
@@ -164,8 +171,55 @@ class ReplayProducts:
         "EditorialRepealNoticeSubstringWitness", ...
     ] = ()
     dropped_cited_version_snapshots: tuple["CitedVersionSnapshotDrop", ...] = ()
+    cited_version_parse_residuals: tuple["CitedVersionParseResidual", ...] = ()
     materialization_issues: tuple[TimelineIssue, ...] = ()
     materialization_coverage: Optional[MaterializationCoverage] = None
+    # StageResult-endgame: the full typed materialization account (coverage +
+    # residuals + findings), carried so the certificate dossier routes it into a
+    # per-stage account subroot instead of discarding it. ``None`` only on the
+    # full-products-skipped path.
+    materialization_stage: Optional["StageResult[IRStatute]"] = None
+    # StageResult-endgame WAIST #7: the per-replay apply/replay execution
+    # authority aggregated over every landed write (replay_authorized = AND over
+    # all landed writes; one unauthorized write un-authorizes the replay). This is
+    # the firewall the certificate dossier branches on — an unauthorized replay
+    # cannot produce an authoritative (clean) receipt/dossier. ``None`` until the
+    # apply path's receipts/findings are known (set at ReplayResult assembly,
+    # where the landed receipts + findings are accumulated); the certificate
+    # re-derives it descriptively from ``bundle.result`` so the writer never
+    # trusts an un-set carrier.
+    apply_authority: Optional["AuthoritySurface"] = None
+    # StageResult-endgame WAIST #3: the per-replay STRUCTURAL (IRNode /
+    # LegalAddress) write-footprint account aggregated over every landed
+    # WriteReceipt of the replay. Each landed write already carries the canonical
+    # ``structural_stage_result(post_ir, receipt)`` per-op account (coverage =
+    # declared footprint owned, unit="paths"; one blocking ``unowned_violation``
+    # residual iff ``receipt.divergence_explained is False``). This field carries
+    # the UNION fold over those per-op accounts so the certificate dossier routes
+    # the structural stage into a per-stage account subroot instead of re-deriving
+    # it. ``None`` until the landed receipts are known (set at ReplayResult
+    # assembly beside ``apply_authority``). On the green corpus every container
+    # write has ``divergence_explained=True`` → empty blocking residuals → clean
+    # coverage. The apply-decline VERDICT stays on the existing #3 apply ``Finding``
+    # channel (``apply_structure_ops``); this carrier is the additive checkable
+    # account.
+    structural_stage: Optional["StageResult[IRNode]"] = None
+    # StageResult-endgame WAIST #6: the per-replay CANONICAL-OPERATION compile
+    # account aggregated over every amendment's ``compile_amendment_ops`` decline
+    # partition. Each amendment already builds one canonical-op ``StageResult``
+    # (``build_canonical_op_stage``: coverage ``unit="candidate_ops"``, owned =
+    # emitted ops, violation = declined ops; one blocking ``unowned_violation``
+    # residual per decline — the same account that backs the typed-residual decline
+    # single-channel). This field carries the UNION fold over those per-amendment
+    # accounts (captured FAITHFULLY off the producer via the
+    # ``canonical_op_stages_out`` sink, NOT re-derived from the stage-tagless union
+    # findings) so the certificate dossier routes the canonical-op stage into a
+    # per-stage account subroot. ``None`` until the per-amendment accounts are
+    # known (set at ReplayResult assembly beside ``apply_authority`` /
+    # ``structural_stage``). The decline VERDICT stays on the existing #6
+    # residual/finding single-channel; this carrier is the additive checkable
+    # account.
+    canonical_op_stage: Optional["StageResult[None]"] = None
 
     def __post_init__(self) -> None:
         temporal_events = tuple(self.temporal_events)
@@ -177,6 +231,11 @@ class ReplayProducts:
             raise TypeError("ReplayProducts.temporal_events must contain TemporalEvent records")
         if not all(isinstance(event, MigrationEvent) for event in migration_events):
             raise TypeError("ReplayProducts.migration_events must contain MigrationEvent records")
+        # LS-11: the sealed migration ledger must form a DAG. A cycle (an eId
+        # migrating into its own ancestry) is a non-terminating-materialization /
+        # repeated-PIT-hash-drift hazard, so fail loud at ledger build rather than
+        # let the address resolvers silently truncate the walk at the visited guard.
+        _assert_lineage_acyclic(migration_events)
         if not all(isinstance(effect, EffectRef) for effect in source_effects):
             raise TypeError("ReplayProducts.source_effects must contain EffectRef records")
         if not all(isinstance(relation, EffectRelation) for relation in effect_relations):
@@ -202,11 +261,172 @@ class ReplayProducts:
         self.source_effects = source_effects
         self.effect_relations = effect_relations
         self.effect_lifecycle_events = effect_lifecycle_events
+        # FW-01 / OV-01 / OV-02 (wave-2 apply-authority whole-tree closure): over
+        # the finished materialized replay tree, assert no surface-origin node
+        # mints replay authority and no overlay-origin node is replay-authorized
+        # without a complete typed promotion witness. No-op on the FI corpus (the
+        # replay tree carries no surface/overlay provenance markers); fails loud
+        # the day a provider/overlay node reaches the replay tree.
+        materialized_ir = getattr(self.materialized_state, "ir", None)
+        if isinstance(materialized_ir, IRNode):
+            assert_tree_authority_closure(materialized_ir)
 
     @property
     def identity_ledger(self) -> IdentityLedger:
         """Frozen read-only lineage snapshot over replay migration events."""
         return IdentityLedger.from_events(self.migration_events)
+
+
+def aggregate_structural_stage(
+    *,
+    materialized_ir: IRNode,
+    write_receipts: tuple["WriteReceipt", ...],
+) -> "StageResult[IRNode]":
+    """Fold the per-op structural write-footprint accounts (WAIST #3).
+
+    Each landed ``WriteReceipt`` carries the canonical per-op structural account
+    via :func:`lawvm.core.tree_ops.structural_stage_result` (coverage = declared
+    footprint owned, ``unit="paths"``; one blocking ``unowned_violation`` residual
+    iff ``receipt.divergence_explained is False``). This aggregates those per-op
+    accounts over every landed write of the replay into the single
+    ``StageResult[IRNode]`` the certificate dossier routes:
+
+      * ``value``     — ``materialized_ir`` (the replay's materialized structural
+        product tree).
+      * ``coverage``  — the SUM of the per-op footprint partitions: ``owned`` =
+        sum of every landed write's declared-footprint path count;
+        ``violation`` = number of landed writes whose BOUND→LANDED divergence is
+        unexplained (each contributes exactly one blocking residual, matching the
+        per-op account); ``unit="paths"``, ``total = owned + violation`` so
+        ``is_partition()`` holds.
+      * ``residuals`` — the union of the per-op blocking ``unowned_violation``
+        residuals (one per landed write that BOUND a target and landed elsewhere
+        with no named recovery rule — the exact #3 structural mutation-boundary
+        condition). EMPTY on the green corpus (every bound container write
+        explains its boundary).
+
+    BOUNDARY SEMANTICS (the #3/#7 contract, NOT a heuristic): a receipt with
+    ``bound_target_path is None`` carried no resolver binding at this granularity
+    (the op-level apply write — ``apply_resolved_op._collect_op_write_receipt``).
+    It has NO bound→landed divergence to explain and the apply path does NOT block
+    it today; the #3 structural residual fires ONLY for a bound target that
+    diverged with no named rule (see ``apply_replay_authorization`` /
+    ``_receipt_boundary_authorized``). Such a receipt therefore contributes its
+    landed footprint as ``owned`` and emits NO residual — treating it as an
+    unexplained divergence would manufacture a violation a write that legitimately
+    stands today never had (a mapping error, not a finding). ``divergence_explained``
+    alone is NOT the test, because for a ``bound=None`` receipt it is vacuously
+    False (``None != landed_primary_path``).
+      * ``evidence``  — ``EMPTY_EVIDENCE``: the per-op source anchors live on the
+        receipts; the aggregate carries the partition account, not a merged
+        witness bundle (the witnesses ride ``apply_authority`` / receipts).
+      * ``findings``  — ``()`` (the apply layer owns the structural-divergence
+        ``Finding`` verdict; this carrier is the additive checkable account).
+      * ``authority`` — ``NEUTRAL_AUTHORITY`` (Pro §8 firewall; execution
+        authorization rides ``apply_authority`` (#7), not this account).
+    """
+    from lawvm.core.stage_result import (
+        EMPTY_EVIDENCE,
+        NEUTRAL_AUTHORITY,
+        CoverageCertificate,
+        Residual,
+        StageResult,
+    )
+    from lawvm.core.tree_ops import structural_stage_result
+
+    owned = 0
+    residuals: list[Residual] = []
+    for receipt in write_receipts:
+        if receipt.bound_target_path is None:
+            # No resolver binding at this granularity: no bound→landed divergence
+            # to account. The landed footprint is owned; emit no residual (the #3
+            # apply consumer / replay-authority gate stand such a write today).
+            owned += len(receipt.declared_footprint)
+            continue
+        per_op = structural_stage_result(materialized_ir, receipt)
+        owned += per_op.coverage.owned
+        residuals.extend(per_op.residuals)
+
+    violation = len(residuals)
+    coverage = CoverageCertificate(
+        unit="paths",
+        total=owned + violation,
+        owned=owned,
+        violation=violation,
+        totality_claimed=True,
+    )
+    return StageResult(
+        value=materialized_ir,
+        evidence=EMPTY_EVIDENCE,
+        residuals=tuple(residuals),
+        findings=(),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
+
+
+def aggregate_canonical_op_stage(
+    canonical_op_stages: tuple["StageResult[object]", ...],
+) -> "StageResult[None]":
+    """Aggregate the per-amendment canonical-op StageResult accounts (WAIST #6).
+
+    Each amendment's ``compile_amendment_ops`` builds one canonical-op
+    ``StageResult`` (``build_canonical_op_stage``: coverage ``unit="candidate_ops"``,
+    ``owned`` = #emitted resolved ops, ``violation`` = #rejected/declined candidate
+    ops, one blocking ``unowned_violation`` residual per decline — the exact #6
+    typed-residual partition that backs the decline single-channel). This folds
+    those per-amendment accounts — captured FAITHFULLY off the producer via the
+    ``canonical_op_stages_out`` sink, NOT re-derived from the stage-tagless union
+    findings — into the single ``StageResult`` the certificate dossier routes:
+
+      * ``coverage``  — the SUM of the per-amendment partitions: ``owned`` = sum of
+        every amendment's emitted-op count; ``violation`` = sum of every
+        amendment's declined-op count; ``unit="candidate_ops"``,
+        ``total = owned + violation`` so ``is_partition()`` holds.
+      * ``residuals`` — the union of every per-amendment blocking/typed canonical-op
+        residual (the compile declines). EMPTY only when no amendment declined a
+        candidate op; the strict-rejection declines that exist on some statutes are
+        the genuine canonical-op residue and ride through here unchanged.
+      * ``findings``  — ``()`` (the decline VERDICT rides the existing #6
+        residual/finding single-channel via
+        ``reconstruct_findings_from_canonical_op_stage``; this carrier is the
+        additive checkable account, it does not replace the decline channel).
+      * ``value``     — ``None`` (the per-amendment resolved-op lists are not a
+        single replay-level value; the account carries the partition, not a merged
+        op list).
+      * ``evidence``  — ``EMPTY_EVIDENCE``; ``authority`` — ``NEUTRAL_AUTHORITY``
+        (compile authority is not execution authority — that rides #7).
+    """
+    from lawvm.core.stage_result import (
+        EMPTY_EVIDENCE,
+        NEUTRAL_AUTHORITY,
+        CoverageCertificate,
+        Residual,
+        StageResult,
+    )
+
+    owned = 0
+    violation = 0
+    residuals: list[Residual] = []
+    for stage in canonical_op_stages:
+        owned += stage.coverage.owned
+        violation += stage.coverage.violation
+        residuals.extend(stage.residuals)
+    coverage = CoverageCertificate(
+        unit="candidate_ops",
+        total=owned + violation,
+        owned=owned,
+        violation=violation,
+        totality_claimed=True,
+    )
+    return StageResult(
+        value=None,
+        evidence=EMPTY_EVIDENCE,
+        residuals=tuple(residuals),
+        findings=(),
+        coverage=coverage,
+        authority=NEUTRAL_AUTHORITY,
+    )
 
 
 def _assert_finland_timeline_safe_ops(lo_ops_out: list[LegalOperation]) -> None:
@@ -418,7 +638,7 @@ def _iter_sections(node: IRNode) -> tuple[IRNode, ...]:
 
 def _chapter_label_from_section_eid(node: IRNode) -> str:
     e_id = str(node.attrs.get("eId") or "")
-    match = _FI_CHAPTER_SECTION_EID_RE.match(e_id)
+    match = _FI_CHAPTER_SECTION_EID_RE.match(e_id)  # lawvm-regex: prefilter fixed-shape eId chapter/section locator parse (structural id, mints no legal state)
     if match is None:
         return ""
     return match.group("chapter").replace("_", " ")
@@ -649,6 +869,100 @@ def _all_section_paths(tree: IRNode, label: str) -> list[tuple[tuple[str, str], 
     return paths
 
 
+def _section_label_number(label: str) -> Optional[int]:
+    digits: list[str] = []
+    for char in label.strip():
+        if not char.isdigit():
+            break
+        digits.append(char)
+    if not digits:
+        return None
+    return int("".join(digits))
+
+
+def _scoped_section_has_local_numeric_siblings(
+    tree: IRNode,
+    parent_path: tuple[tuple[str, str], ...],
+    label: str,
+) -> bool:
+    target_number = _section_label_number(label)
+    if target_number is None:
+        return False
+    parent_node = _tops_resolve(tree, parent_path)
+    if parent_node is None:
+        return False
+    sibling_numbers = [
+        number
+        for child in parent_node.children
+        if child.kind is IRNodeKind.SECTION
+        and child.label != label
+        for number in (_section_label_number(child.label or ""),)
+        if number is not None
+    ]
+    if not sibling_numbers:
+        return False
+    return min(sibling_numbers) <= target_number <= max(sibling_numbers)
+
+
+def _section_eid_confirms_chapter_path(
+    section: IRNode,
+    section_path: tuple[tuple[str, str], ...],
+) -> bool:
+    if len(section_path) < 2:
+        return False
+    parent_kind, parent_label = section_path[-2]
+    if parent_kind != "chapter" or not parent_label:
+        return False
+    return _chapter_label_from_section_eid(section) == parent_label
+
+
+def _has_repeated_scoped_section_label(
+    tree: IRNode,
+    section_paths: Sequence[tuple[tuple[str, str], ...]],
+) -> bool:
+    scoped_parent_paths = {
+        section_path[:-1]
+        for section_path in section_paths
+        if section_path[:-1]
+        and (parent := _tops_resolve(tree, section_path[:-1])) is not None
+        and parent.kind is not IRNodeKind.HCONTAINER
+    }
+    return len(scoped_parent_paths) > 1
+
+
+def _fold_has_section_at_materialized_path(
+    replay_fold: IRNode,
+    materialized: IRNode,
+    section_path: tuple[tuple[str, str], ...],
+    section_paths: Sequence[tuple[tuple[str, str], ...]],
+) -> bool:
+    """Return whether replay fold owns ``section_path`` through its provisions wrapper.
+
+    Finland source statutes commonly wrap legal roots in
+    ``statuteProvisionsWrapper``.  PIT materialization projects that wrapper
+    away, so a scoped materialized path such as ``chapter:2/section:1`` may be
+    present in the fold as ``hcontainer:/chapter:2/section:1``.  Reconciliation
+    must treat that as a fold-owned scoped section, not as a misplaced direct
+    wrapper section sharing the same bare label.  The fold can also contain a
+    real direct section with the same label; in that collision family, keep a
+    scoped materialized section only when its eId confirms the chapter path or
+    the materialized product shows repeated scoped occurrences of that label.
+    """
+    if _tops_resolve(replay_fold, section_path) is not None:
+        return True
+    provisions_parent = _find_provisions_parent(replay_fold)
+    if not provisions_parent:
+        return False
+    fold_section = _tops_resolve(replay_fold, provisions_parent + section_path)
+    if fold_section is None:
+        return False
+    materialized_section = _tops_resolve(materialized, section_path)
+    return (
+        materialized_section is not None
+        and _section_eid_confirms_chapter_path(materialized_section, section_path)
+    ) or _has_repeated_scoped_section_label(materialized, section_paths)
+
+
 def _reconcile_materialized_fold_hcontainer_sections(
     materialized: IRNode,
     replay_fold: IRNode,
@@ -709,6 +1023,26 @@ def _reconcile_materialized_fold_hcontainer_sections(
                 # timeline address requires it.  Treating the child as a
                 # misplaced fold-wrapper section would destroy the materialized
                 # legal address and move the text to the end of the body.
+                continue
+            elif (
+                parent_path
+                and parent_node is not None
+                and parent_node.attrs.get("lawvm_synthesized_container") != "active_descendant"
+                and (
+                    _fold_has_section_at_materialized_path(
+                        replay_fold, result, section_path, section_paths
+                    )
+                    or _scoped_section_has_local_numeric_siblings(result, parent_path, label)
+                )
+            ):
+                # A fold-owned scoped section with the same numeric label is
+                # not a misplaced fold-wrapper child.  Moving it would erase
+                # its legal address (for example chapter:3a/section:4) and
+                # corrupt PIT export whenever the statute also has a body-level
+                # section:4.  A scoped path that is not present in replay fold
+                # is still allowed when its numeric label belongs to the local
+                # sibling run; this preserves real chapter sections after PIT
+                # projection without keeping stray collisions such as 4a/59a.
                 continue
             else:
                 misplaced_paths.append(section_path)
@@ -1137,50 +1471,12 @@ def _mark_detached_horizon_future_repeals(
     return marked
 
 
-_FI_CITED_VERSION_ID_RE = re.compile(
-    r"\bsellais[ei][a-zäöå]*\s+kuin\b.{0,120}?\b(?:laissa|asetuksessa)\s+(\d{1,5})/(\d{4})",
-    flags=re.I | re.S,
-)
-_FI_LOCAL_ITEM_TARGET_RE_TEMPLATE = r"(?<!\d){label}\s*§\s*:\s*n"
-_FI_LOCAL_ITEM_WORD_RE = compile_classifier_regex(
-    r"\bkoht[a-zäöå]*\b",
-    flags=re.I | re.S,
-    classifier_id="fi.local_item_cited_version.item_word",
-)
-_FI_CITED_VERSION_SELLAISENA_RE = compile_classifier_regex(
-    r"\bsellais[ei][a-zäöå]*\s+kuin\b",
-    flags=re.I | re.S,
-    classifier_id="fi.local_item_cited_version.cited_version_cue",
-)
-
-
-@lru_cache(maxsize=512)
-def _local_item_target_re(target_label: str):
-    return compile_classifier_regex(
-        _FI_LOCAL_ITEM_TARGET_RE_TEMPLATE.format(label=re.escape(target_label)),
-        flags=re.I | re.S,
-        classifier_id="fi.local_item_cited_version.target",
-    )
-
-
-@lru_cache(maxsize=8192)
-def _raw_text_has_local_item_cited_version(raw_text: str, target_label: str) -> bool:
-    for match in _local_item_target_re(target_label).finditer(raw_text):
-        tail = raw_text[match.end() : match.end() + 220]
-        comma_index = tail.find(",")
-        semicolon_index = tail.find(";")
-        if comma_index < 0:
-            continue
-        if 0 <= semicolon_index < comma_index:
-            continue
-        item_window = tail[:comma_index]
-        if len(item_window) > 160:
-            continue
-        if _FI_LOCAL_ITEM_WORD_RE.search(item_window) is None:
-            continue
-        if _FI_CITED_VERSION_SELLAISENA_RE.search(tail[comma_index : comma_index + 100]) is not None:
-            return True
-    return False
+# The item-scoped cited-version clause grammar (target window + item-word cue +
+# ``sellaisena kuin`` cited-version cue + ``laissa/asetuksessa N/YYYY`` statute
+# id) is owned by the references lane (``references.cited_version``). The replay
+# layer no longer parses the amendment source language itself; it passes the
+# text in and consumes a typed ``ItemCitedVersionClause`` result (the
+# cited-statute-id sub-parse is routed to the references statute-id constructor).
 
 
 def _payload_shape_counts(payload: IRNode) -> Counter[tuple[IRNodeKind, str]]:
@@ -1248,14 +1544,33 @@ class CitedVersionSnapshotDrop:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _CitedVersionDropResult:
+    """Drop filter result plus the unparsed-cue residuals it accounted for.
+
+    ``filtered`` is the lossless op filter (accepted + typed-rejected). ``residuals``
+    records every item-cited-version clause whose ``sellaisena kuin`` cue matched
+    the target but yielded no parseable cited statute id, so an unparsed cue is
+    surfaced rather than silently passed through.
+    """
+
+    filtered: FilterResult[LegalOperation]
+    residuals: tuple[CitedVersionParseResidual, ...]
+
+
 def _drop_cited_version_item_ancestor_snapshots(
     lo_ops: list[LegalOperation],
-) -> FilterResult[LegalOperation]:
+) -> _CitedVersionDropResult:
     """Filter ancestor snapshots from item-scoped cited-version clauses.
 
-    Returns a lossless ``FilterResult``: accepted ops plus a rejected record per
-    dropped op, so a covered ancestor snapshot is removed from the replay stream
-    with a typed receipt rather than vanishing silently.
+    Returns a lossless filter (accepted ops plus a rejected record per dropped op)
+    so a covered ancestor snapshot is removed from the replay stream with a typed
+    receipt rather than vanishing silently, plus the typed residuals for any
+    cited-version cue whose statute id did not parse.
+
+    The item-cited-version clause grammar (target window + item-word + cited-version
+    cue + cited statute id) is owned by ``references.cited_version``; this function
+    consumes its typed result instead of parsing the amendment source language.
     """
     cited_parent_snapshots: dict[
         tuple[str, str, tuple[tuple[str, str], ...]], LegalOperation
@@ -1270,6 +1585,7 @@ def _drop_cited_version_item_ancestor_snapshots(
 
     accepted: list[LegalOperation] = []
     rejected: list[RejectedItem[LegalOperation]] = []
+    residuals: list[CitedVersionParseResidual] = []
     for op in lo_ops:
         source = op.source
         raw_text = source.raw_text if source is not None else ""
@@ -1286,16 +1602,19 @@ def _drop_cited_version_item_ancestor_snapshots(
         target_label = op.target.path[-1][1]
         if op.target.path[-1][0] == "subsection" and len(op.target.path) >= 2:
             target_label = op.target.path[-2][1]
-        if not _raw_text_has_local_item_cited_version(raw_text, target_label):
+        clause = recognize_item_cited_version_clause(raw_text, target_label)
+        if not clause.matched:
             accepted.append(op)
             continue
-        cited_ids = {
-            f"{match.group(2)}/{int(match.group(1))}"
-            for match in _FI_CITED_VERSION_ID_RE.finditer(raw_text)
-        }
+        if clause.residual is not None:
+            # Cited-version cue without a parseable statute id: keep the op (no
+            # cited snapshot to drop against) and surface the unparsed cue.
+            residuals.append(clause.residual)
+            accepted.append(op)
+            continue
         cited_snapshots = tuple(
             cited_parent_snapshots.get((cited_id, source.effective, tuple(op.target.path)))
-            for cited_id in cited_ids
+            for cited_id in clause.cited_statute_ids
         )
         if not any(
             cited_snapshot is not None
@@ -1319,7 +1638,12 @@ def _drop_cited_version_item_ancestor_snapshots(
                 blocking=False,
             )
         )
-    return FilterResult(accepted_items=tuple(accepted), rejected_items=tuple(rejected))
+    return _CitedVersionDropResult(
+        filtered=FilterResult(
+            accepted_items=tuple(accepted), rejected_items=tuple(rejected)
+        ),
+        residuals=tuple(residuals),
+    )
 
 
 def _cited_version_snapshot_drops(
@@ -1518,6 +1842,10 @@ def _cleanup_sourceless_base_merge_conflicts(
         existing_version
         for existing_version in versions
         if existing_version.source is None
+        or (
+            existing_version.content is None
+            and existing_version.effective > base_effective
+        )
         or (
             existing_version.content is not None
             and (
@@ -1777,6 +2105,7 @@ def build_replay_products(
         )
 
     from lawvm.core.timeline import compile_timelines, materialize_pit_ex
+    from lawvm.core.timeline_results import materialization_result_to_stage_account
 
     base_ir = IRStatute(
         statute_id=statute_id,
@@ -1785,7 +2114,9 @@ def build_replay_products(
     )
     original_lo_ops = lo_ops_out or []
     static_prepared: tuple[
-        tuple[LegalOperation, ...], tuple[CitedVersionSnapshotDrop, ...]
+        tuple[LegalOperation, ...],
+        tuple[CitedVersionSnapshotDrop, ...],
+        tuple[CitedVersionParseResidual, ...],
     ] | None = None
     if fold_backfill_preview_cache is not None:
         prepared_cache_key = (
@@ -1795,10 +2126,12 @@ def build_replay_products(
             len(original_lo_ops),
         )
         cached_prepared = fold_backfill_preview_cache.get(prepared_cache_key)
-        if isinstance(cached_prepared, tuple) and len(cached_prepared) == 2:
+        if isinstance(cached_prepared, tuple) and len(cached_prepared) == 3:
             static_prepared = cast(
                 tuple[
-                    tuple[LegalOperation, ...], tuple[CitedVersionSnapshotDrop, ...]
+                    tuple[LegalOperation, ...],
+                    tuple[CitedVersionSnapshotDrop, ...],
+                    tuple[CitedVersionParseResidual, ...],
                 ],
                 cached_prepared,
             )
@@ -1806,13 +2139,15 @@ def build_replay_products(
             prepared = _normalize_repeal_op_sources(list(original_lo_ops))
             drop_result = _drop_cited_version_item_ancestor_snapshots(prepared)
             static_prepared = (
-                drop_result.accepted_items,
-                _cited_version_snapshot_drops(drop_result),
+                drop_result.filtered.accepted_items,
+                _cited_version_snapshot_drops(drop_result.filtered),
+                drop_result.residuals,
             )
             fold_backfill_preview_cache[prepared_cache_key] = static_prepared
     if static_prepared is not None:
         lo_ops = list(static_prepared[0])
         cited_version_snapshot_drops = static_prepared[1]
+        cited_version_parse_residuals = static_prepared[2]
         lo_ops = _mark_detached_horizon_future_repeals(
             lo_ops,
             as_of=as_of,
@@ -1822,8 +2157,9 @@ def build_replay_products(
         lo_ops = list(original_lo_ops)
         lo_ops = _normalize_repeal_op_sources(lo_ops)
         drop_result = _drop_cited_version_item_ancestor_snapshots(lo_ops)
-        cited_version_snapshot_drops = _cited_version_snapshot_drops(drop_result)
-        lo_ops = list(drop_result.accepted_items)
+        cited_version_snapshot_drops = _cited_version_snapshot_drops(drop_result.filtered)
+        cited_version_parse_residuals = drop_result.residuals
+        lo_ops = list(drop_result.filtered.accepted_items)
         lo_ops = _mark_detached_horizon_future_repeals(
             lo_ops,
             as_of=as_of,
@@ -1980,6 +2316,11 @@ def build_replay_products(
         expires_as_of=expires_as_of,
         lineage_plan=lineage_decision.lineage_plan,
     )
+    # StageResult-endgame: surface the materialization coverage account as the
+    # canonical typed carrier so the certificate dossier can ROUTE it (instead of
+    # the plain path discarding everything but the statute). Built from the SAME
+    # MaterializationResult — no re-materialization, byte-identical value path.
+    materialization_stage = materialization_result_to_stage_account(materialization_result)
     if materialization_result.materialization_status == "degraded_missing_scope":
         # Preserve the historical materialize_pit() contract: missing PIT scope is
         # a hard error, not a silently degraded materialization. The explicit
@@ -2041,8 +2382,10 @@ def build_replay_products(
             editorial_repeal_notice_substring_witnesses
         ),
         dropped_cited_version_snapshots=cited_version_snapshot_drops,
+        cited_version_parse_residuals=cited_version_parse_residuals,
         materialization_issues=materialization_result.issues,
         materialization_coverage=materialization_result.certificate,
+        materialization_stage=materialization_stage,
         materialization_spec=MaterializationSpec(
             as_of=as_of,
             query_type=query_type,

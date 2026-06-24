@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative draft (the semantic apply waist; vertical slice landed for chapter/part INSERT + FI typed relabel). All cited impl symbols verified present; the YAML's open items (ObservedWriteAudit still passive, OccupancyTransitionPolicy §6 still un-unified vs canonical_intent.OccupancyPolicy, receipt persistence/strict enforcement) remain accurately open. No stale paths or PEG3/§1.13 refs.
+
 ---
 title: LawVM Apply Resolution and Receipt Contract — the Semantic Apply Waist
 status: normative draft; vertical slice landed for the chapter/part INSERT

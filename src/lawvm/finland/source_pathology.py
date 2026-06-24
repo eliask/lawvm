@@ -775,6 +775,32 @@ def build_destructive_shape_loss_risk_pathology(
     )
 
 
+def build_unscoped_root_duplicate_consumed_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_label: str,
+    scoped_target_path: str,
+    consumed_path: str,
+) -> SourcePathology:
+    """Build a typed record for consuming a stale unscoped section duplicate."""
+    return SourcePathology.from_scope(
+        code="UNSCOPED_ROOT_DUPLICATE_CONSUMED",
+        message=(
+            "A later explicitly scoped section replacement consumed a stale direct "
+            "wrapper-level section with the same label."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=target_label,
+        detail={
+            "recovery_kind": RecoveryKind.SECTION_REPLACE_CONSUME_UNSCOPED_ROOT_DUPLICATE,
+            "scoped_target_path": scoped_target_path,
+            "consumed_path": consumed_path,
+        },
+    )
+
+
 def build_sparse_merge_invariant_skip_pathology(
     *,
     source_statute: str,
@@ -825,5 +851,73 @@ def build_unique_payload_insert_under_live_duplicates_pathology(
             "recovery_kind": recovery_kind,
             "live_sibling_count": live_sibling_count,
             "payload_sibling_count": payload_sibling_count,
+        },
+    )
+
+
+def build_subsection_shell_replace_kept_pathology(
+    *,
+    source_statute: str,
+    target_section: str,
+    target_chapter: str = "",
+    source_clause: str,
+) -> SourcePathology:
+    """Witness the keep decision for a whole-section shell over a plain subsection.
+
+    ``_drop_suspicious_partial_subsection_shell_replaces`` drops subsection-targeted
+    replaces that carry a stale whole-section wrapper, EXCEPT when the source text
+    explicitly targets the plain ``N momentti`` subsection (then the shell is
+    legitimate and the ops are kept). That keep branch previously emitted no
+    witness, so the source-plane keep decision was unrecorded. This records it,
+    embedding the source clause that justified the keep.
+    """
+    return SourcePathology.from_scope(
+        code="SUBSECTION_SHELL_REPLACE_KEPT",
+        message=(
+            "Whole-section shell over a subsection-targeted replace was KEPT (not "
+            "dropped) because the source explicitly targets the plain subsection: "
+            f"{source_clause!r}"
+        ),
+        source_statute=source_statute,
+        target_unit_kind="section",
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "source_clause": source_clause,
+            "diagnostic_reason": "explicit_plain_subsection_replace_source_kept_shell",
+        },
+    )
+
+
+def build_unresolved_descendant_scope_cue_pathology(
+    *,
+    source_statute: str,
+    target_section: str,
+    target_chapter: str = "",
+    unparsed_cue: str,
+) -> SourcePathology:
+    """Build a typed residual for an unresolved source descendant-scope cue.
+
+    The amendment source named an ``N §:n ... moment/kohta/alakohta`` descendant-
+    scope formula, but for no section matching the snapshot target. The apply path
+    used to swallow this as a silent ``False``; this self-evidencing residual
+    embeds the offending clause text so the unhandled cue is observable instead.
+    """
+    return SourcePathology.from_scope(
+        code="UNRESOLVED_DESCENDANT_SCOPE_CUE",
+        message=(
+            "Source formula names a section-genitive descendant-scope cue "
+            "(N §:n ... moment/kohta/alakohta) that did not resolve to the snapshot "
+            f"target section: {unparsed_cue!r}"
+        ),
+        source_statute=source_statute,
+        target_unit_kind="section",
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "unparsed_cue": unparsed_cue,
+            "diagnostic_reason": "source_descendant_scope_cue_unresolved",
         },
     )

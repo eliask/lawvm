@@ -26,7 +26,12 @@ Currently handled corrections
     sequence.  This handles base XML that split one momentti's kohdat across
     two sibling ``subsection`` elements.
 
-1c. **SUSPICIOUS_SHAPE / PROFILE_INVALID** -- a section-scoped item-style
+1c. **PROFILE_INVALID** -- an unlabelled ``subsection`` carrying only
+    letter-labelled paragraph children and an omission marker may be folded into
+    the preceding comma-ended subsection.  This handles amendment XML that
+    splits one changed momentti's intro/content from its item list.
+
+1d. **SUSPICIOUS_SHAPE / PROFILE_INVALID** -- a section-scoped item-style
     ``<subsection num="9)">`` that cannot be safely folded is preserved as a
     subsection container, and a typed witness is emitted. This keeps the
     suspicious source shape visible while avoiding an illegal
@@ -148,6 +153,7 @@ _DOTTED_MOMENT_NUM_RE = re.compile(r"^(\d+)\.$")
 _DOTTED_MOMENT_INTRO_RE = re.compile(r"^\s*(\d+)\.\s+")
 _LETTER_LABEL_RE = re.compile(r"^[a-z]$")
 _ARABIC_LABEL_RE = re.compile(r"^\d+[a-z]?$")
+_GLUED_ITEM_COORDINATORS = ("seka", "sekä", "ja")
 
 
 def source_normalization_fact_finding_kind(kind_value: str) -> str | None:
@@ -1042,6 +1048,117 @@ def _fold_section_scoped_item_style_subsections(
     return rewritten if changed else children
 
 
+def _is_lettered_paragraph(node: IRNode) -> bool:
+    if node.kind != IRNodeKind.PARAGRAPH:
+        return False
+    label = _norm_num_token(str(node.label or ""))
+    if _LETTER_LABEL_RE.match(label):
+        return True
+    num_child = next((child for child in node.children if child.kind == IRNodeKind.NUM), None)
+    if num_child is None:
+        return False
+    raw = _norm_num_token((num_child.text or "").strip().rstrip(")"))
+    return bool(_LETTER_LABEL_RE.match(raw))
+
+
+def _subsection_paragraph_list_payload(node: IRNode) -> tuple[tuple[IRNode, ...], tuple[IRNode, ...]] | None:
+    if node.kind != IRNodeKind.SUBSECTION:
+        return None
+    if any(child.kind == IRNodeKind.NUM for child in node.children):
+        return None
+    paragraphs: list[IRNode] = []
+    omissions: list[IRNode] = []
+    for child in node.children:
+        if child.kind == IRNodeKind.PARAGRAPH and _is_lettered_paragraph(child):
+            paragraphs.append(child)
+            continue
+        if child.kind == IRNodeKind.OMISSION:
+            omissions.append(child)
+            continue
+        return None
+    if len(paragraphs) < 2:
+        return None
+    labels = [_norm_num_token(str(paragraph.label or "")) for paragraph in paragraphs]
+    if labels and labels[0] and labels[0] != "a":
+        return None
+    return tuple(paragraphs), tuple(omissions)
+
+
+def _fold_unlabelled_paragraph_list_subsection_wrappers(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold an unlabelled paragraph-list wrapper into a preceding momentti.
+
+    Finlex amendment XML sometimes splits one changed subsection into a
+    content-only subsection followed by an unlabelled subsection carrying the
+    ``a)``/``b)`` list and a section-level omission marker. The latter is not a
+    valid peer momentti; the lettered paragraphs complete the preceding
+    comma-ended moment while the omission remains section-local sparse context.
+    """
+    if len(children) < 2:
+        return children
+
+    rewritten: list[IRNode] = []
+    changed = False
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if child.kind != IRNodeKind.SUBSECTION or i + 1 >= len(children):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        payload = _subsection_paragraph_list_payload(children[i + 1])
+        child_text = irnode_to_text(child).strip()
+        if payload is None or not child_text.endswith(","):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        paragraphs, omissions = payload
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(child.children) + paragraphs,
+            )
+        )
+        rewritten.extend(omissions)
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_SECTION_ITEM_SUBSECTION_FOLD,
+                basis=SourceNormalizationBasis.PROFILE_INVALID,
+                before=(
+                    f"unlabelled paragraph-list wrapper {_node_path_label(children[i + 1])} "
+                    f"after comma-ended {_node_path_label(child)}"
+                ),
+                after=(
+                    f"folded paragraphs {[paragraph.label for paragraph in paragraphs]!r} "
+                    f"into {_node_path_label(child)}; kept {len(omissions)} omission marker(s) section-local"
+                ),
+                explanation=(
+                    "The source split one subsection replacement across two "
+                    "subsection wrappers: the first carries comma-ended prose and "
+                    "the second carries only letter-labelled kohdat plus omission "
+                    "context. The wrapper is therefore transport shape, not a peer "
+                    "momentti."
+                ),
+                path=parent_path + (_node_path_label(children[i + 1]),),
+                confidence=0.97,
+            )
+        )
+        changed = True
+        i += 2
+
+    return rewritten if changed else children
+
+
 def _content_item_subsection_payload(node: IRNode) -> tuple[int, IRNode] | None:
     if node.kind != IRNodeKind.SUBSECTION:
         return None
@@ -1067,6 +1184,115 @@ def _content_item_subsection_payload(node: IRNode) -> tuple[int, IRNode] | None:
             ),
         ),
     )
+
+
+def _content_only_subsection_payload(node: IRNode) -> tuple[IRNode, ...] | None:
+    if node.kind != IRNodeKind.SUBSECTION:
+        return None
+    if any(child.kind in {IRNodeKind.NUM, IRNodeKind.PARAGRAPH} for child in node.children):
+        return None
+    if _node_has_descendant_kind(node, IRNodeKind.TABLE):
+        return None
+    payload = tuple(child for child in node.children if irnode_to_text(child).strip())
+    return payload or None
+
+
+def _direct_section_item_carrier_label(node: IRNode) -> str | None:
+    if node.kind != IRNodeKind.SUBSECTION:
+        return None
+    num_child = next((child for child in node.children if child.kind == IRNodeKind.NUM), None)
+    if num_child is None:
+        return None
+    raw = (num_child.text or "").strip()
+    compact = "".join(raw.split())
+    if not compact.endswith(")"):
+        return None
+    num_label = _norm_num_token(compact[:-1])
+    node_label = _norm_num_token(str(node.label or ""))
+    if not num_label or node_label != num_label:
+        return None
+    return node_label
+
+
+def _fold_sparse_section_item_subsection_payload(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold sparse section-level item carriers into the first moment wrapper."""
+    subsections = [child for child in children if child.kind == IRNodeKind.SUBSECTION]
+    if not subsections:
+        return children
+    item_labels = [_direct_section_item_carrier_label(child) for child in subsections]
+    if any(label is None for label in item_labels):
+        return children
+    labels = [str(label) for label in item_labels if label is not None]
+    if len(labels) == 1 and labels[0].isdigit():
+        return children
+    if not any(any(ch.isalpha() for ch in label) for label in labels) and labels == [
+        str(idx) for idx in range(1, len(labels) + 1)
+    ]:
+        return children
+
+    payload_nodes: list[IRNode] = []
+    consumed_paths: list[str] = []
+    for subsection in subsections:
+        payload_nodes.extend(_section_item_style_subsection_payload_nodes(subsection))
+        consumed_paths.append(_node_path_label(subsection))
+
+    rewritten: List[IRNode] = []
+    inserted = False
+    for child in children:
+        if child.kind == IRNodeKind.SUBSECTION:
+            if not inserted:
+                rewritten.append(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=tuple(payload_nodes),
+                    )
+                )
+                inserted = True
+            continue
+        rewritten.append(child)
+
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=BASE_SECTION_ITEM_SUBSECTION_FOLD,
+            basis=SourceNormalizationBasis.PROFILE_INVALID,
+            before=f"sparse section-level item carriers {consumed_paths!r}",
+            after=(
+                "folded into subsection:1 as paragraphs "
+                f"{[node.label for node in payload_nodes if node.kind == IRNodeKind.PARAGRAPH]!r}"
+            ),
+            explanation=(
+                "The source encoded a sparse set of section-level kohdat as "
+                "subsection wrappers. Finnish momentti labels are numeric, while "
+                "the wrapper num/label pair carries item notation such as '1 a)' "
+                "or '5)'. The wrappers are therefore transport shape and are "
+                "folded into the first moment's item list for payload binding."
+            ),
+            path=parent_path,
+            confidence=0.95,
+        )
+    )
+    return rewritten
+
+
+def _append_to_last_numbered_paragraph(
+    children: list[IRNode],
+    payload: tuple[IRNode, ...],
+) -> list[IRNode] | None:
+    for idx in range(len(children) - 1, -1, -1):
+        child = children[idx]
+        if child.kind != IRNodeKind.PARAGRAPH or _numeric_label_value(child.label) is None:
+            continue
+        updated = list(children)
+        updated[idx] = _append_item_continuation(child, payload)
+        return updated
+    return None
 
 
 def _fold_section_content_item_subsection_run(
@@ -1113,20 +1339,45 @@ def _fold_section_content_item_subsection_run(
             expected_value = 1
             min_folded = 2
 
+        base_children = list(child.children)
         folded_paragraphs: list[IRNode] = []
         consumed_paths: list[str] = []
         j = i + 1
         while j < len(children):
             candidate = children[j]
             payload = _content_item_subsection_payload(candidate)
-            if payload is None:
+            if payload is not None:
+                value, paragraph = payload
+                if value != expected_value:
+                    break
+                folded_paragraphs.append(paragraph)
+                consumed_paths.append(_node_path_label(candidate))
+                expected_value += 1
+                j += 1
+                continue
+
+            continuation_payload = _content_only_subsection_payload(candidate)
+            next_payload = (
+                _content_item_subsection_payload(children[j + 1])
+                if j + 1 < len(children)
+                else None
+            )
+            if continuation_payload is None or next_payload is None or next_payload[0] != expected_value:
                 break
-            value, paragraph = payload
-            if value != expected_value:
-                break
-            folded_paragraphs.append(paragraph)
+            if folded_paragraphs:
+                folded_paragraphs[-1] = _append_item_continuation(
+                    folded_paragraphs[-1],
+                    continuation_payload,
+                )
+            else:
+                updated_base = _append_to_last_numbered_paragraph(
+                    base_children,
+                    continuation_payload,
+                )
+                if updated_base is None:
+                    break
+                base_children = updated_base
             consumed_paths.append(_node_path_label(candidate))
-            expected_value += 1
             j += 1
 
         if len(folded_paragraphs) < min_folded:
@@ -1140,7 +1391,7 @@ def _fold_section_content_item_subsection_run(
                 label=child.label,
                 text=child.text,
                 attrs=child.attrs,
-                children=tuple(child.children) + tuple(folded_paragraphs),
+                children=tuple(base_children) + tuple(folded_paragraphs),
             )
         )
 
@@ -1283,6 +1534,18 @@ def _subsection_has_numbered_paragraphs(subsection: IRNode) -> bool:
     return any(_numbered_paragraph_value(child) is not None for child in subsection.children)
 
 
+def _subsection_has_payload_before_first_numbered_paragraph(subsection: IRNode) -> bool:
+    """True when a carrier has substantive child payload before its first numbered item."""
+    for child in subsection.children:
+        if child.kind == IRNodeKind.NUM:
+            continue
+        if _numbered_paragraph_value(child) is not None:
+            return False
+        if irnode_to_text(child).strip():
+            return True
+    return False
+
+
 def _fold_item_carrier_into_paragraphs(
     subsection: IRNode,
     paragraphs: list[IRNode],
@@ -1362,12 +1625,26 @@ def _subsection_can_start_item_run_at(
 ) -> bool:
     if subsection is None or subsection.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(subsection):
         return False
-    if _item_num_value(subsection) == expected_next_value:
+    direct_item_value = _item_num_value(subsection)
+    if direct_item_value == expected_next_value:
         return True
-    return _subsection_resumes_item_run_after_dash_continuation(
+    resumes_after_dash = _subsection_resumes_item_run_after_dash_continuation(
         subsection,
         expected_next_value,
     )
+    if direct_item_value is None and _subsection_has_payload_before_first_numbered_paragraph(subsection):
+        return resumes_after_dash
+    paragraph_values = [
+        value
+        for child in subsection.children
+        for value in (_numbered_paragraph_value(child),)
+        if value is not None
+    ]
+    if paragraph_values and paragraph_values == list(
+        range(expected_next_value, expected_next_value + len(paragraph_values))
+    ):
+        return True
+    return resumes_after_dash
 
 
 def _subsection_can_start_item_run_after_connector(
@@ -1399,6 +1676,160 @@ def _paragraph_labels_are_consecutive(paragraphs: list[IRNode]) -> bool:
         if value is not None
     ]
     return values == list(range(1, len(values) + 1))
+
+
+def _subsection_is_intro_only_open_list_host(subsection: IRNode, parent_path: Tuple[str, ...]) -> bool:
+    if subsection.kind != IRNodeKind.SUBSECTION:
+        return False
+    if _is_item_style_subsection(subsection):
+        return False
+    if any(child.kind == IRNodeKind.PARAGRAPH for child in subsection.children):
+        return False
+    if _node_has_descendant_kind(subsection, IRNodeKind.TABLE):
+        return False
+    text = irnode_to_text(subsection).strip()
+    return bool(text) and not text.endswith((".", "!", "?"))
+
+
+def _subsection_paragraph_item_run(subsection: IRNode) -> list[IRNode]:
+    if subsection.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(subsection):
+        return []
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    if not paragraphs:
+        return []
+    if any(child.kind not in {IRNodeKind.NUM, IRNodeKind.PARAGRAPH} for child in subsection.children):
+        return []
+    return paragraphs if _paragraph_labels_are_consecutive(paragraphs) else []
+
+
+def _subsection_item_num_paragraph_run(subsection: IRNode) -> tuple[list[IRNode], list[IRNode]]:
+    """Return paragraphs from a ``1)`` carrier plus section-local omissions."""
+    if subsection.kind != IRNodeKind.SUBSECTION or _item_num_value(subsection) != 1:
+        return [], []
+    paragraphs: list[IRNode] = []
+    omissions: list[IRNode] = []
+    for child in subsection.children:
+        if child.kind == IRNodeKind.OMISSION:
+            omissions.append(child)
+            continue
+        if child.kind == IRNodeKind.NUM:
+            continue
+        if child.kind == IRNodeKind.INTRO:
+            num_child = next((candidate for candidate in subsection.children if candidate.kind == IRNodeKind.NUM), None)
+            if num_child is None:
+                return [], []
+            paragraphs.append(
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="1",
+                    attrs=subsection.attrs,
+                    children=(
+                        num_child,
+                        IRNode(kind=IRNodeKind.CONTENT, text=child.text, attrs=child.attrs, children=child.children),
+                    ),
+                )
+            )
+            continue
+        numbered_value = _numbered_paragraph_value(child)
+        if numbered_value is not None:
+            paragraphs.append(child)
+            continue
+        if irnode_to_text(child).strip():
+            return [], []
+    if len(paragraphs) < 2 or not _paragraph_labels_are_consecutive(paragraphs):
+        return [], []
+    return paragraphs, omissions
+
+
+def _fold_intro_only_subsection_item_list_wrapper(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold an intro-only moment plus sibling 1..N paragraph wrapper."""
+    if len(children) < 3:
+        return children
+
+    rewritten: List[IRNode] = []
+    changed = False
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if not _subsection_is_intro_only_open_list_host(child, parent_path):
+            rewritten.append(child)
+            i += 1
+            continue
+        if i + 1 >= len(children):
+            rewritten.append(child)
+            i += 1
+            continue
+        folded_paragraphs = _subsection_paragraph_item_run(children[i + 1])
+        folded_omissions: list[IRNode] = []
+        if not folded_paragraphs:
+            folded_paragraphs, folded_omissions = _subsection_item_num_paragraph_run(children[i + 1])
+        if not folded_paragraphs:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(child.children) + tuple(folded_paragraphs),
+            )
+        )
+        rewritten.extend(folded_omissions)
+
+        next_label = (_numeric_label_value(child.label) or 0) + 1
+        relabelled: list[str] = []
+        for rest in children[i + 2:]:
+            if rest.kind == IRNodeKind.SUBSECTION and _numeric_label_value(rest.label) is not None:
+                old_label = str(rest.label)
+                new_label = str(next_label)
+                relabelled.append(f"{old_label}->{new_label}")
+                rest = IRNode(
+                    kind=rest.kind,
+                    label=new_label,
+                    text=rest.text,
+                    attrs=rest.attrs,
+                    children=rest.children,
+                )
+                next_label += 1
+            rewritten.append(rest)
+
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_SECTION_ITEM_SUBSECTION_FOLD,
+                basis=SourceNormalizationBasis.IMPOSSIBLE_NUMBERING,
+                before=(
+                    f"intro-only subsection {_node_path_label(child)} followed by "
+                    f"paragraph item wrapper {_node_path_label(children[i + 1])}"
+                ),
+                after=(
+                    f"folded into {_node_path_label(child)} as paragraphs "
+                    f"{[p.label for p in folded_paragraphs]!r}; relabelled true "
+                    f"subsections {relabelled!r}"
+                ),
+                explanation=(
+                    "The source encoded one moment's lead sentence and numbered "
+                    "kohdat as sibling subsection elements. Because the first "
+                    "subsection is an open list lead and the next wrapper carries "
+                    "a complete consecutive 1..N paragraph sequence, the wrapper "
+                    "is transport shape rather than a peer momentti."
+                ),
+                path=parent_path + (_node_path_label(child),),
+                confidence=0.95,
+            )
+        )
+        changed = True
+        i = len(children)
+
+    return rewritten if changed else children
 
 
 def _fold_section_item_subsection_run(
@@ -1865,6 +2296,125 @@ def _split_digit_reset_subparagraph_runs(
         rewritten.append(new_para)
 
     return rewritten
+
+
+def _find_glued_coordinator_item_split(text: str, expected_label: int) -> tuple[str, str, str] | None:
+    """Find ``; seka5)`` / ``; sekä5)`` / ``; ja5)`` transport glue."""
+    lowered = text.casefold()
+    for idx, ch in enumerate(text):
+        if ch not in ";.":
+            continue
+        cursor = idx + 1
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        for coordinator in _GLUED_ITEM_COORDINATORS:
+            if not lowered.startswith(coordinator, cursor):
+                continue
+            digit_start = cursor + len(coordinator)
+            digit_end = digit_start
+            while digit_end < len(text) and text[digit_end].isdigit():
+                digit_end += 1
+            if digit_end == digit_start or digit_end >= len(text) or text[digit_end] != ")":
+                continue
+            label = text[digit_start:digit_end]
+            if int(label) != expected_label:
+                continue
+            left = text[: idx + 1].strip()
+            right = text[digit_end + 1 :].strip()
+            if left and right:
+                return left, label, right
+    return None
+
+
+def _split_glued_coordinator_item_paragraphs(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Split a source-transport-glued item marker out of paragraph content."""
+    rewritten: list[IRNode] = []
+    changed = False
+    for child in children:
+        if child.kind != IRNodeKind.PARAGRAPH:
+            rewritten.append(child)
+            continue
+        current_label = _numeric_label_value(child.label)
+        if current_label is None:
+            rewritten.append(child)
+            continue
+        expected_label = current_label + 1
+        split_child_index: int | None = None
+        split_payload: tuple[str, str, str] | None = None
+        for child_index, grandchild in enumerate(child.children):
+            if grandchild.kind != IRNodeKind.CONTENT or not grandchild.text:
+                continue
+            split_payload = _find_glued_coordinator_item_split(grandchild.text, expected_label)
+            if split_payload is not None:
+                split_child_index = child_index
+                break
+        if split_child_index is None or split_payload is None:
+            rewritten.append(child)
+            continue
+
+        left_text, new_label, right_text = split_payload
+        left_content = child.children[split_child_index]
+        left_children = list(child.children[:split_child_index])
+        left_children.append(
+            IRNode(
+                kind=left_content.kind,
+                label=left_content.label,
+                text=left_text,
+                attrs=left_content.attrs,
+                children=left_content.children,
+            )
+        )
+        new_paragraph_children = [
+            IRNode(kind=IRNodeKind.NUM, text=f"{new_label})"),
+            IRNode(kind=IRNodeKind.CONTENT, text=right_text, attrs=left_content.attrs),
+        ]
+        new_paragraph_children.extend(child.children[split_child_index + 1 :])
+
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(left_children),
+            )
+        )
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=new_label,
+                attrs=child.attrs,
+                children=tuple(new_paragraph_children),
+            )
+        )
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_DIGIT_RESET_SPLIT,
+                basis=SourceNormalizationBasis.MONOTONIC_LOCAL_REPAIR,
+                before=(
+                    f"paragraph {child.label or '?'} contains coordinator-glued "
+                    f"item marker {new_label}) inside content"
+                ),
+                after=f"split into sibling paragraph {new_label}",
+                explanation=(
+                    "The source glued a coordinating word directly to the next "
+                    "numbered item marker inside a paragraph payload. The marker "
+                    "continues the local item sequence, so it is transport glue "
+                    "rather than legal prose."
+                ),
+                path=parent_path + (_node_path_label(child),),
+                confidence=0.96,
+            )
+        )
+        changed = True
+
+    return rewritten if changed else children
 
 
 def _node_without_kind_text(node: IRNode, excluded_kind: IRNodeKind) -> str:
@@ -2613,6 +3163,112 @@ def _detect_numbering_anomalies(
     if duplicate_indices:
         return [child for i, child in enumerate(children) if i not in duplicate_indices]
     return children
+
+
+def _item_text_ends_with_open_coordinator(node: IRNode) -> bool:
+    text = irnode_to_text(node).strip().casefold()
+    return text.endswith((" ja", " sekä", " tai", " taikka"))
+
+
+def _with_paragraph_label(node: IRNode, label: str) -> IRNode:
+    children: list[IRNode] = []
+    replaced_num = False
+    for child in node.children:
+        if child.kind == IRNodeKind.NUM and not replaced_num:
+            children.append(
+                IRNode(
+                    kind=child.kind,
+                    label=child.label,
+                    text=f"{label})",
+                    attrs=child.attrs,
+                    children=child.children,
+                )
+            )
+            replaced_num = True
+            continue
+        children.append(child)
+    attrs = dict(node.attrs)
+    attrs["lawvm_source_normalization_rule"] = "fi_terminal_duplicate_item_label_repair_v1"
+    return IRNode(
+        kind=node.kind,
+        label=label,
+        text=node.text,
+        attrs=attrs,
+        children=tuple(children),
+    )
+
+
+def _repair_terminal_duplicate_item_label(
+    node: IRNode,
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> IRNode:
+    """Relabel a terminal duplicate item when local list grammar proves a typo.
+
+    A sequence like ``1), 2), 2)`` is normally a duplicate-source pathology.
+    If the earlier ``2)`` ends with an open-list coordinator, the final duplicate
+    is locally witnessed as the next item number rather than a peer moment or a
+    duplicate to drop.
+    """
+    if node.kind != IRNodeKind.SUBSECTION:
+        return node
+    children = list(node.children)
+    paragraph_positions = [
+        idx
+        for idx, child in enumerate(children)
+        if child.kind == IRNodeKind.PARAGRAPH and _numeric_label_value(child.label) is not None
+    ]
+    if len(paragraph_positions) < 3:
+        return node
+    last_idx = paragraph_positions[-1]
+    prev_idx = paragraph_positions[-2]
+    if last_idx != len(children) - 1:
+        return node
+    last = children[last_idx]
+    prev = children[prev_idx]
+    last_value = _numeric_label_value(last.label)
+    prev_value = _numeric_label_value(prev.label)
+    if last_value is None or prev_value is None or last_value != prev_value:
+        return node
+    prior_values = [
+        value
+        for idx in paragraph_positions[:-1]
+        for value in (_numeric_label_value(children[idx].label),)
+        if value is not None
+    ]
+    if prior_values != list(range(1, len(prior_values) + 1)):
+        return node
+    if not _item_text_ends_with_open_coordinator(prev):
+        return node
+    new_label = str(prev_value + 1)
+    children[last_idx] = _with_paragraph_label(last, new_label)
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=SourceNormalizationKind.NUMBERING_REPAIR,
+            basis=SourceNormalizationBasis.MONOTONIC_LOCAL_REPAIR,
+            before=(
+                f"terminal duplicate paragraph label {last_value} after open-list "
+                f"coordinator in paragraph {prev_value}"
+            ),
+            after=f"relabelled terminal paragraph as {new_label}",
+            explanation=(
+                "The preceding item ends with an open-list coordinator, so the "
+                "terminal duplicate item is a locally witnessed next item number "
+                "rather than a duplicate sibling or a peer moment."
+            ),
+            path=parent_path + (_node_path_label(node),),
+            confidence=0.94,
+        )
+    )
+    return IRNode(
+        kind=node.kind,
+        label=node.label,
+        text=node.text,
+        attrs=node.attrs,
+        children=tuple(children),
+    )
 
 
 def _split_nonpenal_trailing_duplicate_paragraph(
@@ -3483,13 +4139,25 @@ def normalize_source_ir(
         initial_children = _fold_section_scoped_item_style_subsections(
             initial_children, statute_id, current_path, facts
         )
+        initial_children = _fold_unlabelled_paragraph_list_subsection_wrappers(
+            initial_children, statute_id, current_path, facts
+        )
         initial_children = _fold_table_note_subsections_into_previous_moment(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_content_item_subsection_run(
             initial_children, statute_id, current_path, facts
         )
+        initial_children = _fold_sparse_section_item_subsection_payload(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_intro_only_subsection_item_list_wrapper(
+            initial_children, statute_id, current_path, facts
+        )
         initial_children = _fold_section_item_subsection_run(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_section_content_item_subsection_run(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _split_unnumbered_subparagraph_moment_payloads(
@@ -3553,6 +4221,12 @@ def normalize_source_ir(
     # Step 6: apply node-level structural corrections.
     if _is_item_style_subsection(working):
         working = _reclassify_item_style_subsection(working, statute_id, parent_path, facts)
+    working = _repair_terminal_duplicate_item_label(
+        working,
+        statute_id,
+        current_path,
+        facts,
+    )
     working = _split_nonpenal_trailing_duplicate_paragraph(
         working,
         statute_id,
@@ -3650,6 +4324,24 @@ def normalize_source_ir(
                 text=working.text,
                 attrs=working.attrs,
                 children=tuple(recovered_children),
+            )
+
+    # Step 8.8: split source-transport glued item markers inside paragraph
+    # content before generic numbering anomaly detection sees the sibling run.
+    if working.kind == IRNodeKind.SUBSECTION:
+        new_children = list(working.children)
+        split_children = _split_glued_coordinator_item_paragraphs(
+            new_children, statute_id, current_path, facts
+        )
+        if len(split_children) != len(new_children) or any(
+            a is not b for a, b in zip(split_children, new_children, strict=True)
+        ):
+            working = IRNode(
+                kind=working.kind,
+                label=working.label,
+                text=working.text,
+                attrs=working.attrs,
+                children=tuple(split_children),
             )
 
     # Step 9: detect numbering anomalies (gaps/duplicates) among siblings.

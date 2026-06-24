@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Superseded as a plan; keep as design rationale. Kind: Explanatory (statute-rollup design/migration proposal, now implemented). StatuteResolvedClaims + build_proof_claims_typed exist and are live in tools/evidence_statute_rules.py. Read the 'should we / Step 1…7 migrate' sections as historical.
+
 # Statute Rollup Claim Algebra
 
 The main point is that statute rollup is **not** the same problem as section selection.

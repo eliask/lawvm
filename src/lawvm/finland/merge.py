@@ -51,9 +51,11 @@ from lawvm.finland.helpers import (
 )
 from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile, ResolvedOp, _op_target_subsection_label
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.scope import source_targets_plain_subsection_moment
 from lawvm.finland.source_pathology import (
     build_malformed_broad_replace_body_pathology,
     build_partial_whole_section_payload_pathology,
+    build_subsection_shell_replace_kept_pathology,
 )
 
 if TYPE_CHECKING:
@@ -61,8 +63,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Leading item-label lexers over an owned IR node's intro/content text (hoisted
+# per §1.11 from _item_label_from_intro_like_ir / _letter_label_from_intro_like_ir).
+_INTRO_NUMERIC_ITEM_LABEL_RE = re.compile(r"^(\d+[a-z]?)\s*[\).]", re.I)
+_INTRO_LETTER_ITEM_LABEL_RE = re.compile(r"^([a-z])\s*[\).]")
+
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _LEADING_OMISSION_ANCHOR_PREFIX_MERGE_RULE = "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE"
+_SPARSE_DESCENDANT_LABEL_OMISSION_MERGE_RULE = "ELAB.SPARSE_DESCENDANT_LABEL_OMISSION_MERGE"
 
 
 @dataclass(frozen=True)
@@ -79,6 +87,18 @@ class MergeContainerContext:
     source_statute: str = ""
     op_target: str = ""
     container_label: str = ""
+
+
+@dataclass(frozen=True)
+class _ContainerSectionUnit:
+    """A direct section plus source-owned non-structural context before it."""
+
+    prefix: Tuple[IRNode, ...]
+    section: IRNode
+
+    @property
+    def label(self) -> str:
+        return self.section.label or ""
 
 
 # ---------------------------------------------------------------------------
@@ -791,7 +811,15 @@ def _merge_section_inner_subsection_omission_ir(
                 if omission_idx is None
                 else [gc for gc in amend_sub.children[omission_idx + 1 :] if not _is_omission_ir(gc)]
             )
-            if omission_idx is not None and not trailing:
+            nested_descendant_result = _merge_sparse_labelled_descendant_omission_ir(
+                master_subsecs[j],
+                amend_sub,
+                omission_idx=omission_idx,
+                trailing=tuple(trailing),
+            )
+            if nested_descendant_result is not None:
+                result = nested_descendant_result
+            elif omission_idx is not None and not trailing:
                 # Section-shell family: subsection-level trailing omission means
                 # "preserve later subsections of the section", not "splice the
                 # old tail back into this replaced subsection". This keeps
@@ -818,6 +846,86 @@ def _merge_section_inner_subsection_omission_ir(
 
     return _tops._with_children(master_sec, new_children)
 
+
+def _merge_sparse_labelled_descendant_omission_ir(
+    master_sub: IRNode,
+    amend_sub: IRNode,
+    *,
+    omission_idx: int | None,
+    trailing: tuple[IRNode, ...],
+) -> Optional[IRNode]:
+    """Replace uniquely labelled live descendants from an omission-marked slot.
+
+    Some sparse Finland payloads publish a direct numbered paragraph after an
+    omission even though the live target is a nested list row.  The source-owned
+    facts are the omission boundary plus the explicit row label; when that label
+    maps to exactly one live descendant and no direct child has the same label,
+    preserve the live subsection shape and replace only that descendant.
+    """
+    if omission_idx is None or not trailing:
+        return None
+    pre_omission = amend_sub.children[:omission_idx]
+    if not _pre_omission_is_context_carried(pre_omission):
+        return None
+    if any(child.kind is not IRNodeKind.PARAGRAPH or not normalized_label_key(child.label) for child in trailing):
+        return None
+
+    direct_labels = {
+        normalized_label_key(child.label)
+        for child in master_sub.children
+        if child.label and not _is_omission_ir(child)
+    }
+    payload_by_label: dict[str, IRNode] = {}
+    for child in trailing:
+        label_key = normalized_label_key(child.label)
+        if label_key in direct_labels or label_key in payload_by_label:
+            return None
+        payload_by_label[label_key] = child
+
+    matches: dict[str, tuple[int, ...]] = {}
+
+    def walk(node: IRNode, path: tuple[int, ...] = ()) -> None:
+        for idx, child in enumerate(node.children):
+            child_path = (*path, idx)
+            label_key = normalized_label_key(child.label)
+            if label_key in payload_by_label:
+                matches.setdefault(label_key, child_path)
+                if matches[label_key] != child_path:
+                    matches[label_key] = ()
+            walk(child, child_path)
+
+    walk(master_sub)
+    if set(matches) != set(payload_by_label) or any(not path for path in matches.values()):
+        return None
+
+    def replace_at_path(node: IRNode, path: tuple[int, ...], replacement: IRNode) -> IRNode:
+        if not path:
+            return replacement
+        idx = path[0]
+        children = list(node.children)
+        children[idx] = replace_at_path(children[idx], path[1:], replacement)
+        return _tops._with_children(node, children)
+
+    result = master_sub
+    for label_key, payload in payload_by_label.items():
+        path = matches[label_key]
+        live_node = result
+        for idx in path:
+            live_node = live_node.children[idx]
+        replacement = IRNode(
+            kind=live_node.kind,
+            label=live_node.label,
+            text=payload.text,
+            attrs={
+                **dict(payload.attrs),
+                _PAYLOAD_NORMALIZATION_RULE_ATTR: (_SPARSE_DESCENDANT_LABEL_OMISSION_MERGE_RULE,),
+            },
+            children=tuple(payload.children),
+        )
+        result = replace_at_path(result, path, replacement)
+
+    return _with_payload_normalization_rule_ir(result, _SPARSE_DESCENDANT_LABEL_OMISSION_MERGE_RULE)
+
 def _strip_leading_text_prefix(text: str, prefix: str) -> Optional[str]:
     """Strip a whitespace-flexible prefix from text if it matches exactly.
 
@@ -830,6 +938,7 @@ def _strip_leading_text_prefix(text: str, prefix: str) -> Optional[str]:
     if not norm_prefix:
         return None
     pattern = r"^\s*" + r"\s+".join(re.escape(part) for part in norm_prefix.split())
+    # lawvm-regex: owning_parser whitespace-flexible exact-prefix strip on the merger's own payload text (dynamic re.escape'd prefix, cannot be hoisted); not a cross-plane raw_text read
     match = re.match(pattern, text, flags=re.IGNORECASE | re.DOTALL)
     if not match:
         return None
@@ -1308,8 +1417,6 @@ def _merge_same_numbered_container_insert_ir(
     context: Optional[MergeContainerContext] = None,
 ) -> Optional[IRNode]:
     """IRNode version: overlay partial container onto live container."""
-    # Start from master, update heading if provided
-    new_children = list(master_node.children)
     # Section labels the amendment payload itself carries, used to classify a
     # duplicate as an amendment child vs. a pre-existing live sibling.
     amend_section_labels: Set[str] = {
@@ -1327,46 +1434,40 @@ def _merge_same_numbered_container_insert_ir(
         if c.kind is IRNodeKind.SECTION and c.label:
             master_label_counts[c.label] = master_label_counts.get(c.label, 0) + 1
     master_preexisting_duplicates: Set[str] = {lbl for lbl, n in master_label_counts.items() if n > 1}
-    amend_heading = next((c for c in amend_node.children if c.kind is IRNodeKind.HEADING), None)
-    if amend_heading is not None:
-        heading_idx = next((i for i, c in enumerate(new_children) if c.kind is IRNodeKind.HEADING), None)
-        if heading_idx is not None:
-            new_children[heading_idx] = amend_heading
-        else:
-            insert_idx = 1 if any(c.kind is IRNodeKind.NUM for c in new_children) else 0
-            new_children.insert(insert_idx, amend_heading)
+    master_units, master_trailing = _container_section_units(master_node.children)
+    amend_units, amend_trailing = _container_section_units(amend_node.children)
+    amend_units_by_label: Dict[str, _ContainerSectionUnit] = {
+        unit.label: unit for unit in amend_units if unit.label
+    }
+    master_labels = {unit.label for unit in master_units if unit.label}
 
-    for amend_child in amend_node.children:
-        if amend_child.kind is not IRNodeKind.SECTION or not amend_child.label:
+    merged_units: List[_ContainerSectionUnit] = []
+    replaced_labels: Set[str] = set()
+    for master_unit in master_units:
+        amend_unit = amend_units_by_label.get(master_unit.label)
+        if amend_unit is None or master_unit.label in replaced_labels:
+            merged_units.append(master_unit)
             continue
-        # Find matching section in master
-        live_idx = next(
-            (i for i, c in enumerate(new_children) if c.kind is IRNodeKind.SECTION and c.label == amend_child.label),
-            None,
+        replaced_labels.add(master_unit.label)
+        merged_section = _merge_container_section(master_unit.section, amend_unit.section)
+        merged_units.append(
+            _ContainerSectionUnit(prefix=amend_unit.prefix, section=merged_section)
         )
-        if live_idx is not None:
-            has_omission = any(_is_omission_ir(gc) for gc in amend_child.children)
-            if has_omission:
-                live_child = new_children[live_idx]
-                live_sub_texts = {c.text or "" for c in live_child.children if c.kind is IRNodeKind.SUBSECTION}
-                for ac in amend_child.children:
-                    if ac.kind is IRNodeKind.SUBSECTION and (ac.text or "") not in live_sub_texts:
-                        live_child = _tops._with_children(live_child, list(live_child.children) + [ac])
-                new_children[live_idx] = live_child
-            else:
-                # Check for inner-subsection omissions
-                merged = _merge_section_inner_subsection_omission_ir(new_children[live_idx], amend_child)
-                new_children[live_idx] = merged if merged is not None else amend_child
-        else:
-            # Insert at sorted position
-            target_key = _section_sort_key(amend_child.label)
-            insert_idx = len(new_children)
-            for idx, c in enumerate(new_children):
-                if c.kind is IRNodeKind.SECTION and c.label:
-                    if _section_sort_key(c.label) > target_key:
-                        insert_idx = idx
-                        break
-            new_children.insert(insert_idx, amend_child)
+
+    appended_amend_labels: Set[str] = set()
+    for amend_unit in amend_units:
+        if amend_unit.label in master_labels or amend_unit.label in appended_amend_labels:
+            continue
+        selected_unit = amend_units_by_label.get(amend_unit.label, amend_unit)
+        merged_units.append(selected_unit)
+        appended_amend_labels.add(amend_unit.label)
+
+    merged_units.sort(key=lambda unit: _section_sort_key(unit.label))
+    new_children = list(_container_top_children(master_node, amend_node))
+    for unit in merged_units:
+        new_children.extend(unit.prefix)
+        new_children.append(unit.section)
+    new_children.extend(amend_trailing or master_trailing)
 
     # Abort ONLY when the merge INCREASES a label's repeat count beyond the
     # master's pre-existing baseline. A collision on a label that the live
@@ -1426,6 +1527,66 @@ def _merge_same_numbered_container_insert_ir(
     return _tops._with_children(master_node, new_children)
 
 
+def _container_top_children(master_node: IRNode, amend_node: IRNode) -> Tuple[IRNode, ...]:
+    """Return the merged container num/heading shell for a partial merge."""
+
+    result: List[IRNode] = []
+    master_num = next((c for c in master_node.children if c.kind is IRNodeKind.NUM), None)
+    amend_num = next((c for c in amend_node.children if c.kind is IRNodeKind.NUM), None)
+    num = amend_num or master_num
+    if num is not None:
+        result.append(num)
+    amend_heading = next((c for c in amend_node.children if c.kind is IRNodeKind.HEADING), None)
+    master_heading = next((c for c in master_node.children if c.kind is IRNodeKind.HEADING), None)
+    heading = amend_heading or master_heading
+    if heading is not None:
+        result.append(heading)
+    return tuple(result)
+
+
+def _container_section_units(
+    children: Tuple[IRNode, ...],
+) -> Tuple[Tuple[_ContainerSectionUnit, ...], Tuple[IRNode, ...]]:
+    """Group direct section children with their immediately preceding context."""
+
+    units: List[_ContainerSectionUnit] = []
+    prefix: List[IRNode] = []
+    for child in children:
+        if child.kind in {IRNodeKind.NUM, IRNodeKind.HEADING} and not units and not prefix:
+            continue
+        if child.kind is IRNodeKind.SECTION and child.label:
+            units.append(_ContainerSectionUnit(prefix=tuple(prefix), section=child))
+            prefix = []
+            continue
+        prefix.append(child)
+    return tuple(units), tuple(prefix)
+
+
+def _merge_container_section(master_section: IRNode, amend_section: IRNode) -> IRNode:
+    """Merge one same-labeled section using the legacy inner-omission semantics."""
+
+    has_omission = any(_is_omission_ir(child) for child in amend_section.children)
+    if has_omission:
+        live_child = master_section
+        live_sub_texts = {
+            child.text or ""
+            for child in live_child.children
+            if child.kind is IRNodeKind.SUBSECTION
+        }
+        for amend_child in amend_section.children:
+            if (
+                amend_child.kind is IRNodeKind.SUBSECTION
+                and (amend_child.text or "") not in live_sub_texts
+            ):
+                live_child = _tops._with_children(
+                    live_child,
+                    list(live_child.children) + [amend_child],
+                )
+        return live_child
+    merged = _merge_section_inner_subsection_omission_ir(master_section, amend_section)
+    return merged if merged is not None else amend_section
+
+
 def _paragraph_signatures_ir(node: IRNode) -> List[str]:
     subsections = [c for c in node.children if c.kind is IRNodeKind.SUBSECTION]
     if len(subsections) != 1:
@@ -1464,7 +1625,8 @@ def _item_label_from_intro_like_ir(node: IRNode) -> Optional[str]:
             continue
         text = (child.text or "").lstrip()
         compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", text, flags=re.I)
-        m = re.match(r"^(\d+[a-z]?)\s*[\).]", compact, flags=re.I)
+        # lawvm-regex: owning_parser leading numeric item-label lexer over the merger's own IR node intro/content text; not a cross-plane raw_text read
+        m = _INTRO_NUMERIC_ITEM_LABEL_RE.match(compact)
         if m:
             return normalized_label_key(m.group(1))
     return None
@@ -1476,7 +1638,8 @@ def _letter_label_from_intro_like_ir(node: IRNode) -> Optional[str]:
         if child.kind not in {IRNodeKind.INTRO, IRNodeKind.CONTENT}:
             continue
         text = (child.text or "").lstrip()
-        m = re.match(r"^([a-z])\s*[\).]", text)
+        # lawvm-regex: owning_parser leading single-letter item-label lexer over the merger's own IR node intro/content text; not a cross-plane raw_text read
+        m = _INTRO_LETTER_ITEM_LABEL_RE.match(text)
         if m:
             return normalized_label_key(m.group(1))
     return None
@@ -1599,6 +1762,7 @@ def _sparse_item_section_replace_merge_ir(
             for lbl in missing_from_amend:
                 if lbl.isdigit():
                     continue  # Pure integers outside max are a genuine sparse signal
+                # lawvm-regex: owning_parser a-suffix label classifier on an already-normalized structural label string; not an IR/raw_text read
                 m = _a_suffix_re.match(lbl)
                 if m and int(m.group(1)) <= max_amend_int:
                     # An "a-suffix" item (e.g. "2a") inside the amendment's integer
@@ -2212,10 +2376,12 @@ def _merge_letter_item_into_content_only_subsection_ir(
         rf"(?<!\w){re.escape(label)}\.\s.*?(?=(?:\s+[A-ZÅÄÖ]\.)|$)",
         re.S,
     )
+    # lawvm-regex: owning_parser locates the letter row to splice in the merge operator's OWN live subsection subtree text (irnode_to_text(sub)); own-subtree predicate, not a cross-plane amendment-source read; no-match -> None (caller falls back to normal merge, no silent legal drop)
     if not row_re.search(master_text):
         return None
 
     replacement = amend_text
+    # lawvm-regex: owning_parser aligns the replacement row start in the merge operator's OWN amend-paragraph subtree text (irnode_to_text(amend_para)); own-subtree alignment, not a cross-plane raw_text read
     row_start = re.search(rf"(?<!\w){re.escape(label)}\.\s", replacement)
     if row_start is not None:
         replacement = replacement[row_start.start() :]
@@ -2297,6 +2463,7 @@ def _partial_section_replace_diagnostics_ir(
         heading = next((c for c in node.children if c.kind is IRNodeKind.HEADING), None)
         return " ".join(irnode_to_text(heading).split()) if heading is not None else ""
 
+    amend_subsections = [c for c in amend_sec.children if c.kind is IRNodeKind.SUBSECTION]
     master_set = set(master_paras)
     diag: dict[str, object] = {}
     if amend_paras and len(amend_paras) < len(master_paras) and all(sig in master_set for sig in amend_paras):
@@ -2332,7 +2499,13 @@ def _partial_section_replace_diagnostics_ir(
             return diag
     master_heading = _heading_text(master_sec)
     amend_heading = _heading_text(amend_sec)
-    if not amend_paras and master_heading and master_heading == amend_heading and text_ratio <= 0.2:
+    if (
+        not amend_paras
+        and len(amend_subsections) <= 1
+        and master_heading
+        and master_heading == amend_heading
+        and text_ratio <= 0.2
+    ):
         return {
             "suspicious": True,
             "reason": "shared_heading_tiny_payload",
@@ -2454,8 +2627,17 @@ def _drop_suspicious_partial_subsection_shell_replaces(
     amend_subsections = [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
     if live_heading is None or amend_heading is None or live_heading.text == amend_heading.text:
         return group_ops, [], []
-    if _has_explicit_heading_and_plain_subsection_replace_source(group_ops):
-        return group_ops, [], []
+    kept_shell_clause = _explicit_heading_and_plain_subsection_replace_source_clause(group_ops)
+    if kept_shell_clause is not None:
+        keep_witness = build_subsection_shell_replace_kept_pathology(
+            source_statute=next(
+                (op.source_statute for op in group_ops if op.source_statute), ""
+            ),
+            target_section=target_norm,
+            target_chapter=target_chapter or "",
+            source_clause=kept_shell_clause,
+        )
+        return group_ops, [keep_witness], []
     if len(amend_subsections) != 1:
         return group_ops, [], []
 
@@ -2515,10 +2697,21 @@ def _drop_suspicious_partial_subsection_shell_replaces(
     return filtered, pathologies, rejected_ops
 
 
-def _has_explicit_heading_and_plain_subsection_replace_source(group_ops: List["AmendmentOp"]) -> bool:
+def _explicit_heading_and_plain_subsection_replace_source_clause(
+    group_ops: List["AmendmentOp"],
+) -> Optional[str]:
+    """Return the source clause that targets a plain subsection, else ``None``.
+
+    A non-``None`` return means the group carries an explicit otsikko op AND a
+    plain-subsection-targeted replace whose source text names the plain
+    ``N momentti``; the whole-section shell is then legitimate and must be KEPT.
+    The returned clause is the witness text for the keep decision. The plain-
+    subsection predicate is owned by ``scope.source_targets_plain_subsection_moment``
+    rather than an inline ``raw_text`` regex (AGENTS.md §1.12 reach-back).
+    """
     has_heading_op = any(str(op.target_special or "").strip() == "otsikko" for op in group_ops)
     if not has_heading_op:
-        return False
+        return None
     for op in group_ops:
         if (
             op.op_type != "REPLACE"
@@ -2529,19 +2722,9 @@ def _has_explicit_heading_and_plain_subsection_replace_source(group_ops: List["A
             continue
         source = getattr(getattr(op, "lo", None), "source", None)
         raw_text = str(getattr(source, "raw_text", "") or "")
-        if _source_targets_plain_subsection(raw_text, op.target_paragraph):
-            return True
-    return False
-
-
-def _source_targets_plain_subsection(raw_text: str, target_paragraph: int) -> bool:
-    text = " ".join(raw_text.casefold().split())
-    if not text:
-        return False
-    target = re.escape(str(target_paragraph))
-    if re.search(rf"\b{target}\s+momentin\s+johdanto\w*", text):
-        return False
-    return re.search(rf"\b{target}\s+momentti\b", text) is not None
+        if source_targets_plain_subsection_moment(raw_text, op.target_paragraph):
+            return raw_text
+    return None
 
 
 def _is_compact_first_subsection_replace_shell_ir(
@@ -2940,18 +3123,18 @@ def _pre_resolve_omissions(
                     resolved = _mark_targeted_subsections_in_place(resolved, item_target_paragraphs)
                 return resolved
 
-        # Container-level: REPLACE with omissions
-        if target_unit_kind in {"chapter", "part"} and _has_whole_op("REPLACE"):
-            # For container targets (L/O), ctx.live_node IS the container
-            if ctx.live_node is not None:
-                merged = _merge_same_numbered_container_insert_ir(
-                    ctx.live_node,
-                    muutos_ir,
-                    context=MergeContainerContext(
-                        op_target=f"REPLACE {ctx.target_unit_kind}:{ctx.target_norm}",
-                        container_label=ctx.live_node.label or "",
-                    ),
-                )
-                return merged if merged is not None else ctx.live_node
+    # Container-level: REPLACE with omissions
+    if target_unit_kind in {"chapter", "part"} and _has_whole_op("REPLACE"):
+        # For container targets (L/O), ctx.live_node IS the container
+        if ctx.live_node is not None:
+            merged = _merge_same_numbered_container_insert_ir(
+                ctx.live_node,
+                muutos_ir,
+                context=MergeContainerContext(
+                    op_target=f"REPLACE {ctx.target_unit_kind}:{ctx.target_norm}",
+                    container_label=ctx.live_node.label or "",
+                ),
+            )
+            return merged if merged is not None else ctx.live_node
 
     return muutos_ir

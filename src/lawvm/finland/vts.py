@@ -14,6 +14,8 @@ from typing import List, Literal, Optional, Set, TYPE_CHECKING
 
 import lxml.etree as etree
 
+from lawvm.core.filter_result import FilterResult
+from lawvm.core.stage_result import PartitionResult, Residual
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.address_parse import ParsedLegalAddress
 from lawvm.finland.references.freetext_addresses import scan_legal_addresses
@@ -129,6 +131,30 @@ class VtsSourceDiagnostic:
         }
 
 
+@dataclass(frozen=True)
+class VtsRepealPartition(PartitionResult[AmendmentOp]):
+    """Conserving carrier for voimaantulosäännös repeal extraction (Audit C).
+
+    Composes the canonical :class:`PartitionResult` (accepted = minted REPEAL
+    ``AmendmentOp`` records + typed core ``residuals``) and ADDS the two rich
+    domain channels the production replay ledger consumes:
+
+      * ``skipped_targets`` — :class:`VtsSkippedTarget` records for parsed targets
+        the extractor refused to widen into a whole-section repeal (the rejected
+        lane).
+      * ``source_diagnostics`` — :class:`VtsSourceDiagnostic` records for source
+        shapes that prevented inspection (a source-pathology residual lane).
+
+    These are not placed in the wrapped ``FilterResult`` rejected lane because
+    their payload is a parsed target / source shape, not an ``AmendmentOp``. The
+    core ``residuals`` mirror them so the total-accounting contract holds; the two
+    typed fields are the channels the legacy out-params drain from.
+    """
+
+    skipped_targets: tuple[VtsSkippedTarget, ...] = ()
+    source_diagnostics: tuple[VtsSourceDiagnostic, ...] = ()
+
+
 # op-keyword set — used to gate VTS fallback (must contain operative verbs
 # so we don't collide with real johtolause ops)
 _VTS_OP_KEYWORDS = {
@@ -191,8 +217,12 @@ def _vts_parent_citation_re(parent_id: str) -> "re.Pattern[str] | None":
         return None
     try:
         parent_year, parent_num_str = parent_id.split("/")
-        parent_num = int(parent_num_str)
     except (ValueError, AttributeError):
+        return None
+    parent_num_head = parent_num_str.split("-", 1)[0]
+    try:
+        parent_num = int(parent_num_head)
+    except ValueError:
         return None
     if not parent_year:
         return None
@@ -297,7 +327,7 @@ def _classify_vts_source_diagnostic(
 ) -> VtsSourceDiagnostic | None:
     try:
         parent_year, parent_num_str = parent_id.split("/")
-        int(parent_num_str)
+        int(parent_num_str.split("-", 1)[0])
     except (ValueError, AttributeError):
         return VtsSourceDiagnostic(
             rule_id=VTS_SOURCE_DIAGNOSTIC_RULE_ID,
@@ -770,12 +800,39 @@ def extract_voimaantulo_repeals(
 ) -> List[AmendmentOp]:
     """Extract repeal operations from voimaantulosäännös (transitional provisions).
 
+    Back-compat shim over :func:`extract_voimaantulo_repeals_partition`. The
+    partition is the canonical conserving carrier; this shim drains its
+    ``skipped_targets`` / ``source_diagnostics`` lanes into the legacy out-params
+    (the production replay ledger reads them) and returns the accepted ops. The
+    drain is the single emission path — the typed records are forwarded from the
+    partition, never re-derived, so no double-emit occurs.
+
+    Returns a (possibly empty) list of ``AmendmentOp`` objects. All returned ops
+    carry ``op_type='REPEAL'`` and typed ``voimaantulo_repeal=True`` provenance.
+    """
+    partition = extract_voimaantulo_repeals_partition(
+        xml_bytes, parent_id, parent_title=parent_title
+    )
+    if skipped_targets_out is not None:
+        skipped_targets_out.extend(partition.skipped_targets)
+    if source_diagnostics_out is not None:
+        source_diagnostics_out.extend(partition.source_diagnostics)
+    return list(partition.accepted)
+
+
+def extract_voimaantulo_repeals_partition(
+    xml_bytes: bytes,
+    parent_id: str,
+    parent_title: str = "",
+) -> VtsRepealPartition:
+    """Extract voimaantulosäännös repeals as a conserving partition.
+
     When a new law repeals provisions of another statute via a transitional
     provision section (``Tällä lailla kumotaan …``), the johtolause just says
     ``säädetään:`` with no op keywords.  This function searches the last
     sections of the amendment XML for such repeal clauses, filters by the
     parent statute citation, and returns the corresponding ``AmendmentOp``
-    objects.
+    objects in the partition's accepted lane.
 
     Whole-section (``N §``), chapter (``N luku``), and subsection/item targets
     parsed by the shared Finnish address parser are extracted. Sub-item
@@ -785,30 +842,31 @@ def extract_voimaantulo_repeals(
     This is a QUIRKS-mode feature: the caller should gate it behind
     ``strict_profile is None``.
 
-    If ``skipped_targets_out`` is provided, unsupported or unsafe parsed
-    targets are appended as ``VtsSkippedTarget`` records instead of disappearing
-    silently. If ``source_diagnostics_out`` is provided, unreadable or
-    structurally empty VTS source shapes are recorded separately from a normal
-    no-match result. Returns a (possibly empty) list of ``AmendmentOp`` objects.
-    All returned ops carry ``op_type='REPEAL'`` and typed
-    ``voimaantulo_repeal=True`` provenance.
+    Conservation (Audit C): unsupported or unsafe parsed targets are routed to
+    the partition's ``skipped_targets`` lane (typed ``VtsSkippedTarget``), and
+    unreadable / structurally empty source shapes to ``source_diagnostics``
+    (typed ``VtsSourceDiagnostic``), instead of disappearing silently. The
+    accepted op set is byte-identical to the previous return value.
     """
+    skipped_targets: List[VtsSkippedTarget] = []
+    source_diagnostics: List[VtsSourceDiagnostic] = []
+    skipped_targets_out = skipped_targets
+    source_diagnostics_out = source_diagnostics
+
     if not _source_may_contain_vts_repeal(xml_bytes):
-        if source_diagnostics_out is not None:
-            diagnostic = _classify_vts_source_diagnostic(xml_bytes, parent_id, parent_title)
-            if diagnostic is not None:
-                source_diagnostics_out.append(diagnostic)
-        return []
+        diagnostic = _classify_vts_source_diagnostic(xml_bytes, parent_id, parent_title)
+        if diagnostic is not None:
+            source_diagnostics_out.append(diagnostic)
+        return _vts_partition([], skipped_targets, source_diagnostics)
 
     fragment = _voimaantulo_repeal_fragment_for_parent(xml_bytes, parent_id, parent_title=parent_title)
     if not fragment:
         fragment = _voimaantulo_force_except_fragment_for_parent(xml_bytes, parent_id, parent_title=parent_title)
     if not fragment:
-        if source_diagnostics_out is not None:
-            diagnostic = _classify_vts_source_diagnostic(xml_bytes, parent_id, parent_title)
-            if diagnostic is not None:
-                source_diagnostics_out.append(diagnostic)
-        return []
+        diagnostic = _classify_vts_source_diagnostic(xml_bytes, parent_id, parent_title)
+        if diagnostic is not None:
+            source_diagnostics_out.append(diagnostic)
+        return _vts_partition([], skipped_targets, source_diagnostics)
 
     ops: List[AmendmentOp] = []
     seen_labels: Set[tuple[str, int | None, str | None, str | None] | str] = set()
@@ -955,7 +1013,41 @@ def extract_voimaantulo_repeals(
                     )
                 )
 
-    return ops
+    return _vts_partition(ops, skipped_targets, source_diagnostics)
+
+
+def _vts_partition(
+    ops: List[AmendmentOp],
+    skipped_targets: List[VtsSkippedTarget],
+    source_diagnostics: List[VtsSourceDiagnostic],
+) -> VtsRepealPartition:
+    """Assemble the conserving VTS partition from the accumulated lanes."""
+    residuals = tuple(
+        Residual(
+            kind="out_of_scope",
+            reason=f"{skip.reason_code}: {skip.source_reason}",
+            scope=f"{skip.source_statute}:section:{skip.target_section}",
+            text=skip.source_excerpt,
+            blocking=skip.blocking,
+        )
+        for skip in skipped_targets
+    ) + tuple(
+        Residual(
+            kind="benign_uninterpreted",
+            reason=f"{diag.reason_code}: {diag.source_reason}",
+            scope=f"{diag.source_statute}:source",
+            source_unit_id=diag.source_statute,
+            text=diag.source_excerpt,
+            blocking=diag.blocking,
+        )
+        for diag in source_diagnostics
+    )
+    return VtsRepealPartition(
+        FilterResult(accepted_items=tuple(ops)),
+        residuals=residuals,
+        skipped_targets=tuple(skipped_targets),
+        source_diagnostics=tuple(source_diagnostics),
+    )
 
 
 # ---------------------------------------------------------------------------

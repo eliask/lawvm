@@ -6,7 +6,7 @@ import re
 from typing import Any, Mapping, Optional, Sequence
 
 from lawvm.core.diagnostic_records import diagnostic_detail
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.execution_authorization import (
@@ -390,7 +390,7 @@ def mark_nonreplay_lowering_rejections_nonblocking(
         return False
     changed = False
     for rejection in lowering_rejections[start_index:]:
-        if not is_blocking_compile_record(rejection):
+        if not is_blocking_compile_record(CompileRecord.from_mapping(rejection)):
             continue
         if rejection.get("nonstructural_replay_candidate_family"):
             continue
@@ -442,7 +442,7 @@ def mark_source_pathology_nonreplay_lowering_rejections_nonblocking(
         return False
     changed = False
     for rejection in lowering_rejections[start_index:]:
-        if not is_blocking_compile_record(rejection):
+        if not is_blocking_compile_record(CompileRecord.from_mapping(rejection)):
             continue
         if rejection.get("nonstructural_replay_candidate_family"):
             continue
@@ -475,7 +475,7 @@ def mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
         return False
     changed = False
     for rejection in lowering_rejections[start_index:]:
-        if not is_blocking_compile_record(rejection):
+        if not is_blocking_compile_record(CompileRecord.from_mapping(rejection)):
             continue
         if rejection.get("nonstructural_replay_candidate_family"):
             continue
@@ -559,7 +559,7 @@ def append_manual_compile_frontier_diagnostic(
             tuple(
                 row
                 for row in current_lowering_rejections
-                if is_blocking_compile_record(row)
+                if is_blocking_compile_record(CompileRecord.from_mapping(row))
             )
         ),
         source_pathology=source_pathology or "",

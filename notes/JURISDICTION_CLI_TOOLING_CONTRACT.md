@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Descriptive (living CLI/debug surface contract). Cited FI/EE/UK command families verified present in tools/cli.py. No PEG3/§1.13.
+
 # Jurisdiction CLI Tooling Contract
 
 Status: living descriptive contract.

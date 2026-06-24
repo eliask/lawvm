@@ -333,3 +333,44 @@ def test_dump_main_default_output_unchanged_without_flags(monkeypatch, capsys) -
     out = capsys.readouterr().out
     assert out == "Statute: 2000/1\nStage  : APPLY (full replay)\n\nUNCHANGED BODY TEXT\n"
     assert called["statute_id"] == "2000/1"
+
+
+def test_dump_main_human_as_of_uses_materialized_ir(monkeypatch, capsys) -> None:
+    fold_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CONTENT, text="EXPIRED"),))
+    materialized_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CONTENT, text="LIVE"),))
+    called: dict[str, object] = {}
+
+    def fake_replay_xml(
+        statute_id: str,
+        *,
+        stop_before: str = "",
+        quiet: bool = False,
+        as_of: str = "",
+    ):
+        called["as_of"] = as_of
+        return SimpleNamespace(
+            ir=fold_ir,
+            materialized_state=SimpleNamespace(ir=materialized_ir),
+            serialize_text=lambda: "EXPIRED",
+        )
+
+    monkeypatch.setattr("lawvm.tools.dump.replay_xml", fake_replay_xml)
+
+    dump.main(
+        Namespace(
+            statute_id="2000/1",
+            after=None,
+            source=None,
+            address=None,
+            before="",
+            jurisdiction="fi",
+            db=None,
+            json=False,
+            hashes=False,
+            as_of="2022-01-01",
+        )
+    )
+
+    out = capsys.readouterr().out
+    assert called["as_of"] == "2022-01-01"
+    assert out == "Statute: 2000/1\nStage  : APPLY (full replay)\n\nLIVE\n"

@@ -126,6 +126,98 @@ def test_failure_reason_is_internal_error_on_lowerer_crash() -> None:
     assert diag.failure_reason == "INTERNAL_ERROR", f"Expected INTERNAL_ERROR, got {diag.failure_reason!r}"
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Escape-hatch bite tests: silent-degradation paths must surface failures.
+# Three former `except Exception: <empty>` hatches masked grammar
+# parse/resolve/lower failures by degrading to empty output.  These tests pin
+# the corrected contract: a known-pipeline RuntimeError is made VISIBLE (typed
+# residual, or a self-evidencing re-raise), and a programming bug propagates.
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def test_totality_predicate_runtime_error_surfaces_as_typed_residual() -> None:
+    """A RuntimeError inside the totality (silent-drop) overlay must surface a
+    `totality_check_error` residual rather than being silently swallowed — the
+    overlay exists to emit the incompleteness signal, so a failure there must
+    not erase it."""
+    from lawvm.finland.johtolause.totality import TOTALITY_ALWAYS
+
+    with patch(
+        "lawvm.finland.johtolause.totality.predicate",
+        side_effect=RuntimeError("synthetic totality failure"),
+    ):
+        result = parse_clause("muutetaan 5 §", totality_policy=TOTALITY_ALWAYS)
+
+    err_residuals = [r for r in result.residuals if r.get("kind") == "totality_check_error"]
+    assert err_residuals, (
+        f"Expected a 'totality_check_error' residual when the totality predicate "
+        f"crashes, got residuals: {result.residuals}"
+    )
+    assert "RuntimeError" in err_residuals[0]["error"]
+
+
+def test_totality_predicate_programming_bug_propagates() -> None:
+    """A non-pipeline programming bug (TypeError) inside the totality overlay
+    must propagate, not be swallowed by a broad except."""
+    from lawvm.finland.johtolause.totality import TOTALITY_ALWAYS
+
+    with patch(
+        "lawvm.finland.johtolause.totality.predicate",
+        side_effect=TypeError("synthetic programming bug"),
+    ):
+        with pytest.raises(TypeError):
+            parse_clause("muutetaan 5 §", totality_policy=TOTALITY_ALWAYS)
+
+
+def test_parse_to_ops_resolver_runtime_error_surfaces_not_empty() -> None:
+    """parse_to_ops must surface a resolver RuntimeError as a self-evidencing
+    error rather than degrading to an empty op list (which would be
+    indistinguishable from 'nothing to parse')."""
+    from lawvm.finland.johtolause.api import parse_to_ops
+    from lawvm.finland.johtolause.lexer import tokenize
+    from lawvm.finland.johtolause.scan import apply_annotations
+
+    tokens = apply_annotations(tokenize("muutetaan 5 §"))
+    with patch(
+        "lawvm.finland.johtolause.surface_resolve.resolve_surface_clause",
+        side_effect=RuntimeError("synthetic resolver failure"),
+    ):
+        with pytest.raises(RuntimeError, match="surface_resolve failed"):
+            parse_to_ops(tokens)
+
+
+def test_parse_to_ops_lowerer_runtime_error_surfaces_not_empty() -> None:
+    """parse_to_ops must surface a lowerer RuntimeError as a self-evidencing
+    error rather than degrading to an empty-ClauseAST (zero ops)."""
+    from lawvm.finland.johtolause.api import parse_to_ops
+    from lawvm.finland.johtolause.lexer import tokenize
+    from lawvm.finland.johtolause.scan import apply_annotations
+
+    tokens = apply_annotations(tokenize("muutetaan 5 §"))
+    with patch(
+        "lawvm.finland.johtolause.lower_clause_ast.lower_to_clause_ast",
+        side_effect=RuntimeError("synthetic lowerer failure"),
+    ):
+        with pytest.raises(RuntimeError, match="clause_ast lowering failed"):
+            parse_to_ops(tokens)
+
+
+def test_parse_to_ops_programming_bug_propagates() -> None:
+    """A non-pipeline programming bug (TypeError) in parse_to_ops resolve must
+    propagate untouched, not be masked as an empty op list."""
+    from lawvm.finland.johtolause.api import parse_to_ops
+    from lawvm.finland.johtolause.lexer import tokenize
+    from lawvm.finland.johtolause.scan import apply_annotations
+
+    tokens = apply_annotations(tokenize("muutetaan 5 §"))
+    with patch(
+        "lawvm.finland.johtolause.surface_resolve.resolve_surface_clause",
+        side_effect=TypeError("synthetic programming bug"),
+    ):
+        with pytest.raises(TypeError):
+            parse_to_ops(tokens)
+
+
 def test_failure_reason_grammar_mismatch_unchanged_for_real_grammar_failure() -> None:
     """A genuine grammar mismatch (no crash) must still report GRAMMAR_MISMATCH."""
     from lawvm.finland.johtolause.diagnostics import extract_ops_diagnostic

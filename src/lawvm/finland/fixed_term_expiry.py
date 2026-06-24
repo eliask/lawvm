@@ -34,7 +34,11 @@ from lawvm.core.statute_validity import (
     StatuteValidityBound,
     expires_on_from_valid_until,
 )
-from lawvm.finland.fi_dates import fi_partitive_month_number, parse_fi_day_month_year
+from lawvm.finland.fi_dates import (
+    FiDateForm,
+    fi_partitive_month_number,
+    match_fi_date,
+)
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
 from lawvm.finland.metadata import (
     CHAPTER_SCOPED_EXPIRY_RE,
@@ -155,6 +159,7 @@ def _whole_law_expiry_clause_text(normalized_text: str) -> Optional[str]:
         # ("Tämä laki/asetus/päätös"), not a named section/chapter.
         if not _whole_law_subject_re_search(clause.text):
             continue
+        # lawvm-regex: owning_parser toistaiseksi-vs-cap discriminator over an already-EXPIRY-classified clause
         if _BARE_TOISTAISEKSI_RE.search(clause.text) and not _TOISTAISEKSI_CAP_RE.search(
             clause.text
         ):
@@ -305,6 +310,7 @@ class _UnresolvedClauseBound:
 def _sentence_containing(text: str, pos: int) -> str:
     """The sentence of ``text`` that contains character offset ``pos``."""
     start = 0
+    # lawvm-regex: owning_parser sentence segmenter (lexer floor) inside the owned expiry construction
     for boundary in _SENTENCE_SPLIT_RE.finditer(text):
         if boundary.end() > pos:
             return text[start : boundary.start() + 1]
@@ -313,16 +319,28 @@ def _sentence_containing(text: str, pos: int) -> str:
 
 
 def _parse_commencement_date(sentence: str) -> Optional[dt.date]:
-    """A concrete commencement date stated in ``sentence``, or None."""
+    """A concrete commencement date stated in ``sentence``, or None.
+
+    The ``tulee/tuli/astuu/astui voimaan`` context regexes remain the owning
+    discriminator that LOCATES the commencement clause; the date-token lexing
+    inside the located span is delegated to the shared :func:`match_fi_date`
+    recognizer (essive form for the spelled-out date, dotted form for
+    ``D.M.YYYY``).
+    """
+    # lawvm-regex: owning_parser Finnish essive DD-month-YYYY commencement-date token inside a classified clause; unparsed -> typed bound residue
     m = _COMMENCEMENT_DATE_ESSIVE_RE.search(sentence)
     if m is not None:
-        return parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
+        essive = match_fi_date(
+            m.group(0), forms={FiDateForm.ESSIVE}, tolerate_dotted_day=True
+        )
+        if essive is not None:
+            return essive.value
+    # lawvm-regex: owning_parser dotted D.M.YYYY commencement-date token inside a classified clause; unparsed -> typed bound residue
     md = _COMMENCEMENT_DATE_DOTTED_RE.search(sentence)
     if md is not None:
-        try:
-            return dt.date(int(md.group(3)), int(md.group(2)), int(md.group(1)))
-        except ValueError:
-            return None
+        dotted = match_fi_date(md.group(0), forms={FiDateForm.DOTTED})
+        if dotted is not None:
+            return dotted.value
     return None
 
 
@@ -366,6 +384,7 @@ def _resolve_duration_form(
     # same-sentence form "tulee voimaan ... <year> ... ja on voimassa vuoden
     # loppuun" resolves (end of the commencement year). A high-confidence
     # inference, never a grammar fact (the opas idiom always names the year).
+    # lawvm-regex: owning_parser elided-year-end validity sub-construction; produces typed _UnresolvedClauseBound code
     elided = _ELIDED_YEAR_END_RE.search(clause_text)
     if elided is not None:
         sentence = _sentence_containing(clause_text, elided.start())
@@ -395,6 +414,7 @@ def _resolve_duration_form(
     # Year/month duration from commencement, computed under 150/1930 §3.
     years = 0
     months = 0
+    # lawvm-regex: owning_parser duration-spec validity sub-construction; typed bound result
     spec_match = _DURATION_SPEC_RE.search(clause_text)
     if spec_match is not None:
         token = spec_match.group(1).lower()
@@ -406,6 +426,7 @@ def _resolve_duration_form(
         else:
             months = count
     else:
+        # lawvm-regex: owning_parser bare-year duration sub-construction; typed bound result
         bare = _BARE_YEAR_DURATION_RE.search(clause_text)
         if bare is None:
             return _UnresolvedClauseBound(
@@ -428,6 +449,7 @@ def _resolve_duration_form(
             "sentence); outside the pinned duration_from_commencement rule",
             blocking=True,
         )
+    # lawvm-regex: owning_parser toistaiseksi-cap discriminator over the classified clause
     if _TOISTAISEKSI_CAP_RE.search(sentence):
         # "enintään / ei kauemmin kuin <duration>": an OUTER CAP on an
         # otherwise open-ended validity, not a stated duration end. The
@@ -443,6 +465,7 @@ def _resolve_duration_form(
     commencement = _parse_commencement_date(sentence)
     source_kind = "same_sentence"
     if commencement is None:
+        # lawvm-regex: owning_parser decree-set commencement sub-construction; typed bound result
         if _DECREE_SET_COMMENCEMENT_RE.search(clause_text):
             return _UnresolvedClauseBound(
                 code=DURATION_COMMENCEMENT_UNRESOLVED,
@@ -492,6 +515,7 @@ def _classify_unresolved_validity_clause(
     non-candidates (the clause is not a whole-law expiry bound at all).
     Ordered most-specific first; the generic unparseable code is the fallback.
     """
+    # lawvm-regex: owning_parser dative end-date validity sub-construction; typed bound result
     for match in _DATIVE_END_DATE_RE.finditer(clause_text):
         day = int(match.group(1))
         month_num = fi_partitive_month_number(match.group(2))
@@ -515,6 +539,7 @@ def _classify_unresolved_validity_clause(
             "voimassa-shaped text is about another subject",
             blocking=False,
         )
+    # lawvm-regex: owning_parser referential-voimassa sub-construction; typed bound result
     if _REFERENTIAL_VOIMASSA_RE.search(clause_text):
         return _UnresolvedClauseBound(
             code=NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED,
@@ -522,7 +547,9 @@ def _classify_unresolved_validity_clause(
             "'sikäli kuin' qualifier), not a whole-law validity bound",
             blocking=False,
         )
+    # lawvm-regex: owning_parser decree-set commencement discriminator over the classified clause
     if _DECREE_SET_COMMENCEMENT_RE.search(clause_text):
+        # lawvm-regex: owning_parser duration-form / elided-year-end discriminators; typed bound result
         if _DURATION_FORM_RE.search(clause_text) or _ELIDED_YEAR_END_RE.search(
             clause_text
         ):
@@ -538,9 +565,11 @@ def _classify_unresolved_validity_clause(
             "whole-law expiry bound",
             blocking=False,
         )
+    # lawvm-regex: owning_parser event-bound validity sub-construction; typed bound result
     event_match = _EVENT_BOUND_RE.search(clause_text)
     if event_match is not None:
         tail = clause_text[event_match.start() :]
+        # lawvm-regex: owning_parser event-instrument sub-construction; typed bound result
         if _EVENT_INSTRUMENT_RE.search(tail):
             return _UnresolvedClauseBound(
                 code=EVENT_BOUND_RESOLVER_MISSING,
@@ -555,8 +584,10 @@ def _classify_unresolved_validity_clause(
             "säädöskokoelma; out of the blessed event-bound drafting pattern",
             blocking=True,
         )
+    # lawvm-regex: owning_parser duration-form / elided-year-end discriminators; typed bound result
     if _DURATION_FORM_RE.search(clause_text) or _ELIDED_YEAR_END_RE.search(clause_text):
         return _resolve_duration_form(clause_text, statute_commencements)
+    # lawvm-regex: owning_parser start-only-vs-end-marker discriminators; typed bound result
     if _START_ONLY_RE.search(clause_text) and not _END_MARKER_RE.search(clause_text):
         return _UnresolvedClauseBound(
             code=START_ONLY_NOT_EXPIRY_BOUND,
@@ -625,7 +656,9 @@ def extract_fixed_term_bounds(
             normalized = _normalize_fi_parse_text(irnode_to_text(version.content))
 
             scoped_only = (
+                # lawvm-regex: owning_parser scoped-vs-whole-law route discriminator over own normalized source-IR; scoped -> typed SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED, no lifecycle minted
                 SECTION_SCOPED_EXPIRY_RE.search(normalized) is not None
+                # lawvm-regex: owning_parser scoped-vs-whole-law route discriminator over own normalized source-IR; scoped -> typed diagnostic
                 or CHAPTER_SCOPED_EXPIRY_RE.search(normalized) is not None
             )
             clause_text = _whole_law_expiry_clause_text(normalized)
@@ -639,8 +672,10 @@ def extract_fixed_term_bounds(
             if scoped_only and clause_text is None:
                 # A scoped (chapter/section) fixed-term form. v1 does not lift it
                 # into a statute-level bound; surface it for review.
+                # lawvm-regex: owning_parser re-locates the scoped clause to populate the self-evidencing diagnostic; no lifecycle minted
                 scoped_match = SECTION_SCOPED_EXPIRY_RE.search(
                     normalized
+                # lawvm-regex: owning_parser re-locates the scoped clause for the self-evidencing diagnostic; no lifecycle minted
                 ) or CHAPTER_SCOPED_EXPIRY_RE.search(normalized)
                 diagnostics.append(
                     FixedTermDiagnostic(
@@ -663,7 +698,9 @@ def extract_fixed_term_bounds(
             valid_until = parse.valid_until if parse is not None else None
             if (
                 valid_until is None
+                # lawvm-regex: owning_parser voimaantulosäännös-context guard (Pro V5 asymmetry); false-positive body text -> typed suppressed diagnostic
                 and not _COMMENCEMENT_CONTEXT_RE.search(normalized)
+                # lawvm-regex: owning_parser structural voimaantulo-heading override of the suppression guard; discriminator only
                 and not _VOIMAANTULO_HEADING_RE.search(normalized)
             ):
                 # Substantive body text can match the expiry meta-clause shape

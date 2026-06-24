@@ -153,10 +153,11 @@ def test_degenerate_pykala_prefix_with_trailing_section_is_out_of_scope() -> Non
 
 
 def test_out_of_scope_shapes_raise() -> None:
-    # Heading-placement inserts ("§:n edelle uusi väliotsikko") remain out of
-    # scope after slice 2 (plain section / sub-target inserts are now handled).
-    with pytest.raises(OutOfScope):
-        new_parser.parse(*_tokens_for("lisätään 5 §:n edelle uusi väliotsikko seuraavasti:"))
+    # NB: heading-placement inserts ("§:n edelle uusi väliotsikko") are NO LONGER
+    # out of scope — target-first heading inserts now parse to a
+    # SurfaceHeadingPlacement (rule fi.heading_edelle_otsikko_target_list); see
+    # test_parse_clause_target_first_valiotsake_then_subsection_insert and the
+    # SurfaceHeadingPlacement coverage in test_fi_grammar_insertions.py.
     # Meta-only clause (no amendment verb) is out of scope.
     with pytest.raises(OutOfScope):
         new_parser.parse(*_tokens_for("Tämä laki tulee voimaan 1 päivänä tammikuuta 2020."))

@@ -3,6 +3,7 @@ from lxml import etree
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.tree_ops import check_invariants
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.finland.corpus import get_corpus_store
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.source_normalize import normalize_source_ir
@@ -289,6 +290,154 @@ def test_fi_xml_to_ir_node_nests_lettered_subparagraphs_under_digit_paragraphs()
     para3 = next(p for p in paragraphs if p.label == "3")
     subs3 = [ch for ch in para3.children if ch.kind == IRNodeKind.SUBPARAGRAPH]
     assert [s.label for s in subs3] == ["a", "b", "c"]
+
+
+def test_fi_xml_to_ir_node_nests_repeated_dotted_digit_rows_with_embedded_items() -> None:
+    """Rows numbered as the parent item may carry child item labels in content."""
+    xml = etree.fromstring(
+        """
+        <subsection>
+          <intro><p>Tässä päätöksessä tarkoitetaan:</p></intro>
+          <paragraph>
+            <num>5)</num>
+            <content><p>muulla tuotteella seuraavia tuotteita:</p></content>
+          </paragraph>
+          <paragraph>
+            <num>5.</num>
+            <content><p>1) maitoa;</p></content>
+          </paragraph>
+          <paragraph>
+            <num>5.</num>
+            <content><p>2) eläinperäisiä rasvoja;</p></content>
+          </paragraph>
+          <paragraph>
+            <num>6)</num>
+            <content><p>seuraava määritelmä.</p></content>
+          </paragraph>
+        </subsection>
+        """
+    )
+
+    subsection = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    assert check_invariants(subsection) == []
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs] == ["5", "6"]
+    parent = paragraphs[0]
+    assert irnode_to_text(parent).startswith("5) muulla tuotteella")
+    subparagraphs = [child for child in parent.children if child.kind == IRNodeKind.SUBPARAGRAPH]
+    assert [child.label for child in subparagraphs] == ["1", "2"]
+    assert [irnode_to_text(child) for child in subparagraphs] == [
+        "maitoa;",
+        "eläinperäisiä rasvoja;",
+    ]
+
+
+def test_real_1999_785_section_4_preserves_repeated_dotted_digit_rows() -> None:
+    xml_bytes = get_corpus_store().read_source("1999/785")
+    assert xml_bytes is not None
+    root = etree.fromstring(xml_bytes)
+    section_el = next(
+        element
+        for element in root.findall(".//{*}section")
+        if element.get("eId") == "chp_1__sec_4"
+    )
+
+    raw = fi_xml_to_ir_node(section_el, _fi_label_postprocessor)
+    normalized, facts = normalize_source_ir(raw, "1999/785")
+
+    assert not any(
+        fact.kind_value == "base_duplicate_sibling_drop"
+        and fact.path == ("section:4", "subsection:1")
+        for fact in facts
+    )
+    subsection = next(
+        child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION
+    )
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs[:6]] == ["1", "2", "3", "4", "5", "6"]
+    item_5 = next(paragraph for paragraph in paragraphs if paragraph.label == "5")
+    subparagraphs = [child for child in item_5.children if child.kind == IRNodeKind.SUBPARAGRAPH]
+    assert [child.label for child in subparagraphs] == [str(index) for index in range(1, 18)]
+    assert "maitoa ja maitopohjaisia tuotteita" in irnode_to_text(subparagraphs[0])
+    assert "heinää ja olkea" in irnode_to_text(subparagraphs[-1])
+
+
+def test_fi_xml_to_ir_node_nests_unique_letter_subparagraphs_under_introducer_item() -> None:
+    """A colon-introducer digit item owns following lettered subitems even in a short list."""
+    xml = etree.fromstring(
+        """
+        <subsection>
+          <intro><p>Tässä luvussa tarkoitetaan:</p></intro>
+          <paragraph>
+            <num>1)</num>
+            <content><p>kansainvälisen liikenteen kuljetusluvalla lupaa, jonka nojalla:</p></content>
+          </paragraph>
+          <paragraph>
+            <num>a)</num>
+            <content><p>ulkomailla rekisteröityä kuorma-autoa saa käyttää Suomessa;</p></content>
+          </paragraph>
+          <paragraph>
+            <num>b)</num>
+            <content><p>Suomessa rekisteröityä kuorma-autoa saa käyttää ulkomailla;</p></content>
+          </paragraph>
+          <paragraph>
+            <num>c)</num>
+            <content><p>linja-autolla saa harjoittaa kansainvälistä liikennettä;</p></content>
+          </paragraph>
+          <paragraph>
+            <num>2)</num>
+            <content><p>kansainvälisellä yhdistetyllä kuljetuksella tiettyjä kuljetuksia.</p></content>
+          </paragraph>
+        </subsection>
+        """
+    )
+
+    subsection = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    assert check_invariants(subsection) == []
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs] == ["1", "2"]
+    nested = [child for child in paragraphs[0].children if child.kind == IRNodeKind.SUBPARAGRAPH]
+    assert [child.label for child in nested] == ["a", "b", "c"]
+    assert "kansainvälisellä yhdistetyllä" in irnode_to_text(paragraphs[1])
+
+
+def test_fi_xml_to_ir_node_keeps_short_generic_colon_letter_items_flat() -> None:
+    """A short generic colon list is not enough to reclassify letters as subitems."""
+    xml = etree.fromstring(
+        """
+        <subsection>
+          <intro><p>Asetusta sovelletaan:</p></intro>
+          <paragraph>
+            <num>1)</num>
+            <content><p>varusteeseen, joka asennetaan alukseen:</p></content>
+          </paragraph>
+          <paragraph>
+            <num>a)</num>
+            <content><p>jossa varustetta ei aiemmin ole ollut; tai</p></content>
+          </paragraph>
+          <paragraph>
+            <num>b)</num>
+            <content><p>jossa aiemmin ollut varuste uusitaan.</p></content>
+          </paragraph>
+          <paragraph>
+            <num>2)</num>
+            <content><p>muuhun varusteeseen.</p></content>
+          </paragraph>
+        </subsection>
+        """
+    )
+
+    subsection = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs] == ["1", "a", "b", "2"]
+    assert all(
+        child.kind is not IRNodeKind.SUBPARAGRAPH
+        for paragraph in paragraphs
+        for child in paragraph.children
+    )
 
 
 def test_fi_xml_to_ir_node_nests_repeated_simple_letter_families_for_1997_1339_section_4() -> None:
@@ -1680,6 +1829,60 @@ def test_fi_xml_to_ir_node_merges_split_intro_item_subsections() -> None:
     assert "kieltää" in irnode_to_text(paragraphs[0])
     assert "vaatia" in irnode_to_text(paragraphs[1])
     assert "velvoittaa" in irnode_to_text(paragraphs[2])
+
+    assert check_invariants(section) == []
+
+
+def test_fi_xml_to_ir_node_split_inner_omission_carries_numbered_payload() -> None:
+    """Inner omission split must not drop numbered rows following the split lead.
+
+    Real-shaped 1995/1767 §26 c carries an omitted earlier moment, then an
+    unnumbered lead sentence and numbered rows for the inserted moment inside a
+    single source subsection.  The split subsection must own the numbered rows.
+    """
+    xml = etree.fromstring(
+        """
+        <section>
+          <num>26 c §</num>
+          <subsection>
+            <intro>
+              <p>Yhteisöhankinnasta ei kuitenkaan ole kyse siltä osin kuin arvo on enintään 50 000 markkaa, jos</p>
+            </intro>
+            <hcontainer name="omission"/>
+            <paragraph>
+              <content><p>Yhteisöhankinnasta ei myöskään ole kyse, jos</p></content>
+            </paragraph>
+            <paragraph>
+              <num>1)</num>
+              <content><p>tavaran myynnistä ei olisi veroa;</p></content>
+            </paragraph>
+            <paragraph>
+              <num>2)</num>
+              <content><p>tavaran hankinta oikeuttaisi palautukseen; tai</p></content>
+            </paragraph>
+            <paragraph>
+              <num>3)</num>
+              <content><p>hankkijana on kansainvälinen järjestö.</p></content>
+            </paragraph>
+          </subsection>
+        </section>
+        """
+    )
+
+    section = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+    subsections = [ch for ch in section.children if ch.kind == IRNodeKind.SUBSECTION]
+    assert len(subsections) == 2
+    assert "enintään 50 000" in irnode_to_text(subsections[0])
+    split = subsections[1]
+    intros = [ch for ch in split.children if ch.kind == IRNodeKind.INTRO]
+    paragraphs = [ch for ch in split.children if ch.kind == IRNodeKind.PARAGRAPH]
+    assert len(intros) == 1
+    assert "myöskään ole kyse" in irnode_to_text(intros[0])
+    assert [p.label for p in paragraphs] == ["1", "2", "3"]
+    assert "tavaran myynnistä" in irnode_to_text(paragraphs[0])
+    assert "palautukseen" in irnode_to_text(paragraphs[1])
+    assert "kansainvälinen järjestö" in irnode_to_text(paragraphs[2])
 
     assert check_invariants(section) == []
 

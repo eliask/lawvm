@@ -16,7 +16,10 @@ from lxml import etree
 
 from lawvm.finland.helpers import _norm_num_token
 
+# lawvm-regex: diagnostic Finlex eId version suffix parser for oracle dedup
 _ORACLE_VERSION_SUFFIX_RE = re.compile(r"v(?P<version>\d{8})$")
+# lawvm-regex: diagnostic Finlex editorial prior-wording note classifier
+_PRIOR_WORDING_RE = re.compile(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE)
 
 
 def _tag(el: etree._Element) -> str:
@@ -54,6 +57,19 @@ def _oracle_eid_component_version(el: etree._Element) -> int:
     return int(match.group("version"))
 
 
+def _has_finlex_original_version(el: etree._Element) -> bool:
+    return bool(el.get("{http://data.finlex.fi/schema/finlex}originalVersion"))
+
+
+def _nearest_section_has_original_version(el: etree._Element) -> bool:
+    current = el.getparent()
+    while current is not None:
+        if _tag(current) == "section":
+            return _has_finlex_original_version(current)
+        current = current.getparent()
+    return False
+
+
 def _eid_slot_number(eid_base: str) -> tuple[str, int] | None:
     prefix, sep, tail = eid_base.rpartition("_")
     if not sep or not tail.isdigit():
@@ -85,7 +101,8 @@ def _has_following_next_slot_child(
 def _element_clean_text(el: etree._Element) -> str:
     """Return cleaned alphanumeric-only text content of an element."""
     raw = etree.tostring(el, method="text", encoding="unicode")
-    return re.sub(r"[^a-z0-9äöå]", "", raw.lower())
+    allowed = frozenset("abcdefghijklmnopqrstuvwxyz0123456789äöå")
+    return "".join(ch for ch in raw.lower() if ch in allowed)
 
 
 def _sequence_ratio_at_least(left: str, right: str, threshold: float) -> bool:
@@ -93,6 +110,37 @@ def _sequence_ratio_at_least(left: str, right: str, threshold: float) -> bool:
     if matcher.quick_ratio() < threshold:
         return False
     return matcher.ratio() >= threshold
+
+
+def strip_prior_wording_sibling(note: etree._Element) -> bool:
+    """Remove the same-slot sibling introduced as Finlex prior wording.
+
+    Finlex consolidated XML can encode a changed provision as:
+
+    current versioned child, editorial note containing ``Aiempi sanamuoto
+    kuuluu:``, prior versioned child. The note is editorial comparison metadata;
+    once stripped, the following prior child must be stripped with it or the
+    oracle projection counts stale text as current law.
+    """
+    note_text = etree.tostring(note, method="text", encoding="unicode")
+    # lawvm-regex: diagnostic Finlex editorial prior-wording note classifier
+    if not _PRIOR_WORDING_RE.search(note_text):
+        return False
+    previous = note.getprevious()
+    candidate = note.getnext()
+    if previous is None or candidate is None:
+        return False
+    if _tag(previous) != _tag(candidate):
+        return False
+    previous_base = _oracle_eid_base(previous)
+    candidate_base = _oracle_eid_base(candidate)
+    if previous_base is None or previous_base != candidate_base:
+        return False
+    parent = candidate.getparent()
+    if parent is None:
+        return False
+    parent.remove(candidate)
+    return True
 
 
 def dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:
@@ -110,7 +158,6 @@ def dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:
     identifies the candidate as a prior-wording shadow.
     """
     seen: dict[str, etree._Element] = {}
-    finlex_orig_attr = "{http://data.finlex.fi/schema/finlex}originalVersion"
     for child in list(parent):
         if _tag(child) != child_tag:
             continue
@@ -121,8 +168,8 @@ def dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:
         key = f"{eid_base}\x00{norm_versioned_child_label(num_text)}"
         if key in seen:
             existing = seen[key]
-            existing_has_orig = bool(existing.get(finlex_orig_attr))
-            candidate_has_orig = bool(child.get(finlex_orig_attr))
+            existing_has_orig = _has_finlex_original_version(existing)
+            candidate_has_orig = _has_finlex_original_version(child)
             existing_text = _element_clean_text(existing)
             candidate_text = _element_clean_text(child)
             if existing_text and candidate_text:
@@ -156,7 +203,10 @@ def dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:
                 if shorter / longer < 0.5 or not _sequence_ratio_at_least(
                     existing_text, candidate_text, 0.75
                 ):
-                    if not (existing_has_orig and candidate_has_orig):
+                    if existing_has_orig and candidate_has_orig:
+                        if _nearest_section_has_original_version(child):
+                            continue
+                    else:
                         continue
             parent.remove(child)
             continue

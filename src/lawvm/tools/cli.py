@@ -9040,6 +9040,14 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="max allowed statutes regressing beyond threshold (default: 3)",
     )
     brg_p.add_argument(
+        "--score-column",
+        default=None,
+        help=(
+            "explicit numeric score column to guard, e.g. lev_similarity for "
+            "Finland text-similarity regressions; default uses the jurisdiction primary lane"
+        ),
+    )
+    brg_p.add_argument(
         "--duration-threshold-s",
         type=float,
         default=1.0,
@@ -10660,6 +10668,32 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit machine-readable JSON",
     )
 
+    # --- bill-counterfactual ---
+    bill_cf_p = sub.add_parser(
+        "bill-counterfactual",
+        help="three-tier counterfactual 'what does this amendment do' report",
+        description=(
+            "Report one Finnish amendment's effects in THREE structurally distinct "
+            "tiers, kept separate and never conflated (read-only projection): "
+            "TIER 1 directly-changed provisions (johtolause ops); TIER 2 provisions "
+            "in the amended act that CITE a tier-1-changed provision (1-hop internal "
+            "back-references, traced only through resolved/unchanged citations); and "
+            "TIER 3 a DECLARED boundary of uncomputed second-order effects (the "
+            "honesty boundary IS part of the result). No score, no magnitude. "
+            "Supports --json."
+        ),
+    )
+    bill_cf_p.add_argument(
+        "statute_id",
+        metavar="STATUTE_ID",
+        help="amending statute id, e.g. 2018/301",
+    )
+    bill_cf_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON",
+    )
+
     # --- fi-refs ---
     fi_refs_p = sub.add_parser(
         "fi-refs",
@@ -10973,6 +11007,131 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         ),
     )
 
+    # --- dangling-refs ---
+    dangling_refs_p = sub.add_parser(
+        "dangling-refs",
+        help=(
+            "corpus DANGLING-reference report over the published fi_refs "
+            "projection (fi); three-way PRESENT/DANGLING/EXISTENCE_UNKNOWN"
+        ),
+        description=(
+            "Read-only projection over the published fi_refs artifact: classify "
+            "every RESOLVED cross-reference (cite_confidence exact/approximate — a "
+            "reference asserting a specific target provision) into a CLOSED "
+            "three-way existence status against the target act's CURRENT "
+            "consolidated text-state (as-of-NOW; no replay). PRESENT = the cited "
+            "provision resolves; DANGLING = the act is materialized but the cited "
+            "provision resolves to nothing; EXISTENCE_UNKNOWN = existence could "
+            "NOT be determined (target act absent from corpus, body not "
+            "materialized, or no statute identity). TAG-DON'T-GUESS: an "
+            "EXISTENCE_UNKNOWN is an honest non-determination, NEVER reported as "
+            "DANGLING. Non-resolved references (statute_only/ambiguous/open/...) "
+            "are out of scope and counted separately. The as-of-NOW vs as-of-"
+            "citing distinction is the declared residual (the heavier "
+            "broken-refs --provenance path does the as-of-citing replay). Surface "
+            "fact, not a legal conclusion."
+        ),
+    )
+    dangling_refs_p.add_argument(
+        "--fi-refs",
+        dest="fi_refs",
+        default=None,
+        metavar="PATH",
+        help=(
+            "path to the fi_refs projection (.jsonl or .parquet). Default: the "
+            "export's standard output location under .tmp/projections/ or "
+            "data/fi/v1/."
+        ),
+    )
+    dangling_refs_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="write the full typed report (counts + every DANGLING witness) to PATH as JSON",
+    )
+    dangling_refs_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="number of DANGLING witnesses shown in the text summary (default: 20)",
+    )
+    dangling_refs_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the full typed report as JSON to stdout",
+    )
+
+    # --- cross-ref-report ---
+    cross_ref_report_p = sub.add_parser(
+        "cross-ref-report",
+        help=(
+            "render the dangling cross-reference claim as a neutral, "
+            "independently-verifiable Markdown document (fi)"
+        ),
+        description=(
+            "PRESENTATION of the existing dangling-reference claim "
+            "(lawvm.fi.reference.dangling.v1) as a structured Markdown report a "
+            "legal scholar / Finlex maintainer / journalist can read and check. "
+            "Either runs the claim fresh over the fi_refs projection (--fi-refs) "
+            "or renders a saved `dangling-refs --out` JSON (--report-json). Adds "
+            "NO new computation and NO new authority: it reads the typed report's "
+            "counts and DANGLING witnesses verbatim and lays them out with a "
+            "prominent methodology/limits section, deterministic findings grouped "
+            "by target act (no silent truncation — a capped list states 'showing "
+            "top N of M'), and reproducible verification steps. EXISTENCE_UNKNOWN "
+            "rows are excluded from the findings (honest non-determination, never "
+            "reported as broken). A dangling reference is a textual/maintenance "
+            "fact, not a legal conclusion."
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--fi-refs",
+        dest="fi_refs",
+        default=None,
+        metavar="PATH",
+        help=(
+            "path to the fi_refs projection (.jsonl or .parquet) to run the claim "
+            "over. Default: the export's standard output location. Ignored when "
+            "--report-json is given."
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--report-json",
+        dest="report_json",
+        default=None,
+        metavar="PATH",
+        help=(
+            "render a previously saved `dangling-refs --out` JSON report instead "
+            "of recomputing (re-asserts the report's totality/closed-status guards "
+            "on read)"
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--scope-label",
+        dest="scope_label",
+        default=None,
+        metavar="TEXT",
+        help=(
+            "free-text declaration of the corpus slice this run covers, printed "
+            "prominently so a slice is never mistaken for the whole corpus"
+        ),
+    )
+    cross_ref_report_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="write the Markdown report to PATH (default: stdout)",
+    )
+    cross_ref_report_p.add_argument(
+        "--top",
+        type=int,
+        default=None,
+        help=(
+            "max number of dangling witnesses rendered inline (the full count is "
+            "always stated; default: 200)"
+        ),
+    )
+
     # --- surface-graph ---
     surface_graph_p = sub.add_parser(
         "surface-graph",
@@ -10996,6 +11155,58 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "--json",
         action="store_true",
         help="emit the graph summary as JSON",
+    )
+
+    # --- corpus-graph ---
+    corpus_graph_p = sub.add_parser(
+        "corpus-graph",
+        help="export the cross-statute corpus Legal Surface Graph (fi)",
+        description=(
+            "Build the CROSS-STATUTE corpus Legal Surface Graph over a DECLARED "
+            "corpus slice (--ids or --limit; never a silent full-corpus "
+            "truncation) and export a typed artifact: the node set + edge set "
+            "(each edge carrying edge_kind, endpoints, provenance, resolution "
+            "status, and the surface_only firewall flag) plus a census (node-kind "
+            "/ edge-kind counts, the cross-statute interlink fabric, the "
+            "resolution-status breakdown, and the count of genuinely inter-statute "
+            "reference edges). The same cited target collapses to ONE shared "
+            "entity node, so 'what cites this act/provision' is a graph query. "
+            "READ-ONLY, surface-fact only — the authority firewall holds (every "
+            "node/edge is surface_only); a fail-loud merge (same node id + "
+            "divergent payload RAISES) and tag-don't-guess (ambiguous -> "
+            "has_candidate, never an invented target). Backed by the claim "
+            "lawvm.fi.legal_surface_graph.v1."
+        ),
+    )
+    corpus_graph_p.add_argument(
+        "--ids",
+        default=None,
+        help="explicit comma-separated statute ids to build the slice over "
+        "(takes precedence over --limit)",
+    )
+    corpus_graph_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="build over the first N statute ids of the corpus (required if "
+        "--ids is not given; the full build is heavy, so the scope must be "
+        "declared explicitly)",
+    )
+    corpus_graph_p.add_argument(
+        "--surface-time",
+        dest="surface_time",
+        default=None,
+        help="as-of surface time for resolution (optional)",
+    )
+    corpus_graph_p.add_argument(
+        "--out",
+        default=None,
+        help="write the full export artifact (JSON) to this path",
+    )
+    corpus_graph_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the full export artifact as JSON to stdout",
     )
 
     # --- parse-characterize ---
@@ -11954,6 +12165,161 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         ),
     )
 
+    # --- BEGIN substrate pack tooling (additive, self-contained) ---
+    # Jurisdiction-neutral sparse-pack exporter + offline checker (P3/P4).
+    pack_work_p = sub.add_parser(
+        "pack-work",
+        parents=_P,
+        help="export a sparse, content-addressed, certified pack for one work (use -j)",
+        description=(
+            "Run the selected jurisdiction replay engine once for one work and "
+            "emit a sparse, content-addressed, certified substrate pack: deduped "
+            "content leaves, sparse selection rows over maximal constant intervals, "
+            "certified tree transitions + checkpoints, and a self-describing "
+            "PackManifest. The offline 'check-pack' verifier validates it without "
+            "running the replay kernel."
+        ),
+    )
+    pack_work_p.add_argument(
+        "work_id",
+        metavar="WORK_ID",
+        help=(
+            "work id in strict year-major year/num form (e.g. 2004/301, 1889/39; "
+            "sub-numbered 1889/39-001 ok). The Finnish num/year citation form "
+            "(301/2004) is rejected — never silently swapped"
+        ),
+    )
+    pack_work_p.add_argument(
+        "--out",
+        required=True,
+        metavar="DIR",
+        help="output pack directory",
+    )
+    pack_work_p.add_argument(
+        "--slice",
+        dest="slice",
+        default="",
+        metavar="ADDRESS_PREFIX",
+        help="optional address-prefix slice (e.g. chapter:11); default = whole work",
+    )
+    pack_work_p.add_argument(
+        "--granularity",
+        dest="granularity",
+        default="subsection",
+        choices=["subsection", "section", "chapter"],
+        help="covering-frontier depth (default: subsection)",
+    )
+
+    check_pack_p = sub.add_parser(
+        "check-pack",
+        parents=_P,
+        help="offline-verify a substrate pack directory and print the verdict",
+        description=(
+            "Read a pack directory produced by 'pack-work' and run the offline, "
+            "deterministic substrate checker (L0 integrity + L1 finite-interval "
+            "selection algebra). Prints the two-axis verdict. Never runs the "
+            "replay engine."
+        ),
+    )
+    check_pack_p.add_argument(
+        "pack_dir",
+        metavar="DIR",
+        help="pack directory to verify",
+    )
+    check_pack_p.add_argument(
+        "--mode",
+        choices=["browse", "audit"],
+        default="browse",
+        help="check mode (default: browse; audit additionally requires source bytes)",
+    )
+
+    pack_corpus_p = sub.add_parser(
+        "pack-corpus",
+        parents=_P,
+        help="build a shared-store corpus pack from >=2 single-work pack directories",
+        description=(
+            "Compose N single-work packs (from 'pack-work') into a corpus pack: "
+            "ONE deduped content-leaf base store (the synergy gate's content-leaf "
+            "dedup across works) plus an edges/<corpus_version> layer holding "
+            "cross-work resolutions. Reads existing packs; never runs replay. The "
+            "offline 'check-pack' verifier accepts the result (edges is an optional "
+            "layer, so an overlay schema yields VALID_WITH_UNSUPPORTED_LAYERS)."
+        ),
+    )
+    pack_corpus_p.add_argument(
+        "member_packs",
+        nargs="+",
+        metavar="PACK_DIR",
+        help="two or more single-work pack directories to compose",
+    )
+    pack_corpus_p.add_argument(
+        "--out",
+        required=True,
+        metavar="DIR",
+        help="output corpus pack directory",
+    )
+    pack_corpus_p.add_argument(
+        "--measure-only",
+        action="store_true",
+        help="only print the cross-work content-leaf dedup measurement, do not write a pack",
+    )
+
+    pack_snapshot_p = sub.add_parser(
+        "pack-snapshot",
+        help="export a sparse certified pack for one OBSERVED snapshot work (no replay)",
+        description=(
+            "Pack a static, never-amended observed-codification snapshot through "
+            "the substrate WITHOUT running the replay engine: induce the address "
+            "tree from the source's section numbering, emit one InitialStateEvent "
+            "(genesis observed_codification_snapshot), deduped content leaves, one "
+            "selection row per addressable node over a single snapshot date, and "
+            "the same self-describing PackManifest 'check-pack' verifies. The "
+            "jurisdiction-neutral counterpart to 'pack-work' for the snapshot end "
+            "of the uniform object model (the LOCUS / 'any jurisdiction' path)."
+        ),
+    )
+    pack_snapshot_p.add_argument(
+        "--source",
+        required=True,
+        choices=["locus"],
+        help="snapshot source adapter (locus = US municipal-code parquet snapshots)",
+    )
+    pack_snapshot_p.add_argument(
+        "--work",
+        required=True,
+        metavar="STATE/LOCALITY",
+        help=(
+            "work selector 'STATE/LOCALITY' (e.g. ak/kingcove, ca/san_jose). "
+            "Combine with --jurisdiction-type for counties (default: cities)"
+        ),
+    )
+    pack_snapshot_p.add_argument(
+        "--jurisdiction-type",
+        dest="jurisdiction_type",
+        default="cities",
+        choices=["cities", "counties"],
+        help="LOCUS source_jurisdiction_type (default: cities)",
+    )
+    pack_snapshot_p.add_argument(
+        "--data",
+        dest="data_glob",
+        default=os.environ.get("LAWVM_LOCUS_DATA_GLOB", ""),
+        metavar="GLOB",
+        help="LOCUS parquet glob (or set LAWVM_LOCUS_DATA_GLOB)",
+    )
+    pack_snapshot_p.add_argument(
+        "--out",
+        required=True,
+        metavar="DIR",
+        help="output pack directory",
+    )
+    pack_snapshot_p.add_argument(
+        "--no-overlay",
+        action="store_true",
+        help="exclude the analytical-score overlay layer (legal-state pack only)",
+    )
+    # --- END substrate pack tooling ---
+
     # --- BEGIN us_federal jurisdiction tooling (additive, self-contained) ---
     # Thin CLI shims over lawvm.us_federal.*; logic stays in those modules.
     us_import_plaw_p = sub.add_parser(
@@ -12260,6 +12626,7 @@ def _main_impl() -> None:
         "export-transition-graph",
         "export-markdown-git",
         "certificate-bundle",
+        "pack-work",
     ):
         _reject_pre_1734_fi_command_line_ids(args)
 
@@ -13558,6 +13925,13 @@ def _main_impl() -> None:
 
         analyze_bill_main(args)
 
+    elif args.command == "bill-counterfactual":
+        from lawvm.tools.bill_counterfactual_effects import (
+            main as bill_counterfactual_main,
+        )
+
+        bill_counterfactual_main(args)
+
     elif args.command == "parse-bench":
         from lawvm.tools.parse_bench import main as parse_bench_main
 
@@ -13578,10 +13952,27 @@ def _main_impl() -> None:
 
         broken_refs_main(args)
 
+    elif args.command == "dangling-refs":
+        from lawvm.tools.dangling_references import main as dangling_refs_main
+
+        dangling_refs_main(args)
+
+    elif args.command == "cross-ref-report":
+        from lawvm.tools.cross_reference_integrity_report import (
+            main as cross_ref_report_main,
+        )
+
+        cross_ref_report_main(args)
+
     elif args.command == "surface-graph":
         from lawvm.tools.surface_graph import main as surface_graph_main
 
         surface_graph_main(args)
+
+    elif args.command == "corpus-graph":
+        from lawvm.tools.corpus_surface_graph import main as corpus_graph_main
+
+        corpus_graph_main(args)
 
     elif args.command == "parse-characterize":
         from lawvm.tools.parse_characterize import main as parse_characterize_main
@@ -13673,6 +14064,179 @@ def _main_impl() -> None:
         from lawvm.tools.certificate_bundle import main as certificate_bundle_main
 
         certificate_bundle_main(args)
+
+    # --- BEGIN substrate pack dispatch (additive, self-contained) ---
+    elif args.command == "pack-work":
+        from lawvm.substrate.exporter import export_work_pack
+
+        _juris = str(getattr(args, "jurisdiction", "fi") or "fi")
+        if _juris == "fi":
+            # Strict year-major gate at the CLI boundary: reject the Finnish
+            # num/year citation form (e.g. 301/2004) rather than silently
+            # swapping it. See lawvm.finland.statute_id.require_year_major.
+            from lawvm.finland.statute_id import require_year_major
+
+            require_year_major(args.work_id)
+        _result = export_work_pack(
+            args.work_id,
+            args.out,
+            jurisdiction=_juris,
+            slice_prefix=getattr(args, "slice", "") or "",
+            granularity=getattr(args, "granularity", "subsection") or "subsection",
+            quiet=False,
+        )
+        print("", flush=True)
+        print(f"  work_id:          {_result.work_id}", flush=True)
+        print(f"  out dir:          {_result.out_dir}", flush=True)
+        print(f"  pack_id:          {_result.pack_id}", flush=True)
+        print(f"  change_dates:     {_result.n_change_dates}", flush=True)
+        print(
+            f"  content_leaves:   {_result.n_content_leaves} "
+            f"(of {_result.leaf_dedup_attempts} stored attempts; "
+            f"dedup ratio "
+            f"{1 - _result.n_content_leaves / max(1, _result.leaf_dedup_attempts):.1%})",
+            flush=True,
+        )
+        print(f"  node_versions:    {_result.n_node_versions}", flush=True)
+        print(f"  selection_rows:   {_result.n_selection_rows}", flush=True)
+        print(f"  address_nodes:    {_result.n_address_nodes}", flush=True)
+        print(f"  transitions:      {_result.n_transitions}", flush=True)
+        print(f"  checkpoints:      {_result.n_checkpoints}", flush=True)
+        print(f"  residuals:        {_result.n_residuals}", flush=True)
+
+    elif args.command == "pack-snapshot":
+        if str(getattr(args, "source", "")) != "locus":
+            parser.error("pack-snapshot only supports --source locus in v0")
+        from lawvm.substrate.locus import WorkKey, export_snapshot_pack
+
+        _state, _, _locality = str(args.work).partition("/")
+        if not _state or not _locality:
+            parser.error("--work must be 'STATE/LOCALITY' (e.g. ak/kingcove)")
+        _jtype = str(getattr(args, "jurisdiction_type", "cities"))
+        _key = (
+            WorkKey(state=_state, city=_locality, county=None, jurisdiction_type=_jtype)
+            if _jtype == "cities"
+            else WorkKey(state=_state, city=None, county=_locality, jurisdiction_type=_jtype)
+        )
+        if not str(args.data_glob):
+            parser.error(
+                "--data is required (a LOCUS parquet glob), or set LAWVM_LOCUS_DATA_GLOB"
+            )
+        print(f"[pack-snapshot] reading LOCUS work {_state}/{_locality} ({_jtype})...", flush=True)
+        _snap = export_snapshot_pack(
+            str(args.data_glob),
+            _key,
+            args.out,
+            emit_overlay=not bool(getattr(args, "no_overlay", False)),
+        )
+        print("", flush=True)
+        print(f"  work_id:          {_snap.work_id}", flush=True)
+        print(f"  out dir:          {_snap.out_dir}", flush=True)
+        print(f"  pack_id:          {_snap.pack_id}", flush=True)
+        print(f"  source rows:      {_snap.n_rows}", flush=True)
+        print(f"  addressable:      {_snap.n_addressable_leaves} leaves", flush=True)
+        print(f"  address_nodes:    {_snap.n_address_nodes}", flush=True)
+        print(f"  content_leaves:   {_snap.n_content_leaves}", flush=True)
+        print(f"  selection_rows:   {_snap.n_selection_rows}", flush=True)
+        print(f"  overlay_rows:     {_snap.n_overlay_rows}", flush=True)
+        print(
+            f"  residuals:        {_snap.n_residuals} typed "
+            f"({', '.join(_snap.residual_kinds) or 'none'}); "
+            f"header-parse residue {_snap.header_parse_residuals}/{_snap.n_rows}",
+            flush=True,
+        )
+        _mc = ", ".join(
+            f"{_m}={_c}" for _m, _c in sorted(_snap.method_counts.items()) if _c
+        )
+        print(f"  induction:        {_mc or 'none'}", flush=True)
+
+    elif args.command == "check-pack":
+        from lawvm.substrate.checker import CheckMode, IntegrityVerdict, check_pack
+        from lawvm.substrate.exporter import load_pack_for_check
+
+        # Route snapshot packs (pack_kind lawvm.pack.snapshot.*) through the
+        # snapshot reader (extended known-schema set for source-lineage rows);
+        # everything else uses the FI exporter reader. The two readers share the
+        # substrate Pack shape, so the checker is the same downstream.
+        import json as _json
+        from pathlib import Path as _Path
+
+        _mf = _json.loads(
+            (_Path(args.pack_dir) / "manifest.json").read_text(encoding="utf-8")
+        )
+        _mf_body = _mf.get("object", _mf)
+        if str(_mf_body.get("pack_kind", "")).startswith("lawvm.pack.snapshot"):
+            from lawvm.substrate.locus import load_snapshot_pack_for_check
+
+            _pack = load_snapshot_pack_for_check(args.pack_dir)
+        else:
+            _pack = load_pack_for_check(args.pack_dir)
+        _mode = (
+            CheckMode.AUDIT
+            if str(getattr(args, "mode", "browse")) == "audit"
+            else CheckMode.BROWSE
+        )
+        _verdict = check_pack(_pack, mode=_mode)
+        print(f"top_line_verdict: {_verdict.top_line_verdict.value}", flush=True)
+        print(f"integrity:        {_verdict.integrity.value}", flush=True)
+        print(f"certification:    {_verdict.certification.value}", flush=True)
+        _tot = _verdict.totality
+        print(f"totality:         {_tot.verdict.value}", flush=True)
+        print(
+            f"  universe:       {_tot.owned_nodes} selected + "
+            f"{_tot.typed_non_selection_nodes} typed-reason / "
+            f"{_tot.addressable_nodes} addressable nodes",
+            flush=True,
+        )
+        if _tot.residual_count:
+            print(
+                f"  residuals:      {_tot.residual_count} typed "
+                f"({', '.join(_tot.residual_kinds) or 'untyped'})",
+                flush=True,
+            )
+        if _tot.coverage_classes:
+            print(f"  coverage:       {', '.join(_tot.coverage_classes)}", flush=True)
+        if _tot.shortfalls:
+            print(f"  shortfalls:     {len(_tot.shortfalls)}", flush=True)
+            for _s in _tot.shortfalls[:20]:
+                print(f"    - [{_s.code.value}] {_s.subject}: {_s.detail}", flush=True)
+        print(f"checked_levels:   {', '.join(_verdict.checked_levels)}", flush=True)
+        if _verdict.violations:
+            print(f"violations:       {len(_verdict.violations)}", flush=True)
+            for _v in _verdict.violations[:20]:
+                print(f"  - [{_v.code.value}] {_v.layer}/{_v.subject}: {_v.detail}", flush=True)
+        else:
+            print("violations:       0", flush=True)
+        _clean = _verdict.integrity in (
+            IntegrityVerdict.VALID,
+            IntegrityVerdict.VALID_WITH_UNSUPPORTED_LAYERS,
+        )
+        raise SystemExit(0 if _clean else 1)
+
+    elif args.command == "pack-corpus":
+        from lawvm.substrate.corpus import build_corpus_pack, measure_leaf_dedup
+
+        _members = {str(p): p for p in args.member_packs}
+        if len(_members) < 2:
+            print("pack-corpus needs >=2 distinct member pack directories", flush=True)
+            raise SystemExit(2)
+        _report = measure_leaf_dedup(_members)
+        print("cross-work content-leaf dedup:", flush=True)
+        print(f"  {_report.summary()}", flush=True)
+        if getattr(args, "measure_only", False):
+            raise SystemExit(0)
+        _cresult = build_corpus_pack(
+            member_pack_dirs=_members,
+            out_dir=args.out,
+            resolutions=[],
+        )
+        print("", flush=True)
+        print(f"  corpus pack_id:   {_cresult.pack_id}", flush=True)
+        print(f"  out dir:          {_cresult.out_dir}", flush=True)
+        print(f"  work_ids:         {list(_cresult.work_ids)}", flush=True)
+        print(f"  shared base leaves: {_cresult.n_shared_base_leaves}", flush=True)
+        print(f"  edges:            {_cresult.n_edges}", flush=True)
+    # --- END substrate pack dispatch ---
 
     # --- BEGIN us_federal jurisdiction dispatch (additive, self-contained) ---
     elif args.command == "us-import-plaw":

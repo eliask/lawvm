@@ -127,11 +127,6 @@ def _facet_to_special(facet: FacetKind | None) -> str:
     return ""
 
 
-def _legacy_item_label(sr: SurfaceSubRef) -> str:
-    """Encode ``kohta`` + ``alakohta`` for the legacy ParsedOp item slot."""
-    return f"{sr.item}{sr.subitem}" if sr.item and sr.subitem else sr.item
-
-
 # ---------------------------------------------------------------------------
 # Node lowering: each SurfaceNode type -> list[ParsedOp]
 # ---------------------------------------------------------------------------
@@ -207,7 +202,8 @@ def _lower_target_ref(node: SurfaceTargetRef, verb: str) -> list[ParsedOp]:
             chapter=chapter,
             number=node.label,
             momentti=sr.momentti,
-            item=_legacy_item_label(sr),
+            item=sr.item,
+            subitem=sr.subitem,
             special=special,
             facet=sr.facet,
             raw="",
@@ -262,11 +258,13 @@ def _lower_insertion(node: SurfaceInsertion, verb: str) -> list[ParsedOp]:
 
     momentti = 0
     item = ""
+    subitem = ""
     special = ""
     facet: FacetKind | None = None
     if node.sub_target is not None:
         momentti = node.sub_target.momentti
-        item = _legacy_item_label(node.sub_target)
+        item = node.sub_target.item
+        subitem = node.sub_target.subitem
         facet = node.sub_target.facet
         special = _facet_to_special(facet)
 
@@ -277,6 +275,7 @@ def _lower_insertion(node: SurfaceInsertion, verb: str) -> list[ParsedOp]:
         number=node.label,
         momentti=momentti,
         item=item,
+        subitem=subitem,
         special=special,
         facet=facet,
         raw="",
@@ -320,7 +319,8 @@ def _lower_back_ref(
             chapter="",
             number="",
             momentti=sr.momentti,
-            item=_legacy_item_label(sr),
+            item=sr.item,
+            subitem=sr.subitem,
             special=special,
             facet=sr.facet,
             raw="",
@@ -434,7 +434,8 @@ def _lower_descendant_coordination(
             chapter=node.base.chapter,
             number=node.base.label,
             momentti=sr.momentti,
-            item=_legacy_item_label(sr),
+            item=sr.item,
+            subitem=sr.subitem,
             special=special,
             facet=sr.facet,
             raw="",

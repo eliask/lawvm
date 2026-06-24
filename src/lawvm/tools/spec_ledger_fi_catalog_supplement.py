@@ -50,6 +50,17 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "no parsed structural target (op.fallback_provenance, gated by "
         "allows_target_guessing)."
     ),
+    "fi_recodification_vacated_insert_scope": (
+        "Recodification-vacated insert-scope inference resolves the part/chapter of a "
+        "section INSERT whose original container was vacated by a recodification, by "
+        "reading the recodification context rather than leaving the chapter unscoped "
+        "(frontend_compile.py _infer_recodification_vacated_insert_scope)."
+    ),
+    "fi_duplicate_section_scope_from_source_heading": (
+        "Duplicate section scope from a source heading records a wrapper-level section "
+        "whose label is consumed by a later explicitly scoped section replacement "
+        "rather than promoted as independent replay authority."
+    ),
     # --- pure-kumotaan repeal reconstruction (kumotaan_replay.py) ---
     "fi.recovery.pure_kumotaan_repeal": (
         "Pure-kumotaan repeal injection reconstructs a whole-section/container REPEAL "
@@ -233,6 +244,10 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
     "fi.jolloin_section_renumber": (
         "A 'jolloin nykyinen N § siirtyy M §:ksi' clause renumbers the displaced section."
     ),
+    "fi.current_section_renumber_tail": (
+        "A SIIRTAA tail 'nykyinen N § uudeksi M §:ksi' renumbers the current section N "
+        "to section M."
+    ),
     "fi.jolloin_chapter_renumber": (
         "A 'jolloin nykyinen N luku siirtyy M luvuksi' clause renumbers the displaced "
         "chapter."
@@ -282,6 +297,12 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "A reinstated flat-body section inherits the chapter/part address recorded by "
         "the prior repeal when that address is unique and still legally available."
     ),
+    "fi_live_stem_scope_overridden_by_corroborated_source_body": (
+        "A flat-body letter-suffix/live-stem insert whose chapter scope is not fixed "
+        "by a prior-repeal address takes the chapter/part scope corroborated by the "
+        "amendment's own source body, overriding the live stem host's chapter when "
+        "the source body independently corroborates that placement."
+    ),
     "fi.act_wide_body_section_replace": (
         "An act-wide body section replacement is recognized as a source-body section "
         "operation rather than a free-floating payload fragment."
@@ -315,6 +336,10 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "shadow only when a same-source semantic snapshot already owns the legal "
         "content for the relabeled provision."
     ),
+    "fi.timeline.restructure_relabel_shell_shadow_collapse": (
+        "Timeline materialization collapses an empty restructure-relabel shell shadow "
+        "only when same-source relabel evidence owns the legal content elsewhere."
+    ),
     "fi_flat_body_replace_scope_from_bracketing_live_siblings": (
         "A flat-body whole-section replacement infers its chapter from live sibling "
         "sections bracketing the replaced label."
@@ -322,6 +347,10 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
     "fi_letter_suffix_insert_scope_from_stem_host": (
         "A letter-suffix section insert can inherit the stem section's live chapter "
         "when the source gives no stronger container scope."
+    ),
+    "fi_same_amendment_stem_scope_for_letter_suffix_insert": (
+        "A letter-suffix section insert can inherit chapter scope from a same-amendment "
+        "stem section when that stem establishes stronger local scope than live lookup."
     ),
     "fi_materialized_attachments_wrapper_split_v1": (
         "Materialization splits attachment wrappers into typed projected provisions "

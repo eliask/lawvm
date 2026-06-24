@@ -106,3 +106,41 @@ def test_diff_sync_replays_quietly(monkeypatch, capsys) -> None:
     assert called == {"statute_id": "1991/1", "quiet": True}
     out = capsys.readouterr().out
     assert "Statute : 1991/1" in out
+
+
+def test_diff_sync_compares_materialized_pit_ir(monkeypatch, capsys) -> None:
+    fold_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CONTENT, text="expired"),))
+    materialized_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CONTENT, text="live"),))
+    captured: dict[str, IRNode] = {}
+
+    def fake_replay_xml(statute_id: str, **kwargs):
+        return SimpleNamespace(
+            title="PIT replay",
+            ir=fold_ir,
+            materialized_state=SimpleNamespace(ir=materialized_ir),
+            products=SimpleNamespace(temporal_events=()),
+        )
+
+    def fake_diff_sections(replay_ir, oracle_root, address_filter, threshold, show_all, *, show_text=False):
+        captured["replay_ir"] = replay_ir
+
+    monkeypatch.setattr("lawvm.tools.diff.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.tools.diff._diff_sections_ir_vs_xml", fake_diff_sections)
+    monkeypatch.setattr(
+        "lawvm.tools.diff.get_consolidated_oracle_context",
+        lambda sid, selector: SimpleNamespace(locator="fake://oracle"),
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.diff.get_corpus",
+        lambda: SimpleNamespace(read_locator=lambda locator: b"<act><body/></act>"),
+    )
+
+    _diff_sync(
+        sid="1991/1",
+        address_filter=None,
+        threshold=1.0,
+        show_all=False,
+        mode="official_consolidation",
+    )
+
+    assert captured["replay_ir"] is materialized_ir

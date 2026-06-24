@@ -529,3 +529,169 @@ def test_statute_id_sort_key_letter_suffix_sorts_after_base() -> None:
     # 100a > 100 numerically since num_int is based on leading digits
     # (both share the same year; the raw string tie-break handles letter suffix)
     assert a <= b  # at minimum not greater
+
+
+# ---------------------------------------------------------------------------
+# _parse_section_list_labels — separator-tokenizer contract
+# ---------------------------------------------------------------------------
+
+
+def test_parse_section_list_simple_comma_ja_list() -> None:
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    assert _parse_section_list_labels("5, 8 b, 11 ja 12") == {"5", "8b", "11", "12"}
+
+
+def test_parse_section_list_seka_separator() -> None:
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    assert _parse_section_list_labels("87 a ja 89 a sekä 90") == {"87a", "89a", "90"}
+
+
+def test_parse_section_list_en_dash_range_expands() -> None:
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    assert _parse_section_list_labels("16 a–16 g") == {
+        "16a",
+        "16b",
+        "16c",
+        "16d",
+        "16e",
+        "16f",
+        "16g",
+    }
+
+
+def test_parse_section_list_momentti_qualifier_yields_section_only() -> None:
+    """The "§:n N momentti" qualifier is dropped; only the section number is kept.
+
+    The old negated-char-class strip left the qualifier text in place, so this
+    input produced the bogus glued label "793momentti" instead of "79". The
+    fix splits on the real separator words first and truncates each item at its
+    "§" marker, dropping the pykälä/momentti qualifier that follows.
+    """
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    assert _parse_section_list_labels("79 §:n 3 momentti") == {"79"}
+    # No leftover glued-qualifier label.
+    assert "793momentti" not in _parse_section_list_labels("79 §:n 3 momentti")
+
+
+def test_parse_section_list_momentti_with_seka_continuation() -> None:
+    """A momentti-qualified item followed by `sekä` must split on the word,
+    not on the letters of "sekä", and must drop the qualifier on each item."""
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    assert _parse_section_list_labels("12 §:n 2 momentti sekä 14 §") == {"12", "14"}
+
+
+def _entry_into_force_tree(text: str) -> "etree._Element":
+    """Wrap a sunset-clause sentence in the entryIntoForce element the
+    section-expiry override builder scans, so a test can drive the production
+    function ``_temporary_section_expiry_overrides`` end-to-end."""
+    return etree.fromstring(
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        f'<hcontainer name="entryIntoForce"><p>{text}</p></hcontainer>'
+        "</akomaNtoso>"
+    )
+
+
+def _section_expiry_by_label(tree: "etree._Element", sid: str) -> dict[str, set[dt.date]]:
+    from lawvm.finland.metadata import _temporary_section_expiry_overrides
+
+    by_label: dict[str, set[dt.date]] = {}
+    for _target_mid, labels, expiry in _temporary_section_expiry_overrides(tree, sid):
+        for label in labels:
+            by_label.setdefault(label, set()).add(expiry)
+    return by_label
+
+
+def test_section_expiry_per_date_attributes_each_date_to_its_own_section() -> None:
+    """1992/1535 (amendment 2021/1132) bite: two provisions joined by "ja" carry
+    TWO different dates ("64 a §:n 3 momentti … 2025 ja … 127 f § … 2027"). The
+    anchor's single ``datetail`` is its LAST date (2027); without the per-date
+    split that 2027 is wrongly attributed to "64 a" too, colliding with the
+    subsection path's correct "64 a -> 2025" and crashing the effect-lifecycle
+    conflict guard (the statute was then excluded from scoring). The per-date split
+    must instead give "64 a -> 2025" and "127 f -> 2027" (two distinct dates)."""
+    tree = _entry_into_force_tree(
+        "Lain 64 a §:n 3 momentti on voimassa 31 päivään joulukuuta 2025 "
+        "ja lain 127 f § on voimassa 31 päivään joulukuuta 2027."
+    )
+    by_label = _section_expiry_by_label(tree, "1992/1535")
+    assert by_label.get("64a") == {dt.date(2025, 12, 31)}
+    assert by_label.get("127f") == {dt.date(2027, 12, 31)}
+    # The cited-act head carried over the "ja lain …" join must be stripped, so the
+    # section is the clean "127f", never a glued "lain127f".
+    assert "lain127f" not in by_label
+
+
+def test_section_expiry_single_date_list_shares_one_date_across_sections() -> None:
+    """Regression guard for the single-date coordinated lists: a span with ONE
+    ``… voimassa … <date>`` segment keeps the whole-list path unchanged, attributing
+    the one shared date to every section in the list (both "59" and "62" here)."""
+    tree = _entry_into_force_tree(
+        "Lain 59 §:n 2 momentti ja 62 § ovat voimassa 31 päivään joulukuuta 2025."
+    )
+    by_label = _section_expiry_by_label(tree, "1900/1")
+    assert by_label.get("59") == {dt.date(2025, 12, 31)}
+    assert by_label.get("62") == {dt.date(2025, 12, 31)}
+
+
+def test_section_expiry_multi_provision_subsection_clause_yields_no_whole_section() -> None:
+    """2017/236 (amendment 2025/236) bite: a subsection-scoped clause that
+    coordinates MORE THAN ONE section ("3 §:n otsikko sekä 3 ja 4 momentti, 4 §:n
+    3 ja 4 momentti, …") must produce NO whole-section expiry from the section
+    path — only its specific momentit/otsikko expire, owned by the provision path.
+    EH1's clean section-list labels otherwise over-expired whole sections 3-8 (they
+    were harmless junk before EH1). A SINGLE-section subsection clause ("51 §:n 5
+    momentti") still legitimately yields its owning section, so the guard keys on
+    an embedded '§' (= multiple coordinated provisions), not on '§:n' alone."""
+    tree = _entry_into_force_tree(
+        "Asetuksen 3 §:n otsikko sekä 3 ja 4 momentti, 4 §:n 3 ja 4 momentti, "
+        "5 §:n 4–6 momentti, 6 §:n 4–6 momentti, 7 §:n 4 momentti ja "
+        "8 §:n 3 momentti ovat voimassa 31 päivään joulukuuta 2025."
+    )
+    by_label = _section_expiry_by_label(tree, "2025/236")
+    assert by_label == {}
+
+
+def test_section_expiry_mixed_subsection_clause_emits_no_whole_section() -> None:
+    """2004/983-style bite: a subsection-scoped sunset that coordinates several
+    provisions (an embedded "§" in the captured list) emits NO whole-section
+    expiry from the subsection path — the owning sections of the "§:n …" items
+    ("1", "2", "9", "18", "22") must not leak in as whole sections. EH1's clean
+    labels otherwise over-expired them (they were harmless junk before EH1)."""
+    tree = _entry_into_force_tree(
+        "Lain 1 §:n 2 momentti, 2 §:n 1 momentti, 9 §:n 1 momentti, 11 §, "
+        "18 §:n 2 momentti, 2 a luku ja 22 §:n 1 momentti ovat voimassa "
+        "31 päivään joulukuuta 2005."
+    )
+    by_label = _section_expiry_by_label(tree, "1996/1094")
+    for leaked in ("1", "2", "9", "18", "22"):
+        assert leaked not in by_label
+
+
+def test_parse_section_list_complex_multi_section_clause() -> None:
+    from lawvm.finland.metadata import _parse_section_list_labels
+
+    got = _parse_section_list_labels(
+        "16 a–16 g ja 58 i–58 k §, 79 §:n 3 momentti sekä 87 a ja 89 a §"
+    )
+    assert got == {
+        "16a",
+        "16b",
+        "16c",
+        "16d",
+        "16e",
+        "16f",
+        "16g",
+        "58i",
+        "58j",
+        "58k",
+        "79",
+        "87a",
+        "89a",
+    }
+    # The qualifier must not leak in as a glued label.
+    assert "793momentti" not in got

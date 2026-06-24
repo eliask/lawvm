@@ -1,0 +1,5 @@
+{
+  "_doc": "Monotone author-set-replay-authority-at-projection ratchet baseline (audit row PROJ-02). Counts truthy `replay_authorized` author-set OUTSIDE an ExecutionAuthorization grant carrier (a dict literal, a non-grant constructor kwarg, or a class/module default) — a projection row claiming legal-state replay authority it cannot hold. The firewall is type-enforced today (FrontierWorkItem validator + legal_surface_graph assembler both raise), so the baseline is 0 and may only stay 0; a new crossing fails CI. Regenerate with `uv run python scripts/inventory_architecture_smells.py --ratchet projection --update-baseline`. See tests/test_projection_author_set_authority.py.",
+  "total_violations": 0,
+  "violation_counts": {}
+}

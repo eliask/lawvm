@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, Optional
 
 from lawvm.core.agreement_residual import AgreementResidual, AgreementResidualFamily
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.source_witness import (
     source_witness_digest_coverage,
@@ -700,7 +700,7 @@ def summarize_uk_effect(
                 {
                     str(row.get("rule_id") or "unknown")
                     for row in lowering_rejections
-                    if is_blocking_compile_record(row)
+                    if is_blocking_compile_record(CompileRecord.from_mapping(row))
                 }
             )
         ),
@@ -1345,7 +1345,7 @@ def _rule_counts(rows: tuple[dict[str, Any], ...]) -> dict[str, int]:
 
 
 def _blocking_rows(rows: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
-    return tuple(row for row in rows if is_blocking_compile_record(row))
+    return tuple(row for row in rows if is_blocking_compile_record(CompileRecord.from_mapping(row)))
 
 
 def _effect_filters_jsonable(filters: _EffectFilters) -> dict[str, Any]:
