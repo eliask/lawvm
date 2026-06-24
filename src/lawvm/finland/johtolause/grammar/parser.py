@@ -528,6 +528,114 @@ def _prov_rementtion_leaks(scan: _Scan) -> bool:
     return False
 
 
+# Provenance-only cats permitted INSIDE a ``näistä/niistä/joista …`` re-mention
+# run (every cat a pure attribution span is built from once provenance prose is
+# collapsed to spans): the structural sub-noun cats the arms re-state, the list
+# separators that join them, and the closer / appositive spans that attribute
+# each arm. A run made EXCLUSIVELY of these (with at least one provenance closer)
+# carries no operative target — it only re-states which already-listed sections
+# the version attributions apply to.
+_PROV_REMENTTION_RUN_CATS = (
+    _PROV_RUN_CATS
+    | _SENTINEL_SPAN_CATS
+    | {"LUKU", "OSA", "SEKA", "PROV", "DOC"}
+)
+# Cats that TERMINATE a re-mention run by opening operative or terminal material:
+# the next verb group (``sekä lisätään …``), an insertion opener (``uusi``), or
+# the clause terminator (``seuraavasti`` / ``näin kuuluviksi``). The run-skipper
+# stops AT these without consuming them, so the outer driver re-enters and parses
+# any real continuation. (END_SENTINEL_SPAN is collapsed END trivia.)
+_PROV_REMENTTION_RUN_STOP_CATS = frozenset(
+    {"VERB", "UUSI", "END", "END_SENTINEL_SPAN"}
+)
+
+
+def _try_skip_whole_provenance_remention_run(scan: _Scan) -> bool:
+    """Consume an ENTIRE ``näistä/niistä/joista …`` multi-arm provenance run.
+
+    ``_try_skip_provenance_anaphor_backref`` (the faithful old-parser port)
+    consumes only ONE attribution arm closed by a single provenance trigger and
+    re-enters the loop; the old ``_target`` then RE-PARSES every following arm's
+    ``§`` into a duplicate operative node — the ``näistä/niistä provenance leak``
+    the leak detector declines on.
+
+    A ``näistä …`` re-mention is, semantically, pure version-attribution metadata
+    over the already-listed head targets: it introduces NO new operative units.
+    So when the WHOLE span from the re-mention anchor to the next verb group /
+    insertion opener / clause terminator is provenance-only (built exclusively of
+    structural sub-noun cats, list separators and provenance closer / appositive
+    spans, with at least one provenance closer present), this recognizer consumes
+    the whole run at once, leaving the cursor at the terminator / next verb group.
+    The section list then ends with NO leaked duplicate, and any real verb-led
+    continuation after the run is reached by the outer driver.
+
+    Returns True (cursor advanced past the whole provenance run) only when the
+    run is unambiguously provenance-only; otherwise restores the cursor and
+    returns False, leaving the existing skip / leak-decline path untouched.
+    """
+    saved = scan.pos
+    toks = scan.cur.tokens
+    n = len(toks)
+
+    # Locate the re-mention anchor, allowing only separators / sentinels between
+    # the cursor and it (mirrors ``_anchor_is_immediate``: an intervening
+    # structural token means the head list was truncated before the anchor).
+    i = scan.pos
+    while i < n and toks[i].cat in _ANCHOR_LEADIN_CATS:
+        i += 1
+    if not (
+        i < n
+        and toks[i].cat == "WORD"
+        and (toks[i].text or "").lower() in _PROV_REMENTTION_WORDS
+    ):
+        return False
+    anchor = i
+    i = anchor + 1
+
+    saw_structural = False
+    saw_closer = False
+    while i < n:
+        t = toks[i]
+        if t.cat in _PROV_REMENTTION_RUN_STOP_CATS:
+            break
+        if t.cat in _PROV_ARM_STRUCT_CATS:
+            saw_structural = True
+        if t.cat in _PROV_CLOSER_CATS or t.cat in _SENTINEL_SPAN_CATS:
+            saw_closer = True
+        if t.cat in _PROV_REMENTTION_RUN_CATS:
+            i += 1
+            continue
+        if _is_provenance_lead_word(t):
+            # An uncollapsed ``sellaisena kuin …`` appositive opener; treat the
+            # remainder up to the run stop as provenance prose only if it carries
+            # no operative material (no further structural unit before the stop).
+            saw_closer = True
+            i += 1
+            continue
+        if t.cat == "WORD":
+            # Trailing ``näin`` before ``kuuluviksi``, or provenance prose
+            # (``mainitussa`` / ``muutettuna`` / day-month words) the lexer left
+            # uncollapsed: benign provenance filler. A non-provenance WORD here
+            # would have to introduce an operative continuation, but operative
+            # continuations are verb-led / insertion-led (a STOP cat), so a bare
+            # WORD inside the run is always attribution prose.
+            i += 1
+            continue
+        # Any other cat (an unexpected operative shape) — do NOT fire; leave the
+        # existing skip / leak-decline path to handle it.
+        return False
+
+    # Require a genuine multi-component provenance run: at least one re-stated
+    # structural arm AND at least one provenance closer / sentinel. Without a
+    # closer the run is the operative target list itself, not an attribution.
+    if not (saw_structural and saw_closer):
+        scan.goto(saved)
+        return False
+
+    scan.goto(i)
+    return True
+
+
 # Lead-words of an uncollapsed ``sellaisena / sellaisina kuin …`` provenance
 # appositive (including the glued ``sellaisenakuin`` / ``sellaisinakuin``).
 _PROV_LEAD_WORDS = frozenset(
@@ -2608,6 +2716,15 @@ def _parse_verb_group(
             # is a corruption. ``_prov_rementtion_leaks`` (faithful to the old
             # skip + its re-parse loop) is exactly that leak/keep oracle: leak →
             # decline; otherwise skip the single closed arm and continue.
+            # When the WHOLE re-mention run (to the next verb group / insertion
+            # opener / clause terminator) is provenance-only, consume it as a unit
+            # FIRST: a ``näistä …`` re-mention introduces no operative target, so
+            # skipping it entirely produces the correct de-duplicated op list and
+            # leaves any real verb-led continuation for the outer driver. This
+            # supersedes the leak-decline below for the multi-arm shape that the
+            # old single-arm skip + re-parse leaked duplicates from.
+            if _try_skip_whole_provenance_remention_run(scan):
+                continue
             if _prov_rementtion_leaks(scan):
                 raise OutOfScope("section näistä/niistä provenance leak")
             if _try_skip_provenance_anaphor_backref(scan):

@@ -787,21 +787,26 @@ def test_trailing_whole_part_carries_label_as_scope() -> None:
     assert by_label["97"].part == "V"
 
 
-def test_naista_second_arm_with_glued_provenance_word_is_declined() -> None:
-    # ``näistä N § [CITE], M § sellaisenakuin se on … laissa`` — the first arm is
-    # closed by a collapsed provenance span (the old anaphor-skip consumes it), but
-    # the second arm's ``§`` is closed by an UNCOLLAPSED glued ``sellaisenakuin``
-    # provenance word run. The old target loop re-parses that second ``§`` as a
-    # fresh duplicate node before stopping at the word run, so the new section path
-    # would silently drop it — the driver must DECLINE instead.
+def test_naista_second_arm_with_glued_provenance_word_is_owned_dedup() -> None:
+    # ``näistä N § [CITE], M § sellaisenakuin se on … laissa`` — a TWO-arm
+    # ``näistä`` re-mention: the first arm is closed by a collapsed provenance
+    # span, the second by an UNCOLLAPSED glued ``sellaisenakuin`` word run. Both
+    # arms only RE-STATE which already-listed head section a version attribution
+    # applies to (``15 a`` and ``15 b`` are both in the head list); the re-mention
+    # introduces NO new operative target. The old parser leaked the second arm's
+    # ``§`` as a duplicate node and the grammar declined the whole shape; the
+    # whole-provenance-run skip now OWNS it, consuming the entire ``näistä …`` run
+    # and emitting exactly the de-duplicated head list (no leaked duplicate).
     text = (
         "muutetaan 15 a, 15 b ja 16 §, näistä 15 a § sellaisena kuin se on laissa "
         "303/1961, 15 b § sellaisenakuin se on 9 päivänä kesäkuuta 1961 annetussa "
         "laissa"
     )
     tokens, _ = _tokenize(text)
-    with pytest.raises(OutOfScope):
-        new_parser.parse(tokens)
+    model = new_parser.parse(tokens)
+    (vg,) = model.verb_groups
+    labels = [n.label for n in vg.nodes if isinstance(n, SurfaceTargetRef)]
+    assert labels == ["15a", "15b", "16"]
 
 
 def test_naista_single_closed_arm_is_not_over_declined() -> None:
