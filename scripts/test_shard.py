@@ -356,6 +356,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ev_residual_ledger_and_self_evidencing.py",
         # Declared non-guarantees as root-committed evidence-plane objects.
         "test_assumption_register.py",
+        "test_se_assumptions.py",
     ),
     "evidence_reports": (
         "test_fi_explain_facade.py",
@@ -659,6 +660,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_spec_ledger_uk_catalog_supplement.py",
         "test_spec_ledger_report.py",
         "test_spec_ledger_ee_catalog.py",
+        "test_spec_ledger_se_catalog.py",
         "test_spec_ledger_ee.py",
         "test_spec_ledger_no_catalog.py",
         "test_delegate_tool.py",
