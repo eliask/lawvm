@@ -15,7 +15,7 @@ from lawvm.finland.constraints import DEBUG
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.merge import merge_section_with_omission_invariants
-from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.finland.uncovered_dispose import (
     ExistingDisposition,
@@ -264,7 +264,7 @@ class UncoveredRecoveryRun:
                 self.append_recovered_rop(
                     self.make_uncovered_rop(
                         UncoveredRopDraft(
-                            op_type="REPLACE" if declared_move_destination else "INSERT",
+                            op_type=OpType.REPLACE if declared_move_destination else OpType.INSERT,
                             target_label=label,
                             target_chapter=amend_chapter_label,
                             target_part=amend_part_label,
@@ -385,7 +385,7 @@ class UncoveredRecoveryRun:
                 self.append_recovered_rop(
                     self.make_uncovered_rop(
                         UncoveredRopDraft(
-                            op_type="INSERT",
+                            op_type=OpType.INSERT,
                             target_label=insert_label,
                             target_chapter=amend_chapter_label,
                             target_part=amend_part_label or _part_label_from_path(existing_path),
@@ -463,7 +463,7 @@ class UncoveredRecoveryRun:
                 self.append_recovered_rop(
                     self.make_uncovered_rop(
                         UncoveredRopDraft(
-                            op_type="REPLACE",
+                            op_type=OpType.REPLACE,
                             target_label=label,
                             target_chapter=amend_chapter_label,
                             target_part=amend_part_label or _part_label_from_path(existing_path),
@@ -478,7 +478,7 @@ class UncoveredRecoveryRun:
             self.append_recovered_rop(
                 self.make_uncovered_rop(
                     UncoveredRopDraft(
-                        op_type="REPLACE",
+                        op_type=OpType.REPLACE,
                         target_label=label,
                         target_chapter=amend_chapter_label,
                         target_part=amend_part_label or _part_label_from_path(existing_path),
@@ -525,7 +525,7 @@ class UncoveredRecoveryRun:
                     self.append_recovered_rop(
                         self.make_uncovered_rop(
                             UncoveredRopDraft(
-                                op_type="REPLACE",
+                                op_type=OpType.REPLACE,
                                 target_label=label,
                                 target_chapter=amend_chapter_label,
                                 target_part=amend_part_label or _part_label_from_path(existing_path),
@@ -602,7 +602,7 @@ class UncoveredRecoveryRun:
         self.append_recovered_rop(
             self.make_uncovered_rop(
                 UncoveredRopDraft(
-                    op_type="INSERT",
+                    op_type=OpType.INSERT,
                     target_label=label,
                     target_chapter=effective_chapter,
                     target_part=effective_part,

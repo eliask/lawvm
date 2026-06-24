@@ -25,7 +25,7 @@ import lxml.etree as etree
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.payload_surface import TargetUnitKind
-from lawvm.finland.ops import AmendmentOp, FailedOp, _op_target_subsection_label
+from lawvm.finland.ops import AmendmentOp, FailedOp, OpType, _op_target_subsection_label
 from lawvm.finland.payload_normalize import SubsectionSlotAssignmentResult, SubsectionSlotMap
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.replay_notices import replay_print
@@ -575,7 +575,7 @@ def _c_language_variant(op: AmendmentOp, all_ops: List[AmendmentOp], ctx: _Filte
     """Drop section REPLACE/INSERT ops that only amend another language variant."""
     if ctx.has_amendment_section or not ctx.is_lang_variant:
         return True, ""
-    if op.op_type in {"REPEAL", "RENUMBER"} or op.target_unit_kind != "section":
+    if op.op_type in {OpType.REPEAL, OpType.RENUMBER} or op.target_unit_kind != "section":
         return True, ""
     if op.target_special:
         return True, ""
@@ -596,7 +596,7 @@ def _c_false_positive_reference(op: AmendmentOp, all_ops: List[AmendmentOp], ctx
     )
     if (
         op.target_unit_kind == "section"
-        and op.op_type not in {"REPEAL", "RENUMBER"}
+        and op.op_type not in {OpType.REPEAL, OpType.RENUMBER}
         and target_section
         and not op.target_special
         and not has_source_node
@@ -610,7 +610,7 @@ def _c_no_source_payload(op: AmendmentOp, all_ops: List[AmendmentOp], ctx: _Filt
     """Drop replace/insert section ops when no amendment section node exists."""
     if ctx.has_amendment_section:
         return True, ""
-    if op.target_unit_kind == "section" and op.op_type in ("REPLACE", "INSERT"):
+    if op.target_unit_kind == "section" and op.op_type in (OpType.REPLACE, OpType.INSERT):
         return False, "no source payload node"
     return True, ""
 
@@ -623,7 +623,7 @@ def _c_no_heading_payload(op: AmendmentOp, all_ops: List[AmendmentOp], ctx: _Fil
         return True, ""
     if (
         op.target_unit_kind == "section"
-        and op.op_type in ("REPLACE", "INSERT")
+        and op.op_type in (OpType.REPLACE, OpType.INSERT)
         and op.target_special == "otsikko"
         and not ctx.has_source_heading_for(op)
     ):
@@ -647,7 +647,7 @@ def _c_whole_section_subsumes_children(
         return True, ""
     if (
         op.target_unit_kind == "section"
-        and op.op_type == "REPEAL"
+        and op.op_type == OpType.REPEAL
         and (op.target_paragraph is not None or op.target_item is not None)
         and not op.target_special
     ):
@@ -660,7 +660,7 @@ def _c_whole_section_subsumes_children(
         return True, ""
     has_mapped_child_ops = any(
         other.target_unit_kind == "section"
-        and other.op_type in ("REPLACE", "REPEAL", "INSERT")
+        and other.op_type in (OpType.REPLACE, OpType.REPEAL, OpType.INSERT)
         and (other.target_paragraph is not None or other.target_item is not None)
         and not other.target_special
         and ctx.has_mapped_subsection(other)
@@ -670,7 +670,7 @@ def _c_whole_section_subsumes_children(
         return True, ""
     has_section_facet_replace = any(
         other.target_unit_kind == "section"
-        and other.op_type == "REPLACE"
+        and other.op_type == OpType.REPLACE
         and (other.target_special in {"otsikko", "johd"} or getattr(other, "preserve_explicit_heading_facet", False))
         for other in all_ops
     )
@@ -688,7 +688,7 @@ def _c_whole_section_subsumes_children(
     }
     has_whole = any(
         o.target_unit_kind == "section"
-        and o.op_type == "REPLACE"
+        and o.op_type == OpType.REPLACE
         and not o.target_paragraph
         and not o.target_item
         and not o.target_special
@@ -711,7 +711,7 @@ def _c_whole_section_subsumes_children(
         }
         if payload_sub_labels and any(
             other.target_unit_kind == "section"
-            and other.op_type == "RENUMBER"
+            and other.op_type == OpType.RENUMBER
             and other.target_paragraph is not None
             and not other.target_item
             and not other.target_special
@@ -721,7 +721,7 @@ def _c_whole_section_subsumes_children(
             return True, ""
         if payload_sub_labels and any(
             other.target_unit_kind == "section"
-            and other.op_type == "INSERT"
+            and other.op_type == OpType.INSERT
             and other.target_paragraph is not None
             and not other.target_item
             and not other.target_special
@@ -731,7 +731,7 @@ def _c_whole_section_subsumes_children(
             return True, ""
     has_item_level_children = any(
         o.target_unit_kind == "section"
-        and o.op_type == "REPLACE"
+        and o.op_type == OpType.REPLACE
         and o.target_paragraph is not None
         and bool(o.target_item)
         and not o.target_special
@@ -739,16 +739,16 @@ def _c_whole_section_subsumes_children(
     )
     if (
         op.target_unit_kind == "section"
-        and op.op_type in ("REPLACE", "REPEAL", "INSERT")
+        and op.op_type in (OpType.REPLACE, OpType.REPEAL, OpType.INSERT)
         and (op.target_paragraph is not None or op.target_item is not None)
         and not op.target_special
     ):
-        if has_item_level_children and op.op_type in ("REPLACE", "INSERT"):
+        if has_item_level_children and op.op_type in (OpType.REPLACE, OpType.INSERT):
             return True, ""
         return False, "covered by whole-section replace"
     if (
         op.target_unit_kind == "section"
-        and op.op_type == "REPLACE"
+        and op.op_type == OpType.REPLACE
         and op.target_special in {"otsikko", "johd"}
     ):
         return False, "covered by whole-section replace"
@@ -764,14 +764,14 @@ def _c_replace_when_insert_same_paragraph(
     later payload-to-slot assignment can decide whether the REPLACE and INSERT
     really share a subsection.
     """
-    if op.op_type != "REPLACE" or op.target_paragraph is None or op.target_item:
+    if op.op_type != OpType.REPLACE or op.target_paragraph is None or op.target_item:
         return True, ""
     key = (op.target_unit_kind, op.target_section, op.target_paragraph, op.target_item)
     same_target_inserts = [
         o
         for o in all_ops
         if (
-            o.op_type == "INSERT"
+            o.op_type == OpType.INSERT
             and o.target_paragraph is not None
             and not o.target_item
             and (o.target_unit_kind, o.target_section, o.target_paragraph, o.target_item) == key
@@ -822,7 +822,7 @@ def _c_language_variant_replace_shadowed_by_sparse_insert(
     """
     if (
         not ctx.has_amendment_section
-        or op.op_type != "REPLACE"
+        or op.op_type != OpType.REPLACE
         or op.target_unit_kind != "section"
         or op.target_paragraph is None
         or op.target_item
@@ -836,7 +836,7 @@ def _c_language_variant_replace_shadowed_by_sparse_insert(
         other.target_paragraph
         for other in all_ops
         if (
-            other.op_type == "INSERT"
+            other.op_type == OpType.INSERT
             and other.target_unit_kind == op.target_unit_kind
             and other.target_section == op.target_section
             and other.target_chapter == op.target_chapter
@@ -864,7 +864,7 @@ def _c_language_variant_plain_replace_shadowed_by_sparse_item_payload(
         not ctx.has_amendment_section
         or not ctx.is_lang_variant
         or not ctx.has_subsection_mapping
-        or op.op_type != "REPLACE"
+        or op.op_type != OpType.REPLACE
         or op.target_unit_kind != "section"
         or op.target_item
     ):
@@ -892,7 +892,7 @@ def _c_language_variant_plain_replace_shadowed_by_sparse_item_payload(
     # content of its own — drop it as a shadowed language variant.
     if mapped_sub.attrs.get("lawvm_split_from_shared_item_slot") == "1" and any(
         other is not op
-        and other.op_type == "REPLACE"
+        and other.op_type == OpType.REPLACE
         and other.target_unit_kind == op.target_unit_kind
         and other.target_section == op.target_section
         and other.target_chapter == op.target_chapter
@@ -907,7 +907,7 @@ def _c_language_variant_plain_replace_shadowed_by_sparse_item_payload(
         other
         for other in all_ops
         if (
-            other.op_type == "REPLACE"
+            other.op_type == OpType.REPLACE
             and other.target_unit_kind == op.target_unit_kind
             and other.target_section == op.target_section
             and other.target_chapter == op.target_chapter
@@ -928,7 +928,7 @@ def _c_language_variant_plain_replace_shadowed_by_sparse_item_payload(
         other
         for other in all_ops
         if (
-            other.op_type == "REPLACE"
+            other.op_type == OpType.REPLACE
             and other.target_unit_kind == op.target_unit_kind
             and other.target_section == op.target_section
             and other.target_chapter == op.target_chapter
@@ -973,7 +973,7 @@ def _c_fragmentary_parent_insert_shadowed_by_item_insert_payload(
     """
     if (
         not ctx.has_subsection_mapping
-        or op.op_type != "INSERT"
+        or op.op_type != OpType.INSERT
         or op.target_unit_kind != "section"
         or op.target_paragraph is None
         or op.target_item
@@ -989,7 +989,7 @@ def _c_fragmentary_parent_insert_shadowed_by_item_insert_payload(
         for other in all_ops
         if (
             other is not op
-            and other.op_type == "INSERT"
+            and other.op_type == OpType.INSERT
             and other.target_unit_kind == op.target_unit_kind
             and other.target_section == op.target_section
             and other.target_chapter == op.target_chapter
@@ -1028,7 +1028,7 @@ def _c_child_item_insert_covered_by_parent_snapshot(
     """
     if (
         not ctx.has_subsection_mapping
-        or op.op_type != "INSERT"
+        or op.op_type != OpType.INSERT
         or op.target_unit_kind != "section"
         or op.target_paragraph is None
         or not op.target_item
@@ -1041,7 +1041,7 @@ def _c_child_item_insert_covered_by_parent_snapshot(
 
     has_parent_snapshot_insert = any(
         other is not op
-        and other.op_type == "INSERT"
+        and other.op_type == OpType.INSERT
         and other.target_unit_kind == op.target_unit_kind
         and other.target_section == op.target_section
         and other.target_chapter == op.target_chapter
@@ -1064,7 +1064,7 @@ def _c_child_item_insert_covered_by_parent_snapshot(
         _normalized_item_label(other.target_item)
         for other in all_ops
         if (
-            other.op_type == "INSERT"
+            other.op_type == OpType.INSERT
             and other.target_unit_kind == op.target_unit_kind
             and other.target_section == op.target_section
             and other.target_chapter == op.target_chapter
@@ -1085,7 +1085,7 @@ def _c_internal_list_update_not_whole_section_replace(
 ) -> Tuple[bool, str]:
     """Drop literal whole-section replaces for `§:ssä olevaa ... luetteloa` clauses."""
     if (
-        op.op_type != "REPLACE"
+        op.op_type != OpType.REPLACE
         or op.target_unit_kind != "section"
         or op.target_paragraph is not None
         or op.target_item
@@ -1106,7 +1106,7 @@ def _c_phantom_subsection(op: AmendmentOp, all_ops: List[AmendmentOp], ctx: _Fil
         return True, ""
     if (
         op.target_unit_kind == "section"
-        and op.op_type in ("REPLACE", "INSERT")
+        and op.op_type in (OpType.REPLACE, OpType.INSERT)
         and op.target_paragraph is not None
         and not op.target_special
         and not ctx.has_mapped_subsection(op)

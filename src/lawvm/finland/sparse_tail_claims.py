@@ -8,7 +8,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.finland.helpers import _norm_num_token
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.source_model import AmendmentSourceModel
 
 
@@ -117,7 +117,7 @@ def build_sparse_omission_tail_claims(
     descendant_ops = [
         op
         for op in ops
-        if op.op_type in {"REPLACE", "INSERT"}
+        if op.op_type in {OpType.REPLACE, OpType.INSERT}
         and op.target_unit_kind == "section"
         and op.target_paragraph is not None
         and not op.target_item
@@ -128,7 +128,7 @@ def build_sparse_omission_tail_claims(
     carrier_ops = [
         op
         for op in ops
-        if op.op_type == "REPLACE"
+        if op.op_type == OpType.REPLACE
         and op.target_unit_kind == "section"
         and op.target_paragraph is None
         and not op.target_item

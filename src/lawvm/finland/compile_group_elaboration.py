@@ -24,7 +24,7 @@ from lawvm.finland.group_ops import (
     remap_body_root_replace_group_before_terminal_voimaantulo,
 )
 from lawvm.finland.helpers import _norm_num_token, _norm_row_anchor_text
-from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile
+from lawvm.finland.ops import AmendmentOp, OpType, FailedOp, ReplayProfile
 from lawvm.finland.sparse_tail_claims import (
     SPARSE_OMISSION_TAIL_PRUNE_RULE,
     SparseOmissionTailClaim,
@@ -189,14 +189,14 @@ def drop_payloadless_source_replace_shadowed_by_same_group_relabel(
     """Reject payloadless whole-section REPLACE ops shadowed by same-group relabel."""
     if muutos_ir is not None or target_unit_kind != "section":
         return group_ops, []
-    if not any(op.op_type == "RENUMBER" for op in group_ops):
+    if not any(op.op_type == OpType.RENUMBER for op in group_ops):
         return group_ops, []
 
     kept_ops: list[AmendmentOp] = []
     rejected_ops: list[FailedOp] = []
     for op in group_ops:
         if (
-            op.op_type == "REPLACE"
+            op.op_type == OpType.REPLACE
             and op.target_unit_kind == "section"
             and _norm_num_token(op.target_section or "") == target_norm
             and op.target_paragraph is None
@@ -247,7 +247,7 @@ def _source_complete_container_replacement_witness(
     whole_replaces = [
         op
         for op in group_ops
-        if op.op_type == "REPLACE"
+        if op.op_type == OpType.REPLACE
         and op.target_unit_kind == target_unit_kind
         and op.target_paragraph is None
         and not op.target_item

@@ -30,7 +30,7 @@ from lawvm.finland.group_plan import (
 )
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
-from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
+from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp, get_replay_profile
 from lawvm.finland.sparse_tail_claims import build_sparse_omission_tail_claims
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
@@ -304,7 +304,7 @@ def compile_amendment_ops(
     inserted_chapter_labels = {
         _norm_num_token(op.target_section or "")
         for op in ops
-        if op.target_unit_kind == "chapter" and op.op_type == "INSERT" and op.target_section
+        if op.target_unit_kind == "chapter" and op.op_type == OpType.INSERT and op.target_section
     }
     inserted_chapter_labels.update(
         _norm_num_token(source_chapter.chapter_label)

@@ -15,7 +15,7 @@ from lawvm.finland.johto_scope_mentions import (
     collect_johto_numbered_table_targets_by_section,
     collect_johto_whole_section_targets,
 )
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.uncovered_recovery_state import (
     UncoveredSectionKey,
     uncovered_section_key,
@@ -44,7 +44,7 @@ class UncoveredRecoveryContext:
 def _part_insert_labels_from_ops(ops: Iterable[AmendmentOp]) -> frozenset[str]:
     labels: set[str] = set()
     for op in ops:
-        if op.op_type != "INSERT" or op.target_unit_kind != "part":
+        if op.op_type != OpType.INSERT or op.target_unit_kind != "part":
             continue
         label = _norm_num_token(str(op.target_section or op.target_part or ""))
         if label:
@@ -80,7 +80,7 @@ def build_uncovered_recovery_context(
 
     for op in ops:
         if (
-            op.op_type != "RENUMBER"
+            op.op_type != OpType.RENUMBER
             or op.target_unit_kind != "section"
             or op.target_paragraph is not None
             or op.target_item

@@ -36,7 +36,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.relabel_identity import RelabelParentKey
-from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
 
 if TYPE_CHECKING:
     from lawvm.finland.migration_ledger import MigrationLedger
@@ -261,9 +261,9 @@ def detect_restructure_signals(
     """
     signals: list[RestructureSignal] = []
 
-    has_chapter_insert = any(op.target_unit_kind == "chapter" and op.op_type == "INSERT" for op in ops)
-    has_part_insert = any(op.target_unit_kind == "part" and op.op_type == "INSERT" for op in ops)
-    has_renumber = any(op.op_type == "RENUMBER" for op in ops)
+    has_chapter_insert = any(op.target_unit_kind == "chapter" and op.op_type == OpType.INSERT for op in ops)
+    has_part_insert = any(op.target_unit_kind == "part" and op.op_type == OpType.INSERT for op in ops)
+    has_renumber = any(op.op_type == OpType.RENUMBER for op in ops)
 
     if has_chapter_insert:
         signals.append(RestructureSignal.CHAPTER_INSERT)

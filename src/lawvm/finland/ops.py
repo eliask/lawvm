@@ -47,7 +47,20 @@ if TYPE_CHECKING:
 # Type aliases
 # ---------------------------------------------------------------------------
 
-OpType = Literal["REPLACE", "REPEAL", "INSERT", "RENUMBER"]
+class OpType(StrEnum):
+    """Finland amendment operation kind.
+
+    A ``StrEnum`` (not a bare ``Literal``) so that op-type comparisons are
+    member-vs-member and survive renames as a *type* error rather than a silent
+    string mismatch (Pro TargetSelector invariant). Members subclass ``str`` and
+    their ``value`` equals the legacy wire string, so ``OpType.REPLACE ==
+    "REPLACE"`` is ``True`` and serialization stays byte-identical.
+    """
+
+    REPLACE = "REPLACE"
+    REPEAL = "REPEAL"
+    INSERT = "INSERT"
+    RENUMBER = "RENUMBER"
 
 _SCOPE_PROVENANCE_TAGS = frozenset(
     {
@@ -649,7 +662,7 @@ class AmendmentOp:
     """
 
     op_id: str = ""
-    op_type: OpType = "REPLACE"
+    op_type: OpType = OpType.REPLACE
     target_section: str = ""
     target_unit_kind: TargetUnitKind = "section"
     target_chapter: Optional[str] = None
@@ -699,7 +712,7 @@ class AmendmentOp:
     def __init__(
         self,
         op_id: str = "",
-        op_type: OpType = "REPLACE",
+        op_type: OpType = OpType.REPLACE,
         target_section: str = "",
         target_unit_kind: TargetUnitKind | None = None,
         target_kind: TargetKind | None = None,
@@ -892,12 +905,12 @@ class AmendmentOp:
         Target fields are derived from lo.target.
         """
         _ACTION_MAP: Dict[StructuralAction, OpType] = {
-            StructuralAction.REPLACE: "REPLACE",
-            StructuralAction.REPEAL: "REPEAL",
-            StructuralAction.INSERT: "INSERT",
-            StructuralAction.RENUMBER: "RENUMBER",
+            StructuralAction.REPLACE: OpType.REPLACE,
+            StructuralAction.REPEAL: OpType.REPEAL,
+            StructuralAction.INSERT: OpType.INSERT,
+            StructuralAction.RENUMBER: OpType.RENUMBER,
         }
-        op_type: OpType = _ACTION_MAP.get(lo.action, "REPLACE")
+        op_type: OpType = _ACTION_MAP.get(lo.action, OpType.REPLACE)
         base_id = lo.op_id or f"op_{idx}"
         move_clause_target_unit_kind = cast(TargetUnitKind | None, lo.move_clause_target_unit_kind)
         all_ops: List[AmendmentOp] = []
@@ -1269,7 +1282,7 @@ class ResolvedOp:
             op_id=op.op_id,
             target_unit_kind=target_unit_kind,
             target_norm=target_norm,
-            _op_type_seed=op.op_type,
+            _op_type_seed=str(op.op_type),
             _target_special_override=(
                 None
                 if _section_payload_requires_root_replace(
@@ -2016,7 +2029,7 @@ def _section_payload_requires_root_replace(
     """
     if target_unit_kind != "section":
         return False
-    if op.op_type != "REPLACE":
+    if op.op_type != OpType.REPLACE:
         return False
     if resolved_target_address is None or resolved_target_address.special != FacetKind.HEADING:
         return False

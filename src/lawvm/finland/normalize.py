@@ -279,7 +279,7 @@ def _extract_insert_subsection_ops_fallback(cleaned: str) -> List[AmendmentOp]:
                 ops.append(
                     AmendmentOp(
                         op_id="",
-                        op_type="INSERT",
+                        op_type=OpType.INSERT,
                         target_section=sec_norm,
                         target_unit_kind="section",
                         target_paragraph=mom_i,
@@ -376,7 +376,7 @@ def _extract_insert_item_ops_fallback(cleaned: str) -> List[AmendmentOp]:
                 ops.append(
                     AmendmentOp(
                         op_id="",
-                        op_type="INSERT",
+                        op_type=OpType.INSERT,
                         target_section=sec_norm,
                         target_unit_kind="section",
                         target_paragraph=mom_i,
@@ -452,14 +452,14 @@ def _prune_shadowed_parent_subsection_insert_fallbacks(ops: List[AmendmentOp]) -
     explicit_item_targets = {
         (_norm_num_token(op.target_section), op.target_paragraph)
         for op in ops
-        if op.op_type == "INSERT" and op.target_section and op.target_paragraph is not None and op.target_item
+        if op.op_type == OpType.INSERT and op.target_section and op.target_paragraph is not None and op.target_item
     }
     if not explicit_item_targets:
         return ops
     pruned: List[AmendmentOp] = []
     for op in ops:
         if (
-            op.op_type == "INSERT"
+            op.op_type == OpType.INSERT
             and op.target_section
             and (_norm_num_token(op.target_section), op.target_paragraph) in explicit_item_targets
             and op.target_paragraph is not None
@@ -622,7 +622,7 @@ def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
         ops.append(
             AmendmentOp(
                 op_id="",
-                op_type="INSERT",
+                op_type=OpType.INSERT,
                 target_section=part,
                 target_unit_kind="part",
             )
@@ -642,7 +642,7 @@ def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
             ops.append(
                 AmendmentOp(
                     op_id="",
-                    op_type="INSERT",
+                    op_type=OpType.INSERT,
                     target_section=norm,
                     target_unit_kind="section",
                     target_chapter=chapter,
@@ -768,7 +768,7 @@ def _extract_root_replace_ops_from_body_fallback(
         label = _norm_num_token(num_el.text or "")
         if not label:
             continue
-        ops.append(AmendmentOp(op_id="", op_type="REPLACE", target_section=label, target_unit_kind="section"))
+        ops.append(AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section=label, target_unit_kind="section"))
     return _dedupe_fallback_ops_ir(ops)
 
 
@@ -791,7 +791,7 @@ def _op_signature(op: AmendmentOp) -> Tuple[object, ...]:
 
 def _is_root_insert_op(op: AmendmentOp) -> bool:
     return (
-        op.op_type == "INSERT" and op.target_paragraph is None and op.target_item is None and op.target_special is None
+        op.op_type == OpType.INSERT and op.target_paragraph is None and op.target_item is None and op.target_special is None
     )
 
 
@@ -896,7 +896,7 @@ def _extract_replace_ops_from_muutetaan_tail(cleaned: str) -> List[AmendmentOp]:
     ops = [
         AmendmentOp(
             op_id="",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section=sec,
             target_unit_kind="section",
             target_paragraph=int(mom) if mom is not None else None,
@@ -994,7 +994,7 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
             repeal_range_ops.append(
                 AmendmentOp(
                     op_id="",
-                    op_type="REPEAL",
+                    op_type=OpType.REPEAL,
                     target_section=sec_norm,
                     target_unit_kind="section",
                     target_paragraph=mom,
@@ -1013,14 +1013,14 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
     cleaned = re.sub(r"\(\s*\d+/\d+\s*\)", " ", cleaned)
     op_type: Optional[OpType] = None
     _KW_TO_OP: tuple[tuple[str, OpType], ...] = (
-        ("muutetaan", "REPLACE"),
-        ("muuttaa", "REPLACE"),
-        ("kumotaan", "REPEAL"),
-        ("kumoaa", "REPEAL"),
-        ("lisätään", "INSERT"),
-        ("lisää", "INSERT"),
-        ("siirretään", "REPLACE"),
-        ("siirtää", "REPLACE"),
+        ("muutetaan", OpType.REPLACE),
+        ("muuttaa", OpType.REPLACE),
+        ("kumotaan", OpType.REPEAL),
+        ("kumoaa", OpType.REPEAL),
+        ("lisätään", OpType.INSERT),
+        ("lisää", OpType.INSERT),
+        ("siirretään", OpType.REPLACE),
+        ("siirtää", OpType.REPLACE),
     )
     for kw, mapped in _KW_TO_OP:
         if kw in cleaned:
@@ -1090,13 +1090,13 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
     ]
     for sec, mom in insert_matches:
         if not any(
-            op.op_type == "INSERT" and op.target_section == sec and op.target_paragraph == mom and not op.target_item
+            op.op_type == OpType.INSERT and op.target_section == sec and op.target_paragraph == mom and not op.target_item
             for op in ops
         ):
             ops.append(
                 AmendmentOp(
                     op_id="",
-                    op_type="INSERT",
+                    op_type=OpType.INSERT,
                     target_section=sec,
                     target_unit_kind="section",
                     target_paragraph=mom,
@@ -1112,7 +1112,7 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
         sec_norm = _RE_WHITESPACE.sub("", sec)
         for i, op in enumerate(ops):
             if (
-                op.op_type == "REPLACE"
+                op.op_type == OpType.REPLACE
                 and op.target_section == sec_norm
                 and op.target_paragraph == int(old_mom)
                 and not op.target_item
@@ -1133,7 +1133,7 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
             op
             for op in ops
             if (
-                op.op_type == "INSERT"
+                op.op_type == OpType.INSERT
                 or (
                     _RE_WHITESPACE.sub("", str(op.target_section or "")).lower(),
                     op.target_paragraph,
@@ -1218,18 +1218,18 @@ def parse_ops_title_fallback(title: str) -> List[AmendmentOp]:
 
     # lawvm-regex: owning_parser N-title-fallback chapter-repeal title op-minter; part of the deferred rank-3 fallback retirement
     for chapter in re.findall(r"(\d+[a-z]?)\s+luvun\s+kumoamisesta", cleaned, flags=re.I):
-        ops.append(AmendmentOp(op_id="", op_type="REPEAL", target_section=chapter, target_unit_kind="chapter"))
+        ops.append(AmendmentOp(op_id="", op_type=OpType.REPEAL, target_section=chapter, target_unit_kind="chapter"))
 
     # lawvm-regex: owning_parser N-title-fallback part-repeal title op-minter; part of the deferred rank-3 fallback retirement
     for part in re.findall(r"(\d+[a-z]?)\s+osan\s+kumoamisesta", cleaned, flags=re.I):
-        ops.append(AmendmentOp(op_id="", op_type="REPEAL", target_section=part, target_unit_kind="part"))
+        ops.append(AmendmentOp(op_id="", op_type=OpType.REPEAL, target_section=part, target_unit_kind="part"))
 
     # lawvm-regex: owning_parser N-title-fallback section-repeal title op-minter; part of the deferred rank-3 fallback retirement
     for sec in re.findall(r"(\d+[a-z]?)\s*§(?::n)?\s+kumoamisesta", cleaned, flags=re.I):
         ops.append(
             AmendmentOp(
                 op_id="",
-                op_type="REPEAL",
+                op_type=OpType.REPEAL,
                 target_section=_RE_WHITESPACE.sub("", sec),
                 target_unit_kind="section",
             )

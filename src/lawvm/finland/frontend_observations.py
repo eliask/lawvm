@@ -13,7 +13,7 @@ from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 
 from lawvm.core.phase_result import Finding
-from lawvm.finland.ops import AmendmentOp, projection_scope_confidence
+from lawvm.finland.ops import AmendmentOp, OpType, projection_scope_confidence
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause import parse_clause, derive_features
 
@@ -232,7 +232,7 @@ def _semantic_collapse_move_or_renumber_observations(
 
     section_replace_ops: dict[Tuple[str, str], List[AmendmentOp]] = {}
     for op in ops:
-        if op.op_type != "REPLACE" or op.target_unit_kind != "section" or not op.target_section:
+        if op.op_type != OpType.REPLACE or op.target_unit_kind != "section" or not op.target_section:
             continue
         key = (
             _norm_num_token(op.target_chapter) if op.target_chapter else "",
@@ -301,7 +301,7 @@ def _destinationless_move_or_relabel_observations(
     findings: List[Finding] = []
     seen: Set[Tuple[str, str, str, Optional[int], Optional[str], Optional[str]]] = set()
     for op in ops:
-        if op.op_type != "RENUMBER":
+        if op.op_type != OpType.RENUMBER:
             continue
         if op.lo is None or op.lo.destination is not None:
             continue

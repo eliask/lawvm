@@ -55,7 +55,7 @@ from lawvm.core.semantic_types import FacetKind, LabelAction, StructuralAction
 from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
 from lawvm.finland.johtolause.surface_model import TargetKind
 from lawvm.finland.johtolause.types import ParsedOp
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, OpType
 
 
 # ---------------------------------------------------------------------------
@@ -423,8 +423,8 @@ def clause_ast_from_amendment_ops(ops: list[AmendmentOp]) -> ClauseAST:
             target = LegalAddress(path=tuple(path), special=special)
             op_action = _OP_TYPE_TO_ACTION.get(op.op_type, StructuralAction.REPLACE)
 
-            if op.op_type == "RENUMBER" or op.target_special == "otsikko":
-                la = LabelAction.RENUMBER if op.op_type == "RENUMBER" else LabelAction.HEADING_REPLACE
+            if op.op_type == OpType.RENUMBER or op.target_special == "otsikko":
+                la = LabelAction.RENUMBER if op.op_type == OpType.RENUMBER else LabelAction.HEADING_REPLACE
                 nodes.append(
                     LabelAmend(
                         action=la,

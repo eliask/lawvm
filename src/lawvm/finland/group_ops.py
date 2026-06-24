@@ -27,6 +27,7 @@ from lawvm.core.elaboration_context import TargetContext, ReplayLookups
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.ops import (
     AmendmentOp,
+    OpType,
     ResolvedOp,
     projection_scope_confidence,
 )
@@ -51,7 +52,7 @@ def normalize_group_ops_for_repeal_reenact(
     Multiple whole-section repeals in a group are pure repeals and must not be
     converted.
     """
-    whole_repeals = [o for o in group_ops if o.op_type == "REPEAL" and not o.target_paragraph]
+    whole_repeals = [o for o in group_ops if o.op_type == OpType.REPEAL and not o.target_paragraph]
     other_ops = [o for o in group_ops if o not in whole_repeals]
     # Only convert when exactly one repeal exists and other ops target the same section
     if len(whole_repeals) == 1 and other_ops:
@@ -66,7 +67,7 @@ def normalize_group_ops_for_repeal_reenact(
             return [
                 dc_replace(
                     repeal_op,
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     lo=new_lo,
                     extraction_provenance_tags=tuple(
                         dict.fromkeys((*repeal_op.extraction_provenance_tags, "repeal_reenact_normalized"))
@@ -122,7 +123,7 @@ def remap_body_root_replace_group_before_terminal_voimaantulo(
         or not re.fullmatch(r"\d+", target_norm)
         or not group_ops
         or any(
-            op.op_type != "REPLACE"
+            op.op_type != OpType.REPLACE
             or op.target_paragraph
             or op.target_item
             or op.target_special
@@ -159,7 +160,7 @@ def remap_body_root_replace_group_before_terminal_voimaantulo(
     remapped_ops = [
         dc_replace(
             op,
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section=insert_label,
         )
         for op in group_ops
@@ -245,7 +246,7 @@ def sort_group_ops_for_apply(
             and o.target_paragraph
             and not o.target_item
             and not o.target_special
-            and o.op_type in ("REPLACE", "INSERT")
+            and o.op_type in (OpType.REPLACE, OpType.INSERT)
         )
     ]
     if plain_moment_ops:
@@ -255,7 +256,7 @@ def sort_group_ops_for_apply(
         # before the later target lands. Run only that family in ascending
         # order; keep the broader reverse-order default for other pure REPLACE
         # groups so existing sparse merge behaviour stays stable.
-        if all(o.op_type == "REPLACE" for o in plain_moment_ops):
+        if all(o.op_type == OpType.REPLACE for o in plain_moment_ops):
             replace_targets = sorted(
                 int(str(o.target_paragraph))
                 for o in plain_moment_ops
@@ -296,12 +297,12 @@ def sort_group_ops_for_apply(
         # This applies even when the group contains non-moment ops (e.g.
         # otsikko replaces) since those don't interact with subsection
         # ordering — they have target_paragraph=None and sort to the front.
-        if all(o.op_type == "INSERT" for o in plain_moment_ops):
+        if all(o.op_type == OpType.INSERT for o in plain_moment_ops):
             return sorted(group_ops, key=_op_apply_sort_key)
         if (
             len(plain_moment_ops) == len(group_ops)
-            and any(o.op_type == "INSERT" for o in plain_moment_ops)
-            and any(o.op_type == "REPLACE" for o in plain_moment_ops)
+            and any(o.op_type == OpType.INSERT for o in plain_moment_ops)
+            and any(o.op_type == OpType.REPLACE for o in plain_moment_ops)
         ):
             # Use target_ctx.live_node instead of master.find_section_path + resolve
             sec = target_ctx.live_node
@@ -314,12 +315,12 @@ def sort_group_ops_for_apply(
                 insert_targets = [
                     int(o.target_paragraph)
                     for o in plain_moment_ops
-                    if o.op_type == "INSERT" and o.target_paragraph is not None
+                    if o.op_type == OpType.INSERT and o.target_paragraph is not None
                 ]
                 replace_targets = {
                     int(o.target_paragraph)
                     for o in plain_moment_ops
-                    if o.op_type == "REPLACE" and o.target_paragraph is not None
+                    if o.op_type == OpType.REPLACE and o.target_paragraph is not None
                 }
                 if insert_targets and live_labels and min(insert_targets) > max(live_labels):
                     return sorted(
@@ -350,17 +351,17 @@ def mixed_subsection_group_requires_insert_first(
     subsec_inserts = [
         o
         for o in ops
-        if o.op_type == "INSERT" and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.INSERT and o.target_paragraph is not None and not o.target_item and not o.target_special
     ]
     subsec_replaces = [
         o
         for o in ops
-        if o.op_type == "REPLACE" and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.REPLACE and o.target_paragraph is not None and not o.target_item and not o.target_special
     ]
     subsec_renumbers = [
         o
         for o in ops
-        if o.op_type == "RENUMBER" and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.RENUMBER and o.target_paragraph is not None and not o.target_item and not o.target_special
     ]
     if not subsec_inserts or not subsec_replaces:
         return False
@@ -395,12 +396,12 @@ def stabilize_insert_order(ops: List[AmendmentOp], target_ctx: TargetContext) ->
     subsec_inserts = [
         o
         for o in ops
-        if o.op_type == "INSERT" and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.INSERT and o.target_paragraph is not None and not o.target_item and not o.target_special
     ]
     subsec_replaces = [
         o
         for o in ops
-        if o.op_type == "REPLACE" and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.REPLACE and o.target_paragraph is not None and not o.target_item and not o.target_special
     ]
     if not subsec_inserts or not subsec_replaces:
         return ops
@@ -415,7 +416,7 @@ def stabilize_insert_order(ops: List[AmendmentOp], target_ctx: TargetContext) ->
         o
         for o in other_ops
         if (
-            o.op_type == "RENUMBER"
+            o.op_type == OpType.RENUMBER
             and o.target_paragraph is not None
             and not o.target_item
             and not o.target_special

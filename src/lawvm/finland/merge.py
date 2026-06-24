@@ -34,7 +34,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Dict, List, Literal, Optional, Set, Tuple, TYPE_CHECKING, cast
+from typing import Dict, List, Literal, Optional, Set, Tuple, TYPE_CHECKING
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
@@ -49,7 +49,7 @@ from lawvm.finland.helpers import (
     _section_sort_key,
     _previous_item_token,
 )
-from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile, ResolvedOp, _op_target_subsection_label
+from lawvm.finland.ops import AmendmentOp, FailedOp, OpType, ReplayProfile, ResolvedOp, _op_target_subsection_label
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.scope import source_targets_plain_subsection_moment
 from lawvm.finland.source_pathology import (
@@ -975,21 +975,20 @@ def _planned_section_subsection_targets(
     explicit_subsection_count: int,
     *,
     has_trailing_omission: bool,
-) -> List[Tuple[Literal["REPLACE", "INSERT"], int]] | None:
+) -> List[Tuple[OpType, int]] | None:
     plain_ops = [
         op
         for op in group_ops
         if op.target_paragraph is not None
         and not op.target_item
         and not op.target_special
-        and op.op_type in ("REPLACE", "INSERT")
+        and op.op_type in (OpType.REPLACE, OpType.INSERT)
     ]
     if not plain_ops:
         return None
 
-    direct_plan: List[Tuple[Literal["REPLACE", "INSERT"], int]] = [
-        (cast(Literal["REPLACE", "INSERT"], op.op_type), int(op.target_paragraph or 0))
-        for op in plain_ops
+    direct_plan: List[Tuple[OpType, int]] = [
+        (op.op_type, int(op.target_paragraph or 0)) for op in plain_ops
     ]
     if len(direct_plan) == explicit_subsection_count:
         return direct_plan
@@ -1000,7 +999,7 @@ def _planned_section_subsection_targets(
     if (
         has_trailing_omission
         and len(direct_plan) < explicit_subsection_count
-        and all(op_type == "INSERT" for op_type, _ in direct_plan)
+        and all(op_type == OpType.INSERT for op_type, _ in direct_plan)
     ):
         expected_prefix = list(range(1, len(direct_plan) + 1))
         actual_prefix = [target for _op_type, target in direct_plan]
@@ -1008,7 +1007,7 @@ def _planned_section_subsection_targets(
             plan = list(direct_plan)
             next_target = len(plan) + 1
             while len(plan) < explicit_subsection_count:
-                plan.append(("REPLACE", next_target))
+                plan.append((OpType.REPLACE, next_target))
                 next_target += 1
             return plan
 
@@ -1044,7 +1043,7 @@ def _merge_section_with_targeted_ops_ir(
             op.target_paragraph is not None
             and not op.target_item
             and not op.target_special
-            and op.op_type == "REPEAL"
+            and op.op_type == OpType.REPEAL
         )
     }
     preserve_sparse_labels = bool(explicit_repeal_targets)
@@ -1071,7 +1070,7 @@ def _merge_section_with_targeted_ops_ir(
                 merged_subsecs.append(master_sub)
             master_idx += 1
 
-        if op_type == "INSERT":
+        if op_type == OpType.INSERT:
             merged_subsecs.append(
                 _relabel_to_target(amend_sub, target_paragraph) if preserve_sparse_labels else amend_sub
             )
@@ -2651,7 +2650,7 @@ def _drop_suspicious_partial_subsection_shell_replaces(
 
     for op in group_ops:
         if (
-            op.op_type != "REPLACE"
+            op.op_type != OpType.REPLACE
             or op.target_paragraph is None
             or op.target_item is not None
             or op.target_special
@@ -2714,7 +2713,7 @@ def _explicit_heading_and_plain_subsection_replace_source_clause(
         return None
     for op in group_ops:
         if (
-            op.op_type != "REPLACE"
+            op.op_type != OpType.REPLACE
             or op.target_paragraph is None
             or op.target_item is not None
             or op.target_special
@@ -2757,7 +2756,7 @@ def _is_compact_first_subsection_replace_shell_ir(
             op.target_paragraph is not None
             and not op.target_item
             and not op.target_special
-            and op.op_type == "REPLACE"
+            and op.op_type == OpType.REPLACE
         )
     ]
     if len(plain_subsection_ops) != 1:
@@ -2808,7 +2807,7 @@ def _is_single_subsection_insert_item_shell_ir(
     insert_sub_ops = [
         op
         for op in group_ops
-        if op.op_type == "INSERT" and op.target_paragraph is not None
+        if op.op_type == OpType.INSERT and op.target_paragraph is not None
     ]
     if not insert_sub_ops:
         return False
@@ -2846,7 +2845,7 @@ def _is_single_subsection_replace_section_omission_shell_ir(
             op.target_paragraph is not None
             and not op.target_item
             and not op.target_special
-            and op.op_type == "REPLACE"
+            and op.op_type == OpType.REPLACE
         )
     ]
     if len(plain_subsection_ops) != 1:
@@ -2901,7 +2900,7 @@ def _is_single_subsection_insert_section_omission_shell_ir(
     insert_sub_ops = [
         op
         for op in group_ops
-        if op.op_type == "INSERT"
+        if op.op_type == OpType.INSERT
         and op.target_paragraph is not None
         and not op.target_item
         and not op.target_special
@@ -2991,7 +2990,7 @@ def _pre_resolve_omissions(
         target_paragraphs = {
             op.target_paragraph
             for op in group_ops
-            if op.op_type == "INSERT"
+            if op.op_type == OpType.INSERT
             and op.target_paragraph is not None
             and not op.target_item
             and not op.target_special
@@ -3067,7 +3066,7 @@ def _pre_resolve_omissions(
             target_paragraphs = {
                 op.target_paragraph
                 for op in group_ops
-                if op.op_type == "INSERT" and op.target_paragraph is not None and not op.target_item
+                if op.op_type == OpType.INSERT and op.target_paragraph is not None and not op.target_item
             }
             target_exists_in_live = any(
                 op_para is not None

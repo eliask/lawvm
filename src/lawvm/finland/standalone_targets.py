@@ -7,7 +7,7 @@ from typing import Iterable
 
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.helpers import _norm_num_token
-from lawvm.finland.ops import AmendmentOp, ScopeResolutionSource
+from lawvm.finland.ops import AmendmentOp, OpType, ScopeResolutionSource
 
 _SCOPE_CONFIDENCE_OVERRIDES_BODY_CHAPTER = frozenset(
     {
@@ -88,7 +88,7 @@ def build_standalone_section_targets(
             continue
         if op.target_paragraph is not None or op.target_item or op.target_special:
             continue
-        if op.target_chapter in (None, "") and op.op_type != "INSERT":
+        if op.target_chapter in (None, "") and op.op_type != OpType.INSERT:
             continue
         norm_label = _norm_num_token(op.target_section)
         standalone_targets.add(
@@ -165,7 +165,7 @@ def group_shadow_pruning_foreign_scoped_section_targets(
             continue
         # Only INSERT ops can shadow carry-forward content; REPLACE ops act on
         # already-existing sections and must not suppress container payload.
-        if op.op_type != "INSERT":
+        if op.op_type != OpType.INSERT:
             continue
         # Carry-forward INSERTs have inferred/stale chapter scope; they should
         # not shadow container payload since their chapter attribution is
@@ -206,7 +206,7 @@ def group_shadow_pruning_foreign_scoped_descendant_section_targets(
         section_label = _norm_num_token(op.target_section or "")
         if op.target_unit_kind != "section" or not section_label:
             continue
-        if op.op_type != "INSERT":
+        if op.op_type != OpType.INSERT:
             continue
         if op.target_paragraph is None and not op.target_item and not op.target_special:
             continue
@@ -246,7 +246,7 @@ def group_shadow_pruning_foreign_scoped_replace_section_targets(
         section_label = _norm_num_token(op.target_section or "")
         if op.target_unit_kind != "section" or not section_label:
             continue
-        if op.op_type != "REPLACE":
+        if op.op_type != OpType.REPLACE:
             continue
         if section_label in duplicate_section_labels:
             continue
@@ -279,7 +279,7 @@ def group_shadow_pruning_foreign_scoped_replace_section_target_scopes(
         section_label = _norm_num_token(op.target_section or "")
         if op.target_unit_kind != "section" or not section_label:
             continue
-        if op.op_type != "REPLACE":
+        if op.op_type != OpType.REPLACE:
             continue
         if section_label in duplicate_section_labels:
             continue

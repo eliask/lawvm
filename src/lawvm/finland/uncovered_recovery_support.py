@@ -280,7 +280,7 @@ def section_scoped_group_ops(
             continue
         if op.target_paragraph is None or op.target_item or op.target_special:
             continue
-        if op.op_type not in ("REPLACE", "INSERT", "REPEAL"):
+        if op.op_type not in (OpType.REPLACE, OpType.INSERT, OpType.REPEAL):
             continue
         scoped.append(op)
     return scoped
@@ -299,7 +299,7 @@ def synthetic_moment_group_ops(
         return []
     return [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_unit_kind="section",
             target_section=label,
             target_chapter=amend_chapter_label,

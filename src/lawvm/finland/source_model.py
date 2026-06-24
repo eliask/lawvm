@@ -1573,15 +1573,17 @@ class AmendmentSourceModel:
 
     def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
         """Whether section/chapter body recovery is content-authorized."""
+        from lawvm.finland.ops import OpType
+
         if any(
-            op.op_type in ("REPLACE", "INSERT")
+            op.op_type in (OpType.REPLACE, OpType.INSERT)
             and op.target_unit_kind == "section"
             and op.target_special is None
             for op in ops
         ):
             return True
         if any(
-            op.op_type in ("REPLACE", "INSERT") and op.target_unit_kind == "chapter"
+            op.op_type in (OpType.REPLACE, OpType.INSERT) and op.target_unit_kind == "chapter"
             for op in ops
         ):
             return True

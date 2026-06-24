@@ -21,6 +21,7 @@ from lawvm.finland.lowering_scope_recovery import (
 from lawvm.finland.ops import (
     AmendmentOp,
     FailedOp,
+    OpType,
     ScopeConfidence,
     ScopeResolutionConfidence,
     ScopeResolutionSource,
@@ -184,7 +185,7 @@ def _group_has_live_scoped_target_path(
 
 def _group_has_whole_section_replace(group_ops: Sequence[AmendmentOp]) -> bool:
     return any(
-        op.op_type == "REPLACE"
+        op.op_type == OpType.REPLACE
         and op.target_unit_kind == "section"
         and bool(op.target_section)
         and op.target_paragraph is None
@@ -306,14 +307,14 @@ def _replace_to_insert_ops(
             op.target_unit_kind == "section"
             and _norm_num_token(op.target_section or "") == target_norm
             and op.target_chapter == target_chapter
-            and op.op_type == "REPLACE"
+            and op.op_type == OpType.REPLACE
         ):
             rewritten.append(op)
             continue
         rewritten.append(
             dc_replace(
                 op,
-                op_type="INSERT",
+                op_type=OpType.INSERT,
                 target_chapter=replacement_chapter,
                 body_chapter_move_from=target_chapter,
                 target_special=None,
@@ -352,7 +353,7 @@ def _replace_to_declared_move_ops(
             op.target_unit_kind == "section"
             and _norm_num_token(op.target_section or "") == target_norm
             and op.target_chapter == target_chapter
-            and op.op_type == "REPLACE"
+            and op.op_type == OpType.REPLACE
         ):
             rewritten.append(op)
             continue
@@ -595,7 +596,7 @@ def _item_as_subsection_rewritten_ops(
             and (
                 _section_has_subsection_label(section, item_label)
                 or (
-                    op.op_type == "INSERT"
+                    op.op_type == OpType.INSERT
                     and not _section_subsection_has_paragraph_children(
                         section,
                         op.target_paragraph,
@@ -671,7 +672,7 @@ def _body_chapter_is_stale_wrapper_for_unchaptered_letter_stem(
         or request.target_unit_kind != "section"
         or request.target_chapter is not None
         or not any(
-            op.op_type == "INSERT"
+            op.op_type == OpType.INSERT
             and op.target_unit_kind == "section"
             and _norm_num_token(op.target_section or "") == request.target_norm
             and op.target_chapter is None
@@ -827,7 +828,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and request.target_chapter is not None
         and body_chapter == request.target_chapter
         and group_targets_whole_section
-        and any(op.op_type == "INSERT" for op in request.group_ops)
+        and any(op.op_type == OpType.INSERT for op in request.group_ops)
         and not explicit_chapter_scoped
         and not same_amendment_stem_scoped
         and not live_stem_host_scoped
@@ -876,7 +877,7 @@ def _maybe_apply_body_chapter_insert_correction(
             and op.target_section
             and _norm_num_token(op.target_section) == _norm_num_token(body_chapter)
             and str(op.target_special or "").strip() == "otsikko"
-            and op.op_type in {"REPLACE", "INSERT"}
+            and op.op_type in {OpType.REPLACE, OpType.INSERT}
             for op in request.amendment_group_ops
         )
     )
@@ -895,7 +896,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and body_chapter != request.target_chapter
         and live_stem_host_scoped
         and group_targets_whole_section
-        and any(op.op_type == "INSERT" for op in request.group_ops)
+        and any(op.op_type == OpType.INSERT for op in request.group_ops)
         and not explicit_chapter_scoped
         and not carry_forward_scoped
         and request.source_model.body_has_real_chapter_container(body_chapter)
@@ -906,7 +907,7 @@ def _maybe_apply_body_chapter_insert_correction(
             and op.target_section
             and _norm_num_token(op.target_section) == _norm_num_token(body_chapter)
             and str(op.target_special or "").strip() == "otsikko"
-            and op.op_type in {"REPLACE", "INSERT"}
+            and op.op_type in {OpType.REPLACE, OpType.INSERT}
             for op in request.amendment_group_ops
         )
         and not body_wrapper_overridden_by_scope
@@ -932,7 +933,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and body_chapter != request.target_chapter
         and live_stem_host_scoped
         and group_targets_whole_section
-        and any(op.op_type == "INSERT" for op in request.group_ops)
+        and any(op.op_type == OpType.INSERT for op in request.group_ops)
         and not explicit_chapter_scoped
         and not carry_forward_scoped
         and source_body_letter_run_scope_corroborated
@@ -1133,7 +1134,7 @@ def _replacement_ops(
             op.target_unit_kind == "section"
             and _norm_num_token(op.target_section or "") == target_norm
             and op.target_chapter == target_chapter
-            and op.op_type == "REPLACE"
+            and op.op_type == OpType.REPLACE
             and not op.target_paragraph
             and not op.target_item
             and not op.target_special
@@ -1165,7 +1166,7 @@ def _maybe_apply_replace_to_insert_move(
     if (
         request.target_unit_kind != "section"
         or not request.target_chapter
-        or not any(op.op_type == "REPLACE" for op in request.group_ops)
+        or not any(op.op_type == OpType.REPLACE for op in request.group_ops)
     ):
         return PhaseResult(output=result)
     body_chapter = request.source_model.body_section_chapter(request.target_norm)
@@ -1318,14 +1319,14 @@ def _maybe_apply_descendant_body_chapter_scope(
     if (
         request.target_unit_kind != "section"
         or not request.target_chapter
-        or not any(op.op_type == "REPLACE" for op in result.group_ops)
+        or not any(op.op_type == OpType.REPLACE for op in result.group_ops)
     ):
         return PhaseResult(output=result)
     descendant_replace_ops = [
         op
         for op in result.group_ops
         if (
-            op.op_type == "REPLACE"
+            op.op_type == OpType.REPLACE
             and op.target_unit_kind == "section"
             and _norm_num_token(op.target_section or "") == request.target_norm
             and op.target_chapter == request.target_chapter
@@ -1453,7 +1454,7 @@ def _maybe_retarget_live_section(
     result: CompileGroupScopeRecoveryResult,
 ) -> PhaseResult[CompileGroupScopeRecoveryResult]:
     all_whole_section_inserts = all(
-        op.op_type == "INSERT"
+        op.op_type == OpType.INSERT
         and op.target_unit_kind == "section"
         and not op.target_paragraph
         and not op.target_item
@@ -1517,7 +1518,7 @@ def _maybe_retarget_live_section(
             body_part == request.target_part
             and body_chapter == request.target_chapter
             and group_targets_whole_section
-            and any(op.op_type == "INSERT" for op in request.group_ops)
+            and any(op.op_type == OpType.INSERT for op in request.group_ops)
             and not group_has_scope_source(request.group_ops, "live_stem_host")
             and body_chapter is not None
             and request.source_model.body_has_real_chapter_container(body_chapter)
@@ -1648,8 +1649,8 @@ def _maybe_retarget_live_section(
 
 def _body_chapter_insert_correction_candidate(group_ops: Sequence[AmendmentOp]) -> bool:
     return all(
-        op.op_type == "INSERT"
-        or (op.op_type == "REPLACE" and str(op.target_special or "").strip() == "otsikko")
+        op.op_type == OpType.INSERT
+        or (op.op_type == OpType.REPLACE and str(op.target_special or "").strip() == "otsikko")
         for op in group_ops
     )
 

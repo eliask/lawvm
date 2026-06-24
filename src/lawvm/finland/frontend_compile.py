@@ -50,7 +50,7 @@ from lawvm.core.compile_result import StrictProfile
 from lawvm.core.phase_result import Finding
 from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.ops import ScopeConfidence
 from lawvm.finland.ops import ScopeResolutionConfidence, ScopeResolutionSource
@@ -162,7 +162,7 @@ def _ambiguous_unscoped_additive_fallback_insert_observation(
 ) -> Finding | None:
     """Reject unscoped additive fallback item inserts when section ownership is multi-scoped."""
     if (
-        fallback_op.op_type != "INSERT"
+        fallback_op.op_type != OpType.INSERT
         or fallback_op.target_chapter is not None
         or fallback_op.target_section is None
         or fallback_op.target_paragraph is None
@@ -254,7 +254,7 @@ def _single_payload_already_owned_fallback_insert_observation(
     would smuggle the same payload into a second target.
     """
     if (
-        fallback_op.op_type != "INSERT"
+        fallback_op.op_type != OpType.INSERT
         or fallback_op.target_section is None
         or fallback_op.target_paragraph is None
         or fallback_op.target_item is not None
@@ -271,7 +271,7 @@ def _single_payload_already_owned_fallback_insert_observation(
         {
             int(op.target_paragraph)
             for op in existing_ops
-            if op.op_type == "INSERT"
+            if op.op_type == OpType.INSERT
             and op.target_section == fallback_op.target_section
             and op.target_paragraph is not None
             and op.target_paragraph != fallback_op.target_paragraph
@@ -316,7 +316,7 @@ def _reject_overbroad_section_repeals_for_deep_targets(
     deep_repeal_sections = {
         _norm_num_token(op.target_section or "")
         for op in ops
-        if op.op_type == "REPEAL"
+        if op.op_type == OpType.REPEAL
         and op.target_section
         and op.target_item is not None
     }
@@ -327,7 +327,7 @@ def _reject_overbroad_section_repeals_for_deep_targets(
     findings: List[Finding] = []
     for op in ops:
         if (
-            op.op_type == "REPEAL"
+            op.op_type == OpType.REPEAL
             and op.target_unit_kind == "section"
             and op.target_paragraph is None
             and op.target_item is None
@@ -466,7 +466,7 @@ def _normalize_historical_top_level_kohta_subsection_ops(
     for op in ops:
         if (
             op.target_unit_kind == "section"
-            and op.op_type == "REPLACE"
+            and op.op_type == OpType.REPLACE
             and op.target_section
             and op.target_paragraph is None
             and op.target_item is None
@@ -513,7 +513,7 @@ def _normalize_historical_top_level_kohta_subsection_ops(
         if (
             section_label in rewrite_sections
             and op.target_unit_kind == "section"
-            and op.op_type in {"INSERT", "REPLACE"}
+            and op.op_type in {OpType.INSERT, OpType.REPLACE}
             and op.target_paragraph == 1
             and op.target_item
             and op.target_special is None
@@ -699,7 +699,7 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
             key not in candidate_keys
             or descendant_scope_key not in descendant_scope_present
             or op.target_unit_kind != "section"
-            or op.op_type != "REPLACE"
+            or op.op_type != OpType.REPLACE
             or op.target_paragraph is not None
             or bool(op.target_item)
             or (op.target_special is not None and not is_explicit_heading_op)
@@ -1021,7 +1021,7 @@ def _body_chapter_scope_for_section_op(
     )
     if op.target_chapter:
         if not (
-            op.op_type == "INSERT"
+            op.op_type == OpType.INSERT
             and op.target_paragraph is None
             and not op.target_item
             and not op.target_special
@@ -1143,7 +1143,7 @@ def _body_chapter_scope_conflicts_with_unchaptered_live_target(
     ):
         return False
     if (
-        op.op_type in {"REPLACE", "REPEAL"}
+        op.op_type in {OpType.REPLACE, OpType.REPEAL}
         and _live_section_path_is_unchaptered(
             master=master,
             section_norm=section_norm,
@@ -1172,7 +1172,7 @@ def _body_chapter_scope_conflicts_with_unchaptered_live_target(
 
 def _is_whole_section_insert(op: AmendmentOp) -> bool:
     return (
-        op.op_type == "INSERT"
+        op.op_type == OpType.INSERT
         and op.target_unit_kind == "section"
         and bool(op.target_section)
         and op.target_paragraph is None
@@ -1241,7 +1241,7 @@ def _is_identity_whole_section_renumber(op: AmendmentOp) -> bool:
     the SIIRTAA verb group. Such targets carry no real relabel — their true verb
     is the outer ``lisätään`` (insert).
     """
-    if op.op_type != "RENUMBER" or op.target_unit_kind != "section":
+    if op.op_type != OpType.RENUMBER or op.target_unit_kind != "section":
         return False
     if not op.target_section:
         return False
@@ -1398,7 +1398,7 @@ def _infer_flat_body_replace_scope_from_bracketing_live_siblings(
     live chapter.
     """
     if (
-        op.op_type != "REPLACE"
+        op.op_type != OpType.REPLACE
         or op.target_unit_kind != "section"
         or not op.target_section
         or op.target_chapter is not None
@@ -1515,7 +1515,7 @@ def _infer_flat_body_replace_chapter_from_live_section_gap(
     known section or part of a multi-section source-body tail prefix.
     """
     if (
-        op.op_type != "REPLACE"
+        op.op_type != OpType.REPLACE
         or op.target_unit_kind != "section"
         or not op.target_section
         or op.target_chapter is not None
@@ -1843,10 +1843,10 @@ def _infer_unique_live_section_chapter_scope(
         or bool(op.target_special)
     )
     section_label = _norm_num_token(op.target_section)
-    if op.op_type in {"REPLACE", "REPEAL"}:
+    if op.op_type in {OpType.REPLACE, OpType.REPEAL}:
         if op.target_chapter is not None or has_child_target:
             return None
-    elif op.op_type == "INSERT" and has_child_target:
+    elif op.op_type == OpType.INSERT and has_child_target:
         if op.target_chapter is not None and master.find_section_path(
             section_label,
             op.target_chapter,
@@ -1866,7 +1866,7 @@ def _infer_unique_live_section_chapter_scope(
         op.target_part,
     ) is not None:
         return unique_chapter
-    if op.op_type == "INSERT" and has_child_target:
+    if op.op_type == OpType.INSERT and has_child_target:
         return None
     return infer_letter_suffix_section_chapter_from_stem_host(
         master,
@@ -1895,7 +1895,7 @@ def _infer_duplicate_section_scope_from_source_heading(
         return None
     if (
         op.target_unit_kind != "section"
-        or op.op_type not in {"REPLACE", "REPEAL"}
+        or op.op_type not in {OpType.REPLACE, OpType.REPEAL}
         or not op.target_section
         or op.target_chapter is not None
         or op.target_paragraph is not None
@@ -2147,7 +2147,7 @@ def _infer_corroborated_body_scope_for_live_stem_insert(
     for other in ops:
         if other is op or other.target_unit_kind != "section" or not other.target_section:
             continue
-        if other.op_type == "INSERT" and _is_whole_section_insert(other):
+        if other.op_type == OpType.INSERT and _is_whole_section_insert(other):
             continue
         other_chapter = _norm_num_token(other.target_chapter or "")
         if other_chapter != _norm_num_token(body_chapter):
@@ -2555,7 +2555,7 @@ def _strip_impossible_chapter_scope_for_bare_body_section_op(
         and scoped_path is None
         and section_norm not in master.duplicate_section_labels
         and not has_descendant_target
-        and op.op_type in {"REPLACE", "REPEAL"}
+        and op.op_type in {OpType.REPLACE, OpType.REPEAL}
         and not any(
             sibling.target_unit_kind == "chapter"
             and _norm_num_token(sibling.target_section or "") == _norm_num_token(op.target_chapter)
@@ -2659,7 +2659,7 @@ def _retarget_stale_body_scope_for_section_op(
     if (
         scope_witness is not None
         and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
-        and op.op_type == "INSERT"
+        and op.op_type == OpType.INSERT
         and op.target_paragraph is None
         and not op.target_item
         and not op.target_special
@@ -2669,7 +2669,7 @@ def _retarget_stale_body_scope_for_section_op(
         # section's chapter.
         return None
     if (
-        op.op_type == "INSERT"
+        op.op_type == OpType.INSERT
         and op.target_paragraph is None
         and not op.target_item
         and not op.target_special
@@ -2812,7 +2812,7 @@ def _enrich_ops_from_amendment_tree(
                 resolved_chapter=scoped_op.target_chapter,
             )
             if (
-                scoped_op.op_type == "INSERT"
+                scoped_op.op_type == OpType.INSERT
                 and scoped_op.target_unit_kind == "section"
                 and scoped_op.target_chapter is not None
                 and (
@@ -2856,7 +2856,7 @@ def _enrich_ops_from_amendment_tree(
             inferred_chapter = None
             inferred_rule_id = "fi_body_chapter_scope_from_source_body"
             if scoped_op.target_chapter is None or (
-                scoped_op.op_type == "INSERT"
+                scoped_op.op_type == OpType.INSERT
                 and scoped_op.target_unit_kind == "section"
                 and scoped_op.target_paragraph is None
                 and scoped_op.target_item is None
@@ -3099,7 +3099,7 @@ def _enrich_ops_from_amendment_tree(
                 )
             scoped_op = dc_replace(
                 scoped_op,
-                op_type="REPLACE" if declared_move_destination else "INSERT",
+                op_type=OpType.REPLACE if declared_move_destination else OpType.INSERT,
                 move_clause_target_unit_kind=(
                     "chapter" if declared_move_destination else scoped_op.move_clause_target_unit_kind
                 ),
@@ -3789,7 +3789,7 @@ def _extract_enacting_formula_body_insert_ops_fallback(
             continue
         if master.find_section(label) is not None:
             continue  # already exists — not a new INSERT
-        ops.append(AmendmentOp(op_id="", op_type="INSERT", target_section=label, target_unit_kind="section"))
+        ops.append(AmendmentOp(op_id="", op_type=OpType.INSERT, target_section=label, target_unit_kind="section"))
     return ops
 
 
@@ -3809,7 +3809,7 @@ def _enacting_formula_body_insert_unowned_section_findings(
     accepted_targets = {
         op.target_section
         for op in accepted_ops
-        if op.op_type == "INSERT" and op.target_unit_kind == "section" and op.target_section
+        if op.op_type == OpType.INSERT and op.target_unit_kind == "section" and op.target_section
     }
     if not accepted_targets:
         return []
@@ -3905,7 +3905,7 @@ def _extract_enacting_formula_body_replace_ops_fallback(
     label = _norm_num_token(num_text)
     if not label or master.find_section(label) is None:
         return []
-    return [AmendmentOp(op_id="", op_type="REPLACE", target_section=label, target_unit_kind="section")]
+    return [AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section=label, target_unit_kind="section")]
 
 
 def _extract_ceremonial_body_only_ops_fallback(
@@ -3954,7 +3954,7 @@ def _extract_ceremonial_body_only_ops_fallback(
                 continue
             [owner_label] = list(existing_owner_labels)
             for item_label in item_labels:
-                op_type = "REPLACE" if _live_subsection_label_for_item(live_section, item_label) is not None else "INSERT"
+                op_type = OpType.REPLACE if _live_subsection_label_for_item(live_section, item_label) is not None else OpType.INSERT
                 ops.append(
                     AmendmentOp(
                         op_id="",
@@ -3977,7 +3977,7 @@ def _extract_ceremonial_body_only_ops_fallback(
             ops.append(
                 AmendmentOp(
                     op_id="",
-                    op_type="INSERT",
+                    op_type=OpType.INSERT,
                     target_section=section_label,
                     target_paragraph=next_label,
                     target_unit_kind="section",
@@ -3988,7 +3988,7 @@ def _extract_ceremonial_body_only_ops_fallback(
             ops.append(
                 AmendmentOp(
                     op_id="",
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     target_section=section_label,
                     target_paragraph=1,
                     target_unit_kind="section",
@@ -4043,7 +4043,7 @@ def _extract_act_wide_body_section_replace_ops_fallback(
                 ops.append(
                     AmendmentOp(
                         op_id="",
-                        op_type="REPLACE",
+                        op_type=OpType.REPLACE,
                         target_section=section_label,
                         target_paragraph=target_paragraph,
                         target_unit_kind="section",
@@ -4053,7 +4053,7 @@ def _extract_act_wide_body_section_replace_ops_fallback(
         ops.append(
             AmendmentOp(
                 op_id="",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section=section_label,
                 target_unit_kind="section",
             )
@@ -4600,7 +4600,7 @@ def normalize_and_compile_ops(
         fallback_plain_insert_count = sum(
             1
             for op in enriched_fallback_ops
-            if op.op_type == "INSERT"
+            if op.op_type == OpType.INSERT
             and op.target_special is None
         )
         for op in enriched_fallback_ops:
@@ -4668,7 +4668,7 @@ def normalize_and_compile_ops(
                 if single_payload_already_owned is not None:
                     frontend_findings_out.append(single_payload_already_owned)
                     continue
-                if op.op_type != "INSERT":
+                if op.op_type != OpType.INSERT:
                     continue
                 if op.target_special is not None:
                     continue

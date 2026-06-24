@@ -7,7 +7,7 @@ from typing import Iterable, Optional, Protocol, Tuple
 from lawvm.core.coverage import CoverageGap
 from lawvm.finland.body_coverage import BodyCoveragePayloadRef
 from lawvm.finland.helpers import _norm_num_token
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, OpType
 
 
 class UncoveredCandidateProcessor(Protocol):
@@ -47,7 +47,7 @@ class UncoveredSectionCandidate:
 def _is_payloadless_section_relabel_source(op: AmendmentOp, label: str) -> bool:
     """True when a whole-section RENUMBER's source label is not a payload claim."""
     if (
-        op.op_type != "RENUMBER"
+        op.op_type != OpType.RENUMBER
         or op.target_unit_kind != "section"
         or op.target_paragraph is not None
         or op.target_item

@@ -31,7 +31,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, replace as dc_replace
 from collections.abc import Sequence
-from typing import List, Tuple, cast
+from typing import List, Tuple
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.phase_result import Finding
@@ -287,7 +287,7 @@ def _parse_item_shift_with_extra_repeal(johto: str) -> List[Tuple[ItemShiftClaus
         clause = match.clause
         extra_op = AmendmentOp(
             op_id=f"explicit_repeal_after_item_shift_{idx}",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section=clause.target_section or "",
             target_unit_kind="section",
             target_paragraph=match.extra_repeal_target_paragraph,
@@ -317,7 +317,7 @@ def _tag_explicit_item_shift_after_repeal_hints(
         repealed = clause.target_items[0]
         for op in tagged_ops:
             if (
-                op.op_type == "REPEAL"
+                op.op_type == OpType.REPEAL
                 and op.target_section == clause.target_section
                 and op.target_paragraph == clause.target_paragraph
                 and normalized_label_key(op.target_item or "") == repealed
@@ -342,7 +342,7 @@ def _supplement_missing_repeals_after_item_shift_clause(
     supplemented = list(ops)
     for _clause, extra_op in results:
         already_present = any(
-            op.op_type == "REPEAL"
+            op.op_type == OpType.REPEAL
             and op.target_section == extra_op.target_section
             and op.target_paragraph == extra_op.target_paragraph
             and not op.target_item
@@ -443,7 +443,7 @@ def _supplement_jolloin_moment_renumber_ops(
     for idx, clause in enumerate(clauses):
         already_present = False
         for op in supplemented:
-            if op.op_type != "RENUMBER":
+            if op.op_type != OpType.RENUMBER:
                 continue
             if _norm_num_token(op.target_section or "") != clause.section:
                 continue
@@ -497,7 +497,7 @@ def _supplement_jolloin_moment_renumber_ops(
         supplemented.extend(renumber_ops)
         for moment in clause.inserted_moments:
             insert_already_present = any(
-                op.op_type == "INSERT"
+                op.op_type == OpType.INSERT
                 and _norm_num_token(op.target_section or "") == clause.section
                 and op.target_paragraph == moment
                 and not op.target_item
@@ -509,7 +509,7 @@ def _supplement_jolloin_moment_renumber_ops(
             supplemented.append(
                 AmendmentOp(
                     op_id=f"jolloin_moment_insert_{clause.section}_{moment}_{idx}",
-                    op_type="INSERT",
+                    op_type=OpType.INSERT,
                     target_section=clause.section,
                     target_unit_kind="section",
                     target_paragraph=moment,
@@ -543,7 +543,7 @@ def _supplement_named_table_row_mixed_clause_ops(
         tagged_repeal = False
         for pos, op in enumerate(supplemented):
             if (
-                op.op_type == "REPEAL"
+                op.op_type == OpType.REPEAL
                 and op.target_section == sec_norm
                 and op.target_unit_kind == "section"
                 and op.target_paragraph is None
@@ -560,7 +560,7 @@ def _supplement_named_table_row_mixed_clause_ops(
             continue
 
         has_replace = any(
-            op.op_type == "REPLACE"
+            op.op_type == OpType.REPLACE
             and op.target_section == sec_norm
             and op.target_unit_kind == "section"
             and op.target_paragraph is None
@@ -582,7 +582,7 @@ def _supplement_named_table_row_mixed_clause_ops(
         supplemented.append(
             AmendmentOp(
                 op_id=f"named_table_row_replace_{idx}",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section=sec_norm or "",
                 target_unit_kind="section",
                 named_row_targets=tuple(replace_rows),
@@ -631,7 +631,7 @@ def _tag_named_table_row_single_clause_ops(
         supplemented.append(
             AmendmentOp(
                 op_id=f"named_table_row_single_replace_{idx}",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section=clause.target_section or "",
                 target_unit_kind="section",
                 named_row_targets=tuple(clause.named_targets),
@@ -674,7 +674,7 @@ def _tag_numbered_table_target_clause_ops(
         tagged = False
         for pos, op in enumerate(supplemented):
             if (
-                op.op_type == "REPLACE"
+                op.op_type == OpType.REPLACE
                 and op.target_section == section
                 and op.target_unit_kind == "section"
                 and op.target_paragraph is None
@@ -689,7 +689,7 @@ def _tag_numbered_table_target_clause_ops(
         supplemented.append(
             AmendmentOp(
                 op_id=f"numbered_table_target_replace_{idx}",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section=section,
                 target_unit_kind="section",
                 numbered_table_targets=table_labels,
@@ -840,7 +840,7 @@ def _append_unique_op(
     ops.append(
         AmendmentOp(
             op_id=op_id,
-            op_type=cast(OpType, op_type),
+            op_type=OpType(op_type),
             target_section=section,
             target_unit_kind="section",
             target_chapter=chapter,
@@ -976,7 +976,7 @@ def _parse_moment_replace_clauses(johto: str) -> tuple[MomentTargetClause, ...]:
                 section=section,
                 chapter=_match_chapter(match),
                 moment=int(match.group("moment")),
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 raw_text=match.group(0),
             )
         )
@@ -994,7 +994,7 @@ def _parse_table_and_moment_replace_clauses(johto: str) -> tuple[MomentTargetCla
                 section=section,
                 chapter=_match_chapter(match),
                 moment=int(match.group("moment")),
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 raw_text=match.group(0),
                 table_labels=_numbered_table_targets_by_section(johto).get(section, ()),
             )
@@ -1017,7 +1017,7 @@ def _parse_moment_insert_clauses(johto: str) -> tuple[MomentTargetClause, ...]:
                 section=section,
                 chapter=_match_chapter(match),
                 moment=int(match.group("moment")),
-                op_type="INSERT",
+                op_type=OpType.INSERT,
                 raw_text=match.group(0),
             )
         )
@@ -1045,7 +1045,7 @@ def _supplement_mixed_explicit_clause_ops(
         _append_unique_op(
             supplemented,
             op_id=f"mixed_item_replace_{idx}_{clause.section}_{clause.moment}_{clause.item_label}",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             section=clause.section,
             chapter=clause.chapter,
             moment=clause.moment,
@@ -1071,7 +1071,7 @@ def _supplement_mixed_explicit_clause_ops(
         _append_unique_op(
             supplemented,
             op_id=f"mixed_bare_section_replace_{idx}_{clause.section}",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             section=clause.section,
             chapter=clause.chapter,
         )
@@ -1093,7 +1093,7 @@ def _supplement_item_and_moment_clause_ops(
         for item_label in clause.item_labels:
             if _has_op(
                 supplemented,
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 section=clause.section,
                 moment=clause.moment,
                 item=item_label,
@@ -1103,7 +1103,7 @@ def _supplement_item_and_moment_clause_ops(
             supplemented.append(
                 AmendmentOp(
                     op_id=f"item_and_moment_replace_item_{clause_index}_{item_label}",
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     target_section=clause.section,
                     target_unit_kind="section",
                     target_chapter=clause.chapter,
@@ -1116,7 +1116,7 @@ def _supplement_item_and_moment_clause_ops(
             )
         if not _has_op(
             supplemented,
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             section=clause.section,
             moment=clause.extra_moment,
             item=None,
@@ -1125,7 +1125,7 @@ def _supplement_item_and_moment_clause_ops(
             supplemented.append(
                 AmendmentOp(
                     op_id=f"item_and_moment_replace_moment_{clause_index}_{clause.extra_moment}",
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     target_section=clause.section,
                     target_unit_kind="section",
                     target_chapter=clause.chapter,
@@ -1139,7 +1139,7 @@ def _supplement_item_and_moment_clause_ops(
     for clause_index, clause in enumerate(insert_clauses):
         if _has_op(
             supplemented,
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             section=clause.section,
             moment=clause.moment,
             item=clause.item_label,
@@ -1149,7 +1149,7 @@ def _supplement_item_and_moment_clause_ops(
         converted = False
         for pos, op in enumerate(supplemented):
             if (
-                op.op_type == "INSERT"
+                op.op_type == OpType.INSERT
                 and op.target_unit_kind == "section"
                 and (not op.target_section or op.target_section == clause.section)
                 and (clause.chapter is None or not op.target_chapter or op.target_chapter == clause.chapter)
@@ -1188,7 +1188,7 @@ def _supplement_item_and_moment_clause_ops(
         supplemented.append(
             AmendmentOp(
                 op_id=f"item_and_moment_insert_item_{clause_index}_{clause.item_label}",
-                op_type="INSERT",
+                op_type=OpType.INSERT,
                 target_section=clause.section,
                 target_unit_kind="section",
                 target_chapter=clause.chapter,
@@ -1272,7 +1272,7 @@ def _supplement_sparse_osalta_row_omission_repeals(
     findings: list[Finding] = []
     for idx, clause in enumerate(clauses):
         duplicate = any(
-            op.op_type == "REPEAL"
+            op.op_type == OpType.REPEAL
             and op.target_unit_kind == "section"
             and op.target_section == clause.section
             and tuple(op.named_row_targets) == (clause.row_target,)
@@ -1283,7 +1283,7 @@ def _supplement_sparse_osalta_row_omission_repeals(
         supplemented.append(
             AmendmentOp(
                 op_id=f"sparse_osalta_row_omission_repeal_{idx}",
-                op_type="REPEAL",
+                op_type=OpType.REPEAL,
                 target_section=clause.section,
                 target_unit_kind="section",
                 named_row_targets=(clause.row_target,),

@@ -19,7 +19,7 @@ from lawvm.finland.kumotaan import (
     _extract_kumotaan_chapter_section_map,
     _extract_kumotaan_container_refs,
 )
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.finland.source_pathology import build_same_effective_container_repeal_shadowed_pathology
 from lawvm.finland.uncovered_recovery_findings import KumotaanRecoveryFindingEmitter
@@ -159,7 +159,7 @@ def _apply_uncovered_kumotaan_typed(
         if not vts_section_refs and not vts_container_refs["chapter"] and not vts_container_refs["part"]:
             return KumotaanRecoveryResult(state=state)
 
-    has_peg_repeals = any(op.op_type == "REPEAL" for op in ops)
+    has_peg_repeals = any(op.op_type == OpType.REPEAL for op in ops)
     has_vts_repeals = bool(vts_section_refs or vts_container_refs["chapter"] or vts_container_refs["part"])
     # lawvm-regex: prefilter cheap presence GATE (does this johto mention kumotaan?); actual targets come from typed _extract_kumotaan_* maps + VTS ops, every injected op witnessed
     if not has_peg_repeals and not has_vts_repeals and not re.search(r"\bkumotaan\b", johto, re.IGNORECASE):

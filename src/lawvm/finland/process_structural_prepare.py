@@ -12,7 +12,7 @@ from lawvm.finland.chapter_seed_targets import (
     ChapterSeedSkipInput,
     normalize_chapter_seed_skips,
 )
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.restructure_plan import (
     StructuralTransformPlan,
     build_restructure_plan,
@@ -188,7 +188,7 @@ class ProcessStructuralPrepareContext:
         # path and the restructure executor. Coverage-aware plans may still be
         # added later during uncovered-body analysis; exact duplicates are
         # suppressed there.
-        preseed_ops = [op for op in ops if op.op_type == "RENUMBER"]
+        preseed_ops = [op for op in ops if op.op_type == OpType.RENUMBER]
         if not preseed_ops:
             return
         early_plan = build_restructure_plan(
