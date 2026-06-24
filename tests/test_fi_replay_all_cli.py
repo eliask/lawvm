@@ -20,12 +20,14 @@ from lawvm.tools import cli, replay_all
 def test_parser_accepts_replay_all_flags() -> None:
     parser = cli._build_parser()
     args = parser.parse_args(
-        ["replay-all", "--workers", "4", "--limit", "10", "--mode", "legal_pit"]
+        ["replay-all", "--workers", "4", "--limit", "10", "--mode", "legal_pit",
+         "--shard", "2/8"]
     )
     assert args.command == "replay-all"
     assert args.workers == 4
     assert args.limit == 10
     assert args.mode == "legal_pit"
+    assert args.shard == "2/8"
 
 
 def test_parser_replay_all_defaults() -> None:
@@ -95,6 +97,40 @@ def test_main_counts_failures_and_continues(monkeypatch: pytest.MonkeyPatch) -> 
 
     # Failures are counted and tolerated; the command still returns success.
     assert rc == 0
+
+
+def test_shards_are_disjoint_and_exhaustive(monkeypatch: pytest.MonkeyPatch) -> None:
+    corpus_ids = [f"2000/{n}" for n in range(1, 24)]  # 23 statutes
+    monkeypatch.setattr(replay_all, "_enumerate_statute_ids", lambda: list(corpus_ids))
+
+    union: List[str] = []
+    for shard in range(4):
+        seen: List[str] = []
+        monkeypatch.setattr(
+            replay_all,
+            "_replay_one",
+            lambda sid, mode, _s=seen: (_s.append(sid), (sid, True, ""))[1],
+        )
+        args = Namespace(
+            workers=1, limit=None, mode="official_consolidation",
+            jurisdiction="fi", shard=f"{shard}/4",
+        )
+        assert replay_all.main(args) == 0
+        union.extend(seen)
+
+    # Every statute replayed exactly once across the 4 shards.
+    assert sorted(union) == sorted(corpus_ids)
+    assert len(union) == len(corpus_ids)
+
+
+def test_invalid_shard_spec_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(replay_all, "_enumerate_statute_ids", lambda: ["2020/1"])
+    monkeypatch.setattr(replay_all, "_replay_one", lambda sid, mode: (sid, True, ""))
+    args = Namespace(
+        workers=1, limit=None, mode="official_consolidation",
+        jurisdiction="fi", shard="5/4",
+    )
+    assert replay_all.main(args) == 2
 
 
 def test_main_rejects_non_fi_jurisdiction(monkeypatch: pytest.MonkeyPatch) -> None:

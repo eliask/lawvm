@@ -77,6 +77,28 @@ def _replay_worker(args: Tuple[str, str]) -> Tuple[str, bool, str]:
     return _replay_one(statute_id, mode)
 
 
+def _coverage_worker_init() -> None:
+    """Pool initializer: start coverage in each worker.
+
+    When the run is under ``coverage`` with ``concurrency=multiprocessing``,
+    coverage's automatic ``multiprocessing`` patching does not reliably reach
+    workers launched through an explicit start-method context. Calling
+    ``coverage.process_startup()`` here is the documented, robust way to ensure
+    every worker records its own coverage data file. A no-op when coverage is
+    not active (``COVERAGE_PROCESS_START`` unset).
+    """
+    import os
+
+    if not os.environ.get("COVERAGE_PROCESS_START"):
+        return
+    try:
+        import coverage
+
+        coverage.process_startup()
+    except Exception:  # noqa: BLE001 — coverage is optional/best-effort
+        pass
+
+
 def main(args: Any) -> int:
     mode: str = getattr(args, "mode", "official_consolidation")
     workers: int = int(getattr(args, "workers", 1) or 1)
@@ -90,15 +112,42 @@ def main(args: Any) -> int:
         )
         return 2
 
+    shard_spec: Optional[str] = getattr(args, "shard", None)
+    shard_i = 0
+    shard_n = 1
+    if shard_spec:
+        try:
+            i_str, n_str = shard_spec.split("/", 1)
+            shard_i, shard_n = int(i_str), int(n_str)
+        except ValueError:
+            print(
+                f"replay-all: --shard must be of the form I/N (got {shard_spec!r})",
+                file=sys.stderr,
+            )
+            return 2
+        if not (0 <= shard_i < shard_n) or shard_n < 1:
+            print(
+                f"replay-all: --shard I/N requires 0 <= I < N (got {shard_spec!r})",
+                file=sys.stderr,
+            )
+            return 2
+
     print("replay-all: enumerating full farchive corpus ...", file=sys.stderr)
     statute_ids = _enumerate_statute_ids()
     total_in_corpus = len(statute_ids)
     if limit is not None and limit >= 0:
         statute_ids = statute_ids[:limit]
+    if shard_n > 1:
+        # Stride sharding for balanced per-shard load. Disjoint + exhaustive
+        # across shards 0..N-1, so the union covers the entire corpus exactly
+        # once — letting N independent single-process invocations be combined
+        # for a correct full-corpus coverage map without multiprocessing.
+        statute_ids = statute_ids[shard_i::shard_n]
     attempted = len(statute_ids)
     print(
         f"replay-all: corpus has {total_in_corpus} statutes; "
-        f"replaying {attempted} (mode={mode}, workers={workers})",
+        f"replaying {attempted} (mode={mode}, workers={workers}, "
+        f"shard={shard_i}/{shard_n})",
         file=sys.stderr,
     )
 
@@ -143,7 +192,7 @@ def main(args: Any) -> int:
             ctx = mp.get_context("spawn")
 
         work = [(sid, mode) for sid in statute_ids]
-        with ctx.Pool(processes=workers) as pool:
+        with ctx.Pool(processes=workers, initializer=_coverage_worker_init) as pool:
             for idx, (sid, ok, status) in enumerate(
                 pool.imap_unordered(_replay_worker, work, chunksize=8), start=1
             ):

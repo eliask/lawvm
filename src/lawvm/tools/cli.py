@@ -9597,6 +9597,16 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         choices=["official_consolidation", "legal_pit"],
         help="replay mode (default: official_consolidation)",
     )
+    ra_p.add_argument(
+        "--shard",
+        metavar="I/N",
+        help=(
+            "replay only shard I of N (stride sharding statute_ids[I::N]); "
+            "disjoint + exhaustive across I=0..N-1. Run N single-process "
+            "invocations in parallel for a correct combinable coverage map "
+            "without multiprocessing (default: whole corpus)"
+        ),
+    )
 
     # --- fi-proposals ---
     fp_p = sub.add_parser(
