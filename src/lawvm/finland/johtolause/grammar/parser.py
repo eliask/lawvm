@@ -1701,6 +1701,37 @@ def _recognize_one_target(
     raise OutOfScope("not a target at target position")
 
 
+def _starts_juxtaposed_section_target(scan: _Scan) -> bool:
+    """True iff the cursor sits on a fresh ``<NUM>[suffix] §`` / ``<NUM> luku``.
+
+    This is the cue for a MISSING-SEPARATOR juxtaposition: a transcription
+    artifact in (chiefly older) statutes where the comma between two operative
+    targets in a ``muutetaan``/``kumotaan`` list was lost, e.g.
+    ``13 §:n 1 momentti 15 §:n 2 momentti`` (note the absent comma before
+    ``15 §``). The legacy parser stops at the gap and silently drops every
+    following target; the construction grammar continues across it.
+
+    The cue is deliberately TIGHT — a real number run (``[NUM/LETTER/DASH]+``)
+    immediately followed by a ``PYKALA`` or ``LUKU`` structural noun, with no
+    intervening separator. Requiring the section/chapter noun (not ``MOMENTTI``/
+    ``KOHTA``) is what distinguishes a NEW target from a sub-noun continuation of
+    the PREVIOUS target (``§:n 1 momentti``), so the recovery never re-anchors a
+    momentti/kohta belonging to the target just consumed.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    j = i
+    while j < n and toks[j].cat in ("NUM", "LETTER", "DASH"):
+        j += 1
+    # Require a real number run (a bare ``§`` with no leading number is not a
+    # fresh section anchor) and a section/chapter noun right after it.
+    if j == i or j >= n or toks[j].cat not in ("PYKALA", "LUKU"):
+        return False
+    # The run must contain at least one NUM (a lone LETTER/DASH is not a number).
+    return any(toks[k].cat == "NUM" for k in range(i, j))
+
+
 def _try_valiotsikko(scan: _Scan, sep_saved: int) -> Optional[list[SurfaceNode]]:
     """Recognize a VALIOTSIKKO heading backref; span starts at ``sep_saved``.
 
@@ -2522,6 +2553,33 @@ def _parse_verb_group(
             if kind == "container" and scan.pos != saved:
                 try:
                     more, more_kind = _recognize_one_target(scan, chapter, part)
+                except OutOfScope:
+                    scan.goto(saved)
+                else:
+                    if more_kind in {"container", "section"}:
+                        nodes.extend(more)
+                        last_batch = list(more)
+                        chapter = _chapter_after_batch(scan, saved, more, chapter, verb)
+                        part = _extract_part(more, part)
+                        continue
+                    scan.goto(saved)
+            # MISSING-SEPARATOR juxtaposition recovery. A genuine transcription
+            # artifact: the comma between two operative targets in a section /
+            # container list was lost, so a fresh ``<NUM> §`` / ``<NUM> luku``
+            # target sits directly against the previous one with only whitespace
+            # between (``13 §:n 1 momentti 15 §:n 2 momentti``). No separator was
+            # consumed and no sentinel advanced us (``scan.pos == saved``), yet a
+            # new same-family target unambiguously begins here. The legacy parser
+            # stops at the gap and silently drops every following target; the
+            # grammar folds the target in and keeps reading the list — a
+            # correctness gain (strictly more operative targets, never fewer).
+            if (
+                kind in ("section", "container")
+                and scan.pos == saved
+                and _starts_juxtaposed_section_target(scan)
+            ):
+                try:
+                    more, more_kind = _recognize_one_target(scan, chapter, part, verb)
                 except OutOfScope:
                     scan.goto(saved)
                 else:

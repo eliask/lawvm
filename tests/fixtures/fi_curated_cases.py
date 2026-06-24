@@ -1678,6 +1678,37 @@ CURATED_CASES = [
             "he_enacting_preamble",
         },
     },
+    {
+        # Missing-separator juxtaposition (G0-w3): the comma between two section
+        # targets was lost in transcription, so a fresh ``<NUM> §`` sits directly
+        # against the previous target's momentti sub-ref with only whitespace
+        # between (modelled on 1975/10: ``13 §:n 1 momentti 15 §:n 2 momentti``).
+        # The legacy parser stops at the gap and silently drops the second target;
+        # the grammar continues the list across the missing comma.
+        "name": "missing_separator_juxtaposed_momentti_section (cf. 1975/10)",
+        "text": "muutetaan lain 13 §:n 1 momentti 15 §:n 2 momentti seuraavasti:",
+        "expected": ["M P 13 1", "M P 15 2"],
+        "features": {
+            "verb_muuttaa",
+            "section_ref",
+            "momentti_ref",
+            "missing_separator_recovery",
+        },
+    },
+    {
+        # Missing-separator juxtaposition, bare-section form: ``12 § 13 §:n 1
+        # momentti`` (no comma before the second ``§``). Same recovery as above
+        # for a target whose first arm is a bare section with no sub-ref.
+        "name": "missing_separator_juxtaposed_bare_section (cf. 1982/414)",
+        "text": "muutetaan lain 12 § 13 §:n 1 momentti seuraavasti:",
+        "expected": ["M P 12", "M P 13 1"],
+        "features": {
+            "verb_muuttaa",
+            "section_ref",
+            "momentti_ref",
+            "missing_separator_recovery",
+        },
+    },
 ]
 
 
