@@ -12,6 +12,7 @@ Finnish act with a known range repeal note. It skips when the corpus is absent.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -170,7 +171,7 @@ def test_classify_splits_and_totals() -> None:
     assert cause_report.undetermined_targets == ("1999/1",)
     # totality invariant holds on serialization round-trip
     d = cause_report.to_canonical_dict()
-    assert d["repealed_target"] + d["undetermined"] == d["total_dangling"]
+    assert cast(int, d["repealed_target"]) + cast(int, d["undetermined"]) == d["total_dangling"]
 
 
 def test_cause_row_rejects_repealed_without_evidence() -> None:

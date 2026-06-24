@@ -12,6 +12,8 @@ the surfaced counts are internally consistent. It skips when the corpus is absen
 """
 from __future__ import annotations
 
+from typing import cast
+
 from pathlib import Path
 
 import pytest
@@ -96,7 +98,7 @@ def test_serialization_round_trip_keys() -> None:
     report = er.build_eu_reference_report(store, ["2020/4"])
     d = report.to_canonical_dict()
     assert d["schema"] == "lawvm.eu_reference_report.v1"
-    assert d["transposition_bound"] + d["transposition_unbound"] == d["transposition_claims"]
+    assert cast(int, d["transposition_bound"]) + cast(int, d["transposition_unbound"]) == d["transposition_claims"]
 
 
 @pytest.mark.skipif(
