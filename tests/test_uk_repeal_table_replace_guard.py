@@ -85,3 +85,30 @@ def test_genuine_substitution_payload_is_not_withheld() -> None:
         lowering_rejections_out=records,
     )
     assert _REJECT_RULE not in {r["rule_id"] for r in records}
+
+
+def test_withheld_op_identity_is_visible_in_rejection_receipt() -> None:
+    """AGENTS.md §1.8 receipt totality: a withheld op stays visible with its
+    identity (op_id, action, target), not only a count. A bare
+    ``withheld_op_count`` makes the rejected lane opaque to downstream
+    consumers; the filter's own return shape omits the withheld ops entirely.
+    """
+    records: list[dict[str, Any]] = []
+    ops = compile_effect_to_ir_ops(
+        _effect("repealed in part"),
+        _repeal_table_el(),
+        sequence=0,
+        lowering_rejections_out=records,
+    )
+    assert ops == []  # the structural replace was withheld
+    rejection = next(r for r in records if r["rule_id"] == _REJECT_RULE)
+    # The rejection must name the withheld ops, not just count them. The detail
+    # kwargs are spread into the payload top-level by ``_append_uk_effect_lowering_rejection``.
+    withheld = rejection["withheld_ops"]
+    assert isinstance(withheld, (list, tuple)) and withheld
+    for entry in withheld:
+        assert "op_id" in entry
+        assert "action" in entry
+        assert "target" in entry
+    # The count field stays as a stable aggregate.
+    assert rejection["withheld_op_count"] == len(withheld)

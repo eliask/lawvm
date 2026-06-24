@@ -433,18 +433,89 @@ def test_payload_kind_realignment_family() -> None:
 # Cross-site — non-insert action: neither observation fires
 # ===========================================================================
 
-def test_neither_realignment_fires_for_replace_action() -> None:
-    """Both realignment observations are guarded by curr_action=='insert'; replace skips both."""
+def _target_paragraph_c() -> LegalAddress:
+    return LegalAddress(path=(("section", "5"), ("subsection", "2"), ("paragraph", "c")))
+
+
+# ===========================================================================
+# Cross-site — replace action: both realignment rules also fire
+# ===========================================================================
+
+def test_replace_action_also_triggers_kind_realignment() -> None:
+    """Replace payloads are subject to the same kind-realignment ownership as inserts."""
     observations: list[dict[str, Any]] = []
-    _call_prepare(
-        content_ir=_payload_blank_label_matching_kind(),
+    result = _call_prepare(
+        content_ir={
+            "kind": "subsection",
+            "label": "c",
+            "text": "Replace text.",
+            "children": [],
+        },
         curr_action="replace",
+        target=_target_paragraph_c(),
+        target_ref="s. 5(2)(c)",
         lowering_rejections_out=observations,
     )
     rule_ids = [obs.get("rule_id") for obs in observations]
-    assert _UK_EFFECT_PAYLOAD_LABEL_REALIGNED_TO_TARGET_LEAF_RULE_ID not in rule_ids, (
-        "Label-realignment must NOT fire for replace actions"
+    assert _UK_EFFECT_PAYLOAD_KIND_REALIGNED_TO_TARGET_LEAF_RULE_ID in rule_ids, (
+        "Replace payload with mismatched leafish kind must emit kind-realignment observation"
     )
+    assert result.payload_node is not None
+    assert result.payload_node.kind.value == "paragraph", (
+        f"Expected kind='paragraph' after replace realignment, got {result.payload_node.kind.value!r}"
+    )
+
+
+def test_replace_action_also_triggers_label_realignment() -> None:
+    """Replace payloads with a blank label inherit the target leaf label."""
+    observations: list[dict[str, Any]] = []
+    result = _call_prepare(
+        content_ir={
+            "kind": "paragraph",
+            "label": "",
+            "text": "Replace text.",
+            "children": [],
+        },
+        curr_action="replace",
+        target=_target_paragraph_c(),
+        target_ref="s. 5(2)(c)",
+        lowering_rejections_out=observations,
+    )
+    rule_ids = [obs.get("rule_id") for obs in observations]
+    assert _UK_EFFECT_PAYLOAD_LABEL_REALIGNED_TO_TARGET_LEAF_RULE_ID in rule_ids, (
+        "Replace payload with blank label must emit label-realignment observation"
+    )
+    assert result.payload_node is not None
+    assert result.payload_node.label == "c", (
+        f"Expected label='c' after replace realignment, got {result.payload_node.label!r}"
+    )
+
+
+def test_replace_action_does_not_realign_kind_when_payload_valid_for_parent() -> None:
+    """Replace payloads that are valid children of the target's parent keep their kind.
+
+    A schedule paragraph target whose payload is lowered to an item must not be
+    forcibly retyped back to paragraph; the source-owned shape is preserved.
+    """
+    observations: list[dict[str, Any]] = []
+    target = LegalAddress(path=(("schedule", "1"), ("paragraph", "d")))
+    result = _call_prepare(
+        content_ir={
+            "kind": "item",
+            "label": "d",
+            "text": "Replace text.",
+            "children": [],
+        },
+        curr_action="replace",
+        target=target,
+        target_ref="Sch. 1 para. d",
+        lowering_rejections_out=observations,
+    )
+    rule_ids = [obs.get("rule_id") for obs in observations]
     assert _UK_EFFECT_PAYLOAD_KIND_REALIGNED_TO_TARGET_LEAF_RULE_ID not in rule_ids, (
-        "Kind-realignment must NOT fire for replace actions"
+        "Kind-realignment must NOT fire when the replace payload kind is valid under the target's parent"
+    )
+    assert result.payload_node is not None
+    assert result.payload_node.kind.value == "item", (
+        f"Expected kind='item' to be preserved, got {result.payload_node.kind.value!r}"
     )

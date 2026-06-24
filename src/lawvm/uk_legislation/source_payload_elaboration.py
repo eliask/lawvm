@@ -67,6 +67,11 @@ def _retarget_instruction_element_to_target(
     raw element as payload fabricates a subtree rooted at the amendment
     paragraph number. In those cases, clone the element and rewrite its direct
     number to the actual affected target label before parsing it as a payload.
+
+    The retargeting is only legitimate when the extracted element's structural
+    kind can actually stand in for the target leaf kind. A subsection paragraph
+    may not be relabeled as a section, because that would silently replace a
+    whole section with a single subsection (granularity escalation).
     """
     target_kind = _addr_leaf_kind(target)
     target_label = _addr_leaf_label(target)
@@ -76,6 +81,45 @@ def _retarget_instruction_element_to_target(
     direct_num = _direct_structural_num(extracted_el)
     if not direct_num or _clean_num(direct_num) == _clean_num(target_label):
         return None
+
+    # Map source structural tags to canonical leaf kinds. Retargeting is allowed
+    # only when the source element and target share the same granularity; if the
+    # source element is a strictly lower-level unit (e.g. a subsection) it may
+    # not be relabelled as a higher-level target (e.g. a section). Such a label
+    # rewrite would silently replace the host with a child unit and, under UK
+    # canonical nesting, typically produces an illegal ``subsection inside
+    # p1group`` tree shape. Unknown source tags (e.g. Schedule wrappers) fall
+    # through to the legacy text-matching path so existing behaviour is
+    # preserved.
+    _STRUCTURAL_TAG_KIND = {
+        "Section": "section",
+        "P1": "section",
+        "Article": "section",
+        "Rule": "section",
+        "Subsection": "subsection",
+        "P2": "subsection",
+        "Paragraph": "paragraph",
+        "P3": "paragraph",
+        "Subparagraph": "subparagraph",
+        "P4": "subparagraph",
+    }
+    _STRUCTURAL_KIND_RANK = {
+        "section": 0,
+        "subsection": 1,
+        "paragraph": 2,
+        "subparagraph": 3,
+        "item": 4,
+    }
+    payload_kind = _STRUCTURAL_TAG_KIND.get(_tag(extracted_el))
+    if payload_kind is not None:
+        payload_rank = _STRUCTURAL_KIND_RANK.get(payload_kind)
+        target_rank = _STRUCTURAL_KIND_RANK.get(target_kind)
+        if (
+            payload_rank is not None
+            and target_rank is not None
+            and payload_rank > target_rank
+        ):
+            return None
 
     text = " ".join(extracted_text.split())
     label_rx = re.escape(target_label)

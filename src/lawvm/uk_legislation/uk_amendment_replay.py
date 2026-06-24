@@ -972,6 +972,7 @@ class UKReplayPipeline:
                     e,
                     compiled,
                     applicability_mode=applicability_mode,
+                    lowering_observations_out=lowering_rejections_out,
                 )
                 if not should_replay_compiled:
                     append_replay_applicability_filter_diagnostic(

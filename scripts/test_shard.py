@@ -507,6 +507,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_tree_ops_ambiguity.py",
         "test_tree_ops_stage.py",
         "test_tree_ops_roman_labels.py",
+        "test_core_tree_invariant_scan_families.py",
     ),
     "core_compile_projection": (
         "test_fi_effect_lifecycle_projection.py",
@@ -566,8 +567,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_defined_terms.py",
         "test_fi_definition_graph.py",
         "test_fi_definition_lint_precision.py",
-        "test_fi_delegation_instrument.py",
         "test_fi_delegation_edge_adapter.py",
+        "test_fi_delegation_instrument.py",
         "test_fi_deontic_core_lens.py",
         "test_fi_deontic_frame_edges.py",
         "test_fi_eu_directive.py",

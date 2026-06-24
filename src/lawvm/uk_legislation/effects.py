@@ -193,12 +193,19 @@ def _apply_uk_effect_type_date_qualifier(
     return base_type
 
 
+UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_schedule_words_before_table_substitution_lowered"
+)
+
+
 def uk_nonstructural_replay_candidate_family_for_effect_type(effect_type: str) -> str:
     """Return the nonstructural replay family implied by an effects-feed type."""
     effect_type = " ".join(str(effect_type or "").strip().lower().split())
-    if effect_type.startswith("substituted for"):
+    if effect_type.startswith("substituted"):
         if effect_type in {"substituted for word", "substituted for words"}:
             return ""
+        if "for the words before the table substitute" in effect_type:
+            return "substituted_schedule_words_before_table"
         return "substituted_for_series"
     if effect_type.startswith("revoked"):
         return "revoked_repeal"
@@ -267,6 +274,15 @@ class UKEffectRecord:
     metadata_only: bool = False  # True if this effect was only found in XML metadata, not the Atom feed.
     comments: str = ""
     affected_title: str = ""
+    # Savings references carried by the effect feed ukm:Savings element.  A repeal
+    # that names one or more savings provisions is legally qualified: replay must
+    # not treat it as an unconditional structural deletion without resolving the
+    # savings scope.
+    savings_references: list[dict[str, str]] = field(default_factory=list)
+
+    @property
+    def has_savings_references(self) -> bool:
+        return bool(self.savings_references)
 
     @property
     def affecting_act_id(self) -> str:
@@ -422,11 +438,11 @@ def parse_effects_from_feeds(
     parse_rejections_out: Optional[list[dict[str, Any]]] = None,
 ) -> list[UKEffectRecord]:
     """Parse all effect feed pages into a list of UKEffectRecord."""
-    if parse_rejections_out is not None:
-        feed_bytes_list: list[bytes] = []
-        feed_locators: list[str] = []
-        for feed_index, ff in enumerate(feed_files):
-            if not ff.exists():
+    feed_bytes_list: list[bytes] = []
+    feed_locators: list[str] = []
+    for feed_index, ff in enumerate(feed_files):
+        if not ff.exists():
+            if parse_rejections_out is not None:
                 parse_rejections_out.append(
                     _uk_effect_feed_diagnostic(
                         rule_id="uk_effect_feed_file_missing_rejected",
@@ -437,60 +453,41 @@ def parse_effects_from_feeds(
                         feed_path=str(ff),
                     )
                 )
-                continue
-            feed_bytes_list.append(ff.read_bytes())
-            feed_locators.append(str(ff))
-        return parse_effects_from_bytes(
-            feed_bytes_list,
-            parse_rejections_out=parse_rejections_out,
-            feed_locators=feed_locators,
-        )
+            continue
+        feed_bytes_list.append(ff.read_bytes())
+        feed_locators.append(str(ff))
+    return parse_effects_from_bytes(
+        feed_bytes_list,
+        parse_rejections_out=parse_rejections_out,
+        feed_locators=feed_locators,
+    )
 
-    ns = {
-        "atom": "http://www.w3.org/2005/Atom",
-        "ukm": "http://www.legislation.gov.uk/namespaces/metadata",
-    }
-    records = []
-    for ff in feed_files:
-        root = ET.parse(ff).getroot()
-        for entry in root.findall("atom:entry", ns):
-            effect = entry.find(".//ukm:Effect", ns)
-            if effect is None:
-                continue
-            in_force_dates = []
-            for inf in effect.findall(".//ukm:InForceDates/ukm:InForce", ns):
-                in_force_dates.append(
-                    {
-                        "date": inf.get("Date", ""),
-                        "applied": inf.get("Applied", ""),
-                        "prospective": inf.get("Prospective", "false"),
-                    }
-                )
-            records.append(
-                UKEffectRecord(
-                    effect_id=effect.get("EffectId", ""),
-                    effect_type=_apply_uk_effect_type_date_qualifier(
-                        effect.get("Type", ""), in_force_dates
-                    ),
-                    applied=(effect.get("Applied", "false").lower() == "true"),
-                    requires_applied=(effect.get("RequiresApplied", "false").lower() == "true"),
-                    modified=effect.get("Modified", "")[:10],
-                    affected_uri=effect.get("AffectedURI", ""),
-                    affected_class=effect.get("AffectedClass", ""),
-                    affected_year=effect.get("AffectedYear", ""),
-                    affected_number=effect.get("AffectedNumber", ""),
-                    affected_provisions=effect.get("AffectedProvisions", ""),
-                    affecting_uri=effect.get("AffectingURI", ""),
-                    affecting_class=effect.get("AffectingClass", ""),
-                    affecting_year=effect.get("AffectingYear", ""),
-                    affecting_number=effect.get("AffectingNumber", ""),
-                    affecting_provisions=effect.get("AffectingProvisions", ""),
-                    affecting_title=effect.findtext("ukm:AffectingTitle", default="", namespaces=ns),
-                    in_force_dates=in_force_dates,
-                    affected_title=effect.findtext("ukm:AffectedTitle", default="", namespaces=ns),
-                )
+
+def _parse_uk_effect_savings_references(
+    effect: ET._Element,
+    ns: dict[str, str],
+) -> list[dict[str, str]]:
+    """Extract ukm:Savings/ukm:Section references from a feed Effect element.
+
+    A repeal or revocation that carries explicit savings references is legally
+    qualified.  LawVM does not silently apply it as an unconditional textual
+    deletion; the references are preserved on the effect record so lowering can
+    own the qualified semantics.
+    """
+    refs: list[dict[str, str]] = []
+    for section in effect.findall(".//ukm:Savings/ukm:Section", ns):
+        ref = section.get("Ref", "")
+        uri = section.get("URI", "")
+        text = (section.text or "").strip()
+        if ref or uri or text:
+            refs.append(
+                {
+                    "ref": ref,
+                    "uri": uri,
+                    "text": text,
+                }
             )
-    return records
+    return refs
 
 
 def parse_effects_from_bytes(
@@ -567,6 +564,8 @@ def parse_effects_from_bytes(
                         "prospective": inf.get("Prospective", "false"),
                     }
                 )
+            savings_references = _parse_uk_effect_savings_references(effect, ns)
+            comments = effect.get("Comments", "")
             records.append(
                 UKEffectRecord(
                     effect_id=effect.get("EffectId", ""),
@@ -589,6 +588,8 @@ def parse_effects_from_bytes(
                     affecting_title=effect.findtext("ukm:AffectingTitle", default="", namespaces=ns),
                     in_force_dates=in_force_dates,
                     affected_title=effect.findtext("ukm:AffectedTitle", default="", namespaces=ns),
+                    savings_references=savings_references,
+                    comments=comments,
                 )
             )
     return records

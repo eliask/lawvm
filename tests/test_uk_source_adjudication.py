@@ -1220,6 +1220,96 @@ def test_classify_uk_manual_compile_frontier_requires_source_witness_for_heading
     assert result["rule_id"] == "uk_manual_frontier_missing_payload_source_insufficient"
 
 
+def test_classify_uk_manual_compile_frontier_marks_body_section_schedule_payload_unmatched_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="section substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="Schedule",
+        extracted_text="SCHEDULE 1 FUNCTIONS ... Regulation 2(1) ...",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_body_section_replace_schedule_unmatched_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_body_section_schedule_payload_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_savings_references_qualified_repeal_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="section repealed",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="BlockAmendment",
+        extracted_text="Schedule 32 (savings) applies to the repeal of section 5.",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_savings_references_qualified_repeal_blocked",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_savings_references_qualified_repeal_candidate"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_marks_incorporation_of_enactments_out_of_scope() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="",
+        source_pathology="reference_only_source_fragment",
+        extracted_tag="BlockAmendment",
+        extracted_text="the following provisions of the 1856 Act shall be incorporated in this Order",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_incorporation_of_enactments_source_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_incorporation_of_enactments_out_of_scope"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_marks_crossheading_insert_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text="",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_crossheading_insert_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_crossheading_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_source_pathology_blocks_heading_claim() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",

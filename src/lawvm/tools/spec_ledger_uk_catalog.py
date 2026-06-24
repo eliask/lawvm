@@ -400,6 +400,14 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A schedule list-entry whose payload is table rows is lowered to a table-row insert.",
     "uk_effect_schedule_table_end_rows_lowered":
         "A schedule table-end rows instruction is lowered to append the rows at the table end.",
+    "uk_effect_schedule_part_paragraph_p1group_wrapper_lowered":
+        "A schedule-part insert/replace payload carrying paragraph-level children directly "
+        "under the part wraps each contiguous run in a synthetic p1group to match canonical "
+        "schedule nesting.",
+    "uk_effect_schedule_subparagraph_definition_entries_lowered":
+        "Schedule definition-list items lowered as schedule_entry children of a subparagraph "
+        "are promoted to paragraph siblings under the enclosing paragraph to match canonical "
+        "nesting.",
 
     # -- Repeal-table feeds (Schedule of repeals; OPC §6.1) ---------------------
     "uk_effect_repeal_table_structural_repeal":
@@ -482,10 +490,10 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A metadata-carried insert places the payload after a prior substitute anchor.",
     "uk_effect_metadata_carried_at_end_add_insert_text_patch":
         "A metadata-carried 'at the end add' insert appends the payload at the provision end.",
+    "uk_effect_metadata_carried_at_end_insert_quoted_text_patch":
+        "A metadata-carried at-end insert appends a carried quoted-words payload at the provision end.",
     "uk_effect_metadata_carried_at_end_substitute_insert_text_patch":
         "A metadata-carried at-end substitute insert appends the substituted payload at the end.",
-    "uk_effect_metadata_carried_at_end_insert_quoted_text_patch":
-        "A metadata-carried at-end insert appends the explicitly quoted payload at the provision end.",
     "uk_effect_metadata_carried_range_insert_substitution_text_patch":
         "A metadata-carried range insert/substitution rewrites the spanned text with the carried payload.",
     "uk_effect_metadata_carried_substituting_words_text_patch":
@@ -654,6 +662,8 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A schedule list entry that LawVM cannot lower is preserved verbatim rather than dropped.",
     "uk_p1group_title_heading_carrier":
         "An enacted P1group Title wrapping a single section-like provision is carried down onto that provision as an explicit heading child (clearing the transparent wrapper text), mirroring the inserted/rewrite heading-carrier shape so the enacted parse path no longer drops section headings.",
+    "uk_effect_inserted_schedule_p1group_crossheading_wrapper_lowered":
+        "An inserted schedule paragraph payload wrapped in a P1group/Title is lowered as a CROSSHEADING Pblock containing the paragraph(s), assigning a schedule-scoped crossheading EID and flat schedule EIDs to the child paragraphs.",
 
     # -- Manual-frontier classification family (OPC ambiguity lane) -------------
     # These ``uk_manual_frontier_*`` ids classify effects/rows that the automatic
@@ -938,4 +948,26 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A validated application-overlay claim emits a non-replayable typed finding recording the scoped application/modification reading (target, overlay kind, scope predicate, temporal window, applying instrument), leaving the affected base text intact (the application dimension is an overlay relation, not a coordinate; the safe under-application default).",
     "uk_application_overlay_finding_withheld_unvalidated":
         "An unvalidated application-overlay claim withholds its recorded-overlay finding, so the application/modification effect stays on the manual frontier byte-unchanged.",
+
+    # -- Nonstructural series admission / schedule words-before-table -----------
+    "uk_effect_nonstructural_substituted_series_all_inserts_admitted":
+        "A nonstructural 'substituted for ss. X-Y' feed row whose targets all lower to source-backed after-anchor inserts (letter-suffix provisions absent from the base) is admitted into replay as a whole series rather than under-applied.",
+    "uk_effect_schedule_words_before_table_substitution_lowered":
+        "A schedule paragraph 'for the words before the table substitute' formula carrying lettered sibling paragraphs is lowered as a replace on the base paragraph plus bounded inserts of the sibling paragraphs after it, rather than misreading the inner omit/insert text as schedule-list-entry repeals.",
+    "uk_effect_schedule_words_before_table_substitution_sibling_deferred_to_base":
+        "A per-target call for a sibling paragraph (e.g. 161A/161B) of a 'words before the table substitute' block is consumed without separate lowering and records a typed deferral to the base-target effect (which lowers the whole P1 series), making the deferral visible in the census rather than a silent drop.",
+
+    # -- Savings-qualified whole-target repeal block ----------------------------
+    "uk_effect_savings_references_qualified_repeal_blocked":
+        "A whole-target repeal/omission carrying a savings reference to an explicit schedule of the affecting instrument is blocked from replay (no ops) until the savings scope is resolved, rather than removing the saved target.",
+
+    # -- Manual-frontier: source adjudication verdicts --------------------------
+    "uk_manual_frontier_body_section_schedule_payload_candidate":
+        "A body-section replacement whose extracted schedule payload contains no matching section-like unit is left to manual review to decide how the schedule structure maps onto the body section before replay.",
+    "uk_manual_frontier_devolved_extent_limited_repeal_out_of_scope":
+        "A whole-Act repeal under a devolved instrument repeals the Act only as it extends to that devolved territory; current replay does not materialize territorial-extent slices, so the row is out of scope.",
+    "uk_manual_frontier_incorporation_of_enactments_out_of_scope":
+        "An incorporation-of-enactments uptake article (not a direct text/tree mutation of the affected statute) is treated as out of replay scope rather than lowered as a structural amendment.",
+    "uk_manual_frontier_savings_references_qualified_repeal_candidate":
+        "A whole-target repeal qualified by an explicit savings-schedule reference is held at the manual frontier until a claim or future compiler owns the savings scope and affected-target boundary instead of applying an unconditional structural repeal.",
 }

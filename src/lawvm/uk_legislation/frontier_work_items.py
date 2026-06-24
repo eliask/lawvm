@@ -342,6 +342,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_facet_target",
         ),
     },
+    "uk_manual_frontier_body_section_schedule_payload_candidate": {
+        "candidate_operation_family": "source_acquisition_or_payload_extraction",
+        "required_validator_checks": (
+            "official_source_witness_contains_payload_or_instruction",
+            "payload_or_instruction_witness_is_not_empty",
+            "claim_blocks_replay_until_source_payload_is_available",
+            "claim_identifies_source_target_payload_and_temporal_dimensions",
+            "claim_preserves_affected_statute_text_state",
+        ),
+    },
     "uk_manual_frontier_instruction_header_source_insufficient": {
         "candidate_operation_family": "source_acquisition_or_payload_extraction",
         "required_validator_checks": (
@@ -470,6 +480,14 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_preserves_affected_statute_text_state",
         ),
     },
+    "uk_manual_frontier_incorporation_of_enactments_out_of_scope": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "source_witness_is_incorporation_of_enactments_article",
+            "claim_confirms_no_direct_text_or_tree_mutation",
+            "claim_preserves_affected_statute_text_state",
+        ),
+    },
     "uk_manual_frontier_repeal_table_candidate": {
         "candidate_operation_family": "table_repeal_or_omission",
         "required_validator_checks": (
@@ -506,6 +524,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_represents_savings_condition_as_applicability_not_unconditional_deletion",
             "claim_preserves_occurrences_outside_the_savings_qualified_scope",
             "changed_paths_are_within_declared_text_carriers_and_applicability_scope",
+        ),
+    },
+    "uk_manual_frontier_savings_references_qualified_repeal_candidate": {
+        "candidate_operation_family": "savings_qualified_structural_repeal",
+        "required_validator_checks": (
+            "source_witness_contains_whole_target_repeal_and_savings_schedule_reference",
+            "claim_represents_savings_condition_as_applicability_not_unconditional_deletion",
+            "claim_identifies_exact_target_carrier",
+            "claim_preserves_unclaimed_target_text_and_children",
+            "changed_paths_are_within_declared_savings_qualified_repeal_boundary",
         ),
     },
     "uk_manual_frontier_schedule_note_candidate": {
@@ -829,6 +857,14 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_names_overlay_kind_scope_predicate_and_applying_instrument",
             "claim_scope_predicate_and_temporal_window_are_coherent_against_target",
             "claim_emits_non_replayable_finding_without_base_text_mutation",
+        ),
+    },
+    "uk_manual_frontier_devolved_extent_limited_repeal_out_of_scope": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_devolved_extent_limited_repeal_semantics",
+            "claim_confirms_no_unauthorized_uk_wide_text_or_tree_mutation",
+            "claim_preserves_affected_statute_text_state_for_non_devolved_extents",
         ),
     },
 }

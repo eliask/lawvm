@@ -29,10 +29,20 @@ from typing import Any, Iterable, NamedTuple
 from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.replay_adjudication import SourceAdjudication
-from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family_for_effect_type
 from lawvm.uk_legislation.effect_temporal_cessation import (
     UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_REASON,
     temporal_ceases_to_have_effect_exclusion_rule,
+)
+from lawvm.uk_legislation.effects import (
+    UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID,
+    uk_nonstructural_replay_candidate_family_for_effect_type,
+)
+
+
+_UK_SOURCE_STRUCTURED_NONSTRUCTURAL_RULE_IDS: frozenset[str] = frozenset(
+    {
+        UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID,
+    }
 )
 
 
@@ -554,6 +564,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_descendant_renumber_provision",
         "uk_effect_word_substitution_escalated_to_structural_replace",
         "uk_replay_source_anchored_order_observed",
+        "uk_replay_sort_order_observation",
         "uk_replay_source_carried_table_entry_paragraph_substitution_resolved",
         "uk_effect_source_parent_each_provision_substitution_text_patch",
         "uk_replay_table_entry_multi_cell_text_patch_resolved",
@@ -2879,6 +2890,18 @@ def classify_uk_manual_compile_frontier(
             "reason": "The row already lowers to replay operations through a source-verified nonstructural replay family.",
         }
 
+    if (
+        compiled_op_count > 0
+        and replay_applicable
+        and not blocking_rules
+        and all_rules & _UK_SOURCE_STRUCTURED_NONSTRUCTURAL_RULE_IDS
+    ):
+        return {
+            "status": "deterministic_frontend_supported",
+            "rule_id": "uk_manual_frontier_deterministic_supported",
+            "reason": "The row lowers to replay operations through a source-backed structural lowering rule that owns a nonstructural effect-feed family.",
+        }
+
     if "uk_effect_structural_pseudo_definition_target_rejected" in blocking_rules:
         if _looks_like_definition_entry_payload(extracted_text_norm):
             return {
@@ -2923,6 +2946,17 @@ def classify_uk_manual_compile_frontier(
             "status": "deterministic_frontend_supported",
             "rule_id": "uk_manual_frontier_deterministic_supported",
             "reason": "The row already lowers to replay operations through a source-verified nonstructural replay family.",
+        }
+
+    if "uk_effect_devolved_whole_act_repeal_extent_limited_rejected" in blocking_rules:
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": "uk_manual_frontier_devolved_extent_limited_repeal_out_of_scope",
+            "reason": (
+                "The effect row repeals the whole Act under a devolved instrument and "
+                "therefore only repeals it as it extends to that devolved territory; "
+                "current UK replay does not materialize territorial-extent slices."
+            ),
         }
 
     if not replay_applicable or not structural_for_replay:
@@ -3075,6 +3109,30 @@ def classify_uk_manual_compile_frontier(
             ),
         }
 
+    if "uk_effect_incorporation_of_enactments_source_rejected" in all_rules:
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": "uk_manual_frontier_incorporation_of_enactments_out_of_scope",
+            "reason": (
+                "The source is an incorporation-of-enactments uptake article rather "
+                "than a direct text/tree mutation of the affected statute; replay must "
+                "not lower it as a structural amendment."
+            ),
+        }
+
+    if "uk_effect_crossheading_insert_rejected" in blocking_rules:
+        if source_pathology_norm == "table_crossheading_target_unsupported":
+            return {
+                "status": "manual_compile_candidate",
+                "rule_id": "uk_manual_frontier_table_crossheading_candidate",
+                "reason": "The source targets a table cross-heading surface; a claim or future table compiler must identify the table, heading cell/prefix, and row boundary instead of treating it as a normal paragraph heading.",
+            }
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_crossheading_candidate",
+            "reason": "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
+        }
+
     if (
         source_pathology_norm
         in {
@@ -3191,6 +3249,30 @@ def classify_uk_manual_compile_frontier(
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_heading_facet_candidate",
             "reason": "The source targets a heading/title/sidenote facet; a manual claim could target an explicit facet without mutating the host body.",
+        }
+
+    if "uk_effect_body_section_replace_schedule_unmatched_rejected" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_body_section_schedule_payload_candidate",
+            "reason": (
+                "The source names a body-section replacement but the extracted "
+                "schedule payload contains no matching section-like unit; a claim or "
+                "future compiler must decide how the schedule structure maps onto "
+                "the body section before replay."
+            ),
+        }
+
+    if "uk_effect_savings_references_qualified_repeal_blocked" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_savings_references_qualified_repeal_candidate",
+            "reason": (
+                "The whole-target repeal is qualified by an explicit savings schedule "
+                "reference in the affecting instrument; replay must not apply it as an "
+                "unconditional structural repeal until a claim or future compiler "
+                "owns the savings scope and affected target boundary."
+            ),
         }
 
     if "uk_effect_crossheading_replace_rejected" in blocking_rules:

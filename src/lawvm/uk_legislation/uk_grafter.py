@@ -5,7 +5,7 @@ import warnings
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Dict, Any, cast
+from typing import Optional, Dict, Any, Callable, cast
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute
@@ -25,6 +25,15 @@ _CLEAN_NUM_PREFIX_RE = re.compile(
 )
 _CLEAN_NUM_TRAILING_PUNCT_RE = re.compile(r"[().]+$")
 _DOT_OR_SPACE_ONLY_RE = re.compile(r"^[.\s]+$")
+# A label (after cleaning) that contains no alphanumerics at all — e.g. a
+# consolidated-XML curly-quote Pnumber like "\u201c" — cannot be a structural
+# label.  Disambiguating such a sibling must NOT pick a fallback like "\u201c-1"
+# because the shared core label normalizer strips non-alphanumeric chars and the
+# synthesized label would collide with the real sibling "1".  Match the
+# consolidated oracle EID convention ("section-322B-n1") by synthesizing an
+# alphanumeric "n{N}" suffix instead.  See
+# uk_quoted_substitution_payload_sibling_synthesized_label.
+_LABEL_NO_ALNUM_RE = re.compile(r"^[^a-zA-Z0-9]+$")
 _GROUNDING_NON_WORD_SPACE_RE = re.compile(r"[^\w\s]")
 _EID_SPLIT_RE = re.compile(r"[-_]+")
 _LEADING_DIGITS_RE = re.compile(r"([0-9]+)")
@@ -211,7 +220,14 @@ def _local_structural_text(el: ET._Element) -> str:
         for child in node:
             tag = _tag(child).lower()
             if (
-                (tag in structural and not (tag == "unorderedlist" and _contains_definition_ordered_list(child)))
+                (
+                    tag in structural
+                    and not (
+                        tag == "unorderedlist"
+                        and _contains_definition_ordered_list(child)
+                        and not _definition_unordered_list_homes_intros(child)
+                    )
+                )
                 or tag in transparent_skip
                 or tag in structural_text_skip
                 or _definition_ordered_list_term(node, child)
@@ -233,6 +249,36 @@ def _contains_definition_ordered_list(el: ET._Element) -> bool:
             if _tag(child) == "OrderedList" and _definition_ordered_list_term(parent, child):
                 return True
     return False
+
+
+def _definition_unordered_list_homes_intros(el: ET._Element) -> bool:
+    """Whether ``_parse_definition_unordered_list`` homes term-intros into children.
+
+    Mirrors that parser's branching so ``_local_structural_text`` can decide
+    whether the definition-item intros are carried by the homed child paragraphs
+    (multi-item path) or only by the subsection's own text (single-nested flat
+    path).  When the intros are homed, the subsection text must skip the whole
+    definition list to avoid double-counting them against the grounding oracle;
+    when they are not, the list must stay in the subsection text so the intros
+    are not dropped.
+    """
+    if _tag(el) != "UnorderedList" or el.get("Class", "").lower() != "definition":
+        return False
+    nested_with_list = 0
+    for item in el:
+        if _tag(item) != "ListItem":
+            continue
+        for para in item:
+            if _tag(para) != "Para":
+                continue
+            for pchild in para:
+                if _tag(pchild) == "OrderedList" and _definition_ordered_list_term(para, pchild):
+                    nested_with_list += 1
+                    break
+    # Exactly one nested ordered list -> legacy flat-paragraph path that returns
+    # only the nested list's items as children (intros NOT homed).  Any other
+    # shape uses the multi-item wrapper path where each intro becomes child text.
+    return nested_with_list != 1
 
 
 def _post_child_local_text_tail(el: ET._Element) -> str:
@@ -460,23 +506,80 @@ def _alpha_label(index: int) -> str:
     return "".join(reversed(chars))
 
 
-def _parse_definition_ordered_list(el: ET._Element, parent_el: ET._Element) -> list[UKMutableNode]:
+_ROMAN_VALUES = (
+    (50, "l"), (40, "xl"), (10, "x"), (9, "ix"),
+    (5, "v"), (4, "iv"), (1, "i"),
+)
+
+
+def _roman_label(index: int) -> str:
+    if index < 0:
+        return ""
+    n = index + 1
+    parts: list[str] = []
+    for value, numeral in _ROMAN_VALUES:
+        while n >= value:
+            parts.append(numeral)
+            n -= value
+    return "".join(parts)
+
+
+_LIST_TYPE_TO_LABEL_FACTORY: dict[str, Callable[[int], str]] = {
+    "alpha": _alpha_label,
+    "alphaUpper": _alpha_label,
+    "a": _alpha_label,
+    "A": _alpha_label,
+    "roman": _roman_label,
+    "Roman": _roman_label,
+    "romanUpper": _roman_label,
+    "i": _roman_label,
+    "I": _roman_label,
+}
+
+
+def _ordered_list_type_label(el: ET._Element, index: int) -> str:
+    list_type = (el.get("Type") or "").strip()
+    if list_type:
+        factory = _LIST_TYPE_TO_LABEL_FACTORY.get(list_type)
+        if factory is not None:
+            return factory(index)
+    return _alpha_label(index)
+
+
+def _parse_definition_ordered_list(
+    el: ET._Element,
+    parent_el: ET._Element,
+    context: str = "",
+) -> list[UKMutableNode]:
     term = _definition_ordered_list_term(parent_el, el)
     if not term:
         return []
     nodes: list[UKMutableNode] = []
     item_index = 0
+    in_body = not context.startswith("schedule")
     for child in el:
         if _tag(child) != "ListItem":
             continue
-        label = (child.get("NumberOverride") or "").strip() or _alpha_label(item_index)
+        label = (child.get("NumberOverride") or "").strip() or _ordered_list_type_label(el, item_index)
         item_index += 1
         text = _text_content(child)
         if not label or not text:
             continue
+        # Body-section definition ordered lists (e.g. "In this section—" followed by
+        # terms whose meaning is given by an alpha sub-list) function as paragraphs
+        # in the enacted source even though the XML encodes them as lists.  The
+        # oracle materialises them as paragraph-* EIDs, and amendments target them as
+        # section:/subsection:/paragraph:.  Replay-address them as paragraphs while
+        # preserving the source-list provenance.
+        if in_body:
+            kind = IRNodeKind.PARAGRAPH
+            node_label = label
+        else:
+            kind = IRNodeKind.ITEM
+            node_label = None
         new_node = UKMutableNode(
-            kind=IRNodeKind.ITEM,
-            label=None,
+            kind=kind,
+            label=node_label,
             text=text,
             attrs={
                 "source_rule_id": "uk_definition_ordered_list_child_preserved",
@@ -489,6 +592,117 @@ def _parse_definition_ordered_list(el: ET._Element, parent_el: ET._Element) -> l
         _add_attrs(new_node, child)
         nodes.append(new_node)
     return nodes
+
+
+def _parse_definition_unordered_list(
+    el: ET._Element,
+    context: str,
+    force_active: bool = False,
+    pit_date: Optional[str] = None,
+    is_eur: bool = False,
+) -> list[UKMutableNode]:
+    """Parse a ``<UnorderedList Class="Definition">`` in body context.
+
+    Each top-level ``ListItem`` introduces a definition term and may carry a
+    nested alpha ``OrderedList`` that expands the term.  When several such items
+    appear under the same subsection, flattening the nested alpha sublists as
+    direct paragraph children creates duplicate paragraph labels (a, b, c ...).
+    Preserve each definition as its own paragraph node and attach the nested
+    alpha sublist items as children of that paragraph.  A single-item definition
+    list keeps the existing flat-paragraph behaviour so existing addressability
+    (e.g. ``section:/subsection:/paragraph:a``) is unchanged.
+    """
+    if context.startswith("schedule"):
+        return []
+    if el.get("Class", "").lower() != "definition":
+        return []
+
+    def _item_info(item: ET._Element) -> tuple[Optional[ET._Element], Optional[ET._Element], str]:
+        para: Optional[ET._Element] = None
+        ordered_list: Optional[ET._Element] = None
+        for child in item:
+            if _tag(child) == "Para":
+                para = child
+                # Nested ordered list normally appears inside the Para.
+                for pchild in child:
+                    if _tag(pchild) == "OrderedList" and _definition_ordered_list_term(child, pchild):
+                        ordered_list = pchild
+                        break
+        if para is None:
+            return (None, None, "")
+        intro = _definition_item_intro_text(para)
+        return (para, ordered_list, intro)
+
+    item_infos = []
+    for child in el:
+        if _tag(child) != "ListItem":
+            continue
+        para, ordered_list, intro = _item_info(child)
+        if para is None:
+            continue
+        item_infos.append((child, para, ordered_list, intro))
+
+    # If exactly one definition item contains a nested ordered list, keep the
+    # legacy flat-paragraph behaviour used by existing body-section targets
+    # (e.g. ``section:/subsection:/paragraph:a``).
+    nested_with_list = [info for info in item_infos if info[2] is not None]
+    if len(nested_with_list) == 1:
+        _, para, ordered_list, _ = nested_with_list[0]
+        assert ordered_list is not None
+        return _parse_definition_ordered_list(ordered_list, para, context)
+
+    nodes: list[UKMutableNode] = []
+    for item, para, ordered_list, intro in item_infos:
+        if not intro and ordered_list is None:
+            continue
+        term = _definition_ordered_list_term(para, ordered_list) if ordered_list is not None else ""
+        if not term:
+            # Fallback: use the definition verb prefix as the term anchor.
+            term = _definition_term_from_intro(intro)
+        attrs: dict[str, Any] = {
+            "source_rule_id": "uk_definition_unordered_list_item_preserved",
+            "source_tag": _tag(item),
+            "definition_term": term,
+        }
+        if ordered_list is not None and term:
+            attrs["definition_term"] = term
+        node = UKMutableNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label=None,
+            text=intro,
+            attrs=attrs,
+        )
+        _add_attrs(node, item)
+        if ordered_list is not None:
+            node.children = _parse_definition_ordered_list(ordered_list, para, context)
+        nodes.append(node)
+    return nodes
+
+
+def _definition_item_intro_text(para_el: ET._Element) -> str:
+    """Return text from a definition paragraph before any nested ordered list."""
+    parts: list[str] = []
+    for child in para_el:
+        if _tag(child) == "OrderedList":
+            break
+        text = _text_content(child)
+        if text:
+            parts.append(text)
+        if child.tail:
+            parts.append(child.tail)
+    return " ".join(" ".join(parts).split())
+
+
+def _definition_term_from_intro(intro: str) -> str:
+    """Extract a quoted term from a definition-item intro line."""
+    quoted_match = re.search(
+        r"[“\"'\u2018]\s*(?P<term>[^”\"'\u2019;]{1,160}?)\s*[”\"'\u2019]",
+        intro,
+        flags=re.I,
+    )
+    if quoted_match is not None:
+        return " ".join(quoted_match.group("term").split())
+    return ""
 
 
 def _parse_generic_ordered_list(
@@ -507,7 +721,7 @@ def _parse_generic_ordered_list(
         if num_override:
             label = num_override.strip().strip("()")
         else:
-            label = _alpha_label(item_index)
+            label = _ordered_list_type_label(el, item_index)
         item_index += 1
 
         if context.startswith("schedule"):
@@ -1135,7 +1349,7 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
             children.extend(_parse_block_amendment_tables(child, context, force_active, pit_date, is_eur))
             continue
         elif ct == "OrderedList":
-            definition_children = _parse_definition_ordered_list(child, parent_el)
+            definition_children = _parse_definition_ordered_list(child, parent_el, context)
             if definition_children:
                 children.extend(definition_children)
                 continue
@@ -1144,6 +1358,17 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
                 children.extend(generic_children)
                 continue
         elif ct == "UnorderedList":
+            if not context.startswith("schedule") and child.get("Class", "").lower() == "definition":
+                definition_nodes = _parse_definition_unordered_list(
+                    child,
+                    context,
+                    force_active,
+                    pit_date,
+                    is_eur,
+                )
+                if definition_nodes:
+                    children.extend(definition_nodes)
+                    continue
             schedule_entries = (
                 _parse_schedule_body_list_entries(
                     child,
@@ -1184,6 +1409,73 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
             # Recurse for transparent containers
             if ct not in ("Pnumber", "Number", "Title", "CommentaryRef", "BlockAmendment"):
                 children.extend(_parse_children(child, context, force_active, pit_date, is_eur))
+    return _disambiguate_duplicate_labels(children, parent_el, context)
+
+
+def _disambiguate_duplicate_labels(
+    children: list[UKMutableNode],
+    parent_el: ET._Element,
+    context: str,
+) -> list[UKMutableNode]:
+    """Make sibling labels unique using the source element id when available.
+
+    UK current/oracle CLML sometimes carries multiple provisions with the same
+    visible Pnumber inside one parent (e.g. two ``paragraph a`` items in the
+    same subsection, versioned as ``an1`` and ``an2`` in the element id).  The
+    visible number is the canonical address, but multiple live children sharing
+    it makes the tree structurally ambiguous and causes duplicate-label
+    invariants to fire.  When the element id contains more than the canonical
+    label suffix, preserve that extra material as the structural label.
+
+    Schedule payloads rely on their own eId-synthesis duplication guard, so
+    this disambiguation is applied only in body context.
+    """
+    if context.startswith("schedule"):
+        return children
+    if not children:
+        return children
+    parent_id = (parent_el.get("id") or parent_el.get("eId") or "").strip()
+    label_counts: dict[str, int] = {}
+    for child in children:
+        if child.label:
+            label_counts[child.label] = label_counts.get(child.label, 0) + 1
+    labels_to_fix = {label for label, count in label_counts.items() if count > 1}
+    if not labels_to_fix:
+        return children
+    seen: dict[str, int] = {}
+    for child in children:
+        canonical = child.label
+        if not canonical or canonical not in labels_to_fix:
+            continue
+        child_id = (child.attrs.get("id") or child.attrs.get("eId") or "").strip()
+        new_label = ""
+        if parent_id and child_id.startswith(parent_id + "-"):
+            after_parent = child_id[len(parent_id) + 1 :]
+            # Use the id suffix only if it begins with the canonical label and
+            # adds alphanumeric disambiguating characters.
+            if (
+                after_parent.startswith(canonical)
+                and len(after_parent) > len(canonical)
+                and after_parent[len(canonical)].isalnum()
+            ):
+                new_label = after_parent
+        if not new_label:
+            seen[canonical] = seen.get(canonical, 0) + 1
+            if _LABEL_NO_ALNUM_RE.match(canonical):
+                # Quoted-substitution bodies consolidated-XML unwraps as orphan
+                # P2 siblings carry only a curly-quote Pnumber (no alphanumerics).
+                # Synthesize an "n{N}" suffix to match the consolidated oracle EID
+                # convention ("section-322B-n1") and avoid normalization
+                # collision with the real numbered sibling of the same kind
+                # (e.g. "\u201c-1" would normalize to "1" and clash with subsection 1).
+                new_label = f"n{seen[canonical]}"
+                child.attrs.setdefault(
+                    "source_rule_id",
+                    "uk_quoted_substitution_payload_sibling_synthesized_label",
+                )
+            else:
+                new_label = f"{canonical}-{seen[canonical]}"
+        child.label = new_label
     return children
 
 
@@ -1226,11 +1518,13 @@ def _parse_p1group(el, context, force_active=False, pit_date=None, is_eur=False)
     node = UKMutableNode(kind=IRNodeKind.P1GROUP, label=None, text=title)
     _add_attrs(node, el)
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
-    _attach_p1group_title_to_sole_section(node, title)
+    _attach_p1group_title_to_sole_section(node, title, context)
     return node
 
 
-def _attach_p1group_title_to_sole_section(node: UKMutableNode, title: str) -> None:
+def _attach_p1group_title_to_sole_section(
+    node: UKMutableNode, title: str, context: str = ""
+) -> None:
     """Carry a ``P1group/Title`` as a ``heading`` child on its sole section.
 
     The CLML wraps each enacted section as
@@ -1244,8 +1538,16 @@ def _attach_p1group_title_to_sole_section(node: UKMutableNode, title: str) -> No
     rendering and heading-facet replay resolution are consistent across the
     enacted and amended paths.  Multi-section / heading-less groups are left
     untouched.
+
+    In schedules a ``P1group/Title`` groups one or more paragraphs as a
+    crossheading, even when the group contains a single paragraph.  Moving the
+    title onto that sole paragraph would erase the crossheading wrapper and lose
+    the schedule crossheading EID, so the title is preserved on the wrapper in
+    schedule context.
     """
     if not title:
+        return
+    if str(context or "").startswith("schedule"):
         return
     section_children = [
         child
@@ -1706,6 +2008,9 @@ def parse_uk_statute_ir_bytes(
 def _slugify(text: str) -> str:
     if not text:
         return ""
+    # Collapse apostrophes (straight and curly) so source headings such as
+    # "children's hearings" are canonically sluggable without punctuation noise.
+    text = text.replace("'", "").replace("\u2019", "").replace("\u2018", "")
     return _SLUGIFY_NON_ALNUM_RE.sub("-", text.lower()).strip("-")
 
 
@@ -1894,6 +2199,53 @@ def _visit_eid(
                         is_nested_schedule_descendant = True
             if not is_nested_schedule_descendant:
                 eid_map[f"{new_context}:suffix:{kind}-{slug}".lower()] = eid
+
+        # ontology_normalization: current-oracle CLML often wraps a schedule
+        # P1group/Title in an explicit <Pblock id="...crossheading-slug"> whose
+        # own <Title> is empty.  The crossheading text lives on the child P1group
+        # in the enacted XML, but the current oracle may have removed the P1group
+        # wrapper and placed the paragraph directly inside the Pblock while keeping
+        # the slug only in the EID.  Register an alias from the child title slug or
+        # from the EID's crossheading suffix so replay can ground the schedule
+        # P1group wrapper to the official crossheading EID.
+        if (
+            eid
+            and kind == "crossheading"
+            and not clean_num
+            and not slug
+        ):
+            _inferred_slug = ""
+            _p1g_title_el = el.find(f"./{{{_LEG_NS}}}P1group/{{{_LEG_NS}}}Title")
+            if _p1g_title_el is not None:
+                _inferred_slug = _slugify(_text_content(_p1g_title_el))
+            if not _inferred_slug and "-crossheading-" in str(eid or ""):
+                _eid_slug_part = str(eid).rsplit("-crossheading-", 1)[1]
+                _inferred_slug = _slugify(_eid_slug_part)
+            if _inferred_slug:
+                _hierarchical_alias = (
+                    f"{parent_path_key}:crossheading-{_inferred_slug}".lower()
+                    if parent_path_key
+                    else f"crossheading-{_inferred_slug}".lower()
+                )
+                for _alias_key in (
+                    _hierarchical_alias,
+                    f"{new_context}:suffix:crossheading-{_inferred_slug}".lower(),
+                ):
+                    if _alias_key not in eid_map:
+                        eid_map[_alias_key] = eid
+                oracle_identity_observations.append(
+                    {
+                        "rule_id": "uk_oracle_empty_crossheading_title_inferred_from_p1group",
+                        "phase": "oracle_alignment",
+                        "family": "ontology_normalization",
+                        "eid": eid,
+                        "inferred_crossheading_slug": _inferred_slug,
+                        "xml_tag": tag,
+                        "physical_path_key": this_node_path,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
+                    }
+                )
 
     next_parent_path = parent_path_key if kind in ("p1group", "pblock", "crossheading") else this_node_path
     kind_counts = {}

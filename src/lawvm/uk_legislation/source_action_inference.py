@@ -8,6 +8,7 @@ from typing import Any, Optional
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_actions import (
     is_uk_benign_application_overlay_effect_type,
+    is_uk_non_textual_modification_effect_type,
     is_uk_territorial_extent_with_modifications_effect_type,
 )
 from lawvm.uk_legislation.lowering_records import (
@@ -394,13 +395,70 @@ def infer_uk_effect_action_from_source(
         )
         return UKActionInference(action="replace")
 
+    # §1.11 prefilter — only fires when the substring predicate below WOULD have
+    # matched an action-verb in the modifying Schedule body of a non-textual-
+    # modification effect type (applied/modified/excluded/restricted/disapplied
+    # with parentheses-suffix qualifications). Without this guard, the substring
+    # predicate silently surfaces-shadowed the variant-body verbs into a
+    # structural repeal/replace/insert of the principal text. The benign overlay
+    # lane (no action-verb in text) is left alone: it falls through to the
+    # ``append_no_supported_action_rejection`` terminal ``is_uk_benign_application_overlay_effect_type``
+    # observation (§1.8 conservation). The verb vocabulary is a closed
+    # discriminator (``is_uk_non_textual_modification_effect_type``), not a
+    # free-text surface match.
+    def _block_non_textual_overlay(action: str) -> Optional[UKActionInference]:
+        """If ``effect_type`` is a non-textual modification verb, emit the
+        blocking ``uk_effect_applied_by_action_inference_blocked`` finding and
+        return the blocked inference carrier. Returns None when the effect type
+        is NOT a non-textual modification (caller proceeds with ``action``)."""
+        if not is_uk_non_textual_modification_effect_type(effect_type):
+            return None
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_applied_by_action_inference_blocked",
+            family="applicability_scope",
+            reason_code="non_textual_modification_overlay",
+            reason=(
+                "UK effect type is a non-textual modification overlay verb "
+                "(applied / modified / excluded / restricted / disapplied, with "
+                "parentheses-suffix qualifications) and the extracted Schedule "
+                "body carries drafting verbs that the substring action-inference "
+                "would have surface-shadowed into a structural "
+                f"{action} of the principal text. The text describes the variant "
+                "body of the overlay, not a principal-text mutation; structural "
+                "replay must not infer an action from a free-text surface match."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "effect_type_normalized": effect_type,
+                "affected_provisions": effect.affected_provisions,
+                "would_have_inferred_action": action,
+                "manual_compile_frontier_axis": "M5_overlay",
+            },
+        )
+        return UKActionInference(action=None, blocked=True)
+
     if "repeal" in text_lower or "omit" in text_lower:
+        blocked = _block_non_textual_overlay("repeal")
+        if blocked is not None:
+            return blocked
         return UKActionInference(action="repeal")
     if "substitute" in text_lower or "replace" in text_lower:
+        blocked = _block_non_textual_overlay("replace")
+        if blocked is not None:
+            return blocked
         return UKActionInference(action="replace")
     if "insert" in text_lower:
+        blocked = _block_non_textual_overlay("insert")
+        if blocked is not None:
+            return blocked
         return UKActionInference(action="insert")
     if re.search(r"\bfrom\b.*\bto\b", text_lower, re.I | re.S):
+        blocked = _block_non_textual_overlay("replace")
+        if blocked is not None:
+            return blocked
         return UKActionInference(action="replace")
 
     source_parent_whole_schedule_insert = _source_parent_whole_schedule_insert_payload(

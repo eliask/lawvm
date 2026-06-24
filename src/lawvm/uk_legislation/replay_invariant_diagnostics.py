@@ -86,9 +86,13 @@ def _invariant_replay_self(replay: object) -> _InvariantReplaySelf:
     return cast(_InvariantReplaySelf, replay)
 
 
-_DUPLICATE_ORDER_INVARIANT_FAMILIES: frozenset[tree_ops.TreeInvariantKind] = frozenset(
+_UK_REPLAY_INVARIANT_FAMILIES: frozenset[tree_ops.TreeInvariantKind] = frozenset(
     CORE_REPLAY_DELTA_MINIMAL_FAMILIES
-)
+) | frozenset[tree_ops.TreeInvariantKind]({"unexpected_child_kind", "mixed_hierarchy_child"})
+
+# Backward-compatible alias for internal callers/tests that predate the
+# structural-fidelity expansion.
+_DUPLICATE_ORDER_INVARIANT_FAMILIES: frozenset[tree_ops.TreeInvariantKind] = _UK_REPLAY_INVARIANT_FAMILIES
 
 
 def _parse_invariant_path_text(path: str) -> tree_ops.InvariantPath:
@@ -117,18 +121,27 @@ def _tree_paths_jsonable(paths: TreePaths) -> list[list[tuple[str, str]]]:
     return [list(path) for path in paths]
 
 
-def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str | None = None) -> list[str]:
-    return [violation.message for violation in _collect_duplicate_order_invariant_records(root, initial_path)]
+def _collect_duplicate_order_invariants(
+    root: UKMutableNode, initial_path: str | None = None
+) -> list[str]:
+    return [
+        violation.message
+        for violation in _collect_duplicate_order_invariant_records(root, initial_path)
+    ]
 
 
 def _collect_duplicate_order_invariant_records(
     root: UKMutableNode,
     initial_path: str | None = None,
 ) -> list[tree_ops.TreeInvariantViolation]:
-    """Return the duplicate/order subset that UK replay diagnostics persist.
+    """Return the structural-invariant records that UK replay diagnostics persist.
+
+    Originally scoped to duplicate/order families only; expanded to include
+    ``unexpected_child_kind`` and ``mixed_hierarchy_child`` so that replayed
+    tree-structure fidelity problems are surfaced rather than silently retained.
 
     ``tree_ops.check_invariants`` also checks nesting and normalized-label
-    aliases, but this caller persists only duplicate/order families.  The
+    aliases, but this caller persists the UK replay-relevant families.  The
     shared typed iterator accepts UK's mutable replay nodes through a read-only
     protocol, so this path does not convert the subtree to frozen IR.
     """
@@ -136,10 +149,15 @@ def _collect_duplicate_order_invariant_records(
     return list(
         tree_ops.iter_tree_invariant_violations(
             root,
-            families=_DUPLICATE_ORDER_INVARIANT_FAMILIES,
+            families=_UK_REPLAY_INVARIANT_FAMILIES,
             root_path=root_path,
         )
     )
+
+
+# Forward aliases for callers that prefer a structural-fidelity naming.
+_collect_uk_replay_invariants = _collect_duplicate_order_invariants
+_collect_uk_replay_invariant_records = _collect_duplicate_order_invariant_records
 
 
 class UKReplayInvariantDiagnosticsMixin:
@@ -466,6 +484,12 @@ class UKReplayInvariantDiagnosticsMixin:
                     detail=_invariant_detail(op, scoped_violation, **mutation_event_detail),
                 )
             else:
+                # A residual ``sort_order`` violation that was NOT already owned by
+                # ``uk_source_anchored_order_observation`` lacks a source-order
+                # witness pertaining to the affected siblings. Asserting "retained
+                # source insertion order" here would be unfalsifiable, so such a
+                # violation stays classified as a replay bug rather than being
+                # silently downgraded to a non-blocking observation.
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_tree_invariant_violation",

@@ -7,6 +7,8 @@ UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS = frozenset(
         "uk_manual_frontier_appropriate_place_candidate",
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
         "uk_manual_frontier_appropriate_place_index_entry_candidate",
+        "uk_manual_frontier_body_section_schedule_payload_candidate",
+        "uk_manual_frontier_savings_references_qualified_repeal_candidate",
         "uk_manual_frontier_amendment_program_target_candidate",
         "uk_manual_frontier_amount_specified_source_target_mismatch",
         "uk_manual_frontier_child_qualified_word_omission_target_mismatch",
