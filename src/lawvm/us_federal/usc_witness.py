@@ -151,13 +151,13 @@ class UscWitnessReport:
         }
 
 
-def _month_to_num(month: str) -> str:
+def _month_to_num(month: str) -> str | None:
     table = {
         "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "May": "05",
         "June": "06", "Jun": "06", "July": "07", "Jul": "07", "Aug": "08",
         "Sept": "09", "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12",
     }
-    return table.get(month, "")
+    return table.get(month)
 
 
 def _date_iso(date_text: str) -> str:

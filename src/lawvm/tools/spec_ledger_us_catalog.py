@@ -71,6 +71,14 @@ US_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
         "us_federal",
         "us_federal_plaw_inventory",
         "us_amendatory",
+        # Provenance tag for a target whose title was supplied from the Act section's
+        # govinfo/OLRC classification refs (including sidenote refs). It is not a
+        # separate witness rule id.
+        "us_amend_target_title_from_section_classification",
+        # Classifier id for the compile_classifier_regex call (AGENTS.md §2.4 telemetry).
+        # Not a witness rule id.
+        "us_amendatory_each_place",
+        "us_amendatory_is_repealed_prose",
         "us_dry_run_section_changed_set",
         "us_dry_run_section_text",
         "us_dry_run_changed_section_set_matches_oracle",
@@ -94,6 +102,47 @@ _US_RULE_SPECS: Dict[str, str] = {
         "text in the target section; a quoted block payload replaces the whole struck "
         "unit."
     ),
+    "us_amend_reconstituted_target_label": (
+        "A structural strike-and-insert payload that omits the repeated label of the "
+        "target provision (common in SBRA redesignations) has the target's canonical "
+        "token prepended by LawVM during lowering so the replacement is a complete "
+        "structural unit."
+    ),
+    "us_amend_strike_insert_tail": (
+        "An open-ended 'striking <anchor> and all that follows and inserting <text>' "
+        "instruction deletes from the anchor through the end of the target node and "
+        "inserts the supplied replacement text."
+    ),
+    "us_amend_strike_insert_through_tail": (
+        "A bounded 'striking <anchor> and all that follows through <end> [and inserting "
+        "<text>]' instruction deletes the inclusive span [<anchor>..<end>] from the "
+        "target node (the right-side text after <end> survives) and inserts the supplied "
+        "replacement text (empty for the pure-strike form). The end anchor is carried on "
+        "TextSelector.end_match_text; the materializer refuses when either anchor is "
+        "absent or out of order in the running node text."
+    ),
+    "us_amend_strike_insert_end_punctuation": (
+        "A 'striking the period/semicolon/comma at the end and inserting <punct>' "
+        "instruction replaces the terminal punctuation of the target node with the "
+        "inserted punctuation character rather than doing a first-occurrence string "
+        "replace."
+    ),
+    "us_amend_strike_insert_punctuation_word": (
+        "A 'striking <old> and inserting a semicolon/comma/period' instruction maps "
+        "the prose punctuation word to its character and replaces the first (or each) "
+        "occurrence of the quoted old text with that character in the target node."
+    ),
+    "us_amend_text_replace_each_place": (
+        "A strike-and-insert whose enacted text says 'each place it appears' is an "
+        "all-occurrence replacement (TextSelector.occurrence=-1), not a single-occurrence "
+        "replace. The phrase is recognized by a named compile_classifier_regex (AGENTS.md "
+        "§1.11/§2.4), not a raw substring check."
+    ),
+    "us_amend_insert_end_punctuation": (
+        "An 'inserting <text> before/after the period/semicolon/comma at the end' "
+        "instruction replaces the terminal punctuation of the target node with the "
+        "inserted text."
+    ),
     "us_amend_strike": (
         "A 'strike <text>' instruction deletes the first (or every, for 'each place') "
         "occurrence of the quoted text from the target section."
@@ -102,9 +151,32 @@ _US_RULE_SPECS: Dict[str, str] = {
         "An 'insert <new> after <anchor>' instruction places the new text immediately "
         "after the quoted anchor text in the target section."
     ),
+    "us_amend_insert_before_anchor": (
+        "An 'insert <new> before <anchor>' instruction places the new text immediately "
+        "before the quoted anchor text in the target section."
+    ),
+    "us_amend_target_title_from_plaw_metadata": (
+        "A bare 'Section N(...)' amendatory target whose title was supplied by the "
+        "Public Law's own short-title preamble (the dc:title metadata) because the "
+        "instruction text and sidenote classification omitted the title. Used only "
+        "when the preamble names exactly one USC title and no explicit title was present."
+    ),
+    "us_amend_plaw_metadata_scope_conflict": (
+        "A Public Law's short-title preamble named exactly one USC title, but other "
+        "amendatory references in the same law explicitly name a different title. "
+        "The preamble is therefore an unsafe fallback for bare 'Section N(...)' targets "
+        "in that law, so metadata title inference is withheld and those targets stay "
+        "unresolved rather than risk cross-title target hijacking."
+    ),
     "us_amend_add_at_end": (
         "An 'add at the end' instruction appends the quoted payload (a block or a "
         "string) as a new child at the end of the target section."
+    ),
+    "us_amend_add_at_end_new_sections": (
+        "An 'add at the end the following' instruction whose payload opens with one "
+        "or more new section catchlines (§ <num>.) lowers to one INSERT per enacted "
+        "section number, targeting the new section directly instead of appending to a "
+        "sibling section's body."
     ),
     "us_amend_to_read": (
         "An 'amend ... to read as follows' instruction replaces the whole target "
@@ -121,6 +193,11 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_amend_redesignate_range": (
         "A 'redesignating <X> through <Y> as <X'> through <Y'>' instruction emits one "
         "RENUMBER per member of the range, relabelling only each node's leading enumerator."
+    ),
+    "us_amend_redesignate_pairs": (
+        "A 'redesignating <A>, <B>, and <C> as <X>, <Y>, and <Z>, respectively' "
+        "instruction maps in source order and emits one RENUMBER per pair, relabelling "
+        "only each node's leading enumerator."
     ),
     "us_amend_strike_structural_unit": (
         "A 'strike subsection/paragraph (X)' instruction repeals the named structural "
@@ -164,6 +241,33 @@ _US_RULE_SPECS: Dict[str, str] = {
         "unit create, not an append to the inherited section's body; held out as a "
         "typed residual rather than corrupting the inherited sibling section's text."
     ),
+    "us_amendatory_sentence_strike_not_section_representable": (
+        "A 'strike the first/second/... sentence' instruction targets a sentence "
+        "boundary the section-text surface cannot locate without guessing."
+    ),
+    "us_amendatory_heading_strike_not_section_representable": (
+        "A 'strike the section/subsection/paragraph heading' instruction removes a "
+        "node's heading, not its body; structural at sub-section granularity, not a "
+        "section-text patch."
+    ),
+    "us_amendatory_tail_strike_not_section_representable": (
+        "A 'strike <anchor> and all that follows' instruction is an open-ended tail "
+        "deletion not representable as a bounded text patch."
+    ),
+    "us_amendatory_through_tail_strike_not_section_representable": (
+        "A 'strike <anchor> and all that follows through <end>' instruction deletes a "
+        "bounded span, not a simple first-occurrence text replace."
+    ),
+    "us_amendatory_designation_strike_not_section_representable": (
+        "A 'strike the ... designation' instruction removes the node's enumerated "
+        "label, not the node's body; structural, not text."
+    ),
+    "us_amendatory_deferred_amend_to_read": (
+        "An 'amend ... to read as follows' instruction whose effective date is in the "
+        "future (e.g. a sunset that reads 'On the date that is 1 year after ...') is "
+        "owned by the temporal layer; it is not lowered as an immediate REPLACE because "
+        "doing so would corrupt the in-force text for any edition before the effective date."
+    ),
     # --- Dry-run outcome rules: the witness classifier --------------------------------
     "us_dry_run_section_materialized_text_matches_oracle": (
         "AGREES witness: the composed section text (before-text with all in-scope ops "
@@ -184,6 +288,14 @@ _US_RULE_SPECS: Dict[str, str] = {
         "Contradiction (missing_source): the oracle changed a section the kernel never "
         "claimed — the honest lowering/coverage gap, no op was emitted for it."
     ),
+    "us_dry_run_resdeferred_op_inflated_as_missing_source": (
+        "Reclassification: the oracle changed a section, and LawVM DID lower the "
+        "amendment that caused the change, but the amendment's statutory effective "
+        "date is after the dry-run window's after-edition cutoff so it was deferred. "
+        "The OLRC editorially pre-dated the amendment's text into the consolidation "
+        "before its effective date. NOT a missing_source gap — classified as "
+        "oracle_suspect (OLRC editorial-on-the-oracle)."
+    ),
     "us_dry_run_residual_match_text_not_found_in_before_section": (
         "Contradiction: an op's quoted match_text was not found in the before/running "
         "section text — the kernel refuses to fuzzy-match into a guess and surfaces a "
@@ -193,6 +305,33 @@ _US_RULE_SPECS: Dict[str, str] = {
         "Contradiction: a sub-section-scoped op named a node (paragraph/clause/...) the "
         "before-section split does not expose, or whose text an earlier op already "
         "mutated — surfaced as a typed residual rather than an unscoped string replace."
+    ),
+    "us_dry_run_residual_target_level_absent_in_source_tree": (
+        "Contradiction: the USC annual-edition source tree for the section does not "
+        "expose the structural level the amendment names (e.g. only subparagraph markers "
+        "are rendered while the amendment targets a paragraph). The node cannot be safely "
+        "located, so the residual is classified as a source-footing gap."
+    ),
+    "us_dry_run_residual_source_tree_parse_ambiguous": (
+        "Contradiction: the USC annual-edition source tree for the section exposes the "
+        "structural level the amendment names, but its marker parsing is ambiguous "
+        "(e.g. prose precedes the first enumerated marker, or a marker is genuinely "
+        "ambiguous between levels). A specific target node cannot be safely located, "
+        "so the residual is classified as a source-footing gap rather than a lowering bug."
+    ),
+    "us_dry_run_residual_target_ancestor_absent_in_source_tree": (
+        "Contradiction: the USC annual-edition source tree exposes the target's deepest "
+        "structural level somewhere in the section, but an ancestor level named in the "
+        "address is missing (e.g. an amendment targets paragraph (1) of subsection (b), "
+        "but subsection (b) itself is not rendered in the source edition). The specific "
+        "anchor cannot be safely located, so the residual is classified as a source-footing "
+        "gap rather than a lawvm_wrong lowering bug."
+    ),
+    "us_dry_run_residual_source_truncated_payload": (
+        "Contradiction: a structural redesignation payload the source XML truncated "
+        "(e.g., a clause introduced only as '(i) any member') was materialized faithfully, "
+        "while the oracle shows the completed clause body.  The gap is on the source/oracle "
+        "surface, not in lowering, so the residual is oracle_suspect rather than lawvm_wrong."
     ),
     "us_dry_run_surface_not_replay_authorized": (
         "Invariant: the dry-run surface never authorizes actual replay — the gate is "
@@ -227,6 +366,12 @@ _US_RULE_SPECS: Dict[str, str] = {
         "rather than composed as a section-tanking divergence that would corrupt a "
         "sibling op's correct materialization of the same section."
     ),
+    # --- Temporal refusal: source-side effective/expiry places the op outside the window.
+    "us_dry_run_deferred_op_not_yet_effective": (
+        "Refusal: the instruction carries a source-side effective or expiry date that "
+        "places it outside the dry-run window, so it is not composed against the "
+        "after-edition snapshot."
+    ),
     # --- Sunset / temporal reclassification (F2) --------------------------------------
     "us_sunset_temporary_provision_reverted_to_prior_permanent": (
         "An otherwise missing-source oracle change is explained by the expiry of a "
@@ -254,6 +399,12 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_plaw_import_existing_content_skipped": (
         "An imported PL member's content already exists in the archive — skipped as "
         "idempotent rather than re-written."
+    ),
+    "us_plaw_import_unreadable_zip_member": (
+        "A PLAW bulkdata zip member could not be read (truncated, CRC-failed, or "
+        "otherwise corrupt) — skipped with a typed finding carrying the entry name "
+        "and underlying exception, never dropped silently. The member is absent from "
+        "the archive as a visible acquisition gap, not a missing-law hole."
     ),
     # --- Statutes-at-Large import hygiene (older public laws) -------------------------
     "us_statute_import_volume_unreachable": (
@@ -371,17 +522,30 @@ _US_RULE_SPECS: Dict[str, str] = {
 # differently); the structural/refusal/import/skip facts are certain.
 _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_strike_insert": US_CONFIDENCE_HEURISTIC,
+    "us_amend_reconstituted_target_label": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_insert_tail": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_insert_through_tail": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_after_anchor": US_CONFIDENCE_HEURISTIC,
+    "us_amend_insert_before_anchor": US_CONFIDENCE_HEURISTIC,
+    "us_amend_target_title_from_plaw_metadata": US_CONFIDENCE_HEURISTIC,
+    "us_amend_plaw_metadata_scope_conflict": US_CONFIDENCE_HEURISTIC,
     "us_amend_add_at_end": US_CONFIDENCE_HEURISTIC,
+    "us_amend_add_at_end_new_sections": US_CONFIDENCE_HEURISTIC,
     "us_amend_to_read": US_CONFIDENCE_HEURISTIC,
     "us_amend_repeal": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_range": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_pairs": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit_list": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_node_after_unit": US_CONFIDENCE_HEURISTIC,
+    "us_amend_insert_end_punctuation": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_insert_end_punctuation": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_insert_punctuation_word": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_materialized_text_mismatch_with_oracle": US_CONFIDENCE_HEURISTIC,
+    "us_dry_run_residual_source_truncated_payload": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_deferred_amend_to_read": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_paren": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_href": US_CONFIDENCE_HEURISTIC,
     "us_sunset_temporary_provision_reverted_to_prior_permanent": US_CONFIDENCE_HEURISTIC,

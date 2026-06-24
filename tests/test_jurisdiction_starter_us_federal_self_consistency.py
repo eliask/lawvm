@@ -101,13 +101,14 @@ def test_amendatory_finding_signal_map_is_exactly_the_three_lowering_findings() 
 
 
 def test_unlowered_instruction_maps_to_unhandled_op() -> None:
-    # A redesignation in a multi-unit / non-numeric form is deliberately NOT
+    # A redesignation in a multi-unit / non-enumerable form (multi-letter target
+    # labels, not simple single-letter alphabetic ranges) is deliberately NOT
     # lowered to a RENUMBER -> us_amendatory_unlowered -> unhandled_op.
     body = (
         "<section><num>2.</num><content>"
         "<ref href='/us/usc/t11/s521'>Section 521 of title 11, United States Code</ref>"
         ", is amended by redesignating subsections (a) through (d) as "
-        "subsections (b) through (e)"
+        "subsections (aa) through (ad)"
         "<amendingAction type='redesignate'/>.</content></section>"
     )
     loc = "us://plaw/116/publ900.xml"

@@ -114,6 +114,7 @@ class WindowResult:
     oracle_suspect: int = 0
     missing_source: int = 0
     sunset_reversion: int = 0
+    deferred_op: int = 0
     refusals: int = 0
     coverage_fraction: float | None = None
 
@@ -139,6 +140,7 @@ class WindowResult:
                 "oracle_suspect": self.oracle_suspect,
                 "missing_source": self.missing_source,
                 "sunset_reversion": self.sunset_reversion,
+                "deferred_op": self.deferred_op,
                 "refusals": self.refusals,
             }
         )
@@ -181,6 +183,7 @@ def us_bench_unit_result(result: "WindowResult") -> "BenchUnitResult":
             ("oracle_suspect", result.oracle_suspect),
             ("missing_source", result.missing_source),
             ("sunset_reversion", result.sunset_reversion),
+            ("deferred_op", result.deferred_op),
         ):
             if count:
                 residue[name] = int(count)
@@ -276,7 +279,12 @@ class BenchReport:
         # lowering wrong. Only the no-source-possible buckets are subtracted.
         n_oracle_suspect = sum(r.oracle_suspect for r in ev)
         n_sunset_reversion = sum(r.sunset_reversion for r in ev)
-        n_structurally_unwitnessable = n_oracle_suspect + n_sunset_reversion
+        n_deferred_op = sum(r.deferred_op for r in ev)
+        # Structurally-unwitnessable: oracle_suspect (F1 editorial) + sunset_reversion
+        # (F2 temporal reversion) + deferred_op (F3 OLRC editorial pre-dating of a
+        # future-effective amendment — LawVM lowered the right op but the after-edition
+        # cutoff precedes its effective date; the OLRC pre-incorporated the text).
+        n_structurally_unwitnessable = n_oracle_suspect + n_sunset_reversion + n_deferred_op
         source_present_denom = denom - n_structurally_unwitnessable
         return {
             "windows_evaluated": len(ev),
@@ -296,20 +304,23 @@ class BenchReport:
             },
             # coverage_source_present: agreements / (oracle-changed − structurally-
             # unwitnessable).  Excluded: oracle_suspect (OLRC editorial pathology, F1)
-            # + sunset_reversion (temporal reversion, F2).  Included: missing_source
-            # (genuine lowering gap — amendment exists, we haven't lowered it yet) and
-            # lawvm_wrong (amendment exists, our lowering is wrong).
+            # + sunset_reversion (temporal reversion, F2) + deferred_op (F3, OLRC
+            # editorial pre-dating of future-effective amendments).  Included:
+            # missing_source (genuine lowering gap — amendment exists, we haven't
+            # lowered it yet) and lawvm_wrong (amendment exists, our lowering is wrong).
             "coverage_source_present": {
                 "numerator": numer,
                 "denominator": source_present_denom,
                 "fraction": (numer / source_present_denom) if source_present_denom else None,
                 "excluded_oracle_suspect": n_oracle_suspect,
                 "excluded_sunset_reversion": n_sunset_reversion,
+                "excluded_deferred_op": n_deferred_op,
                 "excluded_total": n_structurally_unwitnessable,
                 "denominator_note": (
                     "oracle-changed sections minus structurally-unwitnessable buckets "
                     "(oracle_suspect = OLRC editorial pathology F1; "
-                    "sunset_reversion = temporal reversion F2); "
+                    "sunset_reversion = temporal reversion F2; "
+                    "deferred_op = OLRC pre-dating F3); "
                     "missing_source and lawvm_wrong remain in denominator"
                 ),
             },
@@ -326,6 +337,7 @@ class BenchReport:
                 "oracle_suspect": n_oracle_suspect,
                 "missing_source": sum(r.missing_source for r in ev),
                 "sunset_reversion": n_sunset_reversion,
+                "deferred_op": sum(r.deferred_op for r in ev),
             },
             "refusals_total": sum(r.refusals for r in ev),
         }
@@ -487,6 +499,7 @@ def evaluate_window(archive: UsArchiveReader, window: BenchWindow) -> WindowResu
         oracle_suspect=disp.get("oracle_suspect", 0),
         missing_source=ns["missing_source_section_count"],
         sunset_reversion=ns["sunset_reversion_section_count"],
+        deferred_op=ns.get("deferred_op_section_count", 0),
         refusals=summary["sections_refused"],
         coverage_fraction=ns["coverage_fraction"],
     )

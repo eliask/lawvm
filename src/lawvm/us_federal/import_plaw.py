@@ -29,6 +29,7 @@ from typing import Any, Callable, Iterator
 import tempfile
 import urllib.request
 import zipfile
+import zlib
 
 from lawvm.us_federal.sources import (
     GOVINFO_PLAW_MEMBER_URL,
@@ -209,9 +210,29 @@ def import_plaw_zip(
 
             try:
                 data = zf.read(name)
-            except Exception as exc:  # pragma: no cover - corrupt zip member
-                print(f"  ERROR reading {name}: {exc}", file=sys.stderr)
+            except (zipfile.BadZipFile, OSError, zlib.error, EOFError) as exc:  # corrupt/truncated zip member
+                # Acquisition lane: never silently drop. Emit a typed rejection
+                # receipt (AGENTS.md §1.8/§1.10) carrying the entry name, locator,
+                # and the underlying exception class/message, so the gap is visible
+                # in report.skipped_entries rather than a bare stderr print that
+                # disappears. Family: transport_cleanup (mechanical IO failure,
+                # no legal-ontology implication).
                 report.total_errors += 1
+                report.total_skipped += 1
+                entry_locator = locator if locator else ""
+                _record_import_skip(
+                    report,
+                    rule_id="us_plaw_import_unreadable_zip_member",
+                    family="transport_cleanup",
+                    reason=(
+                        f"zip member unreadable ({type(exc).__name__}: {exc}); "
+                        "entry absent from the archive as a visible acquisition gap"
+                    ),
+                    source_label=zip_label,
+                    zip_entry_name=name,
+                    locator=entry_locator or None,
+                    detail={"exception_type": type(exc).__name__},
+                )
                 continue
 
             digest = content_digest(data)

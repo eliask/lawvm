@@ -44,7 +44,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from datetime import date
+from functools import lru_cache
+from typing import Any, Iterable, Mapping
 
 from lawvm.core.agreement_residual import (
     AgreementResidual,
@@ -52,11 +54,17 @@ from lawvm.core.agreement_residual import (
     agreement_surface_from_residuals,
 )
 from lawvm.core.comparison_normalization import normalize_inline_comparison_text
+from lawvm.core.branch_authority import PENDING_CONDITION_STATUS
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import TreePath, tree_path_from_legal_address
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
-from lawvm.us_federal.amendatory import lower_plaw_amendatory
+from lawvm.us_federal.amendatory import (
+    RULE_STRIKE_INSERT_TAIL,
+    RULE_STRIKE_INSERT_THROUGH_TAIL,
+    USAmendatoryReport,
+    lower_plaw_amendatory,
+)
 from lawvm.us_federal.sources import (
     UsArchiveReader,
     read_plaw_locator,
@@ -65,9 +73,15 @@ from lawvm.us_federal.sources import (
 from lawvm.us_federal.source_tree import (
     UscSection,
     UscSourceDocument,
+    _SUBSECTION_PARSE_AMBIGUOUS,
+    _USC_LADDER,
+    _marker_interpretations,
+    _normalize_text,
+    _resolve_marker_level,
     parse_usc_title_document,
     split_statutory_subsections,
     strip_replacement_section_catchline,
+    synthetic_usc_section,
 )
 from lawvm.us_federal.sunset import (
     DISPOSITION_SUNSET_REVERSION,
@@ -76,6 +90,16 @@ from lawvm.us_federal.sunset import (
     SunsetFinding,
     classify_sunset_reversion,
 )
+
+# Structural-marker scanner used when indexing a synthetic node payload: it finds
+# markers anywhere in the text, unlike source_tree._MARKER_RE which is anchored to
+# the start of a statutory paragraph.  Markers not preceded by non-whitespace are
+# still boundary-safe; cross-references are filtered by level-aware parsing.
+# A run-in head like ``(B)(i)`` or ``(ii)(I)`` has the child marker immediately
+# follow a closing parenthesis; that parenthesis is also a valid marker boundary,
+# so the scanner recognizes the nested marker without treating cross-references
+# such as ``section 761(a)`` as structural children.
+_BOUNDARY_MARKER_RE = re.compile(r"(?<![^\s)])\((?P<token>[0-9A-Za-z]+)\)")
 
 # --- Stable rule-id vocabulary (agreement / residual / refusal). --------------
 
@@ -109,6 +133,40 @@ US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID = "us_dry_run_residual_match_te
 US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID = (
     "us_dry_run_residual_subsection_target_node_not_located_in_before_section"
 )
+# A structural-redesignation payload introduced a clause whose body is a bare
+# prefix in the source XML (e.g., USLM quotedContent ended after "(i) any member"),
+# while the oracle shows the full clause body.  The materialization is source-faithful;
+# the gap is on the source/oracle side, so the residual is classified as oracle_suspect
+# rather than lawvm_wrong.
+US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID = (
+    "us_dry_run_residual_source_truncated_payload"
+)
+# The USC annual edition's source tree does not expose the structural level the
+# amendment names: the target level is absent from the parsed section (e.g. a
+# non-positive-law title that omits subsection/paragraph markers but renders
+# deeper subparagraph/clause markers). The materialization cannot safely locate
+# the node, and the gap is in the source comparison surface, so the residual is
+# classified as a source-footing gap rather than a lawvm_wrong lowering bug.
+US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID = (
+    "us_dry_run_residual_target_level_absent_in_source_tree"
+)
+# The USC annual edition's source tree exposes the structural level the
+# amendment names, but the parsing of that section's markers is ambiguous
+# (e.g. a section whose text precedes the first enumerated marker, or a marker
+# that is genuinely ambiguous between levels). The materialization cannot safely
+# locate a specific node without fabricating structure, so the residual is
+# classified as a source-footing gap rather than a lawvm_wrong lowering bug.
+US_DRY_RUN_RESIDUAL_SOURCE_TREE_PARSE_AMBIGUOUS_RULE_ID = (
+    "us_dry_run_residual_source_tree_parse_ambiguous"
+)
+# The USC annual edition's source tree exposes the target's structural level
+# deeper in the section, but an ancestor level named in the address is missing.
+# An amendment targeting subsection (b)/paragraph (1) cannot be located when
+# subsection (b) itself is not rendered in the source edition.  Like
+# target_level_absent, this is a source-footing gap, not a lawvm_wrong bug.
+US_DRY_RUN_RESIDUAL_TARGET_ANCESTOR_ABSENT_IN_SOURCE_TREE_RULE_ID = (
+    "us_dry_run_residual_target_ancestor_absent_in_source_tree"
+)
 
 # Typed refusals (no materialization attempted / not representable at section level).
 US_DRY_RUN_REFUSED_TARGET_NOT_TITLE_RULE_ID = "us_dry_run_refused_target_outside_proof_title"
@@ -129,6 +187,12 @@ US_DRY_RUN_REFUSED_NO_TEXT_PATCH_RULE_ID = "us_dry_run_refused_text_op_missing_t
 US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID = (
     "us_dry_run_refused_text_or_renumber_target_node_absent_in_before_edition"
 )
+# The instruction carries an effective date after the after-edition snapshot, so
+# it is not yet in force for the dry-run window. It is skipped rather than applied
+# as an immediate amendment, and surfaced as a visible typed refusal.
+US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID = (
+    "us_dry_run_deferred_op_not_yet_effective"
+)
 
 # Residual dispositions (AGENTS.md §0/§9). The oracle is a witness; a residual
 # carries which side the gap is on, never a silent repair-to-oracle.
@@ -148,6 +212,18 @@ _BOUNDARY_SAFE_DEFAULT = "classify_section_change_boundary_without_authorizing_r
 _BOUNDARY_FORBIDDEN_SHORTCUTS = (
     "dry_run_boundary_as_replay_authorization",
     "oracle_changed_set_as_source_truth",
+)
+
+# The OLRC consolidation sometimes editorially incorporates a future-effective
+# amendment's text into the consolidation BEFORE its statutory effective date
+# (an editorial pre-dating). LawVM correctly defers the op against the
+# after-edition cutoff, so the section appears in oracle-changed-but-not-claimed
+# (the honest ``missing_source`` shape). This is NOT a lowering gap: the
+# amendment WAS lowered but refused on temporal grounds. Reclassify the residual
+# from ``missing_source`` to ``oracle_suspect`` (OLRC editorial-on-the-oracle)
+# so the finding type is honest and not inflated as a missing-amendment gap.
+US_DRY_RUN_DEFERRED_OP_INFLATED_AS_MISSING_SOURCE_RULE_ID = (
+    "us_dry_run_resdeferred_op_inflated_as_missing_source"
 )
 
 
@@ -188,6 +264,19 @@ _EDITORIAL_DASH_PAREN_SPACE_RE = re.compile(r"([—–:])\s+\(")
 # erases the difference when that anchor-adjacent space is the SOLE divergence — it
 # never invents agreement between texts that differ in any other character.
 _EDITORIAL_INSERT_AFTER_ANCHOR_SPACE_RE = re.compile(r"([),])\s+(?=[\w“”‘’\"'])")
+
+# Detect a payload that opens with a new-section catchline (possibly after the USLM
+# quotedContent wrapper's leading quote). Used to decide when a whole-section INSERT
+# should project its own catchline off the body-only oracle surface.
+_SECTION_CATCHLINE_RE = re.compile(
+    r"^\s*(?:[\"“]\s*)?\[?\s*§+\s*"
+    r"(?P<num>[0-9]+[A-Za-z]*(?:[-‐‑–][0-9]+[A-Za-z]*)?)\.\s*"
+)
+
+
+def _payload_section_number(payload_text: str) -> str | None:
+    m = _SECTION_CATCHLINE_RE.match(payload_text or "")
+    return m.group("num") if m is not None else None
 
 
 def _norm_editorial(text: str) -> str:
@@ -236,6 +325,113 @@ def _subsection_segments(address: LegalAddress) -> tuple[tuple[str, str], ...]:
             out.append((kind, label))
     return tuple(out)
 
+
+def _source_tree_resolution_state(
+    section: UscSection, address: LegalAddress
+) -> tuple[bool, bool, bool]:
+    """Returns ``(target_level_absent, target_ancestor_absent, parse_ambiguous)``.
+
+    ``target_level_absent`` is true when the section exposes no node at the
+    target's deepest structural level at all.  ``target_ancestor_absent`` is
+    true when the target level occurs somewhere in the section, but no node has
+    the target's ancestor sequence (e.g. an amendment targets ``paragraph:1`` of
+    a ``subsection:b`` that is not rendered).  ``parse_ambiguous`` is true when
+    the section's source-tree split emitted ambiguity findings, so locating a
+    specific target node is unsafe even if the levels look present.
+    """
+    target_segments = _subsection_segments(address)
+    if not target_segments:
+        return False, False, False
+    target_level = target_segments[-1][0]
+    nodes, findings = split_statutory_subsections(section)
+    node_segment_sets = {_subsection_segments(node.address) for node in nodes}
+    has_target_level = any(
+        _subsection_segments(node.address)[-1][0] == target_level
+        for node in nodes
+    )
+    # A missing ancestor prefix is diagnosed before a missing node: even if the
+    # target level exists elsewhere, the specific address anchor is absent.
+    target_ancestor_absent = False
+    for i in range(1, len(target_segments)):
+        prefix = target_segments[:i]
+        if prefix not in node_segment_sets:
+            target_ancestor_absent = True
+            break
+    parse_ambiguous = any(
+        f.get("rule_id") == _SUBSECTION_PARSE_AMBIGUOUS for f in findings
+    )
+    return (
+        not has_target_level,
+        target_ancestor_absent,
+        parse_ambiguous,
+    )
+
+
+def _source_tree_gap_rule_for_address(
+    section: UscSection, address: LegalAddress
+) -> str | None:
+    """Return a dedicated source-footing-gap rule id if the section's source tree
+    cannot cleanly locate ``address``, otherwise ``None``.
+    """
+    level_absent, ancestor_absent, parse_ambiguous = _source_tree_resolution_state(
+        section, address
+    )
+    if level_absent:
+        return US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID
+    if ancestor_absent:
+        return US_DRY_RUN_RESIDUAL_TARGET_ANCESTOR_ABSENT_IN_SOURCE_TREE_RULE_ID
+    if parse_ambiguous:
+        return US_DRY_RUN_RESIDUAL_SOURCE_TREE_PARSE_AMBIGUOUS_RULE_ID
+    return None
+
+
+# Conservative pattern for a structural clause introduced by a redesignation payload
+# whose quotedContent was truncated by the USLM converter: a lowercase clause label
+# directly after an em-dash/colon introducer, followed by a very short body (1-3
+# words).  The oracle may show the same words plus a longer completing phrase.
+_SOURCE_TRUNCATED_CLAUSE_RE = re.compile(
+    r"(?P<intro>[—–:])\s*\((?P<label>[a-z]+)\)\s*(?P<body>(?:[^\s()]+\s*){1,3})"
+)
+
+
+def _has_source_truncated_clause_payload(materialized: str, oracle: str) -> bool:
+    """Detect a clause body the source XML truncated during lowering.
+
+    Some USLM redesignations wrap a new clause in quotedContent that ends after a
+    bare noun phrase.  The oracle after-edition supplies the full clause body.  The
+    materialization is source-faithful; the gap belongs to the source/oracle surface,
+    so the residual should be oracle_suspect, not lawvm_wrong.
+
+    This test is intentionally narrow: the clause must be introduced by a structural
+    dash/colon, the materialized body must be a short prefix of the oracle body, and
+    the oracle body must continue with substantial additional text.  It never
+    modifies either text; it only guides classification.
+    """
+    for m in _SOURCE_TRUNCATED_CLAUSE_RE.finditer(materialized):
+        label = m.group("label")
+        body = m.group("body").strip()
+        if not body or body.rstrip().endswith((".", ";")):
+            continue
+        # The oracle must have the same label and its body must start with the same
+        # words and continue significantly.
+        pattern = rf"[—–:]\s*\({re.escape(label)}\)\s*"
+        for om in re.finditer(pattern, oracle):
+            rest = oracle[om.end():]
+            # Compare case-insensitively and quote-insensitively for the prefix.
+            prefix_match = (
+                rest.lower().startswith(body.lower())
+                or _norm(body).lower() == _norm(rest[: len(body)]).lower()
+            )
+            if prefix_match:
+                tail = rest[len(body):]
+                # Require substantial oracle continuation that looks like completed
+                # clause text, not just conjunctions or punctuation.
+                trimmed_tail = tail.lstrip(" \t\n\r\u201c\u201d\"'")
+                if len(trimmed_tail) >= 30 and not trimmed_tail[:8].lower().startswith(
+                    ("and", "or")
+                ):
+                    return True
+    return False
 
 def _locate_subsection_text(
     section: UscSection | None, address: LegalAddress
@@ -385,6 +581,35 @@ class USDryRunReport:
     def sunset_reversion_section_keys(self) -> frozenset[str]:
         return frozenset(f"{self.title}:{c.section}" for c in self.sunset_reversions)
 
+    def deferred_op_section_keys(self) -> frozenset[str]:
+        """Sections whose only on-target ops were deferred (future-effective).
+
+        These are NOT missing_source: LawVM lowered the right amendment but the
+        after-edition cutoff precedes its statutory effective date. If the OLRC's
+        after-edition text already reflects the deferred amendment, the gap is
+        OLRC editorial pre-dating, not a missing amendment.
+        """
+        keys: set[str] = set()
+        for ref in self.refusals:
+            if ref.rule_id != US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID:
+                continue
+            ta = ref.target_address
+            if "/section:" not in ta:
+                continue
+            parts = ta.split("/", 2)
+            # "title:N/section:S[/sub]" -> title=N, section=S
+            title_val = ""
+            sec_val = ""
+            for p in parts[:3]:
+                if p.startswith("title:"):
+                    title_val = p[6:]
+                elif p.startswith("section:"):
+                    sec_val = p[8:].split("/", 1)[0]
+                    break
+            if title_val and sec_val:
+                keys.add(f"{title_val}:{sec_val}")
+        return frozenset(keys)
+
     # --- agreement / residual partitions -------------------------------------
 
     def agreeing_rows(self) -> tuple[USDryRunSectionRow, ...]:
@@ -410,10 +635,12 @@ class USDryRunReport:
         # A sunset reversion (F2) is an EXPLAINED change (the temporal layer owns
         # it), so it is not a source-footing gap — exclude it from missing_source.
         sunset_keys = self.sunset_reversion_section_keys()
+        deferred_keys = self.deferred_op_section_keys()
         missing = tuple(
-            sorted((changed - set(self.claimed_sections)) - sunset_keys)
+            sorted((changed - set(self.claimed_sections) - sunset_keys - deferred_keys))
         )
         sunset = tuple(sorted(changed & sunset_keys))
+        deferred = tuple(sorted(changed & deferred_keys))
         return {
             "oracle_changed_section_count": denom,
             "sections_materialized_in_agreement": numer,
@@ -423,6 +650,8 @@ class USDryRunReport:
             "missing_source_section_count": len(missing),
             "sunset_reversion_sections": list(sunset),
             "sunset_reversion_section_count": len(sunset),
+            "deferred_op_sections": list(deferred),
+            "deferred_op_section_count": len(deferred),
         }
 
     def agreement_surface(self) -> dict[str, Any]:
@@ -476,12 +705,19 @@ class USDryRunReport:
                     )
                 )
         # The honest lowering gap: oracle changed a section we never claimed —
-        # UNLESS the temporal layer reclassifies it as a sunset reversion (F2).
+        # UNLESS the temporal layer reclassifies it as a sunset reversion (F2),
+        # or a deferred-op refusal proves the amendment was lowered but refused on
+        # temporal grounds (the OLRC editorially pre-dated a future-effective
+        # amendment's text into the consolidation before its effective date).
         claimed = set(self.claimed_sections)
         sunset_keys = self.sunset_reversion_section_keys()
         sunset_by_key = {
             f"{self.title}:{c.section}": c for c in self.sunset_reversions
         }
+        # Sections whose only on-target ops were deferred (the OLRC editorially
+        # pre-dated their future-effective text into the consolidation before
+        # the effective date). Not missing_source: reclassify to oracle_suspect.
+        deferred_sections = self.deferred_op_section_keys()
         for section_key in self.oracle_changed_sections:
             if section_key in claimed:
                 continue
@@ -514,6 +750,32 @@ class USDryRunReport:
                             "reverts_to_edition_year": witness.reverts_to_edition_year,
                             "note_head": witness.note_head,
                         },
+                    )
+                )
+                continue
+            if section_key in deferred_sections:
+                # The amendment was lowered but the after-edition cutoff preceded
+                # its statutory effective date; the OLRC editorially pre-dated the
+                # amendment's text into the consolidation anyway. Not a missing
+                # amendment — an editorial-on-the-oracle misclassification.
+                residuals.append(
+                    AgreementResidual(
+                        residual_id=f"us:{self.title}:{section_key}:deferred_inflated",
+                        jurisdiction="us",
+                        agreement_surface=_AGREEMENT_SURFACE,
+                        family="oracle_editorial_pathology",
+                        agreement_residual_status="residual",
+                        owner_phase=_OWNER_PHASE,
+                        rule_id=US_DRY_RUN_DEFERRED_OP_INFLATED_AS_MISSING_SOURCE_RULE_ID,
+                        source_artifact_id=f"{self.title}:{section_key}",
+                        replay_count=0,
+                        oracle_count=1,
+                        safe_default="classify_deferred_op_as_oracle_suspect_without_authorizing_replay",
+                        forbidden_shortcuts=(
+                            "deferred_op_as_missing_source_gap",
+                            "oracle_after_text_as_source_truth",
+                        ),
+                        detail={"section_key": section_key, "disposition": DISPOSITION_ORACLE_SUSPECT},
                     )
                 )
                 continue
@@ -619,7 +881,7 @@ def _residual_family(disposition: str) -> AgreementResidualFamily:
     return "unknown"
 
 
-def _counts(values: Any) -> dict[str, int]:
+def _counts(values: Iterable[str]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for value in values:
         key = str(value or "__blank__")
@@ -661,7 +923,219 @@ def _refuse_absent_text_target(
     )
 
 
+def _index_node_text(
+    node_text: str,
+    base_segments: tuple[tuple[str, str], ...],
+    node_overrides: NodeOverrides,
+    *,
+    as_root: bool = False,
+) -> tuple[tuple[str, str], ...] | None:
+    """Index ``node_text`` and its descendants into ``node_overrides``.
+
+    Used after a sub-section node is created or mutated.  The first emitted marker
+    in ``node_text`` is taken as the root.  When ``as_root=True``, ``base_segments``
+    IS the address of that root node; descendants are stored relative to it.  When
+    ``as_root=False``, ``base_segments`` is the PARENT prefix and the root node is
+    appended to it (used for an inserted sibling whose kind is known only from the
+    payload).
+
+    Structural markers that are at the same level as the root (e.g. cross-reference
+    ``paragraph (1)`` inside a replaced paragraph) are treated as prose, not as
+    sibling units, so the root text and its true children are indexed correctly.
+
+    Returns the full address segments of the indexed root node, or ``None`` when no
+    structural markers are found.
+    """
+    if not node_text:
+        return None
+
+    text = _normalize_text(node_text)
+    # Quote-stripped scan surface: inserted structural units are often wrapped in
+    # curly or straight quotes (``except that—“(A) ...; “(B) ...``).  Replacing quotes
+    # with spaces lets the boundary marker scanner see them while keeping the match
+    # positions valid in the original ``text``.
+    scan_surface = (
+        text.replace('"', " ")
+        .replace("“", " ")
+        .replace("”", " ")
+        .replace("‘", " ")
+        .replace("’", " ")
+    )
+    root_match = _BOUNDARY_MARKER_RE.search(scan_surface)
+    if root_match is None:
+        # No structural marker: store as a leaf at the intended root address.
+        intended_root = base_segments
+        node_overrides[intended_root] = text
+        return intended_root
+
+    root_token = root_match.group("token")
+
+    def _level_for_kind(kind: str) -> int:
+        for i, ladder_kind in enumerate(_USC_LADDER):
+            if ladder_kind == kind:
+                return i
+        return -1
+
+    def _pick_level(token: str, stack: list[tuple[int, int]], expected: int | None, *, run_in_child: bool) -> tuple[int, int] | None:
+        interps = _marker_interpretations(token)
+        if not interps:
+            return None
+        if expected is not None:
+            for lvl, ord_ in interps:
+                if lvl == expected:
+                    return lvl, ord_
+            return None
+        if len(interps) == 1:
+            return interps[0]
+        resolved = _resolve_marker_level(token, stack, run_in_child=run_in_child)
+        return resolved
+
+    if as_root:
+        # The caller has named the root's address. Its level is the ladder position of
+        # the last segment's kind; its label is the last segment's label. A payload that
+        # opens with a different token is a child-first virtual-root payload.
+        root_level = _level_for_kind(base_segments[-1][0]) if base_segments else -1
+        root_level_expected = root_level
+        root_token_expected = base_segments[-1][1] if base_segments else ""
+        root_level_ord = _pick_level(root_token, [], root_level, run_in_child=False)
+        use_virtual_root = (
+            root_level < 0
+            or root_token != root_token_expected
+            or root_level_ord is None
+            or root_level_ord[0] != root_level
+        )
+    else:
+        # The caller has named the parent prefix. The first marker is the first child
+        # of that parent, i.e. one level deeper than the parent's level.
+        parent_level = _level_for_kind(base_segments[-1][0]) if base_segments else -1
+        root_level_expected = parent_level + 1
+        root_level_ord = _pick_level(root_token, [], root_level_expected, run_in_child=False)
+        use_virtual_root = root_level_ord is None
+    if use_virtual_root:
+        root_level = root_level_expected
+        root_ordinal = 0
+        intended_root = base_segments
+        stack: list[tuple[int, int]] = [(root_level, root_ordinal)]
+        starts: list[int] = [0]
+        spans: dict[tuple[tuple[str, str], ...], tuple[int, int]] = {(): (0, len(text))}
+        prev_end = 0
+        label_stack: list[str] = [""]
+    else:
+        if root_level_ord is None:
+            # Cannot place the root marker; index the whole text as a leaf.
+            intended_root = base_segments
+            node_overrides[intended_root] = text
+            return intended_root
+        root_level, root_ordinal = root_level_ord
+
+        if as_root:
+            intended_root = base_segments
+        else:
+            kind = _USC_LADDER[root_level] if root_level < len(_USC_LADDER) else f"level{root_level}"
+            intended_root = base_segments + ((kind, root_token),)
+
+        # Stack of (level, ordinal) for the open chain of structural markers starting
+        # from the root.  Only markers deeper than the root are structural children.
+        stack = [(root_level, root_ordinal)]
+        # Start of the text span for each stack entry.
+        starts = [root_match.start()]
+        # Spans indexed by path tuple relative to intended_root.
+        spans: dict[tuple[tuple[str, str], ...], tuple[int, int]] = {(): (root_match.start(), len(text))}
+
+        prev_end = root_match.end()
+
+        label_stack = [root_token]
+
+    def _path() -> tuple[tuple[str, str], ...]:
+        return tuple(
+            (_USC_LADDER[lvl] if lvl < len(_USC_LADDER) else f"level{lvl}", label)
+            for (lvl, _), label in zip(stack[1:], label_stack[1:], strict=True)
+        )
+
+    for m in _BOUNDARY_MARKER_RE.finditer(scan_surface, 0 if use_virtual_root else root_match.end()):
+        token = m.group("token")
+        run_in_child = prev_end == m.start()
+        resolved = _pick_level(token, stack, None, run_in_child=run_in_child)
+        prev_end = m.end()
+        if resolved is None:
+            continue
+        lvl, _ord = resolved
+        if lvl <= root_level:
+            # Same level as root or shallower: a cross-reference (e.g. ``(1)`` inside
+            # a paragraph), not a structural child.
+            continue
+        # Pop structural ancestors at or deeper than this level.
+        while stack and stack[-1][0] >= lvl:
+            closed_path = _path() if len(stack) > 1 else ()
+            if closed_path in spans:
+                spans[closed_path] = (spans[closed_path][0], m.start())
+            stack.pop()
+            label_stack.pop()
+            starts.pop()
+        stack.append((lvl, _ord))
+        label_stack.append(token)
+        starts.append(m.start())
+        opened_path = _path()
+        spans[opened_path] = (m.start(), len(text))
+
+    # Finalize any still-open structural markers to the end of the text.
+    while len(stack) > 1:
+        closed_path = _path()
+        spans[closed_path] = (spans[closed_path][0], len(text))
+        stack.pop()
+        label_stack.pop()
+        starts.pop()
+
+    # Store the root node with the FULL text (not truncated by cross-references).
+    node_overrides[intended_root] = text
+    for rel_path, (start, end) in spans.items():
+        key = intended_root + rel_path
+        node_overrides[key] = _normalize_text(text[start:end])
+
+    return intended_root
+
+
 NodeOverrides = dict[tuple[tuple[str, str], ...], str]
+
+
+def _refresh_ancestor_overrides(
+    node_overrides: NodeOverrides,
+    changed_key: tuple[tuple[str, str], ...],
+    old_text: str,
+    new_text: str,
+    running: str,
+) -> None:
+    """Propagate a node-text change to every strict ancestor stored in ``node_overrides``.
+
+    When a descendant is patched, its parent/grandparent entries become stale because
+    they still contain the old descendant text.  This helper walks up the address path
+    and substitutes the old child text for the new text inside each ancestor entry, as
+    long as the resulting text is still present in ``running`` (the safety check guards
+    against replacing the wrong occurrence when a substring is repeated).  If an ancestor
+    cannot be refreshed safely, propagation stops there: higher ancestors are not
+    updated, so they remain stale but no false fresh state is introduced.
+    """
+    if old_text == new_text:
+        return
+    current_old = old_text
+    current_new = new_text
+    for ancestor_len in range(len(changed_key) - 1, 0, -1):
+        ancestor_key = changed_key[:ancestor_len]
+        ancestor_text = node_overrides.get(ancestor_key)
+        if ancestor_text is None:
+            continue
+        if current_old not in ancestor_text:
+            break
+        refreshed = ancestor_text.replace(current_old, current_new, 1)
+        if refreshed == ancestor_text:
+            break
+        if refreshed not in running:
+            # The substituted occurrence was not the child's unique span in the ancestor
+            # (or the ancestor also spans unrelated text). Stop to avoid corrupting a parent.
+            break
+        node_overrides[ancestor_key] = refreshed
+        current_old = ancestor_text
+        current_new = refreshed
 
 
 def _running_node_text(
@@ -696,6 +1170,351 @@ def _running_node_text(
     if located is None:
         return None
     return located if located in running else None
+
+
+def _running_subtree_text(
+    before_section: UscSection | None,
+    address: LegalAddress,
+    running: str,
+    node_overrides: NodeOverrides | None,
+) -> str | None:
+    """Return the target node and its current descendants as one contiguous span.
+
+    Some USC paragraphs (e.g., ``(10) ... but—``) are split into a parent intro
+    plus separate child nodes for ``(A), (B), (C)``.  An ``insert after paragraph
+    (10)`` amendment must splice *after* the whole paragraph, not after the parent
+    intro.  This helper unions the node's own span with every descendant span
+    currently indexed under it.
+    """
+    segments = _subsection_segments(address)
+    if not segments:
+        return _running_node_text(before_section, address, running, node_overrides)
+    own: str | None = None
+    if node_overrides is not None and segments in node_overrides:
+        own = node_overrides[segments]
+    if own is None:
+        own = _locate_subsection_text(before_section, address)
+    if own is None or own not in running:
+        return None
+    spans: list[tuple[int, int]] = [(running.find(own), running.find(own) + len(own))]
+    descendant_texts: set[str] = set()
+    if node_overrides is not None:
+        for key, text in node_overrides.items():
+            if key == segments or key[: len(segments)] != segments:
+                continue
+            # Synthetic flush-block nodes have an empty label; they are structural
+            # siblings, not descendants of the anchor node, so they must not be
+            # included in the anchor's subtree span.
+            if any(label == "" for _kind, label in key[len(segments) :]):
+                continue
+            descendant_texts.add(text)
+    # When the node overrides are empty or stale (e.g. a direct unit test calling
+    # ``_materialize_one`` without pre-seeding ``node_overrides``), fall back to
+    # the before-edition split to discover the anchor's current descendants.
+    if before_section is not None:
+        for node in split_statutory_subsections(before_section)[0]:
+            node_segments = _subsection_segments(node.address)
+            if (
+                len(node_segments) > len(segments)
+                and node_segments[: len(segments)] == segments
+                and not any(label == "" for _kind, label in node_segments[len(segments):])
+            ):
+                descendant_texts.add(node.text)
+    for text in descendant_texts:
+        if text not in running:
+            continue
+        start = running.find(text)
+        spans.append((start, start + len(text)))
+    if not spans:
+        return None
+    start = min(s[0] for s in spans)
+    end = max(s[1] for s in spans)
+    return running[start:end]
+
+
+@lru_cache(maxsize=512)
+def _word_boundary_pattern(match_text: str) -> re.Pattern[str]:
+    """Compile and cache a word-boundary pattern for an alphabetic amendatory token.
+
+    Per AGENTS.md §2.7: per-provision ``re.compile(rf\"(?<!\\w){re.escape(match_text)}(?!\\w)\")``
+    calls dominated compile cost. The set of distinct quoted amendatory tokens is
+    small and repeats heavily across ops (``'or'``, ``'and'``, ``'shall'`` ...),
+    so a bounded LRU cache is sound.
+    """
+    return re.compile(rf"(?<!\w){re.escape(match_text)}(?!\w)")
+
+
+def _token_in_text(text: str, match_text: str) -> bool:
+    """True when ``text`` contains ``match_text`` as a standalone token.
+
+    Alphabetic tokens use word-boundary matching (see
+    :func:`_replace_token_in_text`).  Non-alphabetic tokens use literal
+    substring presence.
+    """
+    if match_text.isalpha():
+        return _word_boundary_pattern(match_text).search(text) is not None
+    return match_text in text
+
+
+def _token_count_in_text(text: str, match_text: str) -> int:
+    """Count occurrences of ``match_text`` as a standalone token."""
+    if match_text.isalpha():
+        return len(_word_boundary_pattern(match_text).findall(text))
+    return text.count(match_text)
+
+
+def _replace_token_in_text(text: str, match_text: str, replacement: str, count: int) -> str:
+    """Apply a text patch with word-boundary safety for alphabetic tokens.
+
+    When a quoted amendatory token is a single alphabetic word (``'or'``,
+    ``'and'``), a literal string replacement can maim unrelated words that happen
+    to contain it (``order`` -> ``der``).  A word-boundary match is what the
+    enacted quotation means: replace the standalone word, not a substring inside
+    another word.
+
+    Non-alphabetic tokens (``120``, ``15-year``, ``; or``) keep the existing
+    literal semantics so phrase-shape patches continue to work unchanged.
+    """
+    if match_text.isalpha():
+        pattern = _word_boundary_pattern(match_text)
+        new_text = pattern.sub(replacement or "", text, count=count if count != -1 else 0)
+        return new_text
+    return text.replace(match_text, replacement or "", count)
+
+
+def _replace_token_tail_in_text(text: str, match_text: str, replacement: str, count: int) -> str:
+    """Open-ended tail strike: replace from the anchor to the node end.
+
+    A "striking 'X' and all that follows and inserting 'Y'" instruction deletes
+    everything from the anchor to the end of the target node and inserts Y. We
+    locate the anchor the same way :func:`_replace_token_in_text` does (word
+    boundary for alphabetic tokens, literal otherwise) and drop the tail after it.
+
+    The deletion always runs to the end of the node, so the LEFTMOST anchor's
+    cut subsumes every later (rightward) anchor: there is exactly one meaningful
+    cut point regardless of ``count``. An "each place" tail strike (``count ==
+    -1``) is therefore identical to a first-occurrence tail strike — both cut at
+    the leftmost anchor and append the replacement once. (Earlier code looped
+    right-to-left rebuilding ``text`` from each anchor; that happened to land on
+    the same leftmost result but read as a multi-occurrence rewrite, which a
+    tail-to-end strike can never be.)
+    """
+    if not match_text:
+        return text
+    if match_text.isalpha():
+        pattern = _word_boundary_pattern(match_text)
+        starts = [m.start() for m in pattern.finditer(text)]
+    else:
+        starts = [m.start() for m in re.finditer(re.escape(match_text), text)]
+    if not starts:
+        return text
+    return text[: starts[0]] + (replacement or "")
+
+
+def _replace_token_through_in_text(
+    text: str,
+    start_text: str,
+    end_text: str,
+    replacement: str,
+    count: int,
+) -> str | None:
+    """Bounded tail strike: delete from ``start_text`` THROUGH ``end_text``.
+
+    Mirrors the open-ended tail strike, but stops the deletion at the END
+    anchor (inclusive) instead of running to the end of the target node.
+    Used for the "striking 'OLD' and all that follows through 'END' [and inserting
+    'NEW']" family: the right-side text after END survives the op.
+
+    The first (leftmost) ``start_text`` locates the deletion start; the
+    first ``end_text`` occurrence strictly AFTER that start locates the
+    inclusive right bound. Returns the patched text, or ``None`` when either
+    anchor is absent or out of order (in which case the caller should refuse
+    the op as an absent-target condition, not produce a wrong materialization).
+    """
+    if not start_text or not end_text:
+        return text
+    # Mirror _replace_token_tail_in_text's leftmost-start heuristic: use a
+    # word-boundary pattern for alphabetic anchors (so "Definitions" doesn't
+    # match inside "Definitions/foo"); use a literal find otherwise.
+    if start_text.isalpha():
+        start_pattern = _word_boundary_pattern(start_text)
+        sm = start_pattern.search(text)
+        if sm is None:
+            return None
+        start_pos = sm.start()
+        after_start = sm.end()
+    else:
+        start_pos = text.find(start_text)
+        if start_pos == -1:
+            return None
+        after_start = start_pos + len(start_text)
+    end_start = text.find(end_text, after_start)
+    if end_start == -1:
+        return None
+    end_pos = end_start + len(end_text)
+    # Delete [start_text..end_text] inclusive, insert the replacement at the
+    # START anchor's position, and PRESERVE the right-side text after END. The
+    # earlier form dropped ``text[end_pos:]`` — silently destroying every byte
+    # after the END anchor (forbidden by AGENTS.md §0 over-repeal). The
+    # bounded deletion's whole point is that the inventoried text after END
+    # survives the op.
+    return text[:start_pos] + (replacement or "") + text[end_pos:]
+
+
+def _apply_text_patch_with_tail_dispatch(
+    operation: LegalOperation,
+    text: str,
+    *,
+    match_text: str,
+    replacement: str,
+    count: int,
+) -> str | None:
+    """Dispatch a text patch by the operation's tail-provenance tag and selector.
+
+    Routes the patch through one of three sibling functions:
+      * THROUGH_TAIL — bounded [start..end] deletion + replacement
+      * TAIL — open-ended deletion from start through end of node + replacement
+      * regular — first/each occurrence replace
+
+    Returns ``None`` when the THROUGH family cannot find its end anchor in the
+    running text (the materializer should refuse, mirroring an absent-anchor
+    refusal, rather than produce a wrong cut). For the TAIL/regular paths the
+    existing helpers return the input text unchanged when anchors are missing
+    (preserving their current behavior at section-level fallback sites).
+    """
+    if RULE_STRIKE_INSERT_THROUGH_TAIL in operation.provenance_tags:
+        end_match = (
+            operation.text_patch.selector.end_match_text
+            if operation.text_patch is not None
+            else None
+        ) or ""
+        return _replace_token_through_in_text(
+            text, match_text, end_match, replacement, count
+        )
+    if RULE_STRIKE_INSERT_TAIL in operation.provenance_tags:
+        return _replace_token_tail_in_text(text, match_text, replacement, count)
+    return _replace_token_in_text(text, match_text, replacement, count)
+
+
+def _subtree_overrides(
+    node_overrides: NodeOverrides,
+    target_segments: tuple[tuple[str, str], ...],
+) -> dict[tuple[tuple[str, str], ...], str]:
+    """Return descendant node-override entries strictly under ``target_segments``."""
+    return {
+        key: text
+        for key, text in node_overrides.items()
+        if len(key) > len(target_segments) and key[: len(target_segments)] == target_segments
+    }
+
+
+def _apply_text_patch_to_target_subtree(
+    before_text: str,
+    *,
+    target_segments: tuple[tuple[str, str], ...],
+    match_text: str,
+    replacement: str,
+    count: int,
+    node_overrides: NodeOverrides,
+) -> str | None:
+    """Apply a token-level text patch across the target node's subtree.
+
+    The source may direct an edit at a container (e.g. ``paragraph (4)``) while
+    the marked token (``120``) actually lives in deeper descendants (clause i of
+    subparagraph (A), clause i of subparagraph (B)).  ``split_statutory_subsections``
+    stores each descendant as its own node, so a single-container patch may not
+    find the anchor in the immediate node text.
+
+    When the immediate container does not carry the anchor, this helper locates
+    every descendant node under the target that *does* contain the anchor, maps
+    those nodes to their current spans in the running section text, and applies
+    the patch within those spans only.  It never widens the edit outside the
+    target subtree.
+
+    Returns the materialized section text, or ``None`` when no descendant span
+    contains the anchor (in which case the caller should treat the op as an
+    absent anchor, not a wrong materialization).
+    """
+    subtree = _subtree_overrides(node_overrides, target_segments)
+    if not subtree:
+        return None
+
+    # Locate every descendant node that currently carries the anchor and map it
+    # to a concrete span in the running section text.
+    hits: list[tuple[tuple[tuple[str, str], ...], int, int, str]] = []
+    used: list[tuple[int, int]] = []
+    candidates: list[
+        tuple[tuple[tuple[str, str], ...], str]
+    ] = sorted(
+        ((key, text) for key, text in subtree.items() if _token_in_text(text, match_text)),
+        key=lambda item: (len(item[0]), item[0]),
+    )
+    # Prefer the deepest (longest key) node at a given text position; run-in
+    # heads appear as multiple ancestor/descendant keys sharing the same line,
+    # and the deepest key is the most precise addressable unit.
+    for key, node_text in reversed(candidates):
+        start = before_text.find(node_text)
+        if start == -1:
+            continue
+        end = start + len(node_text)
+        if any(start < u_end and end > u_start for u_start, u_end in used):
+            continue
+        used.append((start, end))
+        hits.append((key, start, end, node_text))
+    if not hits:
+        return None
+
+    # Sort spans left-to-right so first-occurrence semantics follow reading order.
+    hits.sort(key=lambda h: h[1])
+
+    materialized = before_text
+    if count == -1:
+        # Process right-to-left so earlier span indices stay valid after edits.
+        for key, start, end, node_text in sorted(hits, key=lambda h: h[1], reverse=True):
+            new_node_text = _replace_token_in_text(node_text, match_text, replacement or "", -1)
+            materialized = materialized[:start] + new_node_text + materialized[end:]
+            node_overrides[key] = new_node_text
+            # Keep run-in-duplicate ancestor/descendant keys consistent.
+            for k in list(node_overrides):
+                if (
+                    len(k) > len(target_segments)
+                    and k[: len(target_segments)] == target_segments
+                    and node_overrides[k] == node_text
+                ):
+                    node_overrides[k] = new_node_text
+        # Ancestor entries still contain the old descendant text; refresh them so a
+        # later op that needs the parent span (e.g. add-at-end of the parent) can
+        # locate it in the running text.
+        for key, _start, _end, node_text in hits:
+            _refresh_ancestor_overrides(
+                node_overrides, key, node_text, node_overrides[key], materialized
+            )
+        return materialized
+
+    # First-occurrence mode: replace the leftmost match that falls inside a
+    # descendant span.  This mirrors the single-node behaviour where ``count==1``
+    # consumes the first remaining match in reading order.
+    for key, start, end, node_text in hits:
+        # The leftmost standalone match inside this descendant node is what a
+        # first-occurrence token-strike means.
+        new_node_text = _replace_token_in_text(node_text, match_text, replacement or "", 1)
+        if new_node_text == node_text:
+            continue
+        materialized = materialized[:start] + new_node_text + materialized[end:]
+        node_overrides[key] = new_node_text
+        for k in list(node_overrides):
+            if (
+                len(k) > len(target_segments)
+                and k[: len(target_segments)] == target_segments
+                and node_overrides[k] == node_text
+            ):
+                node_overrides[k] = new_node_text
+        _refresh_ancestor_overrides(
+            node_overrides, key, node_text, new_node_text, materialized
+        )
+        return materialized
+
+    return None
 
 
 def _materialize_one(
@@ -761,17 +1580,32 @@ def _materialize_one(
                 before_section, operation.target, before_text, node_overrides
             )
             if node_text is not None:
-                if match_text not in node_text:
-                    # The anchor is not in the running node. Either a prior IDENTICAL
-                    # patch on this node already consumed the only/last occurrence
-                    # (the dual-identical-patch tail), or a sibling op rewrote the node
-                    # away from this anchor. Striking an anchor the running node no
-                    # longer carries is a NO-OP against the live text, not a wrong
-                    # materialization: REFUSE it (mirroring the absent-anchor refusal)
-                    # so the section's already-applied sibling patches keep their
-                    # correct composition instead of being tanked into a section-wide
-                    # residual. Refusing (not collapsing onto the prior edit) is what
-                    # keeps two identical patches from colliding on one occurrence.
+                if not _token_in_text(node_text, match_text):
+                    # The immediate container may not contain the anchor while deeper
+                    # descendants do (e.g. "in paragraph (4)" but ``120`` only appears
+                    # in subparagraph (A)/(B) clauses).  Apply the patch inside the
+                    # target subtree without widening beyond it.
+                    if node_overrides is not None:
+                        subtree_materialized = _apply_text_patch_to_target_subtree(
+                            before_text,
+                            target_segments=_subsection_segments(operation.target),
+                            match_text=match_text,
+                            replacement=replacement or "",
+                            count=count,
+                            node_overrides=node_overrides,
+                        )
+                        if subtree_materialized is not None:
+                            return (subtree_materialized, "", "")
+                    # The anchor is not in the running node or its descendants. Either a
+                    # prior IDENTICAL patch on this node already consumed the only/last
+                    # occurrence (the dual-identical-patch tail), or a sibling op
+                    # rewrote the node away from this anchor. Striking an anchor the
+                    # running node no longer carries is a NO-OP against the live text, not
+                    # a wrong materialization: REFUSE it (mirroring the absent-anchor
+                    # refusal) so the section's already-applied sibling patches keep
+                    # their correct composition instead of being tanked into a section-
+                    # wide residual. Refusing (not collapsing onto the prior edit) is
+                    # what keeps two identical patches from colliding on one occurrence.
                     return _refuse_absent_text_target(
                         operation, absent_kind="match anchor", absent_text=match_text
                     )
@@ -781,22 +1615,81 @@ def _materialize_one(
                 # rewrites the leftmost match here and records the result in
                 # node_overrides; patch 1 then sees the post-patch node and rewrites
                 # the NEXT match — each consumes its own occurrence in source order.
-                new_node_text = node_text.replace(match_text, replacement or "", count)
+                new_node_text = _apply_text_patch_with_tail_dispatch(
+                    operation,
+                    node_text,
+                    match_text=match_text,
+                    replacement=replacement or "",
+                    count=count,
+                )
+                if new_node_text is None:
+                    # Bounded through-tail: refuse when either anchor is absent from
+                    # the running node, or when out of order; never fall through to a
+                    # corrupt cut. The end anchor (or left anchor as a fallback) is the
+                    # self-evidencing witness. (TAIL/regular helpers never return None,
+                    # so reaching this refuse means the THROUGH family failed to find
+                    # its end anchor in the running node text.)
+                    end_match = (
+                        operation.text_patch.selector.end_match_text
+                        if operation.text_patch is not None
+                        else None
+                    ) or match_text
+                    return _refuse_absent_text_target(
+                        operation,
+                        absent_kind="through end anchor",
+                        absent_text=end_match,
+                    )
                 # Substitute the patched node text back into the running section text
                 # (first occurrence — the node text is unique enough to anchor on).
                 materialized = before_text.replace(node_text, new_node_text, 1)
                 if node_overrides is not None:
-                    node_overrides[_subsection_segments(operation.target)] = new_node_text
+                    # Re-index the patched node and any children it carries so later
+                    # ops can still locate descendants of the mutated node.
+                    target_segments = _subsection_segments(operation.target)
+                    _index_node_text(
+                        new_node_text,
+                        target_segments,
+                        node_overrides,
+                        as_root=True,
+                    )
+                    _refresh_ancestor_overrides(
+                        node_overrides,
+                        target_segments,
+                        old_text=node_text,
+                        new_text=node_overrides[target_segments],
+                        running=materialized,
+                    )
                 return (materialized, "", "")
             # Sub-section node not locatable (the split did not expose it cleanly).
             # Fall back to a section-level string replace when the anchor is
             # UNAMBIGUOUS — each-place, or a single occurrence in the section: a
             # precise match_text needs no node location. Only a multi-occurrence
             # anchor we cannot place stays a typed residual (genuinely ambiguous).
-            if match_text in before_text and (count == -1 or before_text.count(match_text) == 1):
-                materialized = before_text.replace(match_text, replacement or "", count)
+            if _token_in_text(before_text, match_text) and (
+                count == -1 or _token_count_in_text(before_text, match_text) == 1
+            ):
+                materialized = _apply_text_patch_with_tail_dispatch(
+                    operation,
+                    before_text,
+                    match_text=match_text,
+                    replacement=replacement or "",
+                    count=count,
+                )
+                if materialized is None:
+                    # The THROUGH family's end anchor was not locatable in the
+                    # running section text (the section-level fallback reached the
+                    # function but the end anchor is absent or out of order). Refuse
+                    # rather than silently fall back to a single-occurrence replace.
+                    end_match = (
+                        operation.text_patch.selector.end_match_text
+                        if operation.text_patch is not None
+                        else None
+                    ) or match_text
+                    return _refuse_absent_text_target(
+                        operation, absent_kind="through end anchor", absent_text=end_match
+                    )
                 return (materialized, "", "")
-            if match_text not in before_text:
+            if not _token_in_text(before_text, match_text):
                 # The targeted sub-section node is not locatable AND its match anchor
                 # is absent from the whole section: the target node is not present in
                 # this window's before edition. Refuse (mirroring REPEAL) rather than
@@ -804,13 +1697,22 @@ def _materialize_one(
                 return _refuse_absent_text_target(
                     operation, absent_kind="match anchor", absent_text=match_text
                 )
+            rule_id = US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+            disposition = DISPOSITION_LAWVM_WRONG
+            if before_section is not None:
+                gap_rule = _source_tree_gap_rule_for_address(
+                    before_section, operation.target
+                )
+                if gap_rule is not None:
+                    rule_id = gap_rule
+                    disposition = DISPOSITION_MISSING_SOURCE
             return (
                 "",
-                US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
-                DISPOSITION_LAWVM_WRONG,
+                rule_id,
+                disposition,
             )
 
-        if match_text not in before_text:
+        if not _token_in_text(before_text, match_text):
             # The strike anchor is not literally present in the (whole) section: the
             # target node this op edits is absent from this window's before edition.
             # Never fuzzy-match. Refuse (mirroring REPEAL) so a sibling op's correct
@@ -819,7 +1721,22 @@ def _materialize_one(
             return _refuse_absent_text_target(
                 operation, absent_kind="match anchor", absent_text=match_text
             )
-        materialized = before_text.replace(match_text, replacement or "", count)
+        materialized = _apply_text_patch_with_tail_dispatch(
+            operation,
+            before_text,
+            match_text=match_text,
+            replacement=replacement or "",
+            count=count,
+        )
+        if materialized is None:
+            end_match = (
+                operation.text_patch.selector.end_match_text
+                if operation.text_patch is not None
+                else None
+            ) or match_text
+            return _refuse_absent_text_target(
+                operation, absent_kind="through end anchor", absent_text=end_match
+            )
         return (materialized, "", "")
 
     if (
@@ -840,43 +1757,85 @@ def _materialize_one(
                 message=f"insert-node-after op ({str(operation.anchor)}) has no payload",
                 target_address=str(operation.anchor),
             )
-        # Resolve against the RUNNING anchor node (via node_overrides) so an append
+        # Resolve against the RUNNING anchor subtree (via node_overrides) so an append
         # that follows an earlier text patch on the SAME node splices onto the text
-        # that patch produced. Appending is non-destructive at the node boundary, so
-        # composing on the running node is the faithful source order.
-        anchor_text = _running_node_text(
+        # that patch produced.  We use the full subtree (parent + descendants) because
+        # a paragraph split into ``(10) ... but—`` plus ``(A)/(B)/(C)`` must receive
+        # the insertion *after* subparagraph (C), not after the parent intro.
+        anchor_text = _running_subtree_text(
             before_section, operation.anchor, before_text, node_overrides
         )
         if anchor_text is None:
+            rule_id = US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+            disposition = DISPOSITION_LAWVM_WRONG
+            if before_section is not None:
+                gap_rule = _source_tree_gap_rule_for_address(
+                    before_section, operation.anchor
+                )
+                if gap_rule is not None:
+                    rule_id = gap_rule
+                    disposition = DISPOSITION_MISSING_SOURCE
             return (
                 "",
-                US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
-                DISPOSITION_LAWVM_WRONG,
+                rule_id,
+                disposition,
             )
         new_anchor_text = f"{anchor_text} {payload_text}".strip()
         materialized = before_text.replace(anchor_text, new_anchor_text, 1)
         if node_overrides is not None:
-            node_overrides[_subsection_segments(operation.anchor)] = new_anchor_text
+            anchor_segments = _subsection_segments(operation.anchor)
+            node_overrides[anchor_segments] = new_anchor_text
+            # When the inserted payload opens with a structural marker it is a new
+            # structural unit. If the source adds the payload AT THE END of the
+            # anchor node itself (target == anchor), the payload's markers are
+            # children of the anchor (e.g. clauses (i)-(iii) under subparagraph
+            # (B)). Otherwise this is an insert-after-anchor sibling, and the
+            # payload's top-level units are children of the anchor's parent.
+            if payload_text.lstrip().startswith("("):
+                if str(operation.target) == str(operation.anchor):
+                    _index_node_text(
+                        new_anchor_text,
+                        anchor_segments,
+                        node_overrides,
+                        as_root=True,
+                    )
+                else:
+                    _index_node_text(
+                        payload_text,
+                        anchor_segments[:-1],
+                        node_overrides,
+                        as_root=False,
+                    )
+            _refresh_ancestor_overrides(
+                node_overrides,
+                anchor_segments,
+                old_text=anchor_text,
+                new_text=node_overrides[anchor_segments],
+                running=materialized,
+            )
         return (materialized, "", "")
 
     if action is StructuralAction.REPEAL and is_subsection:
         # "by striking subsection (X)" — remove the node's span from the section
-        # text and recompose. Only at sub-section granularity; a whole-section
-        # repeal (handled below) is not a text edit.
-        node_text = _locate_subsection_text(before_section, operation.target)
-        if node_text is None or node_text not in before_text:
-            # The struck node is not in the before edition — it was introduced by an
-            # un-lowered sibling/future op (or the strike is a conditional/sunset
-            # repeal of a not-yet-present node). Striking a node that is not there is
-            # a NO-OP against the before text, not a wrong materialization: refuse the
-            # op (do not compose it, do not tank the section's other ops). The honest
-            # gap stays visible as a typed refusal.
+        # text and recompose. Only at sub-section granularity; a whole-section repeal
+        # (handled below) is not a text edit. The node may have been introduced by an
+        # earlier op in this section's composition (e.g. an insert followed by a
+        # conforming strike), so resolve against the running node state.
+        node_text = _running_node_text(
+            before_section, operation.target, before_text, node_overrides
+        )
+        if node_text is None:
+            # The struck node is not present — introduced by an un-lowered sibling/future
+            # op or a conditional/sunset repeal of a not-yet-present node. Striking a
+            # node that is not there is a NO-OP against the before text, not a wrong
+            # materialization: refuse the op so the section's sibling ops keep their
+            # correct composition.
             return USDryRunRefusal(
                 op_id=op_id,
                 rule_id=US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID,
                 message=(
                     f"strike-subsection target {str(operation.target)} not present in "
-                    "the before edition (introduced by an un-lowered sibling op or a "
+                    "the before/running edition (introduced by an un-lowered sibling op or a "
                     "conditional/sunset strike); not composed"
                 ),
                 target_address=str(operation.target),
@@ -884,6 +1843,12 @@ def _materialize_one(
         materialized = before_text.replace(node_text, "", 1)
         # Collapse the double space the removed span may leave between neighbours.
         materialized = re.sub(r"\s{2,}", " ", materialized).strip()
+        if node_overrides is not None:
+            # Remove the repealed node and any indexed descendants from the live state.
+            target_segments = _subsection_segments(operation.target)
+            for key in list(node_overrides.keys()):
+                if key[: len(target_segments)] == target_segments:
+                    del node_overrides[key]
         return (materialized, "", "")
 
     if action in (StructuralAction.REPLACE, StructuralAction.INSERT):
@@ -918,10 +1883,19 @@ def _materialize_one(
                 # We could not locate the targeted node in the running section (the
                 # split did not expose it cleanly, or an earlier op moved it): a
                 # sub-section payload cannot be applied blindly. Typed residual.
+                rule_id = US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+                disposition = DISPOSITION_LAWVM_WRONG
+                if before_section is not None:
+                    gap_rule = _source_tree_gap_rule_for_address(
+                        before_section, operation.target
+                    )
+                    if gap_rule is not None:
+                        rule_id = gap_rule
+                        disposition = DISPOSITION_MISSING_SOURCE
                 return (
                     "",
-                    US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
-                    DISPOSITION_LAWVM_WRONG,
+                    rule_id,
+                    disposition,
                 )
             if action is StructuralAction.REPLACE:
                 # amend-to-read of the sub-section node: the payload IS the node's
@@ -931,7 +1905,23 @@ def _materialize_one(
                 new_node_text = f"{node_text} {payload_text}".strip()
             materialized = before_text.replace(node_text, new_node_text, 1)
             if node_overrides is not None:
-                node_overrides[_subsection_segments(operation.target)] = new_node_text
+                # Index the substituted/appended node and any descendants it carries
+                # (e.g. a replaced paragraph with subparagraphs) so follow-on ops
+                # targeting children or later inserted siblings can locate them.
+                target_segments = _subsection_segments(operation.target)
+                _index_node_text(
+                    new_node_text,
+                    target_segments,
+                    node_overrides,
+                    as_root=True,
+                )
+                _refresh_ancestor_overrides(
+                    node_overrides,
+                    target_segments,
+                    old_text=node_text,
+                    new_text=node_overrides[target_segments],
+                    running=materialized,
+                )
             return (materialized, "", "")
         if operation.payload is None or not operation.payload.text:
             return USDryRunRefusal(
@@ -944,7 +1934,41 @@ def _materialize_one(
                 target_address=str(operation.target),
             )
         if action is StructuralAction.INSERT:
-            materialized = f"{before_text} {operation.payload.text}".strip()
+            payload_text = operation.payload.text
+            section_number = _section_target_number(operation.target)
+            # A whole-new-section insert payload carries its own catchline. Project it
+            # off the body-only oracle surface. First strip the leading wrapper
+            # smart-quote (the USLM converter precedes "§ <num>." with ""); then
+            # strip_replacement_section_catchline returns the body text starting AT
+            # the body-marker "" (the USLM nested-quote opener the OLRC strips).
+            if section_number is not None:
+                candidate = payload_text
+                if candidate and candidate[0] in "\"“":
+                    after_quote = candidate[1:].lstrip()
+                    if _payload_section_number(after_quote) == section_number:
+                        candidate = after_quote
+                stripped = strip_replacement_section_catchline(
+                    candidate, section_number
+                )
+                if stripped is not None:
+                    payload_text = stripped
+            # After catchline strip (or for non-catchline inserts), strip the leading
+            # wrapper/body-marker smart-quote (U+201C) the converter attaches to
+            # quotedContent. The published USC never carries it; keeping it as
+            # materialized text would mismatch the oracle without a substantive
+            # statutory difference. The trailing U+201D is likewise stripped.
+            if payload_text and payload_text[0] == "“":
+                payload_text = payload_text[1:].lstrip()
+            if payload_text and payload_text[-1] == "”":
+                payload_text = payload_text[:-1].rstrip()
+            materialized = f"{before_text} {payload_text}".strip()
+            if node_overrides is not None and payload_text.lstrip().startswith("("):
+                # Index the appended block's top-level units so later sub-section ops on
+                # a freshly inserted section can locate them without re-splitting the
+                # whole running text.
+                _index_node_text(
+                    payload_text, (), node_overrides, as_root=False
+                )
         else:  # REPLACE whole node -> the payload IS the new section body.
             # An "amend ... to read as follows" payload opens with the section's
             # own ``§ <num>. <heading>`` catchline before the first quoted body
@@ -1053,6 +2077,40 @@ def build_us_dry_run(
     expiry inside the window. No prior editions => channel (a) is unavailable, but
     the note-based channel (b) still fires.
     """
+    after_cutoff: date | None = None
+    if after_year.isdigit():
+        after_cutoff = date(int(after_year), 12, 31)
+
+    def _op_not_yet_in_force(op: LegalOperation) -> str | None:
+        """Return a human reason if ``op`` should be skipped for temporal reasons."""
+        if after_cutoff is None or op.source is None:
+            return None
+        if op.source.legal_status == PENDING_CONDITION_STATUS:
+            return (
+                "source effective date is conditional/pending and not demonstrably "
+                f"in force as of after-edition cutoff {after_cutoff.isoformat()}"
+            )
+        effective = op.source.effective or ""
+        if effective:
+            try:
+                op_effective = date.fromisoformat(effective)
+            except ValueError:
+                return None
+            if op_effective > after_cutoff:
+                return f"effective date {effective} is after after-edition cutoff {after_cutoff.isoformat()}"
+        expires = op.source.expires or ""
+        if expires:
+            try:
+                op_expires = date.fromisoformat(expires)
+            except ValueError:
+                return None
+            # Source-side expiry is the *inclusive* last day in force. The dry-run
+            # after-edition represents the end of the after-year, so if the provision
+            # expired on or before that date it is no longer in force for the window.
+            if op_expires <= after_cutoff:
+                return f"expiry date {expires} is on or before after-edition cutoff {after_cutoff.isoformat()}"
+        return None
+
     before_doc = parse_usc_title_document(before_htm, title=title, year=before_year)
     after_doc = parse_usc_title_document(after_htm, title=title, year=after_year)
     prior_docs: dict[str, UscSourceDocument] = {}
@@ -1068,16 +2126,47 @@ def build_us_dry_run(
     refusals: list[USDryRunRefusal] = []
     claimed_sections: set[str] = set()
 
-    # Phase 1: route every op to a typed refusal or to its section's materializing
-    # queue. A section amended by several window laws (e.g. Title 11 §101 in
-    # 2018->2020) gets ALL its text ops composed in source order before a single
-    # comparison against the oracle — comparing each op independently against the
-    # fully-amended oracle would spuriously fail every section with more than one
-    # amendment.
+    # Phase 1: lower each Public Law, then route every op to its section's
+    # materializing queue in ENACTMENT ORDER — sorted by enacted date, tie-broken
+    # by statute id (so laws sharing an enacted date have a stable, total order).
+    # Off-title ops are refused here;
+    # section-existence checks are deferred until after Phase 1a so that a new
+    # section created by one window law (a section-level INSERT) can be amended by
+    # a later window law in the same window.
     section_ops: dict[str, list[LegalOperation]] = {}
-    for statute_id, blob in sorted(plaw_blobs.items()):
-        report = lower_plaw_amendatory(blob, statute_id=statute_id, enacted=enacted)
+    lowered_reports: list[tuple[str, str, bytes, USAmendatoryReport]] = []
+    for statute_id, blob in plaw_blobs.items():
+        report = lower_plaw_amendatory(
+            blob, statute_id=statute_id, enacted=enacted, proof_title=str(title)
+        )
+        report_enacted = report.enacted or statute_id
+        lowered_reports.append((report_enacted, statute_id, blob, report))
+    lowered_reports.sort(key=lambda x: (x[0] or x[1], x[1]))
+    for _enacted, statute_id, _blob, report in lowered_reports:
         for operation in report.operations():
+            # Temporal guard: skip instructions that are not yet in force, or that
+            # have already expired, relative to the after-edition snapshot. Both
+            # source-side effective and expiry dates travel in OperationSource so the
+            # dry-run window can refuse future/conditional provisions without silently
+            # corrupting the comparison.
+            temporal_reason = _op_not_yet_in_force(operation)
+            if temporal_reason is not None:
+                refusals.append(
+                    USDryRunRefusal(
+                        op_id=operation.op_id,
+                        rule_id=US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID,
+                        message=f"{temporal_reason}; not applied in this dry-run window",
+                        target_address=str(operation.target),
+                        detail={
+                            "effective": operation.source.effective if operation.source else "",
+                            "expires": operation.source.expires if operation.source else "",
+                            "after_cutoff": after_cutoff.isoformat() if after_cutoff else "",
+                            "statute_id": operation.source.statute_id if operation.source else "",
+                        },
+                    )
+                )
+                continue
+
             key = _section_key_from_address(operation.target)
             if key is None or int(key[0]) != int(title):
                 refusals.append(
@@ -1093,29 +2182,76 @@ def build_us_dry_run(
                 )
                 continue
             _op_title, section = key
-
-            if section not in before_text_by_section:
-                refusals.append(
-                    USDryRunRefusal(
-                        op_id=operation.op_id,
-                        rule_id=US_DRY_RUN_REFUSED_SECTION_NOT_IN_BEFORE_RULE_ID,
-                        message=(
-                            f"target section {section!r} is not present in the before "
-                            f"edition (title {title}, year {before_year})"
-                        ),
-                        target_address=str(operation.target),
-                        detail={"section": section},
-                    )
-                )
-                continue
-
             section_ops.setdefault(section, []).append(operation)
+
+    # Phase 1a: Seed synthetic before-sections for sections created by window-level
+    # INSERT ops. A new section has no before-edition paragraph structure, so later
+    # sub-section ops (e.g. amend-to-read of paragraph (1)) cannot locate nodes.
+    # We parse the initial INSERT payload into a best-effort UscSection so
+    # subsequent ops can compose sub-section edits on the newly created section.
+    for operations in section_ops.values():
+        for op in operations:
+            if op.action is not StructuralAction.INSERT:
+                continue
+            if op.payload is None or not op.payload.text:
+                continue
+            section_number = _payload_section_number(op.payload.text)
+            if section_number is None:
+                continue
+            if section_number in before_section_by_number:
+                continue
+            payload_text = op.payload.text
+            # Apply the same catchline-stripping projection the materializer uses so
+            # the synthetic section's text matches the running text after the insert.
+            candidate = payload_text
+            if candidate and candidate[0] in "\"“":
+                after_quote = candidate[1:].lstrip()
+                if _payload_section_number(after_quote) == section_number:
+                    candidate = after_quote
+            stripped = strip_replacement_section_catchline(candidate, section_number)
+            if stripped is not None:
+                candidate = stripped
+            # Drop the leading nested-quote marker so structural markers like ``(1)``
+            # are recognized by paragraph splitting (the quote is not whitespace and
+            # would otherwise hide the first ``(token)`` boundary).
+            if candidate and candidate[0] in "\"“":
+                candidate = candidate[1:].lstrip()
+            before_section_by_number[section_number] = synthetic_usc_section(
+                title=title,
+                section=section_number,
+                text=candidate,
+            )
+            # Ensure the before-text map also has an entry (empty: the materializer
+            # will fill it from the insert).
+            if section_number not in before_text_by_section:
+                before_text_by_section[section_number] = ""
+
+    # Phase 1b: Refuse ops on sections still absent from the before edition and not
+    # created by a window-level INSERT.
+    for section, operations in list(section_ops.items()):
+        if section in before_section_by_number:
+            continue
+        for operation in operations:
+            refusals.append(
+                USDryRunRefusal(
+                    op_id=operation.op_id,
+                    rule_id=US_DRY_RUN_REFUSED_SECTION_NOT_IN_BEFORE_RULE_ID,
+                    message=(
+                        f"target section {section!r} is not present in the before "
+                        f"edition (title {title}, year {before_year}) and no INSERT "
+                        f"in this window creates it"
+                    ),
+                    target_address=str(operation.target),
+                    detail={"section": section},
+                )
+            )
+        del section_ops[section]
 
     # Phase 2: compose each section's ops onto its before-text in source order, then
     # compare the composed result against the oracle once.
     for section, operations in section_ops.items():
         section_key = f"{title}:{section}"
-        before_text = before_text_by_section[section]
+        before_text = before_text_by_section.get(section, "")
         before_section = before_section_by_number.get(section)
         oracle_text = after_text_by_section.get(section, "")
         oracle_changed_here = _norm(before_text) != _norm(oracle_text)
@@ -1133,6 +2269,11 @@ def build_us_dry_run(
         # occurrences) act on the running node text, each consuming its own
         # occurrence in source order. See _running_node_text / _materialize_one.
         node_overrides: NodeOverrides = {}
+        # Seed from the before-edition split for accurate first-op addresses; new
+        # windows use the synthetic section created by a window-level INSERT.
+        if before_section is not None:
+            for node in split_statutory_subsections(before_section)[0]:
+                node_overrides[_subsection_segments(node.address)] = node.text
         for operation in operations:
             outcome = _materialize_one(
                 operation,
@@ -1156,7 +2297,7 @@ def build_us_dry_run(
                 # continue composing past an anchor the source does not carry).
                 residual_signal = (signal_rule_id, signal_disposition)
                 break
-            running = materialized
+            running = _normalize_text(materialized)
 
         if not op_ids and composed_refused:
             # Every op for this section was a typed refusal (e.g. all sub-section
@@ -1222,6 +2363,28 @@ def build_us_dry_run(
                     section_key=section_key,
                     status="residual",
                     rule_id=US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
+                    disposition=DISPOSITION_ORACLE_SUSPECT,
+                    match_text=row_match,
+                    replacement=row_replacement,
+                    before_text=before_text,
+                    materialized_text=materialized,
+                    oracle_text=oracle_text,
+                    oracle_changed=oracle_changed_here,
+                )
+            )
+        elif _has_source_truncated_clause_payload(materialized, oracle_text):
+            # The source XML supplied a truncated structural redesignation payload
+            # (e.g., a clause introduced as "(i) any member"); our materialization
+            # faithfully reproduces that source, while the oracle shows the completed
+            # clause body.  The gap is on the source/oracle surface, not the lowering.
+            rows.append(
+                USDryRunSectionRow(
+                    op_id=row_op_id,
+                    action=row_action,
+                    target_address=target_address,
+                    section_key=section_key,
+                    status="residual",
+                    rule_id=US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID,
                     disposition=DISPOSITION_ORACLE_SUSPECT,
                     match_text=row_match,
                     replacement=row_replacement,
@@ -1362,7 +2525,7 @@ def _build_boundary_proof(
     changed_set = set(oracle_changed)
     claimed_set = set(claimed)
 
-    def _paths(section_keys: Any) -> tuple[TreePath, ...]:
+    def _paths(section_keys: Iterable[str]) -> tuple[TreePath, ...]:
         out: list[TreePath] = []
         for section_key in section_keys:
             sk_title, _, section = section_key.partition(":")

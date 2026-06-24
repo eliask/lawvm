@@ -37,6 +37,7 @@ no new rule ids.
 
 from __future__ import annotations
 
+import argparse
 import json
 from collections import Counter
 from dataclasses import dataclass
@@ -54,11 +55,13 @@ from lawvm.us_federal.dry_run import (
     DISPOSITION_MISSING_SOURCE,
     US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID,
     USDryRunReport,
+    USDryRunRefusal,
     USDryRunSectionRow,
 )
 from lawvm.us_federal.sunset import (
     DISPOSITION_SUNSET_REVERSION,
     US_SUNSET_REVERSION_RULE_ID,
+    SunsetClassification,
 )
 
 _FRONTEND_ID = "us_federal"
@@ -168,7 +171,7 @@ def _missing_source_finding(report: USDryRunReport, section_key: str) -> CorpusF
     )
 
 
-def _sunset_finding(report: USDryRunReport, classification: Any) -> CorpusFindingEvidenceRow:
+def _sunset_finding(report: USDryRunReport, classification: SunsetClassification) -> CorpusFindingEvidenceRow:
     """An otherwise-missing_source section explained by a temporary-provision expiry."""
     window = _window_dict(report)
     section = classification.section
@@ -202,7 +205,7 @@ def _sunset_finding(report: USDryRunReport, classification: Any) -> CorpusFindin
     )
 
 
-def _refusal_finding(report: USDryRunReport, refusal: Any) -> CorpusFindingEvidenceRow:
+def _refusal_finding(report: USDryRunReport, refusal: USDryRunRefusal) -> CorpusFindingEvidenceRow:
     """A typed refusal (no materialization attempted) carried verbatim."""
     window = _window_dict(report)
     return CorpusFindingEvidenceRow(
@@ -543,7 +546,7 @@ def _title_counts(rows: tuple[Mapping[str, Any], ...]) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
-def main(args: Any) -> None:
+def main(args: argparse.Namespace) -> None:
     from lawvm.us_federal.sources import open_us_federal_farchive
 
     archive = open_us_federal_farchive(readonly=True)

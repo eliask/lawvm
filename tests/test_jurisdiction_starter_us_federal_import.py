@@ -186,3 +186,58 @@ def test_duplicate_logical_locator_skipped(tmp_path: Path) -> None:
         row["rule_id"] == "us_plaw_import_duplicate_logical_locator"
         for row in report.skipped_entries
     )
+
+
+def test_unreadable_zip_member_emits_typed_skip_not_silent_drop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Guard-liveness: a zip member that raises on read (truncated payload, CRC
+    # mismatch, or other IO corruption) MUST surface as a typed rejection in
+    # report.skipped_entries — never a bare stderr print + `continue` that drops
+    # the lane silently (AGENTS.md §1.8/§1.10). Drives a known-violating input
+    # through the FULL production import path (not a unit test of the catch).
+    zip_path = tmp_path / "PLAW-corrupt-member.zip"
+    body = (FIXTURE_DIR / "PLAW-116publ52.xml").read_bytes()
+    member_name = "PLAW-116publ52.xml"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(member_name, body)
+
+    real_read = zipfile.ZipFile.read
+
+    def _raise_on_plaw(self: zipfile.ZipFile, name: str) -> bytes:
+        if name == member_name:
+            raise zipfile.BadZipFile(f"Bad CRC-32 (synthetic corrupt member): {name}")
+        return real_read(self, name)
+
+    monkeypatch.setattr(zipfile.ZipFile, "read", _raise_on_plaw)
+
+    db_path = tmp_path / "us_federal.farchive"
+    archive = open_us_federal_farchive(db_path, allow_create=True)
+    try:
+        report = import_plaw_zip(zip_path, archive)
+    finally:
+        archive.close()
+
+    # The corrupt member is refused, not silently dropped: the report totals
+    # charge it to both errors and skips (the lane-disappearance receipt counts).
+    assert report.total_errors == 1
+    assert report.total_skipped == 1
+    assert report.total_imported == 0
+    skip = next(
+        row for row in report.skipped_entries
+        if row["rule_id"] == "us_plaw_import_unreadable_zip_member"
+    )
+    assert skip["family"] == "transport_cleanup"
+    assert skip["entry_name"] == member_name
+    # The distinct named diagnostic MUST embed the underlying exception class so
+    # triaging the acquisition gap does not require re-running extraction.
+    assert "BadZipFile" in skip["reason"]
+    # _record_import_skip merges detail keys into the record (not a nested dict).
+    assert skip["exception_type"] == "BadZipFile"
+    # The receiving archive did not persist the corrupt member (no silent
+    # half-import that masquerades as a successful ingest).
+    archive2 = open_us_federal_farchive(db_path, readonly=True)
+    try:
+        assert list(archive2.locators("us://plaw/%")) == []
+    finally:
+        archive2.close()

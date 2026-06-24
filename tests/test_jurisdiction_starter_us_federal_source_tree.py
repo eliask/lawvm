@@ -12,11 +12,14 @@ import pytest
 
 from lawvm.core.ir import LegalAddress
 from lawvm.us_federal.source_tree import (
+    UscSection,
+    UscStatutoryParagraph,
     iter_section_notes,
     parse_usc_title_document,
     split_statutory_subsections,
     strip_replacement_section_catchline,
     summarize_indent_classes,
+    synthetic_usc_section,
     usc_section_address,
 )
 
@@ -346,6 +349,78 @@ def test_split_runin_nested_subparagraph_clause_ladder() -> None:
     ) in segs
 
 
+def test_flush_hang_paragraphs_with_leading_markers_are_structural_nodes() -> None:
+    """The OLRC uses negative-indent "flush/hang" CSS classes for paragraphs that are
+    structurally children of a subsection (e.g., Title 28 §124 divisions (1)-(7)).
+    The marker itself, not the visual indent, determines the structural level.
+    """
+    section = UscSection(
+        title=28,
+        section="124",
+        heading="Texas judicial districts",
+        address=LegalAddress(
+            path=(
+                ("title", "28"),
+                ("section", "124"),
+            )
+        ),
+        statutory_text=(
+            "(a) The Western District comprises seven divisions. "
+            "(1) The Austin Division comprises A. (2) The Pecos Division comprises B. "
+            "Court for the Pecos Division shall be held at Pecos. "
+            "(b) The Eastern District."
+        ),
+        source_credit_raw="",
+        repealed=False,
+        paragraphs=(
+            UscStatutoryParagraph(
+                indent_depth=0,
+                css_class="statutory-body",
+                text="(a) The Western District comprises seven divisions.",
+            ),
+            # These mimic the OLRC flush2/hang4 class: visually flush, but markers
+            # make them paragraph-level structural children of (a).
+            UscStatutoryParagraph(
+                indent_depth=-1,
+                css_class="statutory-body-flush2_hang4",
+                text="(1) The Austin Division comprises A.",
+            ),
+            UscStatutoryParagraph(
+                indent_depth=-1,
+                css_class="statutory-body-flush2_hang4",
+                text="(2) The Pecos Division comprises B.",
+            ),
+            UscStatutoryParagraph(
+                indent_depth=-1,
+                css_class="statutory-body-flush2_hang4",
+                text="Court for the Pecos Division shall be held at Pecos.",
+            ),
+            UscStatutoryParagraph(
+                indent_depth=0,
+                css_class="statutory-body",
+                text="(b) The Eastern District.",
+            ),
+        ),
+        notes=(),
+    )
+    nodes, findings = split_statutory_subsections(section)
+    by_segs = {n.address.path[2:]: n for n in nodes}
+
+    # Flush/hang markers are parsed as paragraph nodes, not swallowed as continuation.
+    assert (("subsection", "a"), ("paragraph", "1")) in by_segs
+    assert (("subsection", "a"), ("paragraph", "2")) in by_segs
+    para1 = by_segs[(("subsection", "a"), ("paragraph", "1"))]
+    assert para1.text.startswith("(1) The Austin Division")
+    para2 = by_segs[(("subsection", "a"), ("paragraph", "2"))]
+    assert para2.text.startswith("(2) The Pecos Division")
+
+    # The continuation line attaches to the open paragraph node.
+    assert "Court for the Pecos Division shall be held at Pecos" in para2.text
+
+    # No ambiguous findings for this clean shape.
+    assert not findings
+
+
 def test_locate_subsection_text_finds_runin_paragraph() -> None:
     """``_locate_subsection_text`` resolves the (b)(2) node the dry-run kernel
     needs (the formerly node-not-located residual class)."""
@@ -556,6 +631,57 @@ def test_split_deep_roman_ladder_descends_not_reopen_shallow_subsection() -> Non
     assert subsec_i.text.startswith("(i) Additional expansion")
 
 
+_DASH_RUNIN_ROMAN_AMBIGUOUS_HTM = b"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head>
+<!-- AUTHORITIES-USC-TITLE-ENUM:38 -->
+ </head>
+ <body>
+  <div>
+<!-- expcite:TITLE 38-VETERANS!@!CHAPTER 73!@!Sec. 7309 -->
+<h3 class="section-head">&sect;7309. Chiefs and assistant chiefs</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">(a) In general. The Secretary may appoint chiefs.</p>
+<p class="statutory-body">(b) Chief Officer.&mdash;(1) There is in the Veterans Health Administration the position of Chief Officer.</p>
+<p class="statutory-body">(2) The Chief Officer is the principal adviser.</p>
+<p class="statutory-body">(c) Structure.&mdash;(1) The Service is organized in directorates.</p>
+<p class="statutory-body">(2) The Service provides counseling.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 95&ndash;598.)</p>
+<!-- field-end:sourcecredit -->
+  </div>
+ </body>
+</html>
+"""
+
+
+def test_split_dash_runin_handles_ambiguous_letter_parent() -> None:
+    """A dash-separated run-in child after an ambiguous lowercase letter (``c`` is
+    both the 3rd subsection and the roman clause 100) must still be split when the
+    letter resolves as a subsection in context.  Both unambiguous ``(b)`` and
+    roman-ambiguous ``(c)`` expose ``paragraph:1``; the following ``(2)``
+    paragraphs are siblings under that paragraph."""
+    doc = parse_usc_title_document(_DASH_RUNIN_ROMAN_AMBIGUOUS_HTM, title=38, year="2014")
+    section = doc.section_by_number("7309")
+    assert section is not None
+    nodes, findings = split_statutory_subsections(section)
+    segs = {n.address.path[2:] for n in nodes}
+    assert findings == []
+    assert (("subsection", "b"),) in segs
+    assert (("subsection", "b"), ("paragraph", "1")) in segs
+    assert (("subsection", "c"),) in segs
+    assert (("subsection", "c"), ("paragraph", "1")) in segs
+    assert (("subsection", "c"), ("paragraph", "2")) in segs
+    # The dash child shares the same source span as its parent.
+    assert any(
+        n.address.path[2:] == (("subsection", "c"), ("paragraph", "1"))
+        and "(c) Structure" in n.text
+        for n in nodes
+    )
+
+
 def test_split_genuinely_ambiguous_marker_stays_flagged_never_guessed() -> None:
     """A bare ``(i)`` opening with NO disambiguating ancestor stack (no open ``(A)``
     to make it a clause, no ``(h)`` to make it the 9th subsection) is genuinely
@@ -716,3 +842,60 @@ def test_replacement_catchline_strip_handles_endash_section() -> None:
     # A mismatched (hyphen) number does NOT strip the en-dash catchline: the dash
     # glyph is part of the key identity, never normalized away.
     assert strip_replacement_section_catchline(payload, "1715z-13a") is None
+
+
+# ---------------------------------------------------------------------------
+# Synthetic-section construction for newly-inserted sections (§1182 SBRA family)
+# ---------------------------------------------------------------------------
+
+
+def test_synthetic_usc_section_splits_quote_wrapped_payload() -> None:
+    """A replacement payload for a new section wraps structural units in nested
+    curly quotes (``“In this subchapter:“(1) Debtor...``). The synthetic section
+    must still expose paragraph-level nodes so later sub-section ops can locate
+    them, and the trailing quote boundary must not be absorbed into the node
+    text (otherwise replacing paragraph (1) would swallow the separator before
+    paragraph (2))."""
+    payload = (
+        "“In this subchapter:“"
+        "(1) Debtor.—The term ‘debtor’ means a small business debtor. "
+        "“(2) Debtor in possession.—The term ‘debtor in possession’ means "
+        "the debtor, unless removed as debtor in possession under section 1185(a) "
+        "of this title. “"
+    )
+    section = synthetic_usc_section(title=11, section="1182", text=payload)
+    nodes, findings = split_statutory_subsections(section)
+    by_addr = {n.address.path[2:]: n for n in nodes}
+    assert (("paragraph", "1"),) in by_addr
+    assert (("paragraph", "2"),) in by_addr
+    para1 = by_addr[(("paragraph", "1"),)]
+    # The node text ends with the statutory period, not the boundary quote that
+    # precedes paragraph (2).
+    assert para1.text.endswith("small business debtor.")
+    assert not para1.text.endswith("“")
+    assert para1.text in section.statutory_text
+
+
+def test_synthetic_usc_section_trailing_quote_boundary_stays_on_adjacent_node() -> None:
+    """When a structural marker is preceded by a quote boundary, the quote must be
+    stripped from the end of the preceding node but retained in the section text
+    as a separator, so ``before_text.replace(node_text, replacement)`` does not
+    delete the next node's wrapper."""
+    payload = (
+        "(1) First.—Text one. "
+        "“(2) Second.—Text two. “"
+    )
+    section = synthetic_usc_section(title=11, section="500", text=payload)
+    nodes, _findings = split_statutory_subsections(section)
+    by_addr = {n.address.path[2:]: n for n in nodes}
+    first = by_addr[(("paragraph", "1"),)]
+    second = by_addr[(("paragraph", "2"),)]
+    # Boundary quote separates the two units in the section text.
+    assert "“" in section.statutory_text
+    # But the first node does not own it.
+    assert not first.text.endswith("“")
+    # The second node still begins with its marker.
+    assert second.text.startswith("(2) Second")
+    # Both nodes are substrings of the whole text.
+    assert first.text in section.statutory_text
+    assert second.text in section.statutory_text

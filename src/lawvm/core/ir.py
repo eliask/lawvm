@@ -87,6 +87,15 @@ class TextSelector:
     match_text: str
     occurrence: int = 0
     end_occurrence: int = 0
+    # Optional second text anchor that BOUNDS the deletion on the right when the
+    # op deletes from `match_text` THROUGH `end_match_text` (inclusive), rather
+    # than from `match_text` to the end of the target node. Used by the US
+    # bounded through-tail strike family: "striking 'OLD' and all that follows
+    # through 'END' and inserting 'NEW'" deletes [OLD..END] then inserts NEW.
+    # When ``None``, the existing single-anchor / last-occurrence semantics
+    # (``occurrence``) apply unchanged, so this field is purely additive for
+    # frontends that do not need it.
+    end_match_text: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.match_text:

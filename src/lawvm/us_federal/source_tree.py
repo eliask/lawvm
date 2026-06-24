@@ -74,7 +74,19 @@ _SECTION_HEAD_RE = re.compile(
 # one line (``(b)(1) If the trustee ...`` is subsection (b) AND its paragraph (1)
 # on a single ``statutory-body`` line). So a paragraph's leading text can carry a
 # run of markers, each opening one level deeper than the last.
+#
+# The OLRC also separates the parent marker from a run-in child by a catchline
+# and an em/en-dash: ``(c) Structure.—(1) The Service ...``.  A second regex
+# finds that child so it is treated as a structural opener, not body prose.
 _MARKER_RE = re.compile(r"^\((?P<token>[0-9A-Za-z]+)\)")
+_MARKER_AFTER_DASH_RE = re.compile(
+    r"^\s*[A-Za-z][A-Za-z\s,.&;]*?[—–—-]\s*\((?P<token>[0-9A-Za-z]+)\)"
+)
+# Structural-marker scanner used inside synthetic_usc_section: finds markers
+# anywhere in the text, unlike _MARKER_RE which is anchored to the start. Hoisted
+# per AGENTS.md §2.4 backtracking discipline — synthetic_usc_section is called
+# per synthetic node and the pattern was compiled per call.
+_SCANNER_MARKER_RE = re.compile(r"(?<!\S)\((?P<token>[0-9A-Za-z]+)\)")
 
 # The pinned USC enumeration ladder. Level == index. The OLRC's CSS indent class
 # is NOT a reliable level signal (run-in nesting flattens children to depth 0, so
@@ -219,21 +231,19 @@ def _marker_interpretations(token: str) -> tuple[tuple[int, int], ...]:
     return tuple(out)
 
 
-def _resolve_marker_level(
+def _resolve_marker_level_with_score(
     token: str,
     stack: list[tuple[int, int]],
     *,
     run_in_child: bool,
-) -> tuple[int, int] | None:
-    """Resolve an enumerator token to one ``(level, ordinal)`` against the open stack.
+) -> tuple[int, int, int] | None:
+    """Resolve an enumerator token to ``(score, level, ordinal)``.
 
-    ``stack`` is the list of ``(level, ordinal)`` open ancestors, shallow→deep.
-    ``run_in_child`` is True when this token follows another marker on the SAME
-    line (``(b)(1)``): it must open a child of the marker before it.
-
-    Returns the chosen ``(level, ordinal)``, or ``None`` when the token is not a
-    recognised enumerator OR is genuinely ambiguous between two levels that score
-    equally (the caller flags it and never guesses).
+    Lower score is a better structural fit against ``stack``.  Returns ``None``
+    when the token is unrecognised or when two different levels tie for the best
+    score.  The score is exposed so callers (e.g. dash-separated run-in detection)
+    can require a clean fit before treating an ambiguous parent letter as a
+    structural container.
     """
     interps = _marker_interpretations(token)
     if not interps:
@@ -280,7 +290,29 @@ def _resolve_marker_level(
     best_levels = {lvl for sc, lvl, _o in scored if sc == best_score}
     if len(best_levels) > 1:
         return None  # ambiguous: two different levels fit equally well
-    return scored[0][1], scored[0][2]
+    return scored[0]
+
+
+def _resolve_marker_level(
+    token: str,
+    stack: list[tuple[int, int]],
+    *,
+    run_in_child: bool,
+) -> tuple[int, int] | None:
+    """Resolve an enumerator token to one ``(level, ordinal)`` against the open stack.
+
+    ``stack`` is the list of ``(level, ordinal)`` open ancestors, shallow→deep.
+    ``run_in_child`` is True when this token follows another marker on the SAME
+    line (``(b)(1)``): it must open a child of the marker before it.
+
+    Returns the chosen ``(level, ordinal)``, or ``None`` when the token is not a
+    recognised enumerator OR is genuinely ambiguous between two levels that score
+    equally (the caller flags it and never guesses).
+    """
+    scored = _resolve_marker_level_with_score(token, stack, run_in_child=run_in_child)
+    if scored is None:
+        return None
+    return scored[1], scored[2]
 
 
 def _localname(el: Any) -> str:
@@ -762,7 +794,7 @@ def _section_heading(head_text: str) -> str:
 # as the target (``§ <num>.``) so it can only ever remove this section's own
 # catchline, never a leading reference that happens to start with ``§``.
 _SECTION_CATCHLINE_PREFIX_RE = re.compile(
-    r"^\s*\[?\s*§+\s*(?P<num>[0-9]+[A-Za-z]*(?:[-‐‑‒–][0-9]+[A-Za-z]*)?)\.\s"
+    r"^\s*\[?\s*§+\s*(?P<num>[0-9]+[A-Za-z]*(?:[-‐‑‒–][0-9]+[A-Za-z]*)?)\.\s*"
 )
 
 
@@ -795,9 +827,100 @@ def strip_replacement_section_catchline(payload: str, section_number: str) -> st
     return payload[body_marker:]
 
 
-# ---------------------------------------------------------------------------
-# STRETCH: subsection-level split
-# ---------------------------------------------------------------------------
+def synthetic_usc_section(
+    *,
+    title: int,
+    section: str,
+    text: str,
+    heading: str = "",
+) -> UscSection:
+    """Build a best-effort :class:`UscSection` from plain text.
+
+    Used to seed a synthetic before-section for a section that does not exist in
+    the before edition but is created by a window-level Public Law INSERT, so that
+    later sub-section operations (e.g. an amend-to-read of paragraph (1)) can locate
+    nodes within the newly created section. The text is split into
+    :class:`UscStatutoryParagraph` paragraphs at structural ``(token)`` markers so
+    :func:`split_statutory_subsections` can run on it.
+
+    This is a fallback construction, not a source parse: it assumes markers that
+    open a fresh unit are not preceded by non-whitespace text. It never fabricates
+    structural information beyond what the text itself carries.
+    """
+    normalized = _normalize_text(text)
+    paragraphs: list[UscStatutoryParagraph] = []
+    # Build a paragraph-breach scan surface where curly/straight quote boundaries act
+    # like whitespace: replacement payloads often wrap structural units in nested
+    # quotes (``“In this subchapter:“(1) Debtor...``). We scan this surface for
+    # markers but slice the ORIGINAL normalized text so quote glyphs remain in the
+    # stored paragraph text (the marker substring is still locatable inside the
+    # original text).
+    scan_surface = (
+        normalized.replace("\"", " ")
+        .replace("“", " ")
+        .replace("”", " ")
+        .replace("‘", " ")
+        .replace("’", " ")
+    )
+    marker_re = _SCANNER_MARKER_RE
+    prev_end = 0
+    for m in marker_re.finditer(scan_surface):
+        body = normalized[prev_end : m.start()].strip()
+        if body:
+            if paragraphs:
+                # Continuation text attaches to the currently open node.
+                last = paragraphs[-1]
+                paragraphs[-1] = UscStatutoryParagraph(
+                    indent_depth=last.indent_depth,
+                    css_class=last.css_class,
+                    text=_normalize_text(f"{last.text} {body}"),
+                )
+            else:
+                # Leading body text before the first marker.
+                paragraphs.append(
+                    UscStatutoryParagraph(indent_depth=-1, css_class="", text=body)
+                )
+        next_m = marker_re.search(scan_surface, m.end())
+        end = next_m.start() if next_m is not None else len(normalized)
+        node_text = _normalize_text(normalized[m.start() : end])
+        # A nested/straight quote that sits immediately before the next structural
+        # marker (or at the end of the payload) is a source wrapper, not part of the
+        # node's statutory text. Drop it so node replacements do not swallow the
+        # boundary between adjacent units.
+        node_text = node_text.rstrip('"\u201c\u201d\u2018\u2019').strip()
+        paragraphs.append(
+            UscStatutoryParagraph(
+                indent_depth=0,
+                css_class="",
+                text=node_text,
+            )
+        )
+        prev_end = end
+    tail = normalized[prev_end:].strip()
+    if tail and paragraphs:
+        last = paragraphs[-1]
+        paragraphs[-1] = UscStatutoryParagraph(
+            indent_depth=last.indent_depth,
+            css_class=last.css_class,
+            text=_normalize_text(f"{last.text} {tail}"),
+        )
+    if not paragraphs:
+        paragraphs.append(
+            UscStatutoryParagraph(indent_depth=-1, css_class="", text=normalized)
+        )
+    return UscSection(
+        title=title,
+        section=section,
+        heading=heading,
+        address=usc_section_address(title, section),
+        statutory_text=normalized,
+        source_credit_raw="",
+        repealed=False,
+        paragraphs=tuple(paragraphs),
+        notes=(),
+        chapter="",
+        subchapter="",
+    )
 
 
 def split_statutory_subsections(
@@ -865,7 +988,74 @@ def split_statutory_subsections(
             # body text that merely contains parenthesised cross-references.
             m = _MARKER_RE.match(rest)
 
-        if para.indent_depth < 0 or not run_tokens:
+        # The OLRC also renders the parent and child markers separated by a short
+        # catchline and an em/en-dash: ``(c) Structure.—(1) The Service ...``.  When
+        # the first marker is followed by such a dash + marker, treat the second as
+        # a run-in child structural opener so amendments targeting ``paragraph:(1)``
+        # can be located.  Conservatively require the parent marker to resolve as
+        # a clean structural container: either it is unambiguous about its level,
+        # or it is the natural next sibling/first-child of the deepest open level.
+        # Ambiguous letters that only fit as a shallower reopen (e.g. the trailing
+        # ``(i)`` in a deep ladder) keep their dash child as prose.
+        if run_tokens and not rest.lstrip().startswith("("):
+            dash_m = _MARKER_AFTER_DASH_RE.match(rest)
+            if dash_m is not None:
+                child_token = dash_m.group("token")
+                # Only treat as structural when the candidate child's token level
+                # cleanly follows the parent marker's level (e.g. (a)->(1) or
+                # (1)->(A)).  Otherwise it is likely cross-reference prose.
+                parent_token = run_tokens[-1]
+                child_interps = _marker_interpretations(child_token)
+                if len(child_interps) == 1:
+                    parent_resolved = _resolve_marker_level(
+                        parent_token, stack, run_in_child=False
+                    )
+                    if parent_resolved is not None:
+                        parent_level, _parent_ordinal = parent_resolved
+                        child_level = child_interps[0][0]
+                        if child_level > parent_level:
+                            run_tokens.append(child_token)
+
+        if not run_tokens:
+            # A flush, unindented block paragraph (e.g. ``Paragraph (4) shall not
+            # be construed...``) is a structural sibling under the current open
+            # unit, not a continuation of its deepest child. Closing to the parent
+            # keeps amendments like ``inserting after paragraph (10)`` from being
+            # spliced inside the prior node's intro text.
+            if para.css_class == "statutory-body-block" and stack:
+                parent_level = stack[-1][0] if len(stack) == 1 else stack[-2][0]
+                while stack and stack[-1][0] > parent_level:
+                    stack.pop()
+                    label_stack.pop()
+                new_level = parent_level + 1
+                new_path = base_path + tuple(
+                    (
+                        _USC_LADDER[lvl] if lvl < len(_USC_LADDER) else f"level{lvl}",
+                        lbl,
+                    )
+                    for (lvl, _o), lbl in zip(stack, label_stack, strict=True)
+                ) + (
+                    (
+                        _USC_LADDER[new_level]
+                        if new_level < len(_USC_LADDER)
+                        else f"level{new_level}",
+                        "",
+                    ),
+                )
+                nodes.append(
+                    UscSubsectionNode(
+                        address=LegalAddress(path=new_path),
+                        label="",
+                        kind=_USC_LADDER[new_level]
+                        if new_level < len(_USC_LADDER)
+                        else f"level{new_level}",
+                        indent_depth=new_level,
+                        text=_normalize_text(para.text),
+                    )
+                )
+                stack.append((new_level, 0))
+                label_stack.append("")
+                continue
             # Continuation / flush / block line, or a paragraph with no leading
             # enumerator: attach text to the currently-open node.
             _attach_continuation(para.text)
