@@ -204,6 +204,130 @@ class TestNoUnexplainedDead:
 # ---------------------------------------------------------------------------
 
 
+class TestReplayDimension:
+    """The replay dimension: replay_exercised is a GENERATED, SNAPSHOTTED fact.
+
+    Import-reach answers "is this DEAD"; replay_exercised answers "does this RUN
+    during replay".  Conflating them cost a 900s census to learn johtolause is
+    ingest-phase (live, 0% replay) not dead.  These tests pin replay_exercised as
+    a committed snapshot with flip-detection in BOTH directions and a guard
+    fixture proving the dimension separates phase from deadness.
+    """
+
+    def test_replay_provenance_recorded(self) -> None:
+        """The snapshot must carry provenance so it cannot go stale silently."""
+        prov = _STATE["replay_provenance"]
+        for field in ("sha256", "corpus", "refresh_command", "module_count"):
+            assert prov.get(field), (
+                f"replay-coverage snapshot provenance missing {field!r}; the "
+                "snapshot must record where it came from + how to refresh it "
+                "(tests/data/replay_coverage_snapshot.json)."
+            )
+
+    def test_replay_exercised_is_none_outside_finland(self) -> None:
+        """Replay scope is the FI pipeline; non-Finland modules are N/A (None),
+        never silently False."""
+        rec = _STATE["modules"]["lawvm.core.observation_registry"]
+        assert rec["replay_exercised"] is None, (
+            "A non-Finland module is outside the replay census scope; its "
+            "replay_exercised must be None (N/A), not False."
+        )
+
+    def test_replay_exercised_snapshot_no_flip(self) -> None:
+        """Flip-detection (BOTH directions): a module changing replay-exercised
+        status without --update-baseline FAILS.  A replay-path module silently
+        falling off = regression signal; an ingest module suddenly replay-hit =
+        also worth a look."""
+        baseline = _load_baseline()
+        committed: dict[str, bool] = baseline["replay_exercised"]
+        current = {
+            mod: rec["replay_exercised"]
+            for mod, rec in _STATE["modules"].items()
+            if rec["replay_exercised"] is not None
+        }
+        became_hot = sorted(
+            m for m, v in current.items() if v and committed.get(m) is False
+        )
+        became_cold = sorted(
+            m for m, v in current.items() if not v and committed.get(m) is True
+        )
+        new_in_scope = sorted(set(current) - set(committed))
+        if became_hot or became_cold or new_in_scope:
+            lines: list[str] = []
+            if became_cold:
+                lines.append(
+                    "  replay-path modules that FELL OFF replay (cold now, "
+                    "hot in snapshot) — possible regression:\n    "
+                    + "\n    ".join(became_cold)
+                )
+            if became_hot:
+                lines.append(
+                    "  ingest modules now HIT by replay (hot now, cold in "
+                    "snapshot) — worth a look:\n    " + "\n    ".join(became_hot)
+                )
+            if new_in_scope:
+                lines.append(
+                    "  Finland modules absent from the snapshot:\n    "
+                    + "\n    ".join(new_in_scope)
+                )
+            pytest.fail(
+                "\n[MODULE-ROLE REPLAY RATCHET] replay_exercised flipped vs the "
+                "committed snapshot:\n"
+                + "\n".join(lines)
+                + "\n\nThe replay_exercised map is a snapshot. If this reflects a "
+                "real change, refresh the replay-coverage snapshot "
+                "(tests/data/replay_coverage_snapshot.json — see its "
+                "provenance.refresh_command) and re-baseline:\n"
+                "      uv run python scripts/inventory_module_roles.py "
+                "--update-baseline"
+            )
+
+    def test_replay_counts_consistent(self) -> None:
+        baseline = _load_baseline()
+        rc = baseline["replay_counts"]
+        re_map: dict[str, bool] = baseline["replay_exercised"]
+        assert rc["in_scope"] == len(re_map)
+        assert rc["exercised"] == sum(1 for v in re_map.values() if v)
+        assert rc["cold"] == sum(1 for v in re_map.values() if not v)
+
+    def test_live_replay_cold_population_named(self) -> None:
+        """The 'live but ingest/analyze-phase' population is NAMED and non-empty —
+        the thing that was confusing, now a checked fact."""
+        cold = _STATE["live_replay_cold"]
+        assert cold, "live-but-replay-cold set is unexpectedly empty."
+        # It is dominated by the known ingest/analyze-phase subpackages.
+        phase_prefixes = (
+            "lawvm.finland.johtolause",
+            "lawvm.finland.references",
+            "lawvm.finland.legal_surface",
+        )
+        in_phase = [m for m in cold if m.startswith(phase_prefixes)]
+        assert in_phase, (
+            "The live-but-replay-cold set must contain the known ingest/"
+            "analyze-phase modules (johtolause/references/legal_surface)."
+        )
+
+    def test_known_ingest_module_is_live_and_replay_cold(self) -> None:
+        """GUARD FIXTURE: a known ingest-phase module classifies LIVE +
+        replay_exercised=False — proving the dimension correctly distinguishes
+        PHASE from DEADNESS.  references.defined_terms is import-reachable from a
+        production consumer (live) yet 0% executed under replay (ingest-phase)."""
+        rec = _STATE["modules"]["lawvm.finland.references.defined_terms"]
+        assert rec["classification"] == "live", (
+            f"references.defined_terms must be LIVE (production-imported), got "
+            f"{rec!r}."
+        )
+        assert rec["replay_exercised"] is False, (
+            f"references.defined_terms is ingest-phase: live but NOT exercised "
+            f"under replay. Got replay_exercised={rec['replay_exercised']!r}. "
+            "If replay now reaches it, refresh the snapshot + re-baseline."
+        )
+        assert rec["replay_exercised"] is not None, (
+            "An ingest-phase Finland module must have a concrete replay_exercised "
+            "fact (not None); the replay dimension applies to it."
+        )
+
+
 class TestStaticAnalysisTraps:
     def test_apply_promotion_chain_classifies_live(self) -> None:
         """Trap #1: zero import call sites, but production-live via the

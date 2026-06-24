@@ -60,6 +60,39 @@ current ``dead`` set and ``test_only_live`` set.  The companion test
 (``tests/test_module_role_consistency.py``) FAILS if either set GROWS — both are
 one-way shrink-only populations (wire it or delete it; never grow the
 unconsumed-producer population).
+
+THE REPLAY DIMENSION (``replay_exercised``)
+-------------------------------------------
+Import-reach answers "is this module DEAD"; it does NOT answer "does this module
+run during REPLAY".  Those are different axes and conflating them cost a 900s
+census to learn that ``johtolause.*`` is INGEST-phase (live, but 0% under
+replay), not dead.  So for every ``lawvm.finland.*`` module we also emit
+``replay_exercised: bool`` — generated, not declared: True iff the module has
+ANY executed statement (``exec > 0``) in a full-corpus ``lawvm replay-all`` run
+under coverage.
+
+Threshold choice: ``exec > 0`` (no floor).  coverage.py records executed
+PHYSICAL statement lines; a module never imported during replay records
+``exec == 0`` even when it has hundreds of statements (e.g.
+``johtolause.census_accounting``: 170 stmts, 0 exec).  The few small-exec
+modules (2–5 exec over 4–23 stmts) are genuine partial replay execution, not
+import noise — an arbitrary floor would falsely drop them.  ``exec > 0`` is the
+honest "did any replay code path touch this module" signal.
+
+The committed replay-coverage snapshot
+(``tests/data/replay_coverage_snapshot.json``) carries the per-module
+``{stmts, exec, pct}`` map plus PROVENANCE (source artifact, sha256, corpus,
+mode, and the heavy refresh command) so the snapshot cannot go stale silently.
+The cheap CI tier reads the committed snapshot (``--replay-coverage`` defaults to
+it); only the heavy refresh re-runs ``replay-all --coverage`` — documented in the
+snapshot's ``provenance.refresh_command``, NOT run here.
+
+The population to NAME: ``classification == 'live' AND replay_exercised == False``
+is the "live but ingest/analyze-phase" set (``johtolause/**``, ``references/**``,
+``legal_surface/**``) — phase, not deadness.  The companion test snapshots
+``replay_exercised`` and FAILS on any flip in EITHER direction without
+``--update-baseline`` (a replay-path module silently falling off = regression
+signal; an ingest module suddenly replay-hit = also worth a look).
 """
 from __future__ import annotations
 
@@ -76,8 +109,23 @@ _DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 BASELINE_PATH = Path("tests/data/module_roles_baseline.json")
 
+# Committed replay-coverage snapshot (the cheap-CI input for replay_exercised).
+REPLAY_COVERAGE_PATH = Path("tests/data/replay_coverage_snapshot.json")
+
 _SRC_ROOT = Path("src")
 _PKG = "lawvm"
+
+# The replay dimension only applies to the Finland pipeline (replay-all replays
+# the FI corpus; only ``lawvm.finland.*`` modules are in scope for the coverage
+# census).  Modules outside this prefix get ``replay_exercised = None`` (N/A).
+_REPLAY_SCOPE_PREFIX = "lawvm.finland."
+
+# A module is replay-exercised iff it has STRICTLY MORE than this many executed
+# statements in the replay-coverage snapshot.  ``> 0`` (no floor): coverage.py
+# counts executed physical statement lines, so a module never imported during
+# replay records exec==0 even with hundreds of statements; the few small-exec
+# modules are genuine partial execution, not import noise.  See module docstring.
+_REPLAY_EXEC_FLOOR = 0
 
 # ---------------------------------------------------------------------------
 # Trap #2: optional env-gated backends — lazy-import-only, 0% coverage EXPECTED,
@@ -317,6 +365,53 @@ def registry_edges(
 
 
 # ---------------------------------------------------------------------------
+# Replay-coverage snapshot (the replay dimension).
+# ---------------------------------------------------------------------------
+
+
+def load_replay_coverage(
+    repo_root: Path, coverage_path: Path | None = None
+) -> dict[str, Any]:
+    """Load the committed replay-coverage snapshot.
+
+    Returns ``{provenance, exec_by_module}`` where ``exec_by_module`` maps a
+    module to its executed-statement count in the full-corpus replay run.  The
+    cheap CI tier reads the committed snapshot; the heavy refresh re-runs
+    ``replay-all`` under coverage (see ``provenance.refresh_command``).
+    """
+    path = (
+        coverage_path
+        if coverage_path is not None
+        else repo_root / REPLAY_COVERAGE_PATH
+    )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    coverage = data.get("coverage", {})
+    exec_by_module = {
+        mod: int(rec.get("exec", 0)) for mod, rec in coverage.items()
+    }
+    return {
+        "provenance": data.get("provenance", {}),
+        "exec_by_module": exec_by_module,
+    }
+
+
+def _replay_exercised(mod: str, exec_by_module: dict[str, int]) -> bool | None:
+    """Generated fact: is ``mod`` exercised during full-corpus replay?
+
+    ``None`` for modules outside the replay scope (non-Finland — the replay
+    census does not cover them, so the question is N/A, not False).  ``True``
+    iff the module's executed-statement count exceeds ``_REPLAY_EXEC_FLOOR``.
+    A Finland module ABSENT from the snapshot is treated as not-exercised
+    (False): the snapshot enumerates every Finland module the coverage run saw;
+    a genuinely new Finland module missing from it is replay-cold until proven
+    otherwise (and the flip ratchet will demand a refresh).
+    """
+    if not mod.startswith(_REPLAY_SCOPE_PREFIX):
+        return None
+    return exec_by_module.get(mod, 0) > _REPLAY_EXEC_FLOOR
+
+
+# ---------------------------------------------------------------------------
 # BFS reachability + classification.
 # ---------------------------------------------------------------------------
 
@@ -333,20 +428,33 @@ def _bfs(roots: set[str], edges: dict[str, set[str]]) -> set[str]:
     return seen
 
 
-def scan_module_roles(repo_root: Path | None = None) -> dict[str, Any]:
-    """Classify every ``src/lawvm`` module by role.  Import-reach only (no coverage).
+def scan_module_roles(
+    repo_root: Path | None = None, coverage_path: Path | None = None
+) -> dict[str, Any]:
+    """Classify every ``src/lawvm`` module by role.  Import-reach + replay dim.
+
+    Classification is import-reach only (no coverage run needed).  The
+    ``replay_exercised`` field is read from the committed replay-coverage
+    snapshot (``coverage_path``, default ``tests/data/replay_coverage_snapshot``)
+    — a FACT, not a re-run of the ~900s census.
 
     Returns a dict with:
       - ``modules``: {module: {reachable_from_entrypoint, importer_kind,
-        classification}}
+        classification, replay_exercised}}
       - ``dead``: sorted list of modules classified ``dead``.
       - ``test_only_live``: sorted list of modules classified ``test_only_live``.
+      - ``live_replay_cold``: sorted list of ``live`` modules with
+        ``replay_exercised == False`` (the ingest/analyze-phase population).
       - ``roots``: the entrypoint roots used.
+      - ``replay_provenance``: the snapshot's provenance block.
       - ``unresolved_owner_residual``: owner strings that did not uniquely resolve.
       - ``parse_failures``: any AST parse failures (should be empty).
     """
     root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
     src_root = root / _SRC_ROOT
+
+    replay = load_replay_coverage(root, coverage_path)
+    exec_by_module: dict[str, int] = replay["exec_by_module"]
 
     graph = build_import_graph(src_root)
     all_mods = set(graph["modules"])
@@ -422,20 +530,30 @@ def scan_module_roles(repo_root: Path | None = None) -> dict[str, Any]:
             "reachable_from_entrypoint": in_production,
             "importer_kind": importer_kind,
             "classification": classification,
+            "replay_exercised": _replay_exercised(mod, exec_by_module),
         }
 
     dead = sorted(m for m, r in modules.items() if r["classification"] == "dead")
     test_only_live = sorted(
         m for m, r in modules.items() if r["classification"] == "test_only_live"
     )
+    # The phase-disambiguated population: live, but cold under replay (ingest /
+    # analyze-phase modules — johtolause/**, references/**, legal_surface/**).
+    live_replay_cold = sorted(
+        m
+        for m, r in modules.items()
+        if r["classification"] == "live" and r["replay_exercised"] is False
+    )
 
     return {
         "modules": modules,
         "dead": dead,
         "test_only_live": test_only_live,
+        "live_replay_cold": live_replay_cold,
         "roots": sorted(roots),
         "optional_backend_modules": sorted(OPTIONAL_BACKEND_MODULES),
         "unresolved_owner_residual": reg["unresolved_owner_residual"],
+        "replay_provenance": replay["provenance"],
         "parse_failures": graph["parse_failures"],
     }
 
@@ -450,21 +568,45 @@ def _baseline_payload(repo_root: Path | None = None) -> dict[str, Any]:
     counts: dict[str, int] = defaultdict(int)
     for record in state["modules"].values():
         counts[record["classification"]] += 1
+
+    # The committed replay_exercised snapshot: {module: bool} over every module
+    # in replay scope (replay_exercised is not None).  This is the snapshot the
+    # flip-detection ratchet pins; a True<->False flip without --update-baseline
+    # fails (either direction is meaningful).
+    replay_exercised = {
+        mod: record["replay_exercised"]
+        for mod, record in sorted(state["modules"].items())
+        if record["replay_exercised"] is not None
+    }
+    replay_counts = {
+        "exercised": sum(1 for v in replay_exercised.values() if v),
+        "cold": sum(1 for v in replay_exercised.values() if not v),
+        "in_scope": len(replay_exercised),
+    }
+
     return {
         "_doc": (
             "Monotone module-role baseline. The `dead` and `test_only_live` sets "
             "may only SHRINK: a module born dead must be wired or deleted, never "
-            "added to the population. Regenerate with `uv run python "
+            "added to the population. The `replay_exercised` map is a SNAPSHOT: a "
+            "module flipping replay-exercised status (either direction) fails the "
+            "ratchet until re-baselined. Regenerate with `uv run python "
             "scripts/inventory_module_roles.py --update-baseline` after "
-            "legitimately retiring (deleting) a dead/test-only module or wiring it "
-            "to a production consumer."
+            "legitimately retiring (deleting) a dead/test-only module, wiring it "
+            "to a production consumer, or refreshing the replay-coverage snapshot "
+            "(tests/data/replay_coverage_snapshot.json — see its "
+            "provenance.refresh_command)."
         ),
         "counts": dict(sorted(counts.items())),
+        "replay_counts": replay_counts,
         "dead": state["dead"],
         "test_only_live": state["test_only_live"],
+        "live_replay_cold": state["live_replay_cold"],
         "roots": state["roots"],
         "optional_backend_modules": state["optional_backend_modules"],
         "unresolved_owner_residual": state["unresolved_owner_residual"],
+        "replay_provenance": state["replay_provenance"],
+        "replay_exercised": replay_exercised,
     }
 
 
@@ -485,6 +627,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Rewrite the committed module-role baseline JSON.",
     )
+    parser.add_argument(
+        "--replay-coverage",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Replay-coverage snapshot to read for replay_exercised (default: "
+            "the committed tests/data/replay_coverage_snapshot.json). The cheap "
+            "CI tier uses the default; the heavy refresh re-runs replay-all "
+            "under coverage (see the snapshot's provenance.refresh_command)."
+        ),
+    )
     return parser
 
 
@@ -494,13 +648,23 @@ def main(argv: list[str] | None = None) -> int:
         out_path = update_baseline()
         print(f"Wrote module-role baseline: {out_path}")
         return 0
-    state = scan_module_roles()
+    state = scan_module_roles(coverage_path=args.replay_coverage)
     counts: dict[str, int] = defaultdict(int)
     for record in state["modules"].values():
         counts[record["classification"]] += 1
     for klass in sorted(counts):
         print(f"{counts[klass]:5d}  {klass}")
     print(f"  dead: {len(state['dead'])}  test_only_live: {len(state['test_only_live'])}")
+    n_scope = sum(
+        1 for r in state["modules"].values() if r["replay_exercised"] is not None
+    )
+    n_exercised = sum(
+        1 for r in state["modules"].values() if r["replay_exercised"] is True
+    )
+    print(
+        f"  replay_exercised: {n_exercised}/{n_scope} in-scope finland modules; "
+        f"live-but-replay-cold: {len(state['live_replay_cold'])}"
+    )
     if state["unresolved_owner_residual"]:
         print(
             f"  unresolved owner residual: "
