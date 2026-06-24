@@ -1079,6 +1079,35 @@ def drill_sparse_omission_tail_pruned_from_carrier_compile_surface() -> None:
     assert SPARSE_OMISSION_TAIL_PRUNE_RULE in finding_kinds
 
 
+def drill_rebase_replaced_renumber_source_inspect_bundle() -> None:
+    """ELAB.REBASE_REPLACED_RENUMBER_SOURCE reaches the inspect-amendment surface.
+
+    Production lane: ``build_amendment_bundle`` runs the real Finland compile /
+    group-elaboration path for the corpus witness ``2007/121 <- 2010/1357``.
+    That path rebases the source ``REPLACE 45 § 3 mom`` to the typed
+    renumber-destination slot and emits the blocking elaboration observation.
+    The drill asserts the observation is consumer-visible on the same debug
+    surface used during bench/divergence triage; it does not hand-build the
+    observation.
+    """
+    from lawvm.tools.inspect_amendment import build_amendment_bundle
+
+    bundle = build_amendment_bundle("2007/121", "2010/1357", mode="official_consolidation")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "45")
+
+    assert any(
+        observation["kind"] == "ELAB.REBASE_REPLACED_RENUMBER_SOURCE"
+        and observation["detail"]["rebases"] == [
+            {
+                "from_paragraph": 3,
+                "to_paragraph": 4,
+                "op_description": "REPLACE 5 luku 45 § 3 mom",
+            }
+        ]
+        for observation in group["elaboration_observations"]
+    )
+
+
 def drill_effect_lifecycle_target_unresolved_apply_lane() -> None:
     """APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED reaches strict barrier from the builder.
 
@@ -3405,6 +3434,7 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET": drill_restore_heading_for_explicit_facet_group_elaboration,
     "ELAB.SPARSE_OMISSION_TAIL_CLAIM": drill_sparse_omission_tail_claim_group_surface,
     "ELAB.SPARSE_OMISSION_TAIL_PRUNED_FROM_CARRIER": drill_sparse_omission_tail_pruned_from_carrier_compile_surface,
+    "ELAB.REBASE_REPLACED_RENUMBER_SOURCE": drill_rebase_replaced_renumber_source_inspect_bundle,
     "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_parse_surface,
     "REPLAY_UNKNOWN_MUTATION_OUTCOME": drill_replay_unknown_mutation_outcome_apply_lane,
     "REPLAY_SKIPPED_OP_MUTATED_TREE": drill_replay_skipped_op_mutated_tree_apply_lane,
@@ -3835,6 +3865,9 @@ _PRODUCTION_BUILDER_CALLS = (
     "compile_amendment_ops",
     "elaborate_group",
     "elaborate_payload_against_live",
+    # Consumer-visible production/debug bundle used by divergence triage; it
+    # drives the real compile/group-elaboration path and exposes observations.
+    "build_amendment_bundle",
     # Pre-snapshot scope/action recovery for one compile group: the production
     # entrypoint that runs every LOWER.* scope-recovery guard
     # (_maybe_apply_descendant_body_chapter_scope etc.) over the lowered group ops.

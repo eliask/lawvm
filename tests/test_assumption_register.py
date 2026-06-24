@@ -123,8 +123,8 @@ def test_b2_entry_is_well_formed() -> None:
     )
     assert b2.kind == "doctrine_unresolved"
     assert b2.effect == "qualifies"
-    # expires_when names a real-corpus anchor AND the 1973/36 discriminator.
-    assert "real-corpus anchor" in b2.expires_when
+    # expires_when names the concrete source-body-wins anchor AND the 1973/36 discriminator.
+    assert "2016/773 §148" in b2.expires_when
     assert "1973/36" in b2.expires_when
     # public_message states the boundary honestly.
     assert b2.public_message.strip()
