@@ -35,6 +35,10 @@ from lawvm.finland.legal_surface.clause_segment import (
     build_clause_index,
     build_segmentation_graph,
 )
+from lawvm.finland.legal_surface.editorial_filter import (
+    iter_operative_paragraphs,
+    operative_itertext,
+)
 from lawvm.finland.legal_surface.provision_index import build_provision_index
 from lawvm.finland.legal_surface.tokenize import (
     build_morph_overlay,
@@ -55,9 +59,14 @@ def _sha256_text(text: str) -> str:
 def decode_body_text(xml_bytes: bytes) -> str:
     """Decode the statute body into a single coordinate space.
 
-    Concatenates each ``<p>`` element's text (``itertext``) joined by newlines —
-    the same paragraph set the existing reference lanes scan, so a surface that a
-    recognizer matched in a ``<p>`` is locatable here. Returns "" on parse error.
+    Concatenates each OPERATIVE ``<p>`` element's text joined by newlines — the
+    same paragraph set the existing reference lanes scan, so a surface a
+    recognizer matched in a ``<p>`` is locatable here. Non-operative editorial
+    material (``<authorialNote>`` footnotes/corrigenda, ``noteAuthorial`` version
+    notes, ``signatures``/``conclusions``/``attachments`` boilerplate) is dropped
+    via the shared :mod:`editorial_filter` so it never pollutes the coordinate
+    space — see that module for why this loses no structural signal. Returns ""
+    on parse error.
     """
     if not xml_bytes:
         return ""
@@ -65,11 +74,9 @@ def decode_body_text(xml_bytes: bytes) -> str:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError:
         return ""
-    parts: list[str] = []
-    for el in root.iter():
-        local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
-        if local == "p":
-            parts.append("".join(el.itertext()))
+    parts = [
+        "".join(operative_itertext(p)) for p, _ in iter_operative_paragraphs(root)
+    ]
     return "\n".join(parts)
 
 
