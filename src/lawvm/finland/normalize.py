@@ -17,9 +17,11 @@ grafter.py re-exports every public symbol from here for backward compatibility.
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from typing import List, Optional, Set, Tuple
+from warnings import deprecated
 
 import lxml.etree as etree
 
@@ -928,6 +930,13 @@ def _expand_numeric_section_list_ir(text: str) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
+@deprecated(
+    "Legacy fallback op heuristic (rank-3 fallback retirement, gated by "
+    "allows_target_guessing). New callers must route johtolause through the "
+    "owning johtolause/forest parser in lawvm.finland.frontend_compile; this "
+    "regex heuristic only fires when the typed parse yields no ops and is being "
+    "strangled out."
+)
 def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
     """Deterministic fallback for very simple johtolause patterns.
 
@@ -952,7 +961,12 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
             chunk = re.sub(r"^(?:sekä|ja)\s+", "", chunk)
             if not chunk or chunk == cleaned:
                 continue
-            split_ops.extend(parse_ops_fallback_heuristic(chunk))
+            with warnings.catch_warnings():
+                # Internal recursion of this legacy fallback over verb-split
+                # chunks; the @deprecated signal is for external callers, not
+                # the fallback's own bounded self-recursion.
+                warnings.simplefilter("ignore", DeprecationWarning)
+                split_ops.extend(parse_ops_fallback_heuristic(chunk))
         if split_ops:
             return _dedupe_fallback_ops_ir(split_ops)
     insert_subsection_ops = _extract_insert_subsection_ops_fallback(cleaned)
@@ -1135,6 +1149,13 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
     )
 
 
+@deprecated(
+    "Legacy fallback op heuristic (coverage-diagnostic shadow of "
+    "parse_ops_fallback_heuristic; rank-3 fallback retirement). New callers must "
+    "route johtolause through the owning johtolause/forest parser in "
+    "lawvm.finland.frontend_compile; this regex heuristic only fires when the "
+    "typed parse yields no ops and is being strangled out."
+)
 def parse_ops_fallback_heuristic_with_coverage(
     johto: str,
     *,
@@ -1147,7 +1168,11 @@ def parse_ops_fallback_heuristic_with_coverage(
     is still semantically unowned.
     """
 
-    ops = parse_ops_fallback_heuristic(johto)
+    with warnings.catch_warnings():
+        # Internal delegation to the sibling legacy fallback; both are demoted
+        # together. The @deprecated signal targets external callers.
+        warnings.simplefilter("ignore", DeprecationWarning)
+        ops = parse_ops_fallback_heuristic(johto)
     cleaned = _RE_WHITESPACE.sub(" ", johto).strip().lower()
     container_coverage = _extract_insert_container_ops_fallback_with_coverage(
         cleaned,
@@ -1171,6 +1196,12 @@ def parse_ops_fallback_heuristic_with_coverage(
     )
 
 
+@deprecated(
+    "Legacy title-only fallback op heuristic (rank-3 fallback retirement). New "
+    "callers must route the amendment through the owning johtolause/forest "
+    "parser in lawvm.finland.frontend_compile; this title-driven repeal-only "
+    "heuristic fires only when the body yields no ops and is being strangled out."
+)
 def parse_ops_title_fallback(title: str) -> List[AmendmentOp]:
     """Recover narrow title-only amendment semantics when the body yields no ops.
 

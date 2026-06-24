@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING, List, Literal, Optional
+from warnings import deprecated
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
@@ -155,6 +156,13 @@ def _legacy_unscoped_duplicate_consumed_paths(
     return tuple(consumed)
 
 
+@deprecated(
+    "Legacy field-based apply dispatch; the compatibility safety net for ops "
+    "that reach apply without a typed CanonicalIntent. New callers must build a "
+    "CanonicalIntent and go through apply_op() / the typed dispatch in "
+    "lawvm.finland.apply_typed_dispatch (_apply_canonical_intent); this field "
+    "dispatcher is being strangled out and emits LEGACY_DISPATCH_FALLBACK."
+)
 def _apply_legacy_dispatch(
     state: "ReplayState",
     op: AmendmentOp,

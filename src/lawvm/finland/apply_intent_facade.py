@@ -13,6 +13,7 @@ facade owns lane *selection* only, not the slice implementations.
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Literal, Optional
 
@@ -380,28 +381,34 @@ def dispatch_apply_intent(
         slot_assignment=slot_assignment,
         rop=rop,
     )
-    return _apply_legacy_dispatch(
-        state,
-        legacy_inputs.shell_op,
-        rop_description,
-        ctx,
-        legacy_inputs.muutos_ir,
-        cross_ir=legacy_inputs.cross_ir,
-        amend_sub_ir=legacy_inputs.amend_sub_ir,
-        slot_assignment=legacy_inputs.slot_assignment,
-        replay_mode=replay_mode,
-        failed_ops_out=failed_ops_out,
-        source_pathologies_out=source_pathologies_out,
-        mutation_events_out=mutation_events_out,
-        findings_out=findings_out,
-        path_hint=path_hint,
-        replay_history_ops=replay_history_ops,
-        standalone_section_targets=standalone_section_targets,
-        rop=rop,
-        migration_ledger=migration_ledger,
-        inputs_prepared=True,
-        strict_profile=strict_profile,
-    )
+    with warnings.catch_warnings():
+        # Legitimate internal fallback: the typed-intent waiver is handled here
+        # at the public apply boundary, then we route to the legacy field
+        # dispatcher. @deprecated lights up EXTERNAL/new callers, not this
+        # facade's own already-witnessed fallback (LEGACY_DISPATCH_FALLBACK).
+        warnings.simplefilter("ignore", DeprecationWarning)
+        return _apply_legacy_dispatch(
+            state,
+            legacy_inputs.shell_op,
+            rop_description,
+            ctx,
+            legacy_inputs.muutos_ir,
+            cross_ir=legacy_inputs.cross_ir,
+            amend_sub_ir=legacy_inputs.amend_sub_ir,
+            slot_assignment=legacy_inputs.slot_assignment,
+            replay_mode=replay_mode,
+            failed_ops_out=failed_ops_out,
+            source_pathologies_out=source_pathologies_out,
+            mutation_events_out=mutation_events_out,
+            findings_out=findings_out,
+            path_hint=path_hint,
+            replay_history_ops=replay_history_ops,
+            standalone_section_targets=standalone_section_targets,
+            rop=rop,
+            migration_ledger=migration_ledger,
+            inputs_prepared=True,
+            strict_profile=strict_profile,
+        )
 
 
 __all__ = [

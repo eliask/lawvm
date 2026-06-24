@@ -20,7 +20,9 @@ adjudication (not pure comparison normalization).
 from __future__ import annotations
 
 import re
+import warnings
 from typing import Any
+from warnings import deprecated
 
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
 
@@ -341,6 +343,12 @@ _STANDALONE_SUBSECTION_ORDINAL_RE = re.compile(
 )
 
 
+@deprecated(
+    "Legacy comparison-only heading-prefix stripper for old FI Roman division "
+    "headings. Comparison-only and self-validating; new callers must go through "
+    "strip_non_substantive_source_projection_residue (the owning composite) "
+    "rather than invoking this legacy stripper directly."
+)
 def strip_legacy_roman_division_heading_prefix(text: str) -> str:
     """Drop old FI division headings accidentally attached to section text.
 
@@ -355,6 +363,12 @@ def strip_legacy_roman_division_heading_prefix(text: str) -> str:
     return _LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE.sub(r"\1", text, count=1)
 
 
+@deprecated(
+    "Legacy comparison-only heading-prefix stripper for old FI numbered "
+    "presentation headings. Comparison-only and self-validating; new callers "
+    "must go through strip_non_substantive_source_projection_residue (the owning "
+    "composite) rather than invoking this legacy stripper directly."
+)
 def strip_legacy_numbered_section_heading_prefix(text: str) -> str:
     """Drop old FI numbered presentation headings attached to section text.
 
@@ -398,11 +412,16 @@ def strip_standalone_subsection_ordinals(text: str) -> str:
 
 def strip_non_substantive_source_projection_residue(text: str) -> str:
     """Remove FI source-side presentation/promulgation residue for comparison."""
-    return strip_promulgation_closure_tail(
-        strip_legacy_numbered_section_heading_prefix(
-            strip_legacy_roman_division_heading_prefix(text)
+    with warnings.catch_warnings():
+        # This composite is the OWNING entry point for the legacy heading
+        # strippers; @deprecated lights up external direct callers, not this
+        # owner's own delegation.
+        warnings.simplefilter("ignore", DeprecationWarning)
+        return strip_promulgation_closure_tail(
+            strip_legacy_numbered_section_heading_prefix(
+                strip_legacy_roman_division_heading_prefix(text)
+            )
         )
-    )
 
 
 # A figure-legend entry: a bare ordinal (1–2 digits) naming one numbered marking

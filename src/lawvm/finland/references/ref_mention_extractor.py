@@ -46,7 +46,9 @@ from __future__ import annotations
 
 import os
 import re
+import warnings
 import xml.etree.ElementTree as ET
+from warnings import deprecated
 from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Callable, List, Optional, Tuple
@@ -1233,6 +1235,13 @@ def extract_eu_reference_mentions(
     return result
 
 
+@deprecated(
+    "Legacy plain-text statute-citation regex lane, demoted to a typed-residue "
+    "FALLBACK behind the construction-grammar lane "
+    "(extract_inline_id_construction_mentions). New callers must go through "
+    "extract_all_reference_mentions, which runs the owning recognizer first and "
+    "keeps this regex lane only as an auditable residue net."
+)
 def extract_plain_text_statute_mentions(
     xml_bytes: bytes,
     statute_id: str,
@@ -2225,15 +2234,20 @@ def extract_all_reference_mentions(
     # path keeps the regex lane as primary, byte-identical to before the flip.
     plain = ExtractionResult()
     if ignore_annotations:
-        plain = extract_plain_text_statute_mentions(
-            xml_bytes,
-            statute_id,
-            valid_at_interval=valid_at_interval,
-            ref_covered_statute_ids=ref_covered,
-            # Measurement mode also reads <ref> INNER text (production hides it in
-            # the markup), so the text lane gets a real shot at the hidden cite.
-            include_ref_text=True,
-        )
+        with warnings.catch_warnings():
+            # Internal demotion path: the regex lane is intentionally kept here
+            # as a typed-residue fallback / measurement lane. @deprecated lights
+            # up EXTERNAL callers, not this owning orchestrator.
+            warnings.simplefilter("ignore", DeprecationWarning)
+            plain = extract_plain_text_statute_mentions(
+                xml_bytes,
+                statute_id,
+                valid_at_interval=valid_at_interval,
+                ref_covered_statute_ids=ref_covered,
+                # Measurement mode also reads <ref> INNER text (production hides it in
+                # the markup), so the text lane gets a real shot at the hidden cite.
+                include_ref_text=True,
+            )
     else:
         construction, construction_keys = extract_inline_id_construction_mentions(
             xml_bytes,
@@ -2248,13 +2262,18 @@ def extract_all_reference_mentions(
         # the construction already covered is the SAME citation (drop the dup); a
         # regex hit the construction did NOT cover is genuine residue — emit it,
         # marked as a typed fallback so the residual class is auditable.
-        regex_residue = extract_plain_text_statute_mentions(
-            xml_bytes,
-            statute_id,
-            valid_at_interval=valid_at_interval,
-            ref_covered_statute_ids=ref_covered,
-            include_ref_text=False,
-        )
+        with warnings.catch_warnings():
+            # Internal demotion path: regex lane runs ONLY for residue the
+            # construction lane did not cover. @deprecated targets external
+            # callers, not this owning orchestrator.
+            warnings.simplefilter("ignore", DeprecationWarning)
+            regex_residue = extract_plain_text_statute_mentions(
+                xml_bytes,
+                statute_id,
+                valid_at_interval=valid_at_interval,
+                ref_covered_statute_ids=ref_covered,
+                include_ref_text=False,
+            )
         for m in regex_residue.mentions:
             key = _inline_id_provision_key(m.target_provision_ref)
             if key is not None and key in construction_keys:

@@ -1,0 +1,96 @@
+{
+  "_doc": "Monotone call-site baseline for the PEP 702 @deprecated FI legacy-fallback cohort. Counts may only fall. Regenerate with `uv run python scripts/inventory_deprecated_callsites.py --update-baseline` after legitimately retiring a legacy call site (or, with explicit acknowledgment, after adding one).",
+  "symbols": {
+    "parse_ops_fallback_heuristic": "src/lawvm/finland/normalize.py",
+    "parse_ops_fallback_heuristic_with_coverage": "src/lawvm/finland/normalize.py",
+    "parse_ops_title_fallback": "src/lawvm/finland/normalize.py",
+    "_apply_legacy_dispatch": "src/lawvm/finland/apply_legacy_dispatch.py",
+    "extract_plain_text_statute_mentions": "src/lawvm/finland/references/ref_mention_extractor.py",
+    "strip_legacy_roman_division_heading_prefix": "src/lawvm/finland/oracle_comparison.py",
+    "strip_legacy_numbered_section_heading_prefix": "src/lawvm/finland/oracle_comparison.py",
+    "parse_leading_structural_address_path": "src/lawvm/finland/address_parse.py"
+  },
+  "counts": {
+    "parse_ops_fallback_heuristic": 17,
+    "parse_ops_fallback_heuristic_with_coverage": 6,
+    "parse_ops_title_fallback": 2,
+    "_apply_legacy_dispatch": 6,
+    "extract_plain_text_statute_mentions": 22,
+    "strip_legacy_roman_division_heading_prefix": 1,
+    "strip_legacy_numbered_section_heading_prefix": 1,
+    "parse_leading_structural_address_path": 0
+  },
+  "sites": {
+    "parse_ops_fallback_heuristic": [
+      "src/lawvm/finland/normalize.py:969",
+      "src/lawvm/finland/normalize.py:1175",
+      "src/lawvm/tools/dump.py:303",
+      "src/lawvm/tools/verify.py:354",
+      "tests/test_fi_grafter_fallback.py:7180",
+      "tests/test_fi_grafter_fallback.py:7906",
+      "tests/test_fi_grafter_fallback.py:8318",
+      "tests/test_fi_grafter_fallback.py:8336",
+      "tests/test_fi_grafter_fallback.py:8384",
+      "tests/test_fi_grafter_fallback.py:8686",
+      "tests/test_fi_grafter_fallback.py:8787",
+      "tests/test_fi_grafter_fallback.py:12797",
+      "tests/test_fi_grafter_fallback.py:13763",
+      "tests/test_fi_grafter_fallback.py:13805",
+      "tests/test_fi_session_regressions_2026_04.py:1528",
+      "tests/test_parser_smell_inventory.py:18",
+      "scripts/capture_gold.py:80"
+    ],
+    "parse_ops_fallback_heuristic_with_coverage": [
+      "src/lawvm/finland/frontend_compile.py:4580",
+      "tests/test_fi_grafter_fallback.py:8093",
+      "tests/test_fi_grafter_fallback.py:8126",
+      "tests/test_fi_grafter_fallback.py:8141",
+      "tests/test_fi_grafter_fallback.py:8177",
+      "tests/test_fi_grafter_fallback.py:8200"
+    ],
+    "parse_ops_title_fallback": [
+      "src/lawvm/finland/frontend_compile.py:4875",
+      "scripts/capture_gold.py:86"
+    ],
+    "_apply_legacy_dispatch": [
+      "src/lawvm/finland/apply_intent_facade.py:390",
+      "tests/test_fi_apply.py:9346",
+      "tests/test_fi_apply.py:16926",
+      "tests/test_fi_apply.py:16996",
+      "tests/test_fi_apply.py:17036",
+      "tests/test_fi_apply.py:17068"
+    ],
+    "extract_plain_text_statute_mentions": [
+      "src/lawvm/finland/references/ref_mention_extractor.py:15",
+      "src/lawvm/finland/references/ref_mention_extractor.py:2242",
+      "src/lawvm/finland/references/ref_mention_extractor.py:2270",
+      "tests/test_fi_cross_statute_chapter.py:92",
+      "tests/test_fi_cross_statute_chapter.py:108",
+      "tests/test_fi_reference_mention.py:823",
+      "tests/test_fi_reference_mention.py:1413",
+      "tests/test_fi_reference_mention.py:1432",
+      "tests/test_fi_reference_mention.py:1449",
+      "tests/test_fi_reference_mention.py:1475",
+      "tests/test_fi_reference_mention.py:1504",
+      "tests/test_fi_reference_mention.py:1525",
+      "tests/test_fi_reference_mention.py:1641",
+      "tests/test_fi_reference_mention.py:1762",
+      "tests/test_fi_reference_mention.py:1789",
+      "tests/test_fi_reference_mention.py:1950",
+      "tests/test_fi_reference_mention.py:1961",
+      "tests/test_fi_reference_mention.py:1972",
+      "tests/test_fi_reference_mention.py:1983",
+      "tests/test_fi_reference_mention.py:1994",
+      "tests/test_fi_reference_mention.py:2010",
+      "tests/test_fi_reference_mention.py:2321"
+    ],
+    "strip_legacy_roman_division_heading_prefix": [
+      "src/lawvm/finland/oracle_comparison.py:422"
+    ],
+    "strip_legacy_numbered_section_heading_prefix": [
+      "src/lawvm/finland/oracle_comparison.py:421"
+    ],
+    "parse_leading_structural_address_path": []
+  },
+  "total": 55
+}

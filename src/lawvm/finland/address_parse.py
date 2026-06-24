@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import List
+from warnings import deprecated
 
 # ---------------------------------------------------------------------------
 # Data type
@@ -71,6 +72,13 @@ def _norm_section(raw: str) -> str:
     return _WHITESPACE_RE.sub("", raw.strip()).lower()
 
 
+@deprecated(
+    "Legacy regex-bounded leading-structural-path probe over flat hcontainer "
+    "raw text. Superseded by the shared johtolause grammar driver "
+    "lawvm.finland.references.freetext_addresses.scan_legal_addresses (a verified "
+    "place-level superset); new callers must parse structure through that "
+    "recognizer rather than this leading-path regex probe."
+)
 def parse_leading_structural_address_path(text: str) -> List[tuple[str, str]]:
     """Best-effort parse of the leading structural address in raw statute text.
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
+import warnings
 from dataclasses import dataclass, replace as dc_replace
 from datetime import date
 from difflib import SequenceMatcher
@@ -4571,10 +4572,15 @@ def normalize_and_compile_ops(
     # Fallback paths (still AmendmentOp-based, skips LO normalization chain)
     # Heuristic #29: parse_ops_fallback_heuristic — gated by allows_target_guessing
     _allows_fallback = strict_profile is None or strict_profile.allows_target_guessing
-    fallback_result = parse_ops_fallback_heuristic_with_coverage(
-        johto,
-        source_artifact_id=amendment_id,
-    )
+    with warnings.catch_warnings():
+        # Internal production fallback lane (Heuristic #29), gated by
+        # allows_target_guessing; only fires when the typed parse yields no ops.
+        # @deprecated lights up EXTERNAL callers / new use, not this strangled lane.
+        warnings.simplefilter("ignore", DeprecationWarning)
+        fallback_result = parse_ops_fallback_heuristic_with_coverage(
+            johto,
+            source_artifact_id=amendment_id,
+        )
     fallback_ops = fallback_result.ops
     if regex_recognition_coverage_out is not None:
         regex_recognition_coverage_out.extend(fallback_result.regex_recognition_coverage)
@@ -4862,7 +4868,11 @@ def normalize_and_compile_ops(
                 )
 
     if not ops:
-        title_fallback_ops = parse_ops_title_fallback(source_title)
+        with warnings.catch_warnings():
+            # Internal production title-fallback lane; fires only when the body
+            # yields no ops. @deprecated targets external callers, not this lane.
+            warnings.simplefilter("ignore", DeprecationWarning)
+            title_fallback_ops = parse_ops_title_fallback(source_title)
         if title_fallback_ops:
             if _allows_fallback:
                 logger.debug(
