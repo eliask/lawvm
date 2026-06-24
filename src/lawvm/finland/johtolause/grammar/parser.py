@@ -594,14 +594,31 @@ def _try_skip_whole_provenance_remention_run(scan: _Scan) -> bool:
 
     saw_structural = False
     saw_closer = False
+    # A genuine operative continuation can follow the LAST provenance closer
+    # WITHOUT a verb (``…, näistä 5 §:n 4 momentti [CITE], sekä 7 §, seuraavasti``
+    # — the head verb ``muutetaan`` still governs the trailing ``7 §``). Such a
+    # trailing, UN-attributed structural arm is NOT part of the provenance run.
+    # Track the cursor just past the last closer (``safe_end``) and whether a
+    # structural arm has appeared since (``pending_structural``); if the run ends
+    # with a pending un-closed arm, stop the skip at ``safe_end`` so the outer
+    # driver re-enters and parses the continuation instead of swallowing it.
+    safe_end = anchor + 1
+    pending_structural = False
     while i < n:
         t = toks[i]
         if t.cat in _PROV_REMENTTION_RUN_STOP_CATS:
             break
         if t.cat in _PROV_ARM_STRUCT_CATS:
             saw_structural = True
+            pending_structural = True
         if t.cat in _PROV_CLOSER_CATS or t.cat in _SENTINEL_SPAN_CATS:
+            # A closer attributes every structural arm seen since the previous
+            # closer; the run is provenance-only up to and including it.
             saw_closer = True
+            pending_structural = False
+            i += 1
+            safe_end = i
+            continue
         if t.cat in _PROV_REMENTTION_RUN_CATS:
             i += 1
             continue
@@ -610,7 +627,9 @@ def _try_skip_whole_provenance_remention_run(scan: _Scan) -> bool:
             # remainder up to the run stop as provenance prose only if it carries
             # no operative material (no further structural unit before the stop).
             saw_closer = True
+            pending_structural = False
             i += 1
+            safe_end = i
             continue
         if t.cat == "WORD":
             # Trailing ``näin`` before ``kuuluviksi``, or provenance prose
@@ -631,6 +650,13 @@ def _try_skip_whole_provenance_remention_run(scan: _Scan) -> bool:
     if not (saw_structural and saw_closer):
         scan.goto(saved)
         return False
+
+    if pending_structural:
+        # A trailing structural arm with no attribution after the last closer is a
+        # real operative continuation (``…[CITE], sekä 7 §``): end the provenance
+        # run at the last closer so the outer driver parses the continuation.
+        scan.goto(safe_end)
+        return True
 
     scan.goto(i)
     return True
