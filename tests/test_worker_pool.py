@@ -47,15 +47,16 @@ def test_managed_executor_reraises_keyboard_interrupt() -> None:
             raise KeyboardInterrupt
 
 
+def _noop_init(val: int) -> None:
+    # Module-level so it is picklable for the forkserver/spawn worker init
+    # (Python 3.14's default Linux start method is no longer fork). Just
+    # verifies the pool starts with an initializer; no side effects tested.
+    pass
+
+
 def test_managed_executor_with_initializer() -> None:
     """initializer/initargs are forwarded to ProcessPoolExecutor correctly."""
-
-    def _init(val: int) -> None:
-        # Store in a global so the worker can read it.  Not testing side
-        # effects here — just verifying the pool starts without error.
-        pass
-
-    with managed_executor(2, initializer=_init, initargs=(42,)) as pool:
+    with managed_executor(2, initializer=_noop_init, initargs=(42,)) as pool:
         result = pool.submit(_identity, 7).result()
 
     assert result == 7
