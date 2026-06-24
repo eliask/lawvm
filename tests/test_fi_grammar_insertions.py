@@ -960,17 +960,25 @@ def test_cross_verb_anaphoric_insert_resolves_prior_section() -> None:
 
 
 def test_cross_verb_whole_section_insert_is_not_claimed_as_anaphora() -> None:
-    # Control: ``… sekä lisätään … uusi 50 a §`` is a WHOLE-section insert, NOT a
-    # cross-group sub-target anaphora. The cross-verb fallback must NOT claim it
-    # (which would stamp the wrong ``fi.cross_verb_*`` witness in place of the old
-    # parser's ``fi.insertion_section``); the clause stays declined (2017/290).
+    # ``… sekä lisätään … uusi 50 a § ja sen edelle uusi väliotsikko`` is a
+    # WHOLE-section insert whose trailing anaphoric heading the old parser DROPS.
+    # The grammar now owns it byte-identically (the terminal ``[sen] edelle uusi
+    # väliotsikko`` residue is recovered by the driver's anaphoric-heading skip),
+    # and the insert must carry ``fi.insertion_section`` — NOT a cross-verb
+    # ``fi.cross_verb_*`` anaphora witness (2017/290).
     text = (
         "muutetaan maa- ja metsätalousministeriön työjärjestyksestä annetun maa- "
         "ja metsätalousministeriön asetuksen (658/2016) 15 ja 52 §, sekä lisätään "
         "työjärjestykseen uusi 50 a § ja sen edelle uusi väliotsikko seuraavasti:"
     )
-    with pytest.raises(OutOfScope):
-        parse_text_with(text, new_parser.parse)
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+    model = parse_text_with(text, new_parser.parse)
+    insert = _as_insertion(model.verb_groups[1].nodes[-1])
+    assert insert.kind == TargetKind.SECTION
+    assert insert.label == "50a"
+    assert insert.witness is not None
+    assert insert.witness.rule_id == "fi.insertion_section"
 
 
 def test_cross_verb_anaphora_without_prior_section_declines() -> None:
@@ -1029,15 +1037,27 @@ def test_bare_uusi_end_terminated_section_emits_section_insertion() -> None:
     assert node.witness.rule_id == "fi.insertion_section"
 
 
-def test_bare_uusi_recovery_declines_on_downstream_heading_fold() -> None:
-    # Self-guard control: a leading ``uusi N §`` followed by a ``… edelle uusi
-    # väliotsikko`` heading-placement fold in the SAME batch must NOT be owned as a
-    # bare-section insert (that would silently DROP the heading arm the old parser
-    # folds into the batch). The clause stays declined (2017/290 shape).
+def test_bare_uusi_recovery_owns_trailing_anaphoric_heading_residue() -> None:
+    # A leading ``uusi N §`` followed by a TERMINAL anaphoric ``[sen] edelle uusi
+    # väliotsikko`` heading residue is now grammar-owned BYTE-IDENTICALLY: the old
+    # parser drops that anaphoric heading (it mints no node), and the grammar
+    # reproduces the drop via the driver's anaphoric-heading skip. The recovered
+    # insert is a whole-section insert (2017/290 shape).
     text = (
         "muutetaan asetuksen (658/2016) 15 ja 52 §, sekä lisätään "
         "työjärjestykseen uusi 50 a § ja sen edelle uusi väliotsikko seuraavasti:"
     )
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_bare_uusi_recovery_declines_on_explicit_target_heading_fold() -> None:
+    # Self-guard control: the NON-anaphoric ``N §:n edelle uusi väliotsikko`` form
+    # (an explicit §:GEN target before EDELLA) is one the old parser folds into the
+    # batch and emits a REAL heading node for — the grammar cannot reproduce that
+    # placement here, so the clause must STAY declined rather than silently drop the
+    # heading. Only the anaphoric ``[sen] edelle …`` drop-form is recovered above.
+    text = "lisätään lakiin uusi 50 a § ja 12 §:n edelle uusi väliotsikko seuraavasti:"
     with pytest.raises(OutOfScope):
         parse_text_with(text, new_parser.parse)
 

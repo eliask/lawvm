@@ -1368,6 +1368,78 @@ def _whole_target_arm_boundary(scan: _Scan, hard: int) -> int:
     return hard
 
 
+# Anaphor pronouns (``sen`` / ``niiden`` …) that introduce the placement of a new
+# heading relative to the JUST-INSERTED section(s): ``[uusi N §] ja sen edelle uusi
+# väliotsikko``. The old parser consumes this tail but mints NO heading node for the
+# anaphoric form, dropping it entirely; the grammar driver's
+# ``_skip_anaphoric_heading_residue`` reproduces that drop after the section batch.
+_ANAPHOR_HEADING_LEMMAS = frozenset({"se", "sen", "ne", "niiden", "niitä"})
+
+
+def _trailing_anaphoric_heading_residue_start(scan: _Scan, hard: int) -> int | None:
+    """Start index of a trailing anaphoric heading residue running to ``hard``.
+
+    Detects the EXACT ``[, | ja | sekä] <anaphor> EDELLA [uusi] [N luvun]
+    (OTSIKKO | VALIOTSIKKO)`` tail that ends the clause (extends to ``hard`` — the
+    next VERB / END). Returns the index of the leading list separator (so the
+    structural OOS guard can stop scanning there), or ``None`` when no such
+    terminal anaphoric residue is present.
+
+    This is the heading the old parser DROPS: it emits a single section insertion
+    and no heading node. Letting the whole-target arm parse the section insert and
+    leaving this residue for the driver's ``_skip_anaphoric_heading_residue`` is
+    byte-identical to the legacy fallback (verified per-statute). A non-anaphoric
+    ``N §:n edelle …`` placement (an explicit §:GEN target before EDELLA) — for
+    which the old parser emits a REAL heading node — is NOT matched here (the token
+    before EDELLA must be an anaphor pronoun, never a structural noun).
+    """
+    toks = scan.cur.tokens
+    # Locate a single EDELLA before ``hard``.
+    edella_idx = None
+    for k in range(scan.pos, min(hard, len(toks))):
+        if toks[k].cat == "EDELLA":
+            if edella_idx is not None:
+                return None  # more than one EDELLA: not the simple residue
+            edella_idx = k
+    if edella_idx is None:
+        return None
+    # The token directly before EDELLA must be an anaphor pronoun WORD.
+    if edella_idx == 0:
+        return None
+    prev = toks[edella_idx - 1]
+    if prev.cat != "WORD" or (prev.lemma or prev.text).lower() not in _ANAPHOR_HEADING_LEMMAS:
+        return None
+    # Walk the heading payload after EDELLA: uusi [N [letter] luvun] (OTSIKKO|VALIOTSIKKO).
+    # ``uusi`` is REQUIRED: this matches exactly what the driver's
+    # ``_skip_anaphoric_heading_residue`` can consume (it mandates ``EDELLA uusi``),
+    # so the recovered section insert is always followed by a residue the driver
+    # drops. A no-``uusi`` ``sen edelle väliotsikko`` tail stays declined (the
+    # driver cannot skip it) — leaving that rarer form to the legacy fallback.
+    j = edella_idx + 1
+    if j >= hard or toks[j].cat != "UUSI":
+        return None
+    j += 1
+    if j < hard and toks[j].cat == "NUM":
+        j += 1
+        if j < hard and toks[j].cat == "LETTER":
+            j += 1
+        if j < hard and toks[j].cat == "LUKU" and toks[j].case == "GEN":
+            j += 1
+    if j >= hard or toks[j].cat not in ("OTSIKKO", "VALIOTSIKKO"):
+        return None
+    j += 1  # past the heading noun
+    # The residue must run to ``hard`` (the clause / verb-group boundary): nothing
+    # operative may follow, or this is not the terminal drop-tail.
+    if j != hard:
+        return None
+    # The residue starts at the separator immediately before the anaphor (``ja`` /
+    # ``sekä`` / ``,``), so the OOS guard stops there.
+    start = edella_idx - 1
+    if start > scan.pos and toks[start - 1].cat in ("COMMA", "CONJ", "SEKA"):
+        start -= 1
+    return start
+
+
 # Structural-authority token categories that may precede a citation-stamped
 # ``nojalla`` authority lead-in (``N §:n M momentin nojalla uusi …``).
 _AUTHORITY_CATS = frozenset(
@@ -1641,7 +1713,18 @@ def _dispatch(
     arm_boundary = _whole_target_arm_boundary(scan, hard)
     if _phrase_has_oos_token(scan, arm_boundary, _OOS_PROVENANCE_CATS):
         return None
-    if _phrase_has_oos_token(scan, hard, _OOS_STRUCTURAL_CATS):
+    # A terminal anaphoric heading residue (``[uusi N §] ja sen edelle uusi
+    # väliotsikko``) is the ONE structural fold the old parser drops to nothing:
+    # it emits the section insert and mints no heading node. The grammar driver's
+    # ``_skip_anaphoric_heading_residue`` reproduces that drop after this batch, so
+    # the whole-target arm may own the section insert. Stop the structural OOS scan
+    # at the residue start so this shape is recovered; any OTHER heading / appendix
+    # / backref fold (which the old parser keeps) still trips the guard.
+    structural_scan_end = hard
+    residue_start = _trailing_anaphoric_heading_residue_start(scan, hard)
+    if residue_start is not None:
+        structural_scan_end = residue_start
+    if _phrase_has_oos_token(scan, structural_scan_end, _OOS_STRUCTURAL_CATS):
         return None
 
     # ── OSA:ILL-scoped insert: ``[N] OSA:ILL uusi numlist (§ | luku)`` ──────
