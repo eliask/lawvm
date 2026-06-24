@@ -4053,6 +4053,38 @@ def test_replay_ee_to_pit_handles_statute_and_annex_institution_rename_in_veesoi
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_converges_curriculum_burooassistent_vastavas_käändes_rename() -> None:
+    """Corpus regression: the Sekretäri- ja kontoritöö erialade riiklikppekava
+    rename ``bürootöö -> bürooassistent vastavas käändes`` MUST converge to
+    zero open divergences at the consolidated oracle.
+
+    Pre-fix to ``_ee_replace_ambiguous_genitive_phrase`` (committed
+    d22c44d0): 14 open MISMATCH divergences at 44.4% sentence match because
+    the case-aware rewrite produced ``bürooassistent eriala`` (nominative)
+    instead of ``bürooassistendi eriala`` (genitive modifier) before every
+    plain noun head. Post-fix: 0 open divergences at 100% match.
+
+    Source witness: amendment ``120092023001`` §1 item 1 over base
+    ``130042020016``. Pinned to detect any regression in the
+    ``ee_case_inflected_vastavas_käändes`` family that re-introduces
+    nominative-default in a plain-noun-head modifier slot.
+    """
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "130042020016",
+        "2023-09-23",
+        archive=archive,
+        oracle_id="120092023003",
+    )
+
+    assert result.error is None
+    assert result.oracle_id == "120092023003"
+    assert result.divergences == []
+
+
 def test_replay_ee_to_pit_handles_old_format_direct_header_target_section() -> None:
     from lawvm.estonia.fetch import open_rt_archive
 
