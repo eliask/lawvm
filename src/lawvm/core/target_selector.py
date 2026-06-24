@@ -20,7 +20,7 @@ the jurisdiction boundary, never here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 
 from lawvm.core.ir import LegalAddress
