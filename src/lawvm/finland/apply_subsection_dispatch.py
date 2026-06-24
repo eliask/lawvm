@@ -20,6 +20,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, normalized_label_key
 from lawvm.finland.ops import AmendmentOp, ReplayProfile, ResolvedOp, _rebind_resolved_target_address
+from lawvm.finland.target_selector_facades import replace_target
 from lawvm.core.compile_result import StrictProfile
 from lawvm.finland.apply_subsection_ops import (
     _SubsectionApplyView,
@@ -228,7 +229,28 @@ def _range_item_routing(
             target_special=None,
         )
         return single_rop, single_rop
-    return dc_replace(dispatch_op, target_item=str(item_num), lo=None), None
+    # Reaching here means rop is None, so the dispatcher's resolved target carrier
+    # is the legacy AmendmentOp (a ResolvedOp has no target_item/lo to replace —
+    # the dc_replace below would raise on one). Make that invariant explicit so
+    # the typed re-target path below is well-typed and fails loud if it is ever
+    # violated rather than silently no-op'ing.
+    if not isinstance(dispatch_op, AmendmentOp):
+        raise TypeError(
+            "_range_item_routing: rop-less dispatch expected an AmendmentOp "
+            f"carrier, got {type(dispatch_op).__name__}"
+        )
+    # Typed partial re-target: relabel the item focus (target_item) while
+    # preserving every other target column, and clear lo so the legacy columns
+    # are authoritative (matching the prior explicit lo=None). Byte-identical to
+    # the prior raw target_item write under TARGET-03.
+    return (
+        dc_replace(
+            dispatch_op,
+            **replace_target(dispatch_op, target_item=str(item_num)),
+            lo=None,
+        ),
+        None,
+    )
 
 
 def _follow_same_wave_subsection_migration(

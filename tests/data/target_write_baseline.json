@@ -19,7 +19,7 @@
     "src/lawvm/finland/apply_ops_executor.py": 1,
     "src/lawvm/finland/apply_runtime_support.py": 7,
     "src/lawvm/finland/apply_structure_ops.py": 2,
-    "src/lawvm/finland/apply_subsection_dispatch.py": 3,
+    "src/lawvm/finland/apply_subsection_dispatch.py": 2,
     "src/lawvm/finland/compile_group_scope_recovery.py": 11,
     "src/lawvm/finland/frontend_compile.py": 13,
     "src/lawvm/finland/group_ops.py": 1,
@@ -65,18 +65,11 @@
     ],
     "src/lawvm/finland/apply_subsection_dispatch.py": [
       {
-        "line": 361,
+        "line": 383,
         "callee": "dc_replace",
         "kwargs": [
           "target_item",
           "target_paragraph"
-        ]
-      },
-      {
-        "line": 231,
-        "callee": "dc_replace",
-        "kwargs": [
-          "target_item"
         ]
       }
     ],
@@ -295,5 +288,5 @@
       }
     ]
   },
-  "total": 57
+  "total": 56
 }

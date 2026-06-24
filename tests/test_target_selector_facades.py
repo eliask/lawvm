@@ -25,11 +25,13 @@ from lawvm.finland.target_selector_codec import (
     AmendmentOpV1Record,
     TargetSelectorCodecV1,
 )
+from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.target_selector_facades import (
     LegacyTargetKwargs,
     fi_chapter_target,
     fi_part_target,
     fi_section_target,
+    replace_target,
 )
 
 
@@ -178,3 +180,122 @@ def test_chapter_target_label_lands_in_target_section() -> None:
     assert kwargs["target_unit_kind"] == "chapter"
     assert kwargs["target_section"] == "9"
     assert kwargs["target_chapter"] is None
+
+
+# --- replace_target (typed partial re-target, W3c) --------------------------
+
+# Representative op shapes spanning section/chapter/part focus, scope columns,
+# descendant tails, the redundant part-scope shape, and a facet. Each must
+# round-trip byte-identically under a no-op replace_target call.
+_REPLACE_TARGET_OP_SHAPES: list[AmendmentOp] = [
+    AmendmentOp(op_type=OpType.REPLACE, target_unit_kind="section", target_section="5"),
+    AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="73",
+        target_chapter="7",
+    ),
+    AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="3",
+        target_chapter="2",
+        target_part="II",
+        target_paragraph=1,
+        target_item="4",
+    ),
+    AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="8",
+        target_special="otsikko",
+    ),
+    AmendmentOp(op_type=OpType.REPLACE, target_unit_kind="chapter", target_section="9"),
+    AmendmentOp(op_type=OpType.REPLACE, target_unit_kind="part", target_section="III"),
+    # part op carrying the redundant target_part column equal to the focus.
+    AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="part",
+        target_section="V",
+        target_part="V",
+    ),
+]
+
+
+def _op_columns(op: AmendmentOp) -> dict[str, object]:
+    return {
+        "target_unit_kind": op.target_unit_kind,
+        "target_section": op.target_section,
+        "target_chapter": op.target_chapter,
+        "target_part": op.target_part,
+        "target_paragraph": op.target_paragraph,
+        "target_item": op.target_item,
+        "target_subitem": op.target_subitem,
+        "target_special": op.target_special,
+    }
+
+
+@pytest.mark.parametrize("op", _REPLACE_TARGET_OP_SHAPES)
+def test_replace_target_noop_is_byte_identical(op: AmendmentOp) -> None:
+    """A no-override replace_target reproduces the op's 8 columns exactly."""
+    produced = replace_target(op)
+    assert dict(produced) == _op_columns(op)
+
+
+def test_replace_target_item_override_changes_only_item() -> None:
+    """Overriding target_item changes that column and preserves all others."""
+    op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="3",
+        target_chapter="2",
+        target_paragraph=1,
+        target_item="4",
+    )
+    produced = replace_target(op, target_item="7")
+    expected = _op_columns(op) | {"target_item": "7"}
+    assert dict(produced) == expected
+
+
+def test_replace_target_clear_special_with_none() -> None:
+    """Passing None clears a column (distinct from the unset sentinel)."""
+    op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="8",
+        target_special="otsikko",
+    )
+    produced = replace_target(op, target_special=None)
+    assert produced["target_special"] is None
+    # Unchanged: the focus and unit kind.
+    assert produced["target_section"] == "8"
+    assert produced["target_unit_kind"] == "section"
+
+
+def test_replace_target_fails_loud_on_empty_string_chapter() -> None:
+    """An empty-string chapter cannot round-trip; the helper fails loud."""
+    op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="5",
+        target_chapter="",
+    )
+    with pytest.raises(ValueError, match="empty-string target_chapter"):
+        replace_target(op, target_item="3")
+
+
+def test_replace_target_splats_into_dataclasses_replace() -> None:
+    """The returned kwargs splat into dataclasses.replace as the dispatch site uses."""
+    from dataclasses import replace as dc_replace
+
+    op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="3",
+        target_paragraph=2,
+    )
+    new_op = dc_replace(op, **replace_target(op, target_item="5"), lo=None)
+    assert new_op.target_item == "5"
+    assert new_op.target_section == "3"
+    assert new_op.target_paragraph == 2
+    assert new_op.lo is None

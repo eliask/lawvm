@@ -38,7 +38,7 @@ selector but is never consulted on the way back to legacy.
 
 from __future__ import annotations
 
-from typing import TypedDict, cast
+from typing import TYPE_CHECKING, Final, TypedDict, cast
 
 from lawvm.core.target_scope import TargetUnitKind
 from lawvm.core.target_selector import (
@@ -49,8 +49,29 @@ from lawvm.core.target_selector import (
 )
 from lawvm.finland.target_selector_codec import (
     _SPECIAL_TOKEN_TO_FACET,
+    AmendmentOpV1Record,
     TargetSelectorCodecV1,
 )
+
+if TYPE_CHECKING:
+    from lawvm.finland.ops import AmendmentOp
+
+
+class _Unset:
+    """Sentinel: a ``replace_target`` field the caller did not change.
+
+    Distinct from ``None`` (which is a meaningful "clear this column" value), so
+    ``replace_target(op, target_special=None)`` can clear the facet while
+    ``replace_target(op, target_item="3")`` leaves ``target_special`` untouched.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid only
+        return "<UNSET>"
+
+
+_UNSET: Final = _Unset()
 
 
 class LegacyTargetKwargs(TypedDict):
@@ -167,6 +188,106 @@ def fi_section_target(
         special_raw=special_raw,
     )
     return _selector_to_kwargs(selector)
+
+
+def replace_target(
+    op: "AmendmentOp",
+    *,
+    target_section: str | _Unset = _UNSET,
+    target_chapter: str | None | _Unset = _UNSET,
+    target_part: str | None | _Unset = _UNSET,
+    target_paragraph: int | None | _Unset = _UNSET,
+    target_item: str | None | _Unset = _UNSET,
+    target_subitem: str | None | _Unset = _UNSET,
+    target_special: str | None | _Unset = _UNSET,
+) -> LegacyTargetKwargs:
+    """Typed *partial* re-target of an existing ``op`` → legacy ``target_*`` kwargs.
+
+    This is the sanctioned typed path for a ``dataclasses.replace(op,
+    target_*=...)`` that changes one (or a few) target columns while deliberately
+    preserving the rest. Instead of hand-patching individual legacy columns, it:
+
+    1. decodes the op's current 8 columns to a typed
+       :class:`TargetSelector` (``op.target_selector`` = ``codec.from_legacy``),
+    2. lowers it back through ``codec.to_legacy`` to recover the column values,
+    3. overlays only the columns the caller explicitly passed (``_UNSET`` leaves
+       a column at its current value; passing ``None`` clears it), and
+    4. re-narrows ``target_unit_kind`` and returns the splattable kwargs.
+
+    Byte-identity: for a no-op call (no overrides) the result is exactly the op's
+    current columns whenever the op satisfies the codec round-trip invariant
+    TARGET-03 (``to_legacy(op.target_selector) == op's columns``). That invariant
+    holds for the production op population (proven at corpus scale by
+    ``test_target_selector_consistency``); it is NOT universal, so this helper is
+    only sound where the op's column population is so covered. It fails loud
+    (below) on the one shape the codec cannot round-trip (an empty-string
+    chapter/part/special column, which the codec lowers to ``None``), rather than
+    silently changing a column.
+
+    AUTHORITY CAVEAT — do NOT use this on a ``dataclasses.replace`` that also
+    carries an ``lo`` (or where ``op.lo`` is non-``None`` and not being cleared):
+    ``AmendmentOp.__init__`` overwrites all ``target_*`` columns from
+    ``_lo_target_fields(lo)`` when ``lo`` is present, so the kwargs this returns
+    would be silently discarded. Only convert sites where ``lo`` is provably
+    ``None`` after the replace (e.g. an explicit ``lo=None``). lo-bearing target
+    rewrites belong to the ``lo`` carrier, not this shadow path.
+    """
+    # The op's current columns via the lossless codec round-trip. This is the
+    # baseline the overrides overlay on; for the production population it equals
+    # the op's live columns byte-for-byte (TARGET-03).
+    current = TargetSelectorCodecV1.to_legacy(op.target_selector)
+
+    # Fail loud on the one non-round-tripping shape: the codec lowers an
+    # empty-string chapter/part/special to None, so this helper cannot reproduce
+    # a literal "" column. Surface the offending column rather than mutate it.
+    for name, value in (
+        ("target_chapter", op.target_chapter),
+        ("target_part", op.target_part),
+        ("target_special", op.target_special),
+    ):
+        if value == "":
+            raise ValueError(
+                f"replace_target: op carries empty-string {name}={value!r}, which "
+                "the codec round-trip lowers to None (not byte-identical). Such "
+                "ops are outside the typed re-target path; patch the legacy column "
+                "directly or normalise the empty string to None upstream."
+            )
+
+    def _pick(
+        override: object, fallback: str | int | None
+    ) -> str | int | None:
+        return fallback if isinstance(override, _Unset) else cast("str | int | None", override)
+
+    # Overlay the explicit overrides on the round-tripped current columns.
+    overlaid = AmendmentOpV1Record(
+        target_unit_kind=current.target_unit_kind,
+        target_section=cast(str, _pick(target_section, current.target_section)),
+        target_chapter=cast("str | None", _pick(target_chapter, current.target_chapter)),
+        target_part=cast("str | None", _pick(target_part, current.target_part)),
+        target_paragraph=cast("int | None", _pick(target_paragraph, current.target_paragraph)),
+        target_item=cast("str | None", _pick(target_item, current.target_item)),
+        target_subitem=cast("str | None", _pick(target_subitem, current.target_subitem)),
+        target_special=cast("str | None", _pick(target_special, current.target_special)),
+    )
+
+    # Route the overlaid record through the typed selector and back, so the result
+    # is produced by the exact codec lowering (not a hand-patched column copy) and
+    # any non-round-tripping overlaid shape is caught by the codec, not papered
+    # over. For a no-op call this is the identity on ``current`` (= the op's live
+    # columns under TARGET-03), making the conversion byte-identical.
+    relowered = TargetSelectorCodecV1.to_legacy(
+        TargetSelectorCodecV1.from_legacy(overlaid)
+    )
+    return LegacyTargetKwargs(
+        target_unit_kind=cast(TargetUnitKind, relowered.target_unit_kind),
+        target_section=relowered.target_section,
+        target_chapter=relowered.target_chapter,
+        target_part=relowered.target_part,
+        target_paragraph=relowered.target_paragraph,
+        target_item=relowered.target_item,
+        target_subitem=relowered.target_subitem,
+        target_special=relowered.target_special,
+    )
 
 
 def fi_chapter_target(
