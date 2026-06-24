@@ -126,17 +126,17 @@ def _strip_delegated_authority_prefix_when_target_follows(compact: str) -> str:
     if match is None:
         return compact
     tail = compact[match.end() :].lstrip()
-    if not tail.startswith(","):
-        return compact
 
-    candidate = tail[1:].lstrip()
+    candidate = tail[1:].lstrip() if tail.startswith(",") else tail
     candidate_lower = candidate.lower()
     if candidate_lower.startswith(("sellaisena kuin", "sellaisina kuin")):
-        provenance_citation = _CITATION_RE.search(candidate)
-        if provenance_citation is not None:
-            comma_after_provenance = candidate.find(",", provenance_citation.end())
-            if comma_after_provenance != -1:
-                candidate = candidate[comma_after_provenance + 1 :].lstrip()
+        comma_after_provenance = candidate.find(",")
+        if comma_after_provenance != -1:
+            candidate = candidate[comma_after_provenance + 1 :].lstrip()
+        else:
+            return compact
+    elif not tail.startswith(","):
+        return compact
 
     if _CITATION_RE.search(candidate) is None:
         return compact

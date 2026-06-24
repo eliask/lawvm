@@ -82,6 +82,23 @@ class TestJohtolauseCitedTargetIds:
         assert surface.references_statute("1988/575")
         assert not surface.references_statute("1987/450")
 
+    def test_nojalla_sellaisina_prefix_does_not_hide_later_target_citation(self) -> None:
+        johto = (
+            "muutetaan yleisestä oikeusavusta 6 päivänä helmikuuta 1998 annetun "
+            "lain (104/1998) 4, 20 ja 30 §:ien sekä maksuttomasta oikeudenkäynnistä "
+            "2 päivänä helmikuuta 1973 annetun lain (87/1973) 5, 5 a ja 28 §:ien "
+            "nojalla sellaisina kuin niistä 5 ja 5 a § ovat laissa 105/1998, "
+            "oikeusavusta ja maksuttomasta oikeudenkäynnistä 6 helmikuuta 1998 "
+            "annetun asetuksen (358/1998) 2 § 1 ja 2 momentit, 5 § ja 6 § "
+            "seuraavasti:"
+        )
+        surface = parse_routing_surface(johto, source_year=2001)
+
+        assert surface.normalized_target_ids() == ("1998/358",)
+        assert surface.references_statute("1998/358")
+        assert not surface.references_statute("1998/104")
+        assert not surface.references_statute("1973/87")
+
     def test_dropped_digit_typo_surfaces_cited_statute(self) -> None:
         # 1965/301 johtolause: a dropped digit makes rakennuslaki (370/58)
         # read as (70/58). The helper must surface the 1958/70 it cites so the

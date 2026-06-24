@@ -16704,6 +16704,19 @@ def test_inspect_amendment_1988_575_1995_407_applies_after_nojalla_authority_pre
     assert "Telekuuntelusta, televalvonnasta ja teknisestä tarkkailusta" in group["normalized_payload"]["text"]
 
 
+def test_inspect_amendment_1998_358_2001_1065_applies_after_nojalla_sellaisina_prefix() -> None:
+    """A no-comma ``nojalla sellaisina kuin`` authority prefix must not hide the target."""
+    bundle = build_amendment_bundle("1998/358", "2001/1065", mode="legal_pit")
+
+    assert bundle["route"] == {"should_apply": True, "reason": "references_parent", "target_amendment_id": ""}
+    assert "REPLACE 2 §" in bundle["compiled_ops"]
+    assert "REPLACE 6 §" in bundle["compiled_ops"]
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "6")
+    assert group["ops_final"] == ["REPLACE 6 §"]
+    assert group["normalized_payload"]["kind"] is IRNodeKind.SECTION
+    assert "enintään 1 009 euroa 90 %" in group["normalized_payload"]["text"]
+
+
 def test_build_amendment_bundle_2012_980_2022_604_applies_johtolause_corrigendum_to_repeal_target() -> None:
     bundle = build_amendment_bundle("2012/980", "2022/604", mode="official_consolidation")
 
