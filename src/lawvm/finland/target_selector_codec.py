@@ -127,12 +127,12 @@ class TargetSelectorCodecV1:
 
         if scope_segments:
             scope = TargetScope(
-                status=ScopeStatus.EXPLICIT_SCOPE,
+                scope_status=ScopeStatus.EXPLICIT_SCOPE,
                 path=tuple(scope_segments),
             )
         else:
             # Legacy encoding cannot distinguish explicit-root from unspecified.
-            scope = TargetScope(status=ScopeStatus.UNSPECIFIED)
+            scope = TargetScope(scope_status=ScopeStatus.UNSPECIFIED)
 
         special_raw = rec.target_special if rec.target_special else None
         special = _SPECIAL_TOKEN_TO_FACET.get(special_raw) if special_raw else None

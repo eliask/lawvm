@@ -135,7 +135,7 @@
     "src/lawvm/uk_legislation/effect_temporal.py": 1,
     "src/lawvm/uk_legislation/execution_authorization.py": 3,
     "src/lawvm/uk_legislation/lowering_records.py": 1,
-    "src/lawvm/uk_legislation/source_adjudication.py": 89,
+    "src/lawvm/uk_legislation/source_adjudication.py": 96,
     "src/lawvm/uk_legislation/uk_acquire.py": 1,
     "src/lawvm/uk_legislation/uk_prefetch.py": 1,
     "src/lawvm/us_federal/amendatory.py": 2,
@@ -372,5 +372,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 366
+  "total_bare_status": 373
 }

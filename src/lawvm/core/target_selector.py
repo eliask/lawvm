@@ -62,18 +62,18 @@ class TargetScope:
     - ``UNSPECIFIED`` forbids a ``path`` (nothing was declared).
     """
 
-    status: ScopeStatus
+    scope_status: ScopeStatus
     path: tuple[AddressSegment, ...] = ()
     rule_id: str | None = None
 
     def __post_init__(self) -> None:
-        if self.status == ScopeStatus.EXPLICIT_SCOPE and not self.path:
+        if self.scope_status == ScopeStatus.EXPLICIT_SCOPE and not self.path:
             raise ValueError("TargetScope.EXPLICIT_SCOPE requires a non-empty path")
-        if self.status == ScopeStatus.EXPLICIT_ROOT and self.path:
+        if self.scope_status == ScopeStatus.EXPLICIT_ROOT and self.path:
             raise ValueError("TargetScope.EXPLICIT_ROOT forbids a path")
-        if self.status == ScopeStatus.UNSPECIFIED and self.path:
+        if self.scope_status == ScopeStatus.UNSPECIFIED and self.path:
             raise ValueError("TargetScope.UNSPECIFIED forbids a path")
-        if self.status == ScopeStatus.INFERRED_SCOPE and not self.rule_id:
+        if self.scope_status == ScopeStatus.INFERRED_SCOPE and not self.rule_id:
             raise ValueError("TargetScope.INFERRED_SCOPE requires a rule_id")
 
 
@@ -133,9 +133,9 @@ class TargetSelector:
         For :attr:`ScopeStatus.EXPLICIT_ROOT` the address is ``relative_path``
         alone; otherwise the scope path is prepended.
         """
-        if self.scope.status == ScopeStatus.UNSPECIFIED:
+        if self.scope.scope_status == ScopeStatus.UNSPECIFIED:
             return None
-        if self.scope.status == ScopeStatus.EXPLICIT_ROOT:
+        if self.scope.scope_status == ScopeStatus.EXPLICIT_ROOT:
             full_segments: tuple[AddressSegment, ...] = self.relative_path
         else:
             scope_path = self.scope.path

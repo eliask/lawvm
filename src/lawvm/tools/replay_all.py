@@ -38,8 +38,8 @@ def _enumerate_statute_ids() -> List[str]:
 def _replay_one(statute_id: str, mode: str) -> Tuple[str, bool, str]:
     """Run the production FI replay pipeline for one statute.
 
-    Returns ``(statute_id, ok, status)``. ``ok`` is True when ``replay_xml``
-    returned without raising; ``status`` carries the exception text on failure.
+    Returns ``(statute_id, ok, replay_status)``. ``ok`` is True when ``replay_xml``
+    returned without raising; ``replay_status`` carries the exception text on failure.
     """
     from typing import Literal, cast
 
@@ -156,14 +156,14 @@ def main(args: Any) -> int:
     failures: List[Tuple[str, str]] = []
     t0 = time.time()
 
-    def _record(statute_id: str, ok: bool, status: str, idx: int) -> None:
+    def _record(statute_id: str, ok: bool, replay_status: str, idx: int) -> None:
         nonlocal replayed, failed
         if ok:
             replayed += 1
         else:
             failed += 1
             if len(failures) < 200:
-                failures.append((statute_id, status))
+                failures.append((statute_id, replay_status))
         if idx % 500 == 0 or idx == attempted:
             elapsed = time.time() - t0
             rate = idx / elapsed if elapsed > 0 else 0.0
@@ -176,8 +176,8 @@ def main(args: Any) -> int:
 
     if workers <= 1:
         for idx, statute_id in enumerate(statute_ids, start=1):
-            sid, ok, status = _replay_one(statute_id, mode)
-            _record(sid, ok, status, idx)
+            sid, ok, replay_status = _replay_one(statute_id, mode)
+            _record(sid, ok, replay_status, idx)
     else:
         import multiprocessing as mp
         import os
@@ -193,10 +193,10 @@ def main(args: Any) -> int:
 
         work = [(sid, mode) for sid in statute_ids]
         with ctx.Pool(processes=workers, initializer=_coverage_worker_init) as pool:
-            for idx, (sid, ok, status) in enumerate(
+            for idx, (sid, ok, replay_status) in enumerate(
                 pool.imap_unordered(_replay_worker, work, chunksize=8), start=1
             ):
-                _record(sid, ok, status, idx)
+                _record(sid, ok, replay_status, idx)
 
     elapsed = time.time() - t0
     print("", file=sys.stderr)
@@ -208,11 +208,11 @@ def main(args: Any) -> int:
     print(f"elapsed      : {elapsed:.1f}s", file=sys.stderr)
     if failures:
         print(
-            f"first {len(failures)} failures (statute_id : status):",
+            f"first {len(failures)} failures (statute_id : replay_status):",
             file=sys.stderr,
         )
-        for sid, status in failures[:50]:
-            short = status.splitlines()[0][:160] if status else ""
+        for sid, replay_status in failures[:50]:
+            short = replay_status.splitlines()[0][:160] if replay_status else ""
             print(f"  {sid} : {short}", file=sys.stderr)
 
     return 0

@@ -148,20 +148,20 @@ def test_unspecified_and_explicit_root_are_distinct() -> None:
     relative = (AddressSegment("section", "5"),)
     unspecified = TargetSelector(
         relative_path=relative,
-        scope=TargetScope(status=ScopeStatus.UNSPECIFIED),
+        scope=TargetScope(scope_status=ScopeStatus.UNSPECIFIED),
     )
     explicit_root = TargetSelector(
         relative_path=relative,
-        scope=TargetScope(status=ScopeStatus.EXPLICIT_ROOT),
+        scope=TargetScope(scope_status=ScopeStatus.EXPLICIT_ROOT),
     )
     assert unspecified != explicit_root
-    assert unspecified.scope.status != explicit_root.scope.status
+    assert unspecified.scope.scope_status != explicit_root.scope.scope_status
 
 
 def test_from_legacy_section_scope_is_unspecified_not_root() -> None:
     """The legacy decode of a bare section maps absent scope → UNSPECIFIED."""
     selector = TargetSelectorCodecV1.from_legacy(_rec(target_section="2"))
-    assert selector.scope.status == ScopeStatus.UNSPECIFIED
+    assert selector.scope.scope_status == ScopeStatus.UNSPECIFIED
 
 
 def test_to_legal_address_none_for_unspecified() -> None:
@@ -172,7 +172,7 @@ def test_to_legal_address_none_for_unspecified() -> None:
 def test_to_legal_address_for_explicit_root() -> None:
     selector = TargetSelector(
         relative_path=(AddressSegment("section", "5"),),
-        scope=TargetScope(status=ScopeStatus.EXPLICIT_ROOT),
+        scope=TargetScope(scope_status=ScopeStatus.EXPLICIT_ROOT),
     )
     address = selector.to_legal_address_if_complete()
     assert address == LegalAddress(path=(("section", "5"),))
@@ -192,7 +192,7 @@ def test_to_legal_address_for_explicit_scope() -> None:
 def test_to_legal_address_carries_facet() -> None:
     selector = TargetSelector(
         relative_path=(AddressSegment("section", "5"),),
-        scope=TargetScope(status=ScopeStatus.EXPLICIT_ROOT),
+        scope=TargetScope(scope_status=ScopeStatus.EXPLICIT_ROOT),
         special=FacetKind.HEADING,
     )
     address = selector.to_legal_address_if_complete()
@@ -204,7 +204,7 @@ def test_chapter_with_part_scope_to_legal_address() -> None:
     selector = TargetSelectorCodecV1.from_legacy(
         _rec(target_unit_kind="chapter", target_section="5", target_part="2")
     )
-    assert selector.scope.status == ScopeStatus.EXPLICIT_SCOPE
+    assert selector.scope.scope_status == ScopeStatus.EXPLICIT_SCOPE
     address = selector.to_legal_address_if_complete()
     assert address == LegalAddress(path=(("part", "2"), ("chapter", "5")))
 
@@ -241,7 +241,7 @@ def test_part_without_target_part_stays_unspecified_scope() -> None:
     selector = TargetSelectorCodecV1.from_legacy(
         _rec(target_unit_kind="part", target_section="5")
     )
-    assert selector.scope.status == ScopeStatus.UNSPECIFIED
+    assert selector.scope.scope_status == ScopeStatus.UNSPECIFIED
     assert selector.to_legal_address_if_complete() is None
     assert TargetSelectorCodecV1.to_legacy(selector) == _rec(
         target_unit_kind="part", target_section="5"
@@ -250,17 +250,17 @@ def test_part_without_target_part_stays_unspecified_scope() -> None:
 
 def test_scope_invariants_enforced() -> None:
     with pytest.raises(ValueError):
-        TargetScope(status=ScopeStatus.EXPLICIT_SCOPE)  # empty path
+        TargetScope(scope_status=ScopeStatus.EXPLICIT_SCOPE)  # empty path
     with pytest.raises(ValueError):
         TargetScope(
-            status=ScopeStatus.EXPLICIT_ROOT,
+            scope_status=ScopeStatus.EXPLICIT_ROOT,
             path=(AddressSegment("part", "1"),),
         )
     with pytest.raises(ValueError):
-        TargetScope(status=ScopeStatus.INFERRED_SCOPE)  # no rule_id
+        TargetScope(scope_status=ScopeStatus.INFERRED_SCOPE)  # no rule_id
     with pytest.raises(ValueError):
         TargetScope(
-            status=ScopeStatus.UNSPECIFIED,
+            scope_status=ScopeStatus.UNSPECIFIED,
             path=(AddressSegment("part", "1"),),
         )
 
@@ -269,5 +269,5 @@ def test_selector_requires_non_empty_relative_path() -> None:
     with pytest.raises(ValueError):
         TargetSelector(
             relative_path=(),
-            scope=TargetScope(status=ScopeStatus.UNSPECIFIED),
+            scope=TargetScope(scope_status=ScopeStatus.UNSPECIFIED),
         )
