@@ -183,7 +183,7 @@ def _read_corpus(
     progress_every: int = 2000,
 ) -> list[ActRecord]:
     """Read and parse all act XMLs from the archive. Returns list of act dicts."""
-    import zstandard as zstd
+    import compression.zstd as czstd
 
     archive = FetchArchive(db_path)
     conn = archive._conn
@@ -205,15 +205,15 @@ def _read_corpus(
     else:
         print(f"  Total act XML URLs: {len(all_urls):,}", file=sys.stderr)
 
-    # Load decompressors once — 42K of 44K blobs are zstd_dict
-    decomp_vanilla = zstd.ZstdDecompressor()
+    # Load the trained dictionary once — 42K of 44K blobs are zstd_dict.
+    # Decompression uses the one-shot czstd.decompress(...) function (not a
+    # reused ZstdDecompressor object): the stdlib ZstdDecompressor is a
+    # single-frame streaming object that raises EOFError after the first
+    # frame, whereas the corpus has one independent frame per blob.
     dict_row = conn.execute(
         "SELECT dict_data FROM dict ORDER BY dict_id DESC LIMIT 1"
     ).fetchone()
-    decomp_dict = None
-    if dict_row:
-        d = zstd.ZstdCompressionDict(bytes(dict_row[0]))
-        decomp_dict = zstd.ZstdDecompressor(dict_data=d)
+    zstd_dict = czstd.ZstdDict(bytes(dict_row[0])) if dict_row else None
 
     # Batch SQL: fetch content+encoding for all act URLs in one query.
     # GROUP BY url with MAX(last_seen) to get the most recent version.
@@ -253,16 +253,16 @@ def _read_corpus(
                 if encoding == "raw":
                     raw = data
                 elif encoding == "zstd":
-                    raw = decomp_vanilla.decompress(data)
+                    raw = czstd.decompress(data)
                 elif encoding == "zstd_dict":
-                    if decomp_dict is None:
+                    if zstd_dict is None:
                         # Fallback: load via archive API (slower)
                         raw = archive.get_latest(url)
                         if raw is None:
                             n_failed += 1
                             continue
                     else:
-                        raw = decomp_dict.decompress(data)
+                        raw = czstd.decompress(data, zstd_dict=zstd_dict)
                 else:
                     # delta or unknown — fall back to archive API
                     raw = archive.get_latest(url)
