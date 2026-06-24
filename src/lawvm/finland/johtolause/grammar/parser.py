@@ -2885,7 +2885,11 @@ def _parse_verb_group(
             # the heading-change arm ``N §:n edellä … väliotsikko`` the old parser
             # keeps but the section recognizer cannot reach — decline on that.
             scan.goto(saved)
-            if kind == "insertion" and not _tail_is_benign(scan):
+            if (
+                kind == "insertion"
+                and not _tail_is_benign(scan)
+                and not _insertion_tail_is_appendix_drop(scan)
+            ):
                 raise OutOfScope("undecodable insertion continuation")
             if kind == "container" and _has_prov_anaphor_continuation(scan):
                 raise OutOfScope("container näistä/niistä provenance continuation")
@@ -3495,6 +3499,76 @@ _BENIGN_TAIL_CATS = frozenset(
         "VALIOTSIKKO",
     }
 )
+
+
+#: Structural-noun token categories that, if they appear in an insertion tail,
+#: mean a REAL further amendment target the old parser would emit a node for.
+#: Their presence disqualifies the appendix-drop tail (see
+#: ``_insertion_tail_is_appendix_drop``).
+_APPENDIX_DROP_DISQUALIFIERS = frozenset(
+    {"PYKALA", "MOMENTTI", "KOHTA", "LUKU", "OTSIKKO", "VERB"}
+)
+#: Filler categories allowed inside an appendix-drop tail. These carry no
+#: operative node on their own (anaphoric ``DOC`` anchors, statute-name ``WORD``
+#: runs, ``uusi`` markers, number/letter/dash label fragments, separators, and
+#: the benign trailing spans).
+_APPENDIX_DROP_FILLER = frozenset(
+    {
+        "CONJ",
+        "COMMA",
+        "DOC",
+        "WORD",
+        "UUSI",
+        "NUM",
+        "LETTER",
+        "DASH",
+        "OSA",
+        "SEKA",
+        "SEMICOLON",
+        "TEMPORAL",
+        "END_SENTINEL_SPAN",
+        "SENTINEL_SPAN",
+        "PROVENANCE_SPAN",
+        "CITATION_SPAN",
+        "REINST_SPAN",
+        "STATUTE_NAME_SPAN",
+    }
+)
+
+
+def _insertion_tail_is_appendix_drop(scan: _Scan) -> bool:
+    """True when an insertion tail is a whole-statute ``liite`` (appendix) tail
+    the OLD parser ALSO drops — so owning the clause (and dropping the tail) is
+    byte-identical to the legacy fallback rather than losing a node.
+
+    The shape is a trailing ``… sekä/ja [uusi] [DOC/WORD] liite[N][–N]`` arm with
+    no decodable target node: the old ``surface_parse`` has no appendix-insert
+    family, so it emits NOTHING for this tail and the outer loop swallows it. The
+    construction grammar likewise has no appendix node, so declining the WHOLE
+    clause over a tail that contributes zero operative nodes is pure noise.
+
+    Fail-loud and TIGHT: the tail must
+      * contain at least one ``LIITE`` token (it is genuinely an appendix arm),
+      * run to end-of-stream with NO further ``VERB`` (a later verb group is real
+        content, never benign), and
+      * contain NO further structural target noun (``§``/momentti/kohta/luku/
+        otsikko) — those would be real targets the old parser keeps, so the tail
+        is not a pure appendix drop and the clause must stay declined.
+    Everything else in the tail must be a known filler category; an unknown
+    category makes this return ``False`` (decline), never a guess.
+    """
+    toks = scan.cur.tokens
+    saw_liite = False
+    for i in range(scan.pos, len(toks)):
+        cat = toks[i].cat
+        if cat == "LIITE":
+            saw_liite = True
+            continue
+        if cat in _APPENDIX_DROP_DISQUALIFIERS:
+            return False
+        if cat not in _APPENDIX_DROP_FILLER:
+            return False
+    return saw_liite
 
 
 def _tail_is_benign(scan: _Scan) -> bool:

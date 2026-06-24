@@ -97,7 +97,18 @@ FI_JOHTOLAUSE_FALLBACK_RESIDUE_CLASSES_V0: tuple[FallbackResidueClass, ...] = (
         # of the clause parses cleanly. Net -1 (no other interleaved clause shifted:
         # the recovery's structural-OOS self-guard keeps heading/appendix folds
         # declining exactly as before).
-        baseline_count=354,
+        #
+        # 354 -> 348: the appendix-drop tail recovery
+        # (``_insertion_tail_is_appendix_drop``) natively owns 6 clauses whose
+        # ONLY decline blocker was a trailing whole-statute ``… sekä/ja [uusi]
+        # liite[N]`` appendix arm. The old ``surface_parse`` has no appendix-insert
+        # family, so it emits ZERO operative nodes for that tail and the outer loop
+        # swallows it; the grammar now drops the same tail and owns the clause,
+        # proven byte-identical to legacy on all 6 (full-model equal, not just
+        # structural). The recovery is TIGHT: the tail must carry a ``LIITE`` and no
+        # further structural target noun (§/momentti/kohta/luku/otsikko) or later
+        # verb, so no clause with a real kept target is silently stripped. Net -6.
+        baseline_count=348,
     ),
     FallbackResidueClass(
         class_id="complex_enumeration_with_subtarget_continuation",
