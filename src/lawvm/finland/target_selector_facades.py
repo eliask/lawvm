@@ -38,8 +38,9 @@ selector but is never consulted on the way back to legacy.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import TypedDict, cast
 
+from lawvm.core.target_scope import TargetUnitKind
 from lawvm.core.target_selector import (
     AddressSegment,
     ScopeStatus,
@@ -57,9 +58,15 @@ class LegacyTargetKwargs(TypedDict):
 
     Keys match the ``AmendmentOp`` constructor parameter names exactly, so the
     dict is splattable: ``AmendmentOp(op_id=..., **fi_section_target(...))``.
+
+    ``target_unit_kind`` is the narrow ``TargetUnitKind`` literal (not bare
+    ``str``) so the splat matches ``AmendmentOp.__init__``'s typed parameter —
+    each facade always emits exactly its own focus kind ("section"/"chapter"/
+    "part"), so the narrowing is sound (the codec records it as ``str``; a single
+    ``cast`` in ``_selector_to_kwargs`` re-narrows it with no runtime change).
     """
 
-    target_unit_kind: str
+    target_unit_kind: TargetUnitKind
     target_section: str
     target_chapter: str | None
     target_part: str | None
@@ -99,7 +106,11 @@ def _selector_to_kwargs(selector: TargetSelector) -> LegacyTargetKwargs:
     """Lower a selector to the legacy ``target_*`` construction kwargs."""
     rec = TargetSelectorCodecV1.to_legacy(selector)
     return LegacyTargetKwargs(
-        target_unit_kind=rec.target_unit_kind,
+        # The codec types ``target_unit_kind`` as bare ``str``; every facade
+        # builds its focus segment from a fixed "section"/"chapter"/"part" kind,
+        # so re-narrowing to ``TargetUnitKind`` is sound (type-only, no runtime
+        # change) and lets the kwargs splat into ``AmendmentOp.__init__``.
+        target_unit_kind=cast(TargetUnitKind, rec.target_unit_kind),
         target_section=rec.target_section,
         target_chapter=rec.target_chapter,
         target_part=rec.target_part,

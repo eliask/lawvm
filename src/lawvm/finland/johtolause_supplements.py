@@ -54,6 +54,7 @@ from lawvm.finland.johto_scope_mentions import (
     expand_johto_section_label_range,
 )
 from lawvm.finland.ops import AmendmentOp, OpType, _lo_with_path_update
+from lawvm.finland.target_selector_facades import fi_section_target
 
 _SPARSE_OSALTA_ROW_OMISSION_RULE_ID = "fi.sparse_osalta_row_omission_repeal.v1"
 _SPARSE_OSALTA_ROW_OMISSION_TAG = "sparse_osalta_row_omission_repeal"
@@ -288,9 +289,10 @@ def _parse_item_shift_with_extra_repeal(johto: str) -> List[Tuple[ItemShiftClaus
         extra_op = AmendmentOp(
             op_id=f"explicit_repeal_after_item_shift_{idx}",
             op_type=OpType.REPEAL,
-            target_section=clause.target_section or "",
-            target_unit_kind="section",
-            target_paragraph=match.extra_repeal_target_paragraph,
+            **fi_section_target(
+                clause.target_section or "",
+                subsection=match.extra_repeal_target_paragraph,
+            ),
             post_repeal_item_shift_label=clause.target_items[0].lower() if clause.target_items else None,
         )
         results.append((clause, extra_op))
@@ -510,9 +512,10 @@ def _supplement_jolloin_moment_renumber_ops(
                 AmendmentOp(
                     op_id=f"jolloin_moment_insert_{clause.section}_{moment}_{idx}",
                     op_type=OpType.INSERT,
-                    target_section=clause.section,
-                    target_unit_kind="section",
-                    target_paragraph=moment,
+                    **fi_section_target(
+                        clause.section,
+                        subsection=moment,
+                    ),
                     extraction_provenance_tags=(_JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG,),
                     witness_rule_id="fi.jolloin_renumber",
                 )
@@ -583,8 +586,7 @@ def _supplement_named_table_row_mixed_clause_ops(
             AmendmentOp(
                 op_id=f"named_table_row_replace_{idx}",
                 op_type=OpType.REPLACE,
-                target_section=sec_norm or "",
-                target_unit_kind="section",
+                **fi_section_target(sec_norm or ""),
                 named_row_targets=tuple(replace_rows),
             )
         )
@@ -632,8 +634,7 @@ def _tag_named_table_row_single_clause_ops(
             AmendmentOp(
                 op_id=f"named_table_row_single_replace_{idx}",
                 op_type=OpType.REPLACE,
-                target_section=clause.target_section or "",
-                target_unit_kind="section",
+                **fi_section_target(clause.target_section or ""),
                 named_row_targets=tuple(clause.named_targets),
             )
         )
@@ -690,8 +691,7 @@ def _tag_numbered_table_target_clause_ops(
             AmendmentOp(
                 op_id=f"numbered_table_target_replace_{idx}",
                 op_type=OpType.REPLACE,
-                target_section=section,
-                target_unit_kind="section",
+                **fi_section_target(section),
                 numbered_table_targets=table_labels,
                 extraction_provenance_tags=(_NUMBERED_TABLE_TARGET_TAG,),
                 witness_rule_id=_NUMBERED_TABLE_TARGET_RULE_ID,
@@ -841,11 +841,12 @@ def _append_unique_op(
         AmendmentOp(
             op_id=op_id,
             op_type=OpType(op_type),
-            target_section=section,
-            target_unit_kind="section",
-            target_chapter=chapter,
-            target_paragraph=moment,
-            target_item=item,
+            **fi_section_target(
+                section,
+                chapter=chapter,
+                subsection=moment,
+                item=item,
+            ),
             numbered_table_targets=numbered_table_targets,
             extraction_provenance_tags=(_MIXED_EXPLICIT_TARGET_TAG,),
             scope_provenance_tags=_scope_tags_for_chapter(chapter),
@@ -1104,11 +1105,12 @@ def _supplement_item_and_moment_clause_ops(
                 AmendmentOp(
                     op_id=f"item_and_moment_replace_item_{clause_index}_{item_label}",
                     op_type=OpType.REPLACE,
-                    target_section=clause.section,
-                    target_unit_kind="section",
-                    target_chapter=clause.chapter,
-                    target_paragraph=clause.moment,
-                    target_item=item_label,
+                    **fi_section_target(
+                        clause.section,
+                        chapter=clause.chapter,
+                        subsection=clause.moment,
+                        item=item_label,
+                    ),
                     extraction_provenance_tags=(_ITEM_AND_MOMENT_TARGET_TAG,),
                     scope_provenance_tags=_scope_tags_for_chapter(clause.chapter),
                     witness_rule_id=_ITEM_AND_MOMENT_TARGET_RULE_ID,
@@ -1126,10 +1128,11 @@ def _supplement_item_and_moment_clause_ops(
                 AmendmentOp(
                     op_id=f"item_and_moment_replace_moment_{clause_index}_{clause.extra_moment}",
                     op_type=OpType.REPLACE,
-                    target_section=clause.section,
-                    target_unit_kind="section",
-                    target_chapter=clause.chapter,
-                    target_paragraph=clause.extra_moment,
+                    **fi_section_target(
+                        clause.section,
+                        chapter=clause.chapter,
+                        subsection=clause.extra_moment,
+                    ),
                     extraction_provenance_tags=(_ITEM_AND_MOMENT_TARGET_TAG,),
                     scope_provenance_tags=_scope_tags_for_chapter(clause.chapter),
                     witness_rule_id=_ITEM_AND_MOMENT_TARGET_RULE_ID,
@@ -1189,11 +1192,12 @@ def _supplement_item_and_moment_clause_ops(
             AmendmentOp(
                 op_id=f"item_and_moment_insert_item_{clause_index}_{clause.item_label}",
                 op_type=OpType.INSERT,
-                target_section=clause.section,
-                target_unit_kind="section",
-                target_chapter=clause.chapter,
-                target_paragraph=clause.moment,
-                target_item=clause.item_label,
+                **fi_section_target(
+                    clause.section,
+                    chapter=clause.chapter,
+                    subsection=clause.moment,
+                    item=clause.item_label,
+                ),
                 extraction_provenance_tags=(_ITEM_AND_MOMENT_TARGET_TAG,),
                 scope_provenance_tags=_scope_tags_for_chapter(clause.chapter),
                 witness_rule_id=_ITEM_AND_MOMENT_TARGET_RULE_ID,
@@ -1284,8 +1288,7 @@ def _supplement_sparse_osalta_row_omission_repeals(
             AmendmentOp(
                 op_id=f"sparse_osalta_row_omission_repeal_{idx}",
                 op_type=OpType.REPEAL,
-                target_section=clause.section,
-                target_unit_kind="section",
+                **fi_section_target(clause.section),
                 named_row_targets=(clause.row_target,),
                 extraction_provenance_tags=(_SPARSE_OSALTA_ROW_OMISSION_TAG,),
                 witness_rule_id=_SPARSE_OSALTA_ROW_OMISSION_RULE_ID,

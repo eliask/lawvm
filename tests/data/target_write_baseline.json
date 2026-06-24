@@ -21,14 +21,12 @@
     "src/lawvm/finland/apply_structure_ops.py": 2,
     "src/lawvm/finland/apply_subsection_dispatch.py": 3,
     "src/lawvm/finland/compile_group_scope_recovery.py": 11,
-    "src/lawvm/finland/frontend_compile.py": 32,
+    "src/lawvm/finland/frontend_compile.py": 13,
     "src/lawvm/finland/group_ops.py": 1,
     "src/lawvm/finland/group_plan.py": 1,
-    "src/lawvm/finland/johtolause_supplements.py": 36,
-    "src/lawvm/finland/normalize.py": 33,
-    "src/lawvm/finland/payload_normalize.py": 14,
-    "src/lawvm/finland/uncovered_recovery_support.py": 9,
-    "src/lawvm/finland/vts.py": 7
+    "src/lawvm/finland/johtolause_supplements.py": 3,
+    "src/lawvm/finland/normalize.py": 1,
+    "src/lawvm/finland/payload_normalize.py": 14
   },
   "sites": {
     "src/lawvm/finland/apply_ops_executor.py": [
@@ -127,7 +125,7 @@
     ],
     "src/lawvm/finland/frontend_compile.py": [
       {
-        "line": 428,
+        "line": 429,
         "callee": "dc_replace",
         "kwargs": [
           "target_item",
@@ -136,7 +134,7 @@
         ]
       },
       {
-        "line": 2231,
+        "line": 2232,
         "callee": "dc_replace",
         "kwargs": [
           "target_chapter",
@@ -144,22 +142,14 @@
         ]
       },
       {
-        "line": 2586,
+        "line": 2587,
         "callee": "dc_replace",
         "kwargs": [
           "target_chapter"
         ]
       },
       {
-        "line": 3908,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 913,
+        "line": 914,
         "callee": "dc_replace",
         "kwargs": [
           "target_chapter",
@@ -167,7 +157,7 @@
         ]
       },
       {
-        "line": 2365,
+        "line": 2366,
         "callee": "dc_replace",
         "kwargs": [
           "target_chapter",
@@ -175,71 +165,18 @@
         ]
       },
       {
-        "line": 3792,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 4054,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 3978,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 3989,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 2843,
+        "line": 2844,
         "callee": "dc_replace",
         "kwargs": [
           "target_chapter"
         ]
       },
       {
-        "line": 3039,
+        "line": 3040,
         "callee": "dc_replace",
         "kwargs": [
           "target_chapter",
           "target_part"
-        ]
-      },
-      {
-        "line": 3959,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_item",
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 4044,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
         ]
       }
     ],
@@ -263,100 +200,7 @@
     ],
     "src/lawvm/finland/johtolause_supplements.py": [
       {
-        "line": 288,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 841,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_chapter",
-          "target_item",
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 583,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 632,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 690,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1189,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_chapter",
-          "target_item",
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1284,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 510,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1104,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_chapter",
-          "target_item",
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1126,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_chapter",
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1160,
+        "line": 1163,
         "callee": "dc_replace",
         "kwargs": [
           "target_chapter",
@@ -367,114 +211,10 @@
     ],
     "src/lawvm/finland/normalize.py": [
       {
-        "line": 897,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 623,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 771,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1073,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1221,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1225,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1230,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 643,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_chapter",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 995,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1097,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 1120,
+        "line": 1109,
         "callee": "dc_replace",
         "kwargs": [
           "target_paragraph"
-        ]
-      },
-      {
-        "line": 280,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 377,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_item",
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
         ]
       }
     ],
@@ -553,51 +293,7 @@
           "target_paragraph"
         ]
       }
-    ],
-    "src/lawvm/finland/uncovered_recovery_support.py": [
-      {
-        "line": 184,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_chapter",
-          "target_part",
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 301,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_chapter",
-          "target_paragraph",
-          "target_part",
-          "target_section",
-          "target_unit_kind"
-        ]
-      }
-    ],
-    "src/lawvm/finland/vts.py": [
-      {
-        "line": 911,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_section",
-          "target_unit_kind"
-        ]
-      },
-      {
-        "line": 998,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_chapter",
-          "target_item",
-          "target_paragraph",
-          "target_section",
-          "target_unit_kind"
-        ]
-      }
     ]
   },
-  "total": 157
+  "total": 57
 }

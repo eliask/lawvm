@@ -14,6 +14,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.body_pairing import should_use_body_section
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
+from lawvm.finland.target_selector_facades import fi_section_target
 from lawvm.finland.uncovered_recovery_state import (
     FI_RECOVERY_UNCOVERED_BODY_RULE_ID,
     UncoveredRecoveryGuards,
@@ -184,10 +185,11 @@ def build_uncovered_rop(
     am_op = AmendmentOp(
         op_id=draft.op_id,
         op_type=draft.op_type,
-        target_section=draft.target_label,
-        target_unit_kind="section",
-        target_chapter=draft.target_chapter,
-        target_part=draft.target_part,
+        **fi_section_target(
+            draft.target_label,
+            chapter=draft.target_chapter,
+            part=draft.target_part,
+        ),
         source_statute=amendment_id,
         move_clause_target_unit_kind=draft.move_clause_target_unit_kind,
         uncovered_body_recovery=True,
@@ -300,11 +302,12 @@ def synthetic_moment_group_ops(
     return [
         AmendmentOp(
             op_type=OpType.REPLACE,
-            target_unit_kind="section",
-            target_section=label,
-            target_chapter=amend_chapter_label,
-            target_part=amend_part_label,
-            target_paragraph=moment,
+            **fi_section_target(
+                label,
+                chapter=amend_chapter_label,
+                part=amend_part_label,
+                subsection=moment,
+            ),
         )
         for moment in sorted(moments)
     ]

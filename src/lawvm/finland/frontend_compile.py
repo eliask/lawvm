@@ -115,6 +115,7 @@ from lawvm.finland.frontend_observations import (
     _scope_anchor_dependence_observations,
 )
 from lawvm.finland.replay_notices import replay_print as _replay_print
+from lawvm.finland.target_selector_facades import fi_section_target
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _TEMPORARY_SECTION_PREFIX_RE = re.compile(r"^\s*(?:uusi|uudet)\s*", flags=re.IGNORECASE)
@@ -3789,7 +3790,7 @@ def _extract_enacting_formula_body_insert_ops_fallback(
             continue
         if master.find_section(label) is not None:
             continue  # already exists — not a new INSERT
-        ops.append(AmendmentOp(op_id="", op_type=OpType.INSERT, target_section=label, target_unit_kind="section"))
+        ops.append(AmendmentOp(op_id="", op_type=OpType.INSERT, **fi_section_target(label)))
     return ops
 
 
@@ -3905,7 +3906,7 @@ def _extract_enacting_formula_body_replace_ops_fallback(
     label = _norm_num_token(num_text)
     if not label or master.find_section(label) is None:
         return []
-    return [AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section=label, target_unit_kind="section")]
+    return [AmendmentOp(op_id="", op_type=OpType.REPLACE, **fi_section_target(label))]
 
 
 def _extract_ceremonial_body_only_ops_fallback(
@@ -3959,10 +3960,11 @@ def _extract_ceremonial_body_only_ops_fallback(
                     AmendmentOp(
                         op_id="",
                         op_type=op_type,
-                        target_section=section_label,
-                        target_paragraph=owner_label,
-                        target_item=item_label,
-                        target_unit_kind="section",
+                        **fi_section_target(
+                            section_label,
+                            subsection=owner_label,
+                            item=item_label,
+                        ),
                     )
                 )
             continue
@@ -3978,9 +3980,7 @@ def _extract_ceremonial_body_only_ops_fallback(
                 AmendmentOp(
                     op_id="",
                     op_type=OpType.INSERT,
-                    target_section=section_label,
-                    target_paragraph=next_label,
-                    target_unit_kind="section",
+                    **fi_section_target(section_label, subsection=next_label),
                 )
             )
             continue
@@ -3989,9 +3989,7 @@ def _extract_ceremonial_body_only_ops_fallback(
                 AmendmentOp(
                     op_id="",
                     op_type=OpType.REPLACE,
-                    target_section=section_label,
-                    target_paragraph=1,
-                    target_unit_kind="section",
+                    **fi_section_target(section_label, subsection=1),
                 )
             )
 
@@ -4044,9 +4042,7 @@ def _extract_act_wide_body_section_replace_ops_fallback(
                     AmendmentOp(
                         op_id="",
                         op_type=OpType.REPLACE,
-                        target_section=section_label,
-                        target_paragraph=target_paragraph,
-                        target_unit_kind="section",
+                        **fi_section_target(section_label, subsection=target_paragraph),
                     )
                 )
             continue
@@ -4054,8 +4050,7 @@ def _extract_act_wide_body_section_replace_ops_fallback(
             AmendmentOp(
                 op_id="",
                 op_type=OpType.REPLACE,
-                target_section=section_label,
-                target_unit_kind="section",
+                **fi_section_target(section_label),
             )
         )
     return _dedupe_fallback_ops_ir(ops)

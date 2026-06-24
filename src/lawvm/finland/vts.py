@@ -18,6 +18,10 @@ from lawvm.core.filter_result import FilterResult
 from lawvm.core.stage_result import PartitionResult, Residual
 from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.address_parse import ParsedLegalAddress
+from lawvm.finland.target_selector_facades import (
+    fi_chapter_target,
+    fi_section_target,
+)
 from lawvm.finland.references.freetext_addresses import scan_legal_addresses
 from lawvm.finland.citation_routing import _head_genitive_title
 
@@ -911,8 +915,7 @@ def extract_voimaantulo_repeals_partition(
                 AmendmentOp(
                     op_id=f"vts_repeal_L_{norm}",
                     op_type=OpType.REPEAL,
-                    target_section=norm,
-                    target_unit_kind="chapter",
+                    **fi_chapter_target(norm),
                     voimaantulo_repeal=True,
                     witness_rule_id=FI_VTS_VOIMAANTULO_REPEAL_RULE_ID,
                 )
@@ -1003,11 +1006,12 @@ def extract_voimaantulo_repeals_partition(
                             + (f"_k{addr.item}" if addr.item is not None else "")
                         ),
                         op_type=OpType.REPEAL,
-                        target_section=addr.section,
-                        target_unit_kind="section",
-                        target_chapter=addr.chapter,
-                        target_paragraph=addr.subsection,
-                        target_item=addr.item,
+                        **fi_section_target(
+                            addr.section,
+                            chapter=addr.chapter,
+                            subsection=addr.subsection,
+                            item=addr.item,
+                        ),
                         voimaantulo_repeal=True,
                         witness_rule_id=FI_VTS_VOIMAANTULO_REPEAL_RULE_ID,
                     )
