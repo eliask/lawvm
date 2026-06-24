@@ -261,7 +261,7 @@ def test_test_shard_new_zealand_group_expands_to_subshards() -> None:
         "new_zealand_effects",
         "new_zealand_reports",
     ]
-    assert module.shard_plan("new_zealand")["assigned_file_count"] == 36
+    assert module.shard_plan("new_zealand")["assigned_file_count"] == 38
     assert module.affected_shards(["tests/test_new_zealand_acquisition.py"]) == [
         "new_zealand_sources"
     ]

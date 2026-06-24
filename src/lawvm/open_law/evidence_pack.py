@@ -290,7 +290,20 @@ def _lawvm_generator_identity() -> dict[str, object]:
 
 
 def _lawvm_repository_label(repo_root: Path) -> str:
-    """Return a shareable repository identity without leaking local paths."""
+    """Return a shareable repository identity without leaking local paths.
+
+    Recognized shared-remote shapes: ``git@github.com:owner/repo[.git]``,
+    ``https://...`` / ``http://...`` / ``ssh://...`` / ``git://...`` URIs, and
+    ``github.com/owner/repo`` HTTPS-without-scheme. A local-path remote
+    (an absolute Unix path like ``/srv/git/repo``, a ``./`` / ``../`` relative
+    reference, or ``file://`` URI) is NOT shareable — fall back to the repo
+    root's leaf name so a developer-local checkout (e.g. one whose
+    ``remote.origin.url`` points at a sibling local clone) does not leak its
+    on-disk location into the evidence-pack manifest. Pinned by
+    ``tests/test_open_law_frontend.py``'s release-hygiene leak guard
+    (AGENTS §1.10 — the diagnostic must be a typed refusal of the leak, never
+    silent).
+    """
 
     remote = subprocess.run(
         ("git", "-C", str(repo_root), "config", "--get", "remote.origin.url"),
@@ -302,14 +315,69 @@ def _lawvm_repository_label(repo_root: Path) -> str:
     remote_url = remote.stdout.strip()
     if not remote_url:
         return repo_root.name
-    return _shareable_git_remote_url(remote_url)
+    return _shareable_git_remote_url(remote_url, fallback_leaf=repo_root.name)
 
 
-def _shareable_git_remote_url(remote_url: str) -> str:
+# URI schemes that are unambiguously shareable (not a developer-local path).
+_SHARED_REMOTE_SCHEMES = ("http://", "https://", "ssh://", "git://", "file://")
+# Bare-host remote shapes that are also shareable (e.g. "github.com/owner/repo").
+_SHARED_REMOTE_HOST_PREFIXES = (
+    "github.com/",
+    "gitlab.com/",
+    "bitbucket.org/",
+)
+
+
+def _is_local_path_remote(remote_url: str) -> bool:
+    """A remote URL that resolves to a developer-local filesystem path.
+
+    Absolute Unix paths (e.g. ``/srv/git/repo``), Windows drive-letters
+    (``C:\\...`` / ``C:/...``), and ``./`` / ``../`` relative references are all
+    local-path remotes that MUST NOT be returned from a shareable-identity
+    function. The leak guard in ``verify_pack`` enforces this contract on the
+    written manifest; this predicate catches it at emission instead.
+    """
+    if not remote_url:
+        return False
+    if remote_url.startswith(("/", "./", "../")):
+        return True
+    # Windows drive-letter form: "C:\..." or "C:/...".
+    if len(remote_url) >= 3 and remote_url[1:3] == ":\\" and remote_url[0].isalpha():
+        return True
+    if len(remote_url) >= 3 and remote_url[1:3] == ":/" and remote_url[0].isalpha():
+        return True
+    return False
+
+
+def _shareable_git_remote_url(
+    remote_url: str, *, fallback_leaf: str | None = None
+) -> str:
+    """Normalize a ``git`` remote URL into a shareable identity.
+
+    GitHub SSH remotes are normalized to HTTPS. Recognized shareable-scheme URIs
+    (http(s) / ssh / git) and bare github.com-style host shapes are returned
+    verbatim after GitHub-SSH normalization. A local-path remote falls back to
+    ``fallback_leaf`` (the repo root's leaf directory name) so a developer-local
+    checkout does not leak its on-disk path into a serialized evidence-pack
+    artifact. If ``fallback_leaf`` is None and the remote is a local path, the
+    verbatim URL is returned (preserves the prior behaviour for any non-library
+    caller and surfaces the path as-is — which the verify-pack leak guard will
+    flag as a typed issue, never silent).
+    """
     match = re.fullmatch(r"git@github\.com:(?P<owner>[^/]+)/(?P<repo>[^/]+?)(?:\.git)?", remote_url)
-    if match is None:
+    if match is not None:
+        return f"https://github.com/{match.group('owner')}/{match.group('repo')}.git"
+    if remote_url.startswith(_SHARED_REMOTE_SCHEMES):
+        # Strip a file:// URI down to a leaf-name fallback — file:// remotes are
+        # local-path remotes dressed as URIs; they leak filesystem paths.
+        if remote_url.startswith("file://"):
+            return fallback_leaf if fallback_leaf is not None else remote_url
         return remote_url
-    return f"https://github.com/{match.group('owner')}/{match.group('repo')}.git"
+    if remote_url.startswith(_SHARED_REMOTE_HOST_PREFIXES):
+        return remote_url
+    if _is_local_path_remote(remote_url):
+        return fallback_leaf if fallback_leaf is not None else remote_url
+    return remote_url
 
 
 def _sized_len(value: object) -> int:
