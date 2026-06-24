@@ -685,7 +685,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_bill_analysis.py",
         "test_bill_counterfactual_effects.py",
         "test_dangling_references.py",
+        "test_dangling_temporal_cause.py",
         "test_cross_reference_integrity_report.py",
+        # test_eu_reference_report.py is owned by the `eu` shard's test_eu_* glob.
+        "test_reference_integrity_demo_report.py",
         "test_provision_state_window_unmaterialized.py",
         "test_read_provision.py",
         "test_reconcile.py",

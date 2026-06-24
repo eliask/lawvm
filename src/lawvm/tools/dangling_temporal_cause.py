@@ -50,13 +50,12 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Optional, Protocol
+from typing import Optional, Protocol
 
 from lawvm.substrate.canonical_json import JsonValue, nfc
 from lawvm.tools.dangling_references import (
     STATUS_DANGLING,
     DanglingReferenceReport,
-    DanglingReferenceRow,
 )
 
 _SCHEMA_CAUSE_ROW = "lawvm.dangling_cause_row.v1"
