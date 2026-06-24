@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 from rapidfuzz.distance import Indel as _RapidFuzzIndel
 
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
+from lawvm.finland.consolidated_store import pin_selection_as_of
 from lawvm.finland.corpus import get_ground_truth, get_ground_truth_bytes, get_ground_truth_tree
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_timeline_diagnostics import (
@@ -49,6 +50,7 @@ from lawvm.finland.replay_timeline_diagnostics import (
 from lawvm.finland.proof_surfaces import finland_bench_run_evidence_surface
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.transparent_store import is_known_missing_source
+from lawvm.finland.xml_statute import serialize_text as _serialize_ir_text
 from lawvm.semantic.projection import get_oracle_text_normalizer
 from lawvm.tools.editorial_hygiene import (  # via shim (pulls registration)
     count_kumottu_bytes,
@@ -56,6 +58,7 @@ from lawvm.tools.editorial_hygiene import (  # via shim (pulls registration)
     strip_editorial_annotations,
 )
 from lawvm.tools.frontier import _run_oracle_checks_parallel
+from lawvm.tools.pit_projection import comparison_ir_for_pit
 from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
 from lawvm.tools.bench_diagnostic_tiers import (
     bench_diagnostic_sidecar_rows,
@@ -404,6 +407,32 @@ def _clean_oracle_section_text(t: str) -> str:
     return _CLEAN_RE.sub("", strip_editorial_annotations(norm(t)).lower())
 
 
+def _comparison_ir(master: Any) -> Any:
+    return comparison_ir_for_pit(master, query_type="in_force")
+
+
+def _comparison_text(master: Any) -> str:
+    return _serialize_ir_text(_comparison_ir(master))
+
+
+def _levenshtein_comparison_text(master: Any) -> str:
+    """Return the historical full replay text used by FI Levenshtein scoring.
+
+    Structural scoring uses ``_comparison_ir`` so inactive PIT sections do not
+    count as live legal structure.  The secondary full-text Levenshtein metric is
+    a broad replay/oracle sanity check and historically compared the replay
+    serializer against the consolidated oracle text.  Keep that surface stable:
+    materialized/PIT projection can intentionally omit inactive context that the
+    consolidated oracle text still carries, which makes the secondary metric
+    measure projection policy rather than text replay agreement.
+    """
+
+    serialize_text = getattr(master, "serialize_text", None)
+    if callable(serialize_text):
+        return str(serialize_text())
+    return _comparison_text(master)
+
+
 def _levenshtein_ratio(left: str, right: str) -> float:
     """Return the same normalized indel similarity as ``python-Levenshtein.ratio``."""
 
@@ -417,7 +446,7 @@ def _lev_sim_fast(sid: str, master: Any) -> float:
     Returns -1.0 on any error.
     """
     try:
-        c_res = _clean(master.serialize_text())
+        c_res = _clean(_levenshtein_comparison_text(master))
         c_truth = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -623,6 +652,13 @@ class _BenchSemanticScore:
     # error and is the residue the unified-contract reconciliation checks
     # against (see lawvm.core.bench_contract.check_residue_reconciliation).
     penalized_event_counts: Counter[str] = field(default_factory=Counter)
+    # amb (nondeterministic oracle-match) witnesses: one per section whose
+    # penalty was forgiven because replay's text matched a genuine-but-not-chosen
+    # oracle version (the oracle's version SELECTION is unreliable). Opaque
+    # triage pointers, NOT reconciled against structural_err — they ride the
+    # ``witnesses`` channel, never ``residue_buckets`` (an amb-neutralized
+    # section has zero structural error, so a residue count would be phantom).
+    amb_alternate_witnesses: tuple[str, ...] = ()
 
 
 def _empty_bench_semantic_score(
@@ -657,7 +693,9 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
     )
     from lawvm.tools.section_keys import (
         extract_ir_sections,
+        extract_oracle_section_alternates,
         extract_oracle_sections,
+        oracle_amb_alternate_match,
         reconcile_unique_unscoped_aliases,
     )
     from lawvm.tools.structural_review import is_oracle_content_absent
@@ -670,13 +708,15 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
     if is_oracle_content_absent(oracle_root):
         return _empty_bench_semantic_score(-1.0, -1.0)
 
-    replay_ir = (
-        master.materialized_state.ir
-        if getattr(master, "materialized_state", None) is not None
-        else master.ir
-    )
+    replay_ir = _comparison_ir(master)
     replay_sections = extract_ir_sections(replay_ir)
     oracle_sections = extract_oracle_sections(oracle_root) if oracle_root is not None else {}
+    # amb candidate set: the oracle version renderings extract_oracle_sections
+    # discarded, keyed by the SAME (pre-reconcile) section key (aliased keys get
+    # no alternates -> fall through to status-quo penalize, safe).
+    oracle_alternates = (
+        extract_oracle_section_alternates(oracle_root) if oracle_root is not None else {}
+    )
     replay_sections, oracle_sections = reconcile_unique_unscoped_aliases(
         replay_sections,
         oracle_sections,
@@ -687,7 +727,7 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
 
     raw_lev = -1.0
     if text_scores:
-        raw_replay_text = _clean(master.serialize_text())
+        raw_replay_text = _clean(_levenshtein_comparison_text(master))
         raw_oracle_text = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -705,6 +745,7 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
     penalized_count = 0
     event_counts: Counter[str] = Counter()
     penalized_event_counts: Counter[str] = Counter()
+    amb_witnesses: list[str] = []
     replay_chunks: list[str] = []
     oracle_chunks: list[str] = []
 
@@ -731,6 +772,20 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
             or bool(sd.get("text", 0))
         )
         neutralized = has_diff and _section_diff_is_bench_neutralized(sd, events)
+        if has_diff and not neutralized and replay_node is not None:
+            # amb: replay matched a genuine-but-not-chosen oracle version of this
+            # exact slot -> source-attested, forgive the penalty + warn (the
+            # oracle's version selection, not replay, was the mismatch source).
+            amb_witness = oracle_amb_alternate_match(
+                key,
+                _clean(irnode_to_text(replay_node)),
+                oracle_alternates.get(key),
+                _clean_oracle_section_text,
+            )
+            if amb_witness is not None:
+                neutralized = True
+                amb_witnesses.append(amb_witness)
+                print(f"WARNING oracle suspect: version selection alternate match {amb_witness}")
         for event in events:
             if isinstance(event, dict):
                 event_counts[event.get("kind", "unknown")] += 1
@@ -784,6 +839,7 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
         adjusted_levenshtein_similarity=adjusted_lev,
         event_counts=event_counts,
         penalized_event_counts=penalized_event_counts,
+        amb_alternate_witnesses=tuple(amb_witnesses),
     )
 
 
@@ -826,6 +882,8 @@ def bench_penalized_section_keys(sid: str, master: Any) -> tuple[set[str], bool]
     for sec_key, sd, events in _sections_with_diffs({"sections": non_editorial}):
         if _section_diff_is_bench_neutralized(sd, events):
             continue
+        if non_editorial.get(sec_key, {}).get("amb_alternate_match"):
+            continue  # replay matched a non-chosen attested oracle version (amb)
         penalized.add(sec_key)
     return penalized, False
 
@@ -874,6 +932,8 @@ def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
             event_counts[event.get("kind", "unknown")] += 1
         if _section_diff_is_bench_neutralized(sd, events):
             continue
+        if non_editorial.get(_sec_key, {}).get("amb_alternate_match"):
+            continue  # replay matched a non-chosen attested oracle version (amb)
         penalised += 1
     return 1.0 - penalised / len(non_editorial), event_counts
 
@@ -981,6 +1041,38 @@ def _fi_status_to_bench_status(status: str) -> "BenchStatus":
     return BenchStatus.CRASH
 
 
+def _bench_oracle_provenance_witnesses(sid: str) -> tuple[str, ...]:
+    """Surface the oracle-selection qualifier as opaque witness pointers.
+
+    A score is valid even when the oracle it scored against was accepted only
+    under the 180-day Finlex-ahead tolerance, or when other candidate artifacts
+    were screened out as incomparable.  That qualifier must be *visible* — an
+    ordinary OK score with no qualifier would silently hide that the oracle was
+    tolerance-accepted.  This reads the same cached selection the score used
+    (no re-selection, no score change) and returns witness strings only when
+    there is something to surface.
+    """
+    from lawvm.finland.corpus import get_oracle_selection_provenance
+
+    provenance = get_oracle_selection_provenance(
+        sid, selector=_BENCH_CONSOLIDATED_SELECTOR
+    )
+    if provenance is None:
+        return ()
+    witnesses: list[str] = []
+    if provenance.tolerance_applied:
+        witnesses.append(
+            "oracle_selected_under_180day_tolerance"
+            f" version_tag={provenance.chosen_version_tag}"
+        )
+    if provenance.rejected_version_tags:
+        witnesses.append(
+            "oracle_candidates_rejected_incomparable="
+            + ",".join(provenance.rejected_version_tags)
+        )
+    return tuple(witnesses)
+
+
 def fi_bench_unit_result(
     sid: str,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
@@ -1028,6 +1120,7 @@ def fi_bench_unit_result(
                 status=BenchStatus.SCORED,
                 structural_err=None,
                 text_err=1.0 - lev_sim,
+                witnesses=_bench_oracle_provenance_witnesses(sid),
             )
 
         score = _semantic_section_score(sid, master, text_scores=text_scores)
@@ -1043,6 +1136,10 @@ def fi_bench_unit_result(
             structural_err=1.0 - sim,
             text_err=text_err,
             residue_buckets=residue,
+            witnesses=(
+                *_bench_oracle_provenance_witnesses(sid),
+                *score.amb_alternate_witnesses,
+            ),
         )
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud
@@ -1098,7 +1195,7 @@ def _section_score(
         )
 
         # Full-text similarity (existing metric)
-        c_res = _clean(master.serialize_text())
+        c_res = _clean(_levenshtein_comparison_text(master))
         c_truth = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -1115,7 +1212,7 @@ def _section_score(
         if oracle_root is None:
             return sid, text_sim, -1.0, "NO_ORACLE_TREE"
 
-        replay_secs = extract_ir_sections(master.ir)
+        replay_secs = extract_ir_sections(_comparison_ir(master))
         oracle_secs = extract_oracle_sections(oracle_root)
         replay_secs, oracle_secs = reconcile_unique_unscoped_aliases(replay_secs, oracle_secs)
 
@@ -1177,7 +1274,7 @@ def _section_score_with_warning_summary(
             },
         )
 
-        c_res = _clean(master.serialize_text())
+        c_res = _clean(_levenshtein_comparison_text(master))
         c_truth = _clean_pre_normalized_oracle(
             get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
         )
@@ -1192,7 +1289,7 @@ def _section_score_with_warning_summary(
         if oracle_root is None:
             return sid, text_sim, -1.0, "NO_ORACLE_TREE", warning_counts
 
-        replay_secs = extract_ir_sections(master.ir)
+        replay_secs = extract_ir_sections(_comparison_ir(master))
         oracle_secs = extract_oracle_sections(oracle_root)
         replay_secs, oracle_secs = reconcile_unique_unscoped_aliases(replay_secs, oracle_secs)
 
@@ -1736,6 +1833,7 @@ def _write_bench_evidence_surface(
     lev_sims: Optional[Dict[str, float]],
     diagnostic_summaries: Dict[str, str],
     oracle_stale_adjusted: Optional[Dict[str, Any]],
+    selection_as_of: Optional[str] = None,
 ) -> Path:
     diagnostic_summary_counts: Counter[str] = Counter(
         summary for summary in diagnostic_summaries.values() if summary
@@ -1759,6 +1857,7 @@ def _write_bench_evidence_surface(
             "fast_mode": fast_mode,
             "diagnostic_replay": diagnostic_replay,
             "oracle_stale_adjusted": oracle_stale_adjusted or {},
+            "selection_as_of": selection_as_of or "",
         }
     )
     path = _bench_evidence_report_path(run_path)
@@ -2971,6 +3070,16 @@ def main(args) -> None:
     oracle_stale_headline = getattr(args, "oracle_aware_headline", False)
     workers = _fi_bench_worker_count(args)
 
+    # Pin one commencement reference date for the whole run so oracle selection
+    # is reproducible: every comparability decision in this run uses the same
+    # ``as_of`` even if the wall clock crosses midnight mid-run, and a
+    # future-dated artifact rejected today cannot become silently accepted
+    # tomorrow with no code/data change. Forked workers inherit this pinned
+    # module-global via copy-on-write (the pool is created after this line).
+    # Snapshot from the same UTC clock as the run timestamp.
+    selection_as_of = datetime.now(timezone.utc).date()
+    pin_selection_as_of(selection_as_of)
+
     print(
         _format_bench_run_banner(
             statute_count=len(corpus),
@@ -3102,6 +3211,7 @@ def main(args) -> None:
             lev_sims=lev_sims,
             diagnostic_summaries=diagnostic_summaries,
             oracle_stale_adjusted=oracle_adjusted_summary,
+            selection_as_of=selection_as_of.isoformat(),
         )
 
         diagnostics_sidecar_path = _save_bench_diagnostic_sidecar(

@@ -164,7 +164,7 @@ def _project_refs_for_statute_via_extractor(
 
     Returns (mention_rows, diagnostic_rows) with profile columns attached.
     """
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
     from lawvm.finland.references.elliptical_resolve import (
         resolve_elliptical_mentions,
     )

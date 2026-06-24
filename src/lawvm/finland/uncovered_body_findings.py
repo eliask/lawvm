@@ -112,8 +112,12 @@ def uncovered_body_recovery_skipped_finding(
         "omission_merge_low_text_ratio": "APPLY.UNCOVERED_BODY_OMISSION_MERGE_LOW_TEXT_RATIO",
         "omission_merge_duplicate_subsection_labels": "APPLY.UNCOVERED_BODY_OMISSION_MERGE_DUPLICATE_LABELS",
         "omission_merge_would_lose_subsections": "APPLY.UNCOVERED_BODY_OMISSION_MERGE_WOULD_LOSE_SUBSECTIONS",
+        "omission_merge_missing_scope": "APPLY.UNCOVERED_BODY_OMISSION_MERGE_MISSING_SCOPE",
+        "omission_merge_special_subprovision_scope": "APPLY.UNCOVERED_BODY_SPECIAL_SUBPROVISION_SCOPE",
         "peg_owned_same_chapter": "APPLY.UNCOVERED_BODY_PEG_SAME_CHAPTER_OWNED",
         "peg_owned_label_collision": "APPLY.UNCOVERED_BODY_PEG_LABEL_COLLISION",
+        "peg_owned_descendant_same_chapter": "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_SAME_CHAPTER_OWNED",
+        "peg_owned_descendant_label_collision": "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_LABEL_COLLISION",
         "future_repeal": "APPLY.UNCOVERED_BODY_FUTURE_REPEAL_SKIP",
         "chapter_payload_owned": "APPLY.UNCOVERED_BODY_CHAPTER_PAYLOAD_OWNED",
     }.get(reason, "APPLY.UNCOVERED_BODY_RECOVERY_SKIPPED")

@@ -6,6 +6,7 @@ from typing import Any, cast
 from lxml import etree
 import pytest
 
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.phase_result import Finding
 import lawvm.finland.process_route_rejection as route_rejection_mod
 from lawvm.finland.process_route_rejection import (
@@ -13,6 +14,9 @@ from lawvm.finland.process_route_rejection import (
     ProcessRouteRejectionContext,
     classify_route_rejection,
 )
+from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.replay_entrypoint import replay_xml
+from lawvm.finland.replay_request import ReplayXmlRequest
 from lawvm.finland.source_model import AmendmentSourceModel
 
 
@@ -157,6 +161,82 @@ def test_route_rejection_meta_repeal_has_stable_rule_metadata() -> None:
     assert signal.source_statute == "2020/100"
     assert signal.target_statute == "2010/123"
     assert signal.target_resolution == "target_instrument_resolved"
+
+
+def test_route_rejection_title_meta_repeal_does_not_emit_vts_parent_repeals() -> None:
+    class SourceModelWithVtsRepeal:
+        def commencement_expiry_override(self, _amendment_id: str) -> None:
+            return None
+
+        def extract_vts_cross_statute_repeals(self, **_kwargs: Any) -> list[AmendmentOp]:
+            return [
+                AmendmentOp(
+                    op_id="phantom_parent_repeal",
+                    op_type="REPEAL",
+                    target_section="4a",
+                    target_unit_kind="section",
+                    voimaantulo_repeal=True,
+                )
+            ]
+
+    source_title = "Laki rikosrekisterilain 4 a ja 6 §:n muuttamisesta annetun lain kumoamisesta"
+    ctx, findings, _prints = _route_context(
+        "citation_mismatch_skip",
+        source_title=source_title,
+        parent_title="Rikosrekisterilaki",
+        johto="Eduskunnan päätöksen mukaisesti säädetään:",
+    )
+    ctx.source_model = cast(AmendmentSourceModel, SourceModelWithVtsRepeal())
+
+    result = ctx.handle()
+
+    assert result.ops == ()
+    assert result.should_return_state is True
+    assert result.vts_ops_enrich_done is False
+    assert result.skip_to_compile is False
+    assert [finding["kind"] for finding in findings] == [
+        "APPLY.META_REPEAL_EFFECT_UNRESOLVED",
+        "APPLY.SOURCE_INCOMPLETE",
+    ]
+    assert findings[1]["detail"]["rule_id"] == "fi.route_rejection.meta_repeal"
+    assert findings[1]["detail"]["branch"] == "meta_repeal"
+
+
+def test_route_rejection_title_meta_repeal_resolves_target_instrument_from_title() -> None:
+    ctx, findings, _prints = _route_context(
+        "citation_mismatch_skip",
+        source_title=(
+            "Laki rikosrekisterilain 4 a ja 6 §:n muuttamisesta "
+            "annetun lain kumoamisesta (27/2012)"
+        ),
+        parent_title="Rikosrekisterilaki",
+        johto="Eduskunnan päätöksen mukaisesti säädetään:",
+    )
+
+    ctx.handle()
+
+    assert findings[0]["kind"] == "APPLY.META_REPEAL_EFFECT_RECORDED"
+    assert findings[0]["detail"]["target_amendment_id"] == "2012/27"
+    assert len(ctx.effect_relation_signals) == 1
+    assert ctx.effect_relation_signals[0].target_statute == "2012/27"
+
+
+def test_replay_1993_770_title_meta_repeal_does_not_repeal_parent_section_4a() -> None:
+    replay = replay_xml(
+        request=ReplayXmlRequest(
+            parent_id="1993/770",
+            mode="legal_pit",
+            stop_before="2014/149",
+            quiet=True,
+        )
+    )
+
+    section_4a = replay.find_section("4a")
+
+    assert section_4a is not None
+    section_text = " ".join(irnode_to_text(section_4a).split())
+    assert "passia, Suomen kansalaisuutta" in section_text
+    assert "lapsen huostaanottoa tai adoptiota" in section_text
 
 
 def test_skipped_amendment_expiry_override_records_lifecycle_when_rewrite_fails(

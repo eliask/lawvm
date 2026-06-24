@@ -30,8 +30,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace as dc_replace
+from collections.abc import Sequence
 from typing import List, Tuple, cast
 
+from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.phase_result import Finding
 from lawvm.core.tree_ops import normalized_label_key
 from lawvm.core.clause_ast import ItemShiftClause, NamedRowClause
@@ -44,6 +46,8 @@ from lawvm.finland.johtolause.clause_surface import (
     parse_item_shift_after_repeal_clauses,
     parse_item_shift_clauses,
 )
+from lawvm.finland.johtolause.lexer import tokenize
+from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johto_scope_mentions import (
     collect_johto_numbered_table_targets,
@@ -59,6 +63,7 @@ _ITEM_AND_MOMENT_TARGET_RULE_ID = "fi.item_and_moment_target_supplement.v1"
 _ITEM_AND_MOMENT_TARGET_TAG = "item_and_moment_target_supplement"
 _MIXED_EXPLICIT_TARGET_RULE_ID = "fi.mixed_explicit_target_supplement.v1"
 _MIXED_EXPLICIT_TARGET_TAG = "mixed_explicit_target_supplement"
+_JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG = "jolloin_moment_renumber_supplement"
 _EXPLICIT_CHAPTER_SCOPE_TAG = "chapter_scope_from_explicit_chunk"
 _SECTION_LABEL_PATTERN = r"\d{1,4}(?:[a-zäöå]|\s[a-zäöå])?"
 _CHAPTER_LABEL_PATTERN = _SECTION_LABEL_PATTERN
@@ -76,8 +81,9 @@ _INSERT_ITEM_RE = re.compile(
     r"\blisätään\b[\s\S]{0,800}?"
     + _OPTIONAL_CHAPTER_SECTION_PREFIX
     + rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
-    r"(?P<moment>\d{1,3})\s+momenttiin\s+uusi\s+kohta\s+"
-    r"(?P<item>\d{1,3})\b",
+    r"(?P<moment>\d{1,3})\s+momenttiin"
+    r"(?:\s*,\s*(?:(?!\buusi\b).){0,500}?)?\s+uusi\s+"
+    rf"(?:(?:näin\s+kuuluva\s+)?(?P<item_before>{_ITEM_LABEL_PATTERN})\s+kohta|kohta\s+(?P<item_after>{_ITEM_LABEL_PATTERN}))\b",
     flags=re.I,
 )
 _ITEM_REPLACE_RE = re.compile(
@@ -216,6 +222,16 @@ class MomentTargetClause:
     table_labels: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class JolloinMomentRenumberClause:
+    """Typed supplement for dropped ``jolloin`` subsection renumber pairs."""
+
+    section: str
+    source_moment: int
+    destination_moment: int
+    inserted_moments: tuple[int, ...]
+
+
 # ---------------------------------------------------------------------------
 # Clause-waist parsers (inlined from former clause_waist.py)
 # ---------------------------------------------------------------------------
@@ -335,6 +351,172 @@ def _supplement_missing_repeals_after_item_shift_clause(
         if already_present:
             continue
         supplemented.append(extra_op)
+    return supplemented
+
+
+def _jolloin_moment_renumber_anchor(
+    tokens: Sequence[object],
+    jolloin_pos: int,
+) -> tuple[str, tuple[int, ...]] | None:
+    """Return the section and inserted moments owning a dropped ``jolloin`` renumber.
+
+    The evidence comes from the token scanner, not a prose regex: only a
+    preceding ``N §:ään ... uusi ... momentti`` insertion span immediately before
+    the ``JOLLOIN_MOVE`` sentinel can anchor the consequence renumber.
+    """
+
+    pykala_pos = None
+    for idx in range(jolloin_pos - 1, -1, -1):
+        token = tokens[idx]
+        cat = getattr(token, "cat", "")
+        if cat == "PYKALA":
+            pykala_pos = idx
+            break
+        if cat == "VERB":
+            break
+    if pykala_pos is None or pykala_pos == 0:
+        return None
+    section_token = tokens[pykala_pos - 1]
+    if getattr(section_token, "cat", "") != "NUM":
+        return None
+    between = tokens[pykala_pos + 1 : jolloin_pos]
+    if not any(getattr(token, "cat", "") == "UUSI" for token in between):
+        return None
+    if not any(getattr(token, "cat", "") == "MOMENTTI" for token in between):
+        return None
+    inserted: list[int] = []
+    seen_uusi = False
+    for token in between:
+        cat = getattr(token, "cat", "")
+        if cat == "UUSI":
+            seen_uusi = True
+            continue
+        if not seen_uusi:
+            continue
+        if cat == "MOMENTTI":
+            break
+        if cat == "NUM":
+            text = str(getattr(token, "text", "") or "")
+            if text.isdigit():
+                inserted.append(int(text))
+    return _norm_num_token(str(getattr(section_token, "text", "") or "")), tuple(inserted)
+
+
+def _parse_jolloin_moment_renumber_clauses(
+    johto: str,
+) -> tuple[JolloinMomentRenumberClause, ...]:
+    tokens, jolloin_pairs = apply_annotations_with_jolloin_pairs(tokenize(johto))
+    if not jolloin_pairs:
+        return ()
+    clauses: list[JolloinMomentRenumberClause] = []
+    for jolloin_pos, pairs in sorted(jolloin_pairs.items()):
+        anchor = _jolloin_moment_renumber_anchor(tokens, jolloin_pos)
+        if anchor is None:
+            continue
+        section, inserted_moments = anchor
+        for source, destination, kind in pairs:
+            if kind != "M":
+                continue
+            if not source.isdigit() or not destination.isdigit():
+                continue
+            clauses.append(
+                JolloinMomentRenumberClause(
+                    section=section,
+                    source_moment=int(source),
+                    destination_moment=int(destination),
+                    inserted_moments=inserted_moments,
+                )
+            )
+    return tuple(clauses)
+
+
+def _supplement_jolloin_moment_renumber_ops(
+    ops: List[AmendmentOp],
+    johto: str,
+) -> List[AmendmentOp]:
+    """Recover scanner-owned ``jolloin`` subsection renumbers dropped by fallback parsing."""
+
+    clauses = _parse_jolloin_moment_renumber_clauses(johto)
+    if not clauses:
+        return ops
+    supplemented = list(ops)
+    for idx, clause in enumerate(clauses):
+        already_present = False
+        for op in supplemented:
+            if op.op_type != "RENUMBER":
+                continue
+            if _norm_num_token(op.target_section or "") != clause.section:
+                continue
+            if op.target_paragraph != clause.source_moment:
+                continue
+            destination = op.lo.destination if op.lo is not None else None
+            if destination is None:
+                continue
+            dest_path = {kind: label for kind, label in destination.path}
+            if dest_path.get("subsection") == str(clause.destination_moment):
+                already_present = True
+                break
+        if already_present:
+            continue
+        target = LegalAddress(
+            path=(
+                ("section", clause.section),
+                ("subsection", str(clause.source_moment)),
+            )
+        )
+        destination = LegalAddress(
+            path=(
+                ("section", clause.section),
+                ("subsection", str(clause.destination_moment)),
+            )
+        )
+        renumber_ops = AmendmentOp.from_lo(
+            LegalOperation(
+                op_id=(
+                    "jolloin_moment_renumber_"
+                    f"{clause.section}_{clause.source_moment}_to_{clause.destination_moment}_{idx}"
+                ),
+                sequence=0,
+                action=StructuralAction.RENUMBER,
+                target=target,
+                destination=destination,
+                provenance_tags=(_JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG,),
+                witness_rule_id="fi.jolloin_renumber",
+            ),
+            len(supplemented),
+        )
+        for op in renumber_ops:
+            op.extraction_provenance_tags = (
+                *(
+                    tag
+                    for tag in op.extraction_provenance_tags
+                    if tag != _JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG
+                ),
+                _JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG,
+            )
+        supplemented.extend(renumber_ops)
+        for moment in clause.inserted_moments:
+            insert_already_present = any(
+                op.op_type == "INSERT"
+                and _norm_num_token(op.target_section or "") == clause.section
+                and op.target_paragraph == moment
+                and not op.target_item
+                and not op.target_special
+                for op in supplemented
+            )
+            if insert_already_present:
+                continue
+            supplemented.append(
+                AmendmentOp(
+                    op_id=f"jolloin_moment_insert_{clause.section}_{moment}_{idx}",
+                    op_type="INSERT",
+                    target_section=clause.section,
+                    target_unit_kind="section",
+                    target_paragraph=moment,
+                    extraction_provenance_tags=(_JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG,),
+                    witness_rule_id="fi.jolloin_renumber",
+                )
+            )
     return supplemented
 
 
@@ -555,7 +737,7 @@ def _parse_item_insert_clauses(johto: str) -> tuple[ItemInsertClause, ...]:
     clauses: list[ItemInsertClause] = []
     for match in _INSERT_ITEM_RE.finditer(johto or ""):
         section = _norm_num_token(match.group("section"))
-        item_label = _norm_num_token(match.group("item"))
+        item_label = _norm_num_token(match.group("item_before") or match.group("item_after") or "")
         if not section or not item_label:
             continue
         clauses.append(

@@ -138,15 +138,17 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "finland_sources": (
         "test_fi_amendment_index.py",
         "test_fi_amendment_selection_residuals.py",
+        "test_fi_lane_c_filter_conservation.py",
         "test_fi_source_xml_label_policy_audit.py",
         "test_fi_audit_verified_finlex_yaml.py",
         "test_fi_backfill_finlex_consolidated_versions.py",
         "test_fi_by_name.py",
         "test_fi_build_publication_db.py",
-        "test_fi_closure.py",
         "test_fi_corpus_archive_guard.py",
         "test_fi_corpus_graph.py",
         "test_fi_corpus_lints.py",
+        "test_fi_editorial_filter.py",
+        "test_corpus_surface_graph_export.py",
         "test_fi_finlex_*.py",
         "test_fi_name_registry_build.py",
         "test_fi_scan_absent_ajantasa.py",
@@ -192,6 +194,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_payload_normalize.py",
         "test_fi_sparse_tail_claims.py",
         "test_fi_source_syntax_graph.py",
+        "test_fi_source_syntax_stage.py",
         "test_fi_token_partition_coverage.py",
         "test_fi_union_ownership_census.py",
         "test_payload_surface.py",
@@ -222,12 +225,15 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "finland_replay_rules": (
         "test_fi_corrigendum_*.py",
         "test_fi_guard_liveness.py",
+        "test_filter_conservation_ratchet.py",
+        "test_scope_source_ratchet.py",
         "test_fi_post_process_repeal_consolidation.py",
         "test_fi_uncovered_dispose.py",
         "test_fi_uncovered_recovery_helpers.py",
         "test_fi_uncovered_target_resolve.py",
         "test_fi_apply_intent_facade.py",
         "test_fi_apply_resolved_op.py",
+        "test_fi_apply_authority_stage.py",
         "test_fi_apply_loop_state.py",
         "test_fi_broken_detection.py",
         "test_fi_chapter_labelled_subheading_recovery.py",
@@ -278,6 +284,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_freetext_addresses.py",
         "test_fi_reference_projection.py",
         "test_fi_reference_mention.py",
+        "test_fi_cited_version_recognizer.py",
         "test_fi_telos_section_flag.py",
         "test_fi_wrapup_preservation.py",
         "test_fi_census_accounting.py",
@@ -288,6 +295,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_proposals_competing.py",
         "test_fi_sections_text.py",
         "test_fi_export_interlinks.py",
+        "test_fi_projection_stage.py",
         "test_fi_interlink_placement_v0.py",
         "test_fi_inline_citation.py",
         "test_fi_preparatory_reference.py",
@@ -321,6 +329,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_retraction_lifecycle.py",
         "test_fi_source_provider.py",
         "test_fi_validate_claims_cli.py",
+        "test_fi_payload_realization_audit.py",
     ),
     "evidence_claims": (
         "test_evidence.py",
@@ -342,6 +351,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_statute_proof_algebra.py",
         "test_strict_payload_confidence.py",
         "test_fi_version_drift.py",
+        "test_ev_residual_ledger_and_self_evidencing.py",
+        # Declared non-guarantees as root-committed evidence-plane objects.
+        "test_assumption_register.py",
     ),
     "evidence_reports": (
         "test_fi_explain_facade.py",
@@ -369,6 +381,53 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_downgrade_witness.py",
         "test_downgrade_witness_lint.py",
         "test_dual_registration_completeness.py",
+        "test_authority_boundary_ratchet.py",
+        "test_source_witness_liveness_ratchet.py",
+        # Audit-invariant registry program (lanes L2a/L2b/L3/L5): control-flow,
+        # determinism-spine, typed-carrier, identity-leak, and replay-determinism gates.
+        "test_fail_loud_ratchet.py",
+        "test_confidence_control_ratchet.py",
+        "test_determinism_spine_ratchet.py",
+        "test_typed_carrier_boundary_ratchet.py",
+        "test_waist_contract_ratchet.py",
+        # Static-ratchet completers wave (CONTRACT-01/02, VOCAB-02, FW-07/FW-08):
+        # waist field/type contract, namespaced-status/confidence, classifier-WRAP
+        # mandate, frozen-residue structural sensors.
+        "test_waist_field_contract_ratchet.py",
+        "test_vocab_namespaced_status_ratchet.py",
+        "test_classifier_wrap_ratchet.py",
+        "test_frozen_residue_sensors_ratchet.py",
+        "test_identity_intrinsic_audit.py",
+        "test_synthetic_label_leak.py",
+        "test_replay_determinism.py",
+        # Audit-invariant registry program (PROJECTION plane): row PROJ-01
+        # (projection re-derivability from committed matter) + row PROJ-02
+        # (tree-wide no-author-set-replay_authorized-at-projection sweep).
+        "test_projection_rederivability.py",
+        "test_projection_author_set_authority.py",
+        "test_explicit_address_level.py",
+        "test_guard_liveness_totality.py",
+        # Claim-surface backbone (Pro invariant-mining §13 step 1+3 + §4): the
+        # generated coverage gate — every declared public claim has a live
+        # accounting path; zero invariants in the forbidden implicit_convention
+        # bucket.
+        "test_claim_surface_coverage.py",
+        # Claim-surface backbone, continued: the finite-axis invariant GENERATOR
+        # (Pro §13 step 1 — invariants generated from claim shape; undischarged
+        # obligation = typed gap); the MUST-trace ledger + drift detector (step 5);
+        # and the per-handle non-guarantee binding gate (every declared
+        # allowed_non_guarantee handle resolves to a registered assumption).
+        "test_invariant_generator.py",
+        "test_must_trace.py",
+        "test_claim_assumption_binding.py",
+        # Audit-invariant registry program (CROSS-JURISDICTION, §2.3): row
+        # XJUR-02 — no hidden replay kernel in a frontend (static boundary audit;
+        # monotone ratchet over a discovered-debt baseline).
+        "test_hidden_replay_kernel_ratchet.py",
+        # Audit-invariant registry program (PROMOTION-CHAIN integrity, §0):
+        # rows PROMOTE-02 (authorization scope-match), CHAIN-01/02 (completeness +
+        # monotonicity), PROMOTE-01 (retraction down-chain propagation).
+        "test_promotion_chain_integrity.py",
     ),
     "core_ir_contracts": (
         "test_fi_address_parse.py",
@@ -380,11 +439,15 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_bitemporal.py",
         "test_branch_projection.py",
         "test_canonical_intent_kinds.py",
+        "test_fi_canonical_op_stage.py",
+        "test_fi_canonical_op_stage_carrier.py",
+        "test_fi_op_coverage_totality.py",
         "test_fi_clause_ast.py",
         "test_fi_coordination_parser.py",
         "test_core_locator.py",
         "test_core_unit_registry_contracts.py",
         "test_fi_effect_lowering.py",
+        "test_fi_dates_recognizer.py",
         "test_filter_result.py",
         "test_fi_intent_compat.py",
         "test_ir_*.py",
@@ -398,6 +461,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_regex_prefilter.py",
         "test_regex_ratchet.py",
         "test_roman.py",
+        "test_stage_result.py",
         "test_fi_scope.py",
         "test_fi_section_keys.py",
         "test_selector.py",
@@ -436,11 +500,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_opaque_marker_boundary.py",
         "test_fi_text_amend.py",
         "test_tree_ops_ambiguity.py",
+        "test_tree_ops_stage.py",
+        "test_tree_ops_roman_labels.py",
     ),
     "core_compile_projection": (
         "test_fi_effect_lifecycle_projection.py",
         "test_fi_compile_facade.py",
         "test_compile_records.py",
+        "test_compile_record_carrier.py",
         "test_compile_result.py",
         "test_compile_views.py",
         "test_emitters_compile_metadata_required.py",
@@ -462,9 +529,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_compile_facade_v3.py",
         "test_export_emitters_compile_metadata.py",
         "test_build_index_db_compile_metadata.py",
+        "test_payload_realization.py",
     ),
     "core_materialization_invariants": (
         "test_fi_materialization_invariants.py",
+        "test_fi_materialization_totality.py",
+        "test_crossjur_materialization_universe.py",
     ),
     "core_replay_timeline": (
         "test_part_snapshot_section_retention.py",
@@ -472,8 +542,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_replay_metamorphic.py",
         "test_replay_small_model.py",
         "test_fi_timeline.py",
+        "test_know_invariants.py",
         "test_timeline_invariants.py",
         "test_timeline_lineage_contracts.py",
+        "test_timeline_materialization_stage.py",
         "test_timeline_promotion.py",
         "test_timeline_results_contracts.py",
         "test_timeline_selection_contracts.py",
@@ -483,11 +555,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_composite_interaction_reference_model.py",
         "test_fi_abstraction_modules.py",
         "test_fi_actor_modal.py",
-        "test_fi_affordances.py",
         "test_fi_anaphora.py",
         "test_fi_annotation_independence.py",
         "test_fi_cross_lens_passes.py",
-        "test_fi_def_scope_lints.py",
         "test_fi_defined_terms.py",
         "test_fi_definition_graph.py",
         "test_fi_definition_lint_precision.py",
@@ -503,6 +573,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_frame_affordances.py",
         "test_fi_frame_id_collisions.py",
         "test_fi_frame_relations.py",
+        "test_fi_derivation_edges.py",
         "test_fi_graph_build.py",
         "test_fi_graph_parity.py",
         "test_fi_interlink_targets.py",
@@ -535,6 +606,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_sanction.py",
         "test_fi_sanction_reference.py",
         "test_fi_segmentation_graph.py",
+        "test_fi_source_identity_stage.py",
+        "test_fi_source_unit_stage.py",
         "test_fi_term_use.py",
         "test_fi_treaty_article.py",
         "test_fi_treaty_vague.py",
@@ -546,6 +619,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_semantic_*.py",
         "test_fi_semantic_*.py",
         "test_solver_slot_assignment.py",
+        "test_fi_sched_window_totality.py",
+        "test_fi_scope_lattice_totality.py",
         "test_fi_surface_*.py",
         "test_table_*.py",
         "test_fi_table_*.py",
@@ -560,6 +635,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_tokentape.py",
         "test_interlinks.py",
         "test_legal_surface_graph.py",
+        "test_reference_sets.py",
         "test_surface_lints.py",
     ),
     "tools_cli_debug_hotspot": (
@@ -593,6 +669,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_parse_view.py",
         "test_fi_refs_view.py",
         "test_bill_analysis.py",
+        "test_bill_counterfactual_effects.py",
+        "test_dangling_references.py",
+        "test_cross_reference_integrity_report.py",
         "test_provision_state_window_unmaterialized.py",
         "test_read_provision.py",
         "test_reconcile.py",
@@ -604,10 +683,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "tools_runtime_io": (
         "test_fi_acquisition.py",
+        "test_fi_source_anchor.py",
         "test_fi_process_acquisition_digest_consumer.py",
         "test_fi_consolidated_artifacts.py",
         "test_branch_demo.py",
         "test_certificate_bundle.py",
+        "test_certificate_stage_roots.py",
         "test_fi_export_sql.py",
         "test_fi_export_transition_graph.py",
         "test_graph_export.py",
@@ -650,6 +731,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_bench_contract_adapters.py",
         "test_fi_bench_contract_adapter.py",
         "test_fi_bench_comparable.py",
+        "test_fi_oracle_amb_match.py",
         "test_bench_curate.py",
         "test_parse_bench.py",
         "test_parse_characterize.py",

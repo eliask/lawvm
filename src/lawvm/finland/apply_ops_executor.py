@@ -6,6 +6,7 @@ boundary is still ``ApplyOpsRequest``/``ApplyOpsSinks``; ``grafter.py`` re-expor
 """
 from __future__ import annotations
 
+from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING
 
 from lawvm.core import tree_ops as _tops
@@ -29,6 +30,7 @@ from lawvm.finland.apply_resolved_op import (
     ApplyResolvedOpSinks,
     apply_resolved_op_with_audit,
 )
+from lawvm.finland.apply_runtime_support import _resolved_destination_path_for_rop
 from lawvm.finland.apply_supplemental_recovery import (
     ApplySupplementalRecoveryRequest,
     ApplySupplementalRecoverySinks,
@@ -49,9 +51,129 @@ from lawvm.finland.restructure_plan_replay import (
 from lawvm.finland.standalone_targets import (
     build_standalone_section_targets as _build_standalone_section_targets,
 )
+from lawvm.finland.helpers import _norm_num_token
 
 if TYPE_CHECKING:
+    from lawvm.core.tree_ops import Path
+    from lawvm.finland.ops import ResolvedOp
     from lawvm.finland.statute import ReplayState
+
+
+_SAME_WAVE_SHIFTED_SUBSECTION_REPEAL_RULE_ID = "same_wave_shifted_subsection_repeal_target"
+
+
+def _replace_last_subsection_label(path: "Path", new_label: str) -> "Path":
+    replaced = False
+    steps: list[tuple[str, str]] = []
+    for kind, label in reversed(path):
+        if not replaced and kind == "subsection":
+            steps.append((kind, new_label))
+            replaced = True
+            continue
+        steps.append((kind, label))
+    return tuple(reversed(steps))
+
+
+def _retarget_same_wave_shifted_subsection_repeals(
+    resolved: list["ResolvedOp"],
+    *,
+    amendment_id: str,
+    findings_out: list[Finding] | None,
+) -> list["ResolvedOp"]:
+    """Retarget repeals that name the pre-insert subsection label.
+
+    Finnish drafting can say: add a new 2 mom, current 2 mom becomes 3 mom,
+    and current 3 mom is repealed. Runtime insertion shifts the old 3 mom to 4,
+    so the repeal must follow the source-time label through that same-wave
+    shift. This is not a fallback to a convenient live node: it requires the
+    insert, renumber, and repeal to all be present in the same target group.
+    """
+    by_group: dict[object, list["ResolvedOp"]] = {}
+    for rop in resolved:
+        by_group.setdefault(rop.resolved_group_key_view, []).append(rop)
+
+    retarget_by_op_id: dict[str, tuple[str, str]] = {}
+    for group_rops in by_group.values():
+        inserted_labels = sorted(
+            int(label)
+            for rop in group_rops
+            if rop.is_insert_action
+            and rop.targets_subsection_only()
+            and (label := _norm_num_token(rop.resolved_target_subsection_label or "")).isdigit()
+        )
+        if not inserted_labels:
+            continue
+        renumber_destination_labels: set[str] = set()
+        for rop in group_rops:
+            if not rop.is_renumber_action or not rop.targets_subsection_only():
+                continue
+            destination_path = _resolved_destination_path_for_rop(rop)
+            if not destination_path or destination_path[-1][0] != "subsection":
+                continue
+            renumber_destination_labels.add(_norm_num_token(destination_path[-1][1]))
+        if not renumber_destination_labels:
+            continue
+        for rop in group_rops:
+            if not rop.is_repeal_action or not rop.targets_subsection_only():
+                continue
+            old_label = _norm_num_token(rop.resolved_target_subsection_label or "")
+            if not old_label.isdigit() or old_label not in renumber_destination_labels:
+                continue
+            old_num = int(old_label)
+            shift = sum(1 for insert_num in inserted_labels if insert_num <= old_num)
+            if not shift:
+                continue
+            retarget_by_op_id[rop.op_id] = (old_label, str(old_num + shift))
+
+    if not retarget_by_op_id:
+        return resolved
+
+    next_resolved: list["ResolvedOp"] = []
+    for rop in resolved:
+        retarget = retarget_by_op_id.get(rop.op_id)
+        address = rop.resolved_target_address
+        if retarget is None or address is None:
+            next_resolved.append(rop)
+            continue
+        old_label, new_label = retarget
+        target_path = _replace_last_subsection_label(address.path, new_label)
+        op_target_paragraph = int(new_label) if new_label.isdigit() else rop.op.target_paragraph
+        next_resolved.append(
+            dc_replace(
+                rop,
+                op=dc_replace(rop.op, target_paragraph=op_target_paragraph),
+                _target_address_override=LegalAddress(path=target_path, special=address.special),
+                scope_provenance_tags=tuple(
+                    dict.fromkeys(
+                        (
+                            *rop.scope_provenance_tags,
+                            _SAME_WAVE_SHIFTED_SUBSECTION_REPEAL_RULE_ID,
+                        )
+                    )
+                ),
+            )
+        )
+        if findings_out is not None:
+            findings_out.append(
+                Finding(
+                    kind="APPLY.SAME_WAVE_SHIFTED_SUBSECTION_REPEAL_TARGET",
+                    role="observation",
+                    stage="replay_apply",
+                    detail={
+                        "rule_id": _SAME_WAVE_SHIFTED_SUBSECTION_REPEAL_RULE_ID,
+                        "message": (
+                            "Subsection repeal target retargeted from the source-time "
+                            "label to the label produced by a same-amendment insert shift."
+                        ),
+                        "op_id": rop.op_id,
+                        "old_subsection": old_label,
+                        "retargeted_subsection": new_label,
+                    },
+                    source_statute=amendment_id,
+                    blocking=False,
+                )
+            )
+    return next_resolved
 
 
 def _apply_ops_to_tree_typed(
@@ -123,6 +245,11 @@ def _apply_ops_to_tree_typed(
     # and section chains like "9→10, 10→11, 11→12" from consuming a label
     # created by a just-applied earlier relabel.
     resolved = _stabilize_same_parent_relabel_order(resolved)
+    resolved = _retarget_same_wave_shifted_subsection_repeals(
+        resolved,
+        amendment_id=amendment_id,
+        findings_out=findings_out,
+    )
 
     active_restructure_plan = None
     if restructure_plans_out:

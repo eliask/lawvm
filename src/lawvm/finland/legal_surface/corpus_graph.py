@@ -30,6 +30,40 @@ Two mechanisms make the network:
 
 Firewall (§D7) is inherited: every merged node/edge is surface_only, and the
 edge pass runs through the assembler's firewall-enforcing minting path.
+
+CORPUS v2 TYPED RELATION FAMILIES (arc B increment 2). On top of the reference /
+anaphora backbone, three further typed SURFACE edge families are folded into the
+SAME cross-statute graph:
+
+  * DEFINITION-USE — the H2 :class:`DefinitionLens` is added to the per-statute
+    lens set, so its ``definition_binding`` / ``term_use`` / ``term_symbol_entity``
+    nodes and ``defines_term`` / ``uses_term`` edges enter the corpus graph. A
+    defined term that two statutes both bind collapses to one shared
+    ``term_symbol_entity`` (the same merge payoff as a shared address).
+
+  * EU TRANSPOSITION — :class:`CorpusTranspositionEdgePass` consumes the
+    transposition-CLAIM extractor (``eu_transposition.recognize_transposition_claims``)
+    per statute and mints a ``transposes`` edge from the citing FI act's
+    ``legal_work_entity`` to the named EU directive ``legal_work_entity``
+    (``entity:eu-directive:<celex>`` when bound, else ``entity:eu-directive-surface:<surface>``).
+    The DECLARED relation only (the act SAYS it transposes), never a conformance
+    conclusion; an unbound directive is still surfaced (tag-don't-guess), never
+    invented.
+
+  * DANGLING-REFERENCE STATUS — :func:`_inject_address_entities` annotates each
+    shared provision-target ``legal_address_entity`` with the three-way existence
+    verdict from ``dangling_references.CurrentStateExistenceOracle``
+    (PRESENT / DANGLING / EXISTENCE_UNKNOWN), so the cross-statute ``refers_to``
+    edges into a BROKEN target are legible as broken (the status rides the target
+    node, read by every incoming citation). NOT a new edge kind — it annotates the
+    existing backbone.
+
+DERIVATION is the ONE v2 family left DEFERRED: its textual / model-code kinds need
+PROVISION-PAIR candidates (which two provisions to byte-compare / title-skeleton
+match) that a reference-only corpus build does not produce, its conformance kind
+overlaps the EU-transposition family above, and its citation kind overlaps the
+reference backbone. Folding it would require fabricating candidate comparisons, so
+it stays in the declared residual (see ``CLAIM_LEGAL_SURFACE_GRAPH``).
 """
 from __future__ import annotations
 
@@ -56,12 +90,25 @@ from lawvm.core.legal_surface_lens import SurfaceEdgeSeed
 from lawvm.finland.legal_surface.body_source import read_reference_body
 from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
 from lawvm.finland.legal_surface.lenses.anaphora import AnaphoraLens
+from lawvm.finland.legal_surface.lenses.definitions import DefinitionLens
 from lawvm.finland.legal_surface.lenses.references import ReferenceLens
+from lawvm.finland.references.eu_transposition import (
+    TranspositionClaim,
+    recognize_transposition_claims,
+)
+from lawvm.tools.dangling_references import (
+    STATUS_EXISTENCE_UNKNOWN,
+    REASON_UNKNOWN_NO_STATUTE_ID,
+    ExistenceOracle,
+)
 
 # Rule ids for the cross-statute edges this module asserts (stable witnesses,
 # distinct from the per-statute reference lens rules so provenance is legible).
 _RULE_CORPUS_REFERS_TO = "fi.corpus.v0.refers_to_address"
 _RULE_CORPUS_HAS_CANDIDATE = "fi.corpus.v0.has_candidate_address"
+# Corpus v2 typed-family witnesses (distinct from the per-statute lens rules so
+# provenance stays legible).
+_RULE_CORPUS_TRANSPOSES = "fi.corpus.v0.transposes_directive"
 
 # Entity node kinds whose node_id is ``entity:<discriminator>`` — corpus-stable
 # by construction, so they dedup across statute graphs on merge.
@@ -250,12 +297,57 @@ def _resolved_provision_target(
     return None
 
 
-def _address_entity_node(graph: LegalSurfaceGraph, address_id: str) -> SurfaceNode:
+def _provision_ref_str(statute_id: str, tail: str) -> str:
+    """Reconstruct the ``ProvisionRef.serialized()`` form the existence oracle wants.
+
+    The address tail (e.g. ``7/3``) is the slash-joined provision path the
+    ``_provision_address_id`` minting produced; the oracle wants
+    ``<statute_id>/<tail>`` (its ``target_provision_ref_str``). An empty tail
+    yields the act-level ref (just the statute id).
+    """
+    return f"{statute_id}/{tail}" if tail else statute_id
+
+
+def _classify_address_existence(
+    address_id: str, *, oracle: ExistenceOracle | None
+) -> tuple[str, str] | None:
+    """Three-way existence verdict for a provision-target address, or ``None``.
+
+    Reuses ``dangling_references.CurrentStateExistenceOracle`` READ-ONLY so the
+    corpus graph and the published dangling report agree on the broken-target
+    oracle. Returns ``(existence_status, existence_reason)`` — one of
+    PRESENT / DANGLING / EXISTENCE_UNKNOWN with its closed-set reason — or ``None``
+    when no oracle is wired (the address node then carries no existence annotation,
+    an honest absence, never a guessed PRESENT).
+    """
+    if oracle is None:
+        return None
+    statute_id, _, tail = address_id.partition("#")
+    if not statute_id:
+        return (STATUS_EXISTENCE_UNKNOWN, REASON_UNKNOWN_NO_STATUTE_ID)
+    return oracle.classify(statute_id, _provision_ref_str(statute_id, tail))
+
+
+def _address_entity_node(
+    graph: LegalSurfaceGraph,
+    address_id: str,
+    *,
+    oracle: ExistenceOracle | None = None,
+) -> SurfaceNode:
     """A ``legal_address_entity`` handle for a provision target (firewall-safe).
 
     Minted directly (not via a lens seed) because it is a pure entity handle the
     cross-statute pass points at; the id is ``entity:<address_id>`` so it dedups
     across statutes exactly like the assembler's entity minting.
+
+    When an existence ``oracle`` is supplied the node payload carries the three-way
+    DANGLING-reference status (``existence_status`` / ``existence_reason``) of the
+    target provision, so a ``refers_to`` edge into a BROKEN target is legible as
+    broken from the target node every incoming citation shares. The annotation is
+    DETERMINISTIC (the same oracle verdict for the same target), so the injected
+    node still dedups idempotently across statutes (same payload_hash) — a
+    divergent verdict for the same id would FAIL LOUD in the merge, never silently
+    overwrite.
     """
     statute_id, _, tail = address_id.partition("#")
     payload: dict[str, object] = {
@@ -263,6 +355,11 @@ def _address_entity_node(graph: LegalSurfaceGraph, address_id: str) -> SurfaceNo
         "address": tail,
         "address_id": address_id,
     }
+    verdict = _classify_address_existence(address_id, oracle=oracle)
+    if verdict is not None:
+        existence_status, existence_reason = verdict
+        payload["existence_status"] = existence_status
+        payload["existence_reason"] = existence_reason
     return SurfaceNode(
         node_id=mint_entity_node_id(address_id),
         node_kind="legal_address_entity",
@@ -283,13 +380,19 @@ def _address_payload_hash(payload: Mapping[str, object]) -> str:
     return compute_payload_hash(payload)
 
 
-def _inject_address_entities(graph: LegalSurfaceGraph) -> LegalSurfaceGraph:
+def _inject_address_entities(
+    graph: LegalSurfaceGraph, *, oracle: ExistenceOracle | None = None
+) -> LegalSurfaceGraph:
     """Add the ``legal_address_entity`` nodes the edge pass will point at.
 
     Scans resolved/ambiguous provision-level resolutions, mints one shared
     address entity per distinct provision target, and returns a graph with those
     nodes merged in. Same-id collision with a divergent payload FAILS LOUD
     (assembler discipline). The edge pass then runs against this enriched graph.
+
+    When an existence ``oracle`` is supplied each address entity is annotated with
+    its three-way DANGLING-reference status (the v2 dangling family folded onto the
+    backbone).
     """
     nodes: dict[str, SurfaceNode] = dict(graph.nodes)
     expr_by_resolution = _resolution_to_expr(graph)
@@ -301,7 +404,7 @@ def _inject_address_entities(graph: LegalSurfaceGraph) -> LegalSurfaceGraph:
         if target is None:
             continue
         address_id, _ = target
-        entity = _address_entity_node(graph, address_id)
+        entity = _address_entity_node(graph, address_id, oracle=oracle)
         _merge_node(nodes, entity)
         added = True
     if not added:
@@ -321,6 +424,187 @@ def _inject_address_entities(graph: LegalSurfaceGraph) -> LegalSurfaceGraph:
         edges=graph.edges,
         build_diagnostics=graph.build_diagnostics,
     )
+
+
+# ── EU transposition family (v2) ──────────────────────────────────────────────
+
+
+def _directive_entity_id(claim: TranspositionClaim) -> str:
+    """The directive ENTITY discriminator (``entity:<this>`` after minting).
+
+    A CELEX-bound directive collapses across statutes to one shared
+    ``eu-directive:<celex>`` node; an unbound (ambiguous / statute_only) directive
+    is surfaced by its named surface (``eu-directive-surface:<surface>``) so the
+    claim is never dropped — tag-don't-guess. Mirrors the substrate / derivation
+    convention exactly so the directive identity agrees across surfaces.
+    """
+    if claim.directive_celex:
+        return f"eu-directive:{claim.directive_celex}"
+    return f"eu-directive-surface:{claim.directive_surface}"
+
+
+def _directive_entity_node(
+    graph: LegalSurfaceGraph, claim: TranspositionClaim
+) -> SurfaceNode:
+    """A ``legal_work_entity`` handle for the EU directive a claim names.
+
+    The directive is a WORK the FI act points at; modelled as a shared work entity
+    (``entity:eu-directive:<celex>`` / ``entity:eu-directive-surface:<surface>``)
+    so two FI acts transposing the same directive land on the SAME node. Carries
+    the CELEX + surface + binding status; surface-only, never a conformance claim.
+    """
+    discriminator = _directive_entity_id(claim)
+    payload: dict[str, object] = {
+        "work_kind": "eu_directive",
+        "directive_celex": claim.directive_celex,
+        "directive_surface": claim.directive_surface,
+        "binding_status": claim.status.value,
+    }
+    return SurfaceNode(
+        node_id=mint_entity_node_id(discriminator),
+        node_kind="legal_work_entity",
+        authority_role="entity_handle",
+        jurisdiction=graph.subject.jurisdiction,
+        source_ref=None,
+        lens_id=None,
+        rule_id=_RULE_CORPUS_TRANSPOSES,
+        status="present",
+        payload_hash=_address_payload_hash(payload),
+        payload=payload,
+    )
+
+
+def _citing_work_entity_node(
+    graph: LegalSurfaceGraph, citing_work_id: str
+) -> SurfaceNode:
+    """A ``legal_work_entity`` handle for the FI act that DECLARES a transposition.
+
+    The transposition edge's source. Minted as ``entity:<citing_work_id>`` exactly
+    like the reference lens mints cited-act work entities, so a self-citation and
+    this src node dedup to the same node (idempotent — same payload).
+    """
+    payload: dict[str, object] = {"work_id": citing_work_id}
+    return SurfaceNode(
+        node_id=mint_entity_node_id(citing_work_id),
+        node_kind="legal_work_entity",
+        authority_role="entity_handle",
+        jurisdiction=graph.subject.jurisdiction,
+        source_ref=None,
+        lens_id=None,
+        rule_id=_RULE_CORPUS_TRANSPOSES,
+        status="present",
+        payload_hash=_address_payload_hash(payload),
+        payload=payload,
+    )
+
+
+def _collect_transposition_claims(
+    store: _StoreLike, statute_ids: list[str]
+) -> list[TranspositionClaim]:
+    """Extract every EU-directive transposition claim across the corpus slice.
+
+    Reads each statute's best-available body (the same ``_read_body`` the surface
+    build uses) and runs the transposition-CLAIM extractor over it. Deterministic:
+    statutes in slice order, claims in extractor order. A statute with no body or
+    no claim contributes nothing — never a crash, never a fabricated claim.
+    """
+    claims: list[TranspositionClaim] = []
+    for sid in statute_ids:
+        xb = _read_body(store, sid)
+        if not xb:
+            continue
+        text = xb.decode("utf-8", errors="replace")
+        claims.extend(recognize_transposition_claims(text, citing_engine_id=sid))
+    return claims
+
+
+def _inject_transposition_entities(
+    graph: LegalSurfaceGraph, claims: list[TranspositionClaim]
+) -> LegalSurfaceGraph:
+    """Materialize the citing-act + directive work-entity nodes for the edge pass.
+
+    Same shape as :func:`_inject_address_entities`: the
+    :class:`CorpusTranspositionEdgePass` emits only edge seeds, so both endpoint
+    entity nodes are merged in FIRST (the assembler then resolves the edge to the
+    already-present endpoints). Same-id divergent-payload merge FAILS LOUD.
+    """
+    if not claims:
+        return graph
+    nodes: dict[str, SurfaceNode] = dict(graph.nodes)
+    for claim in claims:
+        _merge_node(nodes, _citing_work_entity_node(graph, claim.citing_engine_id))
+        _merge_node(nodes, _directive_entity_node(graph, claim))
+    graph_id = _compute_graph_id(
+        subject=graph.subject,
+        nodes=nodes,
+        edges={e.edge_id: e for e in graph.edges},
+    )
+    return LegalSurfaceGraph(
+        schema=graph.schema,
+        graph_id=graph_id,
+        subject=graph.subject,
+        source_units=graph.source_units,
+        lens_runs=graph.lens_runs,
+        nodes=nodes,
+        edges=graph.edges,
+        build_diagnostics=graph.build_diagnostics,
+    )
+
+
+@dataclass(frozen=True)
+class CorpusTranspositionEdgePass:
+    """Cross-statute EU-directive transposition edges (the v2 transposition family).
+
+    For each extracted transposition claim, mints a ``transposes`` edge from the
+    citing FI act's ``legal_work_entity`` to the directive ``legal_work_entity``.
+    The edge status mirrors the directive binding: a RESOLVED (CELEX-bound)
+    directive is an ``asserted`` transposition declaration; an AMBIGUOUS /
+    STATUTE_ONLY binding is a ``candidate`` (the directive is named but not pinned
+    to one CELEX — tag-don't-guess). Surface-only; the edge is the DECLARED
+    relation (the act SAYS it transposes), NEVER a conformance conclusion.
+    """
+
+    claims: tuple[TranspositionClaim, ...]
+    pass_id: str = "fi.corpus.transposition_edges.v0"
+    reads_node_kinds: tuple[str, ...] = ("legal_work_entity",)
+    emits_edge_kinds: tuple[str, ...] = ("transposes",)
+
+    def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
+        seeds: list[SurfaceEdgeSeed] = []
+        for claim in self.claims:
+            src_id = mint_entity_node_id(claim.citing_engine_id)
+            dst_id = mint_entity_node_id(_directive_entity_id(claim))
+            for endpoint in (src_id, dst_id):
+                if endpoint not in graph.nodes:
+                    raise SurfaceAssemblyError(
+                        f"{self.pass_id}: work entity {endpoint!r} was not injected "
+                        f"before the transposition edge pass ran"
+                    )
+            status = "asserted" if claim.directive_celex else "candidate"
+            seeds.append(
+                SurfaceEdgeSeed(
+                    edge_kind="transposes",
+                    src_local=src_id,
+                    dst_local=dst_id,
+                    rule_id=_RULE_CORPUS_TRANSPOSES,
+                    status=status,
+                    payload={
+                        "directive_celex": claim.directive_celex,
+                        "directive_surface": claim.directive_surface,
+                        "binding_status": claim.status.value,
+                        "claim_surface": claim.claim_surface,
+                        # The honesty boundary, encoded IN the edge: a DECLARED
+                        # transposition, never a verified conformance.
+                        "means": "act_declares_it_transposes_directive",
+                        "does_not_imply": "verified_conformance",
+                    },
+                )
+            )
+        # Deterministic: sort by (src, dst, surface) so the seed order is stable.
+        seeds.sort(
+            key=lambda s: (s.src_local, s.dst_local, str(s.payload.get("claim_surface")))
+        )
+        return tuple(seeds)
 
 
 # ── merge ─────────────────────────────────────────────────────────────────────
@@ -360,6 +644,22 @@ def _merge_edge(edges: dict[str, SurfaceEdge], edge: SurfaceEdge) -> None:
 # ── public API ─────────────────────────────────────────────────────────────
 
 
+def _default_existence_oracle(store: _StoreLike) -> ExistenceOracle | None:
+    """Build the as-of-now existence oracle from the store, if it can read oracles.
+
+    Reuses ``dangling_references.CurrentStateExistenceOracle`` so the corpus graph
+    and the published dangling report agree on the broken-target verdict. Returns
+    ``None`` when the store cannot serve consolidated oracle XML (the address nodes
+    then carry no existence annotation — an honest absence, never a guessed
+    PRESENT).
+    """
+    if not hasattr(store, "read_oracle"):
+        return None
+    from lawvm.tools.dangling_references import CurrentStateExistenceOracle
+
+    return CurrentStateExistenceOracle(store)
+
+
 def build_corpus_surface_graph(
     statute_ids: tuple[str, ...] | list[str],
     store: _StoreLike,
@@ -367,20 +667,39 @@ def build_corpus_surface_graph(
     statute_registry: object | None = None,
     eu_registry: object | None = None,
     surface_time: str | None = None,
+    existence_oracle: ExistenceOracle | None = None,
 ) -> LegalSurfaceGraph:
     """Build ONE cross-statute Legal Surface Graph over a ``corpus_slice``.
 
-    Builds each statute's surface graph (reference lens only, for speed),
+    Builds each statute's surface graph (reference + anaphora + definition lenses),
     merges the node maps and edge sets into one union — entity nodes pointing at
     the same target collapse to a single shared node (corpus-stable
     ``entity:<id>`` minting); divergent same-id payloads FAIL LOUD — then runs
-    the cross-statute reference edge pass so resolved provision-level citations
-    become ``refers_to`` edges into shared ``legal_address_entity`` nodes. The
-    ``graph_id`` is recomputed over the union.
+    the cross-statute edge passes so resolved provision-level citations become
+    ``refers_to`` edges into shared ``legal_address_entity`` nodes and EU
+    transposition claims become ``transposes`` edges into shared EU-directive work
+    entities. The provision-target address nodes are annotated with their three-way
+    DANGLING-reference existence status. The ``graph_id`` is recomputed over the
+    union.
+
+    The folded v2 typed relation families:
+
+      * DEFINITION-USE — :class:`DefinitionLens` is in the per-statute lens set, so
+        ``definition_binding`` / ``term_use`` nodes and ``defines_term`` /
+        ``uses_term`` edges enter the corpus graph (a shared defined term collapses
+        to one ``term_symbol_entity``).
+      * EU TRANSPOSITION — ``transposes`` edges (CELEX-bound → asserted; unbound →
+        candidate, tag-don't-guess), the DECLARED relation, never conformance.
+      * DANGLING STATUS — each ``legal_address_entity`` carries
+        ``existence_status`` (PRESENT / DANGLING / EXISTENCE_UNKNOWN), so a broken
+        target is legible from the node every incoming citation shares.
 
     Pass ``statute_registry`` / ``eu_registry`` to enable target resolution;
     without them the per-statute graphs carry no resolved targets and the corpus
-    graph has only the structural (intra-statute) edges.
+    graph has only the structural (intra-statute) edges. ``existence_oracle``
+    overrides the default as-of-now oracle (the store's consolidated oracle text);
+    omit it to use the store's own oracle (or no annotation when the store cannot
+    serve oracle XML).
     """
     ids = list(statute_ids)
     merged_nodes: dict[str, SurfaceNode] = {}
@@ -412,11 +731,13 @@ def build_corpus_surface_graph(
             # cross-statute act, so those links also enter the corpus closure.
             # Both emit reference_expr/reference_resolution/resolution_of, so the
             # CorpusReferenceEdgePass (which scans every reference_resolution)
-            # promotes their resolved provision targets uniformly. The other
-            # lenses are intra-statute (definitions/frames/temporal) — no
-            # cross-statute edge — so they are intentionally omitted here for
-            # speed.
-            lenses=(ReferenceLens(), AnaphoraLens()),
+            # promotes their resolved provision targets uniformly. DefinitionLens
+            # folds the v2 DEFINITION-USE family (definition_binding / term_use
+            # nodes + defines_term / uses_term edges; a shared defined term
+            # collapses to one term_symbol_entity across statutes). The remaining
+            # intra-statute frame/temporal lenses emit no cross-statute edge, so
+            # they stay omitted here for speed.
+            lenses=(ReferenceLens(), AnaphoraLens(), DefinitionLens()),
         )
         for node in statute_graph.nodes.values():
             _merge_node(merged_nodes, node)
@@ -450,10 +771,25 @@ def build_corpus_surface_graph(
         build_diagnostics=tuple(diagnostics),
     )
 
-    # Materialize shared provision-target entity nodes, then assert the
-    # cross-statute reference edges into them via the firewall-enforcing path.
-    merged = _inject_address_entities(merged)
-    return run_edge_passes(merged, (CorpusReferenceEdgePass(),))
+    # Materialize shared provision-target entity nodes (annotated with the v2
+    # DANGLING-reference existence status from the as-of-now oracle), then the EU
+    # transposition work entities, then assert the cross-statute reference +
+    # transposition edges into them via the firewall-enforcing path.
+    oracle = (
+        existence_oracle
+        if existence_oracle is not None
+        else _default_existence_oracle(store)
+    )
+    merged = _inject_address_entities(merged, oracle=oracle)
+    transposition_claims = _collect_transposition_claims(store, built_ids)
+    merged = _inject_transposition_entities(merged, transposition_claims)
+    return run_edge_passes(
+        merged,
+        (
+            CorpusReferenceEdgePass(),
+            CorpusTranspositionEdgePass(claims=tuple(transposition_claims)),
+        ),
+    )
 
 
 def _corpus_bundle_hash(statute_ids: list[str]) -> str:

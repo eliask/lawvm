@@ -14,7 +14,9 @@ from lawvm.core.elaboration_context import (
 )
 from lawvm.core.ir import IRNode
 from lawvm.core.payload_surface import GroupSurface, PayloadSurface, build_payload_surface
+from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.core.phase_result import Finding, PhaseBuilder, PhaseResult
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.constraints import _FilterCtx, _filter_ops_by_constraints
 from lawvm.finland.elaborated_group import ElaboratedGroup, build_elaborated_group
 from lawvm.finland.group_ops import (
@@ -41,6 +43,8 @@ from lawvm.finland.payload_normalize import (
 from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
 
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
+_RESTORE_HEADING_FOR_EXPLICIT_FACET = "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET"
+_SOURCE_COMPLETE_CONTAINER_REPLACEMENT_RULE = "source_complete_container_replacement"
 
 
 def _has_recodification_transfer_context(
@@ -98,6 +102,81 @@ def _internal_elaboration_observation_row(
     }
 
 
+def _restore_source_heading_for_explicit_heading_facet(
+    *,
+    source_model: AmendmentSourceModel | None,
+    prepared_muutos_ir: IRNode | None,
+    group_ops: list[AmendmentOp],
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_chapter: str | None,
+    target_part: str | None,
+) -> tuple[IRNode | None, dict[str, object] | None]:
+    """Keep a typed source heading available for an explicit heading-facet op.
+
+    Sparse subsection preparation may project a section payload down to the
+    targeted subsection and remove the heading. When the johtolause also names
+    the same section's ``otsikko``, the heading is source-owned by that explicit
+    facet op; copy it from the typed source-model payload rather than guessing
+    from prose or widening the subsection payload.
+    """
+    if (
+        target_unit_kind != "section"
+        or source_model is None
+        or prepared_muutos_ir is None
+        or prepared_muutos_ir.kind is not IRNodeKind.SECTION
+    ):
+        return prepared_muutos_ir, None
+    if any(child.kind is IRNodeKind.HEADING for child in prepared_muutos_ir.children):
+        return prepared_muutos_ir, None
+
+    has_heading_op = any(
+        op.target_unit_kind == "section"
+        and _norm_num_token(str(op.target_section or target_norm or ""))
+        == _norm_num_token(str(target_norm or ""))
+        and str(op.target_special or "") == "otsikko"
+        for op in group_ops
+    )
+    if not has_heading_op:
+        return prepared_muutos_ir, None
+
+    lookup = source_model.lookup_payload_ir(
+        target_unit_kind,
+        target_norm,
+        target_chapter=target_chapter,
+        target_part=target_part,
+    )
+    source_payload = lookup.payload_ir
+    if source_payload is None:
+        return prepared_muutos_ir, None
+    source_heading = next(
+        (child for child in source_payload.children if child.kind is IRNodeKind.HEADING),
+        None,
+    )
+    if source_heading is None:
+        return prepared_muutos_ir, None
+
+    children = list(prepared_muutos_ir.children)
+    insert_at = 1 if children and children[0].kind is IRNodeKind.NUM else 0
+    children.insert(insert_at, source_heading)
+    restored = IRNode(
+        kind=prepared_muutos_ir.kind,
+        label=prepared_muutos_ir.label,
+        text=prepared_muutos_ir.text,
+        attrs={
+            **dict(prepared_muutos_ir.attrs),
+            _PAYLOAD_NORMALIZATION_RULE_ATTR: _RESTORE_HEADING_FOR_EXPLICIT_FACET,
+        },
+        children=tuple(children),
+    )
+    return restored, {
+        "target_unit_kind": target_unit_kind,
+        "target_norm": target_norm,
+        "source_payload_status": lookup.status,
+        "heading_text_chars": len(str(source_heading.text or "")),
+    }
+
+
 def drop_payloadless_source_replace_shadowed_by_same_group_relabel(
     group_ops: list[AmendmentOp],
     *,
@@ -141,6 +220,88 @@ def drop_payloadless_source_replace_shadowed_by_same_group_relabel(
             continue
         kept_ops.append(op)
     return kept_ops, rejected_ops
+
+
+def _source_complete_container_replacement_witness(
+    *,
+    raw_muutos_ir: IRNode | None,
+    group_ops: list[AmendmentOp],
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+) -> PayloadCompletenessWitness | None:
+    """Complete-source witness for whole container replacements.
+
+    Container elaboration may merge live children into a chapter/part payload so
+    replay has enough context to execute local section updates. The raw source
+    payload still owns the authoritative child set for a whole-container REPLACE;
+    carry that set explicitly so timeline snapshotting does not treat live-merged
+    children as source-owned.
+    """
+    if target_unit_kind not in {"chapter", "part"}:
+        return None
+    expected_kind = IRNodeKind.CHAPTER if target_unit_kind == "chapter" else IRNodeKind.PART
+    if raw_muutos_ir is None or raw_muutos_ir.kind is not expected_kind:
+        return None
+    if raw_muutos_ir.label and _norm_num_token(raw_muutos_ir.label) != target_norm:
+        return None
+    whole_replaces = [
+        op
+        for op in group_ops
+        if op.op_type == "REPLACE"
+        and op.target_unit_kind == target_unit_kind
+        and op.target_paragraph is None
+        and not op.target_item
+        and (not op.target_special or op.target_special in {"otsikko", "otsikko_edella"})
+    ]
+    if len(whole_replaces) != 1:
+        return None
+    child_kind = IRNodeKind.SECTION if target_unit_kind == "chapter" else IRNodeKind.CHAPTER
+    child_labels = tuple(
+        sorted(
+            {
+                _norm_num_token(child.label)
+                for child in raw_muutos_ir.children
+                if child.kind is child_kind and child.label
+            }
+        )
+    )
+    if not child_labels:
+        return None
+    return PayloadCompletenessWitness(
+        kind="complete",
+        reasons=(_SOURCE_COMPLETE_CONTAINER_REPLACEMENT_RULE,),
+        tail_policy="replace_if_target_scope_requires",
+        detail={"source_child_labels": child_labels},
+    )
+
+
+def _merge_source_container_replacement_witness(
+    payload_completeness: PayloadCompletenessWitness | None,
+    source_witness: PayloadCompletenessWitness | None,
+) -> PayloadCompletenessWitness | None:
+    """Attach raw-source container child ownership to compatible completeness."""
+    if source_witness is None:
+        return payload_completeness
+    if payload_completeness is None:
+        return source_witness
+    if (
+        payload_completeness.kind != "complete"
+        or payload_completeness.tail_policy != "replace_if_target_scope_requires"
+    ):
+        return payload_completeness
+    reasons = tuple(
+        dict.fromkeys((*payload_completeness.reasons, *source_witness.reasons))
+    )
+    detail = {
+        **dict(payload_completeness.detail or {}),
+        **dict(source_witness.detail or {}),
+    }
+    return PayloadCompletenessWitness(
+        kind=payload_completeness.kind,
+        reasons=reasons,
+        tail_policy=payload_completeness.tail_policy,
+        detail=detail,
+    )
 
 
 _REJECTED_OPERATION_MESSAGE = "operation rejected before apply"
@@ -263,6 +424,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
     target_chapter = group_surface.target_chapter
     observation_source_statute = group_surface.source_statute
     muutos_ir = group_surface.body_ir
+    raw_muutos_ir = muutos_ir
     payload_ctx = build_payload_elaboration_context(
         target_ctx,
         lookups,
@@ -320,6 +482,16 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
                 target_chapter=target_chapter,
             )
         )
+    heading_restore_observation: dict[str, object] | None = None
+    muutos_ir, heading_restore_observation = _restore_source_heading_for_explicit_heading_facet(
+        source_model=source_model,
+        prepared_muutos_ir=muutos_ir,
+        group_ops=group_ops,
+        target_unit_kind=target_unit_kind,
+        target_norm=target_norm,
+        target_chapter=target_chapter,
+        target_part=target_part,
+    )
     prepared_payload_observations = _payload_normalization_observation_rows(
         muutos_ir,
         source_statute=observation_source_statute,
@@ -393,6 +565,15 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
     )
     muutos_ir = payload_norm.muutos_ir
     group_ops = list(payload_norm.group_ops)
+    payload_completeness = _merge_source_container_replacement_witness(
+        payload_norm.payload_completeness,
+        _source_complete_container_replacement_witness(
+            raw_muutos_ir=raw_muutos_ir,
+            group_ops=group_ops,
+            target_unit_kind=target_unit_kind,
+            target_norm=target_norm,
+        ),
+    )
 
     local_source_pathologies: list[SourcePathology] = list(payload_norm.source_pathologies or [])
     local_source_pathologies.extend(
@@ -422,6 +603,18 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         if str(observation.kind or "").strip()
         ],
     ]
+    if heading_restore_observation is not None:
+        local_elaboration_observations.append(
+            _internal_elaboration_observation_row(
+                kind=_RESTORE_HEADING_FOR_EXPLICIT_FACET,
+                stage="group_payload_normalization",
+                detail=heading_restore_observation,
+                source_statute=observation_source_statute,
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_chapter=target_chapter,
+            )
+        )
     slot_assignment = payload_norm.slot_assignment
     local_payload_completeness: list[dict[str, object]] = (
         [
@@ -429,10 +622,10 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
                 kind="ELAB.PAYLOAD_COMPLETENESS",
                 stage="group_payload_normalization",
                 detail={
-                    "payload_completeness_kind": str(payload_norm.payload_completeness.kind or ""),
-                    "reasons": list(payload_norm.payload_completeness.reasons or []),
-                    "tail_policy": str(payload_norm.payload_completeness.tail_policy or ""),
-                    **dict(payload_norm.payload_completeness.detail or {}),
+                    "payload_completeness_kind": str(payload_completeness.kind or ""),
+                    "reasons": list(payload_completeness.reasons or []),
+                    "tail_policy": str(payload_completeness.tail_policy or ""),
+                    **dict(payload_completeness.detail or {}),
                 },
                 source_statute=observation_source_statute,
                 target_unit_kind=target_unit_kind,
@@ -440,7 +633,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
                 target_chapter=target_chapter,
             )
         ]
-        if payload_norm.payload_completeness is not None
+        if payload_completeness is not None
         else []
     )
     local_sparse_slot_bindings: list[dict[str, object]] = [
@@ -497,7 +690,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
             slot_assignment=None,
             was_filtered=True,
             payload_surface=surface,
-            payload_completeness=payload_norm.payload_completeness,
+            payload_completeness=payload_completeness,
         )
     else:
         fctx.slot_assignment = slot_assignment
@@ -515,7 +708,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
             source_pathologies=local_source_pathologies,
             was_filtered=False,
             payload_surface=surface,
-            payload_completeness=payload_norm.payload_completeness,
+            payload_completeness=payload_completeness,
         )
 
     b = PhaseBuilder()

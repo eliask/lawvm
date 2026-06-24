@@ -1,0 +1,807 @@
+"""eu_acquire.py — EU CELEX acquisition lane (Cellar → content-addressed farchive).
+
+``cellar.py`` already FETCHES authentic EUR-Lex bytes (FRBR content negotiation,
+NOTICE → Expression(by language) → Manifestation(by format) → Item, multilingual
+selection). It only dumped loose files. This module wires that fetch into the
+content-addressed witness store, mirroring the battle-tested FI HE
+(:mod:`lawvm.finland.he_acquisition`) and UK (:mod:`lawvm.uk_legislation.uk_acquire`)
+acquisition lanes.
+
+Stores RAW WITNESS BYTES (the tree notice + the selected Formex item), not parsed
+IR.
+
+Per-jurisdiction acquisition convention
+----------------------------------------
+Farchive name: ``data/eu_cellar.farchive`` (isolated from FI/UK archives).
+
+Locator convention (keyed on identity, NOT a filesystem path)::
+
+    cellar://celex/{CELEX}/{consolidation_date}/{lang}/{format}
+
+e.g. ``cellar://celex/32016R0679/20160504/fin/fmx4`` for consolidated FI GDPR
+Formex, and ``cellar://celex/32016R0679/20160504/fin/notice`` for the FRBR tree
+notice that selected it. The Work identity is ``celex:{CELEX}`` — minted through
+:mod:`lawvm.eu_lex.celex` so the EU side and the FI reference frontier provably
+agree; NEVER a Finland- or language-specific work id. ``language`` is the
+Expression; ``consolidation_date`` + ``format`` complete the manifestation key.
+
+Universe honesty
+----------------
+Each acquisition records a :class:`~lawvm.substrate.corpus_totality.CorpusTotalityUniverse`
+with ``closed_world_claim=false``: citation-closure / demand mode is the only
+honest claim without an external regulation enumeration. The universe is a
+parameter so an enumeration-driven mode can set a stronger claim later.
+
+AGENTS.md compliance
+--------------------
+* No silent target hijacking / no source-lane disappearance: a blob that is not
+  real XML (HTTP error page / empty / bot-block) is rejected with a typed
+  :class:`CelexAcquisitionFailure`, never silently stored.
+* Typed primitives, no stringly-typed dicts crossing phase boundaries:
+  :class:`CelexAcquisitionMetadata` carries the FRBR provenance.
+* Determinism: no ``datetime.now()`` inside pure logic — the fetch timestamp is
+  passed in by the caller / CLI.
+
+Phase: Acquire. Out of scope: FMX4 → IR extraction (``cellar.extract_fmx4_structure``
+and downstream parsing handle that off the stored witness).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from urllib.error import HTTPError, URLError
+
+from lawvm.eu import cellar
+from lawvm.eu_lex.celex import celex_to_canonical_id, is_well_formed_celex
+from lawvm.substrate.corpus_totality import CorpusTotalityUniverse
+
+_DEFAULT_FARCHIVE = "data/eu_cellar.farchive"
+
+# Locator scheme prefix. Identity-keyed (Work=CELEX, Expression=language,
+# Manifestation=consolidation_date+format), NOT a filesystem path.
+_LOCATOR_SCHEME = "cellar://celex"
+
+# The format slug used for the FRBR tree notice witness (alongside fmx4/xhtml
+# manifestation slugs). The notice is the metadata witness that selected the item.
+_NOTICE_FORMAT_SLUG = "notice"
+
+
+# ---------------------------------------------------------------------------
+# Typed primitives
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class CelexAcquisitionMetadata:
+    """Typed FRBR provenance for one acquired CELEX manifestation.
+
+    Stored alongside the witness blob in the farchive metadata table. Mirrors
+    :class:`lawvm.finland.he_acquisition.HEAcquisitionMetadata`.
+    """
+
+    celex: str
+    """Raw CELEX, e.g. '32016R0679'."""
+    work_canonical_id: str
+    """Language-neutral Work id: 'celex:{CELEX}' (via eu_lex.celex)."""
+    work_uri: str
+    """FRBR Work URI from the notice, e.g. the cellar/celex resource URI."""
+    expression_language: str
+    """Expression language code, e.g. 'fin' / 'FIN'."""
+    manifestation_uri: str
+    """FRBR Manifestation URI (the selected format manifestation)."""
+    item_uri: str
+    """The concrete Item URL fetched (the bytes' provenance)."""
+    fmt: str
+    """Manifestation format slug, e.g. 'fmx4'."""
+    consolidation_date: str
+    """Consolidation date 'YYYYMMDD', or 'enacted' for the non-consolidated act."""
+    fetched_at: datetime
+    """Caller-supplied fetch timestamp (UTC). Never datetime.now() in logic."""
+    source_sha256: str
+    """sha256 of the witness bytes (content address)."""
+    eli: str = ""
+    """ELI id from the notice, if present."""
+    corrigendum_celexes: tuple[str, ...] = ()
+    """Folded corrigendum/amendment CELEX ids extractable from the notice."""
+    corrigenda_extracted: bool = False
+    """True iff corrigendum relations were looked for in a notice; honesty flag."""
+
+    def to_metadata_dict(self) -> dict[str, str]:
+        """Flat string dict for the farchive metadata table."""
+        return {
+            "celex": self.celex,
+            "work_canonical_id": self.work_canonical_id,
+            "work_uri": self.work_uri,
+            "expression_language": self.expression_language,
+            "manifestation_uri": self.manifestation_uri,
+            "item_uri": self.item_uri,
+            "format": self.fmt,
+            "consolidation_date": self.consolidation_date,
+            "fetched_at": self.fetched_at.isoformat(),
+            "source_sha256": self.source_sha256,
+            "eli": self.eli,
+            "corrigendum_celexes": ",".join(self.corrigendum_celexes),
+            "corrigenda_extracted": "true" if self.corrigenda_extracted else "false",
+            "source_surface": "eu-cellar-frbr",
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CelexAcquisitionFailure:
+    """Typed record for a CELEX acquisition failure. Never silently dropped.
+
+    Mirrors :class:`lawvm.finland.he_acquisition.HEAcquisitionFailure`.
+    """
+
+    rule_id: str
+    """Stable rule identifier, e.g. 'EU_ACQ.NOT_XML'."""
+    phase: str
+    """Pipeline phase: 'acquisition' or 'verify'."""
+    family: str
+    """AGENTS.md heuristic family tag."""
+    celex: str
+    expression_language: str | None
+    fmt: str | None
+    locator: str
+    reason: str
+    detail: str
+    strict_disposition: str
+    """'abort' in strict mode, 'record' in quirks mode."""
+
+
+@dataclass
+class CelexIngestRun:
+    """Provenance and counts for one CELEX acquisition run."""
+
+    celex: str
+    consolidation_date: str
+    expression_language: str
+    fetched_at: datetime
+    farchive_path: str
+    added: int = 0
+    skipped: int = 0
+    failed: int = 0
+    stored_locators: list[str] = field(default_factory=list)
+    failures: list[CelexAcquisitionFailure] = field(default_factory=list)
+    metadata: CelexAcquisitionMetadata | None = None
+    universe: CorpusTotalityUniverse | None = None
+
+
+# ---------------------------------------------------------------------------
+# Locator convention
+# ---------------------------------------------------------------------------
+
+
+def celex_locator(celex: str, consolidation_date: str, language: str, fmt: str) -> str:
+    """Canonical content-addressed locator for one CELEX witness.
+
+    Keyed on FRBR identity (Work=CELEX, Expression=language, Manifestation key =
+    consolidation_date + format), NOT a filesystem path.
+
+    Example: ``cellar://celex/32016R0679/20160504/fin/fmx4``.
+    """
+    return f"{_LOCATOR_SCHEME}/{celex}/{consolidation_date}/{language}/{fmt}"
+
+
+def _ingest_run_locator(celex: str, fetched_at: datetime) -> str:
+    ts = fetched_at.strftime("%Y%m%dT%H%M%SZ")
+    return f"_ingest_runs/eu_cellar/{celex}/{ts}"
+
+
+# ---------------------------------------------------------------------------
+# Verify-before-store
+# ---------------------------------------------------------------------------
+
+
+def _xml_root_tag(data: bytes) -> str | None:
+    """Return the XML root tag, or None if the bytes are not parseable XML."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return None
+    tag = root.tag
+    if isinstance(tag, str) and "}" in tag:
+        return tag.rsplit("}", 1)[-1]
+    return str(tag)
+
+
+def verify_xml_witness(data: bytes) -> tuple[bool, str]:
+    """Verify a witness blob is real XML, not an HTTP error page / empty / bot-block.
+
+    Returns ``(ok, reason)``. ``reason`` is a short diagnostic when ``ok`` is False.
+    """
+    if not data:
+        return False, "empty payload"
+    head = data.lstrip(b"\xef\xbb\xbf \t\r\n")
+    lower_head = head[:64].lower()
+    if lower_head.startswith((b"<!doctype html", b"<html")):
+        return False, "HTML page (likely an error page or bot-block), not XML"
+    if head[:1] != b"<":
+        return False, f"does not begin with '<' (first bytes: {head[:32]!r})"
+    if _xml_root_tag(data) is None:
+        return False, "bytes are not parseable XML"
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# Corrigenda / amendment extraction from the notice (best-effort, honest)
+# ---------------------------------------------------------------------------
+
+# Relation tags in a tree notice that point at corrigendum / consolidation /
+# amendment Works. EUR-Lex names them with the ``RESOURCE_LEGAL_..._RESOURCE_LEGAL``
+# verb form (verified on the GDPR tree notice), so the hints match those verbs
+# rather than the abbreviated GR.CORRIG / INFO.CONSLEG forms that appear in other
+# notice dialects. ``CORRECTED_BY`` is the corrigendum relation; ``AMENDMENT`` /
+# ``AMEND`` cover amendment relations; ``CONSLEG`` / ``CONSOLIDATED`` cover
+# consolidation; ``CORRIG`` keeps the abbreviated dialect.
+_CORRIGENDUM_RELATION_HINTS = (
+    "CORRECTED_BY",
+    "CORRIG",
+    "AMENDMENT",
+    "AMENDED_BY",
+    "AMENDS",
+    "AMEND",
+)
+
+
+def extract_corrigendum_celexes(notice_bytes: bytes) -> tuple[tuple[str, ...], bool]:
+    """Extract folded corrigendum/amendment/consolidation CELEX ids from a notice.
+
+    Returns ``(celexes, looked)``. ``looked`` is True iff the notice parsed (we
+    did scan it), so an empty tuple then honestly means "scanned, none found"
+    rather than "never looked". Best-effort: scans relation elements whose tag
+    matches a corrigendum/amendment/consolidation hint and harvests CELEX
+    identifiers (including the corrigendum ``...R(NN)`` suffix form, which is not
+    a well-formed *act* CELEX but is a legitimate corrigendum id, so the strict
+    act-CELEX well-formedness gate is NOT applied here).
+    """
+    try:
+        root = ET.fromstring(notice_bytes)
+    except ET.ParseError:
+        return (), False
+
+    found: set[str] = set()
+    for el in root.iter():
+        tag = el.tag
+        local = tag.rsplit("}", 1)[-1] if isinstance(tag, str) and "}" in tag else str(tag)
+        upper = local.upper()
+        if not any(hint in upper for hint in _CORRIGENDUM_RELATION_HINTS):
+            continue
+        # Harvest CELEX identifiers under this relation element.
+        for uri in el.iter("URI"):
+            type_el = uri.find("TYPE")
+            ident_el = uri.find("IDENTIFIER")
+            if type_el is None or ident_el is None:
+                continue
+            if (type_el.text or "").strip().lower() == "celex":
+                ident = (ident_el.text or "").strip()
+                # Reject manifestation-keyed ids (a '.' suffix such as
+                # '...FIN.fmx4'): those are expression/manifestation identifiers,
+                # not the Work-level CELEX of a related act.
+                if ident and "." not in ident:
+                    found.add(ident)
+    return tuple(sorted(found)), True
+
+
+# ---------------------------------------------------------------------------
+# Idempotent store
+# ---------------------------------------------------------------------------
+
+
+def _store_if_new(
+    farchive: Any,
+    locator: str,
+    data: bytes,
+    *,
+    storage_class: str,
+    metadata: dict[str, str],
+    observed_at: datetime,
+) -> bool:
+    """Store only if content digest differs from what is already stored.
+
+    Returns True if a new state was stored, False if the existing head matched
+    (in which case the existing state is re-observed, not re-stored). Mirrors
+    :func:`lawvm.uk_legislation.uk_acquire._store_if_new`.
+    """
+    digest = hashlib.sha256(data).hexdigest()
+    spans = farchive.history(locator)
+    if spans and spans[-1].digest == digest:
+        farchive.observe(locator, digest, observed_at=observed_at)
+        return False
+    farchive.store(
+        locator,
+        data,
+        storage_class=storage_class,
+        metadata=metadata,
+        observed_at=observed_at,
+    )
+    return True
+
+
+def _store_ingest_run(farchive: Any, run: CelexIngestRun) -> None:
+    """Store run provenance as a JSON blob (mirror HE ``_store_ingest_run``)."""
+    run_data = {
+        "celex": run.celex,
+        "consolidation_date": run.consolidation_date,
+        "expression_language": run.expression_language,
+        "fetched_at": run.fetched_at.isoformat(),
+        "farchive_path": run.farchive_path,
+        "added": run.added,
+        "skipped": run.skipped,
+        "failed": run.failed,
+        "stored_locators": list(run.stored_locators),
+        "universe": (
+            run.universe.to_canonical_dict() if run.universe is not None else None
+        ),
+        "failures": [
+            {
+                "rule_id": f.rule_id,
+                "phase": f.phase,
+                "family": f.family,
+                "celex": f.celex,
+                "expression_language": f.expression_language,
+                "format": f.fmt,
+                "locator": f.locator,
+                "reason": f.reason,
+                "detail": f.detail,
+            }
+            for f in run.failures
+        ],
+    }
+    farchive.store(
+        _ingest_run_locator(run.celex, run.fetched_at),
+        json.dumps(run_data, ensure_ascii=False).encode("utf-8"),
+        storage_class="json",
+        metadata={"source_surface": "ingest_run_provenance"},
+        observed_at=run.fetched_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Default universe declaration
+# ---------------------------------------------------------------------------
+
+
+def default_universe() -> CorpusTotalityUniverse:
+    """Honest default universe for a demand/citation-closure acquisition.
+
+    ``curated_slice`` (a CELEX requested on demand) with
+    ``closed_world_claim=false``: we hold no external regulation enumeration, so
+    the only honest claim is "complete for the requested slice", not "all of EU
+    law". An enumeration-driven mode supplies a stronger universe via the
+    ``universe`` parameter of :func:`acquire_celex`.
+    """
+    return CorpusTotalityUniverse(
+        universe_kind="curated_slice",
+        enumeration_source_refs=(),
+        enumeration_policy_id="lawvm.enumeration.eu_cellar.demand.v0",
+        closed_world_claim=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Acquisition entry point
+# ---------------------------------------------------------------------------
+
+
+def acquire_celex(
+    celex: str,
+    *,
+    fetched_at: datetime,
+    language: str = "fin",
+    consolidation: str | None = None,
+    fmt: str = "fmx4",
+    farchive_path: str | None = None,
+    universe: CorpusTotalityUniverse | None = None,
+    timeout_s: int = cellar.DEFAULT_TIMEOUT_S,
+    farchive: Any = None,
+    _fetch_notice: Any = None,
+    _fetch_item: Any = None,
+) -> CelexIngestRun:
+    """Run the EU Cellar acquisition lane for one CELEX.
+
+    Fetches (a) the FRBR tree notice and (b) the selected manifestation item
+    (default Formex / fmx4 for ``language``), VERIFIES each is real XML, and
+    stores both as separate content-addressed witnesses under their locators.
+    Idempotent: a re-run of identical bytes re-observes (does not re-store).
+
+    Parameters
+    ----------
+    celex:
+        Raw CELEX, e.g. ``'32016R0679'``. Must be well-formed (eu_lex.celex).
+    fetched_at:
+        Caller-supplied fetch timestamp (UTC). NEVER ``datetime.now()`` here.
+    language:
+        Expression language, ISO 639-3, e.g. ``'fin'``. Used for the notice
+        decode language AND the manifestation selection.
+    consolidation:
+        Consolidation date 'YYYYMMDD' for the manifestation key, or None to use
+        ``'enacted'`` (the non-consolidated act).
+    fmt:
+        Manifestation format slug, e.g. ``'fmx4'`` (Formex) or ``'xhtml'``.
+    farchive_path:
+        Farchive path. Default: resolved ``eu_cellar.farchive``.
+    universe:
+        Universe declaration. Default: :func:`default_universe`
+        (``curated_slice``, ``closed_world_claim=false``).
+    farchive:
+        Open ``farchive.Farchive`` to write into. If None, one is opened at
+        ``farchive_path`` and closed at the end.
+    _fetch_notice / _fetch_item:
+        Test seams. ``_fetch_notice(celex, language, timeout_s) -> (bytes, meta)``
+        and ``_fetch_item(item_url, timeout_s) -> (bytes, meta)``. When None, the
+        live ``cellar`` fetch path is used.
+
+    Returns
+    -------
+    CelexIngestRun with provenance, counts, stored locators, and typed failures.
+    """
+    if not is_well_formed_celex(celex):
+        raise ValueError(
+            f"not a well-formed CELEX id: {celex!r}; refusing to acquire a "
+            "non-aligning witness from malformed input"
+        )
+
+    consolidation_date = consolidation or "enacted"
+    work_canonical_id = celex_to_canonical_id(celex)
+    run_universe = universe if universe is not None else default_universe()
+
+    notice_locator = celex_locator(
+        celex, consolidation_date, language, _NOTICE_FORMAT_SLUG
+    )
+    item_locator = celex_locator(celex, consolidation_date, language, fmt)
+
+    run = CelexIngestRun(
+        celex=celex,
+        consolidation_date=consolidation_date,
+        expression_language=language,
+        fetched_at=fetched_at,
+        farchive_path=farchive_path or _DEFAULT_FARCHIVE,
+        universe=run_universe,
+    )
+
+    fetch_notice = _fetch_notice or _live_fetch_notice
+    fetch_item = _fetch_item or _live_fetch_item
+
+    owns_farchive = farchive is None
+    if owns_farchive:
+        from farchive import Farchive
+
+        from lawvm.corpus_store import (
+            resolve_farchive_path,
+            validate_farchive_create_path,
+        )
+
+        if farchive_path is None:
+            dest_path, _rule = resolve_farchive_path("eu_cellar.farchive")
+        else:
+            dest_path = Path(farchive_path)
+        validate_farchive_create_path(dest_path)
+        run.farchive_path = str(dest_path)
+        farchive = Farchive(str(dest_path))
+
+    try:
+        _acquire_into(
+            run,
+            farchive=farchive,
+            celex=celex,
+            language=language,
+            consolidation_date=consolidation_date,
+            fmt=fmt,
+            work_canonical_id=work_canonical_id,
+            notice_locator=notice_locator,
+            item_locator=item_locator,
+            fetched_at=fetched_at,
+            timeout_s=timeout_s,
+            fetch_notice=fetch_notice,
+            fetch_item=fetch_item,
+        )
+        _store_ingest_run(farchive, run)
+    finally:
+        if owns_farchive:
+            farchive.close()
+
+    return run
+
+
+def _live_fetch_notice(
+    celex: str, language: str, timeout_s: int
+) -> tuple[bytes, dict[str, Any]]:
+    """Fetch the FRBR tree notice via cellar.py (read-only reuse)."""
+    notice = cellar.NoticeRequest(
+        celex=celex,
+        notice_format="xml",
+        notice_type="tree",
+        decode_language=language,
+    )
+    return cellar._request_notice(notice, timeout_s=timeout_s)
+
+
+def _live_fetch_item(item_url: str, timeout_s: int) -> tuple[bytes, dict[str, Any]]:
+    """Fetch a manifestation item URL via cellar.py (read-only reuse)."""
+    return cellar._request_url(item_url, timeout_s=timeout_s)
+
+
+def _record_failure(
+    run: CelexIngestRun,
+    *,
+    rule_id: str,
+    phase: str,
+    family: str,
+    celex: str,
+    language: str | None,
+    fmt: str | None,
+    locator: str,
+    reason: str,
+    detail: str,
+) -> None:
+    run.failures.append(
+        CelexAcquisitionFailure(
+            rule_id=rule_id,
+            phase=phase,
+            family=family,
+            celex=celex,
+            expression_language=language,
+            fmt=fmt,
+            locator=locator,
+            reason=reason,
+            detail=detail,
+            strict_disposition="abort",
+        )
+    )
+    run.failed += 1
+
+
+def _acquire_into(
+    run: CelexIngestRun,
+    *,
+    farchive: Any,
+    celex: str,
+    language: str,
+    consolidation_date: str,
+    fmt: str,
+    work_canonical_id: str,
+    notice_locator: str,
+    item_locator: str,
+    fetched_at: datetime,
+    timeout_s: int,
+    fetch_notice: Any,
+    fetch_item: Any,
+) -> None:
+    # --- 1. Fetch + verify + store the FRBR tree notice ---------------------
+    try:
+        notice_bytes, _notice_meta = fetch_notice(celex, language, timeout_s)
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        _record_failure(
+            run,
+            rule_id="EU_ACQ.NOTICE_FETCH_FAILED",
+            phase="acquisition",
+            family="transport_cleanup",
+            celex=celex,
+            language=language,
+            fmt=_NOTICE_FORMAT_SLUG,
+            locator=notice_locator,
+            reason="Cellar tree-notice fetch failed",
+            detail=f"{exc.__class__.__name__}: {exc}",
+        )
+        return
+
+    ok, why = verify_xml_witness(notice_bytes)
+    if not ok:
+        _record_failure(
+            run,
+            rule_id="EU_ACQ.NOTICE_NOT_XML",
+            phase="verify",
+            family="source_pathology",
+            celex=celex,
+            language=language,
+            fmt=_NOTICE_FORMAT_SLUG,
+            locator=notice_locator,
+            reason="Cellar tree notice is not real XML; rejecting (no silent store)",
+            detail=why,
+        )
+        return
+
+    eli = ""
+    work_uri = ""
+    try:
+        # summarize_notice reads from a path; write to a tmp and summarize is
+        # overkill — instead parse cheaply for work_uri/eli from the notice bytes.
+        eli, work_uri = _notice_work_ids(notice_bytes)
+    except ET.ParseError:
+        pass
+
+    corrigendum_celexes, corrigenda_extracted = extract_corrigendum_celexes(
+        notice_bytes
+    )
+
+    notice_meta = CelexAcquisitionMetadata(
+        celex=celex,
+        work_canonical_id=work_canonical_id,
+        work_uri=work_uri,
+        expression_language=language,
+        manifestation_uri="",
+        item_uri="",
+        fmt=_NOTICE_FORMAT_SLUG,
+        consolidation_date=consolidation_date,
+        fetched_at=fetched_at,
+        source_sha256=hashlib.sha256(notice_bytes).hexdigest(),
+        eli=eli,
+        corrigendum_celexes=corrigendum_celexes,
+        corrigenda_extracted=corrigenda_extracted,
+    )
+    if _store_if_new(
+        farchive,
+        notice_locator,
+        notice_bytes,
+        storage_class="xml",
+        metadata=notice_meta.to_metadata_dict(),
+        observed_at=fetched_at,
+    ):
+        run.added += 1
+        run.stored_locators.append(notice_locator)
+    else:
+        run.skipped += 1
+
+    # --- 2. Select the manifestation item from the notice -------------------
+    item_url, manifestation_uri = _select_item_from_notice(notice_bytes, language, fmt)
+    if item_url is None:
+        _record_failure(
+            run,
+            rule_id="EU_ACQ.NO_MANIFESTATION",
+            phase="acquisition",
+            family="source_pathology",
+            celex=celex,
+            language=language,
+            fmt=fmt,
+            locator=item_locator,
+            reason=(
+                f"No {fmt} manifestation item for language={language!r} in the "
+                "tree notice"
+            ),
+            detail="select_manifestation_option found no matching item URL",
+        )
+        return
+
+    # --- 3. Fetch + verify + store the manifestation item -------------------
+    try:
+        item_bytes, _item_meta = fetch_item(item_url, timeout_s)
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        _record_failure(
+            run,
+            rule_id="EU_ACQ.ITEM_FETCH_FAILED",
+            phase="acquisition",
+            family="transport_cleanup",
+            celex=celex,
+            language=language,
+            fmt=fmt,
+            locator=item_locator,
+            reason="Cellar manifestation-item fetch failed",
+            detail=f"{exc.__class__.__name__}: {exc} url={item_url}",
+        )
+        return
+
+    ok, why = verify_xml_witness(item_bytes)
+    if not ok:
+        _record_failure(
+            run,
+            rule_id="EU_ACQ.ITEM_NOT_XML",
+            phase="verify",
+            family="source_pathology",
+            celex=celex,
+            language=language,
+            fmt=fmt,
+            locator=item_locator,
+            reason=(
+                "Cellar manifestation item is not real XML; rejecting "
+                "(no silent store)"
+            ),
+            detail=f"{why} url={item_url}",
+        )
+        return
+
+    item_meta = CelexAcquisitionMetadata(
+        celex=celex,
+        work_canonical_id=work_canonical_id,
+        work_uri=work_uri,
+        expression_language=language,
+        manifestation_uri=manifestation_uri,
+        item_uri=item_url,
+        fmt=fmt,
+        consolidation_date=consolidation_date,
+        fetched_at=fetched_at,
+        source_sha256=hashlib.sha256(item_bytes).hexdigest(),
+        eli=eli,
+        corrigendum_celexes=corrigendum_celexes,
+        corrigenda_extracted=corrigenda_extracted,
+    )
+    run.metadata = item_meta
+    if _store_if_new(
+        farchive,
+        item_locator,
+        item_bytes,
+        storage_class="xml",
+        metadata=item_meta.to_metadata_dict(),
+        observed_at=fetched_at,
+    ):
+        run.added += 1
+        run.stored_locators.append(item_locator)
+    else:
+        run.skipped += 1
+
+
+def _notice_work_ids(notice_bytes: bytes) -> tuple[str, str]:
+    """Return ``(eli, work_uri)`` from a tree notice's WORK element."""
+    root = ET.fromstring(notice_bytes)
+    work = root.find("WORK")
+    if work is None:
+        return "", ""
+    work_uri = ""
+    uri_el = work.find("URI")
+    if uri_el is not None:
+        val = uri_el.find("VALUE")
+        if val is not None and val.text:
+            work_uri = val.text.strip()
+    eli = ""
+    for sameas in work.findall("SAMEAS"):
+        uri = sameas.find("URI")
+        if uri is None:
+            continue
+        type_el = uri.find("TYPE")
+        val_el = uri.find("VALUE")
+        if (
+            type_el is not None
+            and (type_el.text or "").strip().lower() == "eli"
+            and val_el is not None
+            and val_el.text
+        ):
+            eli = val_el.text.strip()
+            break
+    return eli, work_uri
+
+
+def _select_item_from_notice(
+    notice_bytes: bytes, language: str, fmt: str
+) -> tuple[str | None, str]:
+    """Select the (item_url, manifestation_uri) for ``(language, fmt)``.
+
+    Reuses ``cellar.list_manifestation_options`` (which reads from a Path) by
+    writing the notice to a temp path. Returns the FIRST ``(language, fmt)``
+    option that actually carries a non-empty item URL.
+
+    A consolidated act exposes MANY manifestations per (language, fmt) — one per
+    consolidated-version expression — and several of them carry empty item lists
+    in the tree notice. ``cellar.select_manifestation_option`` returns the first
+    type/language match regardless of items, so we walk the options ourselves and
+    skip the empty ones (deterministic first-with-item selection). Returns
+    ``(None, "")`` if no matching option carries an item.
+    """
+    import tempfile
+
+    want_language = language.upper()
+    want_type = fmt.lower()
+    with tempfile.NamedTemporaryFile(suffix=".xml", delete=True) as tmp:
+        tmp.write(notice_bytes)
+        tmp.flush()
+        options = cellar.list_manifestation_options(Path(tmp.name))
+
+    for option in options:
+        if option["language"] != want_language:
+            continue
+        if option["manifestation_type"].lower() != want_type:
+            continue
+        items = option.get("items") or []
+        for item in items:
+            item_url = item["uri"].get("value", "")
+            if item_url:
+                manifestation_uri = option.get("manifestation_uri", {}).get(
+                    "value", ""
+                )
+                return item_url, manifestation_uri
+    return None, ""

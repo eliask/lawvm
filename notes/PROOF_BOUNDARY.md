@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current, minor stale term. Kind: Explanatory/Normative (proof-boundary doctrine + roadmap). 'PEG' (L321/647/784) = FI tokenize/parse stage, now johtolause/surface_parse.py (no peg3.py). AGENTS §3.1 cross-ref (L686) resolves; waist count defers correctly to LAWVM_PIPELINE_CONTRACT §2.
+
 # Proof Boundary Model
 
 The whole domain is not just “parse some amendment prose and mutate a tree.” It is:

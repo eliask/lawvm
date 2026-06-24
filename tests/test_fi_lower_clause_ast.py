@@ -21,8 +21,6 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
-import pytest
-
 from lawvm.core.clause_ast import (
     ClauseAST,
     ClauseNode,
@@ -40,7 +38,6 @@ from lawvm.finland.johtolause.lower_clause_ast import (
     lower_to_clause_ast,
     lower_to_clause_ast_with_diagnostics,
 )
-from lawvm.finland.johtolause.parsed_op_clause_ast import build_clause_ast
 from lawvm.finland.johtolause.surface_model import (
     ScopeKind,
     SurfaceTextAmend,
@@ -582,43 +579,6 @@ class TestWitnessProvenance:
 
 
 # ---------------------------------------------------------------------------
-# 13. Round-trip validation: native path vs parsed bridge path
-#
-# For a selection of curated johtolause texts:
-#   native:  text -> parse_to_surface -> resolve_surface_clause -> lower_to_clause_ast
-#   bridge:  text -> extract_ops -> build_clause_ast
-#
-# The ClauseASTs should produce equivalent LegalOperation lists (same
-# action/target structure) when flattened via clause_ast_to_legal_ops().
-# ---------------------------------------------------------------------------
-
-# Select a focused set of curated cases covering the key node types:
-# - simple section refs, multi-section, chapter-scoped, momentti, insertion,
-#   multi-verb, repeal, renumber.
-_ROUND_TRIP_TEXTS = [
-    "muutetaan 12 §",
-    "kumotaan 7 §",
-    "lisätään 8 §:ään uusi 3 momentti",
-    "muutetaan 3, 5 ja 7 §",
-    "muutetaan 21–23 §",
-    "muutetaan 5 §:n 2 momentti",
-    "muutetaan 70 §:n 2 momentin 1 ja 3 kohta",
-    "muutetaan 3 luvun 12 §:n 2 momentti",
-    "kumotaan 3 luku",
-    "muutetaan 5 luvun otsikko",
-    "lisätään lakiin uusi 5 a §",
-    "muutetaan 3 §, kumotaan 5 §",
-    "muutetaan 5 §:n 2 momentti ja kumotaan 7 §",
-]
-
-
-def _op_signature(lo) -> tuple:
-    """Return a stable comparison key for a LegalOperation."""
-    path_key = tuple(lo.target.path)
-    return (lo.action, path_key, lo.target.special)
-
-
-# ---------------------------------------------------------------------------
 # 14. Move semantics round-trip: LabelAmend -> LegalOperation -> back
 # ---------------------------------------------------------------------------
 
@@ -709,51 +669,19 @@ class TestIsExceptionPropagation:
             assert isinstance(node, RefAmend)
             assert node.is_exception is True
 
-    def test_exception_surface_to_resolved_to_clause_ast(self):
-        """End-to-end: parse text with lukuun ottamatta -> RefAmend(is_exception=True)."""
-        from lawvm.finland.johtolause.lift_to_surface import parse_to_surface
-        from lawvm.finland.johtolause.surface_resolve import resolve_surface_clause
-
-        text = "muutetaan 4–7 luku, lukuun ottamatta kuitenkaan 7 luvun 73 §:ää"
-        surface = parse_to_surface(text)
-        resolved = resolve_surface_clause(surface)
-        ast = lower_to_clause_ast(resolved)
+    def test_exception_flag_propagates_with_chapter_context(self):
+        """ResolvedTargetRef(is_exception=True) with chapter context reaches RefAmend."""
+        tref = ResolvedTargetRef(
+            kind=TargetKind.SECTION,
+            label="73",
+            chapter="7",
+            is_exception=True,
+        )
+        ast = lower_to_clause_ast(_clause(_vg(VerbKind.MUUTTAA, tref)))
         all_nodes = _flatten_nodes(ast)
-        # At least one node should be an exception
         exception_nodes = [n for n in all_nodes if isinstance(n, RefAmend) and n.is_exception]
         assert exception_nodes, (
             f"Expected at least one RefAmend with is_exception=True; got: {all_nodes}"
         )
-        # The exception node targets section 73 in chapter 7
         exc = exception_nodes[0]
         assert any(p == ("section", "73") for p in exc.target.path)
-
-
-class TestRoundTripBridge:
-    """Native path ClauseAST is op-equivalent to bridge path ClauseAST."""
-
-    @pytest.mark.parametrize("text", _ROUND_TRIP_TEXTS)
-    def test_roundtrip(self, text: str) -> None:
-        from lawvm.finland.johtolause.compat import parse_clause
-        from lawvm.finland.johtolause.lift_to_surface import parse_to_surface
-        from lawvm.finland.johtolause.surface_resolve import resolve_surface_clause
-
-        # Native path
-        surface = parse_to_surface(text)
-        resolved = resolve_surface_clause(surface)
-        native_ast = lower_to_clause_ast(resolved)
-        native_ops = clause_ast_to_legal_ops(native_ast)
-
-        # Bridge path (via parse_clause)
-        bridge_parsed_ops = parse_clause(text).parsed_ops
-        bridge_ast = build_clause_ast(bridge_parsed_ops, text)
-        bridge_ops = clause_ast_to_legal_ops(bridge_ast)
-
-        native_sigs = [_op_signature(op) for op in native_ops]
-        bridge_sigs = [_op_signature(op) for op in bridge_ops]
-
-        assert native_sigs == bridge_sigs, (
-            f"Round-trip mismatch for {text!r}:\n"
-            f"  native:  {native_sigs}\n"
-            f"  bridge:  {bridge_sigs}"
-        )

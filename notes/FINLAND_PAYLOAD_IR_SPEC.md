@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current (intentionally partial). Kind: Living spec / Normative-intent (target payload IR). Cited implementation bridges (`payload_normalize.py`, `SubsectionSlotMap`, `GroupPayloadNormalizationResult`, `SparseSubsectionElaborationResult`) verified present; proposed PayloadSurface shapes flagged as target. No findings.
+
 # Finland Payload IR Spec
 
 Status: living spec, intentionally partial.

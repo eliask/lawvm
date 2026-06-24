@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Largely current; aspirational framing partly built. Kind: Explanatory (evidence-classifier design proposal). The 'missing architecture' (rule registry + explicit precedence resolver) is now realized in tools/evidence_claim_algebra.py / evidence_section_rules.py / evidence_claims.py — read the 'append-order selection' critique as the pre-migration baseline. `peg-audit` tool = tools/peg_audit.py (parser itself is now johtolause/surface_parse.py).
+
 # Evidence Inference Model
 
 The core idea is:

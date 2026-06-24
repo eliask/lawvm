@@ -9,7 +9,7 @@ amendment verb group lists after its verb — clauses that ADD new structure:
     [N osan]           N OSA:ILL            uusi numlist (§ | luku)
                        DOC:ILL N LUKU:ILL   uusi numlist §        (prefix-chapter)
                        DOC:ILL (NUM/YY)     uusi N [letter]       (bare-section)
-                       numlist §:ILL        uusi sub_target       (momentti / kohta)
+                       numlist §:ILL        [uusi] sub_target     (otsikko / momentti / kohta)
                        numlist §:GEN        uusi sub_target
                        numlist §:GEN  M MOMENTTI:ILL/GEN  uusi sub_target
                                            uusi numlist (§ | luku | osa)   (cite-stripped)
@@ -99,10 +99,11 @@ class OutOfScopeInsertion(Exception):
 
 @dataclass(frozen=True, slots=True)
 class InsSubTarget:
-    """A parsed insertion sub-target: a momentti or kohta being inserted."""
+    """A parsed insertion sub-target: a momentti, kohta, or alakohta being inserted."""
 
     momentti: int = 0
     item: str = ""
+    subitem: str = ""  # alakohta — a distinct level under the kohta
     facet: Optional[FacetKind] = None
 
 
@@ -386,8 +387,8 @@ def _skip_doc_reinst_preamble(scan: _Scan) -> None:
 # ---------------------------------------------------------------------------
 # Sub-target recognition (faithful narrowing of _insertion_sub_target).
 #
-# Only the clean momentti / kohta arms are recognized. The heading arm
-# (``uusi otsikko``) and the letter-only / archaic arms are out of scope.
+# Only the clean heading / momentti / kohta arms are recognized. The letter-only
+# and archaic arms remain intentionally narrow.
 # ---------------------------------------------------------------------------
 
 
@@ -396,19 +397,28 @@ def _recognize_sub_target(scan: _Scan, sec: str, chapter: str, part: str, mom_ct
 
     Faithful to ``_insertion_sub_target`` restricted to the in-scope arms:
 
+      * ``uusi otsikko``             (section heading facet insert)
       * ``uusi N momentin M kohta``  (genitive momentti container + kohta)
       * ``uusi N momentti``          (nominative momentti insert)
       * ``uusi N kohta``             (kohta insert, defaulting momentti to ctx or 1)
 
-    Heading (``uusi otsikko``) and any reading that needs reinstatement is
-    declined (returns None). An archaic ``näin kuuluva`` lead-in between ``uusi``
-    and the sub-target is skipped (faithful to the old parser, line 1891).
+    Any reading that needs reinstatement is declined (returns None). An archaic
+    ``näin kuuluva`` lead-in between ``uusi`` and the sub-target is skipped
+    (faithful to the old parser, line 1891).
     """
     _skip_optional_comma_nain_kuuluva(scan)
 
     if _at(scan, "OTSIKKO"):
-        # Heading insertion is out of scope for this slice.
-        return None
+        scan.advance()
+        return [
+            InsNode(
+                kind=TargetKind.SECTION,
+                label=sec,
+                chapter=chapter,
+                part=part,
+                sub_target=InsSubTarget(facet=FacetKind.HEADING),
+            )
+        ]
 
     nums = _number_list(scan)
     if not nums:
@@ -517,12 +527,11 @@ def _recognize_alakohta_insert_into_item(
     mom: int,
     item: str,
 ) -> Optional[list[InsNode]]:
-    """Recognize ``K kohtaan uusi c alakohta`` as compound item ``Kc``.
+    """Recognize ``K kohtaan uusi c alakohta`` with the alakohta as its own level.
 
-    Finland's current flat compatibility op has no first-class alakohta carrier.
-    Existing replay uses the compound item label convention (``4b``) for
-    subparagraph appends, so keep that explicit at the parse boundary rather than
-    silently dropping the ``alakohta`` token.
+    The kohta (``K``) and alakohta (``c``) are distinct hierarchy levels
+    (§ -> momentti -> kohta -> alakohta); the alakohta is carried in the
+    sub-target's ``subitem`` slot rather than collapsed into the kohta label.
     """
     saved = scan.pos
     item_nums = _number_list(scan)
@@ -545,6 +554,8 @@ def _recognize_alakohta_insert_into_item(
     if not letters:
         letter = _letter(scan)
         letters = [letter] if letter is not None else []
+    if letters and _at(scan, "DASH"):
+        scan.advance()
     if not letters or not _at(scan, "ALAKOHTA"):
         scan.goto(saved)
         return None
@@ -555,7 +566,7 @@ def _recognize_alakohta_insert_into_item(
             label=sec,
             chapter=chapter,
             part=part,
-            sub_target=InsSubTarget(momentti=mom, item=f"{base_item}{letter}"),
+            sub_target=InsSubTarget(momentti=mom, item=base_item, subitem=letter),
             witness_rule_id="fi.insertion_alakohta_into_item",
         )
         for letter in letters
@@ -1487,7 +1498,13 @@ def _dispatch(
     if nums:
         t = scan.peek()
         if t is not None and t.cat == "PYKALA" and t.case == "ILL":
-            sub = _try_section_ill_sub_target(scan, nums, effective_chapter, effective_part)
+            sub = _try_section_ill_sub_target(
+                scan,
+                nums,
+                effective_chapter,
+                effective_part,
+                verb=verb,
+            )
             if sub is not None:
                 return sub
             return None  # §:ILL committed to a sub-target arm; clean form only
@@ -1594,6 +1611,7 @@ def _dispatch(
                 luvun_nums,
                 inherited_chapter,
                 inherited_part,
+                verb=verb,
             )
             if luvun_nodes is not None:
                 return luvun_nodes
@@ -1749,25 +1767,33 @@ def _consume_sub_target_continuation(
 
 
 def _try_section_ill_sub_target(
-    scan: _Scan, nums: list[NumSuffix], chapter: str, part: str
+    scan: _Scan,
+    nums: list[NumSuffix],
+    chapter: str,
+    part: str,
+    *,
+    verb: Optional[SourceVerb] = None,
 ) -> Optional[list[InsNode]]:
-    """``numlist §:ILL [,] uusi sub_target`` — momentti/kohta insertion.
+    """``numlist §:ILL [,] [uusi] sub_target`` — heading/momentti/kohta insertion.
 
     The §:ILL has already been peeked (not consumed). Consumes it, the old
     parser's reinstatement preamble (``[, REINST] [N kohdan tilalle] uusi``),
-    then requires ``uusi``. Absorbs the anaphoric ``ja/sekä <bare sub-target>``
-    chain that the old parser keeps in the same batch.
+    then requires ``uusi`` except for explicit ``lisätään N §:ään otsikko``
+    heading inserts. Absorbs the anaphoric ``ja/sekä <bare sub-target>`` chain
+    that the old parser keeps in the same batch.
     """
     saved = scan.pos
     scan.advance()  # consume §:ILL
+    repeated_nums = _collect_repeated_section_ill_targets(scan)
     _skip_ill_reinst_preamble(scan)
     # An archaic ``näin kuuluva`` lead-in can sit between the §:ään target (and
     # its skipped provenance) and ``uusi`` (old _insertion line 2421).
     _skip_optional_comma_nain_kuuluva(scan)
-    if not _consume_uusi(scan):
+    had_uusi = _consume_uusi(scan)
+    if not had_uusi and verb != SourceVerb.LISATA:
         scan.goto(saved)
         return None
-    sec_nums = [n + sf for n, sf in nums]
+    sec_nums = [n + sf for n, sf in (*nums, *repeated_nums)]
     all_nodes: list[InsNode] = []
     for sec in sec_nums:
         saved_sub = scan.pos
@@ -1781,6 +1807,27 @@ def _try_section_ill_sub_target(
         return None
     _consume_sub_target_continuation(scan, sec_nums, chapter, part, all_nodes)
     return all_nodes
+
+
+def _collect_repeated_section_ill_targets(scan: _Scan) -> tuple[NumSuffix, ...]:
+    """Collect ``ja N §:ään`` peers before a shared ``uusi`` sub-target."""
+    results: list[NumSuffix] = []
+    while True:
+        saved = scan.pos
+        if _sep(scan) is None:
+            scan.goto(saved)
+            break
+        nums = _number_list(scan)
+        if not nums:
+            scan.goto(saved)
+            break
+        t = scan.peek()
+        if t is None or t.cat != "PYKALA" or t.case != "ILL":
+            scan.goto(saved)
+            break
+        scan.advance()
+        results.extend(nums)
+    return tuple(results)
 
 
 def _try_section_gen_sub_target(
@@ -2072,6 +2119,19 @@ def _fold_doc_section_continuation(scan: _Scan, out_nodes: list[InsNode]) -> boo
             )
             continue
 
+        if more_nums and nxt is not None and nxt.cat == "PYKALA" and nxt.case in {"ILL", "GEN"}:
+            # A fresh section sub-target arm (``9 §:ään otsikko`` /
+            # ``9 §:n 2 momentti``) belongs to the outer target-list loop, not to
+            # the DOC-level whole-section insertion fold.  The target-first
+            # heading-placement form ``9 §:n edelle ...`` is the old folded
+            # heading arm and remains out of scope here.
+            after = scan.peek(1)
+            if nxt.case == "GEN" and after is not None and after.cat == "EDELLA":
+                scan.goto(cont_saved)
+                return False
+            scan.goto(cont_saved)
+            return True
+
         # Not a plain NOM-section arm. If this arm carries a heading-facet /
         # postfix / appendix marker (which the old parser folds into THIS batch),
         # we cannot reproduce it — decline. Otherwise (a §:ILL / §:GEN sub-target
@@ -2177,10 +2237,12 @@ def _foldable_anaphoric_heading_arm_end(scan: _Scan, start: int) -> int | None:
     non-anaphoric ``N §:n edelle …`` form (a §:GEN target before EDELLA), which
     it DOES emit a node for.
 
-    The residue is safe to skip when it is terminal, or when the next separator
-    opens another plain insertion arm. It is deliberately not safe before
-    ``jolloin`` / move tails or unrelated prose: those clauses stay declined so
-    the legacy parser owns their wider control flow.
+    The residue is safe to skip when it is terminal, when the next separator
+    opens another plain insertion arm, or when the next separator opens a typed
+    ``JOLLOIN_MOVE`` consequence-renumber sentinel.  The latter is still owned
+    by the parser driver: this helper returns the separator position so the
+    outer loop can consume the sentinel and emit the existing
+    ``fi.jolloin_renumber`` group.  Unrelated prose remains declined.
     """
     toks = scan.cur.tokens
     n = len(toks)
@@ -2211,6 +2273,8 @@ def _foldable_anaphoric_heading_arm_end(scan: _Scan, start: int) -> int | None:
     if toks[j].cat not in {"COMMA", "CONJ", "SEKA"}:
         return None
     k = j + 1
+    if k < n and toks[k].cat == "JOLLOIN_MOVE":
+        return j
     if k < n and toks[k].cat == "DOC" and toks[k].case == "ILL":
         k += 1
     if k < n and toks[k].cat == "UUSI":
@@ -2520,7 +2584,7 @@ def emit_insertion_nodes(parsed: ParsedInsertion) -> list[SurfaceNode]:
             elif st.facet == FacetKind.INTRO:
                 special = "johd"
             sub_target = SurfaceSubRef(
-                momentti=st.momentti, item=st.item, facet=st.facet, special=special
+                momentti=st.momentti, item=st.item, subitem=st.subitem, facet=st.facet, special=special
             )
         out.append(
             SurfaceInsertion(

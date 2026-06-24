@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative (canonical owner of the op/effect type model: LegalOperation / CanonicalIntent / EffectIntent). Defers vocabulary to LAWVM_PIPELINE_CONTRACT; the two typed occupancy exceptions cross-ref APPLY_RESOLUTION_AND_RECEIPT_CONTRACT §6 (verified). No stale paths or PEG3/§1.13 refs.
+
 # Canonical Op Semantics
 
 Status: living spec, intentionally incomplete.

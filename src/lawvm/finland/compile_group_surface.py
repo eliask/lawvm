@@ -202,6 +202,13 @@ def _relabel_section_payload_root(payload: IRNode, target_norm: str) -> IRNode:
     )
 
 
+def _is_pure_section_renumber_group(group_ops: list[AmendmentOp]) -> bool:
+    return bool(group_ops) and all(
+        op.op_type == "RENUMBER" and op.target_unit_kind == "section"
+        for op in group_ops
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class BuildGroupSurfaceRequest:
     """Typed inputs for compile-group payload surface extraction."""
@@ -245,6 +252,63 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
     )
     muutos_ir = source_payload.payload_ir
     cross_ir = source_payload.cross_heading_ir
+    if target_unit_kind == "section" and _is_pure_section_renumber_group(group_ops):
+        destination_section = _renumber_destination_section_label(group_ops)
+        if destination_section and _norm_num_token(destination_section) != target_norm:
+            destination_payload = request.source_model.lookup_payload_ir(
+                target_unit_kind,
+                destination_section,
+                None,
+                None,
+            )
+            destination_ir = destination_payload.payload_ir
+            if destination_ir is not None and not _is_sparse_source_shell(destination_ir):
+                muutos_ir, cross_ir = destination_ir, destination_payload.cross_heading_ir
+                surface_findings.append(
+                    Finding(
+                        kind="ELAB.RENUMBER_DESTINATION_PAYLOAD_SURFACE",
+                        role="observation",
+                        stage="_build_group_surface",
+                        detail={
+                            "kind": "ELAB.RENUMBER_DESTINATION_PAYLOAD_SURFACE",
+                            "message": (
+                                "Pure renumber payload surface selected from the destination "
+                                "section rather than the source label."
+                            ),
+                            "target_unit_kind": target_unit_kind,
+                            "source_target_norm": target_norm,
+                            "destination_target_norm": destination_section,
+                            "target_chapter": target_chapter or "",
+                            "target_part": target_part or "",
+                        },
+                        source_statute=source_statute,
+                        blocking=False,
+                    )
+                )
+            elif muutos_ir is not None:
+                muutos_ir = None
+                cross_ir = None
+                surface_findings.append(
+                    Finding(
+                        kind="ELAB.RENUMBER_SOURCE_LABEL_PAYLOAD_NOT_CLAIMED",
+                        role="observation",
+                        stage="_build_group_surface",
+                        detail={
+                            "kind": "ELAB.RENUMBER_SOURCE_LABEL_PAYLOAD_NOT_CLAIMED",
+                            "message": (
+                                "Pure renumber left same-label source-body payload unclaimed "
+                                "because a relabel operation can only claim destination-label text."
+                            ),
+                            "target_unit_kind": target_unit_kind,
+                            "source_target_norm": target_norm,
+                            "destination_target_norm": destination_section,
+                            "target_chapter": target_chapter or "",
+                            "target_part": target_part or "",
+                        },
+                        source_statute=source_statute,
+                        blocking=False,
+                    )
+                )
     if (
         muutos_ir is None
         and target_unit_kind == "section"

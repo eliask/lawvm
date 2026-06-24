@@ -24,9 +24,12 @@ receipts. This module carries only the producer-side record.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
 from lawvm.core.mutation_boundary import RenumberedTreePaths, TreePath, TreePaths
+
+if TYPE_CHECKING:
+    from lawvm.core.provenance import SourceAnchor
 
 
 def receipt_address_string(path: TreePath) -> str:
@@ -70,6 +73,12 @@ class WriteReceipt:
 
     pre_hashes: Mapping[str, str] = field(default_factory=dict)
     post_hashes: Mapping[str, str] = field(default_factory=dict)
+
+    # Byte-level anchor of the source clause (johtolause) that drove this write,
+    # in the raw amendment source bytes. Present only when the parse captured a
+    # genuine verbatim contiguous span; None (fail-loud) otherwise. Carries the
+    # source provenance the certificate's source_anchor needs (trace spec §7).
+    source_anchor: "SourceAnchor | None" = None
 
     @property
     def declared_footprint(self) -> TreePaths:

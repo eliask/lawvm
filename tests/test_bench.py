@@ -4,11 +4,14 @@ import argparse
 import csv
 import warnings
 from collections import Counter
+from types import SimpleNamespace
 from typing import Any, cast
 
 import Levenshtein
 import pytest
 
+from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVersion
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.tools import bench
 from lawvm.tools import bench_diagnostic_tiers
 
@@ -16,6 +19,86 @@ from lawvm.tools import bench_diagnostic_tiers
 class _DummyReplay:
     def serialize_text(self) -> str:
         return "foo"
+
+
+def test_bench_comparison_text_prefers_materialized_pit_ir() -> None:
+    fold_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CONTENT, text="expired"),))
+    materialized_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CONTENT, text="live"),))
+    master = SimpleNamespace(
+        ir=fold_ir,
+        materialized_state=SimpleNamespace(ir=materialized_ir),
+        serialize_text=lambda: "expired",
+    )
+
+    assert bench._comparison_text(master) == "live"
+
+
+def test_bench_levenshtein_text_preserves_replay_serializer_surface() -> None:
+    fold_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CONTENT, text="fold"),))
+    materialized_ir = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CONTENT, text="live"),))
+    master = SimpleNamespace(
+        ir=fold_ir,
+        materialized_state=SimpleNamespace(ir=materialized_ir),
+        serialize_text=lambda: "historical replay text",
+    )
+
+    assert bench._comparison_text(master) == "live"
+    assert bench._levenshtein_comparison_text(master) == "historical replay text"
+
+
+def test_bench_comparison_text_prunes_timeline_inactive_sections() -> None:
+    expired_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="25b",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="expired temporary"),),
+    )
+    live_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="live permanent"),),
+    )
+    materialized_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(expired_section,),
+            ),
+            live_section,
+        ),
+    )
+    master = SimpleNamespace(
+        ir=materialized_ir,
+        materialized_state=SimpleNamespace(ir=materialized_ir),
+        products=SimpleNamespace(materialization_spec=SimpleNamespace(as_of="2026-01-01")),
+        timelines={
+            LegalAddress(path=(("chapter", "7"), ("section", "25b"))): ProvisionTimeline(
+                address=LegalAddress(path=(("chapter", "7"), ("section", "25b"))),
+                versions=[
+                    ProvisionVersion(
+                        effective="2020-01-01",
+                        expires="2021-01-01",
+                        content=expired_section,
+                    )
+                ],
+            ),
+            LegalAddress(path=(("section", "1"),)): ProvisionTimeline(
+                address=LegalAddress(path=(("section", "1"),)),
+                versions=[
+                    ProvisionVersion(
+                        effective="2020-01-01",
+                        content=live_section,
+                    )
+                ],
+            ),
+        },
+        serialize_text=lambda: "expired temporary live permanent",
+    )
+
+    comparison = bench._comparison_text(master)
+
+    assert comparison == "live permanent"
 
 
 def test_bench_levenshtein_ratio_helper_matches_python_levenshtein() -> None:

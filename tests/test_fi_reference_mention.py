@@ -12,7 +12,7 @@ Per AGENTS.md §15 test categories:
 
 Module coverage:
   - lawvm.core.reference_mention (ReferenceMention, CiteKind, CiteConfidence, etc.)
-  - lawvm.finland.ref_mention_extractor (extraction entry points)
+  - lawvm.finland.references.ref_mention_extractor (extraction entry points)
   - lawvm.finland.conformance_corpus.refs.fixtures (conformance fixtures)
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ from lawvm.core.reference_mention import (
     SourceSpan,
     reference_mention_to_row,
 )
-from lawvm.finland.ref_mention_extractor import (
+from lawvm.finland.references.ref_mention_extractor import (
     ExtractionResult,
     PlainTextStatuteCitationRecognizer,
     PlainTextStatuteHit,

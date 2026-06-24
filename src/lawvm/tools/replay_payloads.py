@@ -8,7 +8,7 @@ from lawvm.core.agreement_residual import (
     AgreementResidualFamily,
     AgreementResidualStatus,
 )
-from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.adjudication_evidence import (
     adjudication_finding_evidence_rows,
@@ -234,7 +234,11 @@ def _uk_replay_adjudication_residual_status(bucket: str) -> AgreementResidualSta
 
 
 def _blocking_rejections(rejections: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [rejection for rejection in rejections if is_blocking_compile_record(rejection)]
+    return [
+        rejection
+        for rejection in rejections
+        if is_blocking_compile_record(CompileRecord.from_mapping(rejection))
+    ]
 
 
 def _with_uk_compile_authorization(

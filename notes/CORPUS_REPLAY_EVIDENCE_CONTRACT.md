@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative (cross-frontend evidence contract; explicitly "adds no code"). Jurisdiction-agnostic surface contract for FI/EE/UK/Open Law; no cited src paths or section cross-refs to drift. No PEG3/§1.13.
+
 # Corpus Replay Evidence Contract
 
 Status: draft architecture note.

@@ -13,7 +13,7 @@ from __future__ import annotations
 from lawvm.core.semantic_types import MetaClauseKind
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
 from lawvm.finland.johtolause.surface_model import SurfaceMetaClause
-from lawvm.finland.johtolause.compat import parse_clause, ClauseParseResult
+from lawvm.finland.johtolause.api import parse_clause, ClauseParseResult
 
 
 # ---------------------------------------------------------------------------

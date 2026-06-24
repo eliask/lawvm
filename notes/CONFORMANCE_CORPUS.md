@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Largely-current, some stale refs. Kind: Normative (exemplar set). Fix line 427: `lawvm.finland.johtolause.test_peg_curated` is now `curated_cases.py` (consumer `tests/test_fi_peg_curated.py`). 'PEG' = legacy name for the canonical surface parser (johtolause/surface_parse.py). Duplicate `### 2.6` header. All cited statute exemplars + CLI commands otherwise valid.
+
 # Conformance Corpus
 
 Status: living spec, intentionally partial.
@@ -302,7 +304,7 @@ Expected outcome:
 - replay-side residue shrinks to editorial or unresolved residue instead of
   obvious stale duplication
 
-### 2.6 `1992/1702` / `1996/761` / `33 §`
+### 2.6a `1992/1702` / `1996/761` / `33 §`
 
 Family:
 
@@ -424,7 +426,7 @@ Required behavior:
 Validation examples:
 
 ```bash
-uv run python -m lawvm.finland.johtolause.test_peg_curated
+uv run python -m lawvm.finland.johtolause.curated_cases
 uv run lawvm inspect-amendment 1961/404 --mode legal_pit --source 2005/821
 ```
 

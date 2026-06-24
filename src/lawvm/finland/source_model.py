@@ -811,6 +811,72 @@ class AmendmentSourceModel:
         wanted = _norm_num_token(chapter_label)
         return wanted in self._body_inventory_index().real_chapter_labels
 
+    def body_real_chapter_section_labels(self, chapter_label: str) -> tuple[str, ...]:
+        """Return section labels observed under one real source chapter wrapper."""
+        wanted = _norm_num_token(chapter_label)
+        if wanted not in self._body_inventory_index().real_chapter_labels:
+            return ()
+        labels: list[str] = []
+        for unit in self.observed_body_inventory():
+            if unit.kind != "section":
+                continue
+            if _norm_num_token(unit.chapter_label or "") != wanted:
+                continue
+            labels.append(_norm_num_token(unit.label))
+        return tuple(labels)
+
+    def body_chapter_is_single_mixed_wrapper(
+        self,
+        chapter_label: str,
+        master: "ReplayState",
+    ) -> bool:
+        """Return True when one source chapter wrapper contains multiple live chapters.
+
+        Some historical amendment XML opens one chapter wrapper and then leaves
+        unrelated later sections inside it.  The wrapper is then a source
+        topology defect, not reliable chapter-scope evidence for every
+        contained section.
+        """
+        body_chapter_norm = _norm_num_token(chapter_label)
+        real_chapter_labels = {
+            _norm_num_token(unit.label)
+            for unit in self.observed_body_inventory()
+            if unit.kind == "chapter" and unit.source_tag == "chapter"
+        }
+        if real_chapter_labels != {body_chapter_norm}:
+            return False
+
+        foreign_live_chapters: set[str] = set()
+        for unit in self.observed_body_inventory():
+            if (
+                unit.kind != "section"
+                or _norm_num_token(unit.chapter_label) != body_chapter_norm
+            ):
+                continue
+            section_label = _norm_num_token(unit.label)
+            section_path = master.find_section_path(
+                section_label,
+                None,
+                unit.part_label or None,
+            )
+            if section_path is None:
+                stem_match = re.fullmatch(r"(\d+)[a-z]+", section_label, re.I)
+                if stem_match is not None:
+                    section_path = master.find_section_path(
+                        stem_match.group(1),
+                        None,
+                        unit.part_label or None,
+                    )
+            if section_path is None:
+                continue
+            live_chapter = next(
+                (label for kind, label in section_path if kind == "chapter"),
+                "",
+            )
+            if live_chapter and _norm_num_token(live_chapter) != body_chapter_norm:
+                foreign_live_chapters.add(_norm_num_token(live_chapter))
+        return len(foreign_live_chapters) >= 2
+
     def lookup_body_unit(
         self,
         target_unit_kind: str,
@@ -1321,6 +1387,15 @@ class AmendmentSourceModel:
 
         return _section_commencement_effective_override(self.muutos_tree, source_statute_id)
 
+    def chapter_commencement_effective_overrides(
+        self,
+        source_statute_id: str,
+    ) -> tuple[tuple[str, frozenset[str], dt.date], ...]:
+        """Return chapter-scoped commencement effective override metadata."""
+        from lawvm.finland.metadata import _chapter_commencement_effective_overrides
+
+        return _chapter_commencement_effective_overrides(self.muutos_tree, source_statute_id)
+
     def section_subsection_commencement_effective_override(
         self,
         source_statute_id: str,
@@ -1329,6 +1404,18 @@ class AmendmentSourceModel:
         from lawvm.finland.metadata import _section_subsection_commencement_effective_override
 
         return _section_subsection_commencement_effective_override(
+            self.muutos_tree,
+            source_statute_id,
+        )
+
+    def section_subsection_application_commencement_effective_override(
+        self,
+        source_statute_id: str,
+    ) -> tuple[str, tuple[LegalAddress, ...], dt.date] | None:
+        """Return subsection-scoped application-start effective override metadata."""
+        from lawvm.finland.metadata import _section_subsection_application_commencement_effective_override
+
+        return _section_subsection_application_commencement_effective_override(
             self.muutos_tree,
             source_statute_id,
         )
@@ -1351,16 +1438,26 @@ class AmendmentSourceModel:
         strict_profile: "StrictProfile | None",
         skipped_targets_out: list["VtsSkippedTarget"] | None = None,
     ) -> list["AmendmentOp"] | None:
-        """Extract cross-statute VTS repeals through the source-model byte adapter."""
-        from lawvm.finland.vts import extract_vts_cross_statute_repeals
+        """Extract cross-statute VTS repeals through the source-model byte adapter.
 
-        return extract_vts_cross_statute_repeals(
+        Conservation (Audit C): this adapter is the in-set production consumer of
+        the :class:`VtsRepealPartition`. It builds the partition, READS its
+        ``skipped_targets`` rejected lane and drains it into ``skipped_targets_out``
+        (the replay ledger sink), and returns the accepted ops — mirroring the
+        ``parent_id``/op-keyword gate the free-function wrappers apply.
+        """
+        from lawvm.finland.vts import extract_voimaantulo_repeals_partition
+
+        if not parent_id:
+            return None
+        partition = extract_voimaantulo_repeals_partition(
             self.source_xml_bytes(),
             parent_id,
-            parent_title,
-            strict_profile,
-            skipped_targets_out=skipped_targets_out,
+            parent_title=parent_title,
         )
+        if skipped_targets_out is not None:
+            skipped_targets_out.extend(partition.skipped_targets)
+        return list(partition.accepted)
 
     def extract_vts_repeals(
         self,
@@ -1372,7 +1469,14 @@ class AmendmentSourceModel:
         strict_profile: "StrictProfile | None",
         skipped_targets_out: list["VtsSkippedTarget"] | None = None,
     ) -> list["AmendmentOp"] | None:
-        """Extract VTS repeals through the source-model byte adapter."""
+        """Extract VTS repeals through the source-model byte adapter.
+
+        The ``extract_vts_repeals`` callable (default
+        ``extract_vts_repeals_fallback``) owns the johto op-keyword gate; it
+        drains the :class:`VtsRepealPartition` rejected lane into
+        ``skipped_targets_out`` internally, so the dropped targets still reach the
+        production replay ledger.
+        """
         return extract_vts_repeals(
             johto,
             self.source_xml_bytes(),
@@ -1482,6 +1586,7 @@ class AmendmentSourceModel:
         ):
             return True
         return bool(
+            # lawvm-regex: prefilter content-authorization boolean gate for body recovery; op-bearing branches above use typed op.op_type/target_unit_kind, this only answers "is recovery content-authorized?"
             re.search(
                 r"\bmuutetaan\b|\blisätään\b",
                 self.preamble_text(),

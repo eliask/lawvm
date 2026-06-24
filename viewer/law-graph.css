@@ -1,0 +1,308 @@
+/* law-graph.css — additive styling for the pack-native relation-graph viewer.
+   Reuses statute-timeline.css design tokens (--accent, --green, etc.) and node
+   classes; this file adds the proof-grade badges, edge anchors, the cross-work
+   transclusion card, and the two-column graph layout. */
+
+:root {
+  --grade-verified: #1f8a4c;
+  --grade-resolved: #2b5c8a;
+  --grade-evidence: #8a5a1f;
+  --grade-asserted: #b07d1a;
+  --grade-kinship: #b06a00;
+  --grade-other: #6b6b66;
+}
+
+/* layout */
+.graph-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+.doc-pane {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.1rem 1.3rem 1.6rem;
+  min-width: 0;
+}
+.doc-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0 0 1rem;
+}
+.prose {
+  font-family: var(--font-text);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  margin: 0.15rem 0 0.25rem;
+}
+
+/* legend */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.4rem 0 0.1rem;
+  font-size: 0.74rem;
+}
+.legend-lab {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 0.2rem;
+}
+
+/* proof-grade badge — the firewall made visible */
+.grade-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.05em 0.45em;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.gb-icon {
+  font-weight: 800;
+  font-size: 0.85em;
+}
+.grade-verified { background: #e3f6e8; color: var(--grade-verified); border-color: #b6e2c4; }
+.grade-legal { background: #e3f6e8; color: var(--grade-verified); border-color: #b6e2c4; }
+.grade-resolved { background: #e7eef6; color: var(--grade-resolved); border-color: #c2d6ea; }
+.grade-evidence { background: #f6efe3; color: var(--grade-evidence); border-color: #e6d4b6; }
+.grade-asserted { background: #fbf3e0; color: var(--grade-asserted); border-color: #ecdcae; }
+.grade-kinship { background: #fdf0df; color: var(--grade-kinship); border-color: #f0d3a8; }
+.grade-other { background: #eee; color: var(--grade-other); border-color: #ddd; }
+
+/* status + range chips */
+.status-chip {
+  font-size: 0.66rem;
+  padding: 0.02em 0.4em;
+  border-radius: 4px;
+  background: #eef2f6;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.status-resolved { background: #e3f6e8; color: var(--grade-verified); }
+.status-open { background: #fbe6e4; color: var(--red); }
+.status-ambiguous, .status-qualified { background: #fbf3e0; color: var(--grade-asserted); }
+.range-chip, .eu-chip {
+  font-size: 0.66rem;
+  padding: 0.02em 0.4em;
+  border-radius: 4px;
+  background: #eef2f6;
+  color: var(--accent);
+  font-weight: 600;
+}
+.eu-chip { background: #fff2cc; color: #8a5a00; }
+
+/* edge anchors — interlinks appended under a provision */
+.anchors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.3rem 0 0.5rem;
+}
+.edge-anchor {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.12em 0.5em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fafbfc;
+  font-size: 0.78rem;
+  cursor: pointer;
+  max-width: 100%;
+  transition: background 0.12s, border-color 0.12s;
+}
+.edge-anchor:hover, .edge-anchor:focus-visible { background: #eef2f6; border-color: var(--accent); outline: none; }
+.edge-anchor.has-eu { border-color: #e6c34d; background: #fffdf5; }
+.edge-anchor.open { border-color: var(--accent); background: #eef2f6; }
+.edge-anchor.flash { animation: flash 1.3s ease-out; }
+.edge-surface {
+  font-family: var(--font-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 22rem;
+}
+
+/* inline expansion + hovercard share the edge-card body */
+.inline-expansion {
+  margin: 0.1rem 0 0.6rem 0.4rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--accent);
+  background: #f7f9fb;
+  border-radius: 0 6px 6px 0;
+}
+.edge-hovercard {
+  position: absolute;
+  z-index: 50;
+  max-width: 460px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+  padding: 0.7rem 0.85rem;
+  font-size: 0.82rem;
+}
+.edge-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+.ec-plane {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.ec-semantics {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+.ec-targets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.ec-target {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  word-break: break-all;
+}
+.ec-target.ec-eu { font-family: var(--font); }
+.ec-warn { color: var(--red); margin-left: 0.4rem; font-size: 0.72rem; }
+.ec-target-id { font-family: var(--mono); font-size: 0.72rem; }
+
+/* the transclusion card — Finnish law + the EU article it points at */
+.transclusion {
+  border: 1px solid #e6c34d;
+  border-radius: 6px;
+  background: #fffdf5;
+  overflow: hidden;
+}
+.tc-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  background: #fff5d6;
+  border-bottom: 1px solid #efdca0;
+  font-size: 0.72rem;
+}
+.tc-source { font-weight: 700; color: #8a5a00; }
+.tc-addr { color: #8a5a00; font-weight: 600; }
+.tc-body {
+  padding: 0.55rem 0.7rem;
+  font-family: var(--font-text);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+/* the left rail — the graph summary */
+.rail {
+  position: sticky;
+  top: var(--topbar-offset);
+  align-self: start;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem 1rem 1.1rem;
+  max-height: calc(100vh - var(--topbar-offset) - 1rem);
+  overflow-y: auto;
+}
+.rail-title { font-size: 1rem; margin: 0 0 0.3rem; }
+.rail-sub { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.8rem; }
+.rail-sub2 { font-size: 0.78rem; margin: 1rem 0 0.4rem; color: var(--accent); }
+.rail-grade {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  font-size: 0.8rem;
+}
+.rg-label { flex: 1; }
+.rg-count { font-weight: 700; color: var(--muted); }
+.rail-eu-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fffdf5;
+  padding: 0.3rem 0.45rem;
+  margin: 0.25rem 0;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+.rail-eu-link:hover { border-color: var(--accent); background: #fff5d6; }
+.rel-surface { font-family: var(--font-text); }
+.rel-arrow { color: var(--accent); font-weight: 700; }
+.rel-art { color: #8a5a00; font-weight: 600; }
+
+/* verify badge (topbar) */
+.verify-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-size: 0.78rem;
+  padding: 0.2em 0.6em;
+  border-radius: 6px;
+  background: #eef2f6;
+  color: var(--muted);
+  cursor: help;
+}
+.verify-ok { background: #e3f6e8; color: var(--grade-verified); font-weight: 600; }
+.verify-fail { background: #fbe6e4; color: var(--red); font-weight: 600; }
+.vb-check, .vb-x { font-weight: 800; }
+
+/* per-provision inline history (the time lens) */
+.prov-history {
+  margin: 0.2rem 0 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--accent, #2b5c8a);
+  background: #f7f9fb;
+  border-radius: 0 6px 6px 0;
+}
+.ph-head {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+.ph-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.ph-item { font-size: 0.8rem; display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
+.ph-item.ph-future { opacity: 0.7; }
+.ph-act { font-family: var(--font-text); }
+.ph-act-none { color: var(--muted); font-style: italic; }
+
+/* the TOC sits above the relation rail; give it breathing room */
+.col-toc { margin-bottom: 1rem; }
+#toc { font-size: 0.84rem; max-height: 40vh; overflow: auto; }
+
+/* the scrubber controls (reuses statute-timeline.css .timeaxis/.scrubber) */
+.scrubber { margin-top: 0.4rem; }
+
+.loading, .error { color: var(--muted); font-style: italic; padding: 1rem 0; }
+.error { color: var(--red); }
+
+@media (max-width: 880px) {
+  .graph-layout { grid-template-columns: 1fr; }
+  .rail { position: static; max-height: none; }
+}

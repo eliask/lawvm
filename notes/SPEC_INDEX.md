@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current-with-noted-drift. Normative map + descriptive inventory. All linked paths resolve, but: line 101 'AGENTS.md §1.13' is stale (now §1.11/§1.12, §2.4); and three normative docs AGENTS.md itself cites are missing from the index — DISCIPLINE_GATES.md, UNIFIED_BENCH_CONTRACT.md, FI_JOHTOLAUSE_SURFACE_PARSER_CONTRACT.md (plus NZ/NO/SE status docs, indexed only for US).
+
 # LawVM Spec Index
 
 Status: current public/spec index for the v0.1 release line.
@@ -53,6 +55,9 @@ the architecture, keep it explanatory.
 - [CERTIFICATE_SCHEMA_V0.md](CERTIFICATE_SCHEMA_V0.md) — temporal-dossier certificate, hash hierarchy, residue honesty, checker v0 contract
 - [CERTIFIED_TREE_TRANSITION_TRACE_V0.md](CERTIFIED_TREE_TRANSITION_TRACE_V0.md) — replayable transition grammar: base tree, content blobs, action semantics, state-root/checkpoint semantics
 - [APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md](APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md) — the semantic apply waist: ScopedTargetResolver/ResolverBinding, fallback rungs, WriteReceipt, ObservedWriteAudit, occupancy contract, transition-leaf production
+- [DISCIPLINE_GATES.md](DISCIPLINE_GATES.md) — normative (cited by AGENTS.md §4)
+- [UNIFIED_BENCH_CONTRACT.md](UNIFIED_BENCH_CONTRACT.md) — normative (cited by AGENTS.md §4)
+- [FI_JOHTOLAUSE_SURFACE_PARSER_CONTRACT.md](FI_JOHTOLAUSE_SURFACE_PARSER_CONTRACT.md) — normative (cited by AGENTS.md §4)
 
 ## Finland Reference Frontend
 
@@ -77,7 +82,10 @@ the architecture, keep it explanatory.
 - [UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md](UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md) — per-statute UK official drafting-source rules
 - [US_LAWVM_STATUS.md](US_LAWVM_STATUS.md) — U.S. federal frontend status/limits/roadmap: witness-anchored dry-run over keyless govinfo PLAW USLM source + USC annual-edition htm oracle; coverage, lowering-gap residual classes, geo-block reality
 - [SWEDEN_LAWVM_STATUS.md](SWEDEN_LAWVM_STATUS.md) — Sweden frontend status/limits/roadmap: official SFS PDF → clause surface → payload surface → elaboration → effects plan → lowering → replay with typed recovery ladder; unified bench comparator; typed conservation receipt (§1.8 FilterResult); observed-write-audit (§2.3 receipt contract, first step); structured replay outcome; ~1% genuine mismatch on 500-act sample, 0% error rate
+- [NEW_ZEALAND_LAWVM_STATUS.md](NEW_ZEALAND_LAWVM_STATUS.md) — New Zealand frontend status/limits/roadmap
+- [NORWAY_LAWVM_STATUS.md](NORWAY_LAWVM_STATUS.md) — Norway frontend status/limits/roadmap
 - [OPEN_LAW_FRONTEND_SPEC.md](OPEN_LAW_FRONTEND_SPEC.md)
+- [OPEN_LAW_REGIME.md](OPEN_LAW_REGIME.md)
 
 ## Evidence and Verification
 
@@ -99,7 +107,10 @@ the architecture, keep it explanatory.
 
 - [LAWVM_ARCHITECTURE_INDEX.md](LAWVM_ARCHITECTURE_INDEX.md)
 - [LAWVM_STACK_MAP.md](LAWVM_STACK_MAP.md)
-- [REGEX_TO_GRAMMAR_MIGRATION.md](REGEX_TO_GRAMMAR_MIGRATION.md) — when string matching stays regex (lint + prefilter) vs becomes a named recognizer/spec; applies AGENTS.md §1.13
+- [REGEX_TO_GRAMMAR_MIGRATION.md](REGEX_TO_GRAMMAR_MIGRATION.md) — when string matching stays regex (lint + prefilter) vs becomes a named recognizer/spec; applies AGENTS.md §1.11/§1.12 (regex/recognizer firewall) + §2.4
 - [IMPLEMENTATION_DIVERGENCE_LEDGER.md](IMPLEMENTATION_DIVERGENCE_LEDGER.md) — current target-vs-implementation gaps + active work queue
 - [ARCHITECTURE_LEAK_LEDGER.md](ARCHITECTURE_LEAK_LEDGER.md) — EV-ranked backlog of representation/typing/authority leaks vs `LAWVM_PIPELINE_CONTRACT.md` (audit-and-enforce, not rewrite); 27 ranked sites + 2 CI-gate specs + 2 seam candidates from the e2e architecture-coherence audit
+- [LAWVM_INVARIANT_GENERATOR_V0.md](LAWVM_INVARIANT_GENERATOR_V0.md) — the METHOD the registry is generated from (Pro-blessed 2026-06-23): "no public claim without a live accounting path"; the 12-field InvariantSpec, 6 axes (planes × waists × object-kinds × transform-verbs × failure-classes × public-claims), the 12-question generator, the 9-bucket stopping rule (forbidden = `implicit convention`), and 15 under-covered families to fold (INV-META/POL/SRC-LINEAGE/TIME-AXIS/SCOPE/SEL/WRITE/SCHED/PROJ/OVL/SIG/CORPUS/NEG/DET/REGEX)
+- [INVARIANT_DISCIPLINE_AND_PRECEDENT.md](INVARIANT_DISCIPLINE_AND_PRECEDENT.md) — standalone account of the total-invariant-mining discipline: precise statement, its lineage (Design-by-Contract, HAZOP/FMEA, DO-178C/ISO-26262 traceability, proof-carrying code & CompCert/seL4, assertion-based auditing, Jepsen/mutation-testing), what is genuinely novel (HAZOP-generator over a compiler's typed waists + proof-carrying certs + per-unit totality, transferred to law; guard-liveness as a non-optional completion field), how it manifests in LawVM artifacts, and honest limits (bounds the claim surface not the world; evidence- not proof-carrying; oracle-fallible floor)
+- [LAWVM_AUDIT_INVARIANT_REGISTRY.md](LAWVM_AUDIT_INVARIANT_REGISTRY.md) — complete a-priori audit/invariant coverage map: 78 distinct audits across 6 planes from 8 generative axes (planes/waists/§1.x/prime-directive-facts/temporal-determinism/certificate/meta-overlay/cross-jurisdiction); 31 implemented / 27 partial / 20 open, 44 new beyond the UK roadmap; ranked OPEN next-tier roadmap + adversarial completeness self-critique. Subsumes the UK-checkout `LAWVM_AUDIT_REGISTRY_ROADMAP.md`
 - [FINLAND_COVERAGE_GAP_REPORT.md](FINLAND_COVERAGE_GAP_REPORT.md) — Finland projection freshness / coverage snapshot

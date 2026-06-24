@@ -757,10 +757,41 @@ def export_projections(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+def _default_export_compile_metadata(jurisdiction: str) -> Any:
+    """Default v3 CompileMetadata stamp for a CLI projection export.
+
+    Parquet persistence is v3 substrate-locked: every written table carries a
+    CompileMetadata provenance stamp (UNIFIED_PROVENANCE_GRAPH_DESIGN_v3.md §13
+    Step 5), so a CLI caller must supply one. Mirror ``rebuild_indexes``: the
+    ``source_bundle_hash`` is the REAL Tier-1 farchive fingerprint for the
+    jurisdiction (the same hash the read-side freshness guard computes), so the
+    persisted parquet carries faithful provenance — not a sentinel. Degrades to
+    a declared ``no-farchive`` only when the farchive is genuinely absent
+    (CI / farchive-less environments), never silently.
+    """
+    from pathlib import Path
+
+    from lawvm.core.compile_metadata_default import build_default_compile_metadata
+    from lawvm.tools.rebuild_indexes import _projections_for
+    from lawvm.tools.tier2_state import primary_farchive_hash
+
+    specs = _projections_for(jurisdiction)
+    tier_1_deps = specs[0].tier_1_deps if specs else ()
+    farchive_fp = primary_farchive_hash("data", tier_1_deps) if tier_1_deps else ""
+    return build_default_compile_metadata(
+        jurisdiction=jurisdiction,
+        source_bundle_hash=f"sha256:{farchive_fp or 'no-farchive'}",
+        build_id=f"cli.export-projections.{jurisdiction}",
+        graph_store_root=Path("data") / jurisdiction,
+    )
+
+
 def main(args: Any) -> None:
+    jurisdiction = getattr(args, "jurisdiction", None) or "fi"
     export_projections(
         corpus_path=getattr(args, "corpus", None),
         data_dir=getattr(args, "data_dir", ".tmp/projections"),
+        compile_metadata=_default_export_compile_metadata(jurisdiction),
         workers=getattr(args, "workers", 0),
         mode=getattr(args, "mode", "official_consolidation"),
         limit=getattr(args, "limit", None),

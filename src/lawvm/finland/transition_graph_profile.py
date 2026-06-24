@@ -41,9 +41,11 @@ def extract_fi_source_reference(corpus: object, engine_source_id: str) -> str:
         text = amendment_xml.decode("utf-8", "ignore")
     except Exception:
         return ""
+    # lawvm-regex: owning_parser AKN HE-proposal href parse from amendment XML for viewer/export enrichment, structured attribute not prose
     match = _HE_HREF_RE.search(text)
     if match:
         return f"HE {match.group(2)}/{match.group(1)} vp"
+    # lawvm-regex: witness_only fallback 'HE N/YYYY vp' citation surface for export display only, no replay/op effect
     text_match = _HE_TEXT_RE.search(text)
     if text_match:
         return f"HE {text_match.group(1)}/{text_match.group(2)} vp"

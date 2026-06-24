@@ -36,8 +36,7 @@ def _source_files() -> list[pathlib.Path]:
 # ClauseTargetRef). New code must use is_exception, not read the parser-local
 # note tuple.
 #
-# Compat allowlist: lift_to_surface.py sets is_exception from parser-local
-# notes — that is the bridge and is the only permitted crossing point.
+# Compat allowlist: surface_model.py documents the compat note crossing point.
 # ---------------------------------------------------------------------------
 
 _EXCEPTION_IN_NOTES_PATTERN = re.compile(
@@ -46,8 +45,6 @@ _EXCEPTION_IN_NOTES_PATTERN = re.compile(
 
 _EXCEPTION_COMPAT_FILES = frozenset(
     {
-        # Bridge: reads parser-local notes once to populate the typed is_exception field.
-        "finland/johtolause/lift_to_surface.py",
         # surface_model.py contains a docstring explaining the compat note — not a read.
         "finland/johtolause/surface_model.py",
         # NOT a note read: `_could_match_source_parent_schedule_entry_insert`

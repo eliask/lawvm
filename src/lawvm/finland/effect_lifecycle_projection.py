@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Sequence
 
 from lawvm.core.effect_lifecycle import (
@@ -20,7 +21,7 @@ from lawvm.core.effect_lifecycle import (
     merge_unique_effect_refs,
     merge_unique_effect_relations,
 )
-from lawvm.core.ir import LegalOperation
+from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
 from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
 from lawvm.finland.helpers import _norm_num_token
@@ -161,7 +162,7 @@ def _effect_ref_for_legal_operation(
         path=(op.op_id or str(op.target),),
         span_id=op.op_id,
         text_excerpt=source.raw_text,
-        rule_id=op.witness_rule_id or "fi.legal_operation.effect_declaration",
+        rule_id=_operation_effect_rule_id(op),
     )
     return EffectRef(
         effect_id=effect_id or f"fi-effect:{source.statute_id}:{op.op_id or op.sequence}",
@@ -170,6 +171,20 @@ def _effect_ref_for_legal_operation(
         target_address=op.target,
         projection_group_id=str(op.group_id or ""),
         source_provision=witness,
+    )
+
+
+def _operation_effect_rule_id(op: LegalOperation) -> str:
+    if op.action in {StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL}:
+        return "fi.legal_operation.repeal_effect_declaration"
+    return "fi.legal_operation.effect_declaration"
+
+
+def _is_repeal_operation_effect(effect: EffectRef) -> bool:
+    return (
+        effect.source_provision is not None
+        and effect.source_provision.rule_id
+        == "fi.legal_operation.repeal_effect_declaration"
     )
 
 
@@ -300,6 +315,78 @@ def _same_source_effect_claim(left: EffectRef, right: EffectRef) -> bool:
         and left_source.rule_id == right_source.rule_id
         and left_source.text_excerpt == right_source.text_excerpt
     )
+
+
+def _canonicalized_known_source_effects(
+    known_source_effects: Sequence[EffectRef],
+    canonical_ops: Sequence[LegalOperation],
+) -> tuple[EffectRef, ...]:
+    operation_source_by_key: dict[tuple[str, str, LegalAddress | None], tuple[str, str]] = {}
+    duplicated_op_keys = _duplicated_operation_effect_keys(canonical_ops)
+    operation_effect_ids = _disambiguate_colliding_effect_ids(
+        tuple(
+            _legal_operation_effect_id(
+                op,
+                duplicated_op_key=(
+                    source is not None
+                    and bool(source.statute_id)
+                    and (source.statute_id, str(op.op_id or op.sequence)) in duplicated_op_keys
+                ),
+            )
+            if (source := op.source) is not None and source.statute_id
+            else None
+            for op in canonical_ops
+        )
+    )
+    for op, effect_id in zip(canonical_ops, operation_effect_ids, strict=True):
+        if effect_id is None or op.source is None or not op.source.statute_id:
+            continue
+        operation_source_by_key[(op.source.statute_id, effect_id, op.target)] = (
+            _operation_effect_rule_id(op),
+            op.source.raw_text,
+        )
+
+    canonicalized: list[EffectRef] = []
+    for effect in known_source_effects:
+        source_provision = effect.source_provision
+        operation_source = operation_source_by_key.get(
+            (
+                effect.source_instrument.instrument_id,
+                effect.effect_id,
+                effect.target_address,
+            )
+        )
+        rule_id = operation_source[0] if operation_source is not None else None
+        source_raw_text = operation_source[1] if operation_source is not None else ""
+        if (
+            rule_id is None
+            or source_provision is None
+            or (
+                source_provision.rule_id == rule_id
+                and (source_provision.text_excerpt or not source_raw_text)
+            )
+            or source_provision.rule_id not in {
+                "fi.legal_operation.effect_declaration",
+                "fi.legal_operation.repeal_effect_declaration",
+            }
+        ):
+            canonicalized.append(effect)
+            continue
+        replacement_provision = source_provision
+        if source_provision.rule_id != rule_id:
+            replacement_provision = replace(replacement_provision, rule_id=rule_id)
+        if not replacement_provision.text_excerpt and source_raw_text:
+            replacement_provision = replace(
+                replacement_provision,
+                text_excerpt=source_raw_text,
+            )
+        canonicalized.append(
+            replace(
+                effect,
+                source_provision=replacement_provision,
+            )
+        )
+    return tuple(canonicalized)
 
 
 def _known_equivalent_effect(
@@ -477,6 +564,8 @@ def _matched_target_effects(
     seen: set[str] = set()
     for effect in source_effects:
         if effect.effect_id in seen:
+            continue
+        if row.effective and _is_repeal_operation_effect(effect):
             continue
         if not _effect_matches_override_scope(effect, row):
             continue
@@ -897,7 +986,10 @@ def build_finland_effect_lifecycle(
     """
     canonical_ops = _typed_legal_operations(canonical_ops)
     temporal_events = _typed_temporal_events(temporal_events)
-    known_source_effects = _typed_source_effects(known_source_effects)
+    known_source_effects = _canonicalized_known_source_effects(
+        _typed_source_effects(known_source_effects),
+        canonical_ops,
+    )
     source_effects = _source_effects_from_ops_and_temporal_events(
         target_statute=target_statute,
         canonical_ops=canonical_ops,

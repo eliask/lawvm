@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current (intentionally partial). Kind: Living spec / Normative (sparse-slot model). §9 'executed slice' carriers (`sparse_slot_bindings`, `unassigned_sparse_payload_slots`) verified present; target units (MomentIntent/PayloadSlot/Gap) framed as intended. No findings.
+
 # Finland Sparse Subsection Slot Spec
 
 Status: living spec, intentionally partial.

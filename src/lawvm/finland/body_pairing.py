@@ -179,6 +179,7 @@ def _part_label_from_cross_heading(el: etree._Element) -> str:
     """Return a normalized part label when ``el`` is a direct part marker."""
     if _localname(el) != "crossHeading":
         return ""
+    # lawvm-regex: owning_parser part-marker shape over a crossHeading element's own direct XML text, structured element-text not prose
     match = _PART_CROSS_HEADING_RE.match(_direct_text(el))
     if match is None:
         return ""
@@ -1262,7 +1263,7 @@ def analyze_amendment_pairing(
     Returns None if the amendment has no body content or no parseable ops.
     """
     from lawvm.finland.acquisition import build_amendment_acquisition_result
-    from lawvm.finland.johtolause.compat import parse_clause
+    from lawvm.finland.johtolause.api import parse_clause
 
     muutos_tree = etree.fromstring(amendment_xml_bytes)
     acquisition = build_amendment_acquisition_result(

@@ -113,8 +113,8 @@ def _matrix_after(text: str, noun_end: int) -> tuple[str, int, int] | None:
     deterministic tie-break).
     """
     window = text[noun_end : noun_end + _MATRIX_GAP]
-    exc = _MATRIX_EXCEPTION_RE.search(window)
-    con = _MATRIX_CONDITION_RE.search(window)
+    exc = _MATRIX_EXCEPTION_RE.search(window)  # lawvm-regex: owning_parser closed applicability-matrix EXCEPTION pattern over a bounded (_MATRIX_GAP=48) slice of this lens's own anaphor-noun window; surface-fact classifier, mints no state
+    con = _MATRIX_CONDITION_RE.search(window)  # lawvm-regex: owning_parser closed applicability-matrix CONDITION pattern (\bsovelletaan\b) over the same bounded own-surface window; surface-fact classifier
     if exc is not None and (con is None or exc.start() <= con.start()):
         return (KIND_EXCEPTION, noun_end + exc.start(), noun_end + exc.end())
     if con is not None:
@@ -162,7 +162,7 @@ class EnclosingAnaphoraLens:
         for unit in bundle.units:
             units_scanned += 1
             text = unit.raw_text
-            for m in _CUE_RE.finditer(text):
+            for m in _CUE_RE.finditer(text):  # lawvm-regex: owning_parser closed determiner+noun anaphor-cue alternation (_DET_NOUN_SCOPE) over this lens's OWN SourceSurfaceUnit.raw_text (the §D4 lens substrate it owns, not another plane); mints only enclosing_anaphor_cue SurfaceNode seeds
                 det_noun = re.sub(r"\s+", " ", m.group(0).casefold())
                 scope = _DET_NOUN_SCOPE.get(det_noun)
                 if scope is None:

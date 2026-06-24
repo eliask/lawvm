@@ -1,0 +1,5 @@
+{
+  "_doc": "Monotone untyped-authority-boundary ratchet baseline. Counts raw-dict/Mapping (UNTYPED) arguments crossing is_blocking_compile_record instead of the typed CompileRecord carrier. Per-file 'untyped' counts may only fall, never rise; a fall must be committed (regenerate with `uv run python scripts/inventory_architecture_smells.py --ratchet authority --update-baseline`). See tests/test_authority_boundary_ratchet.py.",
+  "total_untyped": 0,
+  "untyped_counts": {}
+}

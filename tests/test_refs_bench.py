@@ -19,7 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from lawvm.core.reference_mention import CiteConfidence, CiteKind
-from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
 from lawvm.tools import refs_bench
 
 

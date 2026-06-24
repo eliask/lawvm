@@ -30,6 +30,8 @@ class PegOwnedSectionTargets:
 
     by_chapter: frozenset[Tuple[Optional[str], str]]
     labels: frozenset[str]
+    descendant_by_chapter: frozenset[Tuple[Optional[str], str]]
+    descendant_labels: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,18 +44,46 @@ class UncoveredSectionCandidate:
     source_ref: BodyCoveragePayloadRef
 
 
+def _is_payloadless_section_relabel_source(op: AmendmentOp, label: str) -> bool:
+    """True when a whole-section RENUMBER's source label is not a payload claim."""
+    if (
+        op.op_type != "RENUMBER"
+        or op.target_unit_kind != "section"
+        or op.target_paragraph is not None
+        or op.target_item
+        or op.target_special
+        or op.lo is None
+        or op.lo.destination is None
+        or not op.lo.destination.path
+    ):
+        return False
+    destination_leaf = op.lo.destination.leaf_label()
+    return bool(destination_leaf) and _norm_num_token(destination_leaf) != label
+
+
 def peg_owned_section_targets(ops: Iterable[AmendmentOp]) -> PegOwnedSectionTargets:
     """Return section labels already owned by deterministic PEG output."""
     targeted_sections: set[Tuple[Optional[str], str]] = set()
     targeted_labels: set[str] = set()
+    descendant_sections: set[Tuple[Optional[str], str]] = set()
+    descendant_labels: set[str] = set()
     for op in ops:
         if op.target_unit_kind == "section" and op.target_section:
             label = _norm_num_token(op.target_section)
-            targeted_sections.add((op.target_chapter, label))
-            targeted_labels.add(label)
+            if _is_payloadless_section_relabel_source(op, label):
+                continue
+            chapter = op.target_chapter
+            if op.target_paragraph is not None or op.target_item or op.target_special:
+                descendant_sections.add((chapter, label))
+                descendant_labels.add(label)
+            else:
+                targeted_sections.add((chapter, label))
+                targeted_labels.add(label)
     return PegOwnedSectionTargets(
         by_chapter=frozenset(targeted_sections),
         labels=frozenset(targeted_labels),
+        descendant_by_chapter=frozenset(descendant_sections),
+        descendant_labels=frozenset(descendant_labels),
     )
 
 
@@ -82,6 +112,12 @@ def run_uncovered_candidate_iteration(
             continue
         if label in peg_owned_targets.labels:
             processor.record_skip("peg_owned_label_collision", label, chapter)
+            continue
+        if (chapter, label) in peg_owned_targets.descendant_by_chapter:
+            processor.record_skip("peg_owned_descendant_same_chapter", label, chapter)
+            continue
+        if label in peg_owned_targets.descendant_labels:
+            processor.record_skip("peg_owned_descendant_label_collision", label, chapter)
             continue
         source_ref = unit.payload_ref
         if not isinstance(source_ref, BodyCoveragePayloadRef) or source_ref.unit_kind != "section":

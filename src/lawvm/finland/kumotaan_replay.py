@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.scoped_section_resolver import section_paths_for_label
 
 if TYPE_CHECKING:
@@ -422,6 +423,7 @@ def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
     range can expire unrelated ``70a``/``70f`` sections in later chapters.
     """
     text = johto.lower()
+    # lawvm-regex: owning_parser clause-boundary segmenter (same family as kumotaan.py); op injection itself is witnessed (PureKumotaanInjected* + witness_rule_id)
     kumotaan_match = re.search(
         r"kumotaan\b(.*?)(?:muutetaan|lisätään|seuraavasti|sekä\s+muutetaan|sekä\s+lisätään|$)",
         text,
@@ -431,6 +433,7 @@ def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
         return {}
 
     kumotaan_text = kumotaan_match.group(1)
+    # lawvm-regex: owning_parser chapter-marker lexer for scoped numeric-range live-suffix expansion
     markers = list(re.finditer(r"(\d+(?:\s*[a-z])?)\s+luvun\b", kumotaan_text))
     blocks: list[tuple[Optional[str], str]] = []
     if markers and markers[0].start() > 0:
@@ -491,6 +494,7 @@ def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
     for chapter, block in blocks:
         ranges = [
             (int(match.group(1)), int(match.group(2)))
+            # lawvm-regex: owning_parser whole-section numeric-range site for the live letter-suffix absorption guard
             for match in re.finditer(r"\b(\d+)\s*[–—―\-]\s*(\d+)\s*§(?!:)", block)
             if int(match.group(1)) <= int(match.group(2))
         ]
@@ -704,6 +708,34 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
         if sub_path is not None:
             covered.add(sub_path)
 
+    def _same_group_snapshot_carries_subsection(
+        section_path: tuple[tuple[str, str], ...],
+        sub_label: str,
+    ) -> bool:
+        sub_norm = _norm_num_token(sub_label)
+        if not sub_norm:
+            return False
+        for lo in lo_ops_out:
+            src = lo.source
+            if src is None or src.statute_id != amendment_id:
+                continue
+            if not lo.op_id.startswith("snapshot_section_"):
+                continue
+            if lo.target.path != section_path:
+                continue
+            payload = lo.payload
+            if payload is None or payload.kind is not IRNodeKind.SECTION:
+                continue
+            for child in payload.children:
+                if child.kind is not IRNodeKind.SUBSECTION or not child.label:
+                    continue
+                if _norm_num_token(child.label) != sub_norm:
+                    continue
+                if child.attrs.get("lawvm_repeal_placeholder") == "1":
+                    continue
+                return True
+        return False
+
     effective_iso = amendment_effective_date.isoformat()
     enacted_iso = amendment_issue_date.isoformat() if amendment_issue_date else effective_iso
     repeal_src = OperationSource(
@@ -733,6 +765,8 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
         for sub_label in sub_labels:
             target_path = resolved.section_path + (("subsection", sub_label),)
             if target_path in covered:
+                continue
+            if _same_group_snapshot_carries_subsection(resolved.section_path, sub_label):
                 continue
             # Check that the subsection exists in the current IR.
             sub_exists = any(

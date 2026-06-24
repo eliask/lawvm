@@ -1,0 +1,15 @@
+{
+  "_doc": "Monotone raw-string scope-source ratchet baseline (Audit D). Counts scope `.source` comparisons against a str literal / collection of str literals (and group_has_scope_source raw-string calls) instead of a ScopeResolutionSource enum member. The 4 migrated comparison files MUST be 0; the producer files carry the fenced residue. Per-file counts may only fall, never rise; a fall must be committed (regenerate with `uv run python scripts/inventory_architecture_smells.py --ratchet scope --update-baseline`). See tests/test_scope_source_ratchet.py.",
+  "comparison_files": [
+    "src/lawvm/finland/apply_structure_ops.py",
+    "src/lawvm/finland/frontend_compile.py",
+    "src/lawvm/finland/scope.py",
+    "src/lawvm/finland/standalone_targets.py"
+  ],
+  "raw_string_counts": {
+    "src/lawvm/finland/compile_group_scope_recovery.py": 4,
+    "src/lawvm/finland/frontend_observations.py": 4,
+    "src/lawvm/finland/lowering_scope_recovery.py": 4
+  },
+  "total_raw_string": 12
+}
