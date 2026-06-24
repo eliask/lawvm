@@ -10,6 +10,7 @@ from typing import Any, Optional
 from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.addressing import (
+    _action_name,
     _addr_leaf_label,
     _uk_canonicalize_eid_letter_case,
 )
@@ -343,7 +344,21 @@ def _withhold_repeal_table_replacement_ops(
         effect=effect,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
-        detail={"effect_type_normalized": effect_type, "withheld_op_count": len(withheld)},
+        detail={
+            "effect_type_normalized": effect_type,
+            "withheld_op_count": len(withheld),
+            # §1.8 receipt totality: name the withheld ops, not just count them.
+            # The filter's return list omits them; consumers must be able to inspect
+            # the rejected lane (op_id, action, target) without re-running lowering.
+            "withheld_ops": tuple(
+                {
+                    "op_id": str(op.op_id or ""),
+                    "action": _action_name(op.action),
+                    "target": str(op.target or ""),
+                }
+                for op in structural_replaces
+            ),
+        },
     )
     return [op for op in ops if id(op) not in withheld]
 
