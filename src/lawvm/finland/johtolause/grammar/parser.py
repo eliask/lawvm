@@ -103,6 +103,7 @@ from lawvm.finland.johtolause.grammar.tail import (
     recognize_postfix_insert,
 )
 from lawvm.finland.johtolause.lexicon import Token
+from lawvm.finland.johtolause.provenance_span import _skip_prov_span
 from lawvm.finland.johtolause.surface_model import (
     ScopeKind,
     SurfaceClause,
@@ -362,10 +363,8 @@ def _try_skip_provenance_anaphor_backref(scan: _Scan) -> bool:
         if t.cat == "PROV":
             # An uncollapsed PROV span (the normal pipeline collapses provenance
             # to CITATION_SPAN, so this branch is only reached for raw token
-            # streams); reuse the shared span-boundary helper, lazily imported to
-            # keep the new package free of a module-level surface_parse edge.
-            from lawvm.finland.johtolause.surface_parse import _skip_prov_span
-
+            # streams); reuse the shared span-boundary helper from the neutral
+            # provenance_span module (no legacy surface_parse edge).
             toks = list(scan.cur.tokens)
             scan.goto(_skip_prov_span(toks, scan.pos, len(toks)))
         else:

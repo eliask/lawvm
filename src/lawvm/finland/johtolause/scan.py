@@ -652,7 +652,7 @@ def annotate_provenance(
     prior_annotations tells this annotator which positions are already claimed
     so that overlapping citation+provenance produces the same result.
     """
-    from lawvm.finland.johtolause.surface_parse import _skip_prov_span
+    from lawvm.finland.johtolause.provenance_span import _skip_prov_span
 
     _PROV_CONTINUATION = frozenset(
         {
