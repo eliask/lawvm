@@ -11789,6 +11789,108 @@ def test_old_format_lower_op_texts_does_not_reject_out_of_body_appendix_clause()
     assert last_section is None
 
 
+def test_mark_old_format_out_of_body_clause_clears_text_patch_for_meta() -> None:
+    """Relabeling a body-replay op (with text_patch / anchor / destination set)
+    to META must clear body-replay-only carriers so the IR invariant holds.
+
+    Regression for the ``LegalOperation text_patch is only valid for
+    text_replace/text_repeal/replace got action=META`` crash in
+    ``_mark_old_format_out_of_body_clause``, which silently dropped every op
+    for any old-format amendment whose out-of-body appendix clause carried a
+    text_replace op (corpus witness: ``104022011015`` vs ``101032012001``).
+    """
+    from lawvm.estonia.target_resolution import _mark_old_format_out_of_body_clause
+    from lawvm.core.ir import TextPatchKindEnum
+
+    text_replace_op = LegalOperation(
+        op_id="ee-text-replace-test-1",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=()),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="vanasõna"),
+            replacement="uus sõna",
+        ),
+        source=OperationSource(statute_id="ee/test"),
+    )
+    anchor_insert_op = LegalOperation(
+        op_id="ee-insert-anchor-test-2",
+        sequence=2,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=()),
+        anchor=LegalAddress(path=(("section", "1"),)),
+        source=OperationSource(statute_id="ee/test"),
+    )
+
+    for original in (text_replace_op, anchor_insert_op):
+        meta_op = _mark_old_format_out_of_body_clause(original, "määrust täiendatakse lisaga 1;")
+        # The META relabel must succeed (no exception raised) and produce a
+        # fully valid META op whose body-replay-only carriers are cleared.
+        assert meta_op.action is StructuralAction.META
+        assert meta_op.target.path == ()
+        assert meta_op.anchor is None
+        assert meta_op.destination is None
+        assert meta_op.text_patch is None
+        assert meta_op.payload is not None
+        assert (
+            meta_op.payload.attrs["source_family"]
+            == "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
+        )
+        assert (
+            "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
+            in meta_op.provenance_tags
+        )
+        # The source-text witness is preserved on the META payload.
+        assert meta_op.payload.text == "määrust täiendatakse lisaga 1;"
+
+
+def test_parse_ee_amendment_ops_real_101032012001_does_not_crash_on_out_of_body_appendix_op() -> None:
+    """Corpus regression: ``101032012001`` amending ``104022011015`` has a
+    multi-clause appendix body whose pre-existing appendix section caused
+    ``_mark_old_format_out_of_body_clause`` to crash on a text_replace op
+    with text_patch set, silently dropping every op for the amendment.
+
+    Pre-fix symptom: ``parse_ee_amendment_ops`` raised
+    ``ValueError: LegalOperation text_patch is only valid for
+    text_replace/text_repeal/replace got action=<StructuralAction.META>``
+    and the EE bench row ``104022011015 -> 101032012003`` reported ``ops=0``
+    with 61 open divergences. Post-fix expectation: ~44 ops, ~6 open.
+    """
+    archive = open_rt_archive(readonly=True)
+    target_title = (
+        "Põllumajandus- ja toidusektoris ning metsandussektoris uute toodete, "
+        "töötlemisviiside ja tehnoloogiate arendamise alase koostöö tegemise "
+        "toetuse saamise nõuded, toetuse taotlemise ja taotluse menetlemise "
+        "täpsem kord"
+    )
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("101032012001", archive),
+        "ee/101032012001",
+        target_title=target_title,
+    )
+
+    # Structural invariant: the amendment must compile real body ops, not a
+    # silently-empty list. The reference corpus pre-fix was 0 ops; post-fix is
+    # around 40-44.
+    assert len(ops) >= 40
+    body_ops = [op for op in ops if op.action is not StructuralAction.META]
+    assert len(body_ops) >= 25
+    # At least one op must target a real provision body (target path non-empty).
+    assert any(op.target.path for op in body_ops)
+    # The out-of-body META clause must carry its typed source-family witness.
+    out_of_body = [
+        op
+        for op in ops
+        if op.action is StructuralAction.META
+        and op.payload is not None
+        and op.payload.attrs.get("source_family")
+        == "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
+    ]
+    assert out_of_body, "expected at least one out-of-body appendix META op"
+
+
 def test_extract_ee_ops_targeted_unparsed_clause_has_source_family_payload() -> None:
     ops = extract_ee_ops(
         "1) § 1 lõike 3 punktis 3;",
@@ -11968,4 +12070,229 @@ def test_parse_ee_amendment_ops_recovers_real_107032025001_section_18_item_4() -
     assert all(
         "ee_plural_item_marker_payload_recovers_inner_quote" in op.provenance_tags
         for op in section_18_ops
+    )
+
+
+def test_has_unclosed_payload_quote_after_formula_marker_local_close_check() -> None:
+    """Marker-local-close corpus: a payload marker whose quote closes mid-tail
+    (followed by more non-quoted amendment items) must be treated as closed,
+    so the wrapper-splitter is safe to split there.
+
+    The first buggy impl used a "tail-ends-with-close-quote" heuristic which
+    only considered a tail that ENDs with a close-quote as closed; any
+    mid-tail close absorbed the next ``§ N.`` wrapper section into the
+    first block and silently dropped that wrapper's ops (corpus witness:
+    ``128062014035`` §2-§4 against ``Kinnipidamiskeskuse sisekorraeeskirja
+    kehtestamine``).
+
+    The second buggy impl used a strict global "open_count > close_count"
+    check that broke source acts whose HTML carries a single unmatched
+    ``„`` elsewhere mid-document: it always returned True (unclosed), so
+    every wrapper boundary was absorbed (corpus witness: ``123122021012``
+    produced 0 inner splits vs the pre-balanced-count's 5; bench row
+    ``112102018008`` dropped from 93.5%/13-open to 74.2%/39-open).
+
+    The current impl looks at the tail AFTER the last ``järgmises
+    sõnastuses:`` marker and asks whether ANY close-quote appears there.
+    If yes, the marker's payload has locally closed → safe to split.
+    If no, the payload is still open across the block boundary → don't split.
+    """
+    from lawvm.estonia.target_resolution import _has_unclosed_payload_quote_after_formula
+
+    # Marker-payload with a close-quote appearing mid-tail before more items:
+    balanced_mid_close = (
+        "paragrahvi 1 täiendatakse pärast sõnu „tunnistamise kord” tekstiosaga "
+        "ning enne töö, teenuse või vara soetamise eest tasumist toetatava tegevuse "
+        "elluviimise riigieelarvelistest vahenditest rahastamise taotlemise ja "
+        "taotluse menetlemise kord ning taotluse vorm"
+    )
+    assert _has_unclosed_payload_quote_after_formula(balanced_mid_close) is False
+
+    # True-open: opening ``„`` whose closing ``”`` is logically beyond this text
+    # boundary (embedded section header sitting inside an open quoted payload).
+    true_open = (
+        "1) määruse preambulit täiendatakse 6. peatükiga järgmises sõnastuses: "
+        "„6. peatükk. ÜLDSÄTTED. § 28. Määruse reguleerimisala"
+    )
+    assert _has_unclosed_payload_quote_after_formula(true_open) is True
+
+    # Guillemet payload ``« ... »`` must also balance.
+    guillemet_balanced = (
+        "tõike 1 punkt 2 muudetakse ja sõnastatakse järgmiselt: "
+        "« 2) mida kasutatakse käesoleva seaduse § 20 lõike 8 alusel. »"
+    )
+    assert _has_unclosed_payload_quote_after_formula(guillemet_balanced) is False
+
+
+def test_has_unclosed_payload_quote_after_formula_symmetric_and_mirror_openers_dont_self_match() -> None:
+    """Regression: openers that previously appeared in BOTH the open set and
+    the close regex (``\u201c`` left-double, ASCII ``\u0022``, ``\u02ee``
+    modifier) self-matched, so an unclosed payload opening with one of them
+    was wrongly reported closed (``False`` = safe to split). That let the
+    wrapper-splitter absorb a later ``\u00a7 N`` body and drop its ops.
+    Each opener must now pair with its *real* closer (or, for the symmetric
+    quotes, the same character only AFTER the opening delimiter), so an
+    open-and-never-closed tail returns ``True`` (unclosed -> don't split).
+    The canonical ``\u201e ... \u201d`` and ``\u00ab ... \u00bb`` pairs
+    must keep their correct closed/open verdicts.
+    """
+    from lawvm.estonia.target_resolution import (
+        _has_unclosed_payload_quote_after_formula,
+    )
+
+    marker = "punkt 1 muudetakse j\u00e4rgmises s\u00f5nastuses: "
+    body = "6. peat\u00fckk. text \u00a7 28 body"
+
+    # The three self-matching openers, opened and never closed -> unclosed.
+    for opener in ("\u201c", "\u0022", "\u02ee"):
+        tail = marker + opener + body
+        assert (
+            _has_unclosed_payload_quote_after_formula(tail) is True
+        ), f"opener {opener!r} opened-and-not-closed must be unclosed"
+
+    # The same openers WITH their real closer present must report closed.
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u201ctekst\u201d more")
+        is False
+    )
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u0022tekst\u0022 more")
+        is False
+    )
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u02eetekst\u02ee more")
+        is False
+    )
+
+    # Canonical paired delimiters keep their correct verdicts.
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u201e6. peat\u00fckk text")
+        is True
+    )
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u201etekst\u201d more")
+        is False
+    )
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u00abtekst\u00bb more")
+        is False
+    )
+    assert (
+        _has_unclosed_payload_quote_after_formula(marker + "\u00abtekst more")
+        is True
+    )
+
+
+def test_parse_ee_amendment_ops_real_128062014035_splits_wrapper_sections_abandoned_by_open_quote() -> None:
+    """Corpus regression: ``128062014035`` is a multi-target omnibus whose
+    ``§ 1`` targets ``Lahkumisettekirjutuses...`` while ``§ 2`` targets
+    ``Kinnipidamiskeskuse sisekorraeeskirja kehtestamine`` (the base act).
+
+    Pre-fix the wrapper-section splitter used a "tail-ends-with-close-quote"
+    heuristic that treated ``§ 1``'s ``järgmises sõnastuses`` marker's quote
+    as still-open once its ``”`` close appeared mid-block followed by more
+    items; the splitter then absorbed ``§ 2`` straight into ``§ 1``'s block
+    and the parser emitted ``ops=0`` against the base-act title, surfacing
+    as a worst-of-bench row. Post-fix the splitter breaks at every ``§ N.``
+    wrapper boundary whose block quotes are balanced and ``§ 2`` ops are
+    extracted against the base act.
+    """
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("128062014035", archive),
+        "ee/128062014035",
+        target_title="Kinnipidamiskeskuse sisekorraeeskirja kehtestamine",
+    )
+    by_target = {(op.action, op.target.path) for op in ops}
+    # ``§ 2`` of the source rewords ``§ 3``/``§ 5``, narrows ``§ 4(2)`` ,
+    # replaces ``§ 8(1)``, rewrites a list of section repeals (``§ 19``,
+    # etc.), and inserts new ``§ 11^1`` subsections across the base act.
+    assert len(ops) >= 15
+    assert (StructuralAction.REPEAL, (("section", "3"),)) in by_target
+    assert (StructuralAction.REPEAL, (("section", "5"),)) in by_target
+    assert any(
+        op.action is StructuralAction.REPLACE and op.target.path[:1] == (("section", "8"),)
+        for op in ops
+    )
+    # The amending act also targets other acts via ``§ 3`` and ``§ 4``;
+    # those wrapper sections must NOT leak into the base-act op set.
+    assert not any(
+        op.target.path[:1] == (("section", "11"),) and op.action is StructuralAction.INSERT
+        and op.payload is not None and "Politseiametniku vormiriietuse" in op.payload.text
+        for op in ops
+    )
+
+
+def test_old_format_split_sections_handles_nbsp_between_section_marker_and_digit() -> None:
+    """EE old-format amendment HTML can encode the ``§ 1.`` wrapper header with
+    ``&nbsp;`` separating the ``§`` from the section number. Pre-fix the outer
+    splitter regex required the ``§`` to be immediately followed by the digit,
+    so any wrapper header that used ``§&nbsp;N.`` was missed and the whole
+    wrapper section was absorbed into the preceding wrapper (or never freed).
+    That surfaced as ``ops=0`` against the base act for acts whose amendments
+    opened with ``§&nbsp;1.`` (corpus witness:
+    ``107072020001`` § 1 against multiple base acts).
+    """
+    from lawvm.estonia.target_resolution import (
+        old_format_split_sections,
+        strip_old_format_html_text,
+    )
+
+    html_bodies = (
+        "<p><b>§&nbsp;1. Esimese seaduse muutmine</b></p>"
+        "<p>1) paragrahvi 1 lõige 1 sõnastatakse järgmiselt:</p>"
+        "<p>„(1) Testisinufraas“;</p>"
+        "<p><b>§&nbsp;2. Teise seaduse muutmine</b></p>"
+        "<p>1) paragrahvi 1 lõige 1 sõnastatakse järgmiselt:</p>"
+        "<p>„(1) Teine testisinufraas“;</p>"
+    )
+    sections = old_format_split_sections(html_bodies)
+    # Pre-fix this returned a single absorbed blob (``[html_bodies]``) because
+    # the splitter required the ``§`` to be immediately followed by a digit.
+    # Post-fix it splits at every ``§&nbsp;N.`` wrapper boundary.
+    bodies = [s for s in sections if s.strip()]
+    assert len(bodies) >= 2
+    plain_first = strip_old_format_html_text(bodies[0])
+    plain_second = strip_old_format_html_text(bodies[1])
+    assert "§ 1." in plain_first
+    assert "Esimese seaduse" in plain_first
+    assert "§ 2." in plain_second
+    assert "Teise seaduse" in plain_second
+
+
+def test_parse_ee_amendment_ops_real_107072020001_extracts_ops_for_nbsp_wrapper_sections() -> None:
+    """Corpus regression: ``107072020001`` is a multi-target omnibus whose
+    ``§ 1``-``§ 8`` wrapper headers are all encoded with ``§&nbsp;N.`` (single
+    open-quote format). Pre-fix the outer splitter absorbed wrapper sections
+    2-5 (and partially others) into the header of ``§ 1``, so
+    ``parse_ee_amendment_ops`` emitted ``ops=0`` against the base act
+    ``Päästetööl osalenud vabatahtliku päästja hukkumise ... kord ja ulatus``
+    (mapped via ``§ 5`` of the source act), surfacing as a worst-of-bench
+    row ``118092018006 -> 107072020008`` (50% section match, 13 open).
+    Post-fix the splitter splits cleanly at ``§&nbsp;5.`` and the parser emits
+    the real source-backed replace / text_replace ops.
+    """
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("107072020001", archive),
+        "ee/107072020001",
+        target_title=(
+            "Päästetööl osalenud vabatahtliku päästja hukkumise, surma või "
+            "osalise või puuduva töövõime korral makstava hüvitise ja kulude "
+            "arvutamise, määramise ning maksmise kord ja ulatus"
+        ),
+    )
+    # Source § 5 amends multiple base-act provisions: title rewrite, § 1
+    # subsection/item-level rewrites, § 2 subsections, and § 3 / § 5 ops.
+    assert len(ops) >= 6
+    by_target = {(op.action, op.target.path[:1]) for op in ops}
+    # The amendment rewrites the base act title via ``pealkirjas asendatakse``
+    # and replaces multiple subsections of § 1, § 2.
+    assert any(
+        op.action is StructuralAction.TEXT_REPLACE and op.target.path[:1] == (("section", "1"),)
+        for op in ops
+    )
+    assert any(
+        op.action is StructuralAction.REPLACE and op.target.path[:1] == (("section", "1"),)
+        for op in ops
     )

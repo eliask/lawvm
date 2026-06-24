@@ -76,6 +76,7 @@ the architecture, keep it explanatory.
 ## Other Frontends
 
 - [ESTONIA_FRONTEND_LIVING_SPEC.md](ESTONIA_FRONTEND_LIVING_SPEC.md)
+- [ESTONIA_GUARD_LIVENESS_DISCIPLINE.md](ESTONIA_GUARD_LIVENESS_DISCIPLINE.md) — EE guard-liveness ratchet: every blocking CompileAdjudication rule_id is partitioned into fire-drills or a debt allowlist with a monotone-decreasing ceiling
 - [UK_FRONTEND_ELABORATION_ARCHITECTURE.md](UK_FRONTEND_ELABORATION_ARCHITECTURE.md)
 - [UK_REPLAY_LIVING_SPEC.md](UK_REPLAY_LIVING_SPEC.md)
 - [UK_REPLAY_REGIME_CONTRACT.md](UK_REPLAY_REGIME_CONTRACT.md)

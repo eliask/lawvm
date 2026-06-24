@@ -255,6 +255,11 @@ _EE_RULE_SPECS: Dict[str, str] = {
     # --- Source-acquisition / parse failure provenance (failed-op lanes) --------------
     "ee_amendment_source_fetch_failed": "A failure to fetch an amendment's source is recorded as a visible failed-op, not a silent skip.",
     "ee_amendment_parse_failed": "A failure to parse a fetched amendment is recorded as a visible failed-op.",
+    "ee_pending_amendment_metapass_parse_failed": "A parse failure during the pending-amendment metapass that re-reads future-oracle amendments to live-update still-targeted text is recorded as a visible non-blocking adjudication rather than silently swallowed.",
+    "ee_extract_act_title_parse_failed": "A parse failure in the act-title prefilter helper (used to look up titles for cancelled-pending-ref and metapass matching) is recorded as a visible non-blocking adjudication instead of returning an empty string silently.",
+    "ee_extract_target_matching_paragraphs_parse_failed": "A parse failure in the target-matching-paragraph-numbers prefilter helper (used by the cancelled-pending-ref filter) is recorded as a visible non-blocking adjudication instead of returning an empty set silently.",
+    "ee_extract_repealed_source_paragraphs_parse_failed": "A parse failure in the repealed-source-paragraph-numbers prefilter helper (used by the cancelled-pending-ref filter to detect source-law repeals before commencement) is recorded as a visible non-blocking adjudication instead of returning an empty set silently.",
+    "ee_extract_rewritten_source_paragraphs_parse_failed": "A parse failure in the rewritten-source-paragraph-numbers prefilter helper (used by the cancelled-pending-ref filter to detect source-law rewrites before commencement) is recorded as a visible non-blocking adjudication instead of returning an empty set silently.",
     "ee_temporal_source_scan_failed": "A failure to scan an act for temporal/commencement data is recorded as a visible failed-op.",
     "ee_cancelled_pending_ref_source_fetch_failed": "A failure to fetch a cancelled-pending reference's source is recorded as a visible failed-op.",
     "ee_cancelled_pending_ref_metadata_parse_failed": "A failure to parse cancelled-pending reference metadata is recorded as a visible failed-op.",

@@ -73,10 +73,26 @@ def _ee_fetch_rt_xml_cached(
     return xml_bytes
 
 
-def _ee_extract_act_title(xml_bytes: bytes) -> str:
+def _ee_extract_act_title(
+    xml_bytes: bytes,
+    *,
+    akt_viide: str = "",
+    adjudications_out: list[CompileAdjudication] | None = None,
+) -> str:
     try:
         root = ET.fromstring(xml_bytes)
-    except Exception:
+    except Exception as exc:
+        _ee_emit_prefilter_parse_failed_adjudication(
+            rule_id=_EE_EXTRACT_ACT_TITLE_PARSE_FAILED_RULE,
+            failure=exc,
+            akt_viide=akt_viide or "unknown",
+            adjudications_out=adjudications_out,
+            message=(
+                "Estonia pending-amendment prefilter skipped act-title "
+                "extraction because the fetched source XML failed to parse."
+            ),
+            reason="act_title_source_xml_parse_failed",
+        )
         return ""
     ns = _ee_xml_ns(root)
     aktinimi = root.find(f"{{{ns}}}aktinimi")
@@ -242,10 +258,28 @@ def _resolve_ee_temporal_event_scopes(
     return tuple(resolved_events)
 
 
-def _ee_extract_target_matching_paragraph_numbers(xml_bytes: bytes, target_title: str) -> set[str]:
+def _ee_extract_target_matching_paragraph_numbers(
+    xml_bytes: bytes,
+    target_title: str,
+    *,
+    akt_viide: str = "",
+    adjudications_out: list[CompileAdjudication] | None = None,
+) -> set[str]:
     try:
         root = ET.fromstring(xml_bytes)
-    except Exception:
+    except Exception as exc:
+        _ee_emit_prefilter_parse_failed_adjudication(
+            rule_id=_EE_EXTRACT_TARGET_MATCHING_PARAGRAPHS_PARSE_FAILED_RULE,
+            failure=exc,
+            akt_viide=akt_viide or "unknown",
+            adjudications_out=adjudications_out,
+            message=(
+                "Estonia cancelled-pending-ref prefilter skipped paragraph-"
+                "matching extraction because the fetched source XML failed "
+                "to parse."
+            ),
+            reason="target_matching_paragraphs_source_xml_parse_failed",
+        )
         return set()
     ns = _ee_xml_ns(root)
     matches: set[str] = set()
@@ -300,10 +334,24 @@ def _ee_source_surface_may_target_title(xml_bytes: bytes, target_title: str) -> 
 def _ee_extract_repealed_source_paragraph_numbers(
     xml_bytes: bytes,
     amended_act_title: str,
+    *,
+    akt_viide: str = "",
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> set[str]:
     try:
         root = ET.fromstring(xml_bytes)
-    except Exception:
+    except Exception as exc:
+        _ee_emit_prefilter_parse_failed_adjudication(
+            rule_id=_EE_EXTRACT_REPEALED_SOURCE_PARAGRAPHS_PARSE_FAILED_RULE,
+            failure=exc,
+            akt_viide=akt_viide or "unknown",
+            adjudications_out=adjudications_out,
+            message=(
+                "Estonia cancelled-pending-ref prefilter skipped repealed-section "
+                "extraction because the fetched source XML failed to parse."
+            ),
+            reason="repealed_source_paragraphs_source_xml_parse_failed",
+        )
         return set()
     ns = _ee_xml_ns(root)
     repealed: set[str] = set()
@@ -331,10 +379,24 @@ def _ee_extract_repealed_source_paragraph_numbers(
 def _ee_extract_rewritten_source_paragraph_numbers(
     xml_bytes: bytes,
     amended_act_title: str,
+    *,
+    akt_viide: str = "",
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> set[str]:
     try:
         root = ET.fromstring(xml_bytes)
-    except Exception:
+    except Exception as exc:
+        _ee_emit_prefilter_parse_failed_adjudication(
+            rule_id=_EE_EXTRACT_REWRITTEN_SOURCE_PARAGRAPHS_PARSE_FAILED_RULE,
+            failure=exc,
+            akt_viide=akt_viide or "unknown",
+            adjudications_out=adjudications_out,
+            message=(
+                "Estonia cancelled-pending-ref prefilter skipped rewritten-section "
+                "extraction because the fetched source XML failed to parse."
+            ),
+            reason="rewritten_source_paragraphs_source_xml_parse_failed",
+        )
         return set()
     ns = _ee_xml_ns(root)
     rewritten: set[str] = set()
@@ -377,6 +439,17 @@ _EE_AMENDMENT_SOURCE_FETCH_FAILED_RULE = "ee_amendment_source_fetch_failed"
 _EE_AMENDMENT_PARSE_FAILED_RULE = "ee_amendment_parse_failed"
 _EE_TEMPORAL_SOURCE_SCAN_FAILED_RULE = "ee_temporal_source_scan_failed"
 _EE_PENDING_SOURCE_ACT_COMMENCEMENT_FETCH_FAILED_RULE = "ee_pending_source_act_commencement_source_fetch_failed"
+_EE_PENDING_AMENDMENT_METAPASS_PARSE_FAILED_RULE = "ee_pending_amendment_metapass_parse_failed"
+_EE_EXTRACT_ACT_TITLE_PARSE_FAILED_RULE = "ee_extract_act_title_parse_failed"
+_EE_EXTRACT_TARGET_MATCHING_PARAGRAPHS_PARSE_FAILED_RULE = (
+    "ee_extract_target_matching_paragraphs_parse_failed"
+)
+_EE_EXTRACT_REPEALED_SOURCE_PARAGRAPHS_PARSE_FAILED_RULE = (
+    "ee_extract_repealed_source_paragraphs_parse_failed"
+)
+_EE_EXTRACT_REWRITTEN_SOURCE_PARAGRAPHS_PARSE_FAILED_RULE = (
+    "ee_extract_rewritten_source_paragraphs_parse_failed"
+)
 
 
 def _ee_rt_xml_source_lane_detail(
@@ -439,6 +512,54 @@ def _ee_orchestration_adjudication(
         blocking=blocking,
         phase=phase,
         detail=normalized_detail,
+    )
+
+
+def _ee_emit_prefilter_parse_failed_adjudication(
+    *,
+    rule_id: str,
+    failure: BaseException,
+    akt_viide: str,
+    adjudications_out: list[CompileAdjudication] | None,
+    message: str,
+    reason: str,
+) -> None:
+    """Append a non-blocking ``record`` adjudication for an XML-parse failure
+    swallowed by a prefilter helper.
+
+    Per AGENTS.md §1.10 / §1.8: prefilter helpers that wrap
+    ``xml.etree.ElementTree.fromstring`` in a broad ``except Exception``
+    must emit a typed diagnostic before their conservative empty return,
+    not silently swallow. Prefilter helpers never widen scope (their
+    empty result is a conservative skip), so the disposition is
+    non-blocking ``record`` rather than ``block``.
+    """
+    if adjudications_out is None:
+        return
+    adjudications_out.append(
+        _ee_orchestration_adjudication(
+            kind=rule_id,
+            message=message,
+            source_statute=f"ee/{akt_viide}",
+            detail={
+                "ref_amendment": akt_viide,
+                "reason": reason,
+                "exception_type": type(failure).__name__,
+                "exception": str(failure),
+                "source_lane_selection": _ee_rt_xml_source_lane_detail(
+                    rule_id=rule_id,
+                    phase="parse",
+                    reason=reason,
+                    akt_viide=akt_viide,
+                    attempt_status="selected_parse_failed",
+                    selected_lane="riigi_teataja_xml",
+                    selected=True,
+                ),
+            },
+            phase="parse",
+            family="source_lane_failure",
+            blocking=False,
+        )
     )
 
 
@@ -516,10 +637,16 @@ def _ee_filter_cancelled_pending_refs(
                 )
             continue
         ref_xml[ref.aktViide] = xml_bytes
-        ref_titles[ref.aktViide] = _ee_extract_act_title(xml_bytes)
+        ref_titles[ref.aktViide] = _ee_extract_act_title(
+            xml_bytes,
+            akt_viide=ref.aktViide,
+            adjudications_out=adjudications_out,
+        )
         target_sections[ref.aktViide] = _ee_extract_target_matching_paragraph_numbers(
             xml_bytes,
             target_title,
+            akt_viide=ref.aktViide,
+            adjudications_out=adjudications_out,
         )
 
     cancelled: set[str] = set()
@@ -540,6 +667,8 @@ def _ee_filter_cancelled_pending_refs(
             repealed_paras = _ee_extract_repealed_source_paragraph_numbers(
                 repealer_xml,
                 ref_title,
+                akt_viide=later.aktViide,
+                adjudications_out=adjudications_out,
             )
             if target_paras and target_paras.issubset(repealed_paras):
                 cancelled.add(ref.aktViide)
@@ -569,6 +698,8 @@ def _ee_filter_cancelled_pending_refs(
             rewritten_paras = _ee_extract_rewritten_source_paragraph_numbers(
                 repealer_xml,
                 ref_title,
+                akt_viide=later.aktViide,
+                adjudications_out=adjudications_out,
             )
             if target_paras and target_paras.issubset(rewritten_paras):
                 cancelled.add(ref.aktViide)
@@ -707,9 +838,15 @@ def _ee_extract_source_act_commencement_replacement(
     xml_bytes: bytes,
     *,
     amended_act_title: str,
+    akt_viide: str = "",
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> str:
     """Return a replacement commencement date for ``amended_act_title`` when explicit."""
-    later_title = _ee_extract_act_title(xml_bytes)
+    later_title = _ee_extract_act_title(
+        xml_bytes,
+        akt_viide=akt_viide,
+        adjudications_out=adjudications_out,
+    )
     if not _strict_title_match_para(amended_act_title, later_title):
         return ""
     try:
@@ -784,7 +921,11 @@ def _ee_precompose_pending_source_act_commencements(
             )
             continue
         xml_by_ref[ref.aktViide] = xml_bytes
-        title_by_ref[ref.aktViide] = _ee_extract_act_title(xml_bytes)
+        title_by_ref[ref.aktViide] = _ee_extract_act_title(
+            xml_bytes,
+            akt_viide=ref.aktViide,
+            adjudications_out=adjudications,
+        )
 
     overrides: dict[str, tuple[str, AmendmentRef]] = {}
     for earlier_ref in sorted(refs, key=lambda ref: (ref.passed, ref.joustumine, ref.aktViide)):
@@ -802,6 +943,8 @@ def _ee_precompose_pending_source_act_commencements(
             replacement_date = _ee_extract_source_act_commencement_replacement(
                 later_xml,
                 amended_act_title=earlier_title,
+                akt_viide=later_ref.aktViide,
+                adjudications_out=adjudications,
             )
             if not replacement_date or replacement_date == earlier_ref.joustumine:
                 continue
@@ -864,11 +1007,16 @@ def _ee_precompose_pending_amendment_text_patches(
     adjudications: list[CompileAdjudication] = []
     sorted_refs = tuple(sorted(refs, key=_ee_ref_sort_key))
     parsed_meta_ops: dict[tuple[str, str], tuple[LegalOperation, ...]] = {}
-    title_by_ref = {
-        ref.aktViide: _ee_extract_act_title(xml_bytes)
-        for ref in sorted_refs
-        if (xml_bytes := amendment_xml_by_ref.get(ref.aktViide)) is not None
-    }
+    title_by_ref: dict[str, str] = {}
+    for ref in sorted_refs:
+        xml_bytes = amendment_xml_by_ref.get(ref.aktViide)
+        if xml_bytes is None:
+            continue
+        title_by_ref[ref.aktViide] = _ee_extract_act_title(
+            xml_bytes,
+            akt_viide=ref.aktViide,
+            adjudications_out=adjudications,
+        )
     surface_may_target_cache: dict[tuple[str, str], bool] = {}
 
     for later_index, later_ref in enumerate(sorted_refs):
@@ -902,8 +1050,48 @@ def _ee_precompose_pending_amendment_text_patches(
                         ref_effective=later_ref.joustumine,
                         adjudications_out=adjudications,
                     )
-                except Exception:
+                except Exception as e:
+                    # Per AGENTS.md §1.10 / §1.8: do not silently swallow a
+                    # parser crash during the pending-amendment metapass that
+                    # re-reads future-oracle amendments to live-update
+                    # still-targeted text. A real parser crash here (e.g. a
+                    # new ``LegalOperation.__post_init__`` violation surfacing
+                    # only on this omnibus shape) used to be swallowed as
+                    # ``parsed = []``, hiding the bug behind an empty result.
+                    # Emit a typed adjudication so the failure is accounted
+                    # for, then treat the parse as empty (the metapass must
+                    # still continue without crashing the whole replay).
                     parsed = []
+                    adjudications.append(
+                        _ee_orchestration_adjudication(
+                            kind=_EE_PENDING_AMENDMENT_METAPASS_PARSE_FAILED_RULE,
+                            message=(
+                                "Estonia pending-amendment metapass skipped a "
+                                "later amendment because operation parsing "
+                                "failed during text-patch precomposition."
+                            ),
+                            source_statute=f"ee/{later_ref.aktViide}",
+                            detail={
+                                "ref_amendment": later_ref.aktViide,
+                                "target_title": earlier_title,
+                                "reason": "metapass_parse_failed",
+                                "exception_type": type(e).__name__,
+                                "exception": str(e),
+                                "source_lane_selection": _ee_rt_xml_source_lane_detail(
+                                    rule_id=_EE_PENDING_AMENDMENT_METAPASS_PARSE_FAILED_RULE,
+                                    phase="parse",
+                                    reason="metapass_parse_failed",
+                                    akt_viide=later_ref.aktViide,
+                                    attempt_status="selected_parse_failed",
+                                    selected_lane="riigi_teataja_xml",
+                                    selected=True,
+                                ),
+                            },
+                            phase="parse",
+                            family="source_lane_failure",
+                            blocking=False,
+                        )
+                    )
                 parsed_meta_ops[meta_key] = tuple(parsed)
             for meta_op in parsed_meta_ops[meta_key]:
                 if meta_op.text_patch is None:
