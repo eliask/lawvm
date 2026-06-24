@@ -11713,6 +11713,46 @@ class TestSubsectionMigrationRebinding:
         assert got.resolved_target_address == rop.resolved_target_address
         assert "follow_same_wave_migration" not in got.target_guessing_provenance_tags
 
+    def test_replaced_renumber_source_rebase_does_not_follow_same_wave_migration(self):
+        op = _op(op_type="REPLACE", target_section="3", target_paragraph=5)
+        op.op_id = "replace_rebased_5"
+        op = dc_replace(
+            op,
+            target_guessing_provenance_tags=("rebase_replaced_renumber_source",),
+            lo=LegalOperation(
+                op_id="replace_rebased_5",
+                sequence=0,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=(("section", "3"), ("subsection", "5"))),
+            ),
+        )
+        rop = ResolvedOp.from_amendment_op(
+            op,
+            muutos_ir=None,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="3",
+            target_chapter=None,
+            slot_assignment=SubsectionSlotAssignmentResult(
+                subsec_map=SubsectionSlotMap(),
+                sparse_slot_bindings=(),
+                used_subs=(),
+                unassigned_payload_slots=(),
+            ),
+        )
+        ledger = MigrationLedger()
+        ledger.record_renumber(
+            LegalAddress(path=(("section", "3"), ("subsection", "5"))),
+            LegalAddress(path=(("section", "3"), ("subsection", "7"))),
+            effective="1995-04-01",
+            source_statute="1995/460",
+        )
+
+        got = _follow_same_wave_subsection_migration(rop, migration_ledger=ledger)
+
+        assert got.resolved_target_address == rop.resolved_target_address
+        assert "follow_same_wave_migration" not in got.target_guessing_provenance_tags
+
 
 # ---------------------------------------------------------------------------
 # _apply_item_repeal

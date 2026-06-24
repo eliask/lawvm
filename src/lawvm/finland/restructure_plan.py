@@ -1419,10 +1419,10 @@ def _stabilize_same_parent_relabel_exec_order(
         if target_path[-1][0] != dest_path[-1][0]:
             return None
         unit_kind = target_path[-1][0]
-        if unit_kind not in {"section", "chapter", "part"}:
+        if unit_kind not in {"section", "chapter", "part", "subsection", "item", "subitem"}:
             return None
         return RelabelParentKey(
-            unit_kind=cast(TargetUnitKind, unit_kind),
+            unit_kind=unit_kind,
             parent_path=tuple(target_path[:-1]),
         )
 
