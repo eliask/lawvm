@@ -1,4 +1,4 @@
-"""``lawvm.must_trace.v1`` — the MUST-trace ledger + drift detector (Pro §13 step 5).
+"""``lawvm.must_trace`` — the MUST-trace ledger + drift detector (Pro §13 step 5).
 
 WHAT THIS ENABLES. The Pro invariant-mining doc (§13 step 5) states the
 discipline: *every normative ``MUST`` in the specs should map to one of —
@@ -35,9 +35,10 @@ lands in exactly one:
 HONESTY BOUNDARY (constructive-invariant pattern — read before trusting this).
 
 * The linter ranges over a DECLARED, VERSIONED SUBSET of spec files
-  (:data:`MUST_TRACE_V1_IN_SCOPE_FILES` — at v1, TWO files: the pipeline
-  contract and the provision-state seam contract), NOT all 66 ``notes/*.md``
-  and NOT source docstrings. Expanding the scope is a version bump, exactly like
+  (:data:`MUST_TRACE_IN_SCOPE_FILES` — at v2, THREE files: the pipeline
+  contract, the provision-state seam contract, and the certified
+  tree-transition trace spec), NOT all 66 ``notes/*.md`` and NOT source
+  docstrings. Expanding the scope is a version bump, exactly like
   :data:`~lawvm.core.claim_surface_manifest.CLAIM_SURFACE_VERSION`. Each newly
   in-scope spec's MUSTs become individually accountable — that is the
   compounding payoff of widening scope.
@@ -71,18 +72,29 @@ _DOMAIN_MUST_CLAUSE = "must_clause"
 _DOMAIN_MUST_TRACE_LEDGER_ROOT = "must_trace_ledger"
 
 #: The MUST-trace ledger schema version (Pro §12 — versioned, claim-relative).
-MUST_TRACE_VERSION = "v1"
+MUST_TRACE_VERSION = "v2"
 
-#: The DECLARED in-scope spec-file subset for v1 (paths relative to repo root).
-#: The linter ranges over exactly these files — NOT all of ``notes/*.md`` and
-#: NOT source docstrings. v1 widens scope from the pipeline contract alone to
-#: ALSO cover the provision-state seam contract (16 normative MUSTs), so every
-#: MUST of the public consumer-facing seam becomes individually accountable.
-#: The certificate spec (with ~70 MUSTs) remains a future version's scope.
-MUST_TRACE_V1_IN_SCOPE_FILES: tuple[str, ...] = (
+#: The DECLARED in-scope spec-file subset (paths relative to repo root). The
+#: linter ranges over exactly these files — NOT all of ``notes/*.md`` and NOT
+#: source docstrings. The scope has widened by version:
+#:
+#: * v0: the pipeline contract alone.
+#: * v1: ALSO the provision-state seam contract — every MUST of the public
+#:   consumer-facing seam became individually accountable.
+#: * v2: ALSO the certified tree-transition trace spec — the CORE proof-carrying
+#:   artifact a certificate checker replays (19 normative MUSTs), so every MUST
+#:   of the replayable patch grammar becomes individually accountable.
+#:
+#: The ``MUST_TRACE_V1_IN_SCOPE_FILES`` name is retained for back-compatibility;
+#: :data:`MUST_TRACE_IN_SCOPE_FILES` is the current (v2) tuple.
+MUST_TRACE_IN_SCOPE_FILES: tuple[str, ...] = (
     "notes/LAWVM_PIPELINE_CONTRACT.md",
     "notes/SEAM_SPEC_PROVISION_STATE.md",
+    "notes/CERTIFIED_TREE_TRANSITION_TRACE_V0.md",
 )
+
+#: Back-compat alias for the in-scope tuple (was the v1 name).
+MUST_TRACE_V1_IN_SCOPE_FILES: tuple[str, ...] = MUST_TRACE_IN_SCOPE_FILES
 
 # The closed set of mapping kinds (Pro §13 step 5 + the honest deferred bucket).
 MappingKind = Literal[
@@ -188,7 +200,7 @@ class MustTraceLedger:
 
     clauses: tuple[MustClause, ...]
     must_trace_version: str = MUST_TRACE_VERSION
-    in_scope_files: tuple[str, ...] = MUST_TRACE_V1_IN_SCOPE_FILES
+    in_scope_files: tuple[str, ...] = MUST_TRACE_IN_SCOPE_FILES
 
     def __post_init__(self) -> None:
         if not isinstance(self.clauses, tuple):
@@ -246,7 +258,7 @@ class MustTraceLedger:
 
 
 # --------------------------------------------------------------------------- #
-# The v1 curated ledger.                                                       #
+# The curated ledger (v0 pipeline + v1 seam + v2 cert-trace rows).             #
 #                                                                              #
 # Each row maps ONE normative MUST in an in-scope spec file to a REAL target.  #
 # Where a MUST currently maps to NOTHING (e.g. a consumer-side behavioural     #
@@ -691,12 +703,380 @@ _MUST_SEAM_TREAT_AS_SEMANTIC_73 = MustClause(
     ),
 )
 
-#: The v1 curated MUST-trace ledger rows (pipeline contract + provision-state
-#: seam contract). The first 12 are the v0 pipeline-contract rows (unchanged);
-#: the 15 SEAM-MUST-* rows are the v1 widening onto the seam contract (one per
-#: normative MUST token of notes/SEAM_SPEC_PROVISION_STATE.md, less the single
-#: waived RFC-2119 notation sentence).
-V1_MUST_CLAUSES: tuple[MustClause, ...] = (
+# --------------------------------------------------------------------------- #
+# The certified tree-transition trace MUSTs                                     #
+# (notes/CERTIFIED_TREE_TRANSITION_TRACE_V0.md, schema                          #
+# lawvm.certified_tree_transition_trace.v0, spec_version 0.3). This is the CORE #
+# proof-carrying artifact a certificate checker REPLAYS. v2 brings it in scope. #
+#                                                                               #
+# The MUSTs split into three honest buckets:                                    #
+#                                                                               #
+# * REPLAY / HASH / ORDERING obligations the writer self-check enforces on      #
+#   every emitted bundle map to ``checker_step`` targets in                     #
+#   lawvm.tools.certificate_bundle (verify_bundle folds the trace, recomputes   #
+#   every committed root, and re-asserts the per-action preconditions; the      #
+#   anchor-or-residual rule is enforced inside build_certificate_bundle).       #
+#   HONESTY: verify_bundle is the WRITER-SIDE self-check, NOT the independent    #
+#   zero-knowledge checker v0 — the spec states that checker is not yet         #
+#   implemented. A ``checker_step`` here asserts a LIVE gate verifies the MUST   #
+#   on emitted bundles, not that the standalone re-implementing checker exists.  #
+# * DISPLAY / CONSUMER / DESIGN-DISCIPLINE obligations (derived-labelling, the   #
+#   attrs non-semantic rule, "don't conflate the two hashes", "don't present    #
+#   annotation as certified") that no live LawVM gate enforces are honest       #
+#   ``deferred_with_owner`` findings naming the owner + reason.                  #
+#                                                                               #
+# No cert-trace MUST maps to ``invariant_id`` (V0_INVARIANTS are FI/domain      #
+# claim invariants, none about the trace artifact) or ``declared_non_guarantee``#
+# (no AssumptionRegister / ClaimSpec handle names the trace's legal-meaning     #
+# boundary) — inventing such a mapping would be a fake target, the cardinal sin.#
+# --------------------------------------------------------------------------- #
+
+_T = "notes/CERTIFIED_TREE_TRANSITION_TRACE_V0.md"
+
+# §1 — "Finer-grained change attribution ... is DERIVED ... and MUST be labelled
+# as derived, never presented as certification." A viewer/report labelling
+# obligation: LawVM cannot enforce how a downstream renderer labels derived
+# diffs.
+_MUST_TRACE_DERIVED_LABELLED = MustClause(
+    must_id="TRACE-MUST-01",
+    spec_source=_T,
+    excerpt=(
+        "DERIVED by diffing certified pre/post subtrees and MUST be labelled as "
+        "derived, never presented as certification."
+    ),
+    mapping_kind="deferred_with_owner",
+    target_ref=(
+        "owner=downstream viewers/reports (e.g. statute-timeline viewer); "
+        "reason=a RENDERING-labelling obligation LawVM cannot enforce in the "
+        "consumer's process — finer-grained per-subsection diffs are derived from "
+        "certified pre/post subtrees, but no LawVM check binds a viewer to label "
+        "them 'derived' rather than presenting them as certification"
+    ),
+)
+
+# §2.2 — "Consumers MUST NOT key decisions on attrs via this hash" (the
+# structural hash is attrs-blind). A consumer keying obligation the artifact
+# family cannot enforce in the consumer.
+_MUST_TRACE_ATTRS_NOT_KEYED = MustClause(
+    must_id="TRACE-MUST-02",
+    spec_source=_T,
+    excerpt="Consumers MUST NOT key decisions on attrs via this hash",
+    mapping_kind="deferred_with_owner",
+    target_ref=(
+        "owner=downstream trace/bundle consumers; reason=a consumer KEYING "
+        "obligation LawVM cannot enforce — the §2.2 structural hash is attrs-blind "
+        "(two subtrees differing only in attrs collide); no LawVM check forbids a "
+        "consumer from keying a decision on attrs through this hash"
+    ),
+)
+
+# §2.2 — attrs non-semantic rule: "Such state MUST be represented in the typed
+# node shape ... or projection payloads ...". A drafting/design discipline on
+# the node schema with no live cross-tree lint asserting no semantic field lives
+# only in attrs.
+_MUST_TRACE_ATTRS_NON_SEMANTIC = MustClause(
+    must_id="TRACE-MUST-03",
+    spec_source=_T,
+    excerpt="Such state MUST be represented in the typed node shape",
+    mapping_kind="deferred_with_owner",
+    target_ref=(
+        "owner=lawvm IR node-shape designers (the attrs-blind structural-hash "
+        "soundness precondition); reason=a DESIGN-discipline obligation — no field "
+        "affecting text-state/applicability/eligibility/status/addressability/"
+        "source-identity may live ONLY in attrs; no live gate scans node schemas "
+        "to assert no such semantic field is attrs-only, so the precondition of "
+        "attrs-blindness is unenforced, tracked"
+    ),
+)
+
+# §2.2 — conditional future obligation: "If the engine ever needs a semantic
+# field that only fits attrs ... attrs MUST be folded into the structural hash
+# under a schema bump." A maintainer change-process obligation conditioned on a
+# future event.
+_MUST_TRACE_ATTRS_FOLD_ON_BUMP = MustClause(
+    must_id="TRACE-MUST-04",
+    spec_source=_T,
+    excerpt="`attrs` MUST be folded into the structural hash under a schema bump.",
+    mapping_kind="deferred_with_owner",
+    target_ref=(
+        "owner=lawvm trace-schema maintainers; reason=a CONDITIONAL future "
+        "change-process obligation — should the engine ever require a semantic "
+        "field that only fits attrs, the frozen §2.2 hash recipe is unsound and "
+        "attrs must be folded in under a schema bump; no live gate detects that "
+        "trigger condition, so it is an unenforced maintainer obligation"
+    ),
+)
+
+# §2.2 — "Distinct from the text-only content_hash of seam responses ...; the
+# two MUST NOT be conflated even though both are sha256 hex values." A
+# discipline against conflating the structural hash with the seam content_hash.
+_MUST_TRACE_HASHES_NOT_CONFLATED = MustClause(
+    must_id="TRACE-MUST-05",
+    spec_source=_T,
+    excerpt=(
+        "the two MUST NOT be conflated even though\n  both are sha256 hex values."
+    ),
+    mapping_kind="deferred_with_owner",
+    target_ref=(
+        "owner=downstream trace/seam consumers; reason=a discipline LawVM cannot "
+        "enforce in the consumer — the §2.2 structural hash and the seam's "
+        "text-only content_hash are both sha256 hex but distinct values; no LawVM "
+        "check forbids a consumer from conflating them"
+    ),
+)
+
+# §3 — "Every content_hash MUST resolve in content_blobs (§4)." Enforced: the
+# writer self-check folds the base tree + transitions and requires every
+# referenced content_hash to have a blob row (TRACE.PAYLOAD_BLOB_MISSING).
+_MUST_TRACE_BASE_CONTENT_HASH_RESOLVES = MustClause(
+    must_id="TRACE-MUST-06",
+    spec_source=_T,
+    excerpt="Every `content_hash` MUST resolve in `content_blobs`",
+    mapping_kind="checker_step",
+    target_ref="lawvm.tools.certificate_bundle:verify_bundle",
+)
+
+# §4 — "Every hash referenced by the base tree, by any transition payload_hash,
+# or by any checkpoint's active set MUST have a blob row
+# (TRACE.PAYLOAD_BLOB_MISSING)." Enforced: verify_bundle asserts the payload
+# blob exists for every set_subtree while folding the trace.
+_MUST_TRACE_PAYLOAD_BLOB_PRESENT = MustClause(
+    must_id="TRACE-MUST-07",
+    spec_source=_T,
+    excerpt="MUST have a blob row\n  (`TRACE.PAYLOAD_BLOB_MISSING`).",
+    mapping_kind="checker_step",
+    target_ref="lawvm.tools.certificate_bundle:verify_bundle",
+)
+
+# §5.1 — "Annotation drift never invalidates a trace; annotation MUST NOT be
+# treated as certified content." A consumer/viewer obligation: display
+# annotation is excluded from the hash, but LawVM cannot enforce how a consumer
+# treats it.
+_MUST_TRACE_ANNOTATION_NOT_CERTIFIED = MustClause(
+    must_id="TRACE-MUST-08",
+    spec_source=_T,
+    excerpt="annotation MUST NOT be treated as certified content.",
+    mapping_kind="deferred_with_owner",
+    target_ref=(
+        "owner=downstream trace consumers; reason=a consumer TREATMENT obligation "
+        "LawVM cannot enforce — §5.1 display annotation (legal_op_summary, "
+        "preparatory_refs, flags, ...) is excluded from transition_hash by "
+        "construction, but no LawVM check binds a consumer to not treat it as "
+        "certified content"
+    ),
+)
+
+# §5.1 — "A viewer or report MUST NOT present preparatory_refs or other
+# annotation as certified provenance unless it is also committed through a
+# rooted projection family." A viewer-side presentation obligation.
+_MUST_TRACE_VIEWER_NO_CERTIFIED_ANNOTATION = MustClause(
+    must_id="TRACE-MUST-09",
+    spec_source=_T,
+    excerpt=(
+        "A\nviewer or report MUST NOT present `preparatory_refs` or other "
+        "annotation as\ncertified provenance"
+    ),
+    mapping_kind="deferred_with_owner",
+    target_ref=(
+        "owner=downstream viewers/reports; reason=a PRESENTATION obligation LawVM "
+        "cannot enforce in the consumer — non-hashed annotation may be shown as "
+        "certified provenance only if also committed through a rooted projection "
+        "family (e.g. transition-graph projection rows); no LawVM check binds a "
+        "viewer to that condition"
+    ),
+)
+
+# §5.1 — "effective_date is an ISO date, non-decreasing with sequence, and MUST
+# be a member of the certificate's committed change-date set
+# (TRACE.CHANGE_DATE_UNDECLARED)." Enforced: verify_bundle re-asserts ordering +
+# change-date membership while folding the trace.
+_MUST_TRACE_EFFECTIVE_DATE_DECLARED = MustClause(
+    must_id="TRACE-MUST-10",
+    spec_source=_T,
+    excerpt=(
+        "`effective_date` is an ISO date, non-decreasing with `sequence`, and "
+        "MUST\n  be a member of the certificate's committed change-date set"
+    ),
+    mapping_kind="checker_step",
+    target_ref="lawvm.tools.certificate_bundle:verify_bundle",
+)
+
+# §5.1 — "The base sentinel 0000-00-00 is not a change date and MUST NOT appear."
+# No live gate rejects the sentinel literal specifically in a transition row;
+# the writer never emits it (effective_date comes from real change dates) but
+# that is by construction, not a checked refusal.
+_MUST_TRACE_NO_BASE_SENTINEL = MustClause(
+    must_id="TRACE-MUST-11",
+    spec_source=_T,
+    excerpt=(
+        "The base sentinel `0000-00-00` is not a\n  change date and MUST NOT "
+        "appear."
+    ),
+    mapping_kind="deferred_with_owner",
+    target_ref=(
+        "owner=lawvm.tools.certificate_bundle (trace emitter / checker); "
+        "reason=no live gate specifically rejects the 0000-00-00 base sentinel "
+        "appearing as a transition effective_date — verify_bundle enforces "
+        "change-date MEMBERSHIP (which the sentinel fails) but does not name the "
+        "sentinel as a distinct refusal; the writer never emits it by "
+        "construction, so the explicit MUST-NOT-appear rule is unenforced, tracked"
+    ),
+)
+
+# §5.1 — "source_anchors ... Certified anchor spans are BYTE-LEVEL only:
+# span_unit MUST be \"byte\" ...". Enforced: build_certificate_bundle verifies
+# every certified anchor byte-level against the bundled raw source bytes (byte
+# span + quote_hash) before it is carried; non-byte/failed anchors are dropped.
+_MUST_TRACE_ANCHOR_SPAN_BYTE = MustClause(
+    must_id="TRACE-MUST-12",
+    spec_source=_T,
+    excerpt='`span_unit` MUST be `"byte"`',
+    mapping_kind="checker_step",
+    target_ref="lawvm.tools.certificate_bundle:build_certificate_bundle",
+)
+
+# §5.1 — "When no anchor covers a source_ref ... a kind=source_anchor_unavailable
+# residual scoped to this transition MUST exist in the certificate's residual
+# ledger (§7)." Enforced: build_certificate_bundle emits a
+# source_anchor_unavailable residual for every (transition, ref) without a
+# re-verified byte anchor.
+_MUST_TRACE_UNAVAILABLE_RESIDUAL = MustClause(
+    must_id="TRACE-MUST-13",
+    spec_source=_T,
+    excerpt=(
+        "`kind=source_anchor_unavailable` residual scoped to this transition "
+        "MUST\n  exist in the certificate's residual ledger"
+    ),
+    mapping_kind="checker_step",
+    target_ref="lawvm.tools.certificate_bundle:build_certificate_bundle",
+)
+
+# §6.1 — Reserved action names "are set aside for future spec versions and MUST
+# NOT be emitted under v0." Enforced (producer side): the producer ONLY emits
+# set_subtree / delete_subtree — it cannot construct a reserved action.
+_MUST_TRACE_RESERVED_NOT_EMITTED = MustClause(
+    must_id="TRACE-MUST-14",
+    spec_source=_T,
+    excerpt=(
+        "are set aside for future spec versions and MUST NOT be\nemitted under v0."
+    ),
+    mapping_kind="writer_refusal",
+    target_ref=(
+        "lawvm.core.certified_transition:certified_tree_transitions_from_receipt"
+    ),
+)
+
+# §6.1 — "A checker encountering a reserved or unknown action returns
+# TRACE.UNKNOWN_ACTION → INVALID; it MUST NOT guess semantics." Enforced:
+# verify_bundle raises BundleSelfCheckError on any action outside
+# {set_subtree, delete_subtree} rather than guessing.
+_MUST_TRACE_NO_GUESS_ACTION = MustClause(
+    must_id="TRACE-MUST-15",
+    spec_source=_T,
+    excerpt="it MUST NOT guess semantics.",
+    mapping_kind="checker_step",
+    target_ref="lawvm.tools.certificate_bundle:verify_bundle",
+)
+
+# §7 — "Every source_ref of every transition MUST satisfy ONE of: [a verified
+# byte anchor] or [a source_anchor_unavailable residual]." Enforced:
+# build_certificate_bundle either carries a re-verified byte anchor or emits the
+# fail-loud source_anchor_unavailable residual for every ref.
+_MUST_TRACE_ANCHOR_OR_RESIDUAL = MustClause(
+    must_id="TRACE-MUST-16",
+    spec_source=_T,
+    excerpt="Every `source_ref` of every transition MUST satisfy ONE of:",
+    mapping_kind="checker_step",
+    target_ref="lawvm.tools.certificate_bundle:build_certificate_bundle",
+)
+
+# §8.2 — "after folding all transitions with effective_date <= date, the
+# recomputed covering-state hash MUST equal tree_hash (TRACE.CHECKPOINT_MISMATCH)."
+# Enforced: verify_bundle folds the batch and re-asserts the §8.1 covering-state
+# hash against each committed checkpoint.
+_MUST_TRACE_CHECKPOINT_MATCH = MustClause(
+    must_id="TRACE-MUST-17",
+    spec_source=_T,
+    excerpt=(
+        "the recomputed covering-state hash MUST equal\n  `tree_hash` "
+        "(`TRACE.CHECKPOINT_MISMATCH`)."
+    ),
+    mapping_kind="checker_step",
+    target_ref="lawvm.tools.certificate_bundle:verify_bundle",
+)
+
+# §8.2 — "the row dates MUST equal the change-date set committed under
+# change_dates_root ...". Enforced: verify_bundle recomputes change_dates_root
+# from the checkpoint dates and re-asserts it against the committed time_axis.
+_MUST_TRACE_CHECKPOINT_DATES_EQUAL = MustClause(
+    must_id="TRACE-MUST-18",
+    spec_source=_T,
+    excerpt=(
+        "the row dates MUST equal the change-date set committed under\n"
+        "`change_dates_root`"
+    ),
+    mapping_kind="checker_step",
+    target_ref="lawvm.tools.certificate_bundle:verify_bundle",
+)
+
+# §9 — Failure model: "each maps the bundle to verdict INVALID and MUST embed
+# the offending row identity ... and enough row content to be self-evidencing."
+# A property of the INDEPENDENT checker v0's typed failures; that checker is not
+# yet implemented (the writer self-check raises BundleSelfCheckError with the
+# offending row id but is not the spec's verdict-producing checker).
+_MUST_TRACE_FAILURES_SELF_EVIDENCING = MustClause(
+    must_id="TRACE-MUST-19",
+    spec_source=_T,
+    excerpt=(
+        "MUST embed the offending row identity (transition_id / content_hash / "
+        "date) and\nenough row content to be self-evidencing"
+    ),
+    mapping_kind="deferred_with_owner",
+    target_ref=(
+        "owner=lawvm certificate checker v0 (not yet implemented; the spec header "
+        "states the trace-folding checker is unimplemented); reason=the §9 typed "
+        "TRACE.* failures that map a bundle to verdict INVALID and embed the "
+        "offending row identity are properties of the verdict-producing checker; "
+        "verify_bundle is the writer-side self-check (raises with the offending "
+        "transition_id but produces no verdict), so the self-evidencing typed-"
+        "failure contract is unenforced until checker v0 exists, tracked"
+    ),
+)
+
+#: The v2 cert-trace MUST rows (one per normative MUST token of
+#: notes/CERTIFIED_TREE_TRANSITION_TRACE_V0.md, less the single waived RFC-2119
+#: notation sentence).
+_TRACE_MUST_CLAUSES: tuple[MustClause, ...] = (
+    _MUST_TRACE_DERIVED_LABELLED,
+    _MUST_TRACE_ATTRS_NOT_KEYED,
+    _MUST_TRACE_ATTRS_NON_SEMANTIC,
+    _MUST_TRACE_ATTRS_FOLD_ON_BUMP,
+    _MUST_TRACE_HASHES_NOT_CONFLATED,
+    _MUST_TRACE_BASE_CONTENT_HASH_RESOLVES,
+    _MUST_TRACE_PAYLOAD_BLOB_PRESENT,
+    _MUST_TRACE_ANNOTATION_NOT_CERTIFIED,
+    _MUST_TRACE_VIEWER_NO_CERTIFIED_ANNOTATION,
+    _MUST_TRACE_EFFECTIVE_DATE_DECLARED,
+    _MUST_TRACE_NO_BASE_SENTINEL,
+    _MUST_TRACE_ANCHOR_SPAN_BYTE,
+    _MUST_TRACE_UNAVAILABLE_RESIDUAL,
+    _MUST_TRACE_RESERVED_NOT_EMITTED,
+    _MUST_TRACE_NO_GUESS_ACTION,
+    _MUST_TRACE_ANCHOR_OR_RESIDUAL,
+    _MUST_TRACE_CHECKPOINT_MATCH,
+    _MUST_TRACE_CHECKPOINT_DATES_EQUAL,
+    _MUST_TRACE_FAILURES_SELF_EVIDENCING,
+)
+
+
+#: The v2 curated MUST-trace ledger rows (pipeline contract + provision-state
+#: seam contract + certified tree-transition trace). The first 12 are the v0
+#: pipeline-contract rows; the 15 SEAM-MUST-* rows are the v1 widening onto the
+#: seam contract; the 19 TRACE-MUST-* rows are the v2 widening onto the
+#: certified tree-transition trace (one per normative MUST token of its spec,
+#: less the single waived RFC-2119 notation sentence). The ``V1_*`` name is
+#: retained for back-compatibility; :data:`MUST_CLAUSES` is the current set.
+MUST_CLAUSES: tuple[MustClause, ...] = (
     _MUST_WAIST_STAGERESULT,
     _MUST_ACCOUNTING_PARTITION,
     _MUST_UNOWNED_VIOLATION_ZERO,
@@ -724,21 +1104,32 @@ V1_MUST_CLAUSES: tuple[MustClause, ...] = (
     _MUST_SEAM_RERUN_CANARIES_72,
     _MUST_SEAM_TREAT_AS_SEMANTIC_72,
     _MUST_SEAM_TREAT_AS_SEMANTIC_73,
+    *_TRACE_MUST_CLAUSES,
 )
 
+#: Back-compat alias for the curated ledger rows (was the v1 name). Now carries
+#: the v2 set (pipeline + seam + cert-trace).
+V1_MUST_CLAUSES: tuple[MustClause, ...] = MUST_CLAUSES
 
-def v1_must_trace_ledger() -> MustTraceLedger:
-    """The v1 :class:`MustTraceLedger` over the declared in-scope spec files."""
+
+def must_trace_ledger() -> MustTraceLedger:
+    """The current :class:`MustTraceLedger` over the declared in-scope spec files."""
     return MustTraceLedger(
-        V1_MUST_CLAUSES,
+        MUST_CLAUSES,
         must_trace_version=MUST_TRACE_VERSION,
-        in_scope_files=MUST_TRACE_V1_IN_SCOPE_FILES,
+        in_scope_files=MUST_TRACE_IN_SCOPE_FILES,
     )
+
+
+#: Back-compat alias for the ledger constructor (was the v1 name).
+v1_must_trace_ledger = must_trace_ledger
 
 
 __all__ = [
     "ENFORCED_MAPPING_KINDS",
     "MAPPING_KINDS",
+    "MUST_CLAUSES",
+    "MUST_TRACE_IN_SCOPE_FILES",
     "MUST_TRACE_V1_IN_SCOPE_FILES",
     "MUST_TRACE_VERSION",
     "MappingKind",
@@ -746,5 +1137,6 @@ __all__ = [
     "MustTraceError",
     "MustTraceLedger",
     "V1_MUST_CLAUSES",
+    "must_trace_ledger",
     "v1_must_trace_ledger",
 ]
